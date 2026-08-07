@@ -58,9 +58,11 @@ def is_blocked(method: str, path: str) -> bool:
     if path == "/api/recently-viewed":
         return True
 
-    # 禁止用户直接上传文件或添加 URL/YouTube 来源（REQ-SCOPE-03）
-    if method == "POST" and path.startswith("/api/sources"):
-        return True
+    # 来源只读（REQ-SCOPE-03 / 设计 §5.1：RDLens 数据面是唯一写路径）：
+    # 浏览器仅允许 GET 回读；创建/改写/重试/删除/洞察一律 403。
+    # HEAD/OPTIONS 放行：中间件在最外层，CORS preflight 需经过此处。
+    if path.startswith("/api/sources"):
+        return method not in ("GET", "HEAD", "OPTIONS")
 
     return False
 
