@@ -206,6 +206,8 @@ class TestAPISurfaceBlocked:
             ("DELETE", "/api/notebooks/notebook:42"),
             ("GET", "/api/recently-viewed"),
             ("POST", "/api/sources"),  # 直接上传/URL 来源（REQ-SCOPE-03）
+            ("PUT", "/api/sources/source:1"),  # 改写来源（RDLens 单写权威）
+            ("DELETE", "/api/sources/source:1"),  # 删除来源（同上）
             ("GET", "/api/auth/status"),  # 认证（REQ-SCOPE-03）
             ("GET", "/api/credentials"),  # Provider 凭据
             ("GET", "/api/providers"),  # Provider 配置
@@ -229,6 +231,8 @@ class TestAPISurfaceBlocked:
             ("GET", "/api/notebooks/notebook:42"),  # 固定 Notebook（REQ-AUTH-03）
             ("GET", "/api/sources"),  # 来源只读（Gateway 代理）
             ("GET", "/api/sources/source:1"),
+            ("HEAD", "/api/sources/source:1"),  # 只读 + 预检语义保留
+            ("OPTIONS", "/api/sources"),  # CORS preflight 放行
             ("GET", "/api/notes"),  # 研究产物 CRUD（Gateway 代理）
             ("POST", "/api/notes"),
             ("GET", "/api/insights"),
@@ -250,6 +254,17 @@ class TestAPISurfaceBlocked:
         client = TestClient(app)
         response = client.get("/api/notebooks")
         assert response.status_code == 403
+
+    def test_embedded_mode_blocks_source_write_methods(self, monkeypatch):
+        """端到端：PUT/DELETE /api/sources/{id} 必须 403（来源只读）。"""
+        _embedded(monkeypatch)
+        from fastapi.testclient import TestClient
+
+        from api.main import app
+
+        client = TestClient(app)
+        assert client.put("/api/sources/source:1").status_code == 403
+        assert client.delete("/api/sources/source:1").status_code == 403
 
 
 class TestTransformationPromptOnly:

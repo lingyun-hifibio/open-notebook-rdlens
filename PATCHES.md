@@ -37,6 +37,20 @@
 合计：8 文件，+424/-1 行；**生产代码 6 文件 +160 行**，未改写 Domain/DB/Schema，
 零数据库迁移。
 
+### 2.1 SPK-03 修复（2026-08-07，审查发现）
+
+RDLens 侧审查发现：屏蔽矩阵只拦 `POST /api/sources*`，上游存在的
+`PUT /api/sources/{id}`、`DELETE /api/sources/{id}` 可绕过，浏览器可改写/删除
+RDLens 同步的 Source，违反「来源只读 + RDLens 单写权威」（设计 §5.1）。
+
+| 文件 | 类型 | 行数 | 说明 |
+|---|---|---:|---|
+| `api/embedded_scope.py` | 行为守卫 | +1/-1 | `/api/sources` 改为仅放行 GET/HEAD/OPTIONS，PUT/DELETE 等一律 403 |
+| `tests/test_embedded_scope.py` | 测试 | +6 | 矩阵补 PUT/DELETE 屏蔽断言；新增端到端 403 用例（12 → 13） |
+
+验证：`uv run pytest tests/test_embedded_scope.py -q` 13 passed；
+全量 `tests/` 无回归（见 §5 验证记录）。
+
 ## 3. 改动边界与成本评估（REQ-POC-02）
 
 - **未触碰**：Domain/DB 数据模型（零迁移）；SurrealDB；前端 Next.js；
