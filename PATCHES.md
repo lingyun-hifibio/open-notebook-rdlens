@@ -5,6 +5,12 @@
 > 基准 commit：`30c7e2a6`（上游 v1.14.0，BASE-01 固定）
 > 分支：`feat/spk-03-embedded-adapter`
 > 责任台账模板见 RDLens `deploy/research/BASELINE.md` §5
+>
+> 表述说明（2026-08-07）：分支已于 2026-08-06 rebase 至 `a7de90d`（fork main，
+> 含 10 个上游 commit）并经 PR #1 合并（merge commit `edd699a`，tag
+> `v1.14.0-rdlens.1`）；§2 清单与「基准 commit」仍按决策固定为 `30c7e2a6`——
+> Patch 相对上游 v1.14.0 的改动面以该基准计量，rebase 只平移基底不改 Patch 内容。
+> 后续修复见 §2.1（PR #2，tag `v1.14.0-rdlens.2`）。
 
 ## 1. 目标
 
