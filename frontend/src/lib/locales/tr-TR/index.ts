@@ -976,4 +976,10 @@ export const trTR = {
     goToSettings: "Ayarlara Git",
     viewDocs: "Belgeleri Görüntüle",
   },
+  research: {
+    loading: "Araştırma çalışma alanı yükleniyor…",
+    ready: "Araştırma çalışma alanı hazır",
+    errorTitle: "Araştırma çalışma alanı kullanılamıyor",
+    errorMessage: "Araştırma oturumu kurulamadı. Lütfen RDLens'e dönüp tekrar deneyin.",
+  },
 } satisfies TranslationShape;

@@ -976,4 +976,10 @@ export const itIT = {
     goToSettings: "Vai alle Impostazioni",
     viewDocs: "Vedi documentazione",
   },
+  research: {
+    loading: "Caricamento dell'area di ricerca…",
+    ready: "Area di ricerca pronta",
+    errorTitle: "Area di ricerca non disponibile",
+    errorMessage: "Impossibile stabilire la sessione di ricerca. Torna a RDLens e riprova.",
+  },
 } satisfies TranslationShape;

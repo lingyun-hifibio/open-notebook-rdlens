@@ -13,6 +13,7 @@ import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { ConnectionGuard } from "@/components/common/ConnectionGuard";
 import { themeScript } from "@/lib/theme-script";
 import { I18nProvider } from "@/components/providers/I18nProvider";
+import { isEmbeddedMode } from "@/lib/embedded/config";
 
 const instrumentSans = Instrument_Sans({
   subsets: ["latin"],
@@ -52,10 +53,20 @@ export default function RootLayout({
           <ThemeProvider>
             <QueryProvider>
               <I18nProvider>
-                <ConnectionGuard>
-                  {children}
-                  <Toaster />
-                </ConnectionGuard>
+                {/* 嵌入式模式下跳过 ConnectionGuard：SPK-03 屏蔽矩阵会 403
+                    /api/config，连接检查会误报后端不可达；会话健康由
+                    ResearchWorkspaceShell 的 ready/token 握手表达。 */}
+                {isEmbeddedMode() ? (
+                  <>
+                    {children}
+                    <Toaster />
+                  </>
+                ) : (
+                  <ConnectionGuard>
+                    {children}
+                    <Toaster />
+                  </ConnectionGuard>
+                )}
               </I18nProvider>
             </QueryProvider>
           </ThemeProvider>

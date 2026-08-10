@@ -976,4 +976,10 @@ export const plPL = {
     goToSettings: "Przejdź do Ustawień",
     viewDocs: "Zobacz dokumentację",
   },
+  research: {
+    loading: "Ładowanie przestrzeni badawczej…",
+    ready: "Przestrzeń badawcza gotowa",
+    errorTitle: "Przestrzeń badawcza niedostępna",
+    errorMessage: "Nie udało się nawiązać sesji badawczej. Wróć do RDLens i spróbuj ponownie.",
+  },
 } satisfies TranslationShape;

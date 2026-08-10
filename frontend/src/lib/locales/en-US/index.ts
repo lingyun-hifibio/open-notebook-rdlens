@@ -975,6 +975,12 @@ export const enUS = {
     goToSettings: "Go to Settings",
     viewDocs: "View docs",
   },
+  research: {
+    loading: "Loading research workspace…",
+    ready: "Research workspace ready",
+    errorTitle: "Research workspace unavailable",
+    errorMessage: "The research session could not be established. Please return to RDLens and try again.",
+  },
 }
 
 // Compile-time shape of the en-US translations. Every other locale must

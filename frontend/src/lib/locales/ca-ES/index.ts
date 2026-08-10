@@ -976,4 +976,10 @@ export const caES = {
     goToSettings: "Ves a la configuració",
     viewDocs: "Visualitza la documentació",
   },
+  research: {
+    loading: "Carregant l'espai de recerca…",
+    ready: "Espai de recerca a punt",
+    errorTitle: "Espai de recerca no disponible",
+    errorMessage: "No s'ha pogut establir la sessió de recerca. Torna a RDLens i torna-ho a provar.",
+  },
 } satisfies TranslationShape;
