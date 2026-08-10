@@ -138,7 +138,6 @@ export function ResearchWorkspace() {
               isCreating={jobs.isCreating}
               error={jobs.error}
               onCreate={(documentIds, groupSize) => jobs.createCompare(documentIds, groupSize)}
-              onJobCreated={() => setTab('jobs')}
             />
           </TabsContent>
           <TabsContent value="jobs" className="min-h-0 flex-1">

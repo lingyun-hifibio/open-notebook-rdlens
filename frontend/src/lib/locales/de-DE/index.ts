@@ -1021,6 +1021,7 @@ export const deDE = {
     compareCreating: "Creating compare job…",
     compareOverDefault: "Exceeds the default limit of 30 — allowed up to the hard cap of 50.",
     compareOverHard: "Maximum 50 documents (selected {{count}}).",
+    compareCreated: "Compare job created — it runs in the background; see the Jobs tab for progress.",
     compareEmpty: "Select at least one source to compare.",
     jobsEmpty: "No research jobs yet.",
     jobsCancel: "Cancel",

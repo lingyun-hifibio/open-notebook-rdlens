@@ -1018,6 +1018,7 @@ export const zhCN = {
     compareCreating: "创建对比任务中…",
     compareOverDefault: "超出默认上限 30 篇——允许创建，但不超过硬上限 50 篇。",
     compareOverHard: "最多 50 篇（当前已选 {{count}} 篇）。",
+    compareCreated: "对比任务已创建——后台继续运行，请在任务页查看进度。",
     compareEmpty: "请至少选择一个来源进行对比。",
     jobsEmpty: "暂无研究任务。",
     jobsCancel: "取消",

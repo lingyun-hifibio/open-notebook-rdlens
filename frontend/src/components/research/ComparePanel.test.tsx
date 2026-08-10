@@ -26,7 +26,6 @@ function renderPanel(sources: ResearchSourceSummary[], selected: string[]) {
       isCreating={false}
       error={null}
       onCreate={vi.fn()}
-      onJobCreated={vi.fn()}
     />,
   )
 }
@@ -66,7 +65,6 @@ describe('ComparePanel', () => {
   it('点击创建把选中 Source 映射为 document_ids 回调', () => {
     const all = sources(3)
     const onCreate = vi.fn()
-    const onJobCreated = vi.fn()
     render(
       <ComparePanel
         sources={all}
@@ -74,12 +72,11 @@ describe('ComparePanel', () => {
         isCreating={false}
         error={null}
         onCreate={onCreate}
-        onJobCreated={onJobCreated}
       />,
     )
     fireEvent.click(screen.getByRole('button', { name: /compare/ }))
     expect(onCreate).toHaveBeenCalledWith(['doc_0', 'doc_2'])
-    expect(onJobCreated).not.toHaveBeenCalled()
+    expect(screen.getByTestId('compare-submitted')).toBeInTheDocument()
   })
 
   it('创建中禁用按钮并显示进度文案', () => {
@@ -91,7 +88,6 @@ describe('ComparePanel', () => {
         isCreating
         error={null}
         onCreate={vi.fn()}
-        onJobCreated={vi.fn()}
       />,
     )
     expect(screen.getByRole('button', { name: /compare/ })).toBeDisabled()
@@ -106,7 +102,6 @@ describe('ComparePanel', () => {
         isCreating={false}
         error="compare.createFailed"
         onCreate={vi.fn()}
-        onJobCreated={vi.fn()}
       />,
     )
     expect(screen.getByText('compare.createFailed')).toBeInTheDocument()
