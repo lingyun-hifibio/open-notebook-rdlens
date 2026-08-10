@@ -141,7 +141,7 @@ describe('useResearchJobs', () => {
     let n = 0
     vi.mocked(getJob).mockImplementation(async (_pid, jid) => {
       n += 1
-      const statuses = ['running', 'cancelling', 'cancelled']
+      const statuses: ResearchJob['status'][] = ['running', 'cancelling', 'cancelled']
       const status = statuses[n - 1] ?? 'cancelled'
       log.push(`getJob#${n}->${status}`)
       return job(jid, status)

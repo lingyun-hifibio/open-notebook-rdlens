@@ -40,10 +40,15 @@ export interface ResearchChatTurn {
   errorMessage: string | null
 }
 
+export interface ResearchChatSelection {
+  sourceIds?: string[]
+  noteIds?: string[]
+}
+
 export interface UseResearchChatResult {
   turns: ResearchChatTurn[]
   isStreaming: boolean
-  send: (query: string) => void
+  send: (query: string, selection?: ResearchChatSelection) => void
 }
 
 interface ActiveTurn {
@@ -185,7 +190,7 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
     })
   }
 
-  const send = (query: string): void => {
+  const send = (query: string, selection?: ResearchChatSelection): void => {
     const trimmed = query.trim()
     if (!trimmed) return
     stopActive()
@@ -221,8 +226,8 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
     const active: ActiveTurn = {
       turnId,
       query: trimmed,
-      sourceIds: [],
-      noteIds: [],
+      sourceIds: selection?.sourceIds ?? [],
+      noteIds: selection?.noteIds ?? [],
       attempt: 1,
       reconnectCount: 0,
       lastEventId: 0,

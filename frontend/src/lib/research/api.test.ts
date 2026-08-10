@@ -140,6 +140,7 @@ describe('openResearchChatStream', () => {
       openResearchChatStream({
         projectId: PROJECT,
         request: { query: 'q' },
+        onEvent: () => {},
         onHttpError: (status) => {
           expect(status).toBe(409)
           resolve()
@@ -156,6 +157,7 @@ describe('openResearchChatStream', () => {
       openResearchChatStream({
         projectId: PROJECT,
         request: { query: 'q' },
+        onEvent: () => {},
         onNetworkError: (error) => {
           expect(error.message).toBe('Failed to fetch')
           resolve()
@@ -203,6 +205,7 @@ describe('openResearchChatStream', () => {
     const abort = openResearchChatStream({
       projectId: PROJECT,
       request: { query: 'q' },
+      onEvent: () => {},
       onNetworkError,
     })
     abort()
@@ -219,6 +222,7 @@ describe('openResearchChatStream', () => {
       openResearchChatStream({
         projectId: PROJECT,
         request: { query: 'q' },
+        onEvent: () => {},
         onHttpError: (status) => {
           errors.push(status)
           resolve()

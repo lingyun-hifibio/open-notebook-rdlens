@@ -59,12 +59,14 @@ describe('useResearchChat', () => {
     const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
 
     act(() => {
-      result.current.send('问题')
+      result.current.send('问题', { sourceIds: ['src_1'], noteIds: ['note_1'] })
     })
 
     expect(streams).toHaveLength(1)
     const s = streams[0]
     expect(s.opts.request.query).toBe('问题')
+    expect(s.opts.request.source_ids).toEqual(['src_1'])
+    expect(s.opts.request.note_ids).toEqual(['note_1'])
     expect(s.opts.lastEventId).toBe(0)
 
     act(() => {

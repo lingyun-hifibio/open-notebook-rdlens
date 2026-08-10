@@ -92,7 +92,7 @@ export function parseResearchEvent(payload: unknown): ResearchSseEvent | null {
   const event: ResearchSseEvent = { event_id, type: type as ResearchSseType }
   if (typeof payload.delta === 'string') event.delta = payload.delta
   if (Array.isArray(payload.citations)) event.citations = payload.citations as ResearchCitation[]
-  if (isRecord(payload.usage)) event.usage = payload.usage as ResearchTokenUsage
+  if (isRecord(payload.usage)) event.usage = payload.usage as unknown as ResearchTokenUsage
   if (typeof payload.resolved_mode === 'string') event.resolved_mode = payload.resolved_mode
   if (typeof payload.session_id === 'string') event.session_id = payload.session_id
   if (typeof payload.request_id === 'string') event.request_id = payload.request_id
