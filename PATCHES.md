@@ -145,7 +145,7 @@ channel 并在 ready 中携带、父页面回显的形态（与 §12.2 ready 载
 ## 6. UI-03 Search、Chat、长任务与 Compare 交互（2026-08-11）
 
 > Task ID: UI-03（GitHub Issue #72，repo: HiFiBiO-Therapeutics/RDLens）
-> 分支：`open-notebook-m4-ui-03`（基于 UI-01 #4）；PR：#5
+> 分支：`open-notebook-m4-ui-03`（基于 UI-01 #4）；PR：#6
 > 设计锚点：设计方案 §7、§9.3、§10、§13、§15.2；契约 v0 §8–§10、§13.2
 > Requirements：REQ-SCOPE-04、REQ-ENG-04、REQ-API-02、REQ-JOB-01–02、
 > REQ-QUOTA-01、REQ-POC-02
