@@ -80,7 +80,7 @@ RDLens 同步的 Source，违反「来源只读 + RDLens 单写权威」（设�
 ## 5. UI-01 ResearchWorkspaceShell 与安全会话（2026-08-11）
 
 > Task ID: UI-01（GitHub Issue #70，repo: HiFiBiO-Therapeutics/RDLens）
-> 分支：`open-notebook-m4-ui-01`；PR：#<PR>
+> 分支：`open-notebook-m4-ui-01`；PR：#4
 > 设计锚点：设计方案 §3.2、§4.1–§4.3、§15.2、§16.2；契约 v0 §12
 > Requirements：REQ-SCOPE-01、REQ-AUTH-01–03、REQ-EMB-01–02、REQ-DEP-02、
 > REQ-POC-02、REQ-TST-02
