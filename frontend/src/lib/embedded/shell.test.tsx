@@ -31,13 +31,32 @@ function dispatchMessage(payload: Record<string, unknown>, origin = PARENT_ORIGI
   })
 }
 
+// UI-02：合法 claims 的 Research Token（契约 v0 §4.1）；session 只对
+// 可解码 claims 的 token 进入 authenticated（fail-closed）。
+function validToken(claims: Record<string, unknown> = {}): string {
+  const payload = {
+    sub: 'user_1',
+    project_id: 'proj_abc',
+    role: 'owner',
+    scopes: ['workspace:read', 'notes:write', 'research:run'],
+    aud: 'research-workspace',
+    iat: 1754460000,
+    nbf: 1754460000,
+    exp: 1754460300,
+    jti: 'j_1',
+    ...claims,
+  }
+  const b64 = Buffer.from(JSON.stringify(payload), 'utf-8').toString('base64url')
+  return `header.${b64}.signature`
+}
+
 function validTokenMessage(nonce: string, channel: string, overrides: Record<string, unknown> = {}) {
   return {
     schema: 'research-v0',
     channel,
     type: 'token',
     nonce,
-    token: 'research.jwt.payload',
+    token: validToken(),
     expires_at: 1754460300,
     ...overrides,
   }

@@ -24,6 +24,10 @@ import {
   clearResearchToken,
   setResearchToken,
 } from './token-store'
+import {
+  decodeResearchClaims,
+  type ResearchRole,
+} from './claims'
 
 export type SessionStatus = 'booting' | 'ready' | 'authenticated' | 'error' | 'destroyed'
 
@@ -32,6 +36,10 @@ export interface SessionState {
   errorCode?: PmErrorCode
   errorMessage?: string
   tokenExpiresAt?: number
+  /** UI-02：Token claims 中的项目 ID（工作台 Gateway 路径；服务端权威） */
+  projectId?: string
+  /** UI-02：Owner 写 / Admin 只读矩阵数据源（设计 §4.4） */
+  role?: ResearchRole
 }
 
 export interface EmbeddedSessionOptions {
@@ -92,11 +100,30 @@ export function createEmbeddedSession(options: EmbeddedSessionOptions): Embedded
   function handleMessage(message: ValidatedInboundMessage): void {
     switch (message.type) {
       case 'token':
-      case 'refresh':
+      case 'refresh': {
+        // UI-02：claims 解码 fail-closed——无法确定项目/角色时拒绝
+        // authenticated，不驻留 Token，工作台不猜测 Gateway 路径或权限
+        // （契约 v0 §4.1；设计 §4.4）。签名/权威校验仍在 Gateway。
+        const claims = decodeResearchClaims(message.token)
+        if (claims === null) {
+          clearResearchToken()
+          setState({
+            status: 'error',
+            errorCode: 'session_invalid',
+            errorMessage: 'research token claims are invalid',
+          })
+          break
+        }
         // 首次交付或过期前刷新：替换内存 Token（REQ-EMB-02）
         setResearchToken(message.token, message.expiresAt)
-        setState({ status: 'authenticated', tokenExpiresAt: message.expiresAt })
+        setState({
+          status: 'authenticated',
+          tokenExpiresAt: message.expiresAt,
+          projectId: claims.projectId,
+          role: claims.role,
+        })
         break
+      }
       case 'error':
         // bootstrap/刷新失败：不清除既有 Token（过期前仍有效，父页面会重试刷新）
         setState({

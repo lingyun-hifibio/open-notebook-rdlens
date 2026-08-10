@@ -9,7 +9,7 @@ import {
   COMPARE_DEFAULT_MAX,
   COMPARE_HARD_MAX,
 } from '@/lib/research/compare'
-import type { ResearchSourceSummary } from '@/lib/research/types'
+import type { ResearchSource } from '@/lib/types/research'
 
 /**
  * Compare 面板（UI-03，REQ-QUOTA-01，设计 §7.4/§13）。
@@ -26,7 +26,7 @@ export function ComparePanel({
   error,
   onCreate,
 }: {
-  sources: ResearchSourceSummary[]
+  sources: ResearchSource[]
   selectedSourceIds: string[]
   isCreating: boolean
   error: string | null

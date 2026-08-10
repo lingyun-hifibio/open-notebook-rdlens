@@ -62,28 +62,6 @@ export interface ResearchJob {
   updated_at: string
 }
 
-/** Source 列表项（契约 §6，不带全文） */
-export interface ResearchSourceSummary {
-  source_id: string
-  document_id: string
-  document_version: string
-  status: 'pending' | 'ready' | 'stale' | 'failed'
-  content_hash: string | null
-  synced_at: string | null
-  last_error: string | null
-}
-
-/** Note 对象（契约 §7.1） */
-export interface ResearchNoteSummary {
-  note_id: string
-  project_id: string
-  title: string
-  content: string
-  note_type: string
-  created_at: string
-  updated_at: string
-}
-
 export interface ResearchEvidenceItem {
   source_id: string
   document_version: string
@@ -128,7 +106,3 @@ export interface ResearchCompareCreateResponse {
   status: ResearchJobStatus
 }
 
-export interface ResearchPage<T> {
-  items: T[]
-  next_cursor: string | null
-}

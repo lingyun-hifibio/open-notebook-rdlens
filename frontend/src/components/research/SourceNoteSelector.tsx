@@ -4,7 +4,7 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import type { ResearchNoteSummary, ResearchSourceSummary } from '@/lib/research/types'
+import type { ResearchNote, ResearchSource } from '@/lib/types/research'
 
 /**
  * Source/Note 选择器（UI-03，契约 §8.1/§8.2）。Search/Chat/Compare 共用
@@ -18,8 +18,8 @@ export function SourceNoteSelector({
   onToggleSource,
   onToggleNote,
 }: {
-  sources: ResearchSourceSummary[]
-  notes: ResearchNoteSummary[]
+  sources: ResearchSource[]
+  notes: ResearchNote[]
   selectedSourceIds: string[]
   selectedNoteIds: string[]
   onToggleSource: (sourceId: string) => void
@@ -31,7 +31,7 @@ export function SourceNoteSelector({
     <div className="grid gap-4 p-4 sm:grid-cols-2">
       <div className="space-y-2">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {t('research.sources')} ({selectedSourceIds.length}/{sources.length})
+          {t('research.selectSources')} ({selectedSourceIds.length}/{sources.length})
         </p>
         <ScrollArea className="max-h-56">
           {sources.length === 0 && (
@@ -65,7 +65,7 @@ export function SourceNoteSelector({
 
       <div className="space-y-2">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {t('research.notes')} ({selectedNoteIds.length}/{notes.length})
+          {t('research.selectNotes')} ({selectedNoteIds.length}/{notes.length})
         </p>
         <ScrollArea className="max-h-56">
           {notes.length === 0 && (

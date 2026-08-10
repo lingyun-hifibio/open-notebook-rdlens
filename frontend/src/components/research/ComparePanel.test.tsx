@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import { ComparePanel } from './ComparePanel'
-import type { ResearchSourceSummary } from '@/lib/research/types'
+import type { ResearchSource } from '@/lib/types/research'
 
 // UI-03 Red：Compare 面板边界（REQ-QUOTA-01）——51 篇拒绝（组件级）、
 // 31–50 超默认提示、空选禁用、document_ids 正确映射。
 
-function sources(count: number): ResearchSourceSummary[] {
+function sources(count: number): ResearchSource[] {
   return Array.from({ length: count }, (_, i) => ({
     source_id: `src_${i}`,
     document_id: `doc_${i}`,
@@ -18,7 +18,7 @@ function sources(count: number): ResearchSourceSummary[] {
   }))
 }
 
-function renderPanel(sources: ResearchSourceSummary[], selected: string[]) {
+function renderPanel(sources: ResearchSource[], selected: string[]) {
   return render(
     <ComparePanel
       sources={sources}

@@ -13,7 +13,7 @@ import { ResearchSearchPanel } from './ResearchSearchPanel'
 import { ResearchChatPanel } from './ResearchChatPanel'
 import { ComparePanel } from './ComparePanel'
 import { ResearchJobList } from './ResearchJobList'
-import type { ResearchNoteSummary, ResearchSourceSummary } from '@/lib/research/types'
+import type { ResearchNote, ResearchSource } from '@/lib/types/research'
 
 /**
  * Research 工作区组合（UI-03，REQ-SCOPE-04，设计 §9.3）。
@@ -21,14 +21,15 @@ import type { ResearchNoteSummary, ResearchSourceSummary } from '@/lib/research/
  * 项目上下文从内存 Research Token 的 payload 读取（project.ts，
  * REQ-AUTH-03）；无上下文 fail-closed 错误态。Source/Note 选择在
  * Search/Chat/Compare 间共享；Chat 与 Job hooks 挂在工作区层，
- * 切换 Tab 不丢失流/轮询状态。
+ * 切换 Tab 不丢失流/轮询状态。Source/Note 列表复用 UI-02 的
+ * `listSources/listNotes`（分页载荷 .items）。
  */
 export function ResearchWorkspace() {
   const { t } = useTranslation()
   const projectId = getResearchProjectId()
 
-  const [sources, setSources] = useState<ResearchSourceSummary[]>([])
-  const [notes, setNotes] = useState<ResearchNoteSummary[]>([])
+  const [sources, setSources] = useState<ResearchSource[]>([])
+  const [notes, setNotes] = useState<ResearchNote[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([])
@@ -40,12 +41,12 @@ export function ResearchWorkspace() {
     setLoading(true)
     setLoadError(null)
     try {
-      const [sourceItems, noteItems] = await Promise.all([
+      const [sourcePage, notePage] = await Promise.all([
         listSources(projectId),
         listNotes(projectId),
       ])
-      setSources(sourceItems)
-      setNotes(noteItems)
+      setSources(sourcePage.items)
+      setNotes(notePage.items)
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : String(err))
     } finally {

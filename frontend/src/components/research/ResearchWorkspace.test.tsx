@@ -3,7 +3,7 @@ import { render, screen, cleanup } from '@testing-library/react'
 import { ResearchWorkspace } from './ResearchWorkspace'
 import * as api from '@/lib/research/api'
 import * as tokenStore from '@/lib/embedded/token-store'
-import type { ResearchSourceSummary, ResearchNoteSummary } from '@/lib/research/types'
+import type { ResearchNote, ResearchSource } from '@/lib/types/research'
 
 // UI-03 Red：工作区组合（REQ-SCOPE-04）——无项目上下文 fail-closed 错误态；
 // 有上下文时加载 Source/Note 并渲染四个面板 Tab。
@@ -30,7 +30,7 @@ function researchToken(): string {
   return `h.${b64url(payload)}.s`
 }
 
-const source: ResearchSourceSummary = {
+const source: ResearchSource = {
   source_id: 'src_1',
   document_id: 'doc_1',
   document_version: 'v3',
@@ -40,7 +40,7 @@ const source: ResearchSourceSummary = {
   last_error: null,
 }
 
-const note: ResearchNoteSummary = {
+const note: ResearchNote = {
   note_id: 'note_1',
   project_id: 'proj_1',
   title: 'Note One',
@@ -54,8 +54,8 @@ describe('ResearchWorkspace', () => {
   beforeEach(() => {
     localStorage.clear()
     vi.clearAllMocks()
-    vi.mocked(api.listSources).mockResolvedValue([source])
-    vi.mocked(api.listNotes).mockResolvedValue([note])
+    vi.mocked(api.listSources).mockResolvedValue({ items: [source], next_cursor: null })
+    vi.mocked(api.listNotes).mockResolvedValue({ items: [note], next_cursor: null })
   })
 
   afterEach(() => {
