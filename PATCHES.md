@@ -192,3 +192,58 @@ channel 并在 ready 中携带、父页面回显的形态（与 §12.2 ready 载
   本任务 15 文件 90 测试，零回归）
 - `npm run lint`：0 errors（7 条 pre-existing warnings，无新增）
 - `npm run build`：通过，含 `/research` 路由
+
+## 7. UI-03 Search、Chat、长任务与 Compare 交互（2026-08-11）
+
+> Task ID: UI-03（GitHub Issue #72，repo: HiFiBiO-Therapeutics/RDLens）
+> 分支：`open-notebook-m4-ui-03`（基于 UI-01 #4）；PR：#6
+> 设计锚点：设计方案 §7、§9.3、§10、§13、§15.2；契约 v0 §8–§10、§13.2
+> Requirements：REQ-SCOPE-04、REQ-ENG-04、REQ-API-02、REQ-JOB-01–02、
+> REQ-QUOTA-01、REQ-POC-02
+
+### 7.1 改动清单（仅前端，后端零改动）
+
+| 文件 | 类型 | 说明 |
+|---|---|---:|
+| `frontend/src/lib/research/sse.ts` | 新增 | SSE 契约纯 reducer：event_id 去重/乱序排序/终态恰好一次 + 帧解析；`lastEventId` = Last-Event-ID 重连依据；错误码与可重试集合（§9.4） |
+| `frontend/src/lib/research/jobs.ts` | 新增 | Job 状态机纯函数（终态不可逆；queued/running 才可取消，§10） |
+| `frontend/src/lib/research/compare.ts` | 新增 | Compare 选择边界（30 默认/50 硬上限/51 拒绝，REQ-QUOTA-01） |
+| `frontend/src/lib/research/types.ts` | 新增 | Research API/SSE/Job 类型（契约 v0 §8–§10 字段） |
+| `frontend/src/lib/research/api.ts` | 合并 | 与 UI-02 共享的 Gateway 客户端：Sources/Notes/Insights/Transformations/Export 端点（UI-02）+ Search/Chat/Compare/Jobs 端点与 fetch SSE 流（UI-03；Bearer=内存 Token、Last-Event-ID、409/网络错误分类、fail-closed）；`listSources/listNotes` 统一为 UI-02 分页签名，UI-03 工作区消费 `.items` |
+| `frontend/src/lib/research/project.ts` | 新增 | 项目上下文：Token payload 解出 project_id（§4.1/§12.2，不校验签名，fail-closed） |
+| `frontend/src/lib/hooks/use-research-chat.ts` | 新增 | Chat 流状态机：断线/409 按 Last-Event-ID 退避重连（≤3 次）、终态一次、session_id 跨轮续接；浏览器断开 ≠ 取消（§9.6） |
+| `frontend/src/lib/hooks/use-research-jobs.ts` | 新增 | Job 交互：job_id 仅存 localStorage（关闭后恢复查看）、状态永远以 GET 为准（终态一次不回归）、显式取消（终态 409 语义）、Compare 51 篇前置拒绝 |
+| `frontend/src/components/research/*` | 新增 | 工作区组合 + Source/Note 选择器 + Search/Chat/Compare/Jobs 四面板 + Citation 列表（page_idx+1 展示） |
+| `frontend/src/app/research/page.tsx` | 修改 | Shell 内上下分屏并列 ResearchWorkbench（UI-02）+ ResearchWorkspace（UI-03） |
+| `frontend/src/lib/locales/*/index.ts` | 修改 | 14 语言 research 面板文案段（zh-CN 翻译，其余英文占位）；移除 UI-01 遗留未用 `ready` 键 |
+| `frontend/src/lib/research/*.test.ts`、`frontend/src/lib/hooks/*.test.ts(x)`、`frontend/src/components/research/*.test.tsx` | 测试 | 10 文件 78 测试 |
+
+### 7.2 契约适配说明
+
+- 项目 ID 来源：postMessage token 载荷无 project_id（UI-01 冻结），iframe 从
+  JWT payload 读取 claim（§4.1）用于 Gateway URL 路由；服务端仍做最终一致校验。
+- 白名单无 Job 列表端点：恢复查看以 localStorage 仅存 job_id + 按 id GET 回源
+  （REQ-JOB-02），本地组件状态不是持久 Job 状态。
+- Chat 无取消入口（§9.6：浏览器断开 ≠ 取消）；取消仅 Job 显式 POST。
+
+### 7.3 验证
+
+- `cd frontend && npx vitest run`：本任务 11 文件 77 测试；与 UI-02 合并后
+  全量 54 文件 345 passed（= 基线 178 + UI-02 90 + UI-03 77，双方测试零删减）
+- `npx tsc --noEmit`：0 errors；`npm run lint`：0 errors（7 条 pre-existing warnings）
+- `npm run build`：通过，含 `/research` 路由
+- `git diff --check`：通过
+
+### 7.4 未覆盖 / 后续
+
+- 断线/重连 E2E：Playwright 未在本 Fork 前端配置；以 jsdom + 假定时器
+  驱动真实 fetch/ReadableStream 管线与组件级 dispatch 作为等价 E2E。
+- 父页面（RDLens frontend）实现仍落 Issue #70。
+
+### 7.5 与 UI-02（PR #5）合并说明（2026-08-11）
+
+- 合并时 UI-02 已合入 fork main：`api.ts` 为双方共享模块（双方端点能力全部
+  保留）；UI-03 流测试独立为 `stream.test.ts`（UI-02 的 `api.test.ts` 以 axios
+  adapter 覆盖 CRUD 端点契约，模块级 mock 互不冲突）；`research.sources/notes`
+  平铺键改名为 `selectSources/selectNotes`（避免与 UI-02 嵌套键 TS 类型冲突）；
+  `page.tsx` 上下分屏并列两套面板；locale 为键集并集。
