@@ -228,7 +228,8 @@ channel 并在 ready 中携带、父页面回显的形态（与 §12.2 ready 载
 
 ### 7.3 验证
 
-- `cd frontend && npx vitest run`：40 文件 256 passed（含本任务 78 新增）
+- `cd frontend && npx vitest run`：本任务 11 文件 77 测试；与 UI-02 合并后
+  全量 54 文件 345 passed（= 基线 178 + UI-02 90 + UI-03 77，双方测试零删减）
 - `npx tsc --noEmit`：0 errors；`npm run lint`：0 errors（7 条 pre-existing warnings）
 - `npm run build`：通过，含 `/research` 路由
 - `git diff --check`：通过
