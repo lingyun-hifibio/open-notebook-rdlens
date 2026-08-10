@@ -976,4 +976,10 @@ export const zhTW = {
     goToSettings: "前往設定",
     viewDocs: "查看文件",
   },
+  research: {
+    loading: "正在載入研究工作區…",
+    ready: "研究工作區就緒",
+    errorTitle: "研究工作區無法使用",
+    errorMessage: "無法建立研究工作階段，請返回 RDLens 後重試。",
+  },
 } satisfies TranslationShape;

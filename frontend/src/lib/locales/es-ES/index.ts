@@ -977,4 +977,10 @@ export const esES = {
     goToSettings: "Ir a configuración",
     viewDocs: "Ver documentación",
   },
+  research: {
+    loading: "Cargando el espacio de investigación…",
+    ready: "Espacio de investigación listo",
+    errorTitle: "Espacio de investigación no disponible",
+    errorMessage: "No se pudo establecer la sesión de investigación. Vuelva a RDLens e inténtelo de nuevo.",
+  },
 } satisfies TranslationShape;

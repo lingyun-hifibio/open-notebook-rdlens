@@ -976,4 +976,10 @@ export const ptBR = {
     goToSettings: "Ir para Configurações",
     viewDocs: "Ver documentação",
   },
+  research: {
+    loading: "Carregando o espaço de pesquisa…",
+    ready: "Espaço de pesquisa pronto",
+    errorTitle: "Espaço de pesquisa indisponível",
+    errorMessage: "Não foi possível estabelecer a sessão de pesquisa. Volte ao RDLens e tente novamente.",
+  },
 } satisfies TranslationShape;

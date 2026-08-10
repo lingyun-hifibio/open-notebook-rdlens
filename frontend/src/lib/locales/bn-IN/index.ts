@@ -977,4 +977,10 @@ export const bnIN = {
     goToSettings: "সেটিংসে যান",
     viewDocs: "ডকুমেন্টেশন দেখুন",
   },
+  research: {
+    loading: "গবেষণা কর্মক্ষেত্র লোড হচ্ছে…",
+    ready: "গবেষণা কর্মক্ষেত্র প্রস্তুত",
+    errorTitle: "গবেষণা কর্মক্ষেত্র উপলব্ধ নয়",
+    errorMessage: "গবেষণা সেশন প্রতিষ্ঠা করা যায়নি। অনুগ্রহ করে RDLens-এ ফিরে আবার চেষ্টা করুন।",
+  },
 } satisfies TranslationShape;

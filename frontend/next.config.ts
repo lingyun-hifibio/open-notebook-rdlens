@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { buildFrameAncestorsCsp } from "./src/lib/embedded/csp";
 
 // Next.js dev server blocks cross-origin requests (including the HMR
 // websocket) from any host not in this list, to guard against DNS
@@ -37,6 +38,23 @@ const nextConfig: NextConfig = {
       {
         source: '/api/:path*',
         destination: `${internalApiUrl}/api/:path*`,
+      },
+    ]
+  },
+
+  // UI-01（设计 §3.2，REQ-EMB-01/REQ-DEP-02）：Embedded Web 独立受控
+  // Origin，通过 CSP `frame-ancestors` 仅允许 RDLens 域名嵌入。服务端
+  // 环境变量 `RD_FRAME_ANCESTORS`（空格分隔多个来源）在请求时读取；
+  // 未配置时不输出头，保持上游默认行为（G3）。
+  async headers() {
+    const frameAncestors = buildFrameAncestorsCsp(process.env.RD_FRAME_ANCESTORS)
+    if (!frameAncestors) {
+      return []
+    }
+    return [
+      {
+        source: '/:path*',
+        headers: [frameAncestors],
       },
     ]
   },

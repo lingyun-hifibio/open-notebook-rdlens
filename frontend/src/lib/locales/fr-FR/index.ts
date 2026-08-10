@@ -976,4 +976,10 @@ export const frFR = {
     goToSettings: "Aller aux paramètres",
     viewDocs: "Voir la documentation",
   },
+  research: {
+    loading: "Chargement de l'espace de recherche…",
+    ready: "Espace de recherche prêt",
+    errorTitle: "Espace de recherche indisponible",
+    errorMessage: "La session de recherche n'a pas pu être établie. Veuillez revenir à RDLens et réessayer.",
+  },
 } satisfies TranslationShape;

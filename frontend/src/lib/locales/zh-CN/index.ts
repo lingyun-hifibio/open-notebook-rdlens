@@ -976,4 +976,10 @@ export const zhCN = {
     goToSettings: "前往设置",
     viewDocs: "查看文档",
   },
+  research: {
+    loading: "正在加载研究工作区…",
+    ready: "研究工作区就绪",
+    errorTitle: "研究工作区不可用",
+    errorMessage: "无法建立研究会话，请返回 RDLens 后重试。",
+  },
 } satisfies TranslationShape;

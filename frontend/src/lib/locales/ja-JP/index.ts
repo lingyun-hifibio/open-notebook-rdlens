@@ -976,4 +976,10 @@ export const jaJP = {
     goToSettings: "設定へ移動",
     viewDocs: "ドキュメントを見る",
   },
+  research: {
+    loading: "研究ワークスペースを読み込み中…",
+    ready: "研究ワークスペースの準備ができました",
+    errorTitle: "研究ワークスペースを利用できません",
+    errorMessage: "研究セッションを確立できませんでした。RDLens に戻ってもう一度お試しください。",
+  },
 } satisfies TranslationShape;

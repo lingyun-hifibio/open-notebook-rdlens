@@ -979,4 +979,10 @@ export const deDE = {
     goToSettings: "Zu den Einstellungen",
     viewDocs: "Dokumentation anzeigen",
   },
+  research: {
+    loading: "Forschungsworkspace wird geladen…",
+    ready: "Forschungsworkspace bereit",
+    errorTitle: "Forschungsworkspace nicht verfügbar",
+    errorMessage: "Die Forschungssitzung konnte nicht eingerichtet werden. Bitte kehren Sie zu RDLens zurück und versuchen Sie es erneut.",
+  },
 } satisfies TranslationShape;

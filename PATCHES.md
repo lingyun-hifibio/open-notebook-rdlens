@@ -76,3 +76,68 @@ RDLens 同步的 Source，违反「来源只读 + RDLens 单写权威」（设�
 - **内部 Registry**：未就绪（BASELINE.md §4）；SPK-03 为纯代码 Spike，不构建镜像，不阻塞。
 - **Fork 公开状态**：`lingyun-hifibio/open-notebook-rdlens` 为 public fork；
   是否迁移 org 私有由负责人决策。
+
+## 5. UI-01 ResearchWorkspaceShell 与安全会话（2026-08-11）
+
+> Task ID: UI-01（GitHub Issue #70，repo: HiFiBiO-Therapeutics/RDLens）
+> 分支：`open-notebook-m4-ui-01`；PR：#4
+> 设计锚点：设计方案 §3.2、§4.1–§4.3、§15.2、§16.2；契约 v0 §12
+> Requirements：REQ-SCOPE-01、REQ-AUTH-01–03、REQ-EMB-01–02、REQ-DEP-02、
+> REQ-POC-02、REQ-TST-02
+
+### 5.1 改动清单（仅前端，后端零改动）
+
+| 文件 | 类型 | 说明 |
+|---|---|---:|
+| `frontend/src/lib/embedded/messages.ts` | 新增 | postMessage v0 契约纯校验器（五要素：origin/source/schema/nonce/channel + 载荷形状；伪造一律返回 null） |
+| `frontend/src/lib/embedded/session.ts` | 新增 | 会话状态机 booting→ready→authenticated/error，token/refresh/error/logout/destroy 处理，destroy 终态移除监听 |
+| `frontend/src/lib/embedded/token-store.ts` | 新增 | Research Token 纯内存驻留（模块级变量；永不入 Storage/URL/日志） |
+| `frontend/src/lib/embedded/config.ts` | 新增 | `NEXT_PUBLIC_RD_EMBEDDED_MODE` / `NEXT_PUBLIC_RD_GATEWAY_URL` / `NEXT_PUBLIC_RD_PARENT_ORIGIN`（默认关闭，语义同后端 `RD_EMBEDDED_MODE`） |
+| `frontend/src/lib/embedded/shell.tsx` | 新增 | ResearchWorkspaceShell 三态（加载/错误/就绪）；挂载即 ready 握手；卸载销毁 |
+| `frontend/src/lib/embedded/csp.ts` | 新增 | `RD_FRAME_ANCESTORS` → CSP `frame-ancestors` 纯函数（未配置不输出） |
+| `frontend/src/app/research/page.tsx` | 新增 | 嵌入式入口路由（非嵌入式模式重定向 /notebooks） |
+| `frontend/src/app/page.tsx` | 修改 | 嵌入式模式入口重定向 → /research |
+| `frontend/src/app/layout.tsx` | 修改 | 嵌入式模式跳过 ConnectionGuard（SPK-03 屏蔽矩阵 403 `/api/config`） |
+| `frontend/src/lib/api/client.ts` | 修改 | 嵌入式适配：baseURL=Gateway、Bearer=内存 Token、401 不跳 /login、Gateway 未配置 fail-closed |
+| `frontend/next.config.ts` | 修改 | `headers()` 输出 CSP frame-ancestors |
+| `frontend/src/lib/locales/*/index.ts` | 修改 | 14 语言 `research` 文案段 |
+| `frontend/src/lib/embedded/*.test.ts(x)`、`frontend/src/lib/api/client.embedded.test.ts` | 测试 | 5 文件 38 测试（伪造消息全拒绝、Token 内存驻留、销毁无残留、Gateway 适配、CSP） |
+
+### 5.2 安全语义（REQ-EMB-01/02）
+
+- ready 由 iframe 生成会话 nonce/channel 并精确 targetOrigin 发送；父页面
+  在 token/refresh/error/logout/destroy 中回显；校验失败的任一消息静默拒绝
+  （不响应、不落日志正文）。
+- Token 只存 `token-store` 模块级内存；刷新替换、登出/销毁清除；apiClient
+  仅嵌入式模式读取内存 Token，绝不读 localStorage `auth-storage`。
+- 嵌入式模式 401 不跳转 `/login`（会话续期由父页面 postMessage 驱动）。
+- 未配置 `NEXT_PUBLIC_RD_GATEWAY_URL` 时请求 fail-closed 拒绝，Token 不
+  发往未知基址。
+- 未配置 `NEXT_PUBLIC_RD_PARENT_ORIGIN` 时 Shell 进入错误态（不发送 ready、
+  不接受任何消息）。
+
+### 5.3 契约适配说明
+
+契约 v0 §12.1 表述 nonce「bootstrap 响应中下发」，但 FND-06 已合并的
+bootstrap 响应（契约 §5）无 nonce 字段；本任务采用 iframe 生成 nonce +
+channel 并在 ready 中携带、父页面回显的形态（与 §12.2 ready 载荷一致），
+不改后端契约。父页面「仅符合条件的项目显示入口」由 RDLens 侧
+`authorize_research_project`（FND-06）强制，属 RDLens frontend 交付面，
+不在本 PR。
+
+### 5.4 验证
+
+- `cd frontend && npx vitest run`：28 文件 178 passed（含本任务 38 新增，
+  基线 140 全绿）
+- `npm run lint`：0 errors（7 条 pre-existing warnings）
+- `npm run build`：通过，含 `/research` 路由与 CSP headers
+
+### 5.5 未覆盖 / 后续
+
+- 业务面板（Sources/Notes/Insights/Transformation/Chat 等）由 UI-02/03 交付。
+- 非 research 路由在嵌入式模式下的前端禁用矩阵（UI 不可见）属 UI-02
+  REQ-SCOPE-03 范围；后端 403 由 SPK-03 屏蔽矩阵已覆盖。
+- 父页面（RDLens 主页面 iframe 嵌入 + bootstrap + 消息发送端）实现落
+  RDLens frontend，Issue #70 统一追踪。
+- Playwright 未在本 Fork 前端配置；以 jsdom 真实 MessageEvent 管线（组件级
+  dispatch → 会话校验）作为等价安全 E2E。
