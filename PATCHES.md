@@ -141,3 +141,54 @@ channel 并在 ready 中携带、父页面回显的形态（与 §12.2 ready 载
   RDLens frontend，Issue #70 统一追踪。
 - Playwright 未在本 Fork 前端配置；以 jsdom 真实 MessageEvent 管线（组件级
   dispatch → 会话校验）作为等价安全 E2E。
+
+## 6. UI-02 Sources、Citation 与 Artifact 工作台（2026-08-11）
+
+> Task ID: UI-02（GitHub Issue #71，repo: HiFiBiO-Therapeutics/RDLens）
+> 分支：`open-notebook-m4-ui-02`（基于 `open-notebook-m4-ui-01` / PR #4）；PR：#5
+> 设计锚点：设计方案 §2.1、§4.4、§5.3、§6、§8、§9.1/§9.2、§12、§15.2
+> Requirements：REQ-SCOPE-03–04、REQ-SRC-04–05、REQ-DATA-03–04、REQ-API-01、
+> REQ-DIS-01–03、REQ-POC-02
+
+### 6.1 改动清单（仅前端，后端零改动）
+
+| 文件 | 类型 | 说明 |
+|---|---|---:|
+| `frontend/src/lib/embedded/claims.ts` | 新增 | Research Token claims 纯函数解码（project_id/role/scopes；契约 v0 §4.1；fail-closed，非法 claims 返回 null） |
+| `frontend/src/lib/embedded/session.ts` | 修改 | authenticated 状态携带 projectId/role（claims 非法 → error session_invalid，不驻留 Token） |
+| `frontend/src/lib/embedded/workspace-context.tsx` | 新增 | 工作台上下文（Shell 认证后注入 projectId/role；无 Provider 抛错 fail-closed） |
+| `frontend/src/lib/embedded/routes.ts` | 新增 | 非 research 路由禁用矩阵纯函数（REQ-SCOPE-03） |
+| `frontend/src/components/embedded/EmbeddedRouteGuard.tsx` | 新增 | 导航守卫：嵌入式模式非 research 路径重定向 /research（dashboard 布局 + login 页） |
+| `frontend/src/lib/types/research.ts` | 新增 | Gateway 契约类型（契约 v0 §6/§7/§13.2；page_idx 0-based） |
+| `frontend/src/lib/research/api.ts` | 新增 | Gateway API 模块（全部经 apiClient；路径精确匹配白名单，无 /api 前缀） |
+| `frontend/src/lib/hooks/use-research.ts` | 新增 | 项目级 hooks（查询键隔离；403 → toast 呈现） |
+| `frontend/src/components/research/*` | 新增 | CitationCard（失效降级）、SourceList/SourceDetail、Notes/Insights/Transformations、ExportSection、ResearchWorkbench、AdminReadOnlyBanner、citation-utils |
+| `frontend/src/app/research/page.tsx` | 修改 | Shell 就绪后渲染 ResearchWorkbench |
+| `frontend/src/app/(dashboard)/layout.tsx`、`frontend/src/app/(auth)/login/page.tsx` | 修改 | 挂载 EmbeddedRouteGuard |
+| `frontend/src/lib/api/query-client.ts` | 修改 | research 项目级查询键 |
+| `frontend/src/lib/locales/*/index.ts` | 修改 | 14 语言 research 工作台文案段（~50 键） |
+| 测试 | 新增 | 15 文件 90 测试（claims/会话 claims/禁用矩阵/API 契约/hooks/全部面板/工作台 e2e 跳转） |
+
+### 6.2 契约要点（与后端 research/router.py、契约 v0 对齐）
+
+- Sources 只读（GET 列表/详情）；状态 pending/ready/stale/failed 全部可见；
+  failed 附 last_error；同步重试仅 Admin（Owner 无重试入口，只提示可见性）。
+- Citation：`page_idx` 0-based 仅展示 +1（REQ-DATA-03）；来源缺失/版本
+  不一致/页缺失 → 禁用跳转、原文保留（REQ-DATA-04）。
+- Notes/Insights/Transformations 全部经 Gateway；Note 保存载荷仅
+  title/content（REQ-DIS-01）；Transformation 模板仅 prompt-only 四字段
+  （REQ-DIS-03）、运行只走 Gateway run 端点（REQ-DIS-02），运行前数据
+  外发提示为硬门槛（§12）。
+- Owner 写 / Admin 只读矩阵：Admin 无写入口 + 只读横幅 + 后端 403 仍以
+  toast 呈现（禁用入口不替代后端授权）。
+- 后端 `GET .../sources`、`GET .../sources/{source_id}` 路由尚未在 RDLens
+  main 落地（契约 §3.7 已定义）；本 PR 按契约实现并以其响应形状为测试
+  fixture，后端落地后无需改动。用户侧无模型目录端点 → Transformation
+  表单以 model_id 输入 + 首次外发提示呈现。
+
+### 6.3 验证
+
+- `cd frontend && npx vitest run`：43 文件 268 passed（基线 28/178 +
+  本任务 15 文件 90 测试，零回归）
+- `npm run lint`：0 errors（7 条 pre-existing warnings，无新增）
+- `npm run build`：通过，含 `/research` 路由
