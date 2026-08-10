@@ -4,6 +4,7 @@ import { useAuth } from '@/lib/hooks/use-auth'
 import { useVersionCheck } from '@/lib/hooks/use-version-check'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
+import { EmbeddedRouteGuard } from '@/components/embedded/EmbeddedRouteGuard'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import { ModalProvider } from '@/components/providers/ModalProvider'
@@ -53,6 +54,7 @@ export default function DashboardLayout({
 
   return (
     <ErrorBoundary>
+      <EmbeddedRouteGuard />
       <CreateDialogsProvider>
         {children}
         <ModalProvider />

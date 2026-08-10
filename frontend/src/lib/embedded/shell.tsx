@@ -5,6 +5,7 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { createEmbeddedSession, type SessionState } from './session'
 import { getEmbeddedParentOrigins } from './config'
+import { ResearchWorkspaceProvider } from './workspace-context'
 
 /**
  * ResearchWorkspaceShell（UI-01，设计 §4.1/§4.2；REQ-EMB-01/02）。
@@ -73,6 +74,16 @@ export function ResearchWorkspaceShell({ children }: { children?: React.ReactNod
 
   if (state.status === 'destroyed') {
     return null
+  }
+
+  // UI-02：认证后把 Token claims 中的 projectId/role 注入工作台上下文
+  // （Gateway 路径与 Owner 写/Admin 只读矩阵数据源）
+  if (state.projectId !== undefined && state.role !== undefined) {
+    return (
+      <ResearchWorkspaceProvider projectId={state.projectId} role={state.role}>
+        {children}
+      </ResearchWorkspaceProvider>
+    )
   }
 
   return <>{children}</>
