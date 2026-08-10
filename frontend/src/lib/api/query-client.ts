@@ -35,4 +35,11 @@ export const QUERY_KEYS = {
   episodeProfiles: ['podcasts', 'episode-profiles'] as const,
   speakerProfiles: ['podcasts', 'speaker-profiles'] as const,
   languages: ['languages'] as const,
+  // UI-02：Research Gateway 项目级查询键（与上游 notebook 域完全隔离）
+  research: (projectId: string) => ['research', projectId] as const,
+  researchSources: (projectId: string) => ['research', projectId, 'sources'] as const,
+  researchSource: (projectId: string, sourceId: string) => ['research', projectId, 'sources', sourceId] as const,
+  researchNotes: (projectId: string) => ['research', projectId, 'notes'] as const,
+  researchInsights: (projectId: string) => ['research', projectId, 'insights'] as const,
+  researchTransformations: (projectId: string) => ['research', projectId, 'transformations'] as const,
 }
