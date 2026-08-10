@@ -68,10 +68,30 @@ function inboundMessage(
     channel: String(ready.channel),
     type: 'token',
     nonce: String(ready.nonce),
-    token: 'research.jwt.payload',
+    token: validToken(),
     expires_at: 1754460300,
     ...overrides,
   }
+}
+
+// UI-02：携带合法 claims 的 Research Token（契约 v0 §4.1）。authenticated
+// 状态从此携带 projectId/role（工作台 Gateway 路径与 Owner 写/Admin 只读
+// 矩阵的数据源），Token 仍只驻留内存（REQ-EMB-02）。
+function validToken(claims: Record<string, unknown> = {}): string {
+  const payload = {
+    sub: 'user_1',
+    project_id: 'proj_abc',
+    role: 'owner',
+    scopes: ['workspace:read', 'notes:write', 'research:run'],
+    aud: 'research-workspace',
+    iat: 1754460000,
+    nbf: 1754460000,
+    exp: 1754460300,
+    jti: 'j_1',
+    ...claims,
+  }
+  const b64 = Buffer.from(JSON.stringify(payload), 'utf-8').toString('base64url')
+  return `header.${b64}.signature`
 }
 
 describe('createEmbeddedSession（REQ-EMB-01/02，契约 v0 §12）', () => {
@@ -99,7 +119,7 @@ describe('createEmbeddedSession（REQ-EMB-01/02，契约 v0 §12）', () => {
     const h = makeHarness()
     h.dispatch({ data: inboundMessage(h.posted[0].data) })
     expect(h.session.getState().status).toBe('authenticated')
-    expect(getResearchToken()).toBe('research.jwt.payload')
+    expect(getResearchToken()).toBe(validToken())
     expect(getResearchTokenExpiry()).toBe(1754460300)
     // Token 不进入任何 Web Storage（REQ-EMB-02）
     expect(window.localStorage.getItem('auth-storage')).toBeNull()
@@ -110,10 +130,90 @@ describe('createEmbeddedSession（REQ-EMB-01/02，契约 v0 §12）', () => {
     const h = makeHarness()
     const ready = h.posted[0].data
     h.dispatch({ data: inboundMessage(ready) })
-    h.dispatch({ data: inboundMessage(ready, { type: 'refresh', token: 'jwt.2', expires_at: 1754460900 }) })
+    h.dispatch({
+      data: inboundMessage(ready, {
+        type: 'refresh',
+        token: validToken({ project_id: 'proj_refreshed' }),
+        expires_at: 1754460900,
+      }),
+    })
     expect(h.session.getState().status).toBe('authenticated')
-    expect(getResearchToken()).toBe('jwt.2')
+    expect(getResearchToken()).toBe(validToken({ project_id: 'proj_refreshed' }))
     expect(getResearchTokenExpiry()).toBe(1754460900)
+  })
+
+  // ── UI-02：authenticated 携带 projectId/role（工作台路径与权限矩阵）──
+
+  it('合法 token 进入 authenticated 并携带 projectId 与 role（owner）', () => {
+    const h = makeHarness()
+    h.dispatch({ data: inboundMessage(h.posted[0].data) })
+    const state = h.session.getState()
+    expect(state.status).toBe('authenticated')
+    expect(state.projectId).toBe('proj_abc')
+    expect(state.role).toBe('owner')
+  })
+
+  it('admin_readonly token 的角色正确透出（Admin 只读矩阵数据源）', () => {
+    const h = makeHarness()
+    h.dispatch({
+      data: inboundMessage(h.posted[0].data, {
+        token: validToken({ role: 'admin_readonly', scopes: ['workspace:read'] }),
+      }),
+    })
+    const state = h.session.getState()
+    expect(state.status).toBe('authenticated')
+    expect(state.projectId).toBe('proj_abc')
+    expect(state.role).toBe('admin_readonly')
+  })
+
+  it('claims 非法（非 JWT）的 token 拒绝进入 authenticated：error session_invalid', () => {
+    const h = makeHarness()
+    h.dispatch({ data: inboundMessage(h.posted[0].data, { token: 'garbage-token' }) })
+    const state = h.session.getState()
+    expect(state.status).toBe('error')
+    expect(state.errorCode).toBe('session_invalid')
+    expect(getResearchToken()).toBeNull()
+  })
+
+  it('claims 缺 project_id 的 token 拒绝进入 authenticated（fail-closed，不猜测路径）', () => {
+    const h = makeHarness()
+    const bad = validToken({ project_id: undefined, role: 'owner' })
+    h.dispatch({ data: inboundMessage(h.posted[0].data, { token: bad }) })
+    expect(h.session.getState().status).toBe('error')
+    expect(h.session.getState().errorCode).toBe('session_invalid')
+  })
+
+  it('refresh 携带非法 claims 时进入 error，不保留旧 claims 状态', () => {
+    const h = makeHarness()
+    const ready = h.posted[0].data
+    h.dispatch({ data: inboundMessage(ready) })
+    expect(h.session.getState().projectId).toBe('proj_abc')
+    h.dispatch({ data: inboundMessage(ready, { type: 'refresh', token: 'bad.jwt' }) })
+    expect(h.session.getState().status).toBe('error')
+    expect(h.session.getState().errorCode).toBe('session_invalid')
+  })
+
+  it('logout 清除 Token 与 projectId/role（回到 ready 等待新 Token）', () => {
+    const h = makeHarness()
+    const ready = h.posted[0].data
+    h.dispatch({ data: inboundMessage(ready) })
+    expect(h.session.getState().projectId).toBe('proj_abc')
+    h.dispatch({ data: inboundMessage(ready, { type: 'logout' }) })
+    const state = h.session.getState()
+    expect(state.status).toBe('ready')
+    expect(state.projectId).toBeUndefined()
+    expect(state.role).toBeUndefined()
+    expect(getResearchToken()).toBeNull()
+  })
+
+  it('destroy 后 projectId/role 清空，不留工作台上下文残留', () => {
+    const h = makeHarness()
+    const ready = h.posted[0].data
+    h.dispatch({ data: inboundMessage(ready) })
+    h.dispatch({ data: inboundMessage(ready, { type: 'destroy' }) })
+    expect(h.session.getState().status).toBe('destroyed')
+    expect(h.session.getState().projectId).toBeUndefined()
+    expect(h.session.getState().role).toBeUndefined()
   })
 
   it('error 消息进入 error 状态并携带 code/message', () => {
