@@ -247,3 +247,48 @@ channel 并在 ready 中携带、父页面回显的形态（与 §12.2 ready 载
   adapter 覆盖 CRUD 端点契约，模块级 mock 互不冲突）；`research.sources/notes`
   平铺键改名为 `selectSources/selectNotes`（避免与 UI-02 嵌套键 TS 类型冲突）；
   `page.tsx` 上下分屏并列两套面板；locale 为键集并集。
+
+## 8. Private RDLens Source Adapter（2026-08-11）
+
+> PR：[#7](https://github.com/lingyun-hifibio/open-notebook-rdlens/pull/7)
+> 合并提交：`c5e0d375d26eeb36ae45f95eb32ad21db9391c85`
+> 功能提交：`e03255d631d651b63ca1c23d752c1cf4e62fb999`
+> 审查修复：`75fc5c03624dab5141c2cd643cea752f82cb5093`
+
+### 8.1 目标与边界
+
+- 新增固定的 `PUT /internal/rdlens/source` 与
+  `DELETE /internal/rdlens/source`，使用独立 service credential；拒绝浏览器、
+  代理和公网客户端，且不返回 CORS。
+- 以 notebook/document/version 确定性生成 Source ID；重复 upsert/delete
+  收敛，delete replay 在目标不存在时仍保持幂等成功。
+- 仅写 `text`/`full_text` 与 notebook relation；不触发 provider、处理命令、
+  原生 AI 或 embedding。
+- embedded 模式下继续阻断普通 `/api/sources*` 写路径，内部适配器不放宽
+  浏览器 API 边界。
+
+### 8.2 Patch 清单
+
+| 文件 | 类型 | 行数 | 说明 |
+|---|---|---:|---|
+| `.env.example` | 配置 | +5 | 独立 `RD_INTERNAL_SOURCE_ADAPTER_TOKEN` 及网络边界说明 |
+| `api/internal_source_adapter.py` | 新增适配器 | +94 | service credential、请求来源守卫、固定 PUT/DELETE 路由 |
+| `api/internal_source_service.py` | 新增服务 | +88 | 确定性 ID、最小字段写入、幂等 upsert/delete |
+| `api/routers/internal_sources.py` | 新增路由 | +21 | 内部路由注册入口 |
+| `api/models.py` | 模型 | +26 | 内部 Source upsert/delete 请求模型 |
+| `api/main.py` | 注册 | +11 | 挂载内部 Source Adapter |
+| `api/embedded_scope.py` | 行为守卫 | +5/-6 | 精确区分内部固定路由与普通 `/api/sources*` |
+| `tests/test_internal_source_adapter.py` | 测试 | +220 | 凭据/网络/CORS/确定性 ID/幂等/副作用边界 |
+| `tests/test_embedded_scope.py` | 测试 | +5/-4 | embedded 普通 Source API 阻断回归 |
+
+合计：9 文件，+475/-10 行。
+
+### 8.3 验证与发布
+
+- Fork 全量测试：677 passed；Ruff、Mypy、`git diff --check` 通过。
+- 内部镜像：`ghcr.io/hifibio-therapeutics/open-notebook-rdlens:v1.14.0-rdlens.3`
+  固定为
+  `sha256:d52b7bab55b508247511e9fb11b1b9d07f814f1e1af3ad6dc17c9e0078cab447`；
+  OCI revision 为上述 PR #7 merge commit，平台为 `linux/amd64`。
+- Registry metadata、远端 digest 拉取和镜像内 Source Adapter compile smoke
+  均通过；尚未执行生产部署或双仓真实 E2E。
