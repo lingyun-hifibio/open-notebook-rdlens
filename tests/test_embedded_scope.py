@@ -205,6 +205,10 @@ class TestAPISurfaceBlocked:
             ("PUT", "/api/notebooks/notebook:42"),  # 改写固定 Notebook
             ("DELETE", "/api/notebooks/notebook:42"),
             ("GET", "/api/recently-viewed"),
+            ("GET", "/api/sources"),  # 来源读取也只能经 Gateway
+            ("GET", "/api/sources/source:1"),
+            ("HEAD", "/api/sources/source:1"),
+            ("OPTIONS", "/api/sources"),
             ("POST", "/api/sources"),  # 直接上传/URL 来源（REQ-SCOPE-03）
             ("PUT", "/api/sources/source:1"),  # 改写来源（RDLens 单写权威）
             ("DELETE", "/api/sources/source:1"),  # 删除来源（同上）
@@ -229,10 +233,6 @@ class TestAPISurfaceBlocked:
         ]
         allowed = [
             ("GET", "/api/notebooks/notebook:42"),  # 固定 Notebook（REQ-AUTH-03）
-            ("GET", "/api/sources"),  # 来源只读（Gateway 代理）
-            ("GET", "/api/sources/source:1"),
-            ("HEAD", "/api/sources/source:1"),  # 只读 + 预检语义保留
-            ("OPTIONS", "/api/sources"),  # CORS preflight 放行
             ("GET", "/api/notes"),  # 研究产物 CRUD（Gateway 代理）
             ("POST", "/api/notes"),
             ("GET", "/api/insights"),
@@ -265,6 +265,7 @@ class TestAPISurfaceBlocked:
         client = TestClient(app)
         assert client.put("/api/sources/source:1").status_code == 403
         assert client.delete("/api/sources/source:1").status_code == 403
+        assert client.get("/api/sources").status_code == 403
 
 
 class TestTransformationPromptOnly:

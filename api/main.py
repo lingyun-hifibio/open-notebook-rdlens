@@ -22,6 +22,10 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from api.auth import PasswordAuthMiddleware
 from api.embedded_scope import EmbeddedScopeMiddleware
+from api.internal_source_adapter import (
+    INTERNAL_SOURCE_PATH,
+    InternalSourceAdapterMiddleware,
+)
 from api.middleware import MaxBodySizeMiddleware, get_max_upload_size_bytes
 from api.routers import (
     auth,
@@ -33,6 +37,7 @@ from api.routers import (
     embedding_rebuild,
     episode_profiles,
     insights,
+    internal_sources,
     languages,
     models,
     notebooks,
@@ -245,6 +250,7 @@ app.add_middleware(
         "/redoc",
         "/api/auth/status",
         "/api/config",
+        INTERNAL_SOURCE_PATH,
     ],
 )
 
@@ -280,6 +286,10 @@ app.add_middleware(
 # RDLens 嵌入式作用域（SPK-03）：屏蔽全局/直接 API（REQ-SCOPE-03 等），
 # 默认透传；最后注册使其处于最外层，先于认证与路由处理。
 app.add_middleware(EmbeddedScopeMiddleware)
+
+# Private RDLens Source Adapter: outermost so browser/public/auth failures do
+# not pass through global CORS or the ordinary Open Notebook password layer.
+app.add_middleware(InternalSourceAdapterMiddleware)
 
 
 # Custom exception handler to ensure CORS headers are included in error responses
@@ -409,6 +419,7 @@ app.include_router(credentials.router, prefix="/api", tags=["credentials"])
 app.include_router(providers.router, prefix="/api", tags=["providers"])
 app.include_router(capabilities.router, prefix="/api", tags=["capabilities"])
 app.include_router(languages.router, prefix="/api", tags=["languages"])
+app.include_router(internal_sources.router, tags=["internal-rdlens-source"])
 
 
 @app.get("/")

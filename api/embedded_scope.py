@@ -1,8 +1,8 @@
 """RDLens 嵌入式作用域 API 屏蔽矩阵（SPK-03）。
 
 REQ-SCOPE-03 / REQ-AUTH-03 / REQ-DIS-01 / REQ-DIS-02 的 Fork 侧边界：
-嵌入式模式下浏览器只允许访问固定 Notebook 及其研究产物 CRUD 与来源只读
-API；全局 Notebook、认证、Provider/凭据、模型、系统设置、原生 AI、
+嵌入式模式下浏览器只允许访问固定 Notebook 及其研究产物 CRUD；普通
+Source API（含只读）由 RDLens Gateway 替代。全局 Notebook、认证、Provider/凭据、模型、系统设置、原生 AI、
 媒体、直接上传/URL 来源一律 403。默认关闭（RD_EMBEDDED_MODE 未启用）
 时完全透传，保持上游行为。
 
@@ -58,11 +58,10 @@ def is_blocked(method: str, path: str) -> bool:
     if path == "/api/recently-viewed":
         return True
 
-    # 来源只读（REQ-SCOPE-03 / 设计 §5.1：RDLens 数据面是唯一写路径）：
-    # 浏览器仅允许 GET 回读；创建/改写/重试/删除/洞察一律 403。
-    # HEAD/OPTIONS 放行：中间件在最外层，CORS preflight 需经过此处。
+    # Source 的读写均只经 RDLens Gateway/内部适配器；普通浏览器 API
+    # 不再承担 Source 回读，也不能成为绕过公开 source_id 映射的入口。
     if path.startswith("/api/sources"):
-        return method not in ("GET", "HEAD", "OPTIONS")
+        return True
 
     return False
 
