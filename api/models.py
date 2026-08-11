@@ -351,6 +351,32 @@ class SourceCreate(BaseModel):
         return self
 
 
+class RDLensSourceUpsert(BaseModel):
+    """Private service-to-service Source payload; never used by browsers."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    notebook_id: str = Field(..., min_length=1, max_length=256)
+    document_id: str = Field(..., min_length=1, max_length=256)
+    document_version: str = Field(..., min_length=1, max_length=64)
+    content_hash: str = Field(..., min_length=1, max_length=128)
+    markdown: str = Field(..., min_length=1)
+    title: Optional[str] = Field(None, max_length=1024)
+    source_type: Literal["text"] = "text"
+    embed: Literal[False] = False
+
+
+class RDLensSourceDelete(BaseModel):
+    """Notebook-bound idempotent delete request for the private adapter."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    notebook_id: str = Field(..., min_length=1, max_length=256)
+    document_id: str = Field(..., min_length=1, max_length=256)
+    document_version: str = Field(..., min_length=1, max_length=64)
+    source_id: Optional[str] = Field(None, max_length=256)
+
+
 class SourceUpdate(BaseModel):
     title: Optional[str] = Field(None, description="Source title")
     topics: Optional[List[str]] = Field(None, description="Source topics")
