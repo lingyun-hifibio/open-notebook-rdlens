@@ -188,3 +188,33 @@ async def test_delete_is_notebook_bound_and_idempotent():
     assert first["deleted"] is True
     assert first["source_id"].startswith("source:rdlens_")
     assert repo_query.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_delete_replay_converges_when_notebook_is_missing():
+    from api.internal_source_service import delete_rdlens_source
+    from api.models import RDLensSourceDelete
+
+    request = RDLensSourceDelete(
+        notebook_id=PAYLOAD["notebook_id"],
+        document_id=PAYLOAD["document_id"],
+        document_version=PAYLOAD["document_version"],
+        source_id=None,
+    )
+    with (
+        patch(
+            "api.internal_source_service.Notebook.get",
+            new=AsyncMock(side_effect=NotFoundError("missing")),
+        ) as get_notebook,
+        patch(
+            "api.internal_source_service.repo_query",
+            new=AsyncMock(return_value=[]),
+        ) as repo_query,
+    ):
+        first = await delete_rdlens_source(request)
+        second = await delete_rdlens_source(request)
+
+    assert first == second
+    assert first["deleted"] is True
+    get_notebook.assert_not_awaited()
+    assert repo_query.await_count == 2

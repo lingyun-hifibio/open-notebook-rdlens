@@ -73,7 +73,6 @@ async def upsert_rdlens_source(request: RDLensSourceUpsert) -> dict:
 async def delete_rdlens_source(request: RDLensSourceDelete) -> dict:
     """Delete the deterministic Source and relation; missing records succeed."""
 
-    await Notebook.get(request.notebook_id)
     expected_id = stable_rdlens_source_id(
         request.notebook_id, request.document_id, request.document_version,
     )
