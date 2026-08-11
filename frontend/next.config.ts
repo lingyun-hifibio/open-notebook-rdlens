@@ -44,8 +44,10 @@ const nextConfig: NextConfig = {
 
   // UI-01（设计 §3.2，REQ-EMB-01/REQ-DEP-02）：Embedded Web 独立受控
   // Origin，通过 CSP `frame-ancestors` 仅允许 RDLens 域名嵌入。服务端
-  // 环境变量 `RD_FRAME_ANCESTORS`（空格分隔多个来源）在请求时读取；
-  // 未配置时不输出头，保持上游默认行为（G3）。
+  // 环境变量 `RD_FRAME_ANCESTORS`（空格分隔多个来源）由 headers() 在
+  // next build 时求值一次，固化进 .next/routes-manifest.json；运行时修改
+  // 环境变量不生效，必须重建镜像（Issue #102）。未配置时不输出头，保持
+  // 上游默认行为（G3）。
   async headers() {
     const frameAncestors = buildFrameAncestorsCsp(process.env.RD_FRAME_ANCESTORS)
     if (!frameAncestors) {

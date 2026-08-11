@@ -25,6 +25,17 @@ RUN i=0; until npm ci; do \
 
 # Copy the rest of the frontend source and build
 COPY frontend/ ./
+# RDLens embedded 部署构建参数（Issue #102）：NEXT_PUBLIC_RD_* 由 Next.js 构建时内联；
+# RD_FRAME_ANCESTORS 由 next.config headers() build 时求值固化进 routes-manifest.json；
+# 运行时 env 变更无效，须重建。默认空 = 上游默认行为。
+ARG NEXT_PUBLIC_RD_EMBEDDED_MODE=""
+ARG NEXT_PUBLIC_RD_GATEWAY_URL=""
+ARG NEXT_PUBLIC_RD_PARENT_ORIGIN=""
+ARG RD_FRAME_ANCESTORS=""
+ENV NEXT_PUBLIC_RD_EMBEDDED_MODE=${NEXT_PUBLIC_RD_EMBEDDED_MODE} \
+    NEXT_PUBLIC_RD_GATEWAY_URL=${NEXT_PUBLIC_RD_GATEWAY_URL} \
+    NEXT_PUBLIC_RD_PARENT_ORIGIN=${NEXT_PUBLIC_RD_PARENT_ORIGIN} \
+    RD_FRAME_ANCESTORS=${RD_FRAME_ANCESTORS}
 RUN npm run build
 
 # Stage 2: Backend builder
