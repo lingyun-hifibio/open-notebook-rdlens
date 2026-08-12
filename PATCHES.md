@@ -292,3 +292,51 @@ channel 并在 ready 中携带、父页面回显的形态（与 §12.2 ready 载
   OCI revision 为上述 PR #7 merge commit，平台为 `linux/amd64`。
 - Registry metadata、远端 digest 拉取和镜像内 Source Adapter compile smoke
   均通过；尚未执行生产部署或双仓真实 E2E。
+
+## 9. Embedded 部署构建参数（2026-08-12，Issue #102）
+
+> Task ID: PMR-01（GitHub Issue #102，repo: HiFiBiO-Therapeutics/RDLens）
+> 分支：`fix/pmr-102-embedded`；目标 tag：`v1.14.0-rdlens.4`
+> 背景：正式 Research 部署未启用 Embedded 安全模式（post-merge review PMR-HIGH）。
+> 物证：前端 `NEXT_PUBLIC_RD_*` 与 `RD_FRAME_ANCESTORS` 均在 `next build` 时固化
+> （物证 `.next/routes-manifest.json`），运行时注入无效，必须带 build arg 重建镜像。
+
+### 9.1 目标与边界
+
+- `NEXT_PUBLIC_RD_*` 由 Next.js 构建时内联进客户端 bundle；`RD_FRAME_ANCESTORS`
+  由 `next.config headers()` build 时求值一次、固化进 `.next/routes-manifest.json`。
+  两者运行时修改环境变量均不生效，必须以 build arg 重建镜像。
+- 后端 5 变量（`RD_EMBEDDED_MODE` 等）为模块导入时读 env，运行时注入有效，经
+  RDLens `deploy/research/compose.yaml` 注入，不在本 Patch 范围。
+- 所有 build arg 默认空 = 上游默认行为（G3：未启用时完全保持上游行为）。
+
+### 9.2 Patch 清单
+
+| 文件 | 类型 | 行数 | 说明 |
+|---|---|---:|---|
+| `Dockerfile` | 构建参数 | +11 | frontend-builder 阶段 `COPY frontend/` 后、`npm run build` 前插入 4 个 `ARG` + `ENV` 注入（`NEXT_PUBLIC_RD_EMBEDDED_MODE` / `NEXT_PUBLIC_RD_GATEWAY_URL` / `NEXT_PUBLIC_RD_PARENT_ORIGIN` / `RD_FRAME_ANCESTORS`），默认空 |
+| `frontend/next.config.ts` | 注释修正 | +4/-2 | headers() 注释改为「build 时求值固化进 routes-manifest.json，运行时改 env 不生效须重建（Issue #102）」 |
+| `frontend/src/lib/embedded/csp.ts` | 注释修正 | +3/-2 | 同上（模块 docstring） |
+
+合计：3 文件，+18/-4 行；零行为改动（仅构建参数声明与注释修正）。
+
+### 9.3 构建命令（嵌入式镜像）
+
+```bash
+docker build \
+  --build-arg NEXT_PUBLIC_RD_EMBEDDED_MODE=true \
+  --build-arg NEXT_PUBLIC_RD_GATEWAY_URL=<rdlens-gateway-url> \
+  --build-arg NEXT_PUBLIC_RD_PARENT_ORIGIN=<rdlens-parent-origin> \
+  --build-arg RD_FRAME_ANCESTORS="<frame-ancestors-origin-list>" \
+  -t ghcr.io/hifibio-therapeutics/open-notebook-rdlens:v1.14.0-rdlens.4 .
+```
+
+> ⚠️ RDLens PMR #102 首次构建以占位/POC origin（`http://127.0.0.1:7890`）打通
+> 构建链路；**生产部署必须以真实 RDLens origin 重建镜像**，占位值不得用于生产。
+
+### 9.4 验证
+
+- 构建后自检：`docker run --rm --entrypoint cat <image> /app/frontend/.next/routes-manifest.json \
+  | grep frame-ancestors` 应输出 CSP frame-ancestors；`.next/static` chunks 应内联
+  `NEXT_PUBLIC_RD_*` 取值。
+- 后端/前端运行行为零改动（仅构建参数声明与注释），不重跑全量测试。
