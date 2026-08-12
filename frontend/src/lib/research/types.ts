@@ -96,6 +96,7 @@ export interface ResearchChatRequest {
 }
 
 export interface ResearchCompareCreateRequest {
+  job_type: 'deep_compare' // 契约 §8.3 必填（RDLens JobCreateRequest）
   document_ids: string[]
   group_size?: number
   mode?: string

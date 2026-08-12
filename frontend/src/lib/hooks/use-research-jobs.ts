@@ -149,6 +149,7 @@ export function useResearchJobs({ projectId }: { projectId: string }): UseResear
     }
     setIsCreating(true)
     createCompare(projectId, {
+      job_type: 'deep_compare', // 契约 §8.3 必填（RDLens JobCreateRequest）
       document_ids: [...documentIds],
       group_size: groupSize,
       mode: 'deep_compare',
