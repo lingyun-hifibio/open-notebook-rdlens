@@ -84,7 +84,10 @@ describe('useResearchJobs', () => {
       result.current.createCompare(['doc_1', 'doc_2'])
     })
     expect(createCompare).toHaveBeenCalledWith('proj_1', {
+      job_type: 'deep_compare', // 契约 §8.3 必填；镜像 RDLens
+      // test_compare.py::TestCompareApi::test_fork_ui_serialized_body_creates_deep_compare_job
       document_ids: ['doc_1', 'doc_2'],
+      group_size: undefined,
       mode: 'deep_compare',
     })
   })
