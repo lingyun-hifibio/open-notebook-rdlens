@@ -51,10 +51,11 @@ async def upsert_rdlens_source(request: RDLensSourceUpsert) -> dict:
         },
         add_timestamp=True,
     )
+    # 关系表必须用 RELATE 语法（SurrealDB 拒绝 UPSERT CONTENT 对
+    # 关系表的 in/out 赋值）；固定 id 保证幂等（重跑不产生重复关系）。
     await repo_query(
-        "UPSERT $relation_id CONTENT { in: $source_id, out: $notebook_id };",
+        f"RELATE $source_id -> {_stable_reference_id(source_id)} -> $notebook_id;",
         {
-            "relation_id": RecordID.parse(_stable_reference_id(source_id)),
             "source_id": RecordID.parse(source_id),
             "notebook_id": RecordID.parse(request.notebook_id),
         },
