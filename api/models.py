@@ -377,6 +377,23 @@ class RDLensSourceDelete(BaseModel):
     source_id: Optional[str] = Field(None, max_length=256)
 
 
+class RDLensNotebookCreate(BaseModel):
+    """Private service-to-service Notebook create payload; never used by browsers."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(..., min_length=1, max_length=256)
+    description: str = Field("", max_length=4096)
+
+
+class RDLensNotebookDelete(BaseModel):
+    """Notebook-bound idempotent delete request for the private notebook channel."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    notebook_id: str = Field(..., min_length=1, max_length=256)
+
+
 class SourceUpdate(BaseModel):
     title: Optional[str] = Field(None, description="Source title")
     topics: Optional[List[str]] = Field(None, description="Source topics")

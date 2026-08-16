@@ -22,6 +22,10 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from api.auth import PasswordAuthMiddleware
 from api.embedded_scope import EmbeddedScopeMiddleware
+from api.internal_notebook_adapter import (
+    INTERNAL_NOTEBOOK_PATH,
+    InternalNotebookAdapterMiddleware,
+)
 from api.internal_source_adapter import (
     INTERNAL_SOURCE_PATH,
     InternalSourceAdapterMiddleware,
@@ -37,6 +41,7 @@ from api.routers import (
     embedding_rebuild,
     episode_profiles,
     insights,
+    internal_notebooks,
     internal_sources,
     languages,
     models,
@@ -251,6 +256,7 @@ app.add_middleware(
         "/api/auth/status",
         "/api/config",
         INTERNAL_SOURCE_PATH,
+        INTERNAL_NOTEBOOK_PATH,
     ],
 )
 
@@ -290,6 +296,10 @@ app.add_middleware(EmbeddedScopeMiddleware)
 # Private RDLens Source Adapter: outermost so browser/public/auth failures do
 # not pass through global CORS or the ordinary Open Notebook password layer.
 app.add_middleware(InternalSourceAdapterMiddleware)
+
+# Private RDLens Notebook channel: same outermost boundary, but authenticated
+# with the ordinary Open Notebook password (research.open_notebook_password).
+app.add_middleware(InternalNotebookAdapterMiddleware)
 
 
 # Custom exception handler to ensure CORS headers are included in error responses
@@ -420,6 +430,7 @@ app.include_router(providers.router, prefix="/api", tags=["providers"])
 app.include_router(capabilities.router, prefix="/api", tags=["capabilities"])
 app.include_router(languages.router, prefix="/api", tags=["languages"])
 app.include_router(internal_sources.router, tags=["internal-rdlens-source"])
+app.include_router(internal_notebooks.router, tags=["internal-rdlens-notebook"])
 
 
 @app.get("/")
