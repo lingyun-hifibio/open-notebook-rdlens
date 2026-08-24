@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ResearchWorkspaceShell } from '@/lib/embedded/shell'
 import { isEmbeddedMode } from '@/lib/embedded/config'
 import { getResearchProjectId } from '@/lib/research/project'
-import { useMediaQuery } from '@/lib/hooks/use-media-query'
+import { useIsDesktop, useMediaQuery } from '@/lib/hooks/use-media-query'
 import { ResearchWorkbench } from '@/components/research/ResearchWorkbench'
 import { ResearchWorkspace } from '@/components/research/ResearchWorkspace'
 import { ResearchSourceChatPanel } from '@/components/research/ResearchSourceChatPanel'
@@ -34,10 +34,14 @@ export default function ResearchPage() {
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null)
   const [highlightPageIdx, setHighlightPageIdx] = useState<number | null>(null)
   const hasUsableHeight = useMediaQuery('(min-height: 560px)')
+  const isDesktop = useIsDesktop()
+  const [globalCompactPanel, setGlobalCompactPanel] = useState<'primary' | 'secondary'>('secondary')
+  const [sourceCompactPanel, setSourceCompactPanel] = useState<'primary' | 'secondary'>('primary')
 
   const handleSelectSource = useCallback(
     (sourceId: string, opts?: { highlightPageIdx?: number | null }) => {
       setSelectedSourceId(sourceId)
+      setSourceCompactPanel('primary')
       // 默认重置高亮页（防上次高亮泄漏到新来源）
       setHighlightPageIdx(opts?.highlightPageIdx ?? null)
     },
@@ -51,6 +55,7 @@ export default function ResearchPage() {
 
   const handleHighlightPage = useCallback((pageIdx: number) => {
     setHighlightPageIdx(pageIdx)
+    setSourceCompactPanel('primary')
   }, [])
 
   useEffect(() => {
@@ -64,27 +69,34 @@ export default function ResearchPage() {
   }
 
   const projectId = getResearchProjectId() ?? ''
+  const sourceMode = selectedSourceId !== null
+  const sourceDesktop = sourceMode && isDesktop
+  const compact = sourceMode ? !isDesktop : !hasUsableHeight
 
   return (
     <div className="h-screen">
       <ResearchWorkspaceShell>
         <ResearchLayout
-          axis="vertical"
-          compact={!hasUsableHeight}
-          defaultRatio={40}
-          minPrimary={200}
-          minSecondary={300}
-          primaryLabel="Research artifacts"
-          secondaryLabel="Research workspace"
-          separatorLabel="Resize research panels"
-          expandSecondaryLabel="Expand workspace"
+          layoutId={sourceDesktop ? 'source-desktop' : 'global'}
+          axis={sourceDesktop ? 'horizontal' : 'vertical'}
+          compact={compact}
+          defaultRatio={sourceDesktop ? 55 : 40}
+          minPrimary={sourceDesktop ? 360 : 200}
+          minSecondary={sourceDesktop ? 360 : 300}
+          primaryLabel={sourceMode ? 'Source content' : 'Research artifacts'}
+          secondaryLabel={sourceMode ? 'Source chat' : 'Research workspace'}
+          separatorLabel={sourceMode ? 'Resize source panels' : 'Resize research panels'}
+          expandSecondaryLabel={sourceMode ? 'Expand source chat' : 'Expand workspace'}
           restoreLabel="Restore layout"
-          compactPrimaryLabel="Research artifacts"
-          compactSecondaryLabel="Workspace"
+          compactPrimaryLabel={sourceMode ? 'Content' : 'Research artifacts'}
+          compactSecondaryLabel={sourceMode ? 'Chat' : 'Workspace'}
+          compactPanel={sourceMode ? sourceCompactPanel : globalCompactPanel}
+          onCompactPanelChange={sourceMode ? setSourceCompactPanel : setGlobalCompactPanel}
         >
           {[
             <div key="workbench" className="h-full min-h-0 overflow-hidden">
             <ResearchWorkbench
+              displayMode={sourceMode ? 'source-focus' : 'workbench'}
               selectedSourceId={selectedSourceId}
               highlightPageIdx={highlightPageIdx}
               onSelectSource={handleSelectSource}

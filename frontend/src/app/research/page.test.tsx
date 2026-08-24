@@ -16,6 +16,7 @@ vi.mock('@/lib/embedded/config', () => ({
 
 vi.mock('@/lib/hooks/use-media-query', () => ({
   useMediaQuery: () => true,
+  useIsDesktop: () => true,
 }))
 
 vi.mock('@/lib/embedded/shell', () => ({
@@ -25,6 +26,7 @@ vi.mock('@/lib/embedded/shell', () => ({
 }))
 
 interface WorkbenchPropsMock {
+  displayMode: 'workbench' | 'source-focus'
   selectedSourceId: string | null
   highlightPageIdx: number | null
   onSelectSource: (sourceId: string, opts?: { highlightPageIdx?: number | null }) => void
@@ -38,6 +40,7 @@ vi.mock('@/components/research/ResearchWorkbench', () => ({
       data-testid="workbench"
       data-selected-source-id={props.selectedSourceId ?? ''}
       data-highlight-page-idx={props.highlightPageIdx ?? ''}
+      data-display-mode={props.displayMode}
     >
       <button data-testid="wb-open" onClick={() => props.onSelectSource('src_1')} />
       <button
@@ -102,6 +105,7 @@ describe('/research Source 详情 + Source Chat 组合（Issue #182）', () => {
 
   it('选源：下半屏切换为 Source Chat 面板，Workspace 保持挂载且被 hidden 包裹', () => {
     render(<ResearchPage />)
+    const originalWorkbench = workbenchEl()
     fireEvent.click(screen.getByTestId('wb-open'))
 
     expect(screen.getByTestId('source-chat-panel')).toBeInTheDocument()
@@ -110,6 +114,9 @@ describe('/research Source 详情 + Source Chat 组合（Issue #182）', () => {
     // 保持挂载：hidden 类包裹而非卸载（chat/jobs 本地状态不丢失）
     const workspace = screen.getByTestId('workspace')
     expect(workspace.parentElement).toHaveClass('hidden')
+    expect(screen.getByTestId('research-layout')).toHaveAttribute('data-axis', 'horizontal')
+    expect(workbenchEl()).toBe(originalWorkbench)
+    expect(workbenchEl()).toHaveAttribute('data-display-mode', 'source-focus')
   })
 
   it('关闭来源：卸载面板并恢复 Workspace（无 hidden）', () => {

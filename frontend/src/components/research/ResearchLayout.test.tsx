@@ -10,6 +10,7 @@ class ResizeObserverMock {
 function renderLayout() {
   return render(
     <ResearchLayout
+      layoutId="global"
       axis="vertical"
       compact={false}
       defaultRatio={40}
@@ -77,7 +78,7 @@ describe('ResearchLayout', () => {
   it('renders compact alternatives as mutually exclusive hidden panels', () => {
     const { rerender } = renderLayout()
     rerender(
-      <ResearchLayout axis="vertical" compact defaultRatio={40} minPrimary={200} minSecondary={300} primaryLabel="primary" secondaryLabel="secondary" separatorLabel="resize panels" expandSecondaryLabel="expand workspace" restoreLabel="restore layout" compactPrimaryLabel="artifacts" compactSecondaryLabel="workspace">
+      <ResearchLayout layoutId="global" axis="vertical" compact defaultRatio={40} minPrimary={200} minSecondary={300} primaryLabel="primary" secondaryLabel="secondary" separatorLabel="resize panels" expandSecondaryLabel="expand workspace" restoreLabel="restore layout" compactPrimaryLabel="artifacts" compactSecondaryLabel="workspace">
         {[<div key="one">first</div>, <div key="two">second</div>]}
       </ResearchLayout>,
     )

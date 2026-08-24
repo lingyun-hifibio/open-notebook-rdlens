@@ -33,6 +33,7 @@ export type ResearchTab = 'sources' | 'notes' | 'insights' | 'transformations'
  * `onCloseSource` 清空两者（返回来源列表）。
  */
 export interface ResearchWorkbenchProps {
+  displayMode: 'workbench' | 'source-focus'
   selectedSourceId: string | null
   highlightPageIdx: number | null
   onSelectSource: (sourceId: string, opts?: { highlightPageIdx?: number | null }) => void
@@ -40,6 +41,7 @@ export interface ResearchWorkbenchProps {
 }
 
 export function ResearchWorkbench({
+  displayMode,
   selectedSourceId,
   highlightPageIdx,
   onSelectSource,
@@ -63,6 +65,22 @@ export function ResearchWorkbench({
     }
     onSelectSource(source.source_id, { highlightPageIdx: citation.page_idx })
     setTab('sources')
+  }
+
+  if (displayMode === 'source-focus' && selectedSourceId !== null) {
+    return (
+      <div className="flex h-full min-h-0 flex-col gap-3 p-4">
+        <div className="flex items-center gap-3">
+          <Button size="sm" variant="ghost" onClick={onCloseSource}>
+            {t('research.sources.back')}
+          </Button>
+          <h1 tabIndex={-1} className="text-lg font-semibold">{t('research.workbench.title')}</h1>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <SourceDetailPanel sourceId={selectedSourceId} highlightPageIdx={highlightPageIdx} />
+        </div>
+      </div>
+    )
   }
 
   return (

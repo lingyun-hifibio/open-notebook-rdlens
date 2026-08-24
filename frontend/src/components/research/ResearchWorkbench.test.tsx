@@ -68,6 +68,7 @@ function ControlledWorkbench() {
   const [highlightPageIdx, setHighlightPageIdx] = useState<number | null>(null)
   return (
     <ResearchWorkbench
+      displayMode="workbench"
       selectedSourceId={selectedSourceId}
       highlightPageIdx={highlightPageIdx}
       onSelectSource={(sourceId, opts) => {

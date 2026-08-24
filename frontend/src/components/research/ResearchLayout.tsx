@@ -7,6 +7,7 @@ const HANDLE_SIZE = 8
 const KEYBOARD_STEP = 5
 
 export interface ResearchLayoutProps {
+  layoutId: string
   axis: 'vertical' | 'horizontal'
   compact: boolean
   defaultRatio: number
@@ -19,6 +20,8 @@ export interface ResearchLayoutProps {
   restoreLabel: string
   compactPrimaryLabel: string
   compactSecondaryLabel: string
+  compactPanel?: 'primary' | 'secondary'
+  onCompactPanelChange?: (panel: 'primary' | 'secondary') => void
   children: [React.ReactNode, React.ReactNode]
 }
 
@@ -28,6 +31,7 @@ export interface ResearchLayoutProps {
  * streaming chat subtrees from high-frequency renders.
  */
 export function ResearchLayout({
+  layoutId,
   axis,
   compact,
   defaultRatio,
@@ -40,6 +44,8 @@ export function ResearchLayout({
   restoreLabel,
   compactPrimaryLabel,
   compactSecondaryLabel,
+  compactPanel: controlledCompactPanel,
+  onCompactPanelChange,
   children,
 }: ResearchLayoutProps) {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -48,6 +54,8 @@ export function ResearchLayout({
   const secondaryRef = useRef<HTMLElement>(null)
   const restoreRef = useRef<HTMLButtonElement>(null)
   const ratioRef = useRef(defaultRatio)
+  const layoutIdRef = useRef(layoutId)
+  const ratiosRef = useRef<Record<string, number>>({ [layoutId]: defaultRatio })
   const pointerIdRef = useRef<number | null>(null)
   const latestCoordinateRef = useRef<number | null>(null)
   const draggingRef = useRef(false)
@@ -56,7 +64,12 @@ export function ResearchLayout({
   const bodyStyleRef = useRef<{ cursor: string; userSelect: string } | null>(null)
   const [ratio, setRatio] = useState(defaultRatio)
   const [maximized, setMaximized] = useState(false)
-  const [compactPanel, setCompactPanel] = useState<'primary' | 'secondary'>('secondary')
+  const [uncontrolledCompactPanel, setUncontrolledCompactPanel] = useState<'primary' | 'secondary'>('secondary')
+  const compactPanel = controlledCompactPanel ?? uncontrolledCompactPanel
+  const setCompactPanel = (panel: 'primary' | 'secondary') => {
+    if (controlledCompactPanel === undefined) setUncontrolledCompactPanel(panel)
+    onCompactPanelChange?.(panel)
+  }
 
   const isVertical = axis === 'vertical'
   const coordinate = useCallback((event: Pick<PointerEvent, 'clientX' | 'clientY'>) => (
@@ -164,6 +177,14 @@ export function ResearchLayout({
   }, [applyRatio, ratio])
 
   useEffect(() => {
+    ratiosRef.current[layoutIdRef.current] = ratioRef.current
+    layoutIdRef.current = layoutId
+    const nextRatio = ratiosRef.current[layoutId] ?? defaultRatio
+    ratioRef.current = nextRatio
+    setRatio(nextRatio)
+  }, [defaultRatio, layoutId])
+
+  useEffect(() => {
     const host = hostRef.current
     if (!host || typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(() => {
@@ -207,68 +228,76 @@ export function ResearchLayout({
   }
 
   const gridStyle = isVertical
-    ? { gridTemplateRows: maximized ? '0px minmax(0, 1fr)' : 'minmax(0, var(--research-primary-size)) 8px minmax(0, 1fr)' }
-    : { gridTemplateColumns: maximized ? '0px minmax(0, 1fr)' : 'minmax(0, var(--research-primary-size)) 8px minmax(0, 1fr)' }
-
-  if (compact) {
-    return (
-      <div className="flex h-full min-h-0 flex-col" data-testid="research-layout-compact">
-        <div className="flex shrink-0 gap-2 border-b p-2" role="tablist" aria-label={separatorLabel}>
-          <button type="button" role="tab" aria-selected={compactPanel === 'primary'} onClick={() => setCompactPanel('primary')}>
-            {compactPrimaryLabel}
-          </button>
-          <button type="button" role="tab" aria-selected={compactPanel === 'secondary'} onClick={() => setCompactPanel('secondary')}>
-            {compactSecondaryLabel}
-          </button>
-        </div>
-        <section ref={primaryRef} hidden={compactPanel !== 'primary'} aria-label={primaryLabel} className="min-h-0 flex-1">
-          {children[0]}
-        </section>
-        <section ref={secondaryRef} hidden={compactPanel !== 'secondary'} aria-label={secondaryLabel} className="min-h-0 flex-1">
-          {children[1]}
-        </section>
-      </div>
-    )
-  }
+    ? { gridTemplateRows: maximized ? '0px 0px minmax(0, 1fr)' : 'minmax(0, var(--research-primary-size)) 8px minmax(0, 1fr)' }
+    : { gridTemplateColumns: maximized ? '0px 0px minmax(0, 1fr)' : 'minmax(0, var(--research-primary-size)) 8px minmax(0, 1fr)' }
 
   return (
     <div
       ref={hostRef}
-      className={`relative grid h-full min-h-0 ${isVertical ? 'grid-rows-[minmax(0,var(--research-primary-size))_8px_minmax(0,1fr)]' : 'grid-cols-[minmax(0,var(--research-primary-size))_8px_minmax(0,1fr)]'}`}
-      style={gridStyle}
+      className={compact
+        ? 'relative flex h-full min-h-0 flex-col'
+        : `relative grid h-full min-h-0 ${isVertical ? 'grid-rows-[minmax(0,var(--research-primary-size))_8px_minmax(0,1fr)]' : 'grid-cols-[minmax(0,var(--research-primary-size))_8px_minmax(0,1fr)]'}`}
+      style={compact ? undefined : gridStyle}
       data-testid="research-layout"
       data-axis={axis}
     >
-      <section ref={primaryRef} hidden={maximized} aria-label={primaryLabel} className="min-h-0 overflow-hidden">
+      <section
+        ref={primaryRef}
+        hidden={maximized || (compact && compactPanel !== 'primary')}
+        aria-label={primaryLabel}
+        className="min-h-0 flex-1 overflow-hidden"
+      >
         {children[0]}
       </section>
-      {!maximized && (
-        <div
-          ref={separatorRef}
-          role="separator"
-          tabIndex={0}
-          aria-label={separatorLabel}
-          aria-orientation={isVertical ? 'horizontal' : 'vertical'}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={Math.round(ratio)}
-          className={isVertical ? 'cursor-row-resize touch-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring' : 'cursor-col-resize touch-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring'}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerCancel={() => finishDragging(false)}
-          onLostPointerCapture={() => finishDragging(false)}
-          onKeyDown={onKeyDown}
-          onDoubleClick={() => {
+      <div
+        ref={separatorRef}
+        hidden={maximized}
+        {...(compact ? {
+          role: 'tablist' as const,
+          'aria-label': separatorLabel,
+          className: 'flex shrink-0 gap-2 border-b p-2',
+        } : {
+          role: 'separator' as const,
+          tabIndex: 0,
+          'aria-label': separatorLabel,
+          'aria-orientation': isVertical ? 'horizontal' : 'vertical',
+          'aria-valuemin': 0,
+          'aria-valuemax': 100,
+          'aria-valuenow': Math.round(ratio),
+          className: isVertical ? 'cursor-row-resize touch-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring' : 'cursor-col-resize touch-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring',
+          onPointerDown,
+          onPointerMove,
+          onPointerUp,
+          onPointerCancel: () => finishDragging(false),
+          onLostPointerCapture: () => finishDragging(false),
+          onKeyDown,
+          onDoubleClick: () => {
             const clamped = applyRatio(defaultRatio)
             setRatio(clamped)
-          }}
-        />
-      )}
-      <section ref={secondaryRef} aria-label={secondaryLabel} className="min-h-0 overflow-hidden">
+          },
+        })}
+      >
+        {compact && (
+          <>
+            <button type="button" role="tab" aria-selected={compactPanel === 'primary'} onClick={() => setCompactPanel('primary')}>
+              {compactPrimaryLabel}
+            </button>
+            <button type="button" role="tab" aria-selected={compactPanel === 'secondary'} onClick={() => setCompactPanel('secondary')}>
+              {compactSecondaryLabel}
+            </button>
+          </>
+        )}
+      </div>
+      <section
+        ref={secondaryRef}
+        hidden={compact && compactPanel !== 'secondary'}
+        aria-label={secondaryLabel}
+        className="min-h-0 flex-1 overflow-hidden"
+        style={compact ? undefined : (isVertical ? { gridRow: 3 } : { gridColumn: 3 })}
+      >
         {children[1]}
       </section>
-      <button ref={restoreRef} type="button" className="absolute right-3 top-3 z-10" onClick={toggleMaximized}>
+      <button ref={restoreRef} hidden={compact} type="button" className="absolute right-3 top-3 z-10" onClick={toggleMaximized}>
         {maximized ? restoreLabel : expandSecondaryLabel}
       </button>
     </div>
