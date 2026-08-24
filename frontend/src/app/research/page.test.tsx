@@ -14,6 +14,10 @@ vi.mock('@/lib/embedded/config', () => ({
   isEmbeddedMode: () => true,
 }))
 
+vi.mock('@/lib/hooks/use-media-query', () => ({
+  useMediaQuery: () => true,
+}))
+
 vi.mock('@/lib/embedded/shell', () => ({
   ResearchWorkspaceShell: ({ children }: { children?: React.ReactNode }) => (
     <div data-testid="shell">{children}</div>
@@ -70,19 +74,21 @@ function workbenchEl(): HTMLElement {
 }
 
 describe('/research 页面骨架', () => {
-  it('上半屏包裹层固定半屏高且裁剪溢出（overflow-hidden）', () => {
+  it('使用稳定的全局纵向布局槽位，工作台继续在内部裁剪溢出', () => {
     render(<ResearchPage />)
     const wrapper = screen.getByTestId('workbench').parentElement
     expect(wrapper).not.toBeNull()
-    expect(wrapper).toHaveClass('h-1/2', 'min-h-0', 'overflow-hidden')
+    expect(wrapper).toHaveClass('h-full', 'min-h-0', 'overflow-hidden')
+    expect(screen.getByTestId('research-layout')).toHaveAttribute('data-axis', 'vertical')
+    expect(screen.getByRole('separator', { name: 'Resize research panels' })).toBeInTheDocument()
   })
 
-  it('下半屏包裹层固定半屏高（与上半屏各占 50%，无剩余可分配空间）', () => {
+  it('工作区占稳定次级槽位而非固定 h-1/2', () => {
     render(<ResearchPage />)
-    // Workspace 外层是保持挂载的 h-full 槽位，再外层才是固定半屏高包裹层
     const wrapper = screen.getByTestId('workspace').parentElement?.parentElement
     expect(wrapper).not.toBeNull()
-    expect(wrapper).toHaveClass('h-1/2', 'min-h-0')
+    expect(wrapper).toHaveClass('h-full', 'min-h-0')
+    expect(wrapper).not.toHaveClass('h-1/2')
   })
 })
 

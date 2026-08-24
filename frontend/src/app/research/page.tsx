@@ -5,10 +5,11 @@ import { useRouter } from 'next/navigation'
 import { ResearchWorkspaceShell } from '@/lib/embedded/shell'
 import { isEmbeddedMode } from '@/lib/embedded/config'
 import { getResearchProjectId } from '@/lib/research/project'
-import { cn } from '@/lib/utils'
+import { useMediaQuery } from '@/lib/hooks/use-media-query'
 import { ResearchWorkbench } from '@/components/research/ResearchWorkbench'
 import { ResearchWorkspace } from '@/components/research/ResearchWorkspace'
 import { ResearchSourceChatPanel } from '@/components/research/ResearchSourceChatPanel'
+import { ResearchLayout } from '@/components/research/ResearchLayout'
 
 /**
  * /research：嵌入式 Research Workspace 入口路由（UI-01，设计 §4.1）。
@@ -32,6 +33,7 @@ export default function ResearchPage() {
 
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null)
   const [highlightPageIdx, setHighlightPageIdx] = useState<number | null>(null)
+  const hasUsableHeight = useMediaQuery('(min-height: 560px)')
 
   const handleSelectSource = useCallback(
     (sourceId: string, opts?: { highlightPageIdx?: number | null }) => {
@@ -66,21 +68,33 @@ export default function ResearchPage() {
   return (
     <div className="h-screen">
       <ResearchWorkspaceShell>
-        <div className="flex h-full flex-col">
-          {/* overflow-hidden：上半屏是固定 50% 高容器，面板内容超高时不得溢出
-              叠画到下半屏（选择器行文字混叠）；滚动约束在工作台 Tabs 链路内 */}
-          <div className="h-1/2 min-h-0 overflow-hidden">
+        <ResearchLayout
+          axis="vertical"
+          compact={!hasUsableHeight}
+          defaultRatio={40}
+          minPrimary={200}
+          minSecondary={300}
+          primaryLabel="Research artifacts"
+          secondaryLabel="Research workspace"
+          separatorLabel="Resize research panels"
+          expandSecondaryLabel="Expand workspace"
+          restoreLabel="Restore layout"
+          compactPrimaryLabel="Research artifacts"
+          compactSecondaryLabel="Workspace"
+        >
+          {[
+            <div key="workbench" className="h-full min-h-0 overflow-hidden">
             <ResearchWorkbench
               selectedSourceId={selectedSourceId}
               highlightPageIdx={highlightPageIdx}
               onSelectSource={handleSelectSource}
               onCloseSource={handleCloseSource}
             />
-          </div>
-          <div className="h-1/2 min-h-0 border-t">
+            </div>,
+            <div key="workspace" className="h-full min-h-0 border-t">
             {/* 全局工作区保持挂载：选中来源时以 hidden 包裹（display:none），
                 多篇 Chat 流与 Job 轮询本地状态不丢失；面板占满同一半屏槽位 */}
-            <div className={cn('h-full', selectedSourceId !== null && 'hidden')}>
+            <div className={`h-full ${selectedSourceId !== null ? 'hidden' : ''}`}>
               <ResearchWorkspace />
             </div>
             {selectedSourceId !== null && (
@@ -92,8 +106,9 @@ export default function ResearchPage() {
                 />
               </div>
             )}
-          </div>
-        </div>
+            </div>,
+          ]}
+        </ResearchLayout>
       </ResearchWorkspaceShell>
     </div>
   )
