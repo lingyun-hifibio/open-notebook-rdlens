@@ -33,7 +33,9 @@ export default function ResearchPage() {
     <div className="h-screen">
       <ResearchWorkspaceShell>
         <div className="flex h-full flex-col">
-          <div className="h-1/2 min-h-0">
+          {/* overflow-hidden：上半屏是固定 50% 高容器，面板内容超高时不得溢出
+              叠画到下半屏（选择器行文字混叠）；滚动约束在工作台 Tabs 链路内 */}
+          <div className="h-1/2 min-h-0 overflow-hidden">
             <ResearchWorkbench />
           </div>
           <div className="h-1/2 min-h-0 border-t">

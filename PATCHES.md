@@ -340,3 +340,48 @@ docker build \
   | grep frame-ancestors` 应输出 CSP frame-ancestors；`.next/static` chunks 应内联
   `NEXT_PUBLIC_RD_*` 取值。
 - 后端/前端运行行为零改动（仅构建参数声明与注释），不重跑全量测试。
+
+## 10. Research 工作台半屏溢出修复（2026-08-24）
+
+> 现象报告：RDLens `dev_docs/progress/reasearch_ui_笔记_点开编辑.png`
+> （DEMO-01 预览环境，镜像 `v1.14.0-rdlens.6`）。关联任务：
+> GitHub Issue #183（repo: HiFiBiO-Therapeutics/RDLens），UI-02 后续缺陷。
+
+### 10.1 现象与根因
+
+- 现象：`/research` 上半屏工作台点开笔记「编辑」后，下半屏的
+  「来源 (1/5) / 笔记 (0/2)」选择器区域出现双层文字混叠；来源、洞察、
+  转换面板同样可复现（内容超高即触发）。
+- 根因：`app/research/page.tsx` 上半屏包裹层为固定 `h-1/2 min-h-0` 容器且
+  默认 `overflow: visible`；`ResearchWorkbench` 根 → `Tabs` → `TabsContent`
+  → 面板整条链路无任何滚动/裁剪约束。编辑表单以普通文档流插入（列表常驻
+  不卸载），把笔记卡片推出半屏盒底，溢出内容按 CSS 绘制顺序叠画到下半屏
+  之上——所有块背景先于所有行内文字绘制，故两层文字均可见，给下半屏加
+  背景色无法消除混叠。
+- 四模块共性：缺陷在共享骨架（page.tsx 上半屏包裹层 + Tabs 链路），不在
+  单个面板；来源详情（全文 chunk 列表）、洞察/转换表单均为同类触发器。
+  下半屏选择器自身使用 `ScrollArea max-h-56` 内部滚动，不受影响。
+
+### 10.2 Patch 清单（仅前端）
+
+| 文件 | 类型 | 行数 | 说明 |
+|---|---|---:|---|
+| `frontend/src/app/research/page.tsx` | 布局修复 | +3/-1 | 上半屏包裹层加 `overflow-hidden`（裁剪兜底）+ 注释 |
+| `frontend/src/components/research/ResearchWorkbench.tsx` | 布局修复 | +8/-5 | `Tabs` 加 `min-h-0 flex-1`；四个 `TabsContent` 统一 `mt-3 min-h-0 flex-1 overflow-y-auto`，面板内容超高时在工作台内部滚动 |
+| `frontend/src/components/research/ResearchWorkbench.test.tsx` | 测试 | +26 | Tabs 根与活动 tabpanel 的滚动约束断言（含切换笔记后仍生效） |
+| `frontend/src/app/research/page.test.tsx` | 测试（新增） | +47 | 上半屏包裹层 `h-1/2 min-h-0 overflow-hidden`、下半屏 `h-1/2 min-h-0` 骨架断言 |
+
+合计：4 文件，+84/-6 行；生产代码 2 文件 +11/-6 行。行为零改动
+（仅布局约束），无 i18n 新增、无后端改动。
+
+### 10.3 验证
+
+- Red：先落两个断言测试，`npx vitest run` 对应 2 failed（无约束时类名缺失）。
+- Green：修复后 `npx vitest run src/app/research/page.test.tsx
+  src/components/research/ResearchWorkbench.test.tsx` 6 passed。
+- 全量回归：`frontend/` 下 `npx vitest run` 55 文件 348 tests passed；
+  `npx eslint` 0 errors（7 个既有 warning 均在本改动之外）；
+  `tsc --noEmit` 通过。
+- 手复验建议：预览环境进入 Research workspace → 笔记 tab 点开「编辑」，
+  笔记卡片应在工作台内部滚动，不再与下半屏选择器文字混叠；来源详情
+  （长文档全文）同理。
