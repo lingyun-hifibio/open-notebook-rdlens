@@ -75,6 +75,47 @@ describe('ResearchLayout', () => {
     expect(document.activeElement).toHaveTextContent('restore layout')
   })
 
+  it('cleans pointer drag state on cancel, lost capture, blur, and unmount', () => {
+    const { unmount } = renderLayout()
+    const separator = screen.getByRole('separator', { name: 'resize panels' })
+
+    fireEvent(separator, pointerEvent('pointerdown', 10))
+    expect(document.body.style.userSelect).toBe('none')
+    fireEvent(separator, pointerEvent('pointercancel', 10))
+    expect(document.body.style.userSelect).toBe('')
+
+    fireEvent(separator, pointerEvent('pointerdown', 10))
+    fireEvent(separator, new Event('lostpointercapture', { bubbles: true }))
+    expect(document.body.style.userSelect).toBe('')
+
+    fireEvent(separator, pointerEvent('pointerdown', 10))
+    fireEvent(window, new Event('blur'))
+    expect(document.body.style.userSelect).toBe('')
+
+    fireEvent(separator, pointerEvent('pointerdown', 10))
+    unmount()
+    expect(document.body.style.userSelect).toBe('')
+  })
+
+  it('does not rerender panel children for continuous pointer moves', () => {
+    let childRenders = 0
+    function StreamingChild() {
+      childRenders += 1
+      return <div>streaming child</div>
+    }
+    render(
+      <ResearchLayout layoutId="global" axis="vertical" compact={false} defaultRatio={40} minPrimary={200} minSecondary={300} primaryLabel="primary" secondaryLabel="secondary" separatorLabel="resize panels" expandSecondaryLabel="expand workspace" restoreLabel="restore layout" compactPrimaryLabel="artifacts" compactSecondaryLabel="workspace">
+        {[<StreamingChild key="one" />, <StreamingChild key="two" />]}
+      </ResearchLayout>,
+    )
+    childRenders = 0
+    const separator = screen.getByRole('separator', { name: 'resize panels' })
+    fireEvent(separator, pointerEvent('pointerdown', 10))
+    fireEvent(separator, pointerEvent('pointermove', 250))
+    fireEvent(separator, pointerEvent('pointermove', 300))
+    expect(childRenders).toBe(0)
+  })
+
   it('renders compact alternatives as mutually exclusive hidden panels', () => {
     const { rerender } = renderLayout()
     rerender(

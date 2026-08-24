@@ -142,6 +142,27 @@ describe('ResearchWorkbench', () => {
     expect(screen.getByText('research.workbench.adminBanner')).toBeInTheDocument()
   })
 
+  it('Source 专注模式在 Citation 高亮后将焦点移到详情标题', async () => {
+    vi.mocked(researchApi.listSources).mockResolvedValue({ items: [], next_cursor: null })
+    vi.mocked(researchApi.getSource).mockResolvedValue({
+      source_id: 'src_1', document_id: 'doc_1', document_version: 'v3', status: 'ready', content_hash: null,
+      synced_at: null, last_error: null, title: 'Paper A', markdown_chunks: [],
+    })
+    const { wrapper } = makeWrapper()
+    render(
+      <ResearchWorkbench
+        displayMode="source-focus"
+        selectedSourceId="src_1"
+        highlightPageIdx={2}
+        onSelectSource={vi.fn()}
+        onCloseSource={vi.fn()}
+      />,
+      { wrapper },
+    )
+    const heading = screen.getByRole('heading', { name: 'research.workbench.title' })
+    expect(document.activeElement).toBe(heading)
+  })
+
   it('Citation 跳转端到端：转换结果 → 点击跳转 → Sources 面板定位目标页（page_idx+1 展示）', async () => {
     vi.mocked(researchApi.listSources).mockResolvedValue({
       items: [{

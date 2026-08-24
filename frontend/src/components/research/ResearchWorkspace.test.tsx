@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, cleanup } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import { ResearchWorkspace } from './ResearchWorkspace'
 import * as api from '@/lib/research/api'
 import * as tokenStore from '@/lib/embedded/token-store'
@@ -70,10 +70,13 @@ describe('ResearchWorkspace', () => {
     expect(screen.queryByRole('tab', { name: /chat/i })).toBeNull()
   })
 
-  it('有 Token 时加载 Source/Note 并渲染四个 Tab 与选择器', async () => {
+  it('有 Token 时默认收起选择器，展开后显示 Source/Note 与四个 Tab', async () => {
     tokenStore.setResearchToken(researchToken(), 9999999999)
     render(<ResearchWorkspace />)
-    await screen.findByText('Note One')
+    expect(await screen.findByTestId('research-context-scope')).toHaveTextContent('research.layout.projectScope')
+    expect(screen.getByText('Note One').closest('#research-context-selection')).toHaveAttribute('hidden')
+    fireEvent.click(screen.getByRole('button', { name: 'research.layout.expandContext' }))
+    expect(await screen.findByText('Note One')).toBeInTheDocument()
     const tabs = screen.getAllByRole('tab').map((tab) => tab.textContent)
     expect(tabs).toEqual([
       'research.tabSearch',

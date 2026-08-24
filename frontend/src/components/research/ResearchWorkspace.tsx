@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Button } from '@/components/ui/button'
 import { getResearchProjectId } from '@/lib/research/project'
 import { listNotes, listSources } from '@/lib/research/api'
 import { useResearchChat } from '@/lib/hooks/use-research-chat'
@@ -90,16 +89,10 @@ export function ResearchWorkspace() {
         selectedNoteIds={selectedNoteIds}
         onToggleSource={toggleSource}
         onToggleNote={toggleNote}
+        loading={loading}
+        loadError={loadError}
+        onRetry={() => void load()}
       />
-
-      {loadError && (
-        <div className="space-y-2 px-4 pb-2 text-sm text-destructive" role="alert">
-          <p>{t('research.loadFailed')}: {loadError}</p>
-          <Button variant="outline" size="sm" onClick={() => void load()}>
-            {t('research.retry')}
-          </Button>
-        </div>
-      )}
 
       <div className="min-h-0 flex-1 border-t">
         <Tabs value={tab} onValueChange={setTab} className="flex h-full flex-col">

@@ -10,6 +10,7 @@ import { ResearchWorkbench } from '@/components/research/ResearchWorkbench'
 import { ResearchWorkspace } from '@/components/research/ResearchWorkspace'
 import { ResearchSourceChatPanel } from '@/components/research/ResearchSourceChatPanel'
 import { ResearchLayout } from '@/components/research/ResearchLayout'
+import { useTranslation } from '@/lib/hooks/use-translation'
 
 /**
  * /research：嵌入式 Research Workspace 入口路由（UI-01，设计 §4.1）。
@@ -30,6 +31,7 @@ import { ResearchLayout } from '@/components/research/ResearchLayout'
  */
 export default function ResearchPage() {
   const router = useRouter()
+  const { t } = useTranslation()
 
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null)
   const [highlightPageIdx, setHighlightPageIdx] = useState<number | null>(null)
@@ -83,13 +85,13 @@ export default function ResearchPage() {
           defaultRatio={sourceDesktop ? 55 : 40}
           minPrimary={sourceDesktop ? 360 : 200}
           minSecondary={sourceDesktop ? 360 : 300}
-          primaryLabel={sourceMode ? 'Source content' : 'Research artifacts'}
-          secondaryLabel={sourceMode ? 'Source chat' : 'Research workspace'}
-          separatorLabel={sourceMode ? 'Resize source panels' : 'Resize research panels'}
-          expandSecondaryLabel={sourceMode ? 'Expand source chat' : 'Expand workspace'}
-          restoreLabel="Restore layout"
-          compactPrimaryLabel={sourceMode ? 'Content' : 'Research artifacts'}
-          compactSecondaryLabel={sourceMode ? 'Chat' : 'Workspace'}
+          primaryLabel={sourceMode ? t('research.layout.sourceContent') : t('research.layout.artifacts')}
+          secondaryLabel={sourceMode ? t('research.layout.sourceChat') : t('research.layout.workspace')}
+          separatorLabel={sourceMode ? t('research.layout.resizeSource') : t('research.layout.resizeWorkspace')}
+          expandSecondaryLabel={sourceMode ? t('research.layout.expandSourceChat') : t('research.layout.expandWorkspace')}
+          restoreLabel={t('research.layout.restore')}
+          compactPrimaryLabel={sourceMode ? t('research.layout.content') : t('research.layout.artifacts')}
+          compactSecondaryLabel={sourceMode ? t('research.layout.chat') : t('research.layout.workspace')}
           compactPanel={sourceMode ? sourceCompactPanel : globalCompactPanel}
           onCompactPanelChange={sourceMode ? setSourceCompactPanel : setGlobalCompactPanel}
         >

@@ -83,7 +83,7 @@ describe('/research 页面骨架', () => {
     expect(wrapper).not.toBeNull()
     expect(wrapper).toHaveClass('h-full', 'min-h-0', 'overflow-hidden')
     expect(screen.getByTestId('research-layout')).toHaveAttribute('data-axis', 'vertical')
-    expect(screen.getByRole('separator', { name: 'Resize research panels' })).toBeInTheDocument()
+    expect(screen.getByRole('separator', { name: 'research.layout.resizeWorkspace' })).toBeInTheDocument()
   })
 
   it('工作区占稳定次级槽位而非固定 h-1/2', () => {
