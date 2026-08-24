@@ -75,7 +75,9 @@ describe('ResearchWorkspace', () => {
     render(<ResearchWorkspace />)
     expect(await screen.findByTestId('research-context-scope')).toHaveTextContent('research.layout.projectScope')
     expect(screen.getByText('Note One').closest('#research-context-selection')).toHaveAttribute('hidden')
-    fireEvent.click(screen.getByRole('button', { name: 'research.layout.expandContext' }))
+    const contextButton = screen.getByRole('button', { name: 'research.layout.expandContext' })
+    expect(contextButton).toHaveClass('border', 'bg-background', 'shadow-sm')
+    fireEvent.click(contextButton)
     expect(await screen.findByText('Note One')).toBeInTheDocument()
     const tabs = screen.getAllByRole('tab').map((tab) => tab.textContent)
     expect(tabs).toEqual([

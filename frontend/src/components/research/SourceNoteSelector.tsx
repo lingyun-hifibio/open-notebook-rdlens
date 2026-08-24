@@ -44,8 +44,9 @@ export function SourceNoteSelector({
       <div className="flex flex-wrap items-center gap-2 p-3">
         <Button
           type="button"
-          variant="ghost"
+          variant="outline"
           size="sm"
+          className="bg-background shadow-sm"
           aria-expanded={expanded}
           aria-controls="research-context-selection"
           onClick={() => setExpanded((value) => !value)}
