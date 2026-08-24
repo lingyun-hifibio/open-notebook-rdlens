@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   SOURCE_CHAT_MAX_STREAM_ATTEMPTS,
   useResearchSourceChat,
@@ -62,6 +63,15 @@ function mockSessionsList(items: Array<Record<string, unknown>> = []): void {
   })
 }
 
+function makeHookWrapper() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
+  return function SourceChatHookWrapper({ children }: { children: React.ReactNode }) {
+    return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  }
+}
+
 describe('useResearchSourceChat', () => {
   beforeEach(() => {
     vi.useFakeTimers()
@@ -74,7 +84,9 @@ describe('useResearchSourceChat', () => {
   })
 
   it('sessions 列表按 research-source-chat query key 只取首页（limit 20）', () => {
-    renderHook(() => useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1' }))
+    renderHook(() => useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1' }), {
+      wrapper: makeHookWrapper(),
+    })
     expect(listSourceChatSessions).toHaveBeenCalledWith('proj_1', 'src_1', { limit: 20 })
     // 不回退原生 /api/source-chat：本 hook 只经参数化 Gateway transport
     expect(vi.mocked(openResearchChatStream)).not.toHaveBeenCalled()
@@ -84,6 +96,7 @@ describe('useResearchSourceChat', () => {
     const streams = openCapture()
     const { result } = renderHook(() =>
       useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1' }),
+      { wrapper: makeHookWrapper() },
     )
 
     act(() => {
@@ -115,6 +128,7 @@ describe('useResearchSourceChat', () => {
     const streams = openCapture()
     const { result } = renderHook(() =>
       useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1' }),
+      { wrapper: makeHookWrapper() },
     )
 
     act(() => {
@@ -158,6 +172,7 @@ describe('useResearchSourceChat', () => {
     const streams = openCapture()
     const { result } = renderHook(() =>
       useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1' }),
+      { wrapper: makeHookWrapper() },
     )
 
     act(() => {
@@ -197,6 +212,7 @@ describe('useResearchSourceChat', () => {
     const streams = openCapture()
     const { result } = renderHook(() =>
       useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1' }),
+      { wrapper: makeHookWrapper() },
     )
 
     act(() => {
@@ -226,6 +242,7 @@ describe('useResearchSourceChat', () => {
     const streams = openCapture()
     const { result } = renderHook(() =>
       useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1' }),
+      { wrapper: makeHookWrapper() },
     )
 
     act(() => {
@@ -247,6 +264,7 @@ describe('useResearchSourceChat', () => {
     const streams = openCapture()
     const { result } = renderHook(() =>
       useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1' }),
+      { wrapper: makeHookWrapper() },
     )
 
     act(() => {
@@ -263,6 +281,7 @@ describe('useResearchSourceChat', () => {
     const streams = openCapture()
     const { result } = renderHook(() =>
       useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1' }),
+      { wrapper: makeHookWrapper() },
     )
 
     act(() => {
@@ -289,6 +308,7 @@ describe('useResearchSourceChat', () => {
     const streams = openCapture()
     const { result } = renderHook(() =>
       useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1' }),
+      { wrapper: makeHookWrapper() },
     )
 
     act(() => {
@@ -319,6 +339,7 @@ describe('useResearchSourceChat', () => {
     const streams = openCapture()
     const { result } = renderHook(() =>
       useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1' }),
+      { wrapper: makeHookWrapper() },
     )
 
     act(() => {
@@ -337,6 +358,7 @@ describe('useResearchSourceChat', () => {
     const streams = openCapture()
     const { result } = renderHook(() =>
       useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1' }),
+      { wrapper: makeHookWrapper() },
     )
 
     act(() => {
@@ -383,7 +405,10 @@ describe('useResearchSourceChat', () => {
     const { result, rerender } = renderHook(
       ({ sourceId }: { sourceId: string }) =>
         useResearchSourceChat({ projectId: 'proj_1', sourceId }),
-      { initialProps: { sourceId: 'src_1' } },
+      {
+        initialProps: { sourceId: 'src_1' },
+        wrapper: makeHookWrapper(),
+      },
     )
 
     act(() => {
@@ -411,6 +436,7 @@ describe('useResearchSourceChat', () => {
     const streams = openCapture()
     const { result } = renderHook(() =>
       useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1' }),
+      { wrapper: makeHookWrapper() },
     )
 
     act(() => {
@@ -480,6 +506,7 @@ describe('useResearchSourceChat', () => {
     const streams = openCapture()
     const { result } = renderHook(() =>
       useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1' }),
+      { wrapper: makeHookWrapper() },
     )
 
     await act(async () => {
@@ -510,6 +537,7 @@ describe('useResearchSourceChat', () => {
     vi.mocked(getSourceChatSession).mockRejectedValue(new Error('boom'))
     const { result } = renderHook(() =>
       useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1' }),
+      { wrapper: makeHookWrapper() },
     )
 
     await act(async () => {
@@ -530,8 +558,13 @@ describe('useResearchSourceChat', () => {
     ])
     const { result } = renderHook(() =>
       useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1' }),
+      { wrapper: makeHookWrapper() },
     )
-    await act(async () => {})
+    // 刷新 query observer 订阅与 promise microtask（fake timers 下两轮推进）
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(0)
+    })
     expect(result.current.sessions).toHaveLength(1)
     expect(result.current.activeSessionId).toBeNull()
     expect(result.current.turns).toEqual([])

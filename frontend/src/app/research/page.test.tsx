@@ -23,7 +23,7 @@ vi.mock('@/lib/embedded/shell', () => ({
 interface WorkbenchPropsMock {
   selectedSourceId: string | null
   highlightPageIdx: number | null
-  onSelectSource: (sourceId: string, opts?: { highlightPageIdx?: number }) => void
+  onSelectSource: (sourceId: string, opts?: { highlightPageIdx?: number | null }) => void
   onCloseSource: () => void
 }
 
@@ -79,7 +79,8 @@ describe('/research 页面骨架', () => {
 
   it('下半屏包裹层固定半屏高（与上半屏各占 50%，无剩余可分配空间）', () => {
     render(<ResearchPage />)
-    const wrapper = screen.getByTestId('workspace').parentElement
+    // Workspace 外层是保持挂载的 h-full 槽位，再外层才是固定半屏高包裹层
+    const wrapper = screen.getByTestId('workspace').parentElement?.parentElement
     expect(wrapper).not.toBeNull()
     expect(wrapper).toHaveClass('h-1/2', 'min-h-0')
   })

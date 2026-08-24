@@ -137,11 +137,11 @@ describe('ResearchSourceChatPanel', () => {
     vi.mocked(useResearchSourceChat).mockReturnValue(chat)
     render(<ResearchSourceChatPanel projectId="proj_1" sourceId="src_1" onHighlightPage={onHighlightPage} />)
 
-    fireEvent.click(screen.getByTestId('srcchat-citation-click-c_1'))
+    fireEvent.click(screen.getByTestId('research-citation-click-c_1'))
     expect(onHighlightPage).toHaveBeenCalledWith(2)
 
     // 无页码 citation 不渲染点击入口
-    expect(screen.queryByTestId('srcchat-citation-click-c_2')).toBeNull()
+    expect(screen.queryByTestId('research-citation-click-c_2')).toBeNull()
   })
 
   it('streaming 中输入与发送按钮禁用；结束后恢复', () => {
