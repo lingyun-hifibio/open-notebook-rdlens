@@ -69,8 +69,11 @@ describe('ResearchLayout', () => {
   it('uses hidden for maximized content and returns focus to the restore control', () => {
     renderLayout()
     const primaryAction = screen.getByRole('button', { name: 'primary action' })
+    const expandButton = screen.getByRole('button', { name: 'expand workspace' })
+    expect(expandButton).toHaveClass('top-1/2', '-translate-y-1/2')
+    expect(expandButton).not.toHaveClass('top-3')
     primaryAction.focus()
-    fireEvent.click(screen.getByRole('button', { name: 'expand workspace' }))
+    fireEvent.click(expandButton)
     expect(primaryAction.closest('section')).toHaveAttribute('hidden')
     expect(document.activeElement).toHaveTextContent('restore layout')
   })

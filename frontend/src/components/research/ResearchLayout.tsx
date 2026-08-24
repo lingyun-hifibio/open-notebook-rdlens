@@ -297,7 +297,17 @@ export function ResearchLayout({
       >
         {children[1]}
       </section>
-      <button ref={restoreRef} hidden={compact} type="button" className="absolute right-3 top-3 z-10" onClick={toggleMaximized}>
+      <button
+        ref={restoreRef}
+        hidden={compact}
+        type="button"
+        className={`absolute z-10 rounded border bg-background px-2 py-1 text-xs shadow-sm ${
+          isVertical
+            ? 'right-3 top-1/2 -translate-y-1/2'
+            : 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2'
+        }`}
+        onClick={toggleMaximized}
+      >
         {maximized ? restoreLabel : expandSecondaryLabel}
       </button>
     </div>
