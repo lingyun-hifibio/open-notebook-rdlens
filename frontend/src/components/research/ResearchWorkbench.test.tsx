@@ -82,6 +82,32 @@ describe('ResearchWorkbench', () => {
     await waitFor(() => expect(researchApi.listNotes).toHaveBeenCalledWith('proj_1', {}))
   })
 
+  it('Tabs 容器链带滚动约束（防面板内容超出半屏后叠画到下半屏）', async () => {
+    vi.mocked(researchApi.listSources).mockResolvedValue({ items: [], next_cursor: null })
+    vi.mocked(researchApi.listNotes).mockResolvedValue({ items: [], next_cursor: null })
+    vi.mocked(researchApi.listInsights).mockResolvedValue({ items: [], next_cursor: null })
+    vi.mocked(researchApi.listTransformations).mockResolvedValue({ items: [], next_cursor: null })
+    const { wrapper } = makeWrapper()
+    const { container } = render(<ResearchWorkbench />, { wrapper })
+
+    // Tabs 根必须是可收缩的 flex-1 子项（否则内容把整棵树撑出半屏容器）
+    const tabs = container.querySelector('[data-slot="tabs"]')
+    expect(tabs).not.toBeNull()
+    expect(tabs).toHaveClass('flex-1', 'min-h-0')
+
+    // 活动 tabpanel 必须是滚动容器：内容超高时在工作台内部滚动，
+    // 而不是溢出到下半屏（编辑表单/长列表/来源全文均走此路径）
+    const panel = await screen.findByRole('tabpanel')
+    expect(panel).toHaveClass('flex-1', 'min-h-0', 'overflow-y-auto')
+
+    // 四个面板一致：切换到笔记后约束仍在
+    const notesTab = screen.getByRole('tab', { name: 'research.workbench.tabNotes' })
+    fireEvent.mouseDown(notesTab)
+    fireEvent.click(notesTab)
+    const notesPanel = await screen.findByRole('tabpanel')
+    expect(notesPanel).toHaveClass('flex-1', 'min-h-0', 'overflow-y-auto')
+  })
+
   it('Admin 会话：顶部展示只读横幅（角色来自 Token claims）', async () => {
     vi.mocked(researchApi.listSources).mockResolvedValue({ items: [], next_cursor: null })
     const { wrapper } = makeWrapper('admin_readonly')

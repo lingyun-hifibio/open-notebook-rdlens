@@ -59,7 +59,7 @@ export function ResearchWorkbench() {
       </div>
       {isAdminReadonly && <AdminReadOnlyBanner />}
 
-      <Tabs value={tab} onValueChange={(value) => setTab(value as ResearchTab)}>
+      <Tabs value={tab} onValueChange={(value) => setTab(value as ResearchTab)} className="min-h-0 flex-1">
         <TabsList>
           <TabsTrigger value="sources">{t('research.workbench.tabSources')}</TabsTrigger>
           <TabsTrigger value="notes">{t('research.workbench.tabNotes')}</TabsTrigger>
@@ -69,7 +69,10 @@ export function ResearchWorkbench() {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="sources" className="mt-3">
+        {/* TabsContent 统一 min-h-0 flex-1 overflow-y-auto：面板内容超高时
+            在工作台内部滚动，不溢出半屏容器（叠加页面上半屏包裹层的
+            overflow-hidden 双保险） */}
+        <TabsContent value="sources" className="mt-3 min-h-0 flex-1 overflow-y-auto">
           {selectedSourceId !== null ? (
             <div className="space-y-2">
               <Button
@@ -88,13 +91,13 @@ export function ResearchWorkbench() {
             <SourceListPanel onOpenSource={openSource} />
           )}
         </TabsContent>
-        <TabsContent value="notes" className="mt-3">
+        <TabsContent value="notes" className="mt-3 min-h-0 flex-1 overflow-y-auto">
           <NotesPanel />
         </TabsContent>
-        <TabsContent value="insights" className="mt-3">
+        <TabsContent value="insights" className="mt-3 min-h-0 flex-1 overflow-y-auto">
           <InsightsPanel />
         </TabsContent>
-        <TabsContent value="transformations" className="mt-3">
+        <TabsContent value="transformations" className="mt-3 min-h-0 flex-1 overflow-y-auto">
           <TransformationsPanel onCitationJump={handleCitationJump} />
         </TabsContent>
       </Tabs>
