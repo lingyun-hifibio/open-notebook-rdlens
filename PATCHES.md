@@ -385,3 +385,75 @@ docker build \
 - 手复验建议：预览环境进入 Research workspace → 笔记 tab 点开「编辑」，
   笔记卡片应在工作台内部滚动，不再与下半屏选择器文字混叠；来源详情
   （长文档全文）同理。
+
+## 11. Source Chat 前端（/research 单篇专属会话，2026-08-24）
+
+> 关联：RDLens GitHub Issue #182（[SRCCHAT] 启用单篇论文 Source Chat）。
+> 本节仅覆盖 Fork 前端落点；后端端点/Repository/Registry/权限见 RDLens 仓
+> 对应任务。分支 `open-notebook-srcchat-ui`。
+
+### 11.1 路由与守卫（两层分开表述）
+
+- **后端 403**：`RD_EMBEDDED_MODE` 下原生 `/api/source-chat` 由 RDLens 侧
+  `EmbeddedScopeMiddleware` 拒绝（403），本批次不改其行为、不放宽白名单。
+- **前端重定向**：嵌入式浏览器只允许落在 `/research`——上游 `/sources/[id]`
+  等非 research 路由由既有 `lib/embedded/routes.ts` 禁用矩阵 +
+  dashboard layout 守卫重定向回 `/research`（第二道防线，纯导航层）。
+  本批次未新增/放宽任何路由。
+- Source 详情与专属 Chat 只通过 `/research` 组合完成：上半屏
+  `SourceDetailPanel` + 下半屏 `ResearchSourceChatPanel`。
+
+### 11.2 /research 组合层变更清单
+
+| 文件 | 变更 |
+|---|---|
+| `app/research/page.tsx` | `selectedSourceId`/`highlightPageIdx` 提升到组合层；选中来源时下半屏切换 `ResearchSourceChatPanel`，`ResearchWorkspace` 以 `hidden` 包裹**保持挂载**（多篇 Chat 流/Job 轮询本地状态不丢失）；关闭来源卸载面板恢复工作区 |
+| `components/research/ResearchWorkbench.tsx` | 受控化：`selectedSourceId/highlightPageIdx` 改 props 注入，`onSelectSource(sourceId, opts?)` 默认重置高亮页、`onCloseSource` 清空两者；tab 状态与 Citation 跳转链路留在组件内部（经回调带页码） |
+| `lib/hooks/use-research-source-chat.ts` | 新增 source-scoped Chat 状态机（见 §11.3） |
+| `components/research/ResearchSourceChatPanel.tsx` | 新增：新会话按钮 + 会话列表（title+updated_at，首页 limit 20，无游标翻页）、消息气泡（thinking 折叠）、usage 元数据徽标（resolved_mode/降级/source_version）、错误/重连状态条、streaming 输入禁用 |
+| `components/research/ResearchCitationList.tsx` | prop 放宽为展示最小结构（兼容 SSE 9 字段与持久化 17 字段快照）；可选点击入口联动高亮；`page_idx=null` 不渲染页码；未传回调行为不变（全局 Search/Chat 零改动） |
+| `lib/research/sse.ts` + `types.ts` | additive 扩展：usage 事件 `degradation_reasons`/`source_ref`（wire snake_case 保持契约字段，State 层转 camelCase）；非法载荷整组丢弃 |
+| `lib/research/api.ts` | `openResearchChatStream` 参数化：`path`（默认 `/chat` 全局语义不变）、`onResponseMeta`（读 `X-Chat-Session-Id` 回显）、`onEnd`（正常 EOF 信号，abort 不触发）；新增 `listSourceChatSessions`/`getSourceChatSession` |
+
+Citation 点击 → `onHighlightPage(page_idx)` 定位上半屏对应 chunk/page
+（0-based 存储仅展示 +1，REQ-DATA-03 不变）；本期无 PDF 渲染器。
+
+### 11.3 useResearchSourceChat 与原生引擎隔离
+
+- 只复用低层 sse reducer/parser、Research bearer token 与参数化 stream
+  transport；不复用上游 `SessionManager/ChatPanel/use-source-chat`，
+  不抽象通用聊天框架。
+- query key 使用 `['research-source-chat', 'sessions', projectId, sourceId]`
+  前缀，避免与上游 `source-chat` 缓存冲突。
+- Gateway 未启用/不可用 fail-closed：404/503 → 终态错误
+  `gateway_unavailable` + 本地化文案 + 重放入口；**绝不回退原生
+  `/api/source-chat`**。
+- 会话语义：发送首条消息前预生成 `sess_<uuid>`（服务端以
+  `X-Chat-Session-Id` 回显，前端仅存储 + 不匹配 console.warn，不作行为
+  依赖）；默认新会话，不自动选择最近会话；选择历史会话走 GET detail 冷
+  恢复；切换 Source 中止本地读取并清空引用（服务端旧 turn 继续运行，
+  浏览器断开 ≠ 取消）。
+- SSE 恢复边界：Last-Event-ID + 同 session_id 有限指数退避（独立常量
+  `SOURCE_CHAT_MAX_STREAM_ATTEMPTS=3`/`SOURCE_CHAT_RECONNECT_BACKOFF_MS=300`）；
+  非终态网络异常/**正常 EOF** 均重连，终态后 EOF 不重连；409 二分——
+  body 含 `resume_after`（秒）按 hint 延迟重试，不含（同 Source 同 session
+  活动 turn 冲突）直接终态 `conflict_busy` 不盲重试。
+- 不持久化 SSE event log（Registry 淘汰/重启后依赖 GET session detail 冷恢复）。
+
+### 11.4 i18n
+
+`research.sourceChat.*` 共 12 键（title/newSession/send/placeholder/
+emptyState/retry/disconnected/conflictBusy/errorGatewayUnavailable/
+modeLabel/degradedBadge/sourceVersionLabel）同步全部 14 locale；zh-CN
+完整翻译，其余英文占位。语义相同文案复用既有 `research.chat*`/
+`research.citations` 键。`locales/index.test.ts` 三不变量（键集严格相等/
+占位符齐性/未引用键检测）通过。
+
+### 11.5 验证与非目标
+
+- Red→Green：先落失败测试（sse/stream/hook/panel/page 组合共 38 个新用例）
+  再实现；全量 `cd frontend && npx vitest run` 57 文件 386 tests passed
+  （基线 55 文件 348 tests，零回归）；`tsc --noEmit` 与 eslint 通过。
+- 非目标（与 Issue #182 一致）：不放行上游 `/sources/[id]`；不改全局多篇
+  `/chat` 选择模型；无重命名/删除会话、model_override、Podcast/TTS；
+  无独立 POST sessions；不持久化 SSE event log；不新增 PDF 渲染器。
