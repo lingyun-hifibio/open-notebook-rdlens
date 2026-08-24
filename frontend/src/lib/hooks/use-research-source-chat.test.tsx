@@ -304,7 +304,7 @@ describe('useResearchSourceChat', () => {
     expect(streams).toHaveLength(SOURCE_CHAT_MAX_STREAM_ATTEMPTS)
   })
 
-  it('409 含 resume_after：按 hint 秒数延迟重试（计入退避预算）', async () => {
+  it('409 缓冲缺口：resume_after 为事件游标，Last-Event-ID=resume_after-1 接受缺口续放（有限退避）', async () => {
     const streams = openCapture()
     const { result } = renderHook(() =>
       useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1' }),
@@ -313,29 +313,37 @@ describe('useResearchSourceChat', () => {
 
     act(() => {
       result.current.send('q')
-      streams[0].httpFail(409, { detail: 'buffer insufficient', resume_after: 2 })
+      streams[0].emit(ev(1, 'answer', { delta: 'A' }))
+      streams[0].httpFail(409, {
+        detail: { message: 'event buffer gap: missing 2-4 (resume_after=5)', resume_after: 5 },
+      })
     })
+    expect(lastAssistant(result.current.turns).status).toBe('reconnecting')
 
-    // hint=2s 内不得提前重试
+    // 退避窗口内不提前重连
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(300)
+      await vi.advanceTimersByTimeAsync(150)
     })
     expect(streams).toHaveLength(1)
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1700)
+      await vi.advanceTimersByTimeAsync(150)
     })
     expect(streams).toHaveLength(2)
-    expect(lastAssistant(result.current.turns).status).not.toBe('error')
+    // 关键：Last-Event-ID 跳到 resume_after-1（本地只收到 1，缺口 2-4 被接受）
+    expect(streams[1].opts.lastEventId).toBe(4)
 
-    // 恢复流完成
+    // 服务端从缓冲最早可用事件续放：缺口后的事件必须被应用而非卡在乱序缓冲
     act(() => {
-      streams[1].emit(ev(1, 'done', { session_id: 'sess_x', completion_status: 'success' }))
+      streams[1].emit(ev(5, 'answer', { delta: 'B' }))
+      streams[1].emit(ev(6, 'done', { session_id: 'sess_x', completion_status: 'success' }))
     })
-    expect(lastAssistant(result.current.turns).status).toBe('done')
+    const turn = lastAssistant(result.current.turns)
+    expect(turn.content).toBe('AB')
+    expect(turn.status).toBe('done')
   })
 
-  it('409 无 resume_after（同 Source 同 session 活动 turn 冲突）：直接终态报错，不盲重试', () => {
+  it('409 resume_after 不大于本地进度时不回退水位（沿用本地 lastEventId）', async () => {
     const streams = openCapture()
     const { result } = renderHook(() =>
       useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1' }),
@@ -344,7 +352,33 @@ describe('useResearchSourceChat', () => {
 
     act(() => {
       result.current.send('q')
-      streams[0].httpFail(409, { detail: 'another active turn for this session' })
+      streams[0].emit(ev(1, 'answer', { delta: 'a' }))
+      streams[0].emit(ev(2, 'answer', { delta: 'b' }))
+      streams[0].emit(ev(3, 'answer', { delta: 'c' }))
+      streams[0].httpFail(409, {
+        detail: { message: 'event buffer gap', resume_after: 2 },
+      })
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300)
+    })
+
+    expect(streams).toHaveLength(2)
+    expect(streams[1].opts.lastEventId).toBe(3)
+  })
+
+  it('409 无 resume_after/null（同 Source 同 session 活动 turn 冲突）：直接终态报错，不盲重试', () => {
+    const streams = openCapture()
+    const { result } = renderHook(() =>
+      useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1' }),
+      { wrapper: makeHookWrapper() },
+    )
+
+    act(() => {
+      result.current.send('q')
+      streams[0].httpFail(409, {
+        detail: { message: 'another active turn for this session', resume_after: null },
+      })
     })
 
     const turn = lastAssistant(result.current.turns)
@@ -474,6 +508,7 @@ describe('useResearchSourceChat', () => {
           message_id: 'm2',
           role: 'assistant',
           content: '回答',
+          thinking: '持久化的思考过程',
           created_at: '2026-08-01T00:00:02Z',
           resolved_mode: 'hybrid_rag',
           degradation_reasons: ['source_over_direct_cap'],
@@ -521,6 +556,7 @@ describe('useResearchSourceChat', () => {
     expect(userTurn.content).toBe('问题')
     expect(userTurn.status).toBe('done')
     expect(assistantTurn.content).toBe('回答')
+    expect(assistantTurn.thinking).toBe('持久化的思考过程')
     expect(assistantTurn.resolvedMode).toBe('hybrid_rag')
     expect(assistantTurn.degradationReasons).toEqual(['source_over_direct_cap'])
     expect(assistantTurn.sourceRef).toEqual({ sourceId: 'src_1', documentId: 'doc_1', documentVersion: 'v1' })

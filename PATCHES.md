@@ -435,9 +435,12 @@ Citation 点击 → `onHighlightPage(page_idx)` 定位上半屏对应 chunk/page
   浏览器断开 ≠ 取消）。
 - SSE 恢复边界：Last-Event-ID + 同 session_id 有限指数退避（独立常量
   `SOURCE_CHAT_MAX_STREAM_ATTEMPTS=3`/`SOURCE_CHAT_RECONNECT_BACKOFF_MS=300`）；
-  非终态网络异常/**正常 EOF** 均重连，终态后 EOF 不重连；409 二分——
-  body 含 `resume_after`（秒）按 hint 延迟重试，不含（同 Source 同 session
-  活动 turn 冲突）直接终态 `conflict_busy` 不盲重试。
+  非终态网络异常/**正常 EOF** 均重连，终态后 EOF 不重连；409 二分
+  （detail 结构化为 `{"message", "resume_after"}`）——`resume_after` 为
+  **SSE event_id 游标**（服务端缓冲最早可用事件，非秒数）时以
+  `Last-Event-ID = resume_after - 1` 接受缺口续放（本地水位只前跳不回退），
+  为 null/缺失（同 Source 同 session 活动 turn 冲突 / 缓冲缺失）直接终态
+  `conflict_busy` 不盲重试。
 - 不持久化 SSE event log（Registry 淘汰/重启后依赖 GET session detail 冷恢复）。
 
 ### 11.4 i18n

@@ -281,14 +281,16 @@ export interface ResearchSourceChatSessionSummary {
 }
 
 /**
- * 持久化消息（GET session detail）。Citation 为 17 字段快照
- * （契约 §13.2）；resolved_mode/degradation_reasons/source_ref/usage
- * 仅 assistant 消息携带（可选，容错历史数据缺省）。
+ * 持久化消息（GET session detail，字段与 T2 响应模型对齐）。
+ * Citation 为 17 字段快照（契约 §13.2）；resolved_mode/degradation_reasons/
+ * usage 挂在 assistant 消息上，source_ref 仅 assistant 消息携带（可选，
+ * 容错缺省）。
  */
 export interface ResearchSourceChatMessage {
   message_id: string
   role: 'user' | 'assistant'
   content: string
+  thinking?: string | null
   created_at?: string | null
   resolved_mode?: string | null
   degradation_reasons?: string[] | null
@@ -356,7 +358,7 @@ export interface ResearchChatStreamOptions {
   onEnd?: () => void
   /** 服务端事件（已按 event_id 校验） */
   onEvent: (event: ResearchSseEvent) => void
-  /** 非 2xx（含 409 resume_after） */
+  /** 非 2xx（409 时 body.detail.resume_after 为服务端缓冲最早事件游标或 null） */
   onHttpError?: (status: number, body: unknown) => void
   /** 传输层错误（断线/网络不可达） */
   onNetworkError?: (error: Error) => void

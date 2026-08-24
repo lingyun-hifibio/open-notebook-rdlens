@@ -14,8 +14,10 @@
  * - 断线恢复边界（契约 §9.5）：非终态网络异常/**正常 EOF** 均进入有限
  *   指数退避重连（Last-Event-ID + 同 session_id）；收到 done/error 后的
  *   正常 EOF 不重连。
- * - 409 二分语义：body 含 `resume_after` → 按 hint 秒延迟重试；不含
- *  （同 Source 同 session 活动 turn 冲突）→ 直接终态报错，不盲重试。
+ * - 409 二分语义（detail 结构化为 {"message", "resume_after"}）：`resume_after`
+ *   为 **SSE event_id 游标**（服务端缓冲最早可用事件，非秒数）时 → 以
+ *   `Last-Event-ID = resume_after - 1` 接受缺口续放（有限退避）；为 null/缺失
+ *  （同 Source 同 session 活动 turn 冲突 / 缓冲缺失）→ 直接终态报错，不盲重试。
  * - Gateway 不可用（404/503）：fail-closed 终态错误 + 重放入口；
  *   绝不回退原生 `/api/source-chat`。
  * - 默认新会话，**不自动选择**最近会话；选择历史会话走 GET session detail
@@ -115,22 +117,38 @@ function randomTurnId(): string {
   return `turn_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 function httpErrorMessage(status: number, body: unknown): string {
   const detail = (body as { detail?: unknown } | null)?.detail
   if (typeof detail === 'string' && detail) {
     return detail
   }
+  // 结构化 detail：{"message": str, "resume_after": int|null}
+  if (isRecord(detail)) {
+    const message = detail.message
+    if (typeof message === 'string' && message) {
+      return message
+    }
+  }
   return `Research stream HTTP ${status}`
 }
 
-/** 409 body 中的 resume_after（秒）；缺失或非法 → null（区分两类 409） */
-function extractResumeAfterSeconds(body: unknown): number | null {
-  const raw = (body as { resume_after?: unknown } | null)?.resume_after
-  if (typeof raw === 'number' && Number.isFinite(raw) && raw >= 0) {
-    return raw
+/**
+ * 409 detail.resume_after：**SSE event_id 游标**（服务端缓冲最早可用事件的
+ * event_id，非秒数）。仅「缓冲缺口且任务进行中」时为 int；并发 turn 冲突 /
+ * 缓冲缺失时为 null。null/缺失/非法 → null（区分两类 409）。
+ */
+function extractResumeAfterCursor(body: unknown): number | null {
+  const detail = (body as { detail?: unknown } | null)?.detail
+  if (!isRecord(detail)) {
+    return null
   }
-  if (typeof raw === 'string' && raw.trim() !== '' && Number.isFinite(Number(raw))) {
-    return Number(raw)
+  const raw = detail.resume_after
+  if (typeof raw === 'number' && Number.isInteger(raw) && raw >= 1) {
+    return raw
   }
   return null
 }
@@ -197,7 +215,7 @@ function mapColdMessage(message: ResearchSourceChatMessage): ResearchSourceChatT
     id: message.message_id,
     role: message.role === 'user' ? 'user' : 'assistant',
     content: message.content ?? '',
-    thinking: '',
+    thinking: message.thinking ?? '',
     citations: (message.citations ?? []).map(mapSnapshotCitation),
     usage: message.usage ?? null,
     resolvedMode: message.resolved_mode ?? null,
@@ -276,7 +294,7 @@ export function useResearchSourceChat({
       setRetryableQuery(active.query)
     }
 
-    const scheduleReconnect = (fixedDelayMs?: number): void => {
+    const scheduleReconnect = (opts?: { resumeFrom?: number }): void => {
       const current = activeRef.current
       if (!current || current.turnId !== turnId) return
       if (current.attempt >= SOURCE_CHAT_MAX_STREAM_ATTEMPTS) {
@@ -288,11 +306,24 @@ export function useResearchSourceChat({
       }
       current.attempt += 1
       current.reconnectCount += 1
+      if (opts?.resumeFrom !== undefined) {
+        // 接受缺口：水位前跳到服务端缓冲最早可用事件的前一个
+        // （Last-Event-ID = resume_after - 1；不回退已收到的本地进度）
+        const watermark = Math.max(current.sse.lastEventId, opts.resumeFrom - 1)
+        if (watermark > current.sse.lastEventId) {
+          current.sse = {
+            ...current.sse,
+            lastEventId: watermark,
+            pending: current.sse.pending.filter((e) => e.event_id > watermark),
+          }
+          current.lastEventId = watermark
+        }
+      }
       patchAssistant(turnId, {
         status: 'reconnecting',
         reconnectCount: current.reconnectCount,
       })
-      const delay = fixedDelayMs ?? SOURCE_CHAT_RECONNECT_BACKOFF_MS * 2 ** (current.attempt - 2)
+      const delay = SOURCE_CHAT_RECONNECT_BACKOFF_MS * 2 ** (current.attempt - 2)
       current.reconnectTimer = setTimeout(() => {
         if (activeRef.current?.turnId === turnId) {
           runTurn(current)
@@ -355,13 +386,14 @@ export function useResearchSourceChat({
         const current = activeRef.current
         if (!current || current.turnId !== turnId) return
         if (status === 409) {
-          const resumeAfter = extractResumeAfterSeconds(body)
-          if (resumeAfter !== null) {
-            // 缓冲不足且任务进行中：按 hint 秒延迟重试（计入退避预算）
-            scheduleReconnect(resumeAfter * 1000)
+          const resumeFrom = extractResumeAfterCursor(body)
+          if (resumeFrom !== null) {
+            // 缓冲缺口且任务进行中：以 Last-Event-ID=resume_after-1 接受缺口续放
+            // （resume_after 为事件游标；计入有限退避预算）
+            scheduleReconnect({ resumeFrom })
             return
           }
-          // 同 Source 同 session 活动 turn 冲突：终态报错，不盲重试
+          // 同 Source 同 session 活动 turn 冲突 / 缓冲缺失：终态报错，不盲重试
           finishError('conflict_busy', httpErrorMessage(status, body))
           return
         }
