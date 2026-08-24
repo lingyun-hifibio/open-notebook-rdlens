@@ -30,8 +30,13 @@ import type {
   ResearchJob,
   ResearchSearchRequest,
   ResearchSearchResponse,
+  ResearchSourceRef,
   ResearchSseEvent,
+  ResearchTokenUsage,
 } from './types'
+import type {
+  ResearchCitation as ResearchCitationSnapshot,
+} from '@/lib/types/research'
 import type {
   ResearchExport,
   ResearchInsight,
@@ -264,6 +269,64 @@ export async function cancelJob(projectId: string, jobId: string): Promise<void>
   await apiClient.post(researchPath(projectId, 'jobs', jobId, 'cancel'))
 }
 
+// ── Source Chat 会话（Issue #182；owner-only，Gateway 化专属端点） ──
+
+/** Source-scoped Chat 会话摘要（契约：GET sessions items 元素） */
+export interface ResearchSourceChatSessionSummary {
+  session_id: string
+  title: string | null
+  source_id: string
+  created_at: string
+  updated_at: string
+}
+
+/**
+ * 持久化消息（GET session detail）。Citation 为 17 字段快照
+ * （契约 §13.2）；resolved_mode/degradation_reasons/source_ref/usage
+ * 仅 assistant 消息携带（可选，容错历史数据缺省）。
+ */
+export interface ResearchSourceChatMessage {
+  message_id: string
+  role: 'user' | 'assistant'
+  content: string
+  created_at?: string | null
+  resolved_mode?: string | null
+  degradation_reasons?: string[] | null
+  source_ref?: ResearchSourceRef | null
+  citations?: ResearchCitationSnapshot[] | null
+  usage?: ResearchTokenUsage | null
+}
+
+/** GET session detail 响应（消息按 created_at ASC, message_id ASC 返回） */
+export interface ResearchSourceChatSessionDetail {
+  session: ResearchSourceChatSessionSummary
+  messages: ResearchSourceChatMessage[]
+  next_cursor: string | null
+}
+
+export async function listSourceChatSessions(
+  projectId: string,
+  sourceId: string,
+  params: { limit?: number } = {},
+): Promise<ResearchPage<ResearchSourceChatSessionSummary>> {
+  const response = await apiClient.get<ResearchPage<ResearchSourceChatSessionSummary>>(
+    researchPath(projectId, 'sources', sourceId, 'chat', 'sessions'),
+    { params },
+  )
+  return response.data
+}
+
+export async function getSourceChatSession(
+  projectId: string,
+  sourceId: string,
+  sessionId: string,
+): Promise<ResearchSourceChatSessionDetail> {
+  const response = await apiClient.get<ResearchSourceChatSessionDetail>(
+    researchPath(projectId, 'sources', sourceId, 'chat', 'sessions', sessionId),
+  )
+  return response.data
+}
+
 /** SSE 流 HTTP 错误分类（含 409 resume_after） */
 export class ResearchStreamHttpError extends Error {
   status: number
@@ -280,8 +343,17 @@ export class ResearchStreamHttpError extends Error {
 export interface ResearchChatStreamOptions {
   projectId: string
   request: ResearchChatRequest
+  /**
+   * SSE 端点路径（默认 `/chat` 全局多篇语义不变；Issue #182 source chat
+   * 传 `/sources/{source_id}/chat`）。仅路径参数化，鉴权/帧解析共用。
+   */
+  path?: string
   /** 断线重连的 Last-Event-ID（0 = 从头开始） */
   lastEventId?: number
+  /** 响应到达时读取一次响应头（Issue #182：X-Chat-Session-Id 回显） */
+  onResponseMeta?: (headers: Headers) => void
+  /** 流正常读尽（EOF）；是否重连由调用方按终态判定（Issue #182 恢复边界） */
+  onEnd?: () => void
   /** 服务端事件（已按 event_id 校验） */
   onEvent: (event: ResearchSseEvent) => void
   /** 非 2xx（含 409 resume_after） */
@@ -296,7 +368,7 @@ export interface ResearchChatStreamOptions {
  */
 export function openResearchChatStream(options: ResearchChatStreamOptions): () => void {
   const controller = new AbortController()
-  const url = `${requireResearchGateway()}${buildResearchUrl(options.projectId, '/chat')}`
+  const url = `${requireResearchGateway()}${buildResearchUrl(options.projectId, options.path ?? '/chat')}`
   const token = researchBearerToken()
 
   const headers: Record<string, string> = {
@@ -332,6 +404,8 @@ export function openResearchChatStream(options: ResearchChatStreamOptions): () =
         options.onNetworkError?.(new Error('no response body'))
         return
       }
+      // Issue #182：响应头只读一次透传（X-Chat-Session-Id 回显），不作行为依赖
+      options.onResponseMeta?.(response.headers)
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
@@ -348,6 +422,11 @@ export function openResearchChatStream(options: ResearchChatStreamOptions): () =
               options.onEvent(event)
             }
           }
+        }
+        // 正常读尽（EOF）：终态与否由调用方依 sse 状态判定；
+        // 调用方 abort 的收尾不算 EOF（不触发 onEnd）
+        if (!controller.signal.aborted) {
+          options.onEnd?.()
         }
       } catch (error) {
         if ((error as Error).name !== 'AbortError') {

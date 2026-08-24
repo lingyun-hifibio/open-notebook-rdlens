@@ -11,7 +11,13 @@
  *   internal 可重试；project_deleted/epoch_mismatch/job_cancelled 不可重试）。
  */
 
-import type { ResearchCitation, ResearchSseEvent, ResearchSseType, ResearchTokenUsage } from './types'
+import type {
+  ResearchCitation,
+  ResearchSourceRef,
+  ResearchSseEvent,
+  ResearchSseType,
+  ResearchTokenUsage,
+} from './types'
 
 export const SSE_ERROR_CODES = [
   'admission_unavailable',
@@ -39,6 +45,10 @@ export interface ResearchSseState {
   citations: ResearchCitation[]
   usage: ResearchTokenUsage | null
   resolvedMode: string | null
+  /** Issue #182：真实降级原因码集合（usage 事件携带；无则空数组） */
+  degradationReasons: string[]
+  /** Issue #182：本轮实际钉住的 source→document 版本（camelCase 视图在 turn 层转换） */
+  sourceRef: ResearchSourceRef | null
   sessionId: string | null
   requestId: string | null
   jobId: string | null
@@ -58,6 +68,8 @@ export function createSseState(): ResearchSseState {
     citations: [],
     usage: null,
     resolvedMode: null,
+    degradationReasons: [],
+    sourceRef: null,
     sessionId: null,
     requestId: null,
     jobId: null,
@@ -94,6 +106,26 @@ export function parseResearchEvent(payload: unknown): ResearchSseEvent | null {
   if (Array.isArray(payload.citations)) event.citations = payload.citations as ResearchCitation[]
   if (isRecord(payload.usage)) event.usage = payload.usage as unknown as ResearchTokenUsage
   if (typeof payload.resolved_mode === 'string') event.resolved_mode = payload.resolved_mode
+  if (
+    Array.isArray(payload.degradation_reasons)
+    && payload.degradation_reasons.length > 0
+    && payload.degradation_reasons.every((r) => typeof r === 'string')
+  ) {
+    // Issue #182：原因码集合必须全为字符串（含混合非法元素时整组丢弃）
+    event.degradation_reasons = payload.degradation_reasons as string[]
+  }
+  if (
+    isRecord(payload.source_ref)
+    && typeof payload.source_ref.source_id === 'string'
+    && typeof payload.source_ref.document_id === 'string'
+    && typeof payload.source_ref.document_version === 'string'
+  ) {
+    event.source_ref = {
+      source_id: payload.source_ref.source_id,
+      document_id: payload.source_ref.document_id,
+      document_version: payload.source_ref.document_version,
+    }
+  }
   if (typeof payload.session_id === 'string') event.session_id = payload.session_id
   if (typeof payload.request_id === 'string') event.request_id = payload.request_id
   if (typeof payload.job_id === 'string' || payload.job_id === null) event.job_id = payload.job_id
@@ -115,7 +147,12 @@ function mergeCitations(existing: ResearchCitation[], incoming: ResearchCitation
 
 /** 应用单个已确认连续的事件（内部：前置校验已完成） */
 function applyOne(state: ResearchSseState, event: ResearchSseEvent): ResearchSseState {
-  const base = { ...state, lastEventId: event.event_id }
+  const base = {
+    ...state,
+    lastEventId: event.event_id,
+    degradationReasons: event.degradation_reasons ?? state.degradationReasons,
+    sourceRef: event.source_ref ?? state.sourceRef,
+  }
   switch (event.type) {
     case 'thinking':
       return { ...base, thinking: base.thinking + (event.delta ?? '') }
