@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -54,7 +54,6 @@ export function ResearchWorkbench({
   const { t } = useTranslation()
   const { projectId, isAdminReadonly } = useResearchWorkspace()
   const [tab, setTab] = useState<ResearchTab>('sources')
-  const sourceFocusHeadingRef = useRef<HTMLHeadingElement>(null)
 
   const sourcesQuery = useResearchSources(projectId)
 
@@ -72,12 +71,6 @@ export function ResearchWorkbench({
     setTab('sources')
   }
 
-  useEffect(() => {
-    if (displayMode === 'source-focus' && highlightPageIdx !== null) {
-      sourceFocusHeadingRef.current?.focus()
-    }
-  }, [displayMode, highlightPageIdx, highlightRequestId])
-
   if (displayMode === 'source-focus' && selectedSourceId !== null) {
     return (
       <div className="flex h-full min-h-0 flex-col gap-3 p-4">
@@ -85,12 +78,16 @@ export function ResearchWorkbench({
           <Button size="sm" variant="ghost" onClick={onCloseSource}>
             {t('research.sources.back')}
           </Button>
-          <h1 ref={sourceFocusHeadingRef} tabIndex={-1} className="text-lg font-semibold">
+          <h1 className="text-lg font-semibold">
             {t('research.workbench.title')}
           </h1>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <SourceDetailPanel sourceId={selectedSourceId} highlightPageIdx={highlightPageIdx} />
+          <SourceDetailPanel
+            sourceId={selectedSourceId}
+            highlightPageIdx={highlightPageIdx}
+            focusRequestId={highlightPageIdx === null ? undefined : highlightRequestId}
+          />
         </div>
       </div>
     )
@@ -127,7 +124,11 @@ export function ResearchWorkbench({
               >
                 {t('research.sources.back')}
               </Button>
-              <SourceDetailPanel sourceId={selectedSourceId} highlightPageIdx={highlightPageIdx} />
+              <SourceDetailPanel
+                sourceId={selectedSourceId}
+                highlightPageIdx={highlightPageIdx}
+                focusRequestId={highlightPageIdx === null ? undefined : highlightRequestId}
+              />
             </div>
           ) : (
             <SourceListPanel onOpenSource={openSource} />

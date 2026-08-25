@@ -125,26 +125,29 @@ export function ResearchLayout({
     ) ? measurement.bounds : current)
   }, [])
 
-  const finishDragging = useCallback((commit: boolean) => {
+  const finishDragging = useCallback((commit: boolean, remeasure = true) => {
     const wasDragging = draggingRef.current
     if (frameRef.current !== null) {
       cancelAnimationFrame(frameRef.current)
       frameRef.current = null
     }
     const separator = pointerTargetRef.current ?? separatorRef.current
-    if (pointerIdRef.current !== null && separator?.hasPointerCapture?.(pointerIdRef.current)) {
-      separator.releasePointerCapture?.(pointerIdRef.current)
-    }
+    const pointerId = pointerIdRef.current
     pointerIdRef.current = null
     pointerTargetRef.current = null
     latestCoordinateRef.current = null
     draggingRef.current = false
+    // Clear ownership before releasing capture because lostpointercapture can
+    // be dispatched as part of the release and must not re-enter teardown.
+    if (pointerId !== null && separator?.hasPointerCapture?.(pointerId)) {
+      separator.releasePointerCapture?.(pointerId)
+    }
     if (bodyStyleRef.current) {
       document.body.style.cursor = bodyStyleRef.current.cursor
       document.body.style.userSelect = bodyStyleRef.current.userSelect
       bodyStyleRef.current = null
     }
-    if (wasDragging) {
+    if (wasDragging && remeasure) {
       const measurement = applyRatio(ratioRef.current)
       if (commit) syncMeasurement(measurement)
     }
@@ -198,6 +201,11 @@ export function ResearchLayout({
     finishDragging(true)
   }
 
+  const onPointerTermination = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!draggingRef.current || event.pointerId !== pointerIdRef.current) return
+    finishDragging(false)
+  }
+
   const focusRestoreIfNeeded = useCallback(() => {
     const active = document.activeElement
     if (active && primaryRef.current?.contains(active)) restoreRef.current?.focus()
@@ -245,11 +253,13 @@ export function ResearchLayout({
   useEffect(() => {
     const host = hostRef.current
     if (compact || !host || typeof ResizeObserver === 'undefined') return
+    let active = true
     const observer = new ResizeObserver(() => {
-      // A callback queued by the desktop observer can still arrive while its
-      // compact-mode cleanup is running. Never let that stale measurement
-      // replace the saved desktop ratio.
-      if (compactRef.current) return
+      // ResizeObserver callbacks can already be queued when this effect is
+      // cleaned up. An instance may belong to an old layout even when the new
+      // layout is also non-compact, so compactRef alone is not a sufficient
+      // stale-callback guard.
+      if (!active || compactRef.current) return
       if (draggingRef.current) {
         resizeDuringDragRef.current = true
         return
@@ -257,7 +267,10 @@ export function ResearchLayout({
       syncMeasurement(applyRatio(ratioRef.current))
     })
     observer.observe(host)
-    return () => observer.disconnect()
+    return () => {
+      active = false
+      observer.disconnect()
+    }
   }, [applyRatio, compact, syncMeasurement])
 
   useEffect(() => {
@@ -270,7 +283,14 @@ export function ResearchLayout({
   }, [finishDragging])
 
   useEffect(() => {
-    if (compact || activeMaximized) finishDragging(false)
+    if (compact) {
+      // The compact host has single-panel geometry. Only tear down gesture
+      // ownership here; measuring it would overwrite the desktop split saved
+      // by the layout effect above.
+      finishDragging(false, false)
+    } else if (activeMaximized) {
+      finishDragging(false)
+    }
   }, [activeMaximized, compact, finishDragging])
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -328,8 +348,8 @@ export function ResearchLayout({
           onPointerDown,
           onPointerMove,
           onPointerUp,
-          onPointerCancel: () => finishDragging(false),
-          onLostPointerCapture: () => finishDragging(false),
+          onPointerCancel: onPointerTermination,
+          onLostPointerCapture: onPointerTermination,
           onKeyDown,
           onDoubleClick: () => {
             syncMeasurement(applyRatio(defaultRatio))

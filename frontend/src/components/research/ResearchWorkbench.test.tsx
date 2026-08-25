@@ -166,8 +166,10 @@ describe('ResearchWorkbench', () => {
       />,
       { wrapper },
     )
-    const heading = screen.getByRole('heading', { name: 'research.workbench.title' })
-    expect(document.activeElement).toBe(heading)
+    const workspaceHeading = screen.getByRole('heading', { name: 'research.workbench.title' })
+    const detailHeading = await screen.findByRole('heading', { name: 'Paper A' })
+    await waitFor(() => expect(document.activeElement).toBe(detailHeading))
+    expect(document.activeElement).not.toBe(workspaceHeading)
 
     const backButton = screen.getByRole('button', { name: 'research.sources.back' })
     backButton.focus()
@@ -184,8 +186,9 @@ describe('ResearchWorkbench', () => {
       />,
     )
 
-    expect(screen.getByRole('heading', { name: 'research.workbench.title' })).toBe(heading)
-    expect(document.activeElement).toBe(heading)
+    expect(screen.getByRole('heading', { name: 'research.workbench.title' })).toBe(workspaceHeading)
+    expect(screen.getByRole('heading', { name: 'Paper A' })).toBe(detailHeading)
+    await waitFor(() => expect(document.activeElement).toBe(detailHeading))
   })
 
   it('Citation 跳转端到端：转换结果 → 点击跳转 → Sources 面板定位目标页（page_idx+1 展示）', async () => {

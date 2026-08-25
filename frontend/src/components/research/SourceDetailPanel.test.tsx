@@ -97,6 +97,39 @@ describe('SourceDetailPanel', () => {
     expect(highlighted).toBeInTheDocument()
   })
 
+  it('数据渲染后聚焦真实详情标题，并为同页的每次请求重新聚焦且不重挂载', async () => {
+    vi.mocked(researchApi.getSource).mockResolvedValue({
+      source_id: 'src_1',
+      document_id: 'doc_1',
+      document_version: 'v3',
+      status: 'ready',
+      content_hash: 'h',
+      synced_at: null,
+      last_error: null,
+      title: 'Paper A',
+      markdown_chunks: [
+        { chunk_id: 'chunk_3', page_idx: 3, markdown: '第四章内容' },
+      ],
+    })
+    const { wrapper } = makeWrapper()
+    const { rerender } = render(
+      <SourceDetailPanel sourceId="src_1" highlightPageIdx={3} focusRequestId={1} />,
+      { wrapper },
+    )
+
+    const detailHeading = await screen.findByRole('heading', { name: 'Paper A' })
+    await waitFor(() => expect(document.activeElement).toBe(detailHeading))
+
+    detailHeading.blur()
+    expect(document.activeElement).not.toBe(detailHeading)
+    rerender(
+      <SourceDetailPanel sourceId="src_1" highlightPageIdx={3} focusRequestId={2} />,
+    )
+
+    expect(screen.getByRole('heading', { name: 'Paper A' })).toBe(detailHeading)
+    await waitFor(() => expect(document.activeElement).toBe(detailHeading))
+  })
+
   it('内容不可用（404）→ 展示降级态，不崩溃', async () => {
     vi.mocked(researchApi.getSource).mockRejectedValue({ response: { status: 404 } })
     const { wrapper } = makeWrapper()

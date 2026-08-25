@@ -202,6 +202,31 @@ describe('ResearchLayout', () => {
     expect(screen.getByRole('separator', { name: 'resize panels' })).toHaveAttribute('aria-valuenow', '75')
   })
 
+  it('ignores queued resize callbacks from a previous non-compact layout', () => {
+    const { rerender } = renderLayout()
+    const globalObserver = ResizeObserverMock.instances.at(-1)
+
+    rerender(layout({
+      layoutId: 'source',
+      axis: 'horizontal',
+      defaultRatio: 70,
+      minPrimary: 600,
+      minSecondary: 200,
+    }))
+    const sourceSeparator = screen.getByRole('separator', { name: 'resize panels' })
+    expect(sourceSeparator).toHaveAttribute('aria-orientation', 'vertical')
+    expect(sourceSeparator).toHaveAttribute('aria-valuemin', '67')
+    expect(sourceSeparator).toHaveAttribute('aria-valuemax', '78')
+    expect(sourceSeparator).toHaveAttribute('aria-valuenow', '70')
+
+    height = 420
+    act(() => globalObserver?.triggerQueuedCallback())
+    expect(sourceSeparator).toHaveAttribute('aria-orientation', 'vertical')
+    expect(sourceSeparator).toHaveAttribute('aria-valuemin', '67')
+    expect(sourceSeparator).toHaveAttribute('aria-valuemax', '78')
+    expect(sourceSeparator).toHaveAttribute('aria-valuenow', '70')
+  })
+
   it('preserves the desktop ratio across compact mode with a low-height host', () => {
     const { rerender } = renderLayout()
     const separator = screen.getByRole('separator', { name: 'resize panels' })
@@ -212,6 +237,37 @@ describe('ResearchLayout', () => {
     height = 420
     rerender(layout({ compact: true }))
     act(() => desktopObserver?.triggerQueuedCallback())
+
+    height = 800
+    rerender(layout())
+    expect(screen.getByRole('separator', { name: 'resize panels' })).toHaveAttribute('aria-valuenow', '45')
+  })
+
+  it('cancels an active drag in compact mode without measuring compact geometry', () => {
+    const { rerender } = renderLayout()
+    const separator = screen.getByRole('separator', { name: 'resize panels' })
+    let capturedPointer: number | null = null
+    const setPointerCapture = vi.fn((pointerId: number) => { capturedPointer = pointerId })
+    const hasPointerCapture = vi.fn((pointerId: number) => capturedPointer === pointerId)
+    const releasePointerCapture = vi.fn(() => { capturedPointer = null })
+    Object.defineProperties(separator, {
+      setPointerCapture: { configurable: true, value: setPointerCapture },
+      hasPointerCapture: { configurable: true, value: hasPointerCapture },
+      releasePointerCapture: { configurable: true, value: releasePointerCapture },
+    })
+
+    fireEvent.keyDown(separator, { key: 'ArrowDown' })
+    expect(separator).toHaveAttribute('aria-valuenow', '45')
+    fireEvent(separator, pointerEvent('pointerdown', 10))
+    fireEvent(separator, pointerEvent('pointermove', 300))
+    expect(frames).toHaveLength(1)
+    expect(document.body.style.userSelect).toBe('none')
+
+    height = 420
+    rerender(layout({ compact: true }))
+    expect(frames).toHaveLength(0)
+    expect(releasePointerCapture).toHaveBeenCalledWith(1)
+    expect(document.body.style.userSelect).toBe('')
 
     height = 800
     rerender(layout())
@@ -300,7 +356,7 @@ describe('ResearchLayout', () => {
 
     fireEvent(separator, pointerEvent('pointerdown', 10))
     fireEvent(separator, pointerEvent('pointermove', 300))
-    fireEvent(separator, new Event('lostpointercapture', { bubbles: true }))
+    fireEvent(separator, pointerEvent('lostpointercapture', 10))
     expect(document.body.style.userSelect).toBe('')
     expect(frames).toHaveLength(0)
 
@@ -346,14 +402,16 @@ describe('ResearchLayout', () => {
 
     fireEvent(separator, pointerEvent('pointermove', 700, 2))
     fireEvent(separator, pointerEvent('pointerup', 700, 2))
+    fireEvent(separator, pointerEvent('pointercancel', 700, 2))
+    fireEvent(separator, pointerEvent('lostpointercapture', 700, 2))
     expect(frames).toHaveLength(0)
     expect(releasePointerCapture).not.toHaveBeenCalled()
     expect(document.body.style.userSelect).toBe('none')
 
     fireEvent(separator, pointerEvent('pointermove', 300, 1))
     expect(frames).toHaveLength(1)
-    fireEvent(separator, pointerEvent('pointerup', 300, 1))
-    expect(separator).toHaveAttribute('aria-valuenow', '38')
+    fireEvent(separator, pointerEvent('pointercancel', 300, 1))
+    expect(separator).toHaveAttribute('aria-valuenow', '40')
     expect(releasePointerCapture).toHaveBeenCalledOnce()
     expect(releasePointerCapture).toHaveBeenCalledWith(1)
     expect(document.body.style.cursor).toBe('crosshair')
