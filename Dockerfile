@@ -90,6 +90,13 @@ FROM python:3.12-slim-trixie AS runtime-base
 # dependency in this image).
 # npm 10.9.9 bundles tar ^7.5.22 (>= 7.5.19), closing the GHSA-23hp-3jrh-7fpw
 # Critical that ships in the default nodesource npm 10.9.8 (tar 7.5.11).
+# issue #147 layer0.3: npm 10.9.9's own transitive deps carry fixable Highs —
+# brace-expansion 2.0.2 (GHSA-3jxr/mh99/rgw5), picomatch 4.0.3
+# (GHSA-c2c7-rcm5-vvqj), ip-address 10.1.0 (GHSA-mwp4-54f8-5fhr), undici
+# 6.26.0 (GHSA-vxpw-j846-p89q), tar 7.5.19 (GHSA-r292-9mhp-454m, fix 7.5.21),
+# sigstore 3.1.0 (GHSA-52v5-jr5w-gjxr, fix 4.1.1). npm cannot upgrade its own
+# bundled tree in place, so overlay the fixed versions from a scratch install
+# (verified: npm --version + npm install still work).
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     ffmpeg \
     supervisor \
@@ -97,6 +104,14 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && npm install -g npm@10.9.9 \
+    && mkdir -p /tmp/npmfix && cd /tmp/npmfix \
+    && npm init -y >/dev/null 2>&1 \
+    && npm install --no-audit --no-fund --silent brace-expansion@2.1.4 picomatch@4.0.4 ip-address@10.3.1 undici@6.27.0 tar@7.5.21 sigstore@4.1.1 \
+    && for p in brace-expansion picomatch ip-address undici tar sigstore; do \
+         rm -rf /usr/lib/node_modules/npm/node_modules/$p \
+         && cp -r /tmp/npmfix/node_modules/$p /usr/lib/node_modules/npm/node_modules/$p; \
+       done \
+    && rm -rf /tmp/npmfix \
     && apt-get purge -y --auto-remove curl libcurl4t64 \
     && rm -rf /var/lib/apt/lists/*
 
@@ -109,18 +124,23 @@ WORKDIR /app
 COPY --from=backend-builder /app/.venv /app/.venv
 
 # issue #147: pytubefix -> nodejs-wheel-binaries bundles a full Node 24 + npm
-# 11.17.0 inside the venv whose bundled `tar` 7.5.16 still carries the
-# GHSA-23hp-3jrh-7fpw Critical (fixed in tar 7.5.19). npm cannot upgrade its
-# own bundled tree in place, so install tar@7.5.19 into a scratch dir with the
-# system npm (10.9.9) and replace the bundled copy wholesale (7.5.16 -> 7.5.19
-# dependency declarations are identical: @isaacs/fs-minipass ^4, chownr ^3,
-# minipass ^7.1.2, minizlib ^3.1, yallist ^5).
-RUN mkdir -p /tmp/tarfix && cd /tmp/tarfix \
+# 11.17.0 inside the venv. Its bundled tree carries fixable vulns that npm
+# cannot upgrade in place, so overlay fixed versions from a scratch install:
+#   - tar 7.5.19 -> 7.5.21 (GHSA-r292-9mhp-454m; 7.5.16 -> 7.5.19 closed the
+#     GHSA-23hp-3jrh-7fpw Critical in layer0)
+#   - brace-expansion 5.0.6 -> 5.0.9 (GHSA-3jxr/mh99/rgw5)
+#   - ip-address 10.2.0 -> 10.3.1 (GHSA-mwp4-54f8-5fhr)
+#   - undici 6.26.0 -> 6.27.0 (GHSA-vxpw-j846-p89q)
+# Dependency declarations of the fixed versions are compatible with npm
+# 11.17.0's ranges (verified: wheel node v24.19.0 + npm-cli.js --version OK).
+RUN mkdir -p /tmp/nwfix && cd /tmp/nwfix \
     && npm init -y >/dev/null 2>&1 \
-    && npm install --no-audit --no-fund --silent tar@7.5.19 \
-    && rm -rf /app/.venv/lib/python3.12/site-packages/nodejs_wheel/lib/node_modules/npm/node_modules/tar \
-    && cp -r /tmp/tarfix/node_modules/tar /app/.venv/lib/python3.12/site-packages/nodejs_wheel/lib/node_modules/npm/node_modules/tar \
-    && rm -rf /tmp/tarfix
+    && npm install --no-audit --no-fund --silent brace-expansion@5.0.9 ip-address@10.3.1 undici@6.27.0 tar@7.5.21 \
+    && for p in brace-expansion ip-address undici tar; do \
+         rm -rf /app/.venv/lib/python3.12/site-packages/nodejs_wheel/lib/node_modules/npm/node_modules/$p \
+         && cp -r /tmp/nwfix/node_modules/$p /app/.venv/lib/python3.12/site-packages/nodejs_wheel/lib/node_modules/npm/node_modules/$p; \
+       done \
+    && rm -rf /tmp/nwfix
 
 # Copy the source code
 COPY . /app
