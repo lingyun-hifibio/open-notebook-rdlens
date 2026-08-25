@@ -215,7 +215,10 @@ export function ResearchLayout({
 
   const focusRestoreIfNeeded = useCallback(() => {
     const active = document.activeElement
-    if (active && primaryRef.current?.contains(active)) restoreRef.current?.focus()
+    if (
+      active === separatorRef.current
+      || (active && primaryRef.current?.contains(active))
+    ) restoreRef.current?.focus()
   }, [])
 
   const toggleMaximized = () => {

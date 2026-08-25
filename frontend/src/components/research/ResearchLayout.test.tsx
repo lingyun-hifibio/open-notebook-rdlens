@@ -381,6 +381,20 @@ describe('ResearchLayout', () => {
     expect(document.activeElement).toHaveTextContent('restore layout')
   })
 
+  it('moves separator focus to the restore control before maximizing', () => {
+    renderLayout()
+    const separator = screen.getByRole('separator', { name: 'resize panels' })
+    const expandButton = screen.getByRole('button', { name: 'expand workspace' })
+
+    separator.focus()
+    expect(separator).toHaveFocus()
+    fireEvent.click(expandButton)
+
+    expect(separator).toHaveAttribute('hidden')
+    expect(expandButton).toHaveTextContent('restore layout')
+    expect(expandButton).toHaveFocus()
+  })
+
   it('cleans pending pointer work on cancel, lost capture, blur, and unmount', () => {
     const { unmount } = renderLayout()
     const separator = screen.getByRole('separator', { name: 'resize panels' })
