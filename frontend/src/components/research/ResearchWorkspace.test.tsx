@@ -90,6 +90,32 @@ describe('ResearchWorkspace', () => {
     expect(api.listNotes).toHaveBeenCalledWith('proj_1')
   })
 
+  it('Source/Note 长列表在各自最多 200px 的区域内纵向滚动', async () => {
+    const sources = Array.from({ length: 12 }, (_, index): ResearchSource => ({
+      ...source,
+      source_id: `src_${index + 1}`,
+      document_id: `doc_${index + 1}`,
+    }))
+    const notes = Array.from({ length: 12 }, (_, index): ResearchNote => ({
+      ...note,
+      note_id: `note_${index + 1}`,
+      title: `Note ${index + 1}`,
+    }))
+    vi.mocked(api.listSources).mockResolvedValue({ items: sources, next_cursor: null })
+    vi.mocked(api.listNotes).mockResolvedValue({ items: notes, next_cursor: null })
+    tokenStore.setResearchToken(researchToken(), 9999999999)
+
+    render(<ResearchWorkspace />)
+    fireEvent.click(await screen.findByRole('button', { name: 'research.layout.expandContext' }))
+
+    const sourceList = screen.getByTestId('source-selection-list')
+    const noteList = screen.getByTestId('note-selection-list')
+    expect(sourceList).toHaveClass('max-h-[200px]', 'overflow-y-auto')
+    expect(noteList).toHaveClass('max-h-[200px]', 'overflow-y-auto')
+    expect(sourceList.contains(screen.getByTestId('source-src_12'))).toBe(true)
+    expect(noteList.contains(screen.getByTestId('note-note_12'))).toBe(true)
+  })
+
   it('加载失败显示错误与重试按钮', async () => {
     tokenStore.setResearchToken(researchToken(), 9999999999)
     vi.mocked(api.listSources).mockRejectedValue(new Error('network down'))

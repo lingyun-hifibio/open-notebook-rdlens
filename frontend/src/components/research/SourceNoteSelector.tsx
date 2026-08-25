@@ -5,7 +5,6 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import type { ResearchNote, ResearchSource } from '@/lib/types/research'
 
 /**
@@ -70,7 +69,7 @@ export function SourceNoteSelector({
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           {t('research.selectSources')}
         </p>
-        <ScrollArea className="max-h-[200px]">
+        <div className="max-h-[200px] overflow-y-auto" data-testid="source-selection-list">
           {sources.length === 0 && (
             <p className="text-sm text-muted-foreground">{t('research.sourcesEmpty')}</p>
           )}
@@ -97,14 +96,14 @@ export function SourceNoteSelector({
               </Badge>
             </label>
           ))}
-        </ScrollArea>
+        </div>
       </div>
 
       <div className="space-y-2">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           {t('research.selectNotes')}
         </p>
-        <ScrollArea className="max-h-[200px]">
+        <div className="max-h-[200px] overflow-y-auto" data-testid="note-selection-list">
           {notes.length === 0 && (
             <p className="text-sm text-muted-foreground">{t('research.notesEmpty')}</p>
           )}
@@ -124,7 +123,7 @@ export function SourceNoteSelector({
               </span>
             </label>
           ))}
-        </ScrollArea>
+        </div>
       </div>
       </div>
     </div>

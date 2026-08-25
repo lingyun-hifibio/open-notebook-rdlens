@@ -64,6 +64,7 @@ export function ResearchLayout({
   const boundsRef = useRef({ min: 0, max: 100 })
   const layoutIdRef = useRef(layoutId)
   const compactRef = useRef(compact)
+  const geometryGenerationRef = useRef(0)
   const ratiosRef = useRef<Record<string, number>>({ [layoutId]: defaultRatio })
   const pointerIdRef = useRef<number | null>(null)
   const pointerTargetRef = useRef<HTMLDivElement | null>(null)
@@ -188,10 +189,13 @@ export function ResearchLayout({
     if (!draggingRef.current || event.pointerId !== pointerIdRef.current) return
     latestCoordinateRef.current = coordinate(event.nativeEvent)
     if (frameRef.current !== null) return
-    frameRef.current = requestAnimationFrame(() => {
-      frameRef.current = null
+    const generation = geometryGenerationRef.current
+    const frameId = requestAnimationFrame(() => {
+      if (frameRef.current === frameId) frameRef.current = null
+      if (generation !== geometryGenerationRef.current) return
       if (latestCoordinateRef.current !== null) applyPointerCoordinate(latestCoordinateRef.current)
     })
+    frameRef.current = frameId
   }
 
   const onPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -203,7 +207,10 @@ export function ResearchLayout({
 
   const onPointerTermination = (event: React.PointerEvent<HTMLDivElement>) => {
     if (!draggingRef.current || event.pointerId !== pointerIdRef.current) return
-    finishDragging(false)
+    // Cancellation accepts the last frame that was actually painted. Keeping
+    // React state in sync with the imperative CSS/ARIA update prevents a later
+    // render from restoring the pre-drag ratio.
+    finishDragging(true)
   }
 
   const focusRestoreIfNeeded = useCallback(() => {
@@ -215,6 +222,14 @@ export function ResearchLayout({
     if (!activeMaximized) focusRestoreIfNeeded()
     setMaximized((value) => !value)
   }
+
+  useLayoutEffect(() => {
+    // Invalidate callbacks during the commit phase. Passive-effect cleanup is
+    // too late: a frame or ResizeObserver notification queued for the old axis,
+    // layout, or minimums can run after paint but before that cleanup.
+    geometryGenerationRef.current += 1
+    finishDragging(false, false)
+  }, [axis, compact, defaultRatio, finishDragging, layoutId, minPrimary, minSecondary])
 
   useLayoutEffect(() => {
     const enteringCompact = compact && !compactRef.current
@@ -254,12 +269,13 @@ export function ResearchLayout({
     const host = hostRef.current
     if (compact || !host || typeof ResizeObserver === 'undefined') return
     let active = true
+    const generation = geometryGenerationRef.current
     const observer = new ResizeObserver(() => {
       // ResizeObserver callbacks can already be queued when this effect is
       // cleaned up. An instance may belong to an old layout even when the new
       // layout is also non-compact, so compactRef alone is not a sufficient
       // stale-callback guard.
-      if (!active || compactRef.current) return
+      if (!active || generation !== geometryGenerationRef.current || compactRef.current) return
       if (draggingRef.current) {
         resizeDuringDragRef.current = true
         return
@@ -271,10 +287,10 @@ export function ResearchLayout({
       active = false
       observer.disconnect()
     }
-  }, [applyRatio, compact, syncMeasurement])
+  }, [applyRatio, axis, compact, defaultRatio, layoutId, minPrimary, minSecondary, syncMeasurement])
 
   useEffect(() => {
-    const cancel = () => finishDragging(false)
+    const cancel = () => finishDragging(true)
     window.addEventListener('blur', cancel)
     return () => {
       window.removeEventListener('blur', cancel)
@@ -283,15 +299,10 @@ export function ResearchLayout({
   }, [finishDragging])
 
   useEffect(() => {
-    if (compact) {
-      // The compact host has single-panel geometry. Only tear down gesture
-      // ownership here; measuring it would overwrite the desktop split saved
-      // by the layout effect above.
-      finishDragging(false, false)
-    } else if (activeMaximized) {
+    if (activeMaximized) {
       finishDragging(false)
     }
-  }, [activeMaximized, compact, finishDragging])
+  }, [activeMaximized, finishDragging])
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (compact || activeMaximized) return

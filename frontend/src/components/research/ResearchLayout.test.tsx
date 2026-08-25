@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { useLayoutEffect } from 'react'
 import { ResearchLayout, type ResearchLayoutProps } from './ResearchLayout'
 
 class ResizeObserverMock {
@@ -203,8 +204,45 @@ describe('ResearchLayout', () => {
   })
 
   it('ignores queued resize callbacks from a previous non-compact layout', () => {
-    const { rerender } = renderLayout()
+    const sourceProps = {
+      layoutId: 'source',
+      axis: 'horizontal' as const,
+      defaultRatio: 70,
+      minPrimary: 600,
+      minSecondary: 200,
+    }
+    let callbackRanBeforePassiveCleanup = false
+    function ResizeRaceHarness({ source }: { source: boolean }) {
+      useLayoutEffect(() => {
+        if (!source) return
+        callbackRanBeforePassiveCleanup = globalObserver?.disconnect.mock.calls.length === 0
+        height = 420
+        globalObserver?.triggerQueuedCallback()
+      }, [source])
+      return layout(source ? sourceProps : {})
+    }
+
+    const { rerender } = render(<ResizeRaceHarness source={false} />)
     const globalObserver = ResizeObserverMock.instances.at(-1)
+
+    // Parent layout effects run after the child's layout effects but before
+    // passive cleanup. Trigger the queued old callback in that exact window.
+    rerender(<ResizeRaceHarness source />)
+    const sourceSeparator = screen.getByRole('separator', { name: 'resize panels' })
+    expect(callbackRanBeforePassiveCleanup).toBe(true)
+    expect(sourceSeparator).toHaveAttribute('aria-orientation', 'vertical')
+    expect(sourceSeparator).toHaveAttribute('aria-valuemin', '67')
+    expect(sourceSeparator).toHaveAttribute('aria-valuemax', '78')
+    expect(sourceSeparator).toHaveAttribute('aria-valuenow', '70')
+  })
+
+  it('invalidates an already queued pointer frame during the layout commit', () => {
+    const { rerender } = renderLayout()
+    const separator = screen.getByRole('separator', { name: 'resize panels' })
+    fireEvent(separator, pointerEvent('pointerdown', 10))
+    fireEvent(separator, pointerEvent('pointermove', 400))
+    const staleFrame = [...frames.values()][0]
+    expect(staleFrame).toBeDefined()
 
     rerender(layout({
       layoutId: 'source',
@@ -214,17 +252,27 @@ describe('ResearchLayout', () => {
       minSecondary: 200,
     }))
     const sourceSeparator = screen.getByRole('separator', { name: 'resize panels' })
-    expect(sourceSeparator).toHaveAttribute('aria-orientation', 'vertical')
-    expect(sourceSeparator).toHaveAttribute('aria-valuemin', '67')
-    expect(sourceSeparator).toHaveAttribute('aria-valuemax', '78')
-    expect(sourceSeparator).toHaveAttribute('aria-valuenow', '70')
+    expect(frames).toHaveLength(0)
 
-    height = 420
-    act(() => globalObserver?.triggerQueuedCallback())
+    fireEvent(sourceSeparator, pointerEvent('pointerdown', 10, 2, 'horizontal'))
+    fireEvent(sourceSeparator, pointerEvent('pointermove', 650, 2, 'horizontal'))
+    expect(frames).toHaveLength(1)
+
+    // A browser may already have dequeued the callback when cancellation
+    // happens. Invoke that saved callback directly to prove generation, rather
+    // than passive cleanup, protects the newly committed geometry and cannot
+    // steal ownership of the new generation's frame.
+    act(() => staleFrame?.(0))
+    expect(frames).toHaveLength(1)
     expect(sourceSeparator).toHaveAttribute('aria-orientation', 'vertical')
     expect(sourceSeparator).toHaveAttribute('aria-valuemin', '67')
     expect(sourceSeparator).toHaveAttribute('aria-valuemax', '78')
     expect(sourceSeparator).toHaveAttribute('aria-valuenow', '70')
+    expect(screen.getByTestId('research-layout').style.getPropertyValue('--research-primary-size')).toBe('624.4px')
+
+    flushAnimationFrames()
+    expect(sourceSeparator).toHaveAttribute('aria-valuenow', '73')
+    fireEvent(sourceSeparator, pointerEvent('pointercancel', 650, 2, 'horizontal'))
   })
 
   it('preserves the desktop ratio across compact mode with a low-height host', () => {
@@ -375,6 +423,46 @@ describe('ResearchLayout', () => {
     expect(observer?.disconnect).toHaveBeenCalled()
     expect(setPointerCapture).toHaveBeenCalledTimes(4)
     expect(releasePointerCapture).toHaveBeenCalledTimes(4)
+  })
+
+  it.each([
+    ['pointercancel', (separator: HTMLElement) => fireEvent(separator, pointerEvent('pointercancel', 400))],
+    ['lostpointercapture', (separator: HTMLElement) => fireEvent(separator, pointerEvent('lostpointercapture', 400))],
+    ['window blur', () => fireEvent(window, new Event('blur'))],
+  ])('accepts the painted ratio on %s and preserves it through later renders', (_name, terminate) => {
+    const { rerender } = renderLayout()
+    const host = screen.getByTestId('research-layout')
+    const separator = screen.getByRole('separator', { name: 'resize panels' })
+    fireEvent(separator, pointerEvent('pointerdown', 10))
+    fireEvent(separator, pointerEvent('pointermove', 400))
+    flushAnimationFrames()
+    expect(separator).toHaveAttribute('aria-valuenow', '51')
+    expect(host.style.getPropertyValue('--research-primary-size')).toBe('400px')
+
+    terminate(separator)
+    expect(document.body.style.userSelect).toBe('')
+    expect(separator).toHaveAttribute('aria-valuenow', '51')
+    expect(host.style.getPropertyValue('--research-primary-size')).toBe('400px')
+
+    // An ordinary prop render and maximize/restore both reconcile from React
+    // state. They must retain the ratio accepted by cancellation.
+    rerender(layout({ primaryLabel: 'renamed primary' }))
+    expect(separator).toHaveAttribute('aria-valuenow', '51')
+    fireEvent.click(screen.getByRole('button', { name: 'expand workspace' }))
+    fireEvent.click(screen.getByRole('button', { name: 'restore layout' }))
+    expect(separator).toHaveAttribute('aria-valuenow', '51')
+    expect(host.style.getPropertyValue('--research-primary-size')).toBe('400px')
+
+    rerender(layout({
+      layoutId: 'source',
+      axis: 'horizontal',
+      defaultRatio: 70,
+      minPrimary: 600,
+      minSecondary: 200,
+    }))
+    rerender(layout())
+    expect(screen.getByRole('separator', { name: 'resize panels' })).toHaveAttribute('aria-valuenow', '51')
+    expect(host.style.getPropertyValue('--research-primary-size')).toBe('400px')
   })
 
   it('ignores non-active pointers throughout an active drag', () => {
