@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { clampPrimaryPixels, percentToPixels, pixelsToPercent } from './research-layout-utils'
+import { clampPrimaryPixels, getPrimaryPercentBounds, percentToPixels, pixelsToPercent } from './research-layout-utils'
 
 describe('research layout dimensions', () => {
   it('clamps primary dimensions without violating either panel minimum', () => {
@@ -18,5 +18,14 @@ describe('research layout dimensions', () => {
   it('converts percentages against the available dimension', () => {
     expect(percentToPixels(40, 500)).toBe(200)
     expect(pixelsToPercent(200, 500)).toBe(40)
+  })
+
+  it('reports the reachable percentage range for the current container', () => {
+    expect(getPrimaryPercentBounds(800, 8, 200, 300)).toEqual({
+      min: 200 / 792 * 100,
+      max: 492 / 792 * 100,
+    })
+    expect(getPrimaryPercentBounds(100, 8, 200, 300)).toEqual({ min: 100, max: 100 })
+    expect(getPrimaryPercentBounds(0, 8, 200, 300)).toEqual({ min: 0, max: 0 })
   })
 })

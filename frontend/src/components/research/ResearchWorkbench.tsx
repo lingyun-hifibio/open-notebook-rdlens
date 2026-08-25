@@ -30,12 +30,15 @@ export type ResearchTab = 'sources' | 'notes' | 'insights' | 'transformations'
  * Source Chat 面板）；tab 状态与 Citation 跳转链路保留在本地。
  * `onSelectSource(sourceId, opts?)` 契约：设置选中来源并**默认重置**
  * 高亮页（opts.highlightPageIdx 显式传入时除外，防高亮泄漏）；
+ * `highlightRequestId` 为每次 Citation 定位请求递增的事件序号，使相同
+ * page_idx 的连续请求也能重新触发焦点移动；
  * `onCloseSource` 清空两者（返回来源列表）。
  */
 export interface ResearchWorkbenchProps {
   displayMode: 'workbench' | 'source-focus'
   selectedSourceId: string | null
   highlightPageIdx: number | null
+  highlightRequestId: number
   onSelectSource: (sourceId: string, opts?: { highlightPageIdx?: number | null }) => void
   onCloseSource: () => void
 }
@@ -44,6 +47,7 @@ export function ResearchWorkbench({
   displayMode,
   selectedSourceId,
   highlightPageIdx,
+  highlightRequestId,
   onSelectSource,
   onCloseSource,
 }: ResearchWorkbenchProps) {
@@ -72,7 +76,7 @@ export function ResearchWorkbench({
     if (displayMode === 'source-focus' && highlightPageIdx !== null) {
       sourceFocusHeadingRef.current?.focus()
     }
-  }, [displayMode, highlightPageIdx])
+  }, [displayMode, highlightPageIdx, highlightRequestId])
 
   if (displayMode === 'source-focus' && selectedSourceId !== null) {
     return (

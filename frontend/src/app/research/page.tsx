@@ -26,7 +26,8 @@ import { useTranslation } from '@/lib/hooks/use-translation'
  * 全局 Workspace 以 hidden 包裹**保持挂载**（多篇 Chat 流与 Job 轮询
  * 本地状态不丢失；浏览器隐藏期间轮询继续，服务端 turn 不受影响）。
  * 关闭来源后卸载面板并恢复全局工作区 tabs。面板内 citation 点击设置
- * `highlightPageIdx`，定位上半屏 SourceDetailPanel 对应 chunk/page
+ * `highlightPageIdx`，定位上半屏 SourceDetailPanel 对应 chunk/page；独立的
+ * `highlightRequestId` 保证重复点击同一页 Citation 也会再次移动焦点
  * （0-based 存储仅展示 +1，REQ-DATA-03）；不强制切换上半屏 tab。
  */
 export default function ResearchPage() {
@@ -35,6 +36,7 @@ export default function ResearchPage() {
 
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null)
   const [highlightPageIdx, setHighlightPageIdx] = useState<number | null>(null)
+  const [highlightRequestId, setHighlightRequestId] = useState(0)
   const hasUsableHeight = useMediaQuery('(min-height: 560px)')
   const isDesktop = useIsDesktop()
   const [globalCompactPanel, setGlobalCompactPanel] = useState<'primary' | 'secondary'>('secondary')
@@ -45,7 +47,11 @@ export default function ResearchPage() {
       setSelectedSourceId(sourceId)
       setSourceCompactPanel('primary')
       // 默认重置高亮页（防上次高亮泄漏到新来源）
-      setHighlightPageIdx(opts?.highlightPageIdx ?? null)
+      const nextHighlightPageIdx = opts?.highlightPageIdx ?? null
+      setHighlightPageIdx(nextHighlightPageIdx)
+      if (nextHighlightPageIdx !== null) {
+        setHighlightRequestId((requestId) => requestId + 1)
+      }
     },
     [],
   )
@@ -57,6 +63,7 @@ export default function ResearchPage() {
 
   const handleHighlightPage = useCallback((pageIdx: number) => {
     setHighlightPageIdx(pageIdx)
+    setHighlightRequestId((requestId) => requestId + 1)
     setSourceCompactPanel('primary')
   }, [])
 
@@ -101,6 +108,7 @@ export default function ResearchPage() {
               displayMode={sourceMode ? 'source-focus' : 'workbench'}
               selectedSourceId={selectedSourceId}
               highlightPageIdx={highlightPageIdx}
+              highlightRequestId={highlightRequestId}
               onSelectSource={handleSelectSource}
               onCloseSource={handleCloseSource}
             />

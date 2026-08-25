@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 
 // /research 组合层（Issue #182 Red）：selectedSourceId/highlightPageIdx 提升。
@@ -14,9 +14,14 @@ vi.mock('@/lib/embedded/config', () => ({
   isEmbeddedMode: () => true,
 }))
 
+const mediaQueryMocks = vi.hoisted(() => ({
+  hasUsableHeight: vi.fn(() => true),
+  isDesktop: vi.fn(() => true),
+}))
+
 vi.mock('@/lib/hooks/use-media-query', () => ({
-  useMediaQuery: () => true,
-  useIsDesktop: () => true,
+  useMediaQuery: () => mediaQueryMocks.hasUsableHeight(),
+  useIsDesktop: () => mediaQueryMocks.isDesktop(),
 }))
 
 vi.mock('@/lib/embedded/shell', () => ({
@@ -29,6 +34,7 @@ interface WorkbenchPropsMock {
   displayMode: 'workbench' | 'source-focus'
   selectedSourceId: string | null
   highlightPageIdx: number | null
+  highlightRequestId: number
   onSelectSource: (sourceId: string, opts?: { highlightPageIdx?: number | null }) => void
   onCloseSource: () => void
 }
@@ -40,6 +46,7 @@ vi.mock('@/components/research/ResearchWorkbench', () => ({
       data-testid="workbench"
       data-selected-source-id={props.selectedSourceId ?? ''}
       data-highlight-page-idx={props.highlightPageIdx ?? ''}
+      data-highlight-request-id={props.highlightRequestId}
       data-display-mode={props.displayMode}
     >
       <button data-testid="wb-open" onClick={() => props.onSelectSource('src_1')} />
@@ -77,6 +84,11 @@ function workbenchEl(): HTMLElement {
 }
 
 describe('/research 页面骨架', () => {
+  beforeEach(() => {
+    mediaQueryMocks.hasUsableHeight.mockReturnValue(true)
+    mediaQueryMocks.isDesktop.mockReturnValue(true)
+  })
+
   it('使用稳定的全局纵向布局槽位，工作台继续在内部裁剪溢出', () => {
     render(<ResearchPage />)
     const wrapper = screen.getByTestId('workbench').parentElement
@@ -96,6 +108,11 @@ describe('/research 页面骨架', () => {
 })
 
 describe('/research Source 详情 + Source Chat 组合（Issue #182）', () => {
+  beforeEach(() => {
+    mediaQueryMocks.hasUsableHeight.mockReturnValue(true)
+    mediaQueryMocks.isDesktop.mockReturnValue(true)
+  })
+
   it('默认：下半屏渲染全局 Workspace，无 Source Chat 面板', () => {
     render(<ResearchPage />)
     expect(screen.getByTestId('workspace')).toBeInTheDocument()
@@ -146,5 +163,30 @@ describe('/research Source 详情 + Source Chat 组合（Issue #182）', () => {
     fireEvent.click(screen.getByTestId('wb-open'))
     fireEvent.click(screen.getByTestId('panel-cite-page'))
     expect(workbenchEl().getAttribute('data-highlight-page-idx')).toBe('7')
+  })
+
+  it('紧凑 Source 模式两次点击同页 Citation 均切回正文并发出独立聚焦请求', () => {
+    mediaQueryMocks.isDesktop.mockReturnValue(false)
+    render(<ResearchPage />)
+    fireEvent.click(screen.getByTestId('wb-open'))
+
+    const originalWorkbench = workbenchEl()
+    const contentTab = screen.getByRole('tab', { name: 'research.layout.content' })
+    const chatTab = screen.getByRole('tab', { name: 'research.layout.chat' })
+
+    fireEvent.click(chatTab)
+    expect(chatTab).toHaveAttribute('aria-selected', 'true')
+    fireEvent.click(screen.getByTestId('panel-cite-page'))
+    expect(contentTab).toHaveAttribute('aria-selected', 'true')
+    expect(workbenchEl()).toHaveAttribute('data-highlight-page-idx', '7')
+    expect(workbenchEl()).toHaveAttribute('data-highlight-request-id', '1')
+
+    fireEvent.click(chatTab)
+    expect(chatTab).toHaveAttribute('aria-selected', 'true')
+    fireEvent.click(screen.getByTestId('panel-cite-page'))
+    expect(contentTab).toHaveAttribute('aria-selected', 'true')
+    expect(workbenchEl()).toHaveAttribute('data-highlight-page-idx', '7')
+    expect(workbenchEl()).toHaveAttribute('data-highlight-request-id', '2')
+    expect(workbenchEl()).toBe(originalWorkbench)
   })
 })

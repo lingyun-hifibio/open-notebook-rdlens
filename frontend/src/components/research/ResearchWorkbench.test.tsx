@@ -66,14 +66,20 @@ function makeWrapper(role: 'owner' | 'admin_readonly' = 'owner') {
 function ControlledWorkbench() {
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null)
   const [highlightPageIdx, setHighlightPageIdx] = useState<number | null>(null)
+  const [highlightRequestId, setHighlightRequestId] = useState(0)
   return (
     <ResearchWorkbench
       displayMode="workbench"
       selectedSourceId={selectedSourceId}
       highlightPageIdx={highlightPageIdx}
+      highlightRequestId={highlightRequestId}
       onSelectSource={(sourceId, opts) => {
         setSelectedSourceId(sourceId)
-        setHighlightPageIdx(opts?.highlightPageIdx ?? null)
+        const nextHighlightPageIdx = opts?.highlightPageIdx ?? null
+        setHighlightPageIdx(nextHighlightPageIdx)
+        if (nextHighlightPageIdx !== null) {
+          setHighlightRequestId((requestId) => requestId + 1)
+        }
       }}
       onCloseSource={() => {
         setSelectedSourceId(null)
@@ -142,24 +148,43 @@ describe('ResearchWorkbench', () => {
     expect(screen.getByText('research.workbench.adminBanner')).toBeInTheDocument()
   })
 
-  it('Source 专注模式在 Citation 高亮后将焦点移到详情标题', async () => {
+  it('Source 专注模式对同页 Citation 的每次请求都重新聚焦详情标题，且不重挂载', async () => {
     vi.mocked(researchApi.listSources).mockResolvedValue({ items: [], next_cursor: null })
     vi.mocked(researchApi.getSource).mockResolvedValue({
       source_id: 'src_1', document_id: 'doc_1', document_version: 'v3', status: 'ready', content_hash: null,
       synced_at: null, last_error: null, title: 'Paper A', markdown_chunks: [],
     })
     const { wrapper } = makeWrapper()
-    render(
+    const { rerender } = render(
       <ResearchWorkbench
         displayMode="source-focus"
         selectedSourceId="src_1"
         highlightPageIdx={2}
+        highlightRequestId={1}
         onSelectSource={vi.fn()}
         onCloseSource={vi.fn()}
       />,
       { wrapper },
     )
     const heading = screen.getByRole('heading', { name: 'research.workbench.title' })
+    expect(document.activeElement).toBe(heading)
+
+    const backButton = screen.getByRole('button', { name: 'research.sources.back' })
+    backButton.focus()
+    expect(document.activeElement).toBe(backButton)
+
+    rerender(
+      <ResearchWorkbench
+        displayMode="source-focus"
+        selectedSourceId="src_1"
+        highlightPageIdx={2}
+        highlightRequestId={2}
+        onSelectSource={vi.fn()}
+        onCloseSource={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByRole('heading', { name: 'research.workbench.title' })).toBe(heading)
     expect(document.activeElement).toBe(heading)
   })
 
