@@ -81,12 +81,23 @@ FROM python:3.12-slim-trixie AS runtime-base
 
 # Install only runtime system dependencies (no build tools)
 # Add Node.js 22.x LTS for running the frontend
+# NOTE (issue #147): curl/libcurl must NOT remain in the final image — its only
+# in-image consumer was scripts/wait-for-api.sh, now rewritten with python3
+# urllib, and it carries 6 Critical CVEs (CVE-2026-8924/8926/8927/9079/10536/
+# 11856, no fixed version in Debian trixie at remediation time). But the
+# nodesource bootstrap script itself needs curl, so install curl first, run the
+# bootstrap, then purge curl+libcurl4t64 (libcurl4t64 has no other reverse
+# dependency in this image).
+# npm 10.9.9 bundles tar ^7.5.22 (>= 7.5.19), closing the GHSA-23hp-3jrh-7fpw
+# Critical that ships in the default nodesource npm 10.9.8 (tar 7.5.11).
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     ffmpeg \
     supervisor \
     curl \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
+    && npm install -g npm@10.9.9 \
+    && apt-get purge -y --auto-remove curl libcurl4t64 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv using the official method
@@ -96,6 +107,20 @@ WORKDIR /app
 
 # Copy the virtual environment from the backend builder
 COPY --from=backend-builder /app/.venv /app/.venv
+
+# issue #147: pytubefix -> nodejs-wheel-binaries bundles a full Node 24 + npm
+# 11.17.0 inside the venv whose bundled `tar` 7.5.16 still carries the
+# GHSA-23hp-3jrh-7fpw Critical (fixed in tar 7.5.19). npm cannot upgrade its
+# own bundled tree in place, so install tar@7.5.19 into a scratch dir with the
+# system npm (10.9.9) and replace the bundled copy wholesale (7.5.16 -> 7.5.19
+# dependency declarations are identical: @isaacs/fs-minipass ^4, chownr ^3,
+# minipass ^7.1.2, minizlib ^3.1, yallist ^5).
+RUN mkdir -p /tmp/tarfix && cd /tmp/tarfix \
+    && npm init -y >/dev/null 2>&1 \
+    && npm install --no-audit --no-fund --silent tar@7.5.19 \
+    && rm -rf /app/.venv/lib/python3.12/site-packages/nodejs_wheel/lib/node_modules/npm/node_modules/tar \
+    && cp -r /tmp/tarfix/node_modules/tar /app/.venv/lib/python3.12/site-packages/nodejs_wheel/lib/node_modules/npm/node_modules/tar \
+    && rm -rf /tmp/tarfix
 
 # Copy the source code
 COPY . /app

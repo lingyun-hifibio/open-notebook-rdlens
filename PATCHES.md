@@ -489,3 +489,35 @@ generation 关闭 RAF/observer 竞态，取消路径同步已绘制比例；Sour
 本地 embedded 环境已完成页面点验，期间发现并修复布局控制按钮重叠、上下文选择器入口
 辨识度不足两项问题；Issue 要求的完整分辨率、低高度、长 Chat/SSE 与截图矩阵仍需在
 PR 验收阶段补齐。
+## 13. 发布镜像漏洞修复（2026-08-25，Issue #147）
+
+> 关联：RDLens GitHub Issue #147（[PRD-03] 发布候选镜像 Critical/High
+> 漏洞清零或风险签字）。本节覆盖 Fork 侧构建改动；RDLens 侧验收证据
+> 见 `dev_docs/validation/issue147/`。分支 `fix/issue147-vuln`，基于
+> fork main `9c7aa9b`（rdlens.8 基线）构建候选 `v1.14.0-rdlens.9`。
+
+### 13.1 目标
+
+将镜像 Critical 从 36 降至约 22（修复可修复项），并对无上游修复的
+残留项输出 VEX 供风险签字：
+
+1. 移除 `curl`/`libcurl4t64`（6 个无修复 Critical CVE，12 个 match）：
+   `wait-for-api.sh` 改用 python3 urllib 探测健康，Dockerfile 在
+   nodesource 引导后 `apt-get purge --auto-remove curl libcurl4t64`。
+2. 升级 nodesource npm 10.9.8 → 10.9.9（捆绑 tar ^7.5.22，关闭
+   GHSA-23hp-3jrh-7fpw Critical）。
+3. 升级 `nodejs-wheel-binaries` 24.13.0 → 24.19.0（uv.lock），并将其中
+   npm 11.17.0 捆绑的 tar 7.5.16 整体替换为 7.5.19（依赖声明完全一致）。
+
+### 13.2 Patch 清单
+
+| 文件 | 类型 | 说明 |
+|---|---|---|
+| `scripts/wait-for-api.sh` | 运行时脚本 | curl 探测 → python3 urllib heredoc（dash 兼容，失败/成功路径均已验证） |
+| `Dockerfile`（runtime-base） | 构建 | 安装 curl（仅用于 nodesource 引导）→ 装 nodejs 22 → `npm install -g npm@10.9.9` → `apt-get purge --auto-remove curl libcurl4t64` |
+| `Dockerfile`（runtime-base） | 构建 | venv COPY 后：scratch 目录安装 tar@7.5.19，整体替换 nodejs_wheel 内 npm 的 tar 7.5.16 |
+| `uv.lock` | 依赖 | nodejs-wheel-binaries 24.13.0 → 24.19.0（`uv lock --upgrade-package`） |
+
+验证记录：见 RDLens `dev_docs/validation/issue147/execution_issue147.json`
+（Grype 0.117.0 前后对比 + SHA256 归档）；VEX 见
+`VEX_rdlens9_20260825.md`。
