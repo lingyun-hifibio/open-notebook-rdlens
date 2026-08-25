@@ -461,14 +461,42 @@ modeLabel/degradedBadge/sourceVersionLabel）同步全部 14 locale；zh-CN
   `/chat` 选择模型；无重命名/删除会话、model_override、Podcast/TTS；
   无独立 POST sessions；不持久化 SSE event log；不新增 PDF 渲染器。
 
-## 12. 发布镜像漏洞修复（2026-08-25，Issue #147）
+## 12. Research Workspace 可调分屏与 Source 专注布局（Issue #186，2026-08-24）
+
+> 关联：RDLens Issue #186；#182 Source Chat 已通过 Fork PR #14 合入 `main` 并关闭。
+> 本分支最初以 `origin/open-notebook-srcchat-ui` 为基线；该基线现已成为 `main` 的祖先，
+> 相对 `main` 的变更仅包含 #186 的实现与评审修复提交。仅修改 Fork 前端，不改 RDLens
+> iframe、Token、API、SSE、数据模型、分页或缓存。
+
+| 文件 | 变更 |
+|---|---|
+| `components/research/ResearchLayout.tsx` | 保持双面板同一 React/DOM 树；全局上下 40/60、Source 桌面左右 55/45、紧凑互斥面板、最大化/恢复、Pointer/RAF、ResizeObserver、键盘与 ARIA separator。比例仅存 React 会话 state。 |
+| `components/research/research-layout-utils.ts` | 可单测的尺寸钳制及百分比转换；拒绝非法尺寸，保证最小面板可恢复。 |
+| `app/research/page.tsx` + `ResearchWorkbench.tsx` | 移除固定 `h-1/2`；同一 Workbench 在普通/Source focus 间切换显示模式，Workspace 在 Source 模式继续 `hidden` 挂载；Citation 在紧凑 Source 模式切回正文。 |
+| `SourceNoteSelector.tsx` + `ResearchWorkspace.tsx` | 选择器默认收起，展示项目自动检索或实际选中范围；加载/失败/重试在收起标题可见；展开列表双列/窄屏单列、最大 200px 内滚动，不展示分页首屏伪总数。 |
+| `lib/locales/*/index.ts` | 新增 `research.layout.*`，14 locale 键集同步；zh-CN 完整中文，其他 locale 沿 Fork 已有约定使用英文占位。 |
+
+验证（2026-08-25 当前 HEAD）：全量 Vitest 59 文件 414 tests passed；ESLint 0 errors
+（7 项既有 warnings，改动未新增）；Next production build 成功，包含 `/research` 路由。
+独立评审发现的最大化跨紧凑模式、比例隔离、ResizeObserver 状态同步、动态 ARIA 范围和
+重复 Citation 聚焦 5 项问题均已修复；复审补充的 compact 比例保持、多指针所有权和原生
+HTML `hidden` 不变量也已补齐；终审补充的旧 observer 回调失效、拖动跨 compact 清理、
+pointer 终止事件所有权和真实 Source 详情标题聚焦亦已覆盖。最终以 commit-phase geometry
+generation 关闭 RAF/observer 竞态，取消路径同步已绘制比例；Source/Note 长列表使用可靠的
+200px 内部滚动容器；StrictMode effect replay 覆盖 observer/listener、RAF、pointer capture
+和 body 样式清理；separator 最大化前的焦点也会转移到恢复控制。共 6 个定向文件
+44 tests。
+本地 embedded 环境已完成页面点验，期间发现并修复布局控制按钮重叠、上下文选择器入口
+辨识度不足两项问题；Issue 要求的完整分辨率、低高度、长 Chat/SSE 与截图矩阵仍需在
+PR 验收阶段补齐。
+## 13. 发布镜像漏洞修复（2026-08-25，Issue #147）
 
 > 关联：RDLens GitHub Issue #147（[PRD-03] 发布候选镜像 Critical/High
 > 漏洞清零或风险签字）。本节覆盖 Fork 侧构建改动；RDLens 侧验收证据
 > 见 `dev_docs/validation/issue147/`。分支 `fix/issue147-vuln`，基于
 > fork main `9c7aa9b`（rdlens.8 基线）构建候选 `v1.14.0-rdlens.9`。
 
-### 12.1 目标
+### 13.1 目标
 
 将镜像 Critical 从 36 降至约 22（修复可修复项），并对无上游修复的
 残留项输出 VEX 供风险签字：
@@ -481,7 +509,7 @@ modeLabel/degradedBadge/sourceVersionLabel）同步全部 14 locale；zh-CN
 3. 升级 `nodejs-wheel-binaries` 24.13.0 → 24.19.0（uv.lock），并将其中
    npm 11.17.0 捆绑的 tar 7.5.16 整体替换为 7.5.19（依赖声明完全一致）。
 
-### 12.2 Patch 清单
+### 13.2 Patch 清单
 
 | 文件 | 类型 | 说明 |
 |---|---|---|

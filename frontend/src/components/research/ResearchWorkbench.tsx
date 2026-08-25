@@ -30,18 +30,24 @@ export type ResearchTab = 'sources' | 'notes' | 'insights' | 'transformations'
  * Source Chat 面板）；tab 状态与 Citation 跳转链路保留在本地。
  * `onSelectSource(sourceId, opts?)` 契约：设置选中来源并**默认重置**
  * 高亮页（opts.highlightPageIdx 显式传入时除外，防高亮泄漏）；
+ * `highlightRequestId` 为每次 Citation 定位请求递增的事件序号，使相同
+ * page_idx 的连续请求也能重新触发焦点移动；
  * `onCloseSource` 清空两者（返回来源列表）。
  */
 export interface ResearchWorkbenchProps {
+  displayMode: 'workbench' | 'source-focus'
   selectedSourceId: string | null
   highlightPageIdx: number | null
+  highlightRequestId: number
   onSelectSource: (sourceId: string, opts?: { highlightPageIdx?: number | null }) => void
   onCloseSource: () => void
 }
 
 export function ResearchWorkbench({
+  displayMode,
   selectedSourceId,
   highlightPageIdx,
+  highlightRequestId,
   onSelectSource,
   onCloseSource,
 }: ResearchWorkbenchProps) {
@@ -63,6 +69,28 @@ export function ResearchWorkbench({
     }
     onSelectSource(source.source_id, { highlightPageIdx: citation.page_idx })
     setTab('sources')
+  }
+
+  if (displayMode === 'source-focus' && selectedSourceId !== null) {
+    return (
+      <div className="flex h-full min-h-0 flex-col gap-3 p-4">
+        <div className="flex items-center gap-3">
+          <Button size="sm" variant="ghost" onClick={onCloseSource}>
+            {t('research.sources.back')}
+          </Button>
+          <h1 className="text-lg font-semibold">
+            {t('research.workbench.title')}
+          </h1>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <SourceDetailPanel
+            sourceId={selectedSourceId}
+            highlightPageIdx={highlightPageIdx}
+            focusRequestId={highlightPageIdx === null ? undefined : highlightRequestId}
+          />
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -96,7 +124,11 @@ export function ResearchWorkbench({
               >
                 {t('research.sources.back')}
               </Button>
-              <SourceDetailPanel sourceId={selectedSourceId} highlightPageIdx={highlightPageIdx} />
+              <SourceDetailPanel
+                sourceId={selectedSourceId}
+                highlightPageIdx={highlightPageIdx}
+                focusRequestId={highlightPageIdx === null ? undefined : highlightRequestId}
+              />
             </div>
           ) : (
             <SourceListPanel onOpenSource={openSource} />

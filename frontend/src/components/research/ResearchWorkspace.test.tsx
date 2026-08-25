@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, cleanup } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import { ResearchWorkspace } from './ResearchWorkspace'
 import * as api from '@/lib/research/api'
 import * as tokenStore from '@/lib/embedded/token-store'
@@ -70,10 +70,15 @@ describe('ResearchWorkspace', () => {
     expect(screen.queryByRole('tab', { name: /chat/i })).toBeNull()
   })
 
-  it('有 Token 时加载 Source/Note 并渲染四个 Tab 与选择器', async () => {
+  it('有 Token 时默认收起选择器，展开后显示 Source/Note 与四个 Tab', async () => {
     tokenStore.setResearchToken(researchToken(), 9999999999)
     render(<ResearchWorkspace />)
-    await screen.findByText('Note One')
+    expect(await screen.findByTestId('research-context-scope')).toHaveTextContent('research.layout.projectScope')
+    expect(screen.getByText('Note One').closest('#research-context-selection')).toHaveAttribute('hidden')
+    const contextButton = screen.getByRole('button', { name: 'research.layout.expandContext' })
+    expect(contextButton).toHaveClass('border', 'bg-background', 'shadow-sm')
+    fireEvent.click(contextButton)
+    expect(await screen.findByText('Note One')).toBeInTheDocument()
     const tabs = screen.getAllByRole('tab').map((tab) => tab.textContent)
     expect(tabs).toEqual([
       'research.tabSearch',
@@ -83,6 +88,32 @@ describe('ResearchWorkspace', () => {
     ])
     expect(api.listSources).toHaveBeenCalledWith('proj_1')
     expect(api.listNotes).toHaveBeenCalledWith('proj_1')
+  })
+
+  it('Source/Note 长列表在各自最多 200px 的区域内纵向滚动', async () => {
+    const sources = Array.from({ length: 12 }, (_, index): ResearchSource => ({
+      ...source,
+      source_id: `src_${index + 1}`,
+      document_id: `doc_${index + 1}`,
+    }))
+    const notes = Array.from({ length: 12 }, (_, index): ResearchNote => ({
+      ...note,
+      note_id: `note_${index + 1}`,
+      title: `Note ${index + 1}`,
+    }))
+    vi.mocked(api.listSources).mockResolvedValue({ items: sources, next_cursor: null })
+    vi.mocked(api.listNotes).mockResolvedValue({ items: notes, next_cursor: null })
+    tokenStore.setResearchToken(researchToken(), 9999999999)
+
+    render(<ResearchWorkspace />)
+    fireEvent.click(await screen.findByRole('button', { name: 'research.layout.expandContext' }))
+
+    const sourceList = screen.getByTestId('source-selection-list')
+    const noteList = screen.getByTestId('note-selection-list')
+    expect(sourceList).toHaveClass('max-h-[200px]', 'overflow-y-auto')
+    expect(noteList).toHaveClass('max-h-[200px]', 'overflow-y-auto')
+    expect(sourceList.contains(screen.getByTestId('source-src_12'))).toBe(true)
+    expect(noteList.contains(screen.getByTestId('note-note_12'))).toBe(true)
   })
 
   it('加载失败显示错误与重试按钮', async () => {
