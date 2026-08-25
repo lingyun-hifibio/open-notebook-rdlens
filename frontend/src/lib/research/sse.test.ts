@@ -162,6 +162,63 @@ describe('sse reducer', () => {
   })
 })
 
+describe('sse reducer：source chat 扩展字段（Issue #182，additive）', () => {
+  it('usage 事件记录 degradation_reasons 与 source_ref（映射到 State 层 camelCase）', () => {
+    const s = stateAfter([
+      ev(1, 'usage', {
+        usage: { input_tokens: 100, output_tokens: 20 },
+        resolved_mode: 'hybrid_rag',
+        degradation_reasons: ['source_over_direct_cap'],
+        source_ref: { source_id: 'src_1', document_id: 'doc_1', document_version: 'v2' },
+      }),
+    ])
+    expect(s.degradationReasons).toEqual(['source_over_direct_cap'])
+    expect(s.sourceRef).toEqual({ source_id: 'src_1', document_id: 'doc_1', document_version: 'v2' })
+    expect(s.resolvedMode).toBe('hybrid_rag')
+  })
+
+  it('无降级/无 source_ref 的 usage 事件保持默认空值（全局 chat 不受影响）', () => {
+    const s = stateAfter([
+      ev(1, 'usage', { usage: { input_tokens: 1, output_tokens: 1 }, resolved_mode: 'auto' }),
+    ])
+    expect(s.degradationReasons).toEqual([])
+    expect(s.sourceRef).toBeNull()
+  })
+
+  it('parseResearchEvent 丢弃非法 degradation_reasons/source_ref（非数组元素/缺关键字段）', () => {
+    const droppedReasons = parseResearchEvent({
+      event_id: 1,
+      type: 'usage',
+      degradation_reasons: ['ok', 42],
+      source_ref: { source_id: 'src_1' },
+    })
+    expect(droppedReasons?.degradation_reasons).toBeUndefined()
+    expect(droppedReasons?.source_ref).toBeUndefined()
+
+    const keptReasons = parseResearchEvent({
+      event_id: 2,
+      type: 'usage',
+      degradation_reasons: ['source_over_budget'],
+      source_ref: { source_id: 'src_1', document_id: 'doc_1', document_version: 'v3' },
+    })
+    expect(keptReasons?.degradation_reasons).toEqual(['source_over_budget'])
+    expect(keptReasons?.source_ref).toEqual({ source_id: 'src_1', document_id: 'doc_1', document_version: 'v3' })
+  })
+
+  it('后续携带扩展字段的事件覆盖 State（终态前），终态后忽略', () => {
+    const s = stateAfter([
+      ev(1, 'usage', { resolved_mode: 'direct_context', source_ref: { source_id: 'src_1', document_id: 'doc_1', document_version: 'v1' } }),
+      ev(2, 'done', { session_id: 's1' }),
+    ])
+    // 终态后事件被忽略：sourceRef 保持 done 前的值
+    const after = applySseEvent(s, ev(3, 'usage', {
+      resolved_mode: 'hybrid_rag',
+      source_ref: { source_id: 'src_1', document_id: 'doc_1', document_version: 'v9' },
+    }))
+    expect(after).toBe(s)
+  })
+})
+
 describe('parseSseFrame', () => {
   it('解析 event/data 单帧并返回规范化事件', () => {
     const frame = 'event: answer\ndata: {"event_id": 2, "type": "answer", "delta": "hi"}\n\n'

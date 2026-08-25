@@ -234,6 +234,101 @@ describe('openResearchChatStream', () => {
     })
     expect(errors).toEqual([422])
   })
+
+  it('path 参数化：source chat 端点按 /sources/{id}/chat 打开（Issue #182）', async () => {
+    const fetchMocked = fetchMock(true, 200, sseBody([
+      'event: done\ndata: {"event_id": 1, "type": "done", "completion_status": "success"}\n\n',
+    ]))
+    vi.stubGlobal('fetch', fetchMocked)
+
+    await new Promise<void>((resolve) => {
+      openResearchChatStream({
+        projectId: PROJECT,
+        path: `/sources/${encodeURIComponent('src/1')}/chat`,
+        request: { query: 'q', session_id: 'sess_ab' },
+        onEvent: (event) => {
+          if (event.type === 'done') resolve()
+        },
+      })
+    })
+
+    const [url] = fetchMocked.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(`${GATEWAY}/v1/research/projects/${PROJECT}/sources/src%2F1/chat`)
+    expect(JSON.parse(String(fetchMocked.mock.calls[0][1].body))).toEqual({
+      query: 'q',
+      session_id: 'sess_ab',
+    })
+  })
+
+  it('onResponseMeta 读取响应头（X-Chat-Session-Id 回显）', async () => {
+    const response = {
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'X-Chat-Session-Id': 'sess_echo' }),
+      body: sseBody([
+        'event: done\ndata: {"event_id": 1, "type": "done", "completion_status": "success"}\n\n',
+      ]),
+      json: async () => ({}),
+    }
+    const fetchMocked = vi.fn().mockResolvedValue(response)
+    vi.stubGlobal('fetch', fetchMocked)
+
+    const seen: string[] = []
+    await new Promise<void>((resolve) => {
+      openResearchChatStream({
+        projectId: PROJECT,
+        request: { query: 'q' },
+        onResponseMeta: (headers) => {
+          seen.push(headers.get('x-chat-session-id') ?? '')
+        },
+        onEvent: (event) => {
+          if (event.type === 'done') resolve()
+        },
+      })
+    })
+    expect(seen).toEqual(['sess_echo'])
+  })
+
+  it('onEnd：未到终态的正常 EOF 触发回调（重连判定交给调用方）', async () => {
+    const fetchMocked = fetchMock(true, 200, sseBody([
+      'event: answer\ndata: {"event_id": 1, "type": "answer", "delta": "a"}\n\n',
+    ]))
+    vi.stubGlobal('fetch', fetchMocked)
+
+    await new Promise<void>((resolve) => {
+      openResearchChatStream({
+        projectId: PROJECT,
+        request: { query: 'q' },
+        onEvent: () => {},
+        onEnd: () => resolve(),
+      })
+    })
+  })
+
+  it('abort 不触发 onEnd（仅正常读尽触发）', async () => {
+    let release!: () => void
+    const encoder = new TextEncoder()
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('event: answer\ndata: {"event_id": 1, "type": "answer", "delta": "x"}\n\n'))
+        // 永不 close：等待 abort
+        release = () => controller.close()
+      },
+    })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, headers: new Headers(), body, json: async () => ({}) }))
+
+    const onEnd = vi.fn()
+    const abort = openResearchChatStream({
+      projectId: PROJECT,
+      request: { query: 'q' },
+      onEvent: () => {},
+      onEnd,
+    })
+    abort()
+    release()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(onEnd).not.toHaveBeenCalled()
+  })
 })
 
 describe('ResearchStreamHttpError', () => {

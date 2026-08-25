@@ -27,6 +27,30 @@ export interface ResearchTokenUsage {
   output_tokens: number
 }
 
+/**
+ * source_ref 载荷（Issue #182：usage 事件携带的实际版本快照）。
+ * wire 形状保持 snake_case（契约字段不改写）；映射到 State/turn 层才转 camelCase。
+ */
+export interface ResearchSourceRef {
+  source_id: string
+  document_id: string
+  document_version: string
+}
+
+/**
+ * Citation 展示最小结构（Issue #182）：兼容 SSE 侧 9 字段（citation_id:
+ * number、page_idx 必有）与持久化 17 字段快照（citation_id: string、
+ * page_idx 可空）两种形态，供轻量 Citation 列表统一渲染。
+ */
+export interface ResearchCitationDisplayItem {
+  citation_id: number | string
+  claim: string
+  doc_id: string
+  /** 0-based；null 时只展示声明不展示页码 */
+  page_idx: number | null
+  confidence?: string | number | null
+}
+
 /** 单个 SSE 事件载荷（契约 §9.1；字段按 type 可选） */
 export interface ResearchSseEvent {
   event_id: number
@@ -35,6 +59,10 @@ export interface ResearchSseEvent {
   citations?: ResearchCitation[]
   usage?: ResearchTokenUsage
   resolved_mode?: string
+  /** Issue #182：真实降级原因码集合（如 source_over_direct_cap） */
+  degradation_reasons?: string[]
+  /** Issue #182：本轮实际钉住的 source→document 版本 */
+  source_ref?: ResearchSourceRef
   session_id?: string
   request_id?: string
   job_id?: string | null

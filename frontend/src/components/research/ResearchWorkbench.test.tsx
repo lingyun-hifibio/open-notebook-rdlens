@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { useState } from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ResearchWorkbench } from './ResearchWorkbench'
@@ -57,6 +58,30 @@ function makeWrapper(role: 'owner' | 'admin_readonly' = 'owner') {
   return { wrapper, queryClient }
 }
 
+/**
+ * Issue #182：Workbench 受控化（selectedSourceId/highlightPageIdx 提升到
+ * /research 组合层）。测试内复刻 page.tsx 的接线，保持既有用例行为：
+ * Citation 跳转 → onSelectSource(source, { highlightPageIdx }) → 详情高亮。
+ */
+function ControlledWorkbench() {
+  const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null)
+  const [highlightPageIdx, setHighlightPageIdx] = useState<number | null>(null)
+  return (
+    <ResearchWorkbench
+      selectedSourceId={selectedSourceId}
+      highlightPageIdx={highlightPageIdx}
+      onSelectSource={(sourceId, opts) => {
+        setSelectedSourceId(sourceId)
+        setHighlightPageIdx(opts?.highlightPageIdx ?? null)
+      }}
+      onCloseSource={() => {
+        setSelectedSourceId(null)
+        setHighlightPageIdx(null)
+      }}
+    />
+  )
+}
+
 describe('ResearchWorkbench', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -70,7 +95,7 @@ describe('ResearchWorkbench', () => {
     vi.mocked(researchApi.listInsights).mockResolvedValue({ items: [], next_cursor: null })
     vi.mocked(researchApi.listTransformations).mockResolvedValue({ items: [], next_cursor: null })
     const { wrapper } = makeWrapper()
-    render(<ResearchWorkbench />, { wrapper })
+    render(<ControlledWorkbench />, { wrapper })
     expect(screen.getByRole('tab', { name: 'research.workbench.tabSources' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'research.workbench.tabNotes' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: 'research.workbench.tabInsights' })).toBeInTheDocument()
@@ -88,7 +113,7 @@ describe('ResearchWorkbench', () => {
     vi.mocked(researchApi.listInsights).mockResolvedValue({ items: [], next_cursor: null })
     vi.mocked(researchApi.listTransformations).mockResolvedValue({ items: [], next_cursor: null })
     const { wrapper } = makeWrapper()
-    const { container } = render(<ResearchWorkbench />, { wrapper })
+    const { container } = render(<ControlledWorkbench />, { wrapper })
 
     // Tabs 根必须是可收缩的 flex-1 子项（否则内容把整棵树撑出半屏容器）
     const tabs = container.querySelector('[data-slot="tabs"]')
@@ -111,7 +136,7 @@ describe('ResearchWorkbench', () => {
   it('Admin 会话：顶部展示只读横幅（角色来自 Token claims）', async () => {
     vi.mocked(researchApi.listSources).mockResolvedValue({ items: [], next_cursor: null })
     const { wrapper } = makeWrapper('admin_readonly')
-    render(<ResearchWorkbench />, { wrapper })
+    render(<ControlledWorkbench />, { wrapper })
     expect(screen.getByTestId('admin-readonly-banner')).toBeInTheDocument()
     expect(screen.getByText('research.workbench.adminBanner')).toBeInTheDocument()
   })
@@ -185,7 +210,7 @@ describe('ResearchWorkbench', () => {
     })
 
     const { wrapper } = makeWrapper()
-    render(<ResearchWorkbench />, { wrapper })
+    render(<ControlledWorkbench />, { wrapper })
 
     // 打开 Transformations 并运行
     const transTab = screen.getByRole('tab', { name: 'research.workbench.tabTransformations' })

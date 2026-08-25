@@ -25,19 +25,34 @@ export type ResearchTab = 'sources' | 'notes' | 'insights' | 'transformations'
  * Admin 会话顶部只读横幅。Citation 跳转：把转换结果中的引用解析到
  * 项目来源（按 document_id），切到 Sources 面板并定位目标页
  * （highlight，page_idx 0-based 仅展示 +1，REQ-DATA-03）。
+ *
+ * Issue #182：选中来源与高亮页提升到 /research 组合层（下半屏据此切换
+ * Source Chat 面板）；tab 状态与 Citation 跳转链路保留在本地。
+ * `onSelectSource(sourceId, opts?)` 契约：设置选中来源并**默认重置**
+ * 高亮页（opts.highlightPageIdx 显式传入时除外，防高亮泄漏）；
+ * `onCloseSource` 清空两者（返回来源列表）。
  */
-export function ResearchWorkbench() {
+export interface ResearchWorkbenchProps {
+  selectedSourceId: string | null
+  highlightPageIdx: number | null
+  onSelectSource: (sourceId: string, opts?: { highlightPageIdx?: number | null }) => void
+  onCloseSource: () => void
+}
+
+export function ResearchWorkbench({
+  selectedSourceId,
+  highlightPageIdx,
+  onSelectSource,
+  onCloseSource,
+}: ResearchWorkbenchProps) {
   const { t } = useTranslation()
   const { projectId, isAdminReadonly } = useResearchWorkspace()
   const [tab, setTab] = useState<ResearchTab>('sources')
-  const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null)
-  const [highlightPageIdx, setHighlightPageIdx] = useState<number | null>(null)
 
   const sourcesQuery = useResearchSources(projectId)
 
   const openSource = (sourceId: string) => {
-    setSelectedSourceId(sourceId)
-    setHighlightPageIdx(null)
+    onSelectSource(sourceId)
   }
 
   const handleCitationJump = (citation: ResearchCitation) => {
@@ -46,8 +61,7 @@ export function ResearchWorkbench() {
     if (!source) {
       return
     }
-    setSelectedSourceId(source.source_id)
-    setHighlightPageIdx(citation.page_idx)
+    onSelectSource(source.source_id, { highlightPageIdx: citation.page_idx })
     setTab('sources')
   }
 
@@ -78,10 +92,7 @@ export function ResearchWorkbench() {
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => {
-                  setSelectedSourceId(null)
-                  setHighlightPageIdx(null)
-                }}
+                onClick={onCloseSource}
               >
                 {t('research.sources.back')}
               </Button>
