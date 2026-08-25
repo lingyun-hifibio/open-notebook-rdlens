@@ -463,9 +463,10 @@ modeLabel/degradedBadge/sourceVersionLabel）同步全部 14 locale；zh-CN
 
 ## 12. Research Workspace 可调分屏与 Source 专注布局（Issue #186，2026-08-24）
 
-> 关联：RDLens Issue #186；依赖尚未合入 Fork main 的 #182 Source Chat，基线为
-> `origin/open-notebook-srcchat-ui`。仅修改 Fork 前端，不改 RDLens iframe、Token、
-> API、SSE、数据模型、分页或缓存。
+> 关联：RDLens Issue #186；#182 Source Chat 已通过 Fork PR #14 合入 `main` 并关闭。
+> 本分支最初以 `origin/open-notebook-srcchat-ui` 为基线；该基线现已成为 `main` 的祖先，
+> 相对 `main` 的变更仅包含 #186 的 5 个提交。仅修改 Fork 前端，不改 RDLens iframe、
+> Token、API、SSE、数据模型、分页或缓存。
 
 | 文件 | 变更 |
 |---|---|
@@ -475,7 +476,8 @@ modeLabel/degradedBadge/sourceVersionLabel）同步全部 14 locale；zh-CN
 | `SourceNoteSelector.tsx` + `ResearchWorkspace.tsx` | 选择器默认收起，展示项目自动检索或实际选中范围；加载/失败/重试在收起标题可见；展开列表双列/窄屏单列、最大 200px 内滚动，不展示分页首屏伪总数。 |
 | `lib/locales/*/index.ts` | 新增 `research.layout.*`，14 locale 键集同步；zh-CN 完整中文，其他 locale 沿 Fork 已有约定使用英文占位。 |
 
-验证：定向布局、页面、Workbench、Workspace 与 locale 用例 47 passed；全量 Vitest 59 文件
-393 passed。ESLint 0 errors（7 项既有 warnings，改动未新增）；Next production build
-成功，包含 `/research` 路由。浏览器实测需具备 Research Token、Gateway 与 iframe
-父页的集成环境；本地无可用浏览器自动化入口，未声称完成该步骤。
+验证（2026-08-25 当前 HEAD）：全量 Vitest 59 文件 396 tests passed；ESLint 0 errors
+（7 项既有 warnings，改动未新增）；Next production build 成功，包含 `/research` 路由。
+本地 embedded 环境已完成页面点验，期间发现并修复布局控制按钮重叠、上下文选择器入口
+辨识度不足两项问题；Issue 要求的完整分辨率、低高度、长 Chat/SSE 与截图矩阵仍需在
+PR 验收阶段补齐。
