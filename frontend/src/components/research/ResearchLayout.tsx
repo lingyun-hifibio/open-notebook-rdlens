@@ -63,6 +63,7 @@ export function ResearchLayout({
   const ratioRef = useRef(defaultRatio)
   const boundsRef = useRef({ min: 0, max: 100 })
   const layoutIdRef = useRef(layoutId)
+  const compactRef = useRef(compact)
   const ratiosRef = useRef<Record<string, number>>({ [layoutId]: defaultRatio })
   const pointerIdRef = useRef<number | null>(null)
   const pointerTargetRef = useRef<HTMLDivElement | null>(null)
@@ -160,7 +161,13 @@ export function ResearchLayout({
   }, [applyRatio, getContainerSize, isVertical])
 
   const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (compact || activeMaximized || (event.button !== 0 && event.button !== undefined)) return
+    if (
+      draggingRef.current
+      || pointerIdRef.current !== null
+      || compact
+      || activeMaximized
+      || (event.button !== 0 && event.button !== undefined)
+    ) return
     const separator = separatorRef.current
     if (!separator) return
     event.preventDefault()
@@ -202,6 +209,13 @@ export function ResearchLayout({
   }
 
   useLayoutEffect(() => {
+    const enteringCompact = compact && !compactRef.current
+
+    if (enteringCompact) {
+      // Compact mode has no meaningful split measurement. Preserve the last
+      // desktop ratio before the host changes to its single-panel geometry.
+      ratiosRef.current[layoutIdRef.current] = ratioRef.current
+    }
     if (layoutIdRef.current !== layoutId) {
       // Save the outgoing layout before applying the incoming layout's axis and
       // minimums. Otherwise the new constraints can overwrite the old ratio.
@@ -209,8 +223,10 @@ export function ResearchLayout({
       layoutIdRef.current = layoutId
       ratioRef.current = ratiosRef.current[layoutId] ?? defaultRatio
     }
+    compactRef.current = compact
+    if (compact) return
     syncMeasurement(applyRatio(ratioRef.current))
-  }, [applyRatio, defaultRatio, layoutId, syncMeasurement])
+  }, [applyRatio, compact, defaultRatio, layoutId, syncMeasurement])
 
   useLayoutEffect(() => {
     if (!compact) return
@@ -228,8 +244,12 @@ export function ResearchLayout({
 
   useEffect(() => {
     const host = hostRef.current
-    if (!host || typeof ResizeObserver === 'undefined') return
+    if (compact || !host || typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(() => {
+      // A callback queued by the desktop observer can still arrive while its
+      // compact-mode cleanup is running. Never let that stale measurement
+      // replace the saved desktop ratio.
+      if (compactRef.current) return
       if (draggingRef.current) {
         resizeDuringDragRef.current = true
         return
@@ -238,7 +258,7 @@ export function ResearchLayout({
     })
     observer.observe(host)
     return () => observer.disconnect()
-  }, [applyRatio, syncMeasurement])
+  }, [applyRatio, compact, syncMeasurement])
 
   useEffect(() => {
     const cancel = () => finishDragging(false)

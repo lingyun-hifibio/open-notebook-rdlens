@@ -476,10 +476,11 @@ modeLabel/degradedBadge/sourceVersionLabel）同步全部 14 locale；zh-CN
 | `SourceNoteSelector.tsx` + `ResearchWorkspace.tsx` | 选择器默认收起，展示项目自动检索或实际选中范围；加载/失败/重试在收起标题可见；展开列表双列/窄屏单列、最大 200px 内滚动，不展示分页首屏伪总数。 |
 | `lib/locales/*/index.ts` | 新增 `research.layout.*`，14 locale 键集同步；zh-CN 完整中文，其他 locale 沿 Fork 已有约定使用英文占位。 |
 
-验证（2026-08-25 当前 HEAD）：全量 Vitest 59 文件 401 tests passed；ESLint 0 errors
+验证（2026-08-25 当前 HEAD）：全量 Vitest 59 文件 404 tests passed；ESLint 0 errors
 （7 项既有 warnings，改动未新增）；Next production build 成功，包含 `/research` 路由。
 独立评审发现的最大化跨紧凑模式、比例隔离、ResizeObserver 状态同步、动态 ARIA 范围和
-重复 Citation 聚焦 5 项问题均已修复，并由 4 个定向文件 25 tests 覆盖。
+重复 Citation 聚焦 5 项问题均已修复；复审补充的 compact 比例保持、多指针所有权和原生
+HTML `hidden` 不变量也已补齐，并由 4 个定向文件 28 tests 覆盖。
 本地 embedded 环境已完成页面点验，期间发现并修复布局控制按钮重叠、上下文选择器入口
 辨识度不足两项问题；Issue 要求的完整分辨率、低高度、长 Chat/SSE 与截图矩阵仍需在
 PR 验收阶段补齐。

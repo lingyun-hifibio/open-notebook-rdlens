@@ -7,7 +7,11 @@ class ResizeObserverMock {
 
   private readonly callback: ResizeObserverCallback
   private target: Element | null = null
-  observe = vi.fn((target: Element) => { this.target = target })
+  private lastTarget: Element | null = null
+  observe = vi.fn((target: Element) => {
+    this.target = target
+    this.lastTarget = target
+  })
   disconnect = vi.fn(() => { this.target = null })
 
   constructor(callback: ResizeObserverCallback) {
@@ -18,6 +22,11 @@ class ResizeObserverMock {
   trigger() {
     if (!this.target) return
     this.callback([{ target: this.target } as ResizeObserverEntry], this as unknown as ResizeObserver)
+  }
+
+  triggerQueuedCallback() {
+    if (!this.lastTarget) return
+    this.callback([{ target: this.lastTarget } as ResizeObserverEntry], this as unknown as ResizeObserver)
   }
 }
 
@@ -193,6 +202,51 @@ describe('ResearchLayout', () => {
     expect(screen.getByRole('separator', { name: 'resize panels' })).toHaveAttribute('aria-valuenow', '75')
   })
 
+  it('preserves the desktop ratio across compact mode with a low-height host', () => {
+    const { rerender } = renderLayout()
+    const separator = screen.getByRole('separator', { name: 'resize panels' })
+    fireEvent.keyDown(separator, { key: 'ArrowDown' })
+    expect(separator).toHaveAttribute('aria-valuenow', '45')
+
+    const desktopObserver = ResizeObserverMock.instances.at(-1)
+    height = 420
+    rerender(layout({ compact: true }))
+    act(() => desktopObserver?.triggerQueuedCallback())
+
+    height = 800
+    rerender(layout())
+    expect(screen.getByRole('separator', { name: 'resize panels' })).toHaveAttribute('aria-valuenow', '45')
+  })
+
+  it('keeps source and global ratios independent across source compact mode', () => {
+    const { rerender } = renderLayout()
+    fireEvent.keyDown(screen.getByRole('separator', { name: 'resize panels' }), { key: 'ArrowDown' })
+
+    const sourceLayout = {
+      layoutId: 'source',
+      axis: 'horizontal' as const,
+      defaultRatio: 70,
+      minPrimary: 600,
+      minSecondary: 200,
+    }
+    rerender(layout(sourceLayout))
+    fireEvent.keyDown(screen.getByRole('separator', { name: 'resize panels' }), { key: 'ArrowRight' })
+    expect(screen.getByRole('separator', { name: 'resize panels' })).toHaveAttribute('aria-valuenow', '75')
+
+    width = 500
+    rerender(layout({ ...sourceLayout, compact: true }))
+    triggerResize()
+    rerender(layout({ compact: true }))
+    rerender(layout({ ...sourceLayout, compact: true }))
+
+    width = 900
+    rerender(layout(sourceLayout))
+    expect(screen.getByRole('separator', { name: 'resize panels' })).toHaveAttribute('aria-valuenow', '75')
+
+    rerender(layout())
+    expect(screen.getByRole('separator', { name: 'resize panels' })).toHaveAttribute('aria-valuenow', '45')
+  })
+
   it('exits maximized mode safely when entering compact mode and preserves a recovery focus target', () => {
     const { rerender } = renderLayout()
     const primaryAction = screen.getByRole('button', { name: 'primary action' })
@@ -265,6 +319,45 @@ describe('ResearchLayout', () => {
     expect(observer?.disconnect).toHaveBeenCalled()
     expect(setPointerCapture).toHaveBeenCalledTimes(4)
     expect(releasePointerCapture).toHaveBeenCalledTimes(4)
+  })
+
+  it('ignores non-active pointers throughout an active drag', () => {
+    renderLayout()
+    const separator = screen.getByRole('separator', { name: 'resize panels' })
+    let capturedPointer: number | null = null
+    const setPointerCapture = vi.fn((pointerId: number) => { capturedPointer = pointerId })
+    const hasPointerCapture = vi.fn((pointerId: number) => capturedPointer === pointerId)
+    const releasePointerCapture = vi.fn(() => { capturedPointer = null })
+    Object.defineProperties(separator, {
+      setPointerCapture: { configurable: true, value: setPointerCapture },
+      hasPointerCapture: { configurable: true, value: hasPointerCapture },
+      releasePointerCapture: { configurable: true, value: releasePointerCapture },
+    })
+    document.body.style.cursor = 'crosshair'
+    document.body.style.userSelect = 'text'
+
+    fireEvent(separator, pointerEvent('pointerdown', 10, 1))
+    fireEvent(separator, pointerEvent('pointerdown', 700, 2))
+    expect(setPointerCapture).toHaveBeenCalledTimes(1)
+    expect(setPointerCapture).toHaveBeenCalledWith(1)
+    expect(capturedPointer).toBe(1)
+    expect(document.body.style.cursor).toBe('row-resize')
+    expect(document.body.style.userSelect).toBe('none')
+
+    fireEvent(separator, pointerEvent('pointermove', 700, 2))
+    fireEvent(separator, pointerEvent('pointerup', 700, 2))
+    expect(frames).toHaveLength(0)
+    expect(releasePointerCapture).not.toHaveBeenCalled()
+    expect(document.body.style.userSelect).toBe('none')
+
+    fireEvent(separator, pointerEvent('pointermove', 300, 1))
+    expect(frames).toHaveLength(1)
+    fireEvent(separator, pointerEvent('pointerup', 300, 1))
+    expect(separator).toHaveAttribute('aria-valuenow', '38')
+    expect(releasePointerCapture).toHaveBeenCalledOnce()
+    expect(releasePointerCapture).toHaveBeenCalledWith(1)
+    expect(document.body.style.cursor).toBe('crosshair')
+    expect(document.body.style.userSelect).toBe('text')
   })
 
   it('does not rerender panel children for continuous pointer moves', () => {

@@ -116,7 +116,7 @@ export default function ResearchPage() {
             <div key="workspace" className="h-full min-h-0 border-t">
             {/* 全局工作区保持挂载：选中来源时以 hidden 包裹（display:none），
                 多篇 Chat 流与 Job 轮询本地状态不丢失；面板占满同一半屏槽位 */}
-            <div className={`h-full ${selectedSourceId !== null ? 'hidden' : ''}`}>
+            <div className="h-full" hidden={selectedSourceId !== null}>
               <ResearchWorkspace />
             </div>
             {selectedSourceId !== null && (

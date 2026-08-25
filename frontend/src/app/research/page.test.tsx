@@ -123,14 +123,19 @@ describe('/research Source 详情 + Source Chat 组合（Issue #182）', () => {
   it('选源：下半屏切换为 Source Chat 面板，Workspace 保持挂载且被 hidden 包裹', () => {
     render(<ResearchPage />)
     const originalWorkbench = workbenchEl()
+    const originalWorkspace = screen.getByTestId('workspace')
+    const workspaceWrapper = originalWorkspace.parentElement
     fireEvent.click(screen.getByTestId('wb-open'))
 
     expect(screen.getByTestId('source-chat-panel')).toBeInTheDocument()
     expect(screen.getByTestId('source-chat-panel').getAttribute('data-source-id')).toBe('src_1')
 
-    // 保持挂载：hidden 类包裹而非卸载（chat/jobs 本地状态不丢失）
+    // 保持挂载：同一个 DOM 节点由原生 hidden 属性包裹（chat/jobs 本地状态不丢失）
     const workspace = screen.getByTestId('workspace')
-    expect(workspace.parentElement).toHaveClass('hidden')
+    expect(workspace).toBe(originalWorkspace)
+    expect(workspace.parentElement).toBe(workspaceWrapper)
+    expect(workspaceWrapper).toHaveAttribute('hidden')
+    expect(workspaceWrapper).not.toHaveClass('hidden')
     expect(screen.getByTestId('research-layout')).toHaveAttribute('data-axis', 'horizontal')
     expect(workbenchEl()).toBe(originalWorkbench)
     expect(workbenchEl()).toHaveAttribute('data-display-mode', 'source-focus')
@@ -138,13 +143,18 @@ describe('/research Source 详情 + Source Chat 组合（Issue #182）', () => {
 
   it('关闭来源：卸载面板并恢复 Workspace（无 hidden）', () => {
     render(<ResearchPage />)
+    const originalWorkspace = screen.getByTestId('workspace')
+    const workspaceWrapper = originalWorkspace.parentElement
     fireEvent.click(screen.getByTestId('wb-open'))
     expect(screen.getByTestId('source-chat-panel')).toBeInTheDocument()
+    expect(workspaceWrapper).toHaveAttribute('hidden')
 
     fireEvent.click(screen.getByTestId('wb-close'))
     expect(screen.queryByTestId('source-chat-panel')).toBeNull()
-    expect(screen.getByTestId('workspace')).toBeInTheDocument()
-    expect(screen.getByTestId('workspace').parentElement).not.toHaveClass('hidden')
+    expect(screen.getByTestId('workspace')).toBe(originalWorkspace)
+    expect(originalWorkspace.parentElement).toBe(workspaceWrapper)
+    expect(workspaceWrapper).not.toHaveAttribute('hidden')
+    expect(workspaceWrapper).not.toHaveClass('hidden')
   })
 
   it('onSelectSource 携带页码时设置高亮；再次普通选源重置高亮为空', () => {
