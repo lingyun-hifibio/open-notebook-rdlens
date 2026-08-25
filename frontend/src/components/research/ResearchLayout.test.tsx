@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { useLayoutEffect } from 'react'
+import { StrictMode, useEffect, useLayoutEffect } from 'react'
 import { ResearchLayout, type ResearchLayoutProps } from './ResearchLayout'
 
 class ResizeObserverMock {
@@ -423,6 +423,108 @@ describe('ResearchLayout', () => {
     expect(observer?.disconnect).toHaveBeenCalled()
     expect(setPointerCapture).toHaveBeenCalledTimes(4)
     expect(releasePointerCapture).toHaveBeenCalledTimes(4)
+  })
+
+  it('keeps exactly one active observer and blur cleanup through StrictMode effect replay', () => {
+    const addWindowListener = vi.spyOn(window, 'addEventListener')
+    const removeWindowListener = vi.spyOn(window, 'removeEventListener')
+    let capturedPointer: number | null = null
+    const setPointerCapture = vi.fn((pointerId: number) => { capturedPointer = pointerId })
+    const hasPointerCapture = vi.fn((pointerId: number) => capturedPointer === pointerId)
+    const releasePointerCapture = vi.fn(() => { capturedPointer = null })
+    let seededFirstEffect = false
+
+    function SeedDragDuringFirstEffect() {
+      useEffect(() => {
+        if (seededFirstEffect) return
+        seededFirstEffect = true
+        const separator = document.querySelector<HTMLElement>('[role="separator"]')
+        if (!separator) throw new Error('Expected the separator during StrictMode effect setup')
+        Object.defineProperties(separator, {
+          setPointerCapture: { configurable: true, value: setPointerCapture },
+          hasPointerCapture: { configurable: true, value: hasPointerCapture },
+          releasePointerCapture: { configurable: true, value: releasePointerCapture },
+        })
+        separator.dispatchEvent(pointerEvent('pointerdown', 10))
+        separator.dispatchEvent(pointerEvent('pointermove', 300))
+      }, [])
+      return <button>strict child action</button>
+    }
+
+    document.body.style.cursor = 'crosshair'
+    document.body.style.userSelect = 'text'
+    const { unmount } = render(
+      <StrictMode>
+        {layout({
+          children: [<SeedDragDuringFirstEffect key="one" />, <button key="two">secondary action</button>],
+        })}
+      </StrictMode>,
+    )
+
+    const blurAdds = addWindowListener.mock.calls.filter(([type]) => type === 'blur')
+    const blurRemovals = removeWindowListener.mock.calls.filter(([type]) => type === 'blur')
+    expect(ResizeObserverMock.instances).toHaveLength(2)
+    expect(ResizeObserverMock.instances[0].observe).toHaveBeenCalledOnce()
+    expect(ResizeObserverMock.instances[0].disconnect).toHaveBeenCalledOnce()
+    expect(ResizeObserverMock.instances[1].observe).toHaveBeenCalledOnce()
+    expect(ResizeObserverMock.instances[1].disconnect).not.toHaveBeenCalled()
+    expect(blurAdds).toHaveLength(2)
+    expect(blurRemovals).toEqual([['blur', blurAdds[0][1]]])
+
+    const separator = screen.getByRole('separator', { name: 'resize panels' })
+    height = 600
+    act(() => ResizeObserverMock.instances[0].triggerQueuedCallback())
+    expect(separator).toHaveAttribute('aria-valuemin', '25')
+    expect(separator).toHaveAttribute('aria-valuemax', '62')
+    act(() => ResizeObserverMock.instances[1].trigger())
+    expect(separator).toHaveAttribute('aria-valuemin', '34')
+    expect(separator).toHaveAttribute('aria-valuemax', '49')
+    height = 800
+    act(() => ResizeObserverMock.instances[1].trigger())
+
+    // The first child passive effect starts a real drag before StrictMode's
+    // development-only setup -> cleanup -> setup replay. That simulated
+    // cleanup must release capture, cancel its RAF, and restore body styles.
+    expect(setPointerCapture).toHaveBeenCalledOnce()
+    expect(releasePointerCapture).toHaveBeenCalledOnce()
+    expect(releasePointerCapture).toHaveBeenCalledWith(1)
+    expect(capturedPointer).toBeNull()
+    expect(frames).toHaveLength(0)
+    expect(cancelFrame).toHaveBeenCalledOnce()
+    expect(document.body.style.cursor).toBe('crosshair')
+    expect(document.body.style.userSelect).toBe('text')
+
+    fireEvent(separator, pointerEvent('pointerdown', 10, 2))
+    fireEvent(separator, pointerEvent('pointermove', 320, 2))
+    expect(frames).toHaveLength(1)
+    fireEvent(window, new Event('blur'))
+    expect(releasePointerCapture).toHaveBeenCalledTimes(2)
+    expect(releasePointerCapture).toHaveBeenLastCalledWith(2)
+    expect(frames).toHaveLength(0)
+    expect(document.body.style.cursor).toBe('crosshair')
+    expect(document.body.style.userSelect).toBe('text')
+
+    // Final unmount cleans the second setup without re-running the stale first
+    // cleanup or removing the current listener with the wrong callback.
+    fireEvent(separator, pointerEvent('pointerdown', 10, 3))
+    fireEvent(separator, pointerEvent('pointermove', 340, 3))
+    expect(frames).toHaveLength(1)
+    unmount()
+    const allBlurRemovals = removeWindowListener.mock.calls.filter(([type]) => type === 'blur')
+    expect(allBlurRemovals).toEqual([
+      ['blur', blurAdds[0][1]],
+      ['blur', blurAdds[1][1]],
+    ])
+    expect(ResizeObserverMock.instances[0].disconnect).toHaveBeenCalledOnce()
+    expect(ResizeObserverMock.instances[1].disconnect).toHaveBeenCalledOnce()
+    expect(releasePointerCapture).toHaveBeenCalledTimes(3)
+    expect(releasePointerCapture).toHaveBeenLastCalledWith(3)
+    expect(capturedPointer).toBeNull()
+    expect(frames).toHaveLength(0)
+    expect(document.body.style.cursor).toBe('crosshair')
+    expect(document.body.style.userSelect).toBe('text')
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
   })
 
   it.each([
