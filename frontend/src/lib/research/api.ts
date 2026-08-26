@@ -27,7 +27,11 @@ import type {
   ResearchChatRequest,
   ResearchCompareCreateRequest,
   ResearchCompareCreateResponse,
+  ResearchContextPreview,
+  ResearchExecutionPreferences,
   ResearchJob,
+  ResearchModelOption,
+  ResearchSearchOutcome,
   ResearchSearchRequest,
   ResearchSearchResponse,
   ResearchSourceRef,
@@ -245,6 +249,107 @@ export async function search(
     request,
   )
   return response.data
+}
+
+// ── Contract v1（Issue #200 Phase 2b，§14.2/§14.3） ──
+
+/** v1 幂等键：每次用户发起的新执行一个键；重试同一请求复用同键。 */
+export function newIdempotencyKey(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return `ui-${crypto.randomUUID()}`
+  }
+  return `ui-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+export async function listModels(
+  projectId: string,
+): Promise<{ models: ResearchModelOption[] }> {
+  const response = await apiClient.get<{ models: ResearchModelOption[] }>(
+    researchPath(projectId, 'models'),
+  )
+  return response.data
+}
+
+export async function getExecutionPreferences(
+  projectId: string,
+): Promise<ResearchExecutionPreferences> {
+  const response = await apiClient.get<ResearchExecutionPreferences>(
+    researchPath(projectId, 'execution-preferences'),
+  )
+  return response.data
+}
+
+export interface SaveExecutionPreferencesInput {
+  default_context_level: ResearchExecutionPreferences['default_context_level']
+  preferred_model_id: string | null
+}
+
+export async function saveExecutionPreferences(
+  projectId: string,
+  input: SaveExecutionPreferencesInput,
+): Promise<ResearchExecutionPreferences> {
+  const response = await apiClient.put<ResearchExecutionPreferences>(
+    researchPath(projectId, 'execution-preferences'),
+    input,
+  )
+  return response.data
+}
+
+export type ResearchContextPreviewRequest = {
+  context_level: 'focused' | 'document' | 'workspace'
+  source_ids: string[]
+  note_ids: string[]
+  question: string
+}
+
+export async function fetchContextPreview(
+  projectId: string,
+  request: ResearchContextPreviewRequest,
+): Promise<ResearchContextPreview> {
+  const response = await apiClient.post<ResearchContextPreview>(
+    researchPath(projectId, 'context-preview'),
+    request,
+  )
+  return response.data
+}
+
+/**
+ * v1 Search：发送契约头并按 HTTP status 判别 direct/background。
+ *
+ * §14.3：不能只看某个 body 字段——200 JSON = direct 结果；202 JSON =
+ * 后台 Job 受理（generation_id/job_id）。SSE 仅 Chat 路径使用。
+ */
+export async function searchV1(
+  projectId: string,
+  request: ResearchSearchRequest,
+  options: { idempotencyKey?: string } = {},
+): Promise<ResearchSearchOutcome> {
+  const idempotencyKey = options.idempotencyKey ?? newIdempotencyKey()
+  const response = await apiClient.post<ResearchSearchResponse>(
+    researchPath(projectId, 'search'),
+    request,
+    {
+      headers: {
+        'X-Research-Contract': 'v1',
+        'Idempotency-Key': idempotencyKey,
+      },
+    },
+  )
+  if (response.status === 200 || response.status === 201) {
+    return { kind: 'direct', result: response.data }
+  }
+  // 202：后台 Job 受理（其余 2xx 视为后台以 fail-closed 兜底）
+  const body = response.data as Partial<ResearchSearchResponse> & {
+    generation_id?: string
+    job_id?: string | null
+    status?: string
+  }
+  return {
+    kind: 'background',
+    generation_id: String(body.generation_id ?? ''),
+    job_id: body.job_id ?? null,
+    status: String(body.status ?? 'queued'),
+  }
 }
 
 export async function createCompare(
