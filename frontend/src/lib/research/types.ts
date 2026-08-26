@@ -161,6 +161,36 @@ export interface ResearchModelOption {
   display_name?: string | null
   provider_id?: string | null
   context_window?: number | null
+  /** Issue #202 Phase 3b：data_egress=true 表示外部模型（本地恒 false） */
+  data_egress?: boolean | null
+}
+
+/** Issue #202 Phase 3b：Workspace 外发确认（§6.3 GET 契约形状） */
+export interface ResearchEgressConsent {
+  project_id: string
+  acknowledged_by: number | null
+  acknowledged_at: string | null
+  policy_version: string
+  scope_hash: string
+  revoked_at: string | null
+  revoked_by: number | null
+  valid: boolean
+}
+
+/** Issue #202 Phase 3b：外发范围（用户被告知的数据类别与目的地） */
+export interface ResearchEgressRequiredScope {
+  policy_version: string
+  provider_destinations: {
+    provider_id: string
+    api_base_url: string
+  }[]
+  data_categories: string[]
+  scope_hash: string
+}
+
+export interface ResearchEgressConsentResponse {
+  consent: ResearchEgressConsent | null
+  required_scope: ResearchEgressRequiredScope
 }
 
 /** Workspace 执行偏好（§6.2 GET/PUT execution-preferences 契约形状） */
