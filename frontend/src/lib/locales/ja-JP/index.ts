@@ -1034,7 +1034,7 @@ export const jaJP = {
     previewTitle: "コンテキストプレビュー",
     previewDirectHint: "直接リクエストで実行可能と推定されます。",
     previewJobHint: "直接リクエストの上限を超過——バックグラウンドジョブで実行されます。",
-    backgroundQueued: "バックグラウンドジョブとして登録されました。更新後も表示されます。",
+    backgroundQueued: "バックグラウンドジョブとして登録されました。研究ジョブ一覧で進行状況を確認できます。",
     resultModel: "モデル",
     resultLevel: "コンテキスト",
     usageEstimatedBadge: "推定使用量",

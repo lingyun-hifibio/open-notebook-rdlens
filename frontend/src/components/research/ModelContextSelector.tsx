@@ -1,6 +1,5 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import type {
@@ -14,46 +13,40 @@ import type {
  * 契约：
  * - 两个选择器分离（模型 ≠ 上下文档位）；
  * - 无已保存偏好时模型选择为空——绝不自动选中第一个模型；
- * - 偏好只能显式保存（Save → PUT execution-preferences）；
+ * - 受控组件：当前选择由父组件持有并发起请求（显示什么就执行什么，
+ *   不要求先保存偏好才能 Run）；Save 仅做显式持久化；
  * - 后端不从偏好隐式补 model_id：发起请求的 model_id 由本选择器的
  *   当前值显式提供。
  */
-const CONTEXT_LEVELS = ['focused', 'document', 'workspace'] as const
+export const CONTEXT_LEVELS = ['focused', 'document', 'workspace'] as const
+
+export type ContextLevel = (typeof CONTEXT_LEVELS)[number]
 
 export function ModelContextSelector({
   models,
   preferences,
+  selectedModelId,
+  selectedLevel,
+  onSelectModel,
+  onSelectLevel,
   onSavePreference,
   saving = false,
 }: {
   models: ResearchModelOption[]
   preferences: ResearchExecutionPreferences | null
+  selectedModelId: string
+  selectedLevel: ContextLevel
+  onSelectModel: (modelId: string) => void
+  onSelectLevel: (level: ContextLevel) => void
   onSavePreference: (input: {
-    default_context_level: 'focused' | 'document' | 'workspace'
+    default_context_level: ContextLevel
     preferred_model_id: string | null
   }) => void
   saving?: boolean
 }) {
   const { t } = useTranslation()
-  const savedModelId = preferences?.preferred_model_id ?? ''
-  const [selectedModelId, setSelectedModelId] = useState(savedModelId)
-  const [selectedLevel, setSelectedLevel] = useState<
-    (typeof CONTEXT_LEVELS)[number]
-  >(preferences?.default_context_level ?? 'focused')
-
-  // 已保存偏好变化（保存成功回读/项目切换）时同步本地选择
-  useEffect(() => {
-    setSelectedModelId(preferences?.preferred_model_id ?? '')
-  }, [preferences?.preferred_model_id])
-
-  useEffect(() => {
-    if (preferences?.default_context_level) {
-      setSelectedLevel(preferences.default_context_level)
-    }
-  }, [preferences?.default_context_level])
-
   const dirty =
-    selectedModelId !== savedModelId ||
+    selectedModelId !== (preferences?.preferred_model_id ?? '') ||
     selectedLevel !== (preferences?.default_context_level ?? 'focused')
 
   return (
@@ -69,7 +62,7 @@ export function ModelContextSelector({
           className="h-8 rounded-md border bg-background px-2 text-xs"
           data-testid="model-select"
           value={selectedModelId}
-          onChange={(event) => setSelectedModelId(event.target.value)}
+          onChange={(event) => onSelectModel(event.target.value)}
         >
           {/* 无已保存偏好时保持空选（不自动选第一个模型） */}
           <option value="">—</option>
@@ -89,11 +82,7 @@ export function ModelContextSelector({
           className="h-8 rounded-md border bg-background px-2 text-xs"
           data-testid="context-select"
           value={selectedLevel}
-          onChange={(event) =>
-            setSelectedLevel(
-              event.target.value as (typeof CONTEXT_LEVELS)[number],
-            )
-          }
+          onChange={(event) => onSelectLevel(event.target.value as ContextLevel)}
         >
           {CONTEXT_LEVELS.map((level) => (
             <option key={level} value={level}>

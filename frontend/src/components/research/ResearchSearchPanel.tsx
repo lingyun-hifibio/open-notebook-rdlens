@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,11 +8,15 @@ import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
 import { ResearchCitationList } from './ResearchCitationList'
-import { ModelContextSelector } from './ModelContextSelector'
+import {
+  ModelContextSelector,
+  type ContextLevel,
+} from './ModelContextSelector'
 import {
   fetchContextPreview,
   getExecutionPreferences,
   listModels,
+  newIdempotencyKey,
   saveExecutionPreferences,
   searchV1,
 } from '@/lib/research/api'
@@ -55,12 +59,17 @@ export function ResearchSearchPanel({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // 模型/上下文偏好（§14.3：无已保存偏好时模型选择为空）
+  // 模型/上下文偏好（§14.3：无已保存偏好时模型选择为空）。
+  // 选择器为受控：当前值由本组件持有并发起请求——显示什么就执行什么。
   const [models, setModels] = useState<ResearchModelOption[]>([])
   const [preferences, setPreferences] =
     useState<ResearchExecutionPreferences | null>(null)
+  const [selectedModelId, setSelectedModelId] = useState('')
+  const [selectedLevel, setSelectedLevel] = useState<ContextLevel>('focused')
   const [savingPreference, setSavingPreference] = useState(false)
-  const selectedModelId = preferences?.preferred_model_id ?? ''
+  // §7.2 幂等键：同一逻辑提交（含失败后的立即重试）复用同键；
+  // 成功受理后重置，下一次 Run 为新执行。
+  const idempotencyKeyRef = useRef<string | null>(null)
 
   // Context Preview（§9.1 只读预判；发送前提示）
   const [preview, setPreview] = useState<ResearchContextPreview | null>(null)
@@ -76,6 +85,9 @@ export function ResearchSearchPanel({
         if (cancelled) return
         setModels(modelPage.models ?? [])
         setPreferences(prefs)
+        // 初始选择取已保存偏好（无偏好 → 模型为空，档位 focused）
+        setSelectedModelId(prefs.preferred_model_id ?? '')
+        setSelectedLevel(prefs.default_context_level ?? 'focused')
       } catch {
         // 目录/偏好加载失败不阻塞面板；Run 由「未选模型」守卫拦截
       }
@@ -91,11 +103,10 @@ export function ResearchSearchPanel({
       setPreview(null)
       return
     }
-    let cancelled = true
+    let cancelled = false
     const timer = setTimeout(() => {
-      cancelled = false
       void fetchContextPreview(projectId, {
-        context_level: preferences?.default_context_level ?? 'focused',
+        context_level: selectedLevel,
         source_ids: selectedSourceIds,
         note_ids: selectedNoteIds,
         question: trimmed,
@@ -114,20 +125,24 @@ export function ResearchSearchPanel({
   }, [
     query,
     projectId,
-    preferences?.default_context_level,
+    selectedLevel,
     selectedSourceIds,
     selectedNoteIds,
   ])
 
   const handleSavePreference = useCallback(
     async (input: {
-      default_context_level: 'focused' | 'document' | 'workspace'
+      default_context_level: ContextLevel
       preferred_model_id: string | null
     }) => {
       setSavingPreference(true)
       try {
         const saved = await saveExecutionPreferences(projectId, input)
         setPreferences(saved)
+        // 显式保存后以服务端权威值同步当前选择（不覆盖在途编辑之外的
+        // 本地状态——受控模式下仅此一处回写）
+        setSelectedModelId(saved.preferred_model_id ?? '')
+        setSelectedLevel(saved.default_context_level)
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err))
       } finally {
@@ -144,18 +159,23 @@ export function ResearchSearchPanel({
     setError(null)
     setResult(null)
     setBackground(null)
+    if (!idempotencyKeyRef.current) {
+      idempotencyKeyRef.current = newIdempotencyKey()
+    }
     try {
-      const outcome = await searchV1(projectId, {
-        query: trimmed,
-        source_ids: selectedSourceIds,
-        note_ids: selectedNoteIds,
-        mode: 'auto',
-        model_id: selectedModelId,
-        context_level:
-          preview?.coverage?.['context_level'] as string | undefined ??
-          preferences?.default_context_level ??
-          'focused',
-      })
+      const outcome = await searchV1(
+        projectId,
+        {
+          query: trimmed,
+          source_ids: selectedSourceIds,
+          note_ids: selectedNoteIds,
+          mode: 'auto',
+          model_id: selectedModelId,
+          context_level: selectedLevel,
+        },
+        { idempotencyKey: idempotencyKeyRef.current },
+      )
+      idempotencyKeyRef.current = null
       if (outcome.kind === 'direct') {
         setResult(outcome.result)
       } else {
@@ -165,6 +185,7 @@ export function ResearchSearchPanel({
         })
       }
     } catch (err) {
+      // 失败保留同键：立即重试时 Gateway 按幂等收敛，不双跑（§7.2）
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       setLoading(false)
@@ -177,6 +198,10 @@ export function ResearchSearchPanel({
         <ModelContextSelector
           models={models}
           preferences={preferences}
+          selectedModelId={selectedModelId}
+          selectedLevel={selectedLevel}
+          onSelectModel={setSelectedModelId}
+          onSelectLevel={setSelectedLevel}
           onSavePreference={handleSavePreference}
           saving={savingPreference}
         />
@@ -188,8 +213,8 @@ export function ResearchSearchPanel({
         {preview && (
           <div className="mt-2 rounded-md border px-3 py-2 text-xs text-muted-foreground" data-testid="context-preview">
             <span className="font-medium">{t('research.previewTitle')}</span>
-            {' · '}
-            {t('research.previewTitle')}: {preview.source_count} /{' '}
+            {': '}
+            {preview.source_count} /{' '}
             {preview.chunk_count} / {preview.note_count} · ~
             {preview.token_estimate} tok
             {preview.direct_or_background === 'background_job' ? (
@@ -235,6 +260,11 @@ export function ResearchSearchPanel({
               {result.model_id && (
                 <Badge variant="outline" data-testid="search-model">
                   {t('research.resultModel')}: {result.model_id}
+                </Badge>
+              )}
+              {result.provider_id && (
+                <Badge variant="outline" data-testid="search-provider">
+                  provider: {result.provider_id}
                 </Badge>
               )}
               {result.context_level && (

@@ -1035,7 +1035,7 @@ export const bnIN = {
     previewTitle: "প্রসঙ্গ প্রিভিউ",
     previewDirectHint: "সরাসরি অনুরোধে ধরে নেওয়া হয়েছে।",
     previewJobHint: "সরাসরি অনুরোধের জন্য খুব বড় — ব্যাকগ্রাউন্ড জব হিসেবে চলবে।",
-    backgroundQueued: "ব্যাকগ্রাউন্ড জব হিসেবে সারিবদ্ধ; রিফ্রেশের পরেও দৃশ্যমান।",
+    backgroundQueued: "ব্যাকগ্রাউন্ড জব হিসেবে সারিবদ্ধ; গবেষণা জব তালিকায় অগ্রগতি দেখুন।",
     resultModel: "মডেল",
     resultLevel: "প্রসঙ্গ",
     usageEstimatedBadge: "আনুমানিক",

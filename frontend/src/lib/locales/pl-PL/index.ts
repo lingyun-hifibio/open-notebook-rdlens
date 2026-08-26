@@ -1034,7 +1034,7 @@ export const plPL = {
     previewTitle: "Podgląd kontekstu",
     previewDirectHint: "Szacowane mieści się w żądaniu bezpośrednim.",
     previewJobHint: "Za duże na żądanie bezpośrednie — zostanie wykonane jako zadanie w tle.",
-    backgroundQueued: "W kolejce jako zadanie w tle; pozostaje widoczne po odświeżeniu.",
+    backgroundQueued: "W kolejce jako zadanie w tle; postęp śledź na liście zadań badawczych.",
     resultModel: "Model",
     resultLevel: "Kontekst",
     usageEstimatedBadge: "szacowany",

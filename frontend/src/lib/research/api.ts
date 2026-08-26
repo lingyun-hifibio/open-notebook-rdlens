@@ -314,16 +314,18 @@ export async function fetchContextPreview(
 }
 
 /**
- * v1 Search：发送契约头并按 HTTP status 判别 direct/background。
+ * v1 Search：发送契约头并按 HTTP status + Content-Type 判别分支。
  *
- * §14.3：不能只看某个 body 字段——200 JSON = direct 结果；202 JSON =
- * 后台 Job 受理（generation_id/job_id）。SSE 仅 Chat 路径使用。
+ * §14.3：status 与 Content-Type 双条件——200 application/json =
+ * direct 结果；202 application/json = 后台 Job 受理（generation_id/
+ * job_id）。非 JSON 的 2xx（反代错误页等）fail-closed 抛错，不猜测。
  */
 export async function searchV1(
   projectId: string,
   request: ResearchSearchRequest,
   options: { idempotencyKey?: string } = {},
 ): Promise<ResearchSearchOutcome> {
+  // 幂等键由调用方决定复用策略；未提供时本次请求生成新键
   const idempotencyKey = options.idempotencyKey ?? newIdempotencyKey()
   const response = await apiClient.post<ResearchSearchResponse>(
     researchPath(projectId, 'search'),
@@ -335,21 +337,31 @@ export async function searchV1(
       },
     },
   )
-  if (response.status === 200 || response.status === 201) {
+  const contentType = String(
+    (response.headers?.['content-type'] as string | undefined) ?? '',
+  )
+  if (!contentType.includes('application/json')) {
+    throw new Error(
+      `unexpected search response content-type: ${contentType || 'none'}`,
+    )
+  }
+  if (response.status === 200) {
     return { kind: 'direct', result: response.data }
   }
-  // 202：后台 Job 受理（其余 2xx 视为后台以 fail-closed 兜底）
-  const body = response.data as Partial<ResearchSearchResponse> & {
-    generation_id?: string
-    job_id?: string | null
-    status?: string
+  if (response.status === 202) {
+    const body = response.data as Partial<ResearchSearchResponse> & {
+      generation_id?: string
+      job_id?: string | null
+      status?: string
+    }
+    return {
+      kind: 'background',
+      generation_id: String(body.generation_id ?? ''),
+      job_id: body.job_id ?? null,
+      status: String(body.status ?? 'queued'),
+    }
   }
-  return {
-    kind: 'background',
-    generation_id: String(body.generation_id ?? ''),
-    job_id: body.job_id ?? null,
-    status: String(body.status ?? 'queued'),
-  }
+  throw new Error(`unexpected search response status: ${response.status}`)
 }
 
 export async function createCompare(

@@ -1034,7 +1034,7 @@ export const trTR = {
     previewTitle: "Bağlam önizlemesi",
     previewDirectHint: "Doğrudan istekte sığacağı tahmin ediliyor.",
     previewJobHint: "Doğrudan istek için çok büyük — arka plan işi olarak çalışacak.",
-    backgroundQueued: "Arka plan işi olarak kuyruğa alındı; yeniledikten sonra görünür kalır.",
+    backgroundQueued: "Arka plan işi olarak kuyruğa alındı; ilerlemeyi araştırma işleri listesinde izleyin.",
     resultModel: "Model",
     resultLevel: "Bağlam",
     usageEstimatedBadge: "tahmini",

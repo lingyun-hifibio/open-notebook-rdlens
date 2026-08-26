@@ -1034,7 +1034,7 @@ export const ptBR = {
     previewTitle: "Pré-visualização do contexto",
     previewDirectHint: "Estimado para caber em uma solicitação direta.",
     previewJobHint: "Grande demais para solicitação direta — será executado como trabalho em segundo plano.",
-    backgroundQueued: "Na fila como trabalho em segundo plano; permanece visível após atualizar.",
+    backgroundQueued: "Na fila como trabalho em segundo plano; acompanhe o progresso na lista de tarefas de pesquisa.",
     resultModel: "Modelo",
     resultLevel: "Contexto",
     usageEstimatedBadge: "estimado",

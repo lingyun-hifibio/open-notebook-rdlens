@@ -1034,7 +1034,7 @@ export const zhTW = {
     previewTitle: "上下文預覽",
     previewDirectHint: "預計可直接執行。",
     previewJobHint: "超出直接請求預算，將轉為背景任務。",
-    backgroundQueued: "已排入背景任務，重新整理後仍可見。",
+    backgroundQueued: "已排入背景任務；可在研究任務清單中查看進度。",
     resultModel: "模型",
     resultLevel: "上下文",
     usageEstimatedBadge: "估算用量",

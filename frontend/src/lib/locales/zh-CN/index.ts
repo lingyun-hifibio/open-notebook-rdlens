@@ -1034,7 +1034,7 @@ export const zhCN = {
     previewTitle: "上下文预览",
     previewDirectHint: "预计可直接执行。",
     previewJobHint: "超出直接请求预算，将转为后台任务。",
-    backgroundQueued: "已排队为后台任务，刷新后仍可见。",
+    backgroundQueued: "已排队为后台任务；可在研究任务列表中查看进度。",
     resultModel: "模型",
     resultLevel: "上下文",
     usageEstimatedBadge: "估算用量",

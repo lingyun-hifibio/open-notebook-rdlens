@@ -119,10 +119,58 @@ describe('ResearchSearchPanel v1（§14.3）', () => {
         query: 'what is ORR?',
         model_id: 'm-local',
       }),
+      expect.objectContaining({ idempotencyKey: 'ui-key' }),
     )
-    // §14.3 结果展示：覆盖报告 + 估算 usage 标识
+    // §14.3 结果展示：provider/覆盖报告 + 估算 usage 标识
+    expect(screen.getByTestId('search-provider').textContent).toContain(
+      'local-sglang',
+    )
     expect(screen.getByTestId('search-coverage')).toBeTruthy()
     expect(screen.getByTestId('search-model').textContent).toContain('m-local')
+  })
+
+  it('失败后立即重试复用同一幂等键；成功后重置为新执行（§7.2）', async () => {
+    vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
+    vi.mocked(searchV1)
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockResolvedValueOnce({
+        kind: 'direct',
+        result: {
+          request_id: 'r9',
+          resolved_mode: 'direct_context',
+          evidence: [],
+          citations: [],
+          usage: { input_tokens: 1, output_tokens: 1 },
+          degradation_reason: null,
+          conclusion: 'ok',
+        },
+      })
+    render(
+      <ResearchSearchPanel
+        projectId="p1"
+        selectedSourceIds={['d1']}
+        selectedNoteIds={[]}
+      />,
+    )
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId('model-select') as HTMLSelectElement).value,
+      ).toBe('m-local'),
+    )
+    const runButton = () =>
+      screen.getByRole('button', { name: 'research.searchRun' })
+    fireEvent.change(screen.getByTestId('search-input'), {
+      target: { value: 'retry me' },
+    })
+    fireEvent.click(runButton())
+    await waitFor(() => expect(screen.getByText('network down')).toBeTruthy())
+    fireEvent.click(runButton())
+    await waitFor(() => expect(screen.getByTestId('search-result')).toBeTruthy())
+    // 两次调用使用同一 Idempotency-Key（同逻辑提交不双跑）
+    const firstKey = vi.mocked(searchV1).mock.calls[0][2]?.idempotencyKey
+    const secondKey = vi.mocked(searchV1).mock.calls[1][2]?.idempotencyKey
+    expect(firstKey).toBeTruthy()
+    expect(secondKey).toBe(firstKey)
   })
 
   it('202 后台受理展示排队提示而非结果', async () => {

@@ -1034,7 +1034,7 @@ export const caES = {
     previewTitle: "Vista prèvia del contexte",
     previewDirectHint: "Es estima que cap en una sol·licitud directa.",
     previewJobHint: "Massa gran per a una sol·licitud directa: s'executarà com a treball en segon pla.",
-    backgroundQueued: "En cua com a treball en segon pla; continua visible en actualitzar.",
+    backgroundQueued: "En cua com a treball en segon pla; segueix el progrés a la llista de treballs de recerca.",
     resultModel: "Model",
     resultLevel: "Context",
     usageEstimatedBadge: "estimat",

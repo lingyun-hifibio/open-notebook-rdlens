@@ -1034,7 +1034,7 @@ export const itIT = {
     previewTitle: "Anteprima contesto",
     previewDirectHint: "Stimato compatibile con una richiesta diretta.",
     previewJobHint: "Troppo grande per una richiesta diretta: verrà eseguito come processo in background.",
-    backgroundQueued: "In coda come processo in background; resta visibile dopo l'aggiornamento.",
+    backgroundQueued: "In coda come processo in background; segui l'avanzamento nell'elenco dei job di ricerca.",
     resultModel: "Modello",
     resultLevel: "Contesto",
     usageEstimatedBadge: "stimato",

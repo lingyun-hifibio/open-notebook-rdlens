@@ -1035,7 +1035,7 @@ export const esES = {
     previewTitle: "Vista previa del contexto",
     previewDirectHint: "Se estima que cabe en una solicitud directa.",
     previewJobHint: "Demasiado grande para una solicitud directa: se ejecutará como trabajo en segundo plano.",
-    backgroundQueued: "En cola como trabajo en segundo plano; sigue visible tras actualizar.",
+    backgroundQueued: "En cola como trabajo en segundo plano; sigue el progreso en la lista de trabajos de investigación.",
     resultModel: "Modelo",
     resultLevel: "Contexto",
     usageEstimatedBadge: "estimado",

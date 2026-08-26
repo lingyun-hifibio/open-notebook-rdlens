@@ -1034,7 +1034,7 @@ export const frFR = {
     previewTitle: "Aperçu du contexte",
     previewDirectHint: "Devrait tenir dans une requête directe.",
     previewJobHint: "Trop volumineux pour une requête directe – sera exécuté en tâche de fond.",
-    backgroundQueued: "Mis en file en tâche de fond ; reste visible après actualisation.",
+    backgroundQueued: "Mis en file en tâche de fond ; suivez la progression dans la liste des tâches de recherche.",
     resultModel: "Modèle",
     resultLevel: "Contexte",
     usageEstimatedBadge: "estimé",

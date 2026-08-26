@@ -8,6 +8,7 @@
  * - 模型列表 / 执行偏好 GET/PUT / Context Preview 端点路径。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { InternalAxiosRequestConfig } from 'axios'
 import { apiClient } from '@/lib/api/client'
 import * as researchApi from './api'
 
@@ -30,9 +31,10 @@ interface Captured {
 
 const calls: Captured[] = []
 
-function installAdapter(responder: (config: Record<string, unknown>) => {
+function installAdapter(responder: (config: InternalAxiosRequestConfig) => {
   status: number
   data: unknown
+  contentType?: string
 }) {
   apiClient.defaults.adapter = async (config) => {
     const raw = config.data
@@ -50,7 +52,7 @@ function installAdapter(responder: (config: Record<string, unknown>) => {
       data: outcome.data,
       status: outcome.status,
       statusText: 'OK',
-      headers: {},
+      headers: { 'content-type': outcome.contentType ?? 'application/json' },
       config,
     }
   }
@@ -177,6 +179,32 @@ describe('contract v1 客户端（Phase 2b）', () => {
       expect(outcome.job_id).toBe('job_9')
       expect(outcome.generation_id).toBe('gen_2')
     }
+  })
+
+  it('非 JSON 的 200 响应 fail-closed 抛错（§14.3 Content-Type 双条件）', async () => {
+    installAdapter(() => ({
+      status: 200,
+      data: '<html>gateway error page</html>',
+      contentType: 'text/html',
+    }))
+    await expect(
+      researchApi.searchV1(P, {
+        query: 'q',
+        model_id: 'm-local',
+        context_level: 'focused',
+      }),
+    ).rejects.toThrow('content-type')
+  })
+
+  it('非 200/202 的 2xx 抛错而非兜底归类', async () => {
+    installAdapter(() => ({ status: 204, data: '' }))
+    await expect(
+      researchApi.searchV1(P, {
+        query: 'q',
+        model_id: 'm-local',
+        context_level: 'focused',
+      }),
+    ).rejects.toThrow('status: 204')
   })
 
   it('searchV1 显式 idempotencyKey 复用调用方给定值', async () => {

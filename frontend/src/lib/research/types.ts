@@ -132,8 +132,13 @@ export interface ResearchSearchResponse {
   usage: ResearchTokenUsage
   degradation_reason: string | null
   conclusion: string
-  /** Issue #200：v1 响应携带（真实执行路径的覆盖报告） */
+  /** Issue #200：v1 响应固定携带（§14.2/§14.3 结果展示依据） */
   generation_id?: string
+  job_id?: string | null
+  status?: string
+  model_id?: string
+  provider_id?: string | null
+  context_level?: string
   context_coverage?: ResearchContextCoverage
 }
 
@@ -155,7 +160,6 @@ export interface ResearchModelOption {
   model_id: string
   display_name?: string | null
   provider_id?: string | null
-  provider_is_external?: boolean
   context_window?: number | null
 }
 
@@ -178,17 +182,6 @@ export interface ResearchContextPreview {
   needs_consent: boolean
   coverage: Record<string, unknown>
   warnings: string[]
-}
-
-/** Search 响应（契约 §8.1；REQ-ENG-04：模式/证据/引用/用量/降级原因） */
-export interface ResearchSearchResponse {
-  request_id: string
-  resolved_mode: string
-  evidence: ResearchEvidenceItem[]
-  citations: ResearchCitation[]
-  usage: ResearchTokenUsage
-  degradation_reason: string | null
-  conclusion: string
 }
 
 export interface ResearchChatRequest {

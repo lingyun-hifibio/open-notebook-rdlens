@@ -1033,7 +1033,7 @@ export const enUS = {
     previewTitle: "Context preview",
     previewDirectHint: "Estimated to fit a direct request.",
     previewJobHint: "Too large for a direct request — will run as a background job.",
-    backgroundQueued: "Queued as a background job; it remains visible after refresh.",
+    backgroundQueued: "Queued as a background job; track it in the research jobs list.",
     resultModel: "Model",
     resultLevel: "Context",
     usageEstimatedBadge: "estimated",
