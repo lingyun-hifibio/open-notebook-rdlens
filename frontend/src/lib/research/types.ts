@@ -25,6 +25,8 @@ export interface ResearchTokenUsage {
   input_tokens: number
   thinking_tokens?: number
   output_tokens: number
+  /** §13.2：无真实 usage 按本地估算结算时为 true（v1 响应） */
+  estimated?: boolean
 }
 
 /**
@@ -103,6 +105,22 @@ export interface ResearchSearchRequest {
   source_ids?: string[]
   note_ids?: string[]
   mode?: string
+  /** Issue #200 §14.2：v1 必填的显式模型 */
+  model_id?: string
+  /** Issue #200 §8：三档上下文（focused/document/workspace） */
+  context_level?: string
+}
+
+/** §8.1/§8.5 focused coverage report（v1 响应可选字段） */
+export interface ResearchContextCoverage {
+  context_level?: string
+  selected_full?: number
+  relevant_extra?: number
+  trimmed?: number
+  missing?: number
+  token_estimate?: number
+  input_budget?: number | null
+  estimator_version?: string
 }
 
 /** Search 响应（契约 §8.1；REQ-ENG-04：模式/证据/引用/用量/降级原因） */
@@ -114,6 +132,56 @@ export interface ResearchSearchResponse {
   usage: ResearchTokenUsage
   degradation_reason: string | null
   conclusion: string
+  /** Issue #200：v1 响应固定携带（§14.2/§14.3 结果展示依据） */
+  generation_id?: string
+  job_id?: string | null
+  status?: string
+  model_id?: string
+  provider_id?: string | null
+  context_level?: string
+  context_coverage?: ResearchContextCoverage
+}
+
+/**
+ * v1 搜索结果判别联合（§14.3：按 HTTP status 分支，不能只看 body）。
+ * direct = 200 JSON；background = 202 JSON（generation/job 引用）。
+ */
+export type ResearchSearchOutcome =
+  | { kind: 'direct'; result: ResearchSearchResponse }
+  | {
+      kind: 'background'
+      generation_id: string
+      job_id: string | null
+      status: string
+    }
+
+/** 用户模型列表条目（§5.2 GET models；本地 enabled 且非 embedding） */
+export interface ResearchModelOption {
+  model_id: string
+  display_name?: string | null
+  provider_id?: string | null
+  context_window?: number | null
+}
+
+/** Workspace 执行偏好（§6.2 GET/PUT execution-preferences 契约形状） */
+export interface ResearchExecutionPreferences {
+  project_id: string
+  default_context_level: 'focused' | 'document' | 'workspace'
+  preferred_model_id: string | null
+  updated_by: number | null
+  updated_at: string | null
+}
+
+/** Context Preview 响应（§9.1 本地只读预判；结论只是提示） */
+export interface ResearchContextPreview {
+  source_count: number
+  chunk_count: number
+  note_count: number
+  token_estimate: number
+  direct_or_background: 'direct' | 'background_job'
+  needs_consent: boolean
+  coverage: Record<string, unknown>
+  warnings: string[]
 }
 
 export interface ResearchChatRequest {
