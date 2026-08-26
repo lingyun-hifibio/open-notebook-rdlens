@@ -31,7 +31,10 @@ const noPrefs = {
 
 vi.mock('@/lib/research/api', () => ({
   listModels: vi.fn(async () => ({
-    models: [{ model_id: 'm-local', display_name: 'Local M' }],
+    models: [
+      { model_id: 'm-local', display_name: 'Local M' },
+      { model_id: 'm-ext', display_name: 'Ext M' },
+    ],
   })),
   getExecutionPreferences: vi.fn(async () => noPrefs),
   saveExecutionPreferences: vi.fn(async (input) => ({ ...noPrefs, ...input })),
@@ -46,10 +49,12 @@ vi.mock('@/lib/research/api', () => ({
     warnings: [],
   })),
   searchV1: vi.fn(),
-  newIdempotencyKey: vi.fn(() => 'ui-key'),
+  newIdempotencyKey: vi.fn(() => `ui-${++keySeq}`),
 }))
 
 import { searchV1, getExecutionPreferences } from '@/lib/research/api'
+
+let keySeq = 0
 
 describe('ResearchSearchPanel v1（§14.3）', () => {
   beforeEach(() => {
@@ -119,7 +124,9 @@ describe('ResearchSearchPanel v1（§14.3）', () => {
         query: 'what is ORR?',
         model_id: 'm-local',
       }),
-      expect.objectContaining({ idempotencyKey: 'ui-key' }),
+      expect.objectContaining({
+        idempotencyKey: expect.stringMatching(/^ui-/),
+      }),
     )
     // §14.3 结果展示：provider/覆盖报告 + 估算 usage 标识
     expect(screen.getByTestId('search-provider').textContent).toContain(
@@ -159,6 +166,14 @@ describe('ResearchSearchPanel v1（§14.3）', () => {
     )
     const runButton = () =>
       screen.getByRole('button', { name: 'research.searchRun' })
+    const waitIdleRun = async () => {
+      await waitFor(() =>
+        expect(
+          screen.getByRole('button', { name: 'research.searchRun' }),
+        ).toBeTruthy(),
+      )
+      return runButton()
+    }
     fireEvent.change(screen.getByTestId('search-input'), {
       target: { value: 'retry me' },
     })
@@ -171,6 +186,163 @@ describe('ResearchSearchPanel v1（§14.3）', () => {
     const secondKey = vi.mocked(searchV1).mock.calls[1][2]?.idempotencyKey
     expect(firstKey).toBeTruthy()
     expect(secondKey).toBe(firstKey)
+  })
+
+  it('服务端已给结局的错误后重试使用新幂等键（§7.2 终态需新 key）', async () => {
+    vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
+    const serverError = Object.assign(new Error('engine unavailable'), {
+      response: { status: 503 },
+    })
+    vi.mocked(searchV1)
+      .mockRejectedValueOnce(serverError)
+      .mockResolvedValueOnce({
+        kind: 'direct',
+        result: {
+          request_id: 'r10',
+          resolved_mode: 'direct_context',
+          evidence: [],
+          citations: [],
+          usage: { input_tokens: 1, output_tokens: 1 },
+          degradation_reason: null,
+          conclusion: 'ok',
+        },
+      })
+    render(
+      <ResearchSearchPanel
+        projectId="p1"
+        selectedSourceIds={['d1']}
+        selectedNoteIds={[]}
+      />,
+    )
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId('model-select') as HTMLSelectElement).value,
+      ).toBe('m-local'),
+    )
+    const runButton = () =>
+      screen.getByRole('button', { name: 'research.searchRun' })
+    const waitIdleRun = async () => {
+      await waitFor(() =>
+        expect(
+          screen.getByRole('button', { name: 'research.searchRun' }),
+        ).toBeTruthy(),
+      )
+      return runButton()
+    }
+    fireEvent.change(screen.getByTestId('search-input'), {
+      target: { value: 'q' },
+    })
+    fireEvent.click(runButton())
+    await waitFor(() =>
+      expect(screen.getByText('engine unavailable')).toBeTruthy(),
+    )
+    fireEvent.click(await waitIdleRun())
+    await waitFor(() => expect(screen.getByTestId('search-result')).toBeTruthy())
+    const firstKey = vi.mocked(searchV1).mock.calls[0][2]?.idempotencyKey
+    const secondKey = vi.mocked(searchV1).mock.calls[1][2]?.idempotencyKey
+    expect(firstKey).toBeTruthy()
+    expect(secondKey).not.toBe(firstKey)
+  })
+
+  it('改输入后重试换新键（不落入 idempotency_conflict 循环）', async () => {
+    vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
+    vi.mocked(searchV1).mockRejectedValue(new Error('network down'))
+    render(
+      <ResearchSearchPanel
+        projectId="p1"
+        selectedSourceIds={['d1']}
+        selectedNoteIds={[]}
+      />,
+    )
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId('model-select') as HTMLSelectElement).value,
+      ).toBe('m-local'),
+    )
+    const runButton = () =>
+      screen.getByRole('button', { name: 'research.searchRun' })
+    const waitIdleRun = async () => {
+      await waitFor(() =>
+        expect(
+          screen.getByRole('button', { name: 'research.searchRun' }),
+        ).toBeTruthy(),
+      )
+      return runButton()
+    }
+    fireEvent.change(screen.getByTestId('search-input'), {
+      target: { value: 'first query' },
+    })
+    fireEvent.click(runButton())
+    await waitFor(() => expect(screen.getByText('network down')).toBeTruthy())
+    // 网络层错误保留同键 + 同输入
+    fireEvent.click(await waitIdleRun())
+    const secondCall = vi.mocked(searchV1).mock.calls[1]
+    expect(secondCall[2]?.idempotencyKey).toBe(
+      vi.mocked(searchV1).mock.calls[0][2]?.idempotencyKey,
+    )
+    // 改输入 → 新键（避免 409 idempotency_conflict 死循环）
+    fireEvent.change(screen.getByTestId('search-input'), {
+      target: { value: 'second query' },
+    })
+    fireEvent.click(await waitIdleRun())
+    const thirdCall = vi.mocked(searchV1).mock.calls[2]
+    expect(thirdCall[2]?.idempotencyKey).not.toBe(
+      vi.mocked(searchV1).mock.calls[0][2]?.idempotencyKey,
+    )
+  })
+
+  it('未保存的手选模型/档位直接进入请求体（受控布线）', async () => {
+    vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
+    vi.mocked(searchV1).mockResolvedValue({
+      kind: 'background',
+      generation_id: 'gen_u',
+      job_id: 'job_u',
+      status: 'queued',
+    })
+    render(
+      <ResearchSearchPanel
+        projectId="p1"
+        selectedSourceIds={['d1']}
+        selectedNoteIds={[]}
+      />,
+    )
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId('model-select') as HTMLSelectElement).value,
+      ).toBe('m-local'),
+    )
+    const runButton = () =>
+      screen.getByRole('button', { name: 'research.searchRun' })
+    const waitIdleRun = async () => {
+      await waitFor(() =>
+        expect(
+          screen.getByRole('button', { name: 'research.searchRun' }),
+        ).toBeTruthy(),
+      )
+      return runButton()
+    }
+    // 不点 Save，直接改选并 Run
+    fireEvent.change(screen.getByTestId('model-select'), {
+      target: { value: 'm-ext' },
+    })
+    fireEvent.change(screen.getByTestId('context-select'), {
+      target: { value: 'workspace' },
+    })
+    fireEvent.change(screen.getByTestId('search-input'), {
+      target: { value: 'unsaved selection' },
+    })
+    fireEvent.click(runButton())
+    await waitFor(() =>
+      expect(screen.getByTestId('background-queued')).toBeTruthy(),
+    )
+    expect(searchV1).toHaveBeenCalledWith(
+      'p1',
+      expect.objectContaining({
+        model_id: 'm-ext',
+        context_level: 'workspace',
+      }),
+      expect.anything(),
+    )
   })
 
   it('202 后台受理展示排队提示而非结果', async () => {

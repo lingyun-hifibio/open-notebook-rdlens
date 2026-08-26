@@ -67,9 +67,12 @@ export function ResearchSearchPanel({
   const [selectedModelId, setSelectedModelId] = useState('')
   const [selectedLevel, setSelectedLevel] = useState<ContextLevel>('focused')
   const [savingPreference, setSavingPreference] = useState(false)
-  // §7.2 幂等键：同一逻辑提交（含失败后的立即重试）复用同键；
-  // 成功受理后重置，下一次 Run 为新执行。
+  // §7.2 幂等键：同一逻辑提交（同输入、含网络层失败后的立即重试）
+  // 复用同键防双跑；成功受理、服务端已给确定性结局（带 response 的错
+  // 误）、或输入变化时重置为新执行。
   const idempotencyKeyRef = useRef<string | null>(null)
+  const keyInputsRef = useRef<string>('')
+  const interactedRef = useRef(false)
 
   // Context Preview（§9.1 只读预判；发送前提示）
   const [preview, setPreview] = useState<ResearchContextPreview | null>(null)
@@ -85,9 +88,12 @@ export function ResearchSearchPanel({
         if (cancelled) return
         setModels(modelPage.models ?? [])
         setPreferences(prefs)
-        // 初始选择取已保存偏好（无偏好 → 模型为空，档位 focused）
-        setSelectedModelId(prefs.preferred_model_id ?? '')
-        setSelectedLevel(prefs.default_context_level ?? 'focused')
+        // 初始选择取已保存偏好（无偏好 → 模型为空，档位 focused）；
+        // 用户在加载完成前已手动选择的，不覆盖（评审 NEW-3）
+        if (!interactedRef.current) {
+          setSelectedModelId(prefs.preferred_model_id ?? '')
+          setSelectedLevel(prefs.default_context_level ?? 'focused')
+        }
       } catch {
         // 目录/偏好加载失败不阻塞面板；Run 由「未选模型」守卫拦截
       }
@@ -159,8 +165,18 @@ export function ResearchSearchPanel({
     setError(null)
     setResult(null)
     setBackground(null)
-    if (!idempotencyKeyRef.current) {
+    // 同一逻辑提交（同输入）复用幂等键；输入变化即视为新执行（§7.2：
+    // 终态失败后需新 key 才能发起新执行）
+    const signature = [
+      trimmed,
+      selectedModelId,
+      selectedLevel,
+      selectedSourceIds.join(','),
+      selectedNoteIds.join(','),
+    ].join('|')
+    if (!idempotencyKeyRef.current || keyInputsRef.current !== signature) {
       idempotencyKeyRef.current = newIdempotencyKey()
+      keyInputsRef.current = signature
     }
     try {
       const outcome = await searchV1(
@@ -176,6 +192,7 @@ export function ResearchSearchPanel({
         { idempotencyKey: idempotencyKeyRef.current },
       )
       idempotencyKeyRef.current = null
+      keyInputsRef.current = ''
       if (outcome.kind === 'direct') {
         setResult(outcome.result)
       } else {
@@ -185,7 +202,14 @@ export function ResearchSearchPanel({
         })
       }
     } catch (err) {
-      // 失败保留同键：立即重试时 Gateway 按幂等收敛，不双跑（§7.2）
+      // 网络层错误（无 response，结果真未知）保留同键防双跑；
+      // 服务端已给确定性结局（有 response）→ 重置允许新执行
+      const hasServerResponse =
+        !!(err as { response?: unknown } | null)?.response
+      if (hasServerResponse) {
+        idempotencyKeyRef.current = null
+        keyInputsRef.current = ''
+      }
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       setLoading(false)
@@ -200,8 +224,14 @@ export function ResearchSearchPanel({
           preferences={preferences}
           selectedModelId={selectedModelId}
           selectedLevel={selectedLevel}
-          onSelectModel={setSelectedModelId}
-          onSelectLevel={setSelectedLevel}
+          onSelectModel={(modelId) => {
+            interactedRef.current = true
+            setSelectedModelId(modelId)
+          }}
+          onSelectLevel={(level) => {
+            interactedRef.current = true
+            setSelectedLevel(level)
+          }}
           onSavePreference={handleSavePreference}
           saving={savingPreference}
         />
