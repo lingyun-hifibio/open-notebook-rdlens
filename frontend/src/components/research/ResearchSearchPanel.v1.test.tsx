@@ -166,14 +166,6 @@ describe('ResearchSearchPanel v1（§14.3）', () => {
     )
     const runButton = () =>
       screen.getByRole('button', { name: 'research.searchRun' })
-    const waitIdleRun = async () => {
-      await waitFor(() =>
-        expect(
-          screen.getByRole('button', { name: 'research.searchRun' }),
-        ).toBeTruthy(),
-      )
-      return runButton()
-    }
     fireEvent.change(screen.getByTestId('search-input'), {
       target: { value: 'retry me' },
     })
@@ -313,14 +305,6 @@ describe('ResearchSearchPanel v1（§14.3）', () => {
     )
     const runButton = () =>
       screen.getByRole('button', { name: 'research.searchRun' })
-    const waitIdleRun = async () => {
-      await waitFor(() =>
-        expect(
-          screen.getByRole('button', { name: 'research.searchRun' }),
-        ).toBeTruthy(),
-      )
-      return runButton()
-    }
     // 不点 Save，直接改选并 Run
     fireEvent.change(screen.getByTestId('model-select'), {
       target: { value: 'm-ext' },

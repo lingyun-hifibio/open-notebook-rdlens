@@ -79,6 +79,9 @@ export function ResearchSearchPanel({
 
   useEffect(() => {
     let cancelled = false
+    // 项目上下文热切换（组件不重挂载）时清除手选守卫，
+    // 允许新项目偏好回显（复审 R3 残留）
+    interactedRef.current = false
     void (async () => {
       try {
         const [modelPage, prefs] = await Promise.all([
@@ -167,13 +170,13 @@ export function ResearchSearchPanel({
     setBackground(null)
     // 同一逻辑提交（同输入）复用幂等键；输入变化即视为新执行（§7.2：
     // 终态失败后需新 key 才能发起新执行）
-    const signature = [
+    const signature = JSON.stringify([
       trimmed,
       selectedModelId,
       selectedLevel,
-      selectedSourceIds.join(','),
-      selectedNoteIds.join(','),
-    ].join('|')
+      selectedSourceIds,
+      selectedNoteIds,
+    ])
     if (!idempotencyKeyRef.current || keyInputsRef.current !== signature) {
       idempotencyKeyRef.current = newIdempotencyKey()
       keyInputsRef.current = signature
