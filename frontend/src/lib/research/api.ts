@@ -28,6 +28,7 @@ import type {
   ResearchCompareCreateRequest,
   ResearchCompareCreateResponse,
   ResearchContextPreview,
+  ResearchEgressConsentResponse,
   ResearchExecutionPreferences,
   ResearchJob,
   ResearchModelOption,
@@ -309,6 +310,36 @@ export async function fetchContextPreview(
   const response = await apiClient.post<ResearchContextPreview>(
     researchPath(projectId, 'context-preview'),
     request,
+  )
+  return response.data
+}
+
+/** Issue #202 Phase 3b：Workspace 外发确认（§6.3/§14.2 用户侧端点）。 */
+
+export async function getExternalEgressConsent(
+  projectId: string,
+): Promise<ResearchEgressConsentResponse> {
+  const response = await apiClient.get<ResearchEgressConsentResponse>(
+    researchPath(projectId, 'external-egress-consent'),
+  )
+  return response.data
+}
+
+export async function acknowledgeExternalEgressConsent(
+  projectId: string,
+): Promise<ResearchEgressConsentResponse> {
+  const response = await apiClient.post<ResearchEgressConsentResponse>(
+    researchPath(projectId, 'external-egress-consent'),
+    {},
+  )
+  return response.data
+}
+
+export async function revokeExternalEgressConsent(
+  projectId: string,
+): Promise<ResearchEgressConsentResponse> {
+  const response = await apiClient.delete<ResearchEgressConsentResponse>(
+    researchPath(projectId, 'external-egress-consent'),
   )
   return response.data
 }

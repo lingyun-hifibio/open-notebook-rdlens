@@ -29,11 +29,42 @@ const noPrefs = {
   updated_at: null,
 }
 
+const validConsentResponse = {
+  consent: {
+    project_id: 'p1',
+    acknowledged_by: 1,
+    acknowledged_at: '2026-08-27T00:00:00+00:00',
+    policy_version: '1',
+    scope_hash: 'hash-current',
+    revoked_at: null,
+    revoked_by: null,
+    valid: true,
+  },
+  required_scope: {
+    policy_version: '1',
+    provider_destinations: [
+      { provider_id: 'ext-1', api_base_url: 'https://ext.example.com/v1' },
+    ],
+    data_categories: ['focused_context'],
+    scope_hash: 'hash-current',
+  },
+}
+
+const noConsentResponse = {
+  consent: null,
+  required_scope: validConsentResponse.required_scope,
+}
+
 vi.mock('@/lib/research/api', () => ({
   listModels: vi.fn(async () => ({
     models: [
-      { model_id: 'm-local', display_name: 'Local M' },
-      { model_id: 'm-ext', display_name: 'Ext M' },
+      { model_id: 'm-local', display_name: 'Local M', data_egress: false },
+      {
+        model_id: 'm-ext',
+        display_name: 'Ext M',
+        provider_id: 'ext-1',
+        data_egress: true,
+      },
     ],
   })),
   getExecutionPreferences: vi.fn(async () => noPrefs),
@@ -48,6 +79,9 @@ vi.mock('@/lib/research/api', () => ({
     coverage: {},
     warnings: [],
   })),
+  // Issue #202 Phase 3b：外发确认端点（mock 默认已确认，测试可覆盖）
+  getExternalEgressConsent: vi.fn(async () => validConsentResponse),
+  acknowledgeExternalEgressConsent: vi.fn(async () => validConsentResponse),
   searchV1: vi.fn(),
   newIdempotencyKey: vi.fn(() => `ui-${++keySeq}`),
 }))
@@ -360,5 +394,133 @@ describe('ResearchSearchPanel v1（§14.3）', () => {
     expect(screen.getByTestId('background-queued').textContent).toContain(
       'job_bg_9',
     )
+  })
+
+  it('外部模型无有效确认时 Run 打开 Owner 确认框，确认后执行', async () => {
+    // Issue #202 §14.3：首次使用外部模型 → 展示数据类别与目的地范围
+    const { getExternalEgressConsent, acknowledgeExternalEgressConsent } =
+      await import('@/lib/research/api')
+    vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
+    vi.mocked(getExternalEgressConsent).mockResolvedValue(noConsentResponse)
+    vi.mocked(searchV1).mockResolvedValue({
+      kind: 'direct',
+      result: {
+        request_id: 'r1',
+        resolved_mode: 'hybrid_rag',
+        evidence: [],
+        citations: [],
+        usage: { input_tokens: 10, output_tokens: 5, estimated: true },
+        conclusion: 'ok',
+      },
+    })
+    render(
+      <ResearchSearchPanel
+        projectId="p1"
+        selectedSourceIds={['d1']}
+        selectedNoteIds={[]}
+      />,
+    )
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId('model-select') as HTMLSelectElement).value,
+      ).toBe('m-local'),
+    )
+    // 选择外部模型 → 展示「需要确认」提示
+    fireEvent.change(screen.getByTestId('model-select'), {
+      target: { value: 'm-ext' },
+    })
+    await waitFor(() =>
+      expect(screen.getByTestId('consent-required-hint')).toBeTruthy(),
+    )
+    fireEvent.change(screen.getByTestId('search-input'), {
+      target: { value: 'external question' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'research.searchRun' }))
+    // Run 未发出请求：先展示确认框（零外发语义的 UI 侧）
+    await waitFor(() => expect(screen.getByTestId('consent-dialog')).toBeTruthy())
+    expect(searchV1).not.toHaveBeenCalled()
+    expect(screen.getByTestId('consent-destination').textContent).toContain(
+      'ext-1',
+    )
+    expect(screen.getByTestId('consent-categories').textContent).toContain(
+      'focused_context',
+    )
+    // 确认 → POST consent → 继续执行
+    fireEvent.click(screen.getByTestId('consent-confirm'))
+    await waitFor(() => expect(searchV1).toHaveBeenCalled())
+    expect(acknowledgeExternalEgressConsent).toHaveBeenCalledWith('p1')
+    await waitFor(() =>
+      expect(screen.getByTestId('search-result')).toBeTruthy(),
+    )
+  })
+
+  it('外部模型已有有效确认时 Run 直接执行，不弹确认框', async () => {
+    const { getExternalEgressConsent } = await import('@/lib/research/api')
+    vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
+    vi.mocked(getExternalEgressConsent).mockResolvedValue(validConsentResponse)
+    vi.mocked(searchV1).mockResolvedValue({
+      kind: 'direct',
+      result: {
+        request_id: 'r2',
+        resolved_mode: 'hybrid_rag',
+        evidence: [],
+        citations: [],
+        usage: { input_tokens: 10, output_tokens: 5, estimated: false },
+        conclusion: 'ok',
+      },
+    })
+    render(
+      <ResearchSearchPanel
+        projectId="p1"
+        selectedSourceIds={['d1']}
+        selectedNoteIds={[]}
+      />,
+    )
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId('model-select') as HTMLSelectElement).value,
+      ).toBe('m-local'),
+    )
+    fireEvent.change(screen.getByTestId('model-select'), {
+      target: { value: 'm-ext' },
+    })
+    fireEvent.change(screen.getByTestId('search-input'), {
+      target: { value: 'external question 2' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'research.searchRun' }))
+    await waitFor(() => expect(searchV1).toHaveBeenCalled())
+    expect(screen.queryByTestId('consent-dialog')).toBeNull()
+  })
+
+  it('服务端返回 consent_required 时重新打开确认框', async () => {
+    // dispatch 侧重检（§9.2 第 4 步）：确认在途撤销/scope 变化后及时生效
+    const { getExternalEgressConsent } = await import('@/lib/research/api')
+    vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
+    vi.mocked(getExternalEgressConsent).mockResolvedValue(noConsentResponse)
+    vi.mocked(searchV1).mockRejectedValue({
+      response: {
+        data: { detail: { code: 'consent_required', message: 'x' } },
+      },
+    })
+    render(
+      <ResearchSearchPanel
+        projectId="p1"
+        selectedSourceIds={['d1']}
+        selectedNoteIds={[]}
+      />,
+    )
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId('model-select') as HTMLSelectElement).value,
+      ).toBe('m-local'),
+    )
+    fireEvent.change(screen.getByTestId('model-select'), {
+      target: { value: 'm-ext' },
+    })
+    fireEvent.change(screen.getByTestId('search-input'), {
+      target: { value: 'external question 3' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'research.searchRun' }))
+    await waitFor(() => expect(screen.getByTestId('consent-dialog')).toBeTruthy())
   })
 })

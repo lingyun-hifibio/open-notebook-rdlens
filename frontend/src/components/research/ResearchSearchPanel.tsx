@@ -7,14 +7,24 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { ResearchCitationList } from './ResearchCitationList'
 import {
   ModelContextSelector,
   type ContextLevel,
 } from './ModelContextSelector'
 import {
+  acknowledgeExternalEgressConsent,
   fetchContextPreview,
   getExecutionPreferences,
+  getExternalEgressConsent,
   listModels,
   newIdempotencyKey,
   saveExecutionPreferences,
@@ -22,6 +32,7 @@ import {
 } from '@/lib/research/api'
 import type {
   ResearchContextPreview,
+  ResearchEgressConsentResponse,
   ResearchExecutionPreferences,
   ResearchModelOption,
   ResearchSearchResponse,
@@ -77,6 +88,19 @@ export function ResearchSearchPanel({
   // Context Preview（§9.1 只读预判；发送前提示）
   const [preview, setPreview] = useState<ResearchContextPreview | null>(null)
 
+  // Issue #202 Phase 3b：Workspace 外发确认（§6.3/§14.3）——
+  // 外部模型首次使用前展示数据类别与目的地范围，明确"发送前预览"。
+  const [consent, setConsent] = useState<ResearchEgressConsentResponse | null>(
+    null,
+  )
+  const [consentOpen, setConsentOpen] = useState(false)
+  const [consenting, setConsenting] = useState(false)
+
+  const selectedModel = models.find((m) => m.model_id === selectedModelId) ?? null
+  // data_egress=true 即外部模型（本地模型恒 false）
+  const selectedModelIsExternal = selectedModel?.data_egress === true
+  const consentValid = consent?.consent?.valid === true
+
   useEffect(() => {
     let cancelled = false
     // 项目上下文热切换（组件不重挂载）时清除手选守卫，
@@ -84,13 +108,15 @@ export function ResearchSearchPanel({
     interactedRef.current = false
     void (async () => {
       try {
-        const [modelPage, prefs] = await Promise.all([
+        const [modelPage, prefs, consentPage] = await Promise.all([
           listModels(projectId),
           getExecutionPreferences(projectId),
+          getExternalEgressConsent(projectId),
         ])
         if (cancelled) return
         setModels(modelPage.models ?? [])
         setPreferences(prefs)
+        setConsent(consentPage)
         // 初始选择取已保存偏好（无偏好 → 模型为空，档位 focused）；
         // 用户在加载完成前已手动选择的，不覆盖（评审 NEW-3）
         if (!interactedRef.current) {
@@ -98,7 +124,7 @@ export function ResearchSearchPanel({
           setSelectedLevel(prefs.default_context_level ?? 'focused')
         }
       } catch {
-        // 目录/偏好加载失败不阻塞面板；Run 由「未选模型」守卫拦截
+        // 目录/偏好/consent 加载失败不阻塞面板；Run 由「未选模型」守卫拦截
       }
     })()
     return () => {
@@ -161,9 +187,31 @@ export function ResearchSearchPanel({
     [projectId],
   )
 
-  const run = async () => {
+  const handleConfirmConsent = async () => {
+    setConsenting(true)
+    try {
+      const updated = await acknowledgeExternalEgressConsent(projectId)
+      setConsent(updated)
+      setConsentOpen(false)
+      void run(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setConsenting(false)
+    }
+  }
+
+  const run = async (skipConsentCheck = false) => {
     const trimmed = query.trim()
     if (!trimmed || loading || !selectedModelId) return
+    // Issue #202：外部模型 + 无有效确认 → 先展示 Owner 确认
+    // （§6.3：无授权零外发；确认请求本身不创建生成）。
+    // ``skipConsentCheck`` 仅供确认回调使用——setState 异步生效，
+    // 闭包内 consentValid 仍是旧值，确认后执行需跳过本次检查。
+    if (!skipConsentCheck && selectedModelIsExternal && !consentValid) {
+      setConsentOpen(true)
+      return
+    }
     setLoading(true)
     setError(null)
     setResult(null)
@@ -212,6 +260,22 @@ export function ResearchSearchPanel({
       if (hasServerResponse) {
         idempotencyKeyRef.current = null
         keyInputsRef.current = ''
+        // 服务端判定授权失效（撤销/策略变化/scope 变化/未确认）→
+        // 重新展示 Owner 确认（dispatch 侧重检，§9.2 第 4 步）
+        const detailCode = (
+          (err as { response?: { data?: { detail?: { code?: string } } } })
+            ?.response?.data?.detail?.code ?? ''
+        )
+        if (
+          [
+            'consent_required',
+            'consent_revoked',
+            'consent_scope_changed',
+            'policy_denied',
+          ].includes(detailCode)
+        ) {
+          setConsentOpen(true)
+        }
       }
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -241,6 +305,11 @@ export function ResearchSearchPanel({
         {!selectedModelId && (
           <p className="mt-1 text-xs text-muted-foreground" data-testid="model-required-hint">
             {t('research.modelRequiredHint')}
+          </p>
+        )}
+        {selectedModelIsExternal && !consentValid && (
+          <p className="mt-1 text-xs text-amber-600" data-testid="consent-required-hint">
+            {t('research.consentRequired')}
           </p>
         )}
         {preview && (
@@ -375,12 +444,64 @@ export function ResearchSearchPanel({
           data-testid="search-input"
         />
         <Button
-          onClick={run}
+          onClick={() => run()}
           disabled={!query.trim() || loading || !selectedModelId}
         >
           {loading ? t('research.searchRunning') : t('research.searchRun')}
         </Button>
       </div>
+
+      {/* Issue #202 §14.3：外部模型首次用于 Workspace 的 Owner 确认——
+          展示数据类别与目的地范围，明确"发送前预览"。 */}
+      <Dialog open={consentOpen} onOpenChange={setConsentOpen}>
+        <DialogContent data-testid="consent-dialog">
+          <DialogHeader>
+            <DialogTitle>{t('research.consentTitle')}</DialogTitle>
+            <DialogDescription>{t('research.consentIntro')}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <div>
+              <p className="font-medium">{t('research.consentDestinations')}</p>
+              <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-muted-foreground">
+                {(consent?.required_scope.provider_destinations ?? []).map(
+                  (destination) => (
+                    <li key={destination.provider_id} data-testid="consent-destination">
+                      {destination.provider_id} · {destination.api_base_url}
+                    </li>
+                  ),
+                )}
+              </ul>
+            </div>
+            <div>
+              <p className="font-medium">{t('research.consentCategories')}</p>
+              <p className="mt-1 text-xs text-muted-foreground" data-testid="consent-categories">
+                {(consent?.required_scope.data_categories ?? []).join(', ')}
+              </p>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {t('research.consentPreviewNote')}
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setConsentOpen(false)}
+              disabled={consenting}
+            >
+              {t('research.consentCancel')}
+            </Button>
+            <Button
+              onClick={handleConfirmConsent}
+              disabled={consenting}
+              data-testid="consent-confirm"
+            >
+              {consenting
+                ? t('research.searchRunning')
+                : t('research.consentConfirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
