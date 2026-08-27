@@ -11,6 +11,7 @@ import type { ResearchSseEvent } from '@/lib/research/types'
 
 vi.mock('@/lib/research/api', () => ({
   getExecutionPreferences: vi.fn(),
+  newIdempotencyKey: vi.fn(() => 'ik-turn'),
   openResearchChatStream: vi.fn(),
 }))
 
@@ -166,6 +167,8 @@ describe('useResearchChat', () => {
 
     expect(streams).toHaveLength(2)
     expect(streams[1].opts.lastEventId).toBe(2)
+    // #238 评审：重连必须复用同一幂等键（新键 = 新 Generation 双扣）
+    expect(streams[1].opts.idempotencyKey).toBe(streams[0].opts.idempotencyKey)
 
     act(() => {
       // 服务端重放 n+1 起（含重复旧事件也不影响）

@@ -14,7 +14,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { getExecutionPreferences, openResearchChatStream } from '@/lib/research/api'
+import { getExecutionPreferences, newIdempotencyKey, openResearchChatStream } from '@/lib/research/api'
 import { applySseEvent, createSseState, type ResearchSseState } from '@/lib/research/sse'
 import type { ResearchCitation, ResearchSseEvent, ResearchTokenUsage } from '@/lib/research/types'
 
@@ -57,6 +57,9 @@ interface ActiveTurn {
   sourceIds: string[]
   noteIds: string[]
   modelId: string | null
+  /** 每 turn 生成一次；断线重连必须复用同一键（后端同键同 hash 可重入，
+   *  新键 = 新 Generation，首事件前断线会双扣） */
+  idempotencyKey: string
   attempt: number
   reconnectCount: number
   lastEventId: number
@@ -135,6 +138,7 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
         // #238：v1 契约显式透传执行偏好（不变量 2：后端不隐式补值）
         model_id: active.modelId ?? undefined,
       },
+      idempotencyKey: active.idempotencyKey,
       lastEventId: active.lastEventId,
       onEvent: (event: ResearchSseEvent) => {
         const current = activeRef.current
@@ -229,6 +233,7 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
       sourceIds: selection?.sourceIds ?? [],
       noteIds: selection?.noteIds ?? [],
       modelId,
+      idempotencyKey: newIdempotencyKey(),
       attempt: 1,
       reconnectCount: 0,
       lastEventId: 0,
