@@ -398,10 +398,19 @@ export async function searchV1(
 export async function createCompare(
   projectId: string,
   request: ResearchCompareCreateRequest,
+  options: { idempotencyKey?: string } = {},
 ): Promise<ResearchCompareCreateResponse> {
+  // #238：v1 契约（Phase 6 锁死：无头/无幂等键 → 426/422）
+  const idempotencyKey = options.idempotencyKey ?? newIdempotencyKey()
   const response = await apiClient.post<ResearchCompareCreateResponse>(
     researchPath(projectId, 'compare', 'jobs'),
     request,
+    {
+      headers: {
+        'X-Research-Contract': 'v1',
+        'Idempotency-Key': idempotencyKey,
+      },
+    },
   )
   return response.data
 }
@@ -498,6 +507,8 @@ export interface ResearchChatStreamOptions {
    * 传 `/sources/{source_id}/chat`）。仅路径参数化，鉴权/帧解析共用。
    */
   path?: string
+  /** #238：v1 契约幂等键；调用方复用策略决定，缺省新键 */
+  idempotencyKey?: string
   /** 断线重连的 Last-Event-ID（0 = 从头开始） */
   lastEventId?: number
   /** 响应到达时读取一次响应头（Issue #182：X-Chat-Session-Id 回显） */
@@ -524,6 +535,9 @@ export function openResearchChatStream(options: ResearchChatStreamOptions): () =
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Accept: 'text/event-stream',
+    // #238：v1 契约（Phase 6 锁死：生成 POST 必须带版本头 + 幂等键）
+    'X-Research-Contract': 'v1',
+    'Idempotency-Key': options.idempotencyKey ?? newIdempotencyKey(),
   }
   if (token) {
     headers.Authorization = `Bearer ${token}`

@@ -6,8 +6,10 @@ import {
   useResearchSourceChat,
 } from './use-research-source-chat'
 import {
+  getExecutionPreferences,
   getSourceChatSession,
   listSourceChatSessions,
+  newIdempotencyKey,
   openResearchChatStream,
 } from '@/lib/research/api'
 
@@ -15,11 +17,14 @@ import {
 // 断线恢复（首轮任意非终态事件后）、无终态 EOF 重连/终态 EOF 不重连、
 // 两类 409 分流（resume_after 重试 vs 活动冲突终态）、Gateway 不可用
 // fail-closed、切换 Source 清理、GET detail 冷恢复映射。
+// #238：v1 契约——偏好显式透传 model_id；无偏好阻止发送。
 
 vi.mock('@/lib/research/api', () => ({
   openResearchChatStream: vi.fn(),
   listSourceChatSessions: vi.fn(),
   getSourceChatSession: vi.fn(),
+  getExecutionPreferences: vi.fn(),
+  newIdempotencyKey: vi.fn(() => 'ik-src'),
 }))
 
 interface StreamCapture {
@@ -76,6 +81,11 @@ describe('useResearchSourceChat', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     mockSessionsList()
+    // #238：默认已保存偏好（既有用例的发送流程依赖它）
+    vi.mocked(getExecutionPreferences).mockResolvedValue({
+      preferred_model_id: 'm-local',
+      default_context_level: 'focused',
+    } as never)
   })
 
   afterEach(() => {
@@ -99,7 +109,7 @@ describe('useResearchSourceChat', () => {
       { wrapper: makeHookWrapper() },
     )
 
-    act(() => {
+    await act(async () => {
       result.current.send('这篇论文的方法是什么？')
     })
 
@@ -124,15 +134,17 @@ describe('useResearchSourceChat', () => {
     expect((streams[1].opts.request as { session_id?: string }).session_id).toBe(sessionId)
   })
 
-  it('usage 事件映射 resolvedMode/degradationReasons/sourceRef 到 turn 层（camelCase）', () => {
+  it('usage 事件映射 resolvedMode/degradationReasons/sourceRef 到 turn 层（camelCase）', async () => {
     const streams = openCapture()
     const { result } = renderHook(() =>
       useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1' }),
       { wrapper: makeHookWrapper() },
     )
 
-    act(() => {
+    await act(async () => {
       result.current.send('q')
+    })
+    act(() => {
       streams[0].emit(ev(1, 'citation', {
         citations: [{
           citation_id: 1,
@@ -167,7 +179,7 @@ describe('useResearchSourceChat', () => {
     expect(turn.citations).toEqual([expect.objectContaining({ claim: '声明', page_idx: 3 })])
   })
 
-  it('X-Chat-Session-Id 回显不一致时 console.warn 并存储回显值（不作其他行为依赖）', () => {
+  it('X-Chat-Session-Id 回显不一致时 console.warn 并存储回显值（不作其他行为依赖）', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const streams = openCapture()
     const { result } = renderHook(() =>
@@ -175,7 +187,7 @@ describe('useResearchSourceChat', () => {
       { wrapper: makeHookWrapper() },
     )
 
-    act(() => {
+    await act(async () => {
       result.current.send('q')
     })
     const sentSessionId = (streams[0].opts.request as { session_id?: string }).session_id
@@ -192,7 +204,7 @@ describe('useResearchSourceChat', () => {
     expect(warnSpy.mock.calls[0][0]).toContain('sess_server_generated')
 
     // 存储回显值：下一轮续接使用服务端回显的 session_id
-    act(() => {
+    await act(async () => {
       result.current.send('第二轮')
     })
     expect((streams[1].opts.request as { session_id?: string }).session_id).toBe('sess_server_generated')
@@ -215,8 +227,10 @@ describe('useResearchSourceChat', () => {
       { wrapper: makeHookWrapper() },
     )
 
-    act(() => {
+    await act(async () => {
       result.current.send('q')
+    })
+    act(() => {
       streams[0].emit(ev(1, 'thinking', { delta: '思' }))
     })
     act(() => {
@@ -245,8 +259,10 @@ describe('useResearchSourceChat', () => {
       { wrapper: makeHookWrapper() },
     )
 
-    act(() => {
+    await act(async () => {
       result.current.send('q')
+    })
+    act(() => {
       streams[0].emit(ev(1, 'answer', { delta: '部分' }))
       streams[0].end()
     })
@@ -260,15 +276,17 @@ describe('useResearchSourceChat', () => {
     expect(lastAssistant(result.current.turns).reconnectCount).toBe(1)
   })
 
-  it('收到 done/error 后的正常 EOF 不重连', () => {
+  it('收到 done/error 后的正常 EOF 不重连', async () => {
     const streams = openCapture()
     const { result } = renderHook(() =>
       useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1' }),
       { wrapper: makeHookWrapper() },
     )
 
-    act(() => {
+    await act(async () => {
       result.current.send('q')
+    })
+    act(() => {
       streams[0].emit(ev(1, 'done', { session_id: 'sess_x', completion_status: 'success' }))
       streams[0].end()
     })
@@ -284,7 +302,7 @@ describe('useResearchSourceChat', () => {
       { wrapper: makeHookWrapper() },
     )
 
-    act(() => {
+    await act(async () => {
       result.current.send('q')
     })
     for (let attempt = 1; attempt <= SOURCE_CHAT_MAX_STREAM_ATTEMPTS; attempt += 1) {
@@ -311,8 +329,10 @@ describe('useResearchSourceChat', () => {
       { wrapper: makeHookWrapper() },
     )
 
-    act(() => {
+    await act(async () => {
       result.current.send('q')
+    })
+    act(() => {
       streams[0].emit(ev(1, 'answer', { delta: 'A' }))
       streams[0].httpFail(409, {
         detail: { message: 'event buffer gap: missing 2-4 (resume_after=5)', resume_after: 5 },
@@ -350,8 +370,10 @@ describe('useResearchSourceChat', () => {
       { wrapper: makeHookWrapper() },
     )
 
-    act(() => {
+    await act(async () => {
       result.current.send('q')
+    })
+    act(() => {
       streams[0].emit(ev(1, 'answer', { delta: 'a' }))
       streams[0].emit(ev(2, 'answer', { delta: 'b' }))
       streams[0].emit(ev(3, 'answer', { delta: 'c' }))
@@ -367,15 +389,17 @@ describe('useResearchSourceChat', () => {
     expect(streams[1].opts.lastEventId).toBe(3)
   })
 
-  it('409 无 resume_after/null（同 Source 同 session 活动 turn 冲突）：直接终态报错，不盲重试', () => {
+  it('409 无 resume_after/null（同 Source 同 session 活动 turn 冲突）：直接终态报错，不盲重试', async () => {
     const streams = openCapture()
     const { result } = renderHook(() =>
       useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1' }),
       { wrapper: makeHookWrapper() },
     )
 
-    act(() => {
+    await act(async () => {
       result.current.send('q')
+    })
+    act(() => {
       streams[0].httpFail(409, {
         detail: { message: 'another active turn for this session', resume_after: null },
       })
@@ -388,15 +412,17 @@ describe('useResearchSourceChat', () => {
     expect(streams).toHaveLength(1)
   })
 
-  it('Gateway 不可用（404/503）：fail-closed 终态错误（gateway_unavailable）+ 可重试 query，绝不回退原生端点', () => {
+  it('Gateway 不可用（404/503）：fail-closed 终态错误（gateway_unavailable）+ 可重试 query，绝不回退原生端点', async () => {
     const streams = openCapture()
     const { result } = renderHook(() =>
       useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1' }),
       { wrapper: makeHookWrapper() },
     )
 
-    act(() => {
+    await act(async () => {
       result.current.send('q')
+    })
+    act(() => {
       streams[0].httpFail(503, { detail: 'gateway unavailable' })
     })
 
@@ -406,7 +432,8 @@ describe('useResearchSourceChat', () => {
 
     // retry() 重放最近一次失败 query（仍走参数化 Gateway 端点）
     expect(result.current.retryableQuery).toBe('q')
-    act(() => {
+    // #238：retry 同样走异步偏好前置 → 需冲刷
+    await act(async () => {
       result.current.retry()
     })
     expect(streams).toHaveLength(2)
@@ -445,8 +472,10 @@ describe('useResearchSourceChat', () => {
       },
     )
 
-    act(() => {
+    await act(async () => {
       result.current.send('第一问')
+    })
+    act(() => {
       streams[0].emit(ev(1, 'answer', { delta: '内容' }))
     })
 
@@ -459,22 +488,24 @@ describe('useResearchSourceChat', () => {
     expect(result.current.activeSessionId).toBeNull()
 
     // 新 Source 首条消息生成全新 session_id
-    act(() => {
+    await act(async () => {
       result.current.send('第二问')
     })
     const newSessionId = (streams[1].opts.request as { session_id?: string }).session_id
     expect(newSessionId).toMatch(/^sess_[0-9a-f-]{36}$/)
   })
 
-  it('新会话按钮语义（selectSession(null)）：清空当前 session 与 turns，下次发送重新预生成', () => {
+  it('新会话按钮语义（selectSession(null)）：清空当前 session 与 turns，下次发送重新预生成', async () => {
     const streams = openCapture()
     const { result } = renderHook(() =>
       useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1' }),
       { wrapper: makeHookWrapper() },
     )
 
-    act(() => {
+    await act(async () => {
       result.current.send('q')
+    })
+    act(() => {
       streams[0].emit(ev(1, 'done', { session_id: 'sess_x', completion_status: 'success' }))
     })
     expect(result.current.activeSessionId).toBe('sess_x')
@@ -485,7 +516,7 @@ describe('useResearchSourceChat', () => {
     expect(result.current.turns).toEqual([])
     expect(result.current.activeSessionId).toBeNull()
 
-    act(() => {
+    await act(async () => {
       result.current.send('新会话首条')
     })
     const freshSessionId = (streams[1].opts.request as { session_id?: string }).session_id
@@ -563,7 +594,7 @@ describe('useResearchSourceChat', () => {
     expect(assistantTurn.citations[0]).toMatchObject({ claim: '持久化声明', page_idx: 2 })
 
     // 冷恢复后续接：请求体带恢复的 session_id
-    act(() => {
+    await act(async () => {
       result.current.send('续问')
     })
     expect((streams[0].opts.request as { session_id?: string }).session_id).toBe('sess_old')
@@ -604,5 +635,42 @@ describe('useResearchSourceChat', () => {
     expect(result.current.sessions).toHaveLength(1)
     expect(result.current.activeSessionId).toBeNull()
     expect(result.current.turns).toEqual([])
+  })
+
+  it('#238：请求体显式携带已保存模型偏好（model_id）', async () => {
+    const streams = openCapture()
+    const { result } = renderHook(() =>
+      useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1' }),
+      { wrapper: makeHookWrapper() },
+    )
+
+    await act(async () => {
+      result.current.send('q')
+    })
+
+    expect(streams[0].opts.request).toMatchObject({ model_id: 'm-local' })
+    expect(streams[0].opts.idempotencyKey).toBe('ik-src')
+  })
+
+  it('#238：无已保存偏好 → 错误 turn 且不打开流', async () => {
+    const streams = openCapture()
+    vi.mocked(getExecutionPreferences).mockResolvedValue({
+      preferred_model_id: null,
+      default_context_level: 'focused',
+    } as never)
+    const { result } = renderHook(() =>
+      useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1' }),
+      { wrapper: makeHookWrapper() },
+    )
+
+    await act(async () => {
+      result.current.send('q')
+    })
+
+    expect(streams).toHaveLength(0)
+    const turn = lastAssistant(result.current.turns)
+    expect(turn.status).toBe('error')
+    expect(turn.errorCode).toBe('model_preference_required')
+    expect(turn.errorMessage).toMatch(/model preference/i)
   })
 })

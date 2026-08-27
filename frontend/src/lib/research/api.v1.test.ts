@@ -216,4 +216,21 @@ describe('contract v1 客户端（Phase 2b）', () => {
     )
     expect(String(calls[0].headers['Idempotency-Key'])).toBe('fixed-key')
   })
+
+  it('#238 createCompare 带 v1 头 + 幂等键 + model_id 透传', async () => {
+    installAdapter(() => ({
+      status: 202,
+      data: { job_id: 'job_1', status: 'queued' },
+    }))
+    await researchApi.createCompare(
+      P,
+      { job_type: 'deep_compare', document_ids: ['d1'], model_id: 'm1' },
+      { idempotencyKey: 'ik-1' },
+    )
+    expect(calls[0].url).toBe(`/v1/research/projects/${P}/compare/jobs`)
+    expect(calls[0].method).toBe('POST')
+    expect(String(calls[0].headers['X-Research-Contract'])).toBe('v1')
+    expect(String(calls[0].headers['Idempotency-Key'])).toBe('ik-1')
+    expect((calls[0].data as { model_id?: string }).model_id).toBe('m1')
+  })
 })

@@ -19,6 +19,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   cancelJob,
   createCompare,
+  getExecutionPreferences,
   getJob,
 } from '@/lib/research/api'
 import { canCancelJob, isJobTerminal } from '@/lib/research/jobs'
@@ -148,23 +149,42 @@ export function useResearchJobs({ projectId }: { projectId: string }): UseResear
       return null
     }
     setIsCreating(true)
-    createCompare(projectId, {
-      job_type: 'deep_compare', // 契约 §8.3 必填（RDLens JobCreateRequest）
-      document_ids: [...documentIds],
-      group_size: groupSize,
-      mode: 'deep_compare',
-    })
-      .then(({ job_id }) => {
-        knownIdsRef.current.add(job_id)
-        writeStoredJobId(projectId, job_id)
-        return fetchJob(job_id)
-      })
-      .catch((err: Error) => {
-        setError(err.message || 'compare.createFailed')
-      })
-      .finally(() => {
+    // #238：v1 契约要求显式 model_id——读取已保存执行偏好；
+    // 无偏好阻止创建（后端不隐式补值，不变量 2）。
+    void (async () => {
+      let modelId: string | null = null
+      try {
+        const prefs = await getExecutionPreferences(projectId)
+        modelId = prefs?.preferred_model_id ?? null
+      } catch {
+        // 偏好读取失败 = fail-closed：不创建
+      }
+      if (!modelId) {
         setIsCreating(false)
+        setError(
+          'Select and save a model preference in the search panel first',
+        )
+        return
+      }
+      createCompare(projectId, {
+        job_type: 'deep_compare', // 契约 §8.3 必填（RDLens JobCreateRequest）
+        document_ids: [...documentIds],
+        group_size: groupSize,
+        mode: 'deep_compare',
+        model_id: modelId,
       })
+        .then(({ job_id }) => {
+          knownIdsRef.current.add(job_id)
+          writeStoredJobId(projectId, job_id)
+          return fetchJob(job_id)
+        })
+        .catch((err: Error) => {
+          setError(err.message || 'compare.createFailed')
+        })
+        .finally(() => {
+          setIsCreating(false)
+        })
+    })()
     return null
   }, [fetchJob, projectId])
 

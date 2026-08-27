@@ -1,16 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useResearchJobs, POLL_INTERVAL_MS } from './use-research-jobs'
-import { createCompare, getJob, cancelJob } from '@/lib/research/api'
+import { createCompare, getExecutionPreferences, getJob, cancelJob } from '@/lib/research/api'
 import type { ResearchJob } from '@/lib/research/types'
 
 // UI-03 Red：Job 交互状态机（契约 v0 §10）——浏览器关闭后按 job_id 恢复
 // 查看（REQ-JOB-02）、终态一次（轮询不回归）、显式取消（queued/running →
 // cancelling → cancelled）、Compare 51 篇不入队（REQ-QUOTA-01）、
 // 本地状态不是持久 Job 状态（每轮询以服务端为准）。
+// #238：创建前读取执行偏好显式透传 model_id；无偏好阻止创建。
 
 vi.mock('@/lib/research/api', () => ({
   createCompare: vi.fn(),
+  getExecutionPreferences: vi.fn(),
   getJob: vi.fn(),
   cancelJob: vi.fn(),
 }))
@@ -39,6 +41,11 @@ describe('useResearchJobs', () => {
     vi.useFakeTimers()
     localStorage.clear()
     vi.clearAllMocks()
+    // #238：默认已保存偏好（既有用例的创建流程依赖它）
+    vi.mocked(getExecutionPreferences).mockResolvedValue({
+      preferred_model_id: 'm-local',
+      default_context_level: 'focused',
+    } as never)
   })
 
   afterEach(() => {
@@ -83,13 +90,36 @@ describe('useResearchJobs', () => {
     act(() => {
       result.current.createCompare(['doc_1', 'doc_2'])
     })
+    // #238：偏好读取为异步前置 → 冲刷微任务
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
     expect(createCompare).toHaveBeenCalledWith('proj_1', {
       job_type: 'deep_compare', // 契约 §8.3 必填；镜像 RDLens
       // test_compare.py::TestCompareApi::test_fork_ui_serialized_body_creates_deep_compare_job
       document_ids: ['doc_1', 'doc_2'],
       group_size: undefined,
       mode: 'deep_compare',
+      model_id: 'm-local',
     })
+  })
+
+  it('#238：无已保存偏好 → 拒绝创建且不调用 API', async () => {
+    vi.mocked(getExecutionPreferences).mockResolvedValue({
+      preferred_model_id: null,
+      default_context_level: 'focused',
+    } as never)
+    vi.mocked(getJob).mockResolvedValue(job('job_new', 'queued'))
+    const { result } = renderHook(() => useResearchJobs({ projectId: 'proj_1' }))
+
+    act(() => {
+      result.current.createCompare(['doc_1'])
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(createCompare).not.toHaveBeenCalled()
+    expect(result.current.error).toMatch(/model preference/i)
   })
 
   it('创建 Compare 成功后写入 localStorage 并拉取 Job 状态', async () => {

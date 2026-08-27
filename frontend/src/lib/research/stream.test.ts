@@ -108,6 +108,9 @@ describe('openResearchChatStream', () => {
     expect(headers.Authorization).toBe('Bearer research.jwt')
     expect(headers.Accept).toBe('text/event-stream')
     expect(headers['Last-Event-ID']).toBeUndefined()
+    // #238：v1 契约头（Phase 6 锁死：无版本头/幂等键 → 426/422）
+    expect(headers['X-Research-Contract']).toBe('v1')
+    expect(headers['Idempotency-Key']).toBeTruthy()
     expect(JSON.parse(String(init.body))).toEqual({ query: 'q', source_ids: ['src_1'] })
     expect(events).toHaveLength(3)
     expect(events[2].type).toBe('done')
