@@ -49,7 +49,7 @@ function lastAssistant(turns: ReturnType<typeof useResearchChat> extends { turns
 
 /** send + 冲刷偏好读取微任务（#238 后 send 为异步前置） */
 async function sendAndFlush(
-  result: ReturnType<typeof renderHook<ReturnType<typeof useResearchChat>, { projectId: string }>['result']>,
+  result: ReturnType<typeof renderHook<ReturnType<typeof useResearchChat>, { projectId: string }>>['result'],
   query: string,
   selection?: Parameters<ReturnType<typeof useResearchChat>['send']>[1],
 ) {
