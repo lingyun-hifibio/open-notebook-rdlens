@@ -14,7 +14,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { openResearchChatStream } from '@/lib/research/api'
+import { getExecutionPreferences, openResearchChatStream } from '@/lib/research/api'
 import { applySseEvent, createSseState, type ResearchSseState } from '@/lib/research/sse'
 import type { ResearchCitation, ResearchSseEvent, ResearchTokenUsage } from '@/lib/research/types'
 
@@ -56,6 +56,7 @@ interface ActiveTurn {
   query: string
   sourceIds: string[]
   noteIds: string[]
+  modelId: string | null
   attempt: number
   reconnectCount: number
   lastEventId: number
@@ -80,6 +81,8 @@ function httpErrorMessage(status: number, body: unknown): string {
 export function useResearchChat({ projectId }: { projectId: string }): UseResearchChatResult {
   const [turns, setTurns] = useState<ResearchChatTurn[]>([])
   const activeRef = useRef<ActiveTurn | null>(null)
+  /** 单调 send 序号：偏好读取期间的新 send 使旧 turn 整体放弃（latest wins） */
+  const latestSeqRef = useRef(0)
   /** 跨轮次续接的服务端 session_id（done 事件记录） */
   const sessionIdRef = useRef<string | null>(null)
 
@@ -129,6 +132,8 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
         source_ids: active.sourceIds,
         note_ids: active.noteIds,
         session_id: active.sessionId ?? undefined,
+        // #238：v1 契约显式透传执行偏好（不变量 2：后端不隐式补值）
+        model_id: active.modelId ?? undefined,
       },
       lastEventId: active.lastEventId,
       onEvent: (event: ResearchSseEvent) => {
@@ -190,10 +195,58 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
     })
   }
 
+  const startTurn = async (
+    seq: number,
+    trimmed: string,
+    turnId: string,
+    selection?: ResearchChatSelection,
+  ): Promise<void> => {
+    // #238：v1 契约要求显式 model_id——读取已保存执行偏好；
+    // 无偏好阻止发送（后端不隐式补值，不变量 2）。
+    let modelId: string | null = null
+    try {
+      const prefs = await getExecutionPreferences(projectId)
+      modelId = prefs?.preferred_model_id ?? null
+    } catch {
+      // 偏好读取失败 = fail-closed：不发送
+    }
+    if (seq !== latestSeqRef.current) {
+      // 偏好读取期间已被更新的 send 抢占 → 整体放弃（latest wins）
+      return
+    }
+    if (!modelId) {
+      patchAssistant(turnId, {
+        status: 'error',
+        errorCode: 'model_preference_required',
+        errorMessage:
+          'Select and save a model preference in the search panel first',
+      })
+      return
+    }
+    const active: ActiveTurn = {
+      turnId,
+      query: trimmed,
+      sourceIds: selection?.sourceIds ?? [],
+      noteIds: selection?.noteIds ?? [],
+      modelId,
+      attempt: 1,
+      reconnectCount: 0,
+      lastEventId: 0,
+      sessionId: sessionIdRef.current,
+      sse: createSseState(),
+      abort: null,
+      reconnectTimer: null,
+    }
+    activeRef.current = active
+    runTurn(active)
+  }
+
   const send = (query: string, selection?: ResearchChatSelection): void => {
     const trimmed = query.trim()
     if (!trimmed) return
     stopActive()
+    const seq = latestSeqRef.current + 1
+    latestSeqRef.current = seq
     const turnId = randomId()
     const userTurn: ResearchChatTurn = {
       id: `user_${turnId}`,
@@ -222,22 +275,7 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
       errorMessage: null,
     }
     setTurns((prev) => [...prev, userTurn, assistantTurn])
-
-    const active: ActiveTurn = {
-      turnId,
-      query: trimmed,
-      sourceIds: selection?.sourceIds ?? [],
-      noteIds: selection?.noteIds ?? [],
-      attempt: 1,
-      reconnectCount: 0,
-      lastEventId: 0,
-      sessionId: sessionIdRef.current,
-      sse: createSseState(),
-      abort: null,
-      reconnectTimer: null,
-    }
-    activeRef.current = active
-    runTurn(active)
+    void startTurn(seq, trimmed, turnId, selection)
   }
 
   const isStreaming = turns.some((t) => t.status === 'streaming' || t.status === 'reconnecting')

@@ -219,6 +219,8 @@ export interface ResearchChatRequest {
   source_ids?: string[]
   note_ids?: string[]
   session_id?: string
+  /** #238：v1 契约必填——显式透传已保存执行偏好（不变量 2：后端不隐式补值） */
+  model_id?: string
 }
 
 export interface ResearchCompareCreateRequest {
@@ -226,6 +228,8 @@ export interface ResearchCompareCreateRequest {
   document_ids: string[]
   group_size?: number
   mode?: string
+  /** #238：v1 契约必填——显式透传已保存执行偏好（不变量 2） */
+  model_id?: string
 }
 
 export interface ResearchCompareCreateResponse {
