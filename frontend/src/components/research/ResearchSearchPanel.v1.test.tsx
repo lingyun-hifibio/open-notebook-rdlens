@@ -410,6 +410,7 @@ describe('ResearchSearchPanel v1（§14.3）', () => {
         evidence: [],
         citations: [],
         usage: { input_tokens: 10, output_tokens: 5, estimated: true },
+        degradation_reason: null,
         conclusion: 'ok',
       },
     })
@@ -466,6 +467,7 @@ describe('ResearchSearchPanel v1（§14.3）', () => {
         evidence: [],
         citations: [],
         usage: { input_tokens: 10, output_tokens: 5, estimated: false },
+        degradation_reason: null,
         conclusion: 'ok',
       },
     })
