@@ -27,8 +27,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
+  getExecutionPreferences,
   getSourceChatSession,
   listSourceChatSessions,
+  newIdempotencyKey,
   openResearchChatStream,
   type ResearchSourceChatMessage,
   type ResearchSourceChatSessionSummary,
@@ -92,6 +94,9 @@ export interface UseResearchSourceChatResult {
 interface ActiveTurn {
   turnId: string
   query: string
+  modelId: string
+  /** 每 turn 生成一次；断线重连必须复用（新键 = 新 Generation 双扣） */
+  idempotencyKey: string
   attempt: number
   reconnectCount: number
   lastEventId: number
@@ -240,8 +245,14 @@ export function useResearchSourceChat({
   const [loadDetailError, setLoadDetailError] = useState<string | null>(null)
   const [retryableQuery, setRetryableQuery] = useState<string | null>(null)
   const activeRef = useRef<ActiveTurn | null>(null)
+  /** 单调 send 序号：偏好读取期间的新 send 使旧 turn 整体放弃（latest wins） */
+  const latestSeqRef = useRef(0)
+  /** 卸载守卫：偏好读取期间卸载不得再开流 */
+  const mountedRef = useRef(true)
   /** 跨轮次绑定的服务端 session（发送前预生成 / 冷恢复回填 / 回显采纳） */
   const sessionIdRef = useRef<string | null>(null)
+
+  useEffect(() => () => { mountedRef.current = false }, [])
 
   const patchAssistant = useCallback((turnId: string, patch: Partial<ResearchSourceChatTurn>) => {
     setTurns((prev) => {
@@ -337,7 +348,10 @@ export function useResearchSourceChat({
       request: {
         query: active.query,
         session_id: active.sessionId,
+        // #238：v1 契约显式透传执行偏好（不变量 2：后端不隐式补值）
+        model_id: active.modelId,
       },
+      idempotencyKey: active.idempotencyKey,
       lastEventId: active.lastEventId,
       onResponseMeta: (headers) => {
         // X-Chat-Session-Id 回显：仅存储 + 不匹配告警，不作行为依赖（Issue #182）
@@ -428,23 +442,47 @@ export function useResearchSourceChat({
     })
   }
 
-  const send = (query: string): void => {
-    const trimmed = query.trim()
-    if (!trimmed || !projectId || !sourceId) return
-    stopActive()
-    setRetryableQuery(null)
-    if (sessionIdRef.current === null) {
-      sessionIdRef.current = generateSourceChatSessionId()
+  const startTurn = async (seq: number, trimmed: string, sessionId: string, turnId: string): Promise<void> => {
+    // #238：v1 契约要求显式 model_id——读取已保存执行偏好；
+    // 无偏好阻止发送（后端不隐式补值，不变量 2）。
+    let modelId: string | null = null
+    try {
+      const prefs = await getExecutionPreferences(projectId)
+      modelId = prefs?.preferred_model_id ?? null
+    } catch {
+      // 偏好读取失败 = fail-closed：不发送
     }
-    const sessionId = sessionIdRef.current
-    setActiveSessionId(sessionId)
-
-    const turnId = randomTurnId()
-    setTurns((prev) => [...prev, makeUserTurn(turnId, trimmed), emptyAssistantTurn(turnId)])
-
+    if (!mountedRef.current) {
+      patchAssistant(turnId, {
+        status: 'error',
+        errorCode: 'unmounted',
+        errorMessage: 'Component unmounted before the stream started',
+      })
+      return
+    }
+    if (seq !== latestSeqRef.current) {
+      // 偏好读取期间已被更新的 send 抢占 → 整体放弃并补终态
+      patchAssistant(turnId, {
+        status: 'error',
+        errorCode: 'superseded',
+        errorMessage: 'Superseded by a newer request',
+      })
+      return
+    }
+    if (!modelId) {
+      patchAssistant(turnId, {
+        status: 'error',
+        errorCode: 'model_preference_required',
+        errorMessage:
+          'Select and save a model preference in the search panel first',
+      })
+      return
+    }
     const active: ActiveTurn = {
       turnId,
       query: trimmed,
+      modelId,
+      idempotencyKey: newIdempotencyKey(),
       attempt: 1,
       reconnectCount: 0,
       lastEventId: 0,
@@ -455,6 +493,25 @@ export function useResearchSourceChat({
     }
     activeRef.current = active
     runTurn(active)
+  }
+
+  const send = (query: string): void => {
+    const trimmed = query.trim()
+    if (!trimmed || !projectId || !sourceId) return
+    stopActive()
+    const seq = latestSeqRef.current + 1
+    latestSeqRef.current = seq
+    setRetryableQuery(null)
+    if (sessionIdRef.current === null) {
+      sessionIdRef.current = generateSourceChatSessionId()
+    }
+    const sessionId = sessionIdRef.current
+    setActiveSessionId(sessionId)
+
+    const turnId = randomTurnId()
+    setTurns((prev) => [...prev, makeUserTurn(turnId, trimmed), emptyAssistantTurn(turnId)])
+
+    void startTurn(seq, trimmed, sessionId, turnId)
   }
 
   const selectSession = useCallback((sessionId: string | null): void => {

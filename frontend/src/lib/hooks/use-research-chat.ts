@@ -88,6 +88,10 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
   const latestSeqRef = useRef(0)
   /** 跨轮次续接的服务端 session_id（done 事件记录） */
   const sessionIdRef = useRef<string | null>(null)
+  /** 卸载守卫：偏好读取期间卸载不得再开流（评审 LOW-4） */
+  const mountedRef = useRef(true)
+
+  useEffect(() => () => { mountedRef.current = false }, [])
 
   const patchAssistant = useCallback((turnId: string, patch: Partial<ResearchChatTurn>) => {
     setTurns((prev) => {
@@ -214,8 +218,23 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
     } catch {
       // 偏好读取失败 = fail-closed：不发送
     }
+    if (!mountedRef.current) {
+      // 组件已卸载：放弃并补终态，不留悬空 streaming
+      patchAssistant(turnId, {
+        status: 'error',
+        errorCode: 'unmounted',
+        errorMessage: 'Component unmounted before the stream started',
+      })
+      return
+    }
     if (seq !== latestSeqRef.current) {
       // 偏好读取期间已被更新的 send 抢占 → 整体放弃（latest wins）
+      // 评审 LOW-3：放弃的 turn 补终态，避免 isStreaming 恒 true
+      patchAssistant(turnId, {
+        status: 'error',
+        errorCode: 'superseded',
+        errorMessage: 'Superseded by a newer request',
+      })
       return
     }
     if (!modelId) {

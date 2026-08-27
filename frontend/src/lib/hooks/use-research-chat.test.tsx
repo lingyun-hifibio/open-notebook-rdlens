@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useResearchChat, MAX_STREAM_ATTEMPTS } from './use-research-chat'
-import { getExecutionPreferences, openResearchChatStream } from '@/lib/research/api'
+import { getExecutionPreferences, newIdempotencyKey, openResearchChatStream } from '@/lib/research/api'
 import type { ResearchSseEvent } from '@/lib/research/types'
 
 // UI-03 Red：Chat SSE 流状态机（契约 v0 §9）——乱序/重复事件经由 reducer
@@ -149,6 +149,13 @@ describe('useResearchChat', () => {
 
   it('断线重连：第二次打开携带 Last-Event-ID，重放事件去重不重复追加', async () => {
     const streams = openCapture()
+    // 评审 MEDIUM-2：计数器 mock——每轮只应生成一次键（重连复用），
+    // 若改成每次尝试重新生成则 n=2、断言失败（非死断言）
+    let n = 0
+    vi.mocked(newIdempotencyKey).mockImplementation(() => {
+      n += 1
+      return `ik-${n}`
+    })
     const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
 
     await sendAndFlush(result, "问题")
@@ -169,6 +176,7 @@ describe('useResearchChat', () => {
     expect(streams[1].opts.lastEventId).toBe(2)
     // #238 评审：重连必须复用同一幂等键（新键 = 新 Generation 双扣）
     expect(streams[1].opts.idempotencyKey).toBe(streams[0].opts.idempotencyKey)
+    expect(n).toBe(1)
 
     act(() => {
       // 服务端重放 n+1 起（含重复旧事件也不影响）
@@ -261,6 +269,10 @@ describe('useResearchChat', () => {
       deferreds[0]!({ preferred_model_id: 'm-local', default_context_level: 'focused' })
     })
     expect(streams).toHaveLength(0)
+    // 评审 LOW-3：被抢占的 turn 补终态，isStreaming 不得恒 true
+    const abandoned = result.current.turns.find((t) => t.content === '' && t.role === 'assistant')
+    expect(abandoned?.status).toBe('error')
+    expect(abandoned?.errorCode).toBe('superseded')
 
     // 放行最新一轮（seq=2）→ 打开流
     await act(async () => {
