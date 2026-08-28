@@ -93,7 +93,7 @@ describe('openResearchChatStream', () => {
     await new Promise<void>((resolve) => {
       openResearchChatStream({
         projectId: PROJECT,
-        request: { query: 'q', source_ids: ['src_1'] },
+        request: { query: 'q', source_ids: ['src_1'], model_id: 'm-test' },
         onEvent: (event) => {
           events.push(event)
           if (event.type === 'done') resolve()
@@ -111,7 +111,11 @@ describe('openResearchChatStream', () => {
     // #238：v1 契约头（Phase 6 锁死：无版本头/幂等键 → 426/422）
     expect(headers['X-Research-Contract']).toBe('v1')
     expect(headers['Idempotency-Key']).toBeTruthy()
-    expect(JSON.parse(String(init.body))).toEqual({ query: 'q', source_ids: ['src_1'] })
+    expect(JSON.parse(String(init.body))).toEqual({
+      query: 'q',
+      source_ids: ['src_1'],
+      model_id: 'm-test',
+    })
     expect(events).toHaveLength(3)
     expect(events[2].type).toBe('done')
   })
@@ -126,7 +130,7 @@ describe('openResearchChatStream', () => {
     await new Promise<void>((resolve) => {
       openResearchChatStream({
         projectId: PROJECT,
-        request: { query: 'q' },
+        request: { query: 'q', model_id: 'm-test' },
         lastEventId: 2,
         onEvent: (event) => {
           if (event.type === 'done') resolve()
@@ -145,7 +149,7 @@ describe('openResearchChatStream', () => {
     await new Promise<void>((resolve) => {
       openResearchChatStream({
         projectId: PROJECT,
-        request: { query: 'q' },
+        request: { query: 'q', model_id: 'm-test' },
         onEvent: () => {},
         onHttpError: (status) => {
           expect(status).toBe(409)
@@ -162,7 +166,7 @@ describe('openResearchChatStream', () => {
     await new Promise<void>((resolve) => {
       openResearchChatStream({
         projectId: PROJECT,
-        request: { query: 'q' },
+        request: { query: 'q', model_id: 'm-test' },
         onEvent: () => {},
         onNetworkError: (error) => {
           expect(error.message).toBe('Failed to fetch')
@@ -185,7 +189,7 @@ describe('openResearchChatStream', () => {
     await new Promise<void>((resolve) => {
       openResearchChatStream({
         projectId: PROJECT,
-        request: { query: 'q' },
+        request: { query: 'q', model_id: 'm-test' },
         onEvent: () => {
           throw new Error('事件不应在断开后被回调')
         },
@@ -210,7 +214,7 @@ describe('openResearchChatStream', () => {
 
     const abort = openResearchChatStream({
       projectId: PROJECT,
-      request: { query: 'q' },
+      request: { query: 'q', model_id: 'm-test' },
       onEvent: () => {},
       onNetworkError,
     })
@@ -227,7 +231,7 @@ describe('openResearchChatStream', () => {
     await new Promise<void>((resolve) => {
       openResearchChatStream({
         projectId: PROJECT,
-        request: { query: 'q' },
+        request: { query: 'q', model_id: 'm-test' },
         onEvent: () => {},
         onHttpError: (status) => {
           errors.push(status)
@@ -248,7 +252,7 @@ describe('openResearchChatStream', () => {
       openResearchChatStream({
         projectId: PROJECT,
         path: `/sources/${encodeURIComponent('src/1')}/chat`,
-        request: { query: 'q', session_id: 'sess_ab' },
+        request: { query: 'q', session_id: 'sess_ab', model_id: 'm-test' },
         onEvent: (event) => {
           if (event.type === 'done') resolve()
         },
@@ -260,6 +264,7 @@ describe('openResearchChatStream', () => {
     expect(JSON.parse(String(fetchMocked.mock.calls[0][1].body))).toEqual({
       query: 'q',
       session_id: 'sess_ab',
+      model_id: 'm-test',
     })
   })
 
@@ -280,7 +285,7 @@ describe('openResearchChatStream', () => {
     await new Promise<void>((resolve) => {
       openResearchChatStream({
         projectId: PROJECT,
-        request: { query: 'q' },
+        request: { query: 'q', model_id: 'm-test' },
         onResponseMeta: (headers) => {
           seen.push(headers.get('x-chat-session-id') ?? '')
         },
@@ -301,7 +306,7 @@ describe('openResearchChatStream', () => {
     await new Promise<void>((resolve) => {
       openResearchChatStream({
         projectId: PROJECT,
-        request: { query: 'q' },
+        request: { query: 'q', model_id: 'm-test' },
         onEvent: () => {},
         onEnd: () => resolve(),
       })
@@ -323,7 +328,7 @@ describe('openResearchChatStream', () => {
     const onEnd = vi.fn()
     const abort = openResearchChatStream({
       projectId: PROJECT,
-      request: { query: 'q' },
+      request: { query: 'q', model_id: 'm-test' },
       onEvent: () => {},
       onEnd,
     })

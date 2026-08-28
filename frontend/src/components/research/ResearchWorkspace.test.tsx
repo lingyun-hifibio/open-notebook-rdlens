@@ -181,6 +181,8 @@ describe('ResearchWorkspace', () => {
     // 守卫未放行：不创建 Job、不落 localStorage（不变量 9）
     expect(api.createCompare).not.toHaveBeenCalled()
     expect(localStorage.getItem('rdlens.research.jobs.proj_1')).toBeNull()
+    // 评审 MEDIUM-1：未派发时不显示「已创建」提示（取消不误报成功）
+    expect(screen.queryByTestId('compare-submitted')).toBeNull()
   })
 
   it('#243：无可用全局模型时 Chat 输入/发送禁用并展示引导（评审 Important-2）', async () => {

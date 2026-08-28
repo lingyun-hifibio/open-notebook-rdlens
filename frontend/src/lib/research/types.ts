@@ -105,8 +105,8 @@ export interface ResearchSearchRequest {
   source_ids?: string[]
   note_ids?: string[]
   mode?: string
-  /** Issue #200 §14.2：v1 必填的显式模型 */
-  model_id?: string
+  /** Issue #243 §6.7：正式前端必填——顶层 confirmed 全局模型快照 */
+  model_id: string
   /** Issue #200 §8：三档上下文（focused/document/workspace） */
   context_level?: string
 }
@@ -227,8 +227,8 @@ export interface ResearchChatRequest {
   source_ids?: string[]
   note_ids?: string[]
   session_id?: string
-  /** #238：v1 契约必填——显式透传已保存执行偏好（不变量 2：后端不隐式补值） */
-  model_id?: string
+  /** Issue #243 §6.7：正式前端必填——顶层 confirmed 全局模型快照（不变量 2） */
+  model_id: string
 }
 
 export interface ResearchCompareCreateRequest {
@@ -236,8 +236,8 @@ export interface ResearchCompareCreateRequest {
   document_ids: string[]
   group_size?: number
   mode?: string
-  /** #238：v1 契约必填——显式透传已保存执行偏好（不变量 2） */
-  model_id?: string
+  /** Issue #243 §6.7：正式前端必填——顶层 confirmed 全局模型快照（不变量 2） */
+  model_id: string
 }
 
 export interface ResearchCompareCreateResponse {

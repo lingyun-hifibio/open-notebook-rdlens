@@ -100,8 +100,17 @@ export function ResearchWorkspace() {
   )
 
   const createCompare = useCallback(
-    (documentIds: readonly string[], groupSize?: number) => {
-      void runGuarded((modelId) => createCompareJob(documentIds, modelId, groupSize))
+    async (
+      documentIds: readonly string[],
+      groupSize?: number,
+    ): Promise<boolean> => {
+      // 与 sendChat 相同：返回「是否真正派发」，供面板区分 consent 取消，
+      // 取消时不显示「已创建」提示
+      const sent = await runGuarded((modelId) => {
+        createCompareJob(documentIds, modelId, groupSize)
+        return true
+      })
+      return sent === true
     },
     [createCompareJob, runGuarded],
   )

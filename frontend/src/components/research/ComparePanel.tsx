@@ -32,7 +32,8 @@ export function ComparePanel({
   selectedSourceIds: string[]
   isCreating: boolean
   error: string | null
-  onCreate: (documentIds: string[], groupSize?: number) => void
+  /** 返回是否真正派发（守卫未确认/取消时为 false），避免取消后误报已创建 */
+  onCreate: (documentIds: string[], groupSize?: number) => Promise<boolean>
   /** #243：无可用全局模型时禁用创建（不变量 2/7 的 Compare 侧表达） */
   modelBlocked?: boolean
   blockedHint?: string | null
@@ -47,10 +48,12 @@ export function ComparePanel({
 
   const modelBlocked = modelBlockedProp === true
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     if (!check.ok || isCreating || modelBlocked) return
-    setSubmitted(true)
-    onCreate(selectedDocuments)
+    // 只在守卫真正派发（本地模型直接执行 / 外部模型确认完成）后置位；
+    // consent 取消时 onCreate 返回 false，「已创建」提示不出现
+    const sent = await onCreate(selectedDocuments)
+    if (sent) setSubmitted(true)
   }
 
   const disabled = !check.ok || isCreating || modelBlocked

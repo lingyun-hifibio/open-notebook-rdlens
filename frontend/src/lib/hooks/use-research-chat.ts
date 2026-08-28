@@ -66,7 +66,8 @@ interface ActiveTurn {
   query: string
   sourceIds: string[]
   noteIds: string[]
-  modelId: string | null
+  /** startTurn 已 fail-closed（空 modelId 直接 error 不建 turn），重连必非空 */
+  modelId: string
   /** 每 turn 生成一次；断线重连必须复用同一键（后端同键同 hash 可重入，
    *  新键 = 新 Generation，首事件前断线会双扣） */
   idempotencyKey: string
@@ -143,8 +144,10 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
         source_ids: active.sourceIds,
         note_ids: active.noteIds,
         session_id: active.sessionId ?? undefined,
-        // #238：v1 契约显式透传执行偏好（不变量 2：后端不隐式补值）
-        model_id: active.modelId ?? undefined,
+        // #238：v1 契约显式透传执行偏好（不变量 2：后端不隐式补值）；
+        // #243 §6.7：类型必填，快照缺失时 startTurn 已 fail-closed，重连
+        // 路径无 undefined 兜底
+        model_id: active.modelId,
       },
       idempotencyKey: active.idempotencyKey,
       lastEventId: active.lastEventId,
