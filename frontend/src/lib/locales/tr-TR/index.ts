@@ -1057,6 +1057,7 @@ export const trTR = {
       adminReadonly: "Salt okunur",
       settings: "Araştırma ayarları",
       external: "Harici",
+      consentFailed: "Onay işlemi başarısız oldu. Lütfen tekrar deneyin.",
     },
     searchContext: {
       label: "Bağlam",

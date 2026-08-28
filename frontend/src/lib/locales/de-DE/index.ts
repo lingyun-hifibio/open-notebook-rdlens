@@ -1060,6 +1060,7 @@ export const deDE = {
       adminReadonly: "Nur Lesen",
       settings: "Forschungseinstellungen",
       external: "Extern",
+      consentFailed: "Zustimmung konnte nicht bestätigt werden. Bitte erneut versuchen.",
     },
     searchContext: {
       label: "Kontext",

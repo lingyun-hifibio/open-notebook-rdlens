@@ -1057,6 +1057,7 @@ export const caES = {
       adminReadonly: "Només lectura",
       settings: "Configuració de recerca",
       external: "Extern",
+      consentFailed: "No s'ha pogut confirmar el consentiment. Torneu-ho a provar.",
     },
     searchContext: {
       label: "Context",

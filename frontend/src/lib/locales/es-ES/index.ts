@@ -1058,6 +1058,7 @@ export const esES = {
       adminReadonly: "Solo lectura",
       settings: "Ajustes de investigación",
       external: "Externo",
+      consentFailed: "No se pudo confirmar el consentimiento. Inténtalo de nuevo.",
     },
     searchContext: {
       label: "Contexto",

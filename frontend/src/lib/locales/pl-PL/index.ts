@@ -1057,6 +1057,7 @@ export const plPL = {
       adminReadonly: "Tylko do odczytu",
       settings: "Ustawienia badania",
       external: "Zewnętrzny",
+      consentFailed: "Nie udało się potwierdzić zgody. Spróbuj ponownie.",
     },
     searchContext: {
       label: "Kontekst",

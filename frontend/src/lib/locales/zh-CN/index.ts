@@ -1057,6 +1057,7 @@ export const zhCN = {
       adminReadonly: "只读",
       settings: "研究设置",
       external: "外部",
+      consentFailed: "外发确认失败，请重试。",
     },
     searchContext: {
       label: "上下文",

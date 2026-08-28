@@ -25,12 +25,17 @@ export function ComparePanel({
   isCreating,
   error,
   onCreate,
+  modelBlocked: modelBlockedProp,
+  blockedHint,
 }: {
   sources: ResearchSource[]
   selectedSourceIds: string[]
   isCreating: boolean
   error: string | null
   onCreate: (documentIds: string[], groupSize?: number) => void
+  /** #243：无可用全局模型时禁用创建（不变量 2/7 的 Compare 侧表达） */
+  modelBlocked?: boolean
+  blockedHint?: string | null
 }) {
   const { t } = useTranslation()
   const [submitted, setSubmitted] = useState(false)
@@ -40,13 +45,15 @@ export function ComparePanel({
     .map((source) => source.document_id)
   const check = checkCompareSelection(selectedDocuments)
 
+  const modelBlocked = modelBlockedProp === true
+
   const handleCreate = () => {
-    if (!check.ok || isCreating) return
+    if (!check.ok || isCreating || modelBlocked) return
     setSubmitted(true)
     onCreate(selectedDocuments)
   }
 
-  const disabled = !check.ok || isCreating
+  const disabled = !check.ok || isCreating || modelBlocked
 
   return (
     <div className="space-y-3 p-4">
@@ -79,6 +86,11 @@ export function ComparePanel({
       {!check.ok && check.reason === 'empty' && (
         <Alert variant="default" data-testid="compare-empty">
           <AlertDescription>{t('research.compareEmpty')}</AlertDescription>
+        </Alert>
+      )}
+      {modelBlocked && blockedHint && (
+        <Alert variant="default" data-testid="compare-model-blocked-hint">
+          <AlertDescription>{blockedHint}</AlertDescription>
         </Alert>
       )}
       {error && (

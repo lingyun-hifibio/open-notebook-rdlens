@@ -1058,6 +1058,7 @@ export const bnIN = {
       adminReadonly: "শুধুমাত্র পঠনযোগ্য",
       settings: "গবেষণা সেটিংস",
       external: "বাহ্যিক",
+      consentFailed: "সম্মতি নিশ্চিত করা যায়নি। আবার চেষ্টা করুন।",
     },
     searchContext: {
       label: "প্রসঙ্গ",

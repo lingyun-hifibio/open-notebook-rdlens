@@ -30,6 +30,7 @@ export function ResearchEgressConsentDialog() {
     isConsentPromptOpen,
     isConsentInFlight,
     consentResponse,
+    consentError,
     confirmConsent,
     cancelConsent,
   } = useResearchGlobalModel()
@@ -75,6 +76,17 @@ export function ResearchEgressConsentDialog() {
           <p className="text-xs text-muted-foreground">
             {t('research.consentPreviewNote')}
           </p>
+          {consentError && (
+            <p
+              className="text-xs font-medium text-destructive"
+              role="alert"
+              data-testid="egress-consent-error"
+            >
+              {t('research.globalModel.consentFailed')}
+              {': '}
+              {consentError}
+            </p>
+          )}
         </div>
         <DialogFooter>
           <Button

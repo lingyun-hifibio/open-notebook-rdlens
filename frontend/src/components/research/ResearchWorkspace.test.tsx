@@ -183,6 +183,41 @@ describe('ResearchWorkspace', () => {
     expect(localStorage.getItem('rdlens.research.jobs.proj_1')).toBeNull()
   })
 
+  it('#243：无可用全局模型时 Chat 输入/发送禁用并展示引导（评审 Important-2）', async () => {
+    tokenStore.setResearchToken(researchToken(), 9999999999)
+    setGlobalModelStub({ confirmedModelId: null })
+    render(<ResearchWorkspace />)
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'research.tabChat' }), {
+      button: 0,
+      ctrlKey: false,
+    })
+
+    expect(screen.getByTestId('chat-input')).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'research.chatSend' })).toBeDisabled()
+    expect(screen.getByTestId('chat-model-blocked-hint')).toHaveTextContent(
+      'research.globalModel.selectModelHint',
+    )
+    expect(api.openResearchChatStream).not.toHaveBeenCalled()
+  })
+
+  it('#243：无可用全局模型时 Compare 创建禁用并展示引导（评审 Important-2）', async () => {
+    tokenStore.setResearchToken(researchToken(), 9999999999)
+    setGlobalModelStub({ confirmedModelId: null })
+    render(<ResearchWorkspace />)
+    fireEvent.click(await screen.findByRole('button', { name: 'research.layout.expandContext' }))
+    fireEvent.click(await screen.findByTestId('source-src_1'))
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'research.tabCompare' }), {
+      button: 0,
+      ctrlKey: false,
+    })
+
+    expect(screen.getByTestId('compare-create')).toBeDisabled()
+    expect(screen.getByTestId('compare-model-blocked-hint')).toHaveTextContent(
+      'research.globalModel.selectModelHint',
+    )
+    expect(api.createCompare).not.toHaveBeenCalled()
+  })
+
   it('加载失败显示错误与重试按钮', async () => {
     tokenStore.setResearchToken(researchToken(), 9999999999)
     vi.mocked(api.listSources).mockRejectedValue(new Error('network down'))

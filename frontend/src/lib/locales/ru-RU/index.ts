@@ -1057,6 +1057,7 @@ export const ruRU = {
       adminReadonly: "Только чтение",
       settings: "Настройки исследования",
       external: "Внешняя",
+      consentFailed: "Не удалось подтвердить согласие. Попробуйте ещё раз.",
     },
     searchContext: {
       label: "Контекст",

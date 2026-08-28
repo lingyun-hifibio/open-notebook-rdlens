@@ -113,6 +113,9 @@ export interface UseResearchGlobalModelResult {
   invalidateConsent: () => void
   cancelConsent: () => void
   confirmConsent: () => Promise<void>
+  /** 最近一次确认失败的信息（弹窗内展示；登记保留可重试） */
+  consentError: string | null
+  dismissConsentError: () => void
   /** Admin 只读：显示禁用控件，不发 PATCH，不执行 */
   isAdminReadonly: boolean
 }
@@ -125,6 +128,7 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
 
   const [draftModelId, setDraftModelId] = useState<string | null>(null)
   const [saveModelError, setSaveModelError] = useState<string | null>(null)
+  const [consentError, setConsentError] = useState<string | null>(null)
   const [isConsentPromptOpen, setIsConsentPromptOpen] = useState(false)
   const [isConsentInFlight, setIsConsentInFlight] = useState(false)
   /** §6.8 single-flight：同一时刻只允许一个确认流程在途 */
@@ -183,18 +187,23 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
     [refetchConsent],
   )
 
-  const preferencePatch = useMutation({
-    mutationFn: (input: Parameters<typeof patchExecutionPreferences>[1]) =>
-      patchExecutionPreferences(projectId, input),
-    onSuccess: (saved) => {
-      // 服务端响应即权威值：直接写入缓存（比 invalidate 更快且避免
-      // 多标签页并发 PATCH 期间读到陈旧快照），仍保留 invalidate 语义
-      queryClient.setQueryData(
-        QUERY_KEYS.researchExecutionPreferences(projectId),
-        saved,
-      )
-    },
-  })
+  // 模型保存与 Search 上下文保存是两个独立 mutation：isSavingModel 只反映
+  // 模型保存（不变量 3 的冻结范围），上下文保存不冻结生成入口；分离实例
+  // 也避免并发保存共用 isPending 导致提前解冻。
+  const patchPreferences = (input: Parameters<typeof patchExecutionPreferences>[1]) =>
+    patchExecutionPreferences(projectId, input)
+
+  const onPatchSuccess = (saved: Awaited<ReturnType<typeof patchExecutionPreferences>>) => {
+    // 服务端响应即权威值：直接写入缓存（比 invalidate 更快且避免
+    // 多标签页并发 PATCH 期间读到陈旧快照），仍保留 invalidate 语义
+    queryClient.setQueryData(
+      QUERY_KEYS.researchExecutionPreferences(projectId),
+      saved,
+    )
+  }
+
+  const modelPatch = useMutation({ mutationFn: patchPreferences, onSuccess: onPatchSuccess })
+  const contextPatch = useMutation({ mutationFn: patchPreferences, onSuccess: onPatchSuccess })
 
   const saveModel = useCallback(async (): Promise<void> => {
     if (isAdminReadonly || draftModelId === null) return
@@ -202,7 +211,7 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
     try {
       // 只 PATCH preferred_model_id；成功后服务端权威值成为 confirmed
       // （draft 保留为用户选择，正常情况下两者相等）
-      await preferencePatch.mutateAsync({ preferred_model_id: draftModelId })
+      await modelPatch.mutateAsync({ preferred_model_id: draftModelId })
     } catch (err) {
       setSaveModelError(err instanceof Error ? err.message : String(err))
       // 失败丢弃 draft，回滚到服务端值（§6.1：refetch authority）
@@ -210,28 +219,28 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
       setDraftTouched(false)
       throw err
     }
-  }, [confirmedModelId, draftModelId, isAdminReadonly, preferencePatch])
+  }, [confirmedModelId, draftModelId, isAdminReadonly, modelPatch])
 
   const clearModel = useCallback(async (): Promise<void> => {
     if (isAdminReadonly) return
     setSaveModelError(null)
     try {
-      await preferencePatch.mutateAsync({ preferred_model_id: null })
+      await modelPatch.mutateAsync({ preferred_model_id: null })
       setDraftModelId(null)
       setDraftTouched(false)
     } catch (err) {
       setSaveModelError(err instanceof Error ? err.message : String(err))
       throw err
     }
-  }, [isAdminReadonly, preferencePatch])
+  }, [isAdminReadonly, modelPatch])
 
   const saveSearchContext = useCallback(
     async (level: ResearchContextLevel): Promise<void> => {
       if (isAdminReadonly) return
       // 只 PATCH default_context_level，不触碰模型（不变量 8）
-      await preferencePatch.mutateAsync({ default_context_level: level })
+      await contextPatch.mutateAsync({ default_context_level: level })
     },
-    [isAdminReadonly, preferencePatch],
+    [isAdminReadonly, contextPatch],
   )
 
   const confirmedModel =
@@ -245,7 +254,7 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
         ? 'unavailable'
         : 'available'
 
-  const isSavingModel = preferencePatch.isPending
+  const isSavingModel = modelPatch.isPending
   const isLoadingModel =
     modelsQuery.isLoading || preferencesQuery.isLoading || consentQuery.isLoading
 
@@ -270,10 +279,11 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
   const cancelConsent = useCallback(() => {
     // 已在途的确认不可取消（避免半执行），只丢弃尚未开始的登记
     if (isConsentInFlight) return
-    // 不变零 9：取消不创建/不改变任何执行状态
+    // 不变量 9：取消不创建/不改变任何执行状态
     pendingOperationRef.current = null
     pendingModelIdRef.current = null
     setIsConsentPromptOpen(false)
+    setConsentError(null)
   }, [isConsentInFlight])
 
   const confirmConsent = useCallback(async (): Promise<void> => {
@@ -294,6 +304,11 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
       pendingOperationRef.current = null
       pendingModelIdRef.current = null
       if (operation && snapshot) await operation(snapshot)
+      setConsentError(null)
+    } catch (err) {
+      // acknowledge 失败：弹窗保持打开、登记保留可重试，并给出可见反馈
+      //（不静默吞错，也不产生未处理 rejection）
+      setConsentError(err instanceof Error ? err.message : String(err))
     } finally {
       consentInFlightRef.current = false
       setIsConsentInFlight(false)
@@ -341,8 +356,11 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
     invalidateConsent: refetchConsent,
     cancelConsent,
     confirmConsent,
+    consentError,
+    dismissConsentError: () => setConsentError(null),
     isAdminReadonly,
   }), [
+    consentError,
     refetchConsent,
     blockedReason,
     canExecute,
@@ -383,4 +401,27 @@ export function useResearchGlobalModel(): UseResearchGlobalModelResult {
     throw new Error('research global model provider is not available')
   }
   return value
+}
+
+/**
+ * blockedReason → 引导文案（各生成入口共用同一映射，避免文案漂移）。
+ * 'none' / 'loading' 返回空串——可用或尚在加载（loading 由骨架/禁用表达，
+ * 不需要额外提示行）。
+ */
+export function researchModelBlockedHint(
+  reason: ResearchModelBlockedReason,
+  t: (key: string) => string,
+): string {
+  switch (reason) {
+    case 'no-model':
+      return t('research.globalModel.selectModelHint')
+    case 'unavailable':
+      return t('research.globalModel.unavailable')
+    case 'saving':
+      return t('research.globalModel.saving')
+    case 'admin-readonly':
+      return t('research.globalModel.adminReadonly')
+    default:
+      return ''
+  }
 }

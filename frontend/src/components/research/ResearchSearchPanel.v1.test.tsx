@@ -445,8 +445,7 @@ describe('ResearchSearchPanel（GMOD §6.3 全局模型接线）', () => {
     )
   })
 
-  it('外部模型已有有效确认时 Run 直接执行，不弹确认框', async () => {
-    vi.mocked(getExecutionPreferences).mockResolvedValue({
+  it('外部模型已有有效确认时 Run 直接执行，不弹确认框', async () => {    vi.mocked(getExecutionPreferences).mockResolvedValue({
       ...prefs,
       preferred_model_id: 'm-ext',
     })

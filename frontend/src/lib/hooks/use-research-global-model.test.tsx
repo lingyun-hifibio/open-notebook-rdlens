@@ -289,7 +289,7 @@ describe('useResearchGlobalModel（GMOD §6.1 draft/confirmed）', () => {
     // 入口仍可点击：禁用会让用户永远无法触发确认（§6.8 第 3 步）
     expect(result.current.canExecute).toBe(true)
 
-    const operation = vi.fn(async (_modelId: string) => 'ok')
+    const operation = vi.fn(async () => 'ok')
     await act(async () => {
       await result.current.runGuarded(operation)
     })
@@ -315,7 +315,7 @@ describe('useResearchGlobalModel（GMOD §6.1 draft/confirmed）', () => {
     vi.mocked(getExternalEgressConsent).mockResolvedValue(CONSENT_MISSING)
     const { result } = renderGlobalModel()
     await waitFor(() => expect(result.current.isLoadingModel).toBe(false))
-    const operation = vi.fn(async (_modelId: string) => 'ok')
+    const operation = vi.fn(async () => 'ok')
     await act(async () => {
       await result.current.runGuarded(operation)
     })
@@ -352,7 +352,7 @@ describe('useResearchGlobalModel（GMOD §6.1 draft/confirmed）', () => {
     )
     const { result } = renderGlobalModel()
     await waitFor(() => expect(result.current.isLoadingModel).toBe(false))
-    const operation = vi.fn(async (_modelId: string) => 'ok')
+    const operation = vi.fn(async () => 'ok')
     await act(async () => {
       await result.current.runGuarded(operation)
     })
@@ -377,6 +377,87 @@ describe('useResearchGlobalModel（GMOD §6.1 draft/confirmed）', () => {
     expect(operation).toHaveBeenCalledWith('m-ext')
   })
 
+  it('confirmConsent acknowledge 失败：弹窗保持打开、错误可见、登记保留可重试', async () => {
+    vi.mocked(getExecutionPreferences).mockResolvedValue({
+      ...PREFS_M_LOCAL,
+      preferred_model_id: 'm-ext',
+    })
+    vi.mocked(getExternalEgressConsent).mockResolvedValue(CONSENT_MISSING)
+    vi.mocked(acknowledgeExternalEgressConsent)
+      .mockRejectedValueOnce(new Error('ack down'))
+      .mockResolvedValueOnce(CONSENT_VALID)
+    const { result } = renderGlobalModel()
+    await waitFor(() => expect(result.current.isLoadingModel).toBe(false))
+    const operation = vi.fn(async () => 'ok')
+    await act(async () => {
+      await result.current.runGuarded(operation)
+    })
+    expect(result.current.isConsentPromptOpen).toBe(true)
+
+    // 第一次确认失败：错误置位、无未处理 rejection、弹窗与登记保留
+    await act(async () => {
+      await result.current.confirmConsent()
+    })
+    expect(result.current.consentError).toBe('ack down')
+    expect(result.current.isConsentPromptOpen).toBe(true)
+    expect(operation).not.toHaveBeenCalled()
+
+    // 重试成功：执行登记的操作并清除错误
+    await act(async () => {
+      await result.current.confirmConsent()
+    })
+    expect(acknowledgeExternalEgressConsent).toHaveBeenCalledTimes(2)
+    expect(operation).toHaveBeenCalledTimes(1)
+    expect(operation).toHaveBeenCalledWith('m-ext')
+    expect(result.current.consentError).toBeNull()
+    expect(result.current.isConsentPromptOpen).toBe(false)
+
+    // 取消时错误一并清除（不留陈旧提示）
+    await act(async () => {
+      await result.current.runGuarded(vi.fn(async () => 'ok'))
+    })
+    act(() => result.current.cancelConsent())
+    expect(result.current.consentError).toBeNull()
+  })
+
+  it('保存 Search 上下文不冻结生成入口（isSavingModel 只反映模型保存）', async () => {
+    // 先建 deferred，再挂 mock：不依赖 mutateAsync 的调用时机
+    let resolveContext!: (value: unknown) => void
+    const contextDeferred = new Promise((resolve) => {
+      resolveContext = resolve as (value: unknown) => void
+    })
+    vi.mocked(patchExecutionPreferences).mockImplementation(
+      (_projectId, input) => {
+        if (input.default_context_level !== undefined) {
+          return contextDeferred as never
+        }
+        return Promise.resolve({
+          ...PREFS_M_LOCAL,
+          ...input,
+        }) as never
+      },
+    )
+    const { result } = renderGlobalModel()
+    await waitFor(() => expect(result.current.isLoadingModel).toBe(false))
+
+    let contextSave: Promise<void> | null = null
+    await act(async () => {
+      contextSave = result.current.saveSearchContext('document')
+    })
+    // 上下文保存在途：生成入口不被冻结（冻结范围仅模型保存，不变量 3）
+    expect(result.current.isSavingModel).toBe(false)
+    expect(result.current.canExecute).toBe(true)
+
+    await act(async () => {
+      resolveContext({
+        ...PREFS_M_LOCAL,
+        default_context_level: 'document',
+      })
+      await contextSave
+    })
+    await waitFor(() => expect(result.current.searchContextDefault).toBe('document'))
+  })
+
   it('切换模型（draft 变化）时 refetch consent（目标 scope 不复用）', async () => {
     const { result } = renderGlobalModel()
     await waitFor(() => expect(result.current.isLoadingModel).toBe(false))
@@ -399,7 +480,7 @@ describe('useResearchGlobalModel（GMOD §6.1 draft/confirmed）', () => {
     expect(result.current.isAdminReadonly).toBe(true)
     expect(result.current.canExecute).toBe(false)
     expect(result.current.blockedReason).toBe('admin-readonly')
-    const operation = vi.fn(async (_modelId: string) => 'ok')
+    const operation = vi.fn(async () => 'ok')
     let outcome: string | undefined
     await act(async () => {
       outcome = await result.current.runGuarded(operation)

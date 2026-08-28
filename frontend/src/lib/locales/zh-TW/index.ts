@@ -1057,6 +1057,7 @@ export const zhTW = {
       adminReadonly: "唯讀",
       settings: "研究設定",
       external: "外部",
+      consentFailed: "外發確認失敗，請重試。",
     },
     searchContext: {
       label: "上下文",

@@ -1057,6 +1057,7 @@ export const jaJP = {
       adminReadonly: "読み取り専用",
       settings: "研究設定",
       external: "外部",
+      consentFailed: "同意の確認に失敗しました。もう一度お試しください。",
     },
     searchContext: {
       label: "コンテキスト",

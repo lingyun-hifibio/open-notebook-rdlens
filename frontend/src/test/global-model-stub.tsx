@@ -45,6 +45,25 @@ export function setGlobalModelStub(next: StubOverrides): void {
   overrides = { ...overrides, ...next }
 }
 
+/** 与真实实现同语义：'none'/'loading' 无提示行 */
+export function researchModelBlockedHint(
+  reason: string,
+  t: (key: string) => string,
+): string {
+  switch (reason) {
+    case 'no-model':
+      return t('research.globalModel.selectModelHint')
+    case 'unavailable':
+      return t('research.globalModel.unavailable')
+    case 'saving':
+      return t('research.globalModel.saving')
+    case 'admin-readonly':
+      return t('research.globalModel.adminReadonly')
+    default:
+      return ''
+  }
+}
+
 export function ResearchGlobalModelProvider({ children }: { children: ReactNode }) {
   return <>{children}</>
 }
@@ -105,6 +124,8 @@ export function useResearchGlobalModel(): UseResearchGlobalModelResult {
     invalidateConsent: () => undefined,
     cancelConsent: () => undefined,
     confirmConsent: async () => undefined,
+    consentError: null,
+    dismissConsentError: () => undefined,
     isAdminReadonly: blockedReason === 'admin-readonly',
   }
 }

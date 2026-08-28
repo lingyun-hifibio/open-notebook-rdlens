@@ -1057,6 +1057,7 @@ export const itIT = {
       adminReadonly: "Sola lettura",
       settings: "Impostazioni di ricerca",
       external: "Esterno",
+      consentFailed: "Conferma del consenso non riuscita. Riprova.",
     },
     searchContext: {
       label: "Contesto",

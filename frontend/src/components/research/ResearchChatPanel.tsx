@@ -24,6 +24,8 @@ export function ResearchChatPanel({
   onSend,
   selectedSourceIds,
   selectedNoteIds,
+  sendDisabled,
+  blockedHint,
 }: {
   turns: ResearchChatTurn[]
   isStreaming: boolean
@@ -34,13 +36,17 @@ export function ResearchChatPanel({
   onSend: (query: string, selection?: ResearchChatSelection) => Promise<boolean>
   selectedSourceIds: string[]
   selectedNoteIds: string[]
+  /** #243：无可用全局模型时禁用发送（不变量 2/7 的 Chat 侧表达） */
+  sendDisabled?: boolean
+  blockedHint?: string | null
 }) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
+  const generationBlocked = sendDisabled === true
 
   const submit = () => {
     const trimmed = query.trim()
-    if (!trimmed) return
+    if (!trimmed || generationBlocked) return
     void onSend(trimmed, { sourceIds: selectedSourceIds, noteIds: selectedNoteIds }).then((sent) => {
       if (sent) setQuery('')
     })
@@ -142,6 +148,15 @@ export function ResearchChatPanel({
         )}
       </div>
 
+      {generationBlocked && blockedHint && (
+        <p
+          className="border-t px-3 pt-2 text-xs text-muted-foreground"
+          data-testid="chat-model-blocked-hint"
+        >
+          {blockedHint}
+        </p>
+      )}
+
       <div className="flex gap-2 border-t p-3">
         <Input
           value={query}
@@ -149,10 +164,11 @@ export function ResearchChatPanel({
           onKeyDown={(event) => {
             if (event.key === 'Enter') submit()
           }}
+          disabled={generationBlocked}
           placeholder={t('research.chatPlaceholder')}
           data-testid="chat-input"
         />
-        <Button onClick={submit} disabled={!query.trim() || isStreaming}>
+        <Button onClick={submit} disabled={!query.trim() || isStreaming || generationBlocked}>
           {t('research.chatSend')}
         </Button>
       </div>

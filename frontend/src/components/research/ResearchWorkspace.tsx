@@ -6,7 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { getResearchProjectId } from '@/lib/research/project'
 import { listNotes, listSources } from '@/lib/research/api'
 import { useResearchChat } from '@/lib/hooks/use-research-chat'
-import { useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
+import { researchModelBlockedHint, useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
 import { useResearchJobs } from '@/lib/hooks/use-research-jobs'
 import { SourceNoteSelector } from './SourceNoteSelector'
 import { ResearchSearchPanel } from './ResearchSearchPanel'
@@ -77,7 +77,9 @@ export function ResearchWorkspace() {
   // #243 §6.4：Chat/Compare 统一走顶层执行守卫——传入调用时刻捕获的
   // confirmed 模型快照；外部模型需确认时只登记不执行，取消零副作用
   // （不发请求、不建 Job，不变量 9）。
-  const { runGuarded } = useResearchGlobalModel()
+  const { runGuarded, canExecute, blockedReason } = useResearchGlobalModel()
+  // 各生成入口共用同一禁用文案映射（与 Search/SourceChat 一致）
+  const blockedHint = researchModelBlockedHint(blockedReason, t)
 
   const sendChat = useCallback(
     async (
@@ -152,6 +154,8 @@ export function ResearchWorkspace() {
               onSend={sendChat}
               selectedSourceIds={selectedSourceIds}
               selectedNoteIds={selectedNoteIds}
+              sendDisabled={!canExecute}
+              blockedHint={blockedHint}
             />
           </TabsContent>
           <TabsContent value="compare" className="min-h-0 flex-1">
@@ -161,6 +165,8 @@ export function ResearchWorkspace() {
               isCreating={isCreating}
               error={jobsError}
               onCreate={createCompare}
+              modelBlocked={!canExecute}
+              blockedHint={blockedHint}
             />
           </TabsContent>
           <TabsContent value="jobs" className="min-h-0 flex-1">

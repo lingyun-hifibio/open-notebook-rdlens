@@ -1057,6 +1057,7 @@ export const frFR = {
       adminReadonly: "Lecture seule",
       settings: "Paramètres de recherche",
       external: "Externe",
+      consentFailed: "Échec de la confirmation du consentement. Veuillez réessayer.",
     },
     searchContext: {
       label: "Contexte",

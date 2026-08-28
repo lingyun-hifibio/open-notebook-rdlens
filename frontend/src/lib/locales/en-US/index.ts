@@ -1056,6 +1056,7 @@ export const enUS = {
       adminReadonly: "Read-only",
       settings: "Research settings",
       external: "External",
+      consentFailed: "Consent confirmation failed. Please try again.",
     },
     searchContext: {
       label: "Context",

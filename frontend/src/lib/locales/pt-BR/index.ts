@@ -1057,6 +1057,7 @@ export const ptBR = {
       adminReadonly: "Somente leitura",
       settings: "Configurações da pesquisa",
       external: "Externo",
+      consentFailed: "Falha ao confirmar o consentimento. Tente novamente.",
     },
     searchContext: {
       label: "Contexto",

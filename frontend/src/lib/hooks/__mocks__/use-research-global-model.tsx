@@ -9,6 +9,7 @@
 export {
   GLOBAL_MODEL_STUB_ID,
   ResearchGlobalModelProvider,
+  researchModelBlockedHint,
   resetGlobalModelStub,
   setGlobalModelStub,
   useResearchGlobalModel,

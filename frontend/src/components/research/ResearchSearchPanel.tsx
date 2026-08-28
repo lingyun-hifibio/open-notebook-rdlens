@@ -13,7 +13,7 @@ import {
   CONTEXT_LEVELS,
 } from './SearchContextSelector'
 import { fetchContextPreview, newIdempotencyKey, searchV1 } from '@/lib/research/api'
-import { useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
+import { researchModelBlockedHint, useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
 import type {
   ResearchContextLevel,
   ResearchContextPreview,
@@ -259,16 +259,7 @@ export function ResearchSearchPanel({
     selectedSourceIds,
   ])
 
-  const blockedHint =
-    blockedReason === 'no-model'
-      ? t('research.globalModel.selectModelHint')
-      : blockedReason === 'unavailable'
-        ? t('research.globalModel.unavailable')
-        : blockedReason === 'saving'
-          ? t('research.globalModel.saving')
-          : blockedReason === 'admin-readonly'
-            ? t('research.globalModel.adminReadonly')
-            : ''
+  const blockedHint = researchModelBlockedHint(blockedReason, t)
 
   return (
     <div className="flex h-full min-h-0 flex-col">
