@@ -7,7 +7,6 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
 import { useResearchSources } from '@/lib/hooks/use-research'
 import { AdminReadOnlyBanner } from './AdminReadOnlyBanner'
-import { ExportSection } from './ExportSection'
 import { SourceListPanel } from './SourceListPanel'
 import { SourceDetailPanel } from './SourceDetailPanel'
 import { NotesPanel } from './NotesPanel'
@@ -74,13 +73,12 @@ export function ResearchWorkbench({
   if (displayMode === 'source-focus' && selectedSourceId !== null) {
     return (
       <div className="flex h-full min-h-0 flex-col gap-3 p-4">
+        {/* Issue #243 §6.2：标题与导出上移到顶层 Research header，此处只保留
+            Source focus 的返回控制，避免重复的「研究工作台」标题 */}
         <div className="flex items-center gap-3">
           <Button size="sm" variant="ghost" onClick={onCloseSource}>
             {t('research.sources.back')}
           </Button>
-          <h1 className="text-lg font-semibold">
-            {t('research.workbench.title')}
-          </h1>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
           <SourceDetailPanel
@@ -95,10 +93,7 @@ export function ResearchWorkbench({
 
   return (
     <div className="flex h-full flex-col gap-3 p-4">
-      <div className="flex items-center justify-between gap-3">
-        <h1 className="text-lg font-semibold">{t('research.workbench.title')}</h1>
-        <ExportSection />
-      </div>
+      {/* Issue #243 §6.2：标题与导出入口已上移到顶层 Research header */}
       {isAdminReadonly && <AdminReadOnlyBanner />}
 
       <Tabs value={tab} onValueChange={(value) => setTab(value as ResearchTab)} className="min-h-0 flex-1">

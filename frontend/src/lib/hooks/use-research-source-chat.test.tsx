@@ -6,24 +6,25 @@ import {
   useResearchSourceChat,
 } from './use-research-source-chat'
 import {
-  getExecutionPreferences,
   getSourceChatSession,
   listSourceChatSessions,
-  newIdempotencyKey,
   openResearchChatStream,
 } from '@/lib/research/api'
+
+/** #243 §6.4：调用方传入的 confirmed 全局模型快照 */
+const MODEL = 'm-local'
 
 // Issue #182 Red：Source-scoped Chat hook——预生成 session_id、Last-Event-ID
 // 断线恢复（首轮任意非终态事件后）、无终态 EOF 重连/终态 EOF 不重连、
 // 两类 409 分流（resume_after 重试 vs 活动冲突终态）、Gateway 不可用
 // fail-closed、切换 Source 清理、GET detail 冷恢复映射。
-// #238：v1 契约——偏好显式透传 model_id；无偏好阻止发送。
+// #243 §6.4：modelId 由调用方 required 传入（confirmed 全局模型快照）；
+// 无模型 fail-closed 不发请求，重放沿用同一快照。
 
 vi.mock('@/lib/research/api', () => ({
   openResearchChatStream: vi.fn(),
   listSourceChatSessions: vi.fn(),
   getSourceChatSession: vi.fn(),
-  getExecutionPreferences: vi.fn(),
   newIdempotencyKey: vi.fn(() => 'ik-src'),
 }))
 
@@ -81,11 +82,6 @@ describe('useResearchSourceChat', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     mockSessionsList()
-    // #238：默认已保存偏好（既有用例的发送流程依赖它）
-    vi.mocked(getExecutionPreferences).mockResolvedValue({
-      preferred_model_id: 'm-local',
-      default_context_level: 'focused',
-    } as never)
   })
 
   afterEach(() => {
@@ -110,7 +106,7 @@ describe('useResearchSourceChat', () => {
     )
 
     await act(async () => {
-      result.current.send('这篇论文的方法是什么？')
+      result.current.send('这篇论文的方法是什么？', MODEL)
     })
 
     expect(streams).toHaveLength(1)
@@ -142,7 +138,7 @@ describe('useResearchSourceChat', () => {
     )
 
     await act(async () => {
-      result.current.send('q')
+      result.current.send('q', MODEL)
     })
     act(() => {
       streams[0].emit(ev(1, 'citation', {
@@ -188,7 +184,7 @@ describe('useResearchSourceChat', () => {
     )
 
     await act(async () => {
-      result.current.send('q')
+      result.current.send('q', MODEL)
     })
     const sentSessionId = (streams[0].opts.request as { session_id?: string }).session_id
 
@@ -205,7 +201,7 @@ describe('useResearchSourceChat', () => {
 
     // 存储回显值：下一轮续接使用服务端回显的 session_id
     await act(async () => {
-      result.current.send('第二轮')
+      result.current.send('第二轮', MODEL)
     })
     expect((streams[1].opts.request as { session_id?: string }).session_id).toBe('sess_server_generated')
 
@@ -228,7 +224,7 @@ describe('useResearchSourceChat', () => {
     )
 
     await act(async () => {
-      result.current.send('q')
+      result.current.send('q', MODEL)
     })
     act(() => {
       streams[0].emit(ev(1, 'thinking', { delta: '思' }))
@@ -260,7 +256,7 @@ describe('useResearchSourceChat', () => {
     )
 
     await act(async () => {
-      result.current.send('q')
+      result.current.send('q', MODEL)
     })
     act(() => {
       streams[0].emit(ev(1, 'answer', { delta: '部分' }))
@@ -284,7 +280,7 @@ describe('useResearchSourceChat', () => {
     )
 
     await act(async () => {
-      result.current.send('q')
+      result.current.send('q', MODEL)
     })
     act(() => {
       streams[0].emit(ev(1, 'done', { session_id: 'sess_x', completion_status: 'success' }))
@@ -303,7 +299,7 @@ describe('useResearchSourceChat', () => {
     )
 
     await act(async () => {
-      result.current.send('q')
+      result.current.send('q', MODEL)
     })
     for (let attempt = 1; attempt <= SOURCE_CHAT_MAX_STREAM_ATTEMPTS; attempt += 1) {
       act(() => {
@@ -330,7 +326,7 @@ describe('useResearchSourceChat', () => {
     )
 
     await act(async () => {
-      result.current.send('q')
+      result.current.send('q', MODEL)
     })
     act(() => {
       streams[0].emit(ev(1, 'answer', { delta: 'A' }))
@@ -371,7 +367,7 @@ describe('useResearchSourceChat', () => {
     )
 
     await act(async () => {
-      result.current.send('q')
+      result.current.send('q', MODEL)
     })
     act(() => {
       streams[0].emit(ev(1, 'answer', { delta: 'a' }))
@@ -397,7 +393,7 @@ describe('useResearchSourceChat', () => {
     )
 
     await act(async () => {
-      result.current.send('q')
+      result.current.send('q', MODEL)
     })
     act(() => {
       streams[0].httpFail(409, {
@@ -420,7 +416,7 @@ describe('useResearchSourceChat', () => {
     )
 
     await act(async () => {
-      result.current.send('q')
+      result.current.send('q', MODEL)
     })
     act(() => {
       streams[0].httpFail(503, { detail: 'gateway unavailable' })
@@ -473,7 +469,7 @@ describe('useResearchSourceChat', () => {
     )
 
     await act(async () => {
-      result.current.send('第一问')
+      result.current.send('第一问', MODEL)
     })
     act(() => {
       streams[0].emit(ev(1, 'answer', { delta: '内容' }))
@@ -489,7 +485,7 @@ describe('useResearchSourceChat', () => {
 
     // 新 Source 首条消息生成全新 session_id
     await act(async () => {
-      result.current.send('第二问')
+      result.current.send('第二问', MODEL)
     })
     const newSessionId = (streams[1].opts.request as { session_id?: string }).session_id
     expect(newSessionId).toMatch(/^sess_[0-9a-f-]{36}$/)
@@ -503,7 +499,7 @@ describe('useResearchSourceChat', () => {
     )
 
     await act(async () => {
-      result.current.send('q')
+      result.current.send('q', MODEL)
     })
     act(() => {
       streams[0].emit(ev(1, 'done', { session_id: 'sess_x', completion_status: 'success' }))
@@ -517,7 +513,7 @@ describe('useResearchSourceChat', () => {
     expect(result.current.activeSessionId).toBeNull()
 
     await act(async () => {
-      result.current.send('新会话首条')
+      result.current.send('新会话首条', MODEL)
     })
     const freshSessionId = (streams[1].opts.request as { session_id?: string }).session_id
     expect(freshSessionId).not.toBe('sess_x')
@@ -595,7 +591,7 @@ describe('useResearchSourceChat', () => {
 
     // 冷恢复后续接：请求体带恢复的 session_id
     await act(async () => {
-      result.current.send('续问')
+      result.current.send('续问', MODEL)
     })
     expect((streams[0].opts.request as { session_id?: string }).session_id).toBe('sess_old')
   })
@@ -637,7 +633,7 @@ describe('useResearchSourceChat', () => {
     expect(result.current.turns).toEqual([])
   })
 
-  it('#238：请求体显式携带已保存模型偏好（model_id）', async () => {
+  it('#243 §6.4：请求体显式携带调用方传入的模型快照（model_id）', async () => {
     const streams = openCapture()
     const { result } = renderHook(() =>
       useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1' }),
@@ -645,32 +641,51 @@ describe('useResearchSourceChat', () => {
     )
 
     await act(async () => {
-      result.current.send('q')
+      result.current.send('q', MODEL)
     })
 
     expect(streams[0].opts.request).toMatchObject({ model_id: 'm-local' })
     expect(streams[0].opts.idempotencyKey).toBe('ik-src')
   })
 
-  it('#238：无已保存偏好 → 错误 turn 且不打开流', async () => {
+  it('#243 §6.4：无 confirmed 模型 → 错误 turn 且不打开流', async () => {
     const streams = openCapture()
-    vi.mocked(getExecutionPreferences).mockResolvedValue({
-      preferred_model_id: null,
-      default_context_level: 'focused',
-    } as never)
     const { result } = renderHook(() =>
       useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1' }),
       { wrapper: makeHookWrapper() },
     )
 
     await act(async () => {
-      result.current.send('q')
+      result.current.send('q', '')
     })
 
     expect(streams).toHaveLength(0)
     const turn = lastAssistant(result.current.turns)
     expect(turn.status).toBe('error')
-    expect(turn.errorCode).toBe('model_preference_required')
-    expect(turn.errorMessage).toMatch(/model preference/i)
+    expect(turn.errorCode).toBe('model_required')
+    expect(turn.errorMessage).toMatch(/select a research model/i)
+  })
+
+  it('#243 §6.4：retry 重放沿用失败时的模型快照（不变量 4）', async () => {
+    const streams = openCapture()
+    const { result } = renderHook(() =>
+      useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1' }),
+      { wrapper: makeHookWrapper() },
+    )
+
+    await act(async () => {
+      result.current.send('q', 'm-a')
+    })
+    act(() => {
+      streams[0].emit(ev(1, 'error', { code: 'gateway_unavailable', message: 'down' }))
+    })
+    expect(result.current.retryableQuery).toBe('q')
+
+    await act(async () => {
+      result.current.retry()
+    })
+
+    expect(streams).toHaveLength(2)
+    expect(streams[1].opts.request).toMatchObject({ model_id: 'm-a' })
   })
 })

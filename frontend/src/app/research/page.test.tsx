@@ -63,6 +63,15 @@ vi.mock('@/components/research/ResearchWorkspace', () => ({
   ResearchWorkspace: () => <div data-testid="workspace" />,
 }))
 
+// #243 §6.2：页面顶层新增 Research header（全局模型栏 + 导出）与根级外发
+// 确认弹窗，二者依赖全局模型/工作区上下文；本文件被测对象是组合与布局，
+// 因此用测试替身替换上下文，导出区也一并替身化
+vi.mock('@/lib/hooks/use-research-global-model')
+
+vi.mock('@/components/research/ExportSection', () => ({
+  ExportSection: () => <div data-testid="export-section" />,
+}))
+
 vi.mock('@/components/research/ResearchSourceChatPanel', () => ({
   ResearchSourceChatPanel: ({
     sourceId,

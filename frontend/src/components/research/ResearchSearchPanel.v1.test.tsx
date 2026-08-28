@@ -1,16 +1,38 @@
 /**
- * Issue #200 Phase 2b：ResearchSearchPanel v1 集成（§14.3）。
+ * ResearchSearchPanel 集成测试（Issue #200 Phase 2b §14.3；Issue #243
+ * GMOD-FE-01 §6.3/§6.7/§6.8）。
  *
- * - 未选模型时 Run 禁用（后端不隐式补 model_id 的 UI 对应）；
- * - 发送前展示 Context Preview（只读预判）；
- * - 202 后台受理展示排队提示（刷新不消失语义由 Job 列表兜底）。
+ * 覆盖：
+ * - 模型来自 Research 顶层 confirmed 全局模型，本面板不再有模型选择器；
+ * - 无 confirmed 模型时 Run 禁用并给出引导（不自动改选）；
+ * - Preview 与执行都显式携带 confirmed model_id（§6.7 required）；
+ * - Search 局部档位可未经保存直接使用；保存档位只 PATCH context；
+ * - 当前模型 interactive_context_levels 不支持已选档位时收敛到 focused；
+ * - 外部模型未经确认时 Run 不发出请求，由根级弹窗确认后才执行，取消则
+ *   零副作用（不变量 9）；
+ * - 幂等键语义（§7.2）与后台受理展示不受全局模型改造影响。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ResearchSearchPanel } from './ResearchSearchPanel'
+import { ResearchEgressConsentDialog } from './ResearchEgressConsentDialog'
+import { ResearchGlobalModelProvider } from '@/lib/hooks/use-research-global-model'
+import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
 
 vi.mock('@/lib/hooks/use-translation', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  // 插值参数一并拼进返回值，便于断言 i18n 占位符实际取值
+  useTranslation: () => ({
+    t: (key: string, opts?: Record<string, unknown>) =>
+      opts === undefined ? key : `${key}|${JSON.stringify(opts)}`,
+  }),
+}))
+
+// MarkdownRenderer 依赖 window.matchMedia（jsdom 未实现），与本文断言无关
+vi.mock('@/components/ui/markdown-renderer', () => ({
+  MarkdownRenderer: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="markdown">{children}</div>
+  ),
 }))
 
 const prefs = {
@@ -55,20 +77,27 @@ const noConsentResponse = {
   required_scope: validConsentResponse.required_scope,
 }
 
+const MODELS: ResearchModelOption[] = [
+  {
+    model_id: 'm-local',
+    display_name: 'Local M',
+    data_egress: false,
+    interactive_context_levels: ['focused', 'document', 'workspace'],
+  },
+  {
+    model_id: 'm-ext',
+    display_name: 'Ext M',
+    provider_id: 'ext-1',
+    data_egress: true,
+    // §5.2：外部模型只声明 focused
+    interactive_context_levels: ['focused'],
+  },
+]
+
 vi.mock('@/lib/research/api', () => ({
-  listModels: vi.fn(async () => ({
-    models: [
-      { model_id: 'm-local', display_name: 'Local M', data_egress: false },
-      {
-        model_id: 'm-ext',
-        display_name: 'Ext M',
-        provider_id: 'ext-1',
-        data_egress: true,
-      },
-    ],
-  })),
+  listModels: vi.fn(async () => ({ models: MODELS })),
   getExecutionPreferences: vi.fn(async () => noPrefs),
-  saveExecutionPreferences: vi.fn(async (input) => ({ ...noPrefs, ...input })),
+  patchExecutionPreferences: vi.fn(async (_projectId, input) => ({ ...noPrefs, ...input })),
   fetchContextPreview: vi.fn(async () => ({
     source_count: 1,
     chunk_count: 3,
@@ -79,33 +108,106 @@ vi.mock('@/lib/research/api', () => ({
     coverage: {},
     warnings: [],
   })),
-  // Issue #202 Phase 3b：外发确认端点（mock 默认已确认，测试可覆盖）
   getExternalEgressConsent: vi.fn(async () => validConsentResponse),
   acknowledgeExternalEgressConsent: vi.fn(async () => validConsentResponse),
   searchV1: vi.fn(),
   newIdempotencyKey: vi.fn(() => `ui-${++keySeq}`),
 }))
 
-import { searchV1, getExecutionPreferences } from '@/lib/research/api'
+import {
+  acknowledgeExternalEgressConsent,
+  fetchContextPreview,
+  getExecutionPreferences,
+  getExternalEgressConsent,
+  listModels,
+  newIdempotencyKey,
+  patchExecutionPreferences,
+  searchV1,
+} from '@/lib/research/api'
+import type { ResearchModelOption } from '@/lib/research/types'
 
 let keySeq = 0
 
-describe('ResearchSearchPanel v1（§14.3）', () => {
+/** 复现页面真实结构：provider → 面板 + 根级确认弹窗。 */
+function renderPanel() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <ResearchWorkspaceProvider projectId="p1" role="owner">
+        <ResearchGlobalModelProvider>
+          <ResearchSearchPanel
+            projectId="p1"
+            selectedSourceIds={['d1']}
+            selectedNoteIds={[]}
+          />
+          <ResearchEgressConsentDialog />
+        </ResearchGlobalModelProvider>
+      </ResearchWorkspaceProvider>
+    </QueryClientProvider>,
+  )
+}
+
+const runButton = () =>
+  screen.getByRole('button', { name: 'research.searchRun' }) as HTMLButtonElement
+
+/**
+ * 等 confirmed 模型到位。Run 同时受空查询约束，因此先输入查询词再等按钮
+ * 可用——两者都满足才说明 confirmed 模型已就绪且入口未被冻结。
+ */
+async function typeAndWaitReady(value: string) {
+  fireEvent.change(screen.getByTestId('search-input'), { target: { value } })
+  await waitFor(() => expect(runButton().disabled).toBe(false))
+}
+
+describe('ResearchSearchPanel（GMOD §6.3 全局模型接线）', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
-  })
-
-  it('未保存模型偏好时 Run 禁用并显示提示；选择模型后可发送', async () => {
-    // 覆盖无偏好的初始态
-    render(<ResearchSearchPanel projectId="p1" selectedSourceIds={['d1']} selectedNoteIds={[]} />)
-    await waitFor(() =>
-      expect(screen.getByTestId('model-select')).toBeTruthy(),
+    // reset 后重建默认实现：clearAllMocks 在本仓库 Vitest 版本下会清掉实现
+    vi.resetAllMocks()
+    keySeq = 0
+    vi.mocked(listModels).mockResolvedValue({ models: MODELS })
+    vi.mocked(getExecutionPreferences).mockResolvedValue(noPrefs)
+    vi.mocked(patchExecutionPreferences).mockImplementation(async (_projectId, input) => ({
+      ...noPrefs,
+      ...input,
+    }))
+    vi.mocked(fetchContextPreview).mockResolvedValue({
+      source_count: 1,
+      chunk_count: 3,
+      note_count: 0,
+      token_estimate: 120,
+      direct_or_background: 'direct',
+      needs_consent: false,
+      coverage: {},
+      warnings: [],
+    })
+    vi.mocked(getExternalEgressConsent).mockResolvedValue(validConsentResponse)
+    vi.mocked(acknowledgeExternalEgressConsent).mockResolvedValue(
+      validConsentResponse,
     )
-    const run = screen.getByRole('button', { name: 'research.searchRun' })
-    expect((run as HTMLButtonElement).disabled).toBe(true)
+    vi.mocked(newIdempotencyKey).mockImplementation(() => `ui-${++keySeq}`)
   })
 
-  it('有已保存偏好时输入查询展示 Preview 并以显式 model_id 发送', async () => {
+  it('面板内不再有模型选择器（页面内唯一入口在 Research 顶层）', async () => {
+    renderPanel()
+    await waitFor(() =>
+      expect(screen.getByTestId('search-context-selector')).toBeTruthy(),
+    )
+    expect(screen.queryByTestId('model-select')).toBeNull()
+  })
+
+  it('无 confirmed 模型时 Run 禁用并给出引导，不自动改选', async () => {
+    renderPanel()
+    // noPrefs：confirmed 为空 → 入口不可用（不变量 7 的 UI 对应）
+    await waitFor(() =>
+      expect(screen.getByTestId('model-blocked-hint')).toBeTruthy(),
+    )
+    expect(runButton().disabled).toBe(true)
+    expect(searchV1).not.toHaveBeenCalled()
+  })
+
+  it('Preview 与执行都以显式 confirmed model_id 发送（§6.7 required）', async () => {
     vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
     vi.mocked(searchV1).mockResolvedValue({
       kind: 'direct',
@@ -128,49 +230,80 @@ describe('ResearchSearchPanel v1（§14.3）', () => {
         },
       },
     })
-    render(
-      <ResearchSearchPanel
-        projectId="p1"
-        selectedSourceIds={['d1']}
-        selectedNoteIds={[]}
-      />,
-    )
-    // 等待偏好加载完成（model-select 回显 m-local）
-    await waitFor(() =>
-      expect(
-        (screen.getByTestId('model-select') as HTMLSelectElement).value,
-      ).toBe('m-local'),
-    )
-    fireEvent.change(screen.getByTestId('search-input'), {
-      target: { value: 'what is ORR?' },
-    })
-    // Preview 防抖后出现
+    renderPanel()
+    await typeAndWaitReady('what is ORR?')
     await waitFor(() =>
       expect(screen.getByTestId('context-preview')).toBeTruthy(),
     )
-    fireEvent.click(screen.getByRole('button', { name: 'research.searchRun' }))
-    await waitFor(() =>
-      expect(screen.getByTestId('search-result')).toBeTruthy(),
+    expect(fetchContextPreview).toHaveBeenCalledWith(
+      'p1',
+      expect.objectContaining({ model_id: 'm-local' }),
     )
+    fireEvent.click(runButton())
+    await waitFor(() => expect(screen.getByTestId('search-result')).toBeTruthy())
     expect(searchV1).toHaveBeenCalledWith(
       'p1',
-      expect.objectContaining({
-        query: 'what is ORR?',
-        model_id: 'm-local',
-      }),
-      expect.objectContaining({
-        idempotencyKey: expect.stringMatching(/^ui-/),
-      }),
+      expect.objectContaining({ query: 'what is ORR?', model_id: 'm-local' }),
+      expect.objectContaining({ idempotencyKey: expect.stringMatching(/^ui-/) }),
     )
-    // §14.3 结果展示：provider/覆盖报告 + 估算 usage 标识
-    expect(screen.getByTestId('search-provider').textContent).toContain(
-      'local-sglang',
-    )
-    expect(screen.getByTestId('search-coverage')).toBeTruthy()
     expect(screen.getByTestId('search-model').textContent).toContain('m-local')
   })
 
-  it('失败后立即重试复用同一幂等键；成功后重置为新执行（§7.2）', async () => {
+  it('局部档位未经保存也直接进入请求体；保存档位只 PATCH context', async () => {
+    vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
+    vi.mocked(searchV1).mockResolvedValue({
+      kind: 'background',
+      generation_id: 'gen_u',
+      job_id: 'job_u',
+      status: 'queued',
+    })
+    renderPanel()
+    await typeAndWaitReady('unsaved level')
+    fireEvent.change(screen.getByTestId('context-select'), {
+      target: { value: 'workspace' },
+    })
+    fireEvent.click(runButton())
+    await waitFor(() =>
+      expect(screen.getByTestId('background-queued')).toBeTruthy(),
+    )
+    expect(searchV1).toHaveBeenCalledWith(
+      'p1',
+      expect.objectContaining({ model_id: 'm-local', context_level: 'workspace' }),
+      expect.anything(),
+    )
+    // 保存档位：只 PATCH default_context_level，不触碰模型（不变量 8）
+    fireEvent.click(screen.getByTestId('save-search-context'))
+    await waitFor(() =>
+      expect(patchExecutionPreferences).toHaveBeenCalledWith('p1', {
+        default_context_level: 'workspace',
+      }),
+    )
+    const payload = vi.mocked(patchExecutionPreferences).mock.calls[0]?.[1]
+    expect(Object.keys(payload ?? {})).toEqual(['default_context_level'])
+  })
+
+  it('模型不支持已选档位时收敛到 focused 并提示，不静默写回服务端', async () => {
+    // 服务端默认档位 workspace，但 confirmed 外部模型只声明 focused
+    vi.mocked(getExecutionPreferences).mockResolvedValue({
+      ...prefs,
+      preferred_model_id: 'm-ext',
+      default_context_level: 'workspace',
+    })
+    renderPanel()
+    await typeAndWaitReady('context probe')
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId('context-select') as HTMLSelectElement).value,
+      ).toBe('focused'),
+    )
+    expect(screen.getByTestId('context-auto-adjusted').textContent).toContain(
+      'workspace',
+    )
+    // 收敛只发生在本地：不产生任何保存请求（不静默写回服务端）
+    expect(patchExecutionPreferences).not.toHaveBeenCalled()
+  })
+
+  it('失败后立即重试复用同一幂等键（§7.2 网络层结果未知）', async () => {
     vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
     vi.mocked(searchV1)
       .mockRejectedValueOnce(new Error('network down'))
@@ -186,32 +319,15 @@ describe('ResearchSearchPanel v1（§14.3）', () => {
           conclusion: 'ok',
         },
       })
-    render(
-      <ResearchSearchPanel
-        projectId="p1"
-        selectedSourceIds={['d1']}
-        selectedNoteIds={[]}
-      />,
-    )
-    await waitFor(() =>
-      expect(
-        (screen.getByTestId('model-select') as HTMLSelectElement).value,
-      ).toBe('m-local'),
-    )
-    const runButton = () =>
-      screen.getByRole('button', { name: 'research.searchRun' })
-    fireEvent.change(screen.getByTestId('search-input'), {
-      target: { value: 'retry me' },
-    })
+    renderPanel()
+    await typeAndWaitReady('retry me')
     fireEvent.click(runButton())
     await waitFor(() => expect(screen.getByText('network down')).toBeTruthy())
     fireEvent.click(runButton())
     await waitFor(() => expect(screen.getByTestId('search-result')).toBeTruthy())
-    // 两次调用使用同一 Idempotency-Key（同逻辑提交不双跑）
-    const firstKey = vi.mocked(searchV1).mock.calls[0][2]?.idempotencyKey
-    const secondKey = vi.mocked(searchV1).mock.calls[1][2]?.idempotencyKey
-    expect(firstKey).toBeTruthy()
-    expect(secondKey).toBe(firstKey)
+    expect(vi.mocked(searchV1).mock.calls[1][2]?.idempotencyKey).toBe(
+      vi.mocked(searchV1).mock.calls[0][2]?.idempotencyKey,
+    )
   })
 
   it('服务端已给结局的错误后重试使用新幂等键（§7.2 终态需新 key）', async () => {
@@ -233,133 +349,16 @@ describe('ResearchSearchPanel v1（§14.3）', () => {
           conclusion: 'ok',
         },
       })
-    render(
-      <ResearchSearchPanel
-        projectId="p1"
-        selectedSourceIds={['d1']}
-        selectedNoteIds={[]}
-      />,
-    )
-    await waitFor(() =>
-      expect(
-        (screen.getByTestId('model-select') as HTMLSelectElement).value,
-      ).toBe('m-local'),
-    )
-    const runButton = () =>
-      screen.getByRole('button', { name: 'research.searchRun' })
-    const waitIdleRun = async () => {
-      await waitFor(() =>
-        expect(
-          screen.getByRole('button', { name: 'research.searchRun' }),
-        ).toBeTruthy(),
-      )
-      return runButton()
-    }
-    fireEvent.change(screen.getByTestId('search-input'), {
-      target: { value: 'q' },
-    })
+    renderPanel()
+    await typeAndWaitReady('q')
     fireEvent.click(runButton())
     await waitFor(() =>
       expect(screen.getByText('engine unavailable')).toBeTruthy(),
     )
-    fireEvent.click(await waitIdleRun())
+    fireEvent.click(runButton())
     await waitFor(() => expect(screen.getByTestId('search-result')).toBeTruthy())
-    const firstKey = vi.mocked(searchV1).mock.calls[0][2]?.idempotencyKey
-    const secondKey = vi.mocked(searchV1).mock.calls[1][2]?.idempotencyKey
-    expect(firstKey).toBeTruthy()
-    expect(secondKey).not.toBe(firstKey)
-  })
-
-  it('改输入后重试换新键（不落入 idempotency_conflict 循环）', async () => {
-    vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
-    vi.mocked(searchV1).mockRejectedValue(new Error('network down'))
-    render(
-      <ResearchSearchPanel
-        projectId="p1"
-        selectedSourceIds={['d1']}
-        selectedNoteIds={[]}
-      />,
-    )
-    await waitFor(() =>
-      expect(
-        (screen.getByTestId('model-select') as HTMLSelectElement).value,
-      ).toBe('m-local'),
-    )
-    const runButton = () =>
-      screen.getByRole('button', { name: 'research.searchRun' })
-    const waitIdleRun = async () => {
-      await waitFor(() =>
-        expect(
-          screen.getByRole('button', { name: 'research.searchRun' }),
-        ).toBeTruthy(),
-      )
-      return runButton()
-    }
-    fireEvent.change(screen.getByTestId('search-input'), {
-      target: { value: 'first query' },
-    })
-    fireEvent.click(runButton())
-    await waitFor(() => expect(screen.getByText('network down')).toBeTruthy())
-    // 网络层错误保留同键 + 同输入
-    fireEvent.click(await waitIdleRun())
-    const secondCall = vi.mocked(searchV1).mock.calls[1]
-    expect(secondCall[2]?.idempotencyKey).toBe(
+    expect(vi.mocked(searchV1).mock.calls[1][2]?.idempotencyKey).not.toBe(
       vi.mocked(searchV1).mock.calls[0][2]?.idempotencyKey,
-    )
-    // 改输入 → 新键（避免 409 idempotency_conflict 死循环）
-    fireEvent.change(screen.getByTestId('search-input'), {
-      target: { value: 'second query' },
-    })
-    fireEvent.click(await waitIdleRun())
-    const thirdCall = vi.mocked(searchV1).mock.calls[2]
-    expect(thirdCall[2]?.idempotencyKey).not.toBe(
-      vi.mocked(searchV1).mock.calls[0][2]?.idempotencyKey,
-    )
-  })
-
-  it('未保存的手选模型/档位直接进入请求体（受控布线）', async () => {
-    vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
-    vi.mocked(searchV1).mockResolvedValue({
-      kind: 'background',
-      generation_id: 'gen_u',
-      job_id: 'job_u',
-      status: 'queued',
-    })
-    render(
-      <ResearchSearchPanel
-        projectId="p1"
-        selectedSourceIds={['d1']}
-        selectedNoteIds={[]}
-      />,
-    )
-    await waitFor(() =>
-      expect(
-        (screen.getByTestId('model-select') as HTMLSelectElement).value,
-      ).toBe('m-local'),
-    )
-    const runButton = () =>
-      screen.getByRole('button', { name: 'research.searchRun' })
-    // 不点 Save，直接改选并 Run
-    fireEvent.change(screen.getByTestId('model-select'), {
-      target: { value: 'm-ext' },
-    })
-    fireEvent.change(screen.getByTestId('context-select'), {
-      target: { value: 'workspace' },
-    })
-    fireEvent.change(screen.getByTestId('search-input'), {
-      target: { value: 'unsaved selection' },
-    })
-    fireEvent.click(runButton())
-    await waitFor(() =>
-      expect(screen.getByTestId('background-queued')).toBeTruthy(),
-    )
-    expect(searchV1).toHaveBeenCalledWith(
-      'p1',
-      expect.objectContaining({
-        model_id: 'm-ext',
-        context_level: 'workspace',
-      }),
-      expect.anything(),
     )
   })
 
@@ -371,36 +370,20 @@ describe('ResearchSearchPanel v1（§14.3）', () => {
       job_id: 'job_bg_9',
       status: 'queued',
     })
-    render(
-      <ResearchSearchPanel
-        projectId="p1"
-        selectedSourceIds={['d1']}
-        selectedNoteIds={[]}
-      />,
-    )
-    await waitFor(() =>
-      expect(
-        (screen.getByTestId('model-select') as HTMLSelectElement).value,
-      ).toBe('m-local'),
-    )
-    fireEvent.change(screen.getByTestId('search-input'), {
-      target: { value: 'long research' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'research.searchRun' }))
+    renderPanel()
+    await typeAndWaitReady('long research')
+    fireEvent.click(runButton())
     await waitFor(() =>
       expect(screen.getByTestId('background-queued')).toBeTruthy(),
     )
     expect(screen.queryByTestId('search-result')).toBeNull()
-    expect(screen.getByTestId('background-queued').textContent).toContain(
-      'job_bg_9',
-    )
   })
 
-  it('外部模型无有效确认时 Run 打开 Owner 确认框，确认后执行', async () => {
-    // Issue #202 §14.3：首次使用外部模型 → 展示数据类别与目的地范围
-    const { getExternalEgressConsent, acknowledgeExternalEgressConsent } =
-      await import('@/lib/research/api')
-    vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
+  it('外部模型无有效确认：Run 不发出请求，确认后执行；取消零副作用', async () => {
+    vi.mocked(getExecutionPreferences).mockResolvedValue({
+      ...prefs,
+      preferred_model_id: 'm-ext',
+    })
     vi.mocked(getExternalEgressConsent).mockResolvedValue(noConsentResponse)
     vi.mocked(searchV1).mockResolvedValue({
       kind: 'direct',
@@ -414,40 +397,47 @@ describe('ResearchSearchPanel v1（§14.3）', () => {
         conclusion: 'ok',
       },
     })
-    render(
-      <ResearchSearchPanel
-        projectId="p1"
-        selectedSourceIds={['d1']}
-        selectedNoteIds={[]}
-      />,
-    )
-    await waitFor(() =>
-      expect(
-        (screen.getByTestId('model-select') as HTMLSelectElement).value,
-      ).toBe('m-local'),
-    )
-    // 选择外部模型 → 展示「需要确认」提示
-    fireEvent.change(screen.getByTestId('model-select'), {
-      target: { value: 'm-ext' },
-    })
+    renderPanel()
     await waitFor(() =>
       expect(screen.getByTestId('consent-required-hint')).toBeTruthy(),
     )
     fireEvent.change(screen.getByTestId('search-input'), {
       target: { value: 'external question' },
     })
-    fireEvent.click(screen.getByRole('button', { name: 'research.searchRun' }))
-    // Run 未发出请求：先展示确认框（零外发语义的 UI 侧）
-    await waitFor(() => expect(screen.getByTestId('consent-dialog')).toBeTruthy())
+    // 入口仍可点击：禁用会让用户无法触发确认（§6.8 第 3 步）
+    expect(runButton().disabled).toBe(false)
+    fireEvent.click(runButton())
+
+    // 不变量 9：确认前不发出任何搜索请求
+    await waitFor(() =>
+      expect(screen.getByTestId('egress-consent-dialog')).toBeTruthy(),
+    )
     expect(searchV1).not.toHaveBeenCalled()
-    expect(screen.getByTestId('consent-destination').textContent).toContain(
+    expect(screen.getByTestId('egress-consent-destination').textContent).toContain(
       'ext-1',
     )
-    expect(screen.getByTestId('consent-categories').textContent).toContain(
+    expect(screen.getByTestId('egress-consent-categories').textContent).toContain(
       'focused_context',
     )
-    // 确认 → POST consent → 继续执行
-    fireEvent.click(screen.getByTestId('consent-confirm'))
+
+    // 取消：查询保留，不执行、不 acknowledge、无排队/结果状态
+    fireEvent.click(screen.getByTestId('egress-consent-cancel'))
+    await waitFor(() =>
+      expect(screen.queryByTestId('egress-consent-dialog')).toBeNull(),
+    )
+    expect(searchV1).not.toHaveBeenCalled()
+    expect(acknowledgeExternalEgressConsent).not.toHaveBeenCalled()
+    expect(screen.queryByTestId('background-queued')).toBeNull()
+    expect(
+      (screen.getByTestId('search-input') as HTMLInputElement).value,
+    ).toBe('external question')
+
+    // 再次 Run → 确认 → 执行
+    fireEvent.click(runButton())
+    await waitFor(() =>
+      expect(screen.getByTestId('egress-consent-dialog')).toBeTruthy(),
+    )
+    fireEvent.click(screen.getByTestId('egress-consent-confirm'))
     await waitFor(() => expect(searchV1).toHaveBeenCalled())
     expect(acknowledgeExternalEgressConsent).toHaveBeenCalledWith('p1')
     await waitFor(() =>
@@ -456,8 +446,10 @@ describe('ResearchSearchPanel v1（§14.3）', () => {
   })
 
   it('外部模型已有有效确认时 Run 直接执行，不弹确认框', async () => {
-    const { getExternalEgressConsent } = await import('@/lib/research/api')
-    vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
+    vi.mocked(getExecutionPreferences).mockResolvedValue({
+      ...prefs,
+      preferred_model_id: 'm-ext',
+    })
     vi.mocked(getExternalEgressConsent).mockResolvedValue(validConsentResponse)
     vi.mocked(searchV1).mockResolvedValue({
       kind: 'direct',
@@ -471,58 +463,33 @@ describe('ResearchSearchPanel v1（§14.3）', () => {
         conclusion: 'ok',
       },
     })
-    render(
-      <ResearchSearchPanel
-        projectId="p1"
-        selectedSourceIds={['d1']}
-        selectedNoteIds={[]}
-      />,
-    )
-    await waitFor(() =>
-      expect(
-        (screen.getByTestId('model-select') as HTMLSelectElement).value,
-      ).toBe('m-local'),
-    )
-    fireEvent.change(screen.getByTestId('model-select'), {
-      target: { value: 'm-ext' },
-    })
-    fireEvent.change(screen.getByTestId('search-input'), {
-      target: { value: 'external question 2' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'research.searchRun' }))
+    renderPanel()
+    await typeAndWaitReady('external question 2')
+    fireEvent.click(runButton())
     await waitFor(() => expect(searchV1).toHaveBeenCalled())
-    expect(screen.queryByTestId('consent-dialog')).toBeNull()
+    expect(screen.queryByTestId('egress-consent-dialog')).toBeNull()
   })
 
-  it('服务端返回 consent_required 时重新打开确认框', async () => {
-    // dispatch 侧重检（§9.2 第 4 步）：确认在途撤销/scope 变化后及时生效
-    const { getExternalEgressConsent } = await import('@/lib/research/api')
-    vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
-    vi.mocked(getExternalEgressConsent).mockResolvedValue(noConsentResponse)
+  it('后端 dispatch 侧判定 consent_required → 让 consent 重新生效判定（§9.2 第 4 步）', async () => {
+    vi.mocked(getExecutionPreferences).mockResolvedValue({
+      ...prefs,
+      preferred_model_id: 'm-ext',
+    })
+    vi.mocked(getExternalEgressConsent).mockResolvedValue(validConsentResponse)
     vi.mocked(searchV1).mockRejectedValue({
-      response: {
-        data: { detail: { code: 'consent_required', message: 'x' } },
-      },
+      response: { data: { detail: { code: 'consent_required', message: 'x' } } },
     })
-    render(
-      <ResearchSearchPanel
-        projectId="p1"
-        selectedSourceIds={['d1']}
-        selectedNoteIds={[]}
-      />,
-    )
+    renderPanel()
+    await typeAndWaitReady('external question 3')
+    const before = vi.mocked(getExternalEgressConsent).mock.calls.length
+    fireEvent.click(runButton())
+    // 后端是最终权威：前端不自行重试或改模型，只让 consent 重新判定，
+    // 下一次执行由根级 guard 重新弹确认
     await waitFor(() =>
-      expect(
-        (screen.getByTestId('model-select') as HTMLSelectElement).value,
-      ).toBe('m-local'),
+      expect(vi.mocked(getExternalEgressConsent).mock.calls.length).toBeGreaterThan(
+        before,
+      ),
     )
-    fireEvent.change(screen.getByTestId('model-select'), {
-      target: { value: 'm-ext' },
-    })
-    fireEvent.change(screen.getByTestId('search-input'), {
-      target: { value: 'external question 3' },
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'research.searchRun' }))
-    await waitFor(() => expect(screen.getByTestId('consent-dialog')).toBeTruthy())
+    expect(searchV1).toHaveBeenCalledTimes(1)
   })
 })

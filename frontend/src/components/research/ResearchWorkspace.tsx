@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { getResearchProjectId } from '@/lib/research/project'
 import { listNotes, listSources } from '@/lib/research/api'
 import { useResearchChat } from '@/lib/hooks/use-research-chat'
+import { useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
 import { useResearchJobs } from '@/lib/hooks/use-research-jobs'
 import { SourceNoteSelector } from './SourceNoteSelector'
 import { ResearchSearchPanel } from './ResearchSearchPanel'
@@ -69,8 +70,36 @@ export function ResearchWorkspace() {
     )
   }, [])
 
-  const chat = useResearchChat({ projectId: projectId ?? '' })
-  const jobs = useResearchJobs({ projectId: projectId ?? '' })
+  const { turns, isStreaming, send: sendTurn } = useResearchChat({ projectId: projectId ?? '' })
+  const { jobs, isCreating, error: jobsError, createCompare: createCompareJob, cancel } = useResearchJobs({
+    projectId: projectId ?? '',
+  })
+  // #243 §6.4：Chat/Compare 统一走顶层执行守卫——传入调用时刻捕获的
+  // confirmed 模型快照；外部模型需确认时只登记不执行，取消零副作用
+  // （不发请求、不建 Job，不变量 9）。
+  const { runGuarded } = useResearchGlobalModel()
+
+  const sendChat = useCallback(
+    async (
+      query: string,
+      selection: Parameters<typeof sendTurn>[1],
+    ): Promise<boolean> => {
+      // sendTurn 返回 void，用 true 标记「已派发」，供调用方区分确认取消
+      const sent = await runGuarded((modelId) => {
+        sendTurn(query, selection, modelId)
+        return true
+      })
+      return sent === true
+    },
+    [sendTurn, runGuarded],
+  )
+
+  const createCompare = useCallback(
+    (documentIds: readonly string[], groupSize?: number) => {
+      void runGuarded((modelId) => createCompareJob(documentIds, modelId, groupSize))
+    },
+    [createCompareJob, runGuarded],
+  )
 
   if (!projectId) {
     return (
@@ -102,7 +131,7 @@ export function ResearchWorkspace() {
             <TabsTrigger value="compare">{t('research.tabCompare')}</TabsTrigger>
             <TabsTrigger value="jobs">
               {t('research.tabJobs')}
-              {jobs.jobs.length > 0 ? ` (${jobs.jobs.length})` : ''}
+              {jobs.length > 0 ? ` (${jobs.length})` : ''}
             </TabsTrigger>
           </TabsList>
           <TabsContent value="search" className="min-h-0 flex-1">
@@ -118,9 +147,9 @@ export function ResearchWorkspace() {
           </TabsContent>
           <TabsContent value="chat" className="min-h-0 flex-1">
             <ResearchChatPanel
-              turns={chat.turns}
-              isStreaming={chat.isStreaming}
-              onSend={chat.send}
+              turns={turns}
+              isStreaming={isStreaming}
+              onSend={sendChat}
               selectedSourceIds={selectedSourceIds}
               selectedNoteIds={selectedNoteIds}
             />
@@ -129,13 +158,13 @@ export function ResearchWorkspace() {
             <ComparePanel
               sources={sources}
               selectedSourceIds={selectedSourceIds}
-              isCreating={jobs.isCreating}
-              error={jobs.error}
-              onCreate={(documentIds, groupSize) => jobs.createCompare(documentIds, groupSize)}
+              isCreating={isCreating}
+              error={jobsError}
+              onCreate={createCompare}
             />
           </TabsContent>
           <TabsContent value="jobs" className="min-h-0 flex-1">
-            <ResearchJobList jobs={jobs.jobs} isCreating={jobs.isCreating} onCancel={jobs.cancel} />
+            <ResearchJobList jobs={jobs} isCreating={isCreating} onCancel={cancel} />
           </TabsContent>
         </Tabs>
       </div>

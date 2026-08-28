@@ -163,7 +163,15 @@ export interface ResearchModelOption {
   context_window?: number | null
   /** Issue #202 Phase 3b：data_egress=true 表示外部模型（本地恒 false） */
   data_egress?: boolean | null
+  /**
+   * #243 GMOD §5.2：Search 交互式上下文档位（服务端真实能力，前端不得
+   * 按 provider/data_egress 自行猜测）。外部模型恒 ['focused']。
+   */
+  interactive_context_levels?: ResearchContextLevel[]
 }
+
+/** Search 交互式上下文档位（服务端能力声明子集） */
+export type ResearchContextLevel = 'focused' | 'document' | 'workspace'
 
 /** Issue #202 Phase 3b：Workspace 外发确认（§6.3 GET 契约形状） */
 export interface ResearchEgressConsent {

@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/select'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
+import { useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
 import { useCreateResearchInsight, useResearchInsights } from '@/lib/hooks/use-research'
 import { AdminReadOnlyBanner } from './AdminReadOnlyBanner'
 
@@ -24,10 +25,19 @@ import { AdminReadOnlyBanner } from './AdminReadOnlyBanner'
  * Owner：创建 manual（用户提供内容）或 ai（必须携带已批准 model_id，
  * REQ-MOD-01）Insight；Admin：只读列表。保存永不触发 Embedding
  * （REQ-DIS-01 语义延伸）。
+ *
+ * Issue #243 GMOD-FE-01 §6.5：
+ * - AI Insight 不再有独立模型输入——AI 生成固定使用顶层 confirmed 全局
+ *   模型（页面内唯一入口，不变量 1）；
+ * - Manual Insight 保持人工内容流程：不要求模型，也不触发外发确认；
+ * - 无 confirmed 模型时只阻止 AI 模式，不影响已有 Insight 浏览或
+ *   Manual 创建；
+ * - 外部模型的首次 AI 生成由根级 `runGuarded` 统一弹确认（不变量 9）。
  */
 export function InsightsPanel() {
   const { t } = useTranslation()
   const { projectId, isAdminReadonly } = useResearchWorkspace()
+  const { canExecute, runGuarded } = useResearchGlobalModel()
   const { data, isLoading, isError } = useResearchInsights(projectId)
   const createMutation = useCreateResearchInsight(projectId)
 
@@ -35,22 +45,38 @@ export function InsightsPanel() {
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [insightType, setInsightType] = useState<'ai' | 'manual'>('manual')
-  const [modelId, setModelId] = useState('')
+
+  const resetForm = () => {
+    setTitle('')
+    setContent('')
+    setInsightType('manual')
+    setShowForm(false)
+  }
 
   const submitCreate = () => {
     if (!title.trim() || !content.trim()) return
-    if (insightType === 'ai' && !modelId.trim()) return
-    createMutation.mutate({
-      title: title.trim(),
-      content: content.trim(),
-      insight_type: insightType,
-      model_id: insightType === 'ai' ? modelId.trim() : undefined,
+    const titleSnapshot = title.trim()
+    const contentSnapshot = content.trim()
+    // §6.5：Manual 是人工内容流程——不要求模型，也不触发外发确认
+    if (insightType === 'manual') {
+      createMutation.mutate({
+        title: titleSnapshot,
+        content: contentSnapshot,
+        insight_type: 'manual',
+      })
+      resetForm()
+      return
+    }
+    // AI 生成：走根级 guard，模型来自 confirmed 全局模型快照
+    void runGuarded(async (modelId) => {
+      await createMutation.mutateAsync({
+        title: titleSnapshot,
+        content: contentSnapshot,
+        insight_type: 'ai',
+        model_id: modelId,
+      })
+      resetForm()
     })
-    setTitle('')
-    setContent('')
-    setModelId('')
-    setInsightType('manual')
-    setShowForm(false)
   }
 
   const items = data?.items ?? []
@@ -103,21 +129,24 @@ export function InsightsPanel() {
                   </SelectContent>
                 </Select>
               </div>
-              {insightType === 'ai' && (
-                <div className="space-y-1">
-                  <Label htmlFor="insight-model">{t('research.insights.modelLabel')}</Label>
-                  <Input
-                    id="insight-model"
-                    value={modelId}
-                    onChange={(event) => setModelId(event.target.value)}
-                    placeholder="qwen3.6-35b-a3b-fp8"
-                    className="w-56"
-                  />
-                </div>
+              {/* §6.5：模型输入已移除——AI 生成使用顶层 confirmed 全局模型 */}
+              {insightType === 'ai' && !canExecute && (
+                <p className="text-xs text-muted-foreground" data-testid="insight-model-blocked">
+                  {t('research.globalModel.selectModelHint')}
+                </p>
               )}
             </div>
             <div className="flex gap-2">
-              <Button size="sm" onClick={submitCreate} disabled={createMutation.isPending}>
+              <Button
+                size="sm"
+                onClick={submitCreate}
+                disabled={
+                  createMutation.isPending ||
+                  // 无可用模型时只阻止 AI 模式；Manual 不受影响
+                  (insightType === 'ai' && !canExecute)
+                }
+                data-testid="insight-submit"
+              >
                 {t('research.notes.save')}
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setShowForm(false)}>

@@ -1,18 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useResearchJobs, POLL_INTERVAL_MS } from './use-research-jobs'
-import { createCompare, getExecutionPreferences, getJob, cancelJob } from '@/lib/research/api'
+import { createCompare, getJob, cancelJob } from '@/lib/research/api'
 import type { ResearchJob } from '@/lib/research/types'
+
+/** #243 §6.4：调用方传入的 confirmed 全局模型快照 */
+const MODEL = 'm-local'
 
 // UI-03 Red：Job 交互状态机（契约 v0 §10）——浏览器关闭后按 job_id 恢复
 // 查看（REQ-JOB-02）、终态一次（轮询不回归）、显式取消（queued/running →
 // cancelling → cancelled）、Compare 51 篇不入队（REQ-QUOTA-01）、
 // 本地状态不是持久 Job 状态（每轮询以服务端为准）。
-// #238：创建前读取执行偏好显式透传 model_id；无偏好阻止创建。
+// #243 §6.4：createCompare 接受 required modelId（confirmed 全局模型快照），
+// 不在执行时读取执行偏好；无模型 fail-closed 不创建。
 
 vi.mock('@/lib/research/api', () => ({
   createCompare: vi.fn(),
-  getExecutionPreferences: vi.fn(),
   getJob: vi.fn(),
   cancelJob: vi.fn(),
 }))
@@ -41,11 +44,6 @@ describe('useResearchJobs', () => {
     vi.useFakeTimers()
     localStorage.clear()
     vi.clearAllMocks()
-    // #238：默认已保存偏好（既有用例的创建流程依赖它）
-    vi.mocked(getExecutionPreferences).mockResolvedValue({
-      preferred_model_id: 'm-local',
-      default_context_level: 'focused',
-    } as never)
   })
 
   afterEach(() => {
@@ -75,22 +73,22 @@ describe('useResearchJobs', () => {
     const over50 = Array.from({ length: 51 }, (_, i) => `doc_${i}`)
     let created: ResearchJob | null = null
     act(() => {
-      created = result.current.createCompare(over50)
+      created = result.current.createCompare(over50, MODEL)
     })
     expect(created).toBeNull()
     expect(createCompare).not.toHaveBeenCalled()
     expect(result.current.error).toMatch(/50/)
 
     act(() => {
-      created = result.current.createCompare([])
+      created = result.current.createCompare([], MODEL)
     })
     expect(created).toBeNull()
     expect(createCompare).not.toHaveBeenCalled()
 
     act(() => {
-      result.current.createCompare(['doc_1', 'doc_2'])
+      result.current.createCompare(['doc_1', 'doc_2'], MODEL)
     })
-    // #238：偏好读取为异步前置 → 冲刷微任务
+    // 创建链（POST → GET 回源）为异步：冲刷后再断言，避免游离更新
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0)
     })
@@ -104,22 +102,15 @@ describe('useResearchJobs', () => {
     })
   })
 
-  it('#238：无已保存偏好 → 拒绝创建且不调用 API', async () => {
-    vi.mocked(getExecutionPreferences).mockResolvedValue({
-      preferred_model_id: null,
-      default_context_level: 'focused',
-    } as never)
+  it('#243 §6.4：无 confirmed 模型 → 拒绝创建且不调用 API', () => {
     vi.mocked(getJob).mockResolvedValue(job('job_new', 'queued'))
     const { result } = renderHook(() => useResearchJobs({ projectId: 'proj_1' }))
 
     act(() => {
-      result.current.createCompare(['doc_1'])
-    })
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0)
+      result.current.createCompare(['doc_1'], '')
     })
     expect(createCompare).not.toHaveBeenCalled()
-    expect(result.current.error).toMatch(/model preference/i)
+    expect(result.current.error).toMatch(/select a research model/i)
   })
 
   it('创建 Compare 成功后写入 localStorage 并拉取 Job 状态', async () => {
@@ -131,7 +122,7 @@ describe('useResearchJobs', () => {
       await vi.advanceTimersByTimeAsync(0)
     })
     act(() => {
-      result.current.createCompare(['doc_1'])
+      result.current.createCompare(['doc_1'], MODEL)
     })
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0)

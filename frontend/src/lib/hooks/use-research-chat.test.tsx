@@ -1,19 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useResearchChat, MAX_STREAM_ATTEMPTS } from './use-research-chat'
-import { getExecutionPreferences, newIdempotencyKey, openResearchChatStream } from '@/lib/research/api'
+import { newIdempotencyKey, openResearchChatStream } from '@/lib/research/api'
 import type { ResearchSseEvent } from '@/lib/research/types'
 
 // UI-03 Red：Chat SSE 流状态机（契约 v0 §9）——乱序/重复事件经由 reducer
 // 去重排序、断线自动按 event_id 重连（Last-Event-ID）、终态恰好一次、
 // 409 resume_after 重试、错误码可重试标记。
-// #238：send 前异步读取执行偏好→显式透传 model_id（v1 契约）；无偏好阻止。
+// #243 §6.4：modelId 由调用方（confirmed 全局模型快照）required 传入，
+// 本 hook 不在执行时读取执行偏好；无模型 fail-closed 不发请求。
 
 vi.mock('@/lib/research/api', () => ({
-  getExecutionPreferences: vi.fn(),
   newIdempotencyKey: vi.fn(() => 'ik-turn'),
   openResearchChatStream: vi.fn(),
 }))
+
+const MODEL = 'm-local'
 
 interface StreamCapture {
   opts: Parameters<typeof openResearchChatStream>[0]
@@ -47,24 +49,21 @@ function lastAssistant(turns: ReturnType<typeof useResearchChat> extends { turns
   throw new Error('no assistant turn')
 }
 
-/** send + 冲刷偏好读取微任务（#238 后 send 为异步前置） */
-async function sendAndFlush(
+/** send 是同步的（#243 §6.4 后不再有执行前的偏好读取） */
+function sendNow(
   result: ReturnType<typeof renderHook<ReturnType<typeof useResearchChat>, { projectId: string }>>['result'],
   query: string,
+  modelId: string = MODEL,
   selection?: Parameters<ReturnType<typeof useResearchChat>['send']>[1],
 ) {
-  await act(async () => {
-    result.current.send(query, selection)
+  act(() => {
+    result.current.send(query, selection, modelId)
   })
 }
 
 describe('useResearchChat', () => {
   beforeEach(() => {
     vi.useFakeTimers()
-    vi.mocked(getExecutionPreferences).mockResolvedValue({
-      preferred_model_id: 'm-local',
-      default_context_level: 'focused',
-    } as never)
   })
 
   afterEach(() => {
@@ -76,7 +75,7 @@ describe('useResearchChat', () => {
     const streams = openCapture()
     const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
 
-    await sendAndFlush(result, '问题', { sourceIds: ['src_1'], noteIds: ['note_1'] })
+    sendNow(result, '问题', MODEL, { sourceIds: ['src_1'], noteIds: ['note_1'] })
 
     expect(streams).toHaveLength(1)
     const s = streams[0]
@@ -99,39 +98,46 @@ describe('useResearchChat', () => {
     expect(turn.status).toBe('streaming')
   })
 
-  it('#238：无已保存偏好 → 错误 turn 且不打开流', async () => {
+  it('#243 §6.4：无 confirmed 模型 → fail-closed，错误 turn 且不打开流', () => {
     const streams = openCapture()
-    vi.mocked(getExecutionPreferences).mockResolvedValue({
-      preferred_model_id: null,
-      default_context_level: 'focused',
-    } as never)
     const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
 
-    await sendAndFlush(result, "问题")
+    sendNow(result, '问题', '')
 
     expect(streams).toHaveLength(0)
     const turn = lastAssistant(result.current.turns)
     expect(turn.status).toBe('error')
-    expect(turn.errorCode).toBe('model_preference_required')
-    expect(turn.errorMessage).toMatch(/model preference/i)
+    expect(turn.errorCode).toBe('model_required')
+    expect(turn.errorMessage).toMatch(/select a research model/i)
+    expect(result.current.isStreaming).toBe(false)
   })
 
-  it('#238：偏好读取失败 fail-closed → 不发送', async () => {
+  it('#243 §6.4：modelId 逐次快照——第二轮用新模型，首轮在途 turn 不被改写', () => {
     const streams = openCapture()
-    vi.mocked(getExecutionPreferences).mockRejectedValue(new Error('network down'))
     const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
 
-    await sendAndFlush(result, "问题")
+    sendNow(result, '第一轮', 'm-a')
+    act(() => {
+      streams[0].emit(ev(1, 'answer', { delta: 'A' }))
+    })
+    sendNow(result, '第二轮', 'm-b')
 
-    expect(streams).toHaveLength(0)
-    expect(lastAssistant(result.current.turns).status).toBe('error')
+    expect(streams).toHaveLength(2)
+    // 不变量 4：各自保留发送时刻的快照，互不影响
+    expect(streams[0].opts.request.model_id).toBe('m-a')
+    expect(streams[1].opts.request.model_id).toBe('m-b')
+    // 抢占在途 turn 时补终态：已收到的内容保留，但不再停留在 streaming
+    const superseded = result.current.turns.find((t) => t.errorCode === 'superseded')
+    expect(superseded?.status).toBe('error')
+    expect(superseded?.content).toBe('A')
+    expect(lastAssistant(result.current.turns).status).toBe('streaming')
   })
 
   it('done 终态：状态 done、记录 sessionId 供下一轮续接、终态后事件忽略', async () => {
     const streams = openCapture()
     const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
 
-    await sendAndFlush(result, "问题")
+    sendNow(result, "问题")
     act(() => {
       streams[0].emit(ev(1, 'answer', { delta: 'A' }))
       streams[0].emit(ev(2, 'done', { session_id: 's1', request_id: 'r1', completion_status: 'success' }))
@@ -142,7 +148,7 @@ describe('useResearchChat', () => {
     expect(turn.status).toBe('done')
     expect(turn.content).toBe('A')
 
-    await sendAndFlush(result, "第二轮")
+    sendNow(result, "第二轮")
     expect(streams[1].opts.request.session_id).toBe('s1')
     expect(streams[1].opts.lastEventId).toBe(0)
   })
@@ -158,7 +164,7 @@ describe('useResearchChat', () => {
     })
     const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
 
-    await sendAndFlush(result, "问题")
+    sendNow(result, "问题")
     act(() => {
       streams[0].emit(ev(1, 'thinking', { delta: 'A' }))
       streams[0].emit(ev(2, 'answer', { delta: 'B' }))
@@ -195,7 +201,7 @@ describe('useResearchChat', () => {
     const streams = openCapture()
     const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
 
-    await sendAndFlush(result, "问题")
+    sendNow(result, "问题")
     for (let attempt = 1; attempt <= MAX_STREAM_ATTEMPTS; attempt += 1) {
       act(() => {
         streams[streams.length - 1].fail(new Error('socket reset'))
@@ -216,7 +222,7 @@ describe('useResearchChat', () => {
     const streams = openCapture()
     const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
 
-    await sendAndFlush(result, "问题")
+    sendNow(result, "问题")
     act(() => {
       streams[0].httpFail(409, { detail: 'resume_after' })
     })
@@ -237,7 +243,7 @@ describe('useResearchChat', () => {
     const streams = openCapture()
     const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
 
-    await sendAndFlush(result, "问题")
+    sendNow(result, "问题")
     act(() => {
       streams[0].emit(ev(1, 'error', { code: 'project_deleted', message: '项目已删除' }))
     })
@@ -249,36 +255,22 @@ describe('useResearchChat', () => {
     expect(streams).toHaveLength(1)
   })
 
-  it('#238：偏好读取期间连发 → 旧 turn 整体放弃，最新一轮打开流', async () => {
+  it('#243 §6.4：断线重连沿用发送时刻的模型快照（不变量 4）', async () => {
     const streams = openCapture()
-    // 每次调用返回独立的 deferred promise（按调用顺序入队）
-    const deferreds: Array<(prefs: unknown) => void> = []
-    vi.mocked(getExecutionPreferences).mockImplementation(
-      () => new Promise((resolve) => { deferreds.push(resolve) }) as never,
-    )
     const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
 
+    sendNow(result, '问题', 'm-a')
     act(() => {
-      result.current.send('第一问')
+      streams[0].emit(ev(1, 'answer', { delta: 'A' }))
     })
     act(() => {
-      result.current.send('第二问')
+      streams[0].fail(new Error('socket reset'))
     })
-    // 先放行第一轮的偏好读取（seq=1 < latest=2）→ 应被 seq 守卫整体放弃
     await act(async () => {
-      deferreds[0]!({ preferred_model_id: 'm-local', default_context_level: 'focused' })
+      await vi.advanceTimersByTimeAsync(300)
     })
-    expect(streams).toHaveLength(0)
-    // 评审 LOW-3：被抢占的 turn 补终态，isStreaming 不得恒 true
-    const abandoned = result.current.turns.find((t) => t.content === '' && t.role === 'assistant')
-    expect(abandoned?.status).toBe('error')
-    expect(abandoned?.errorCode).toBe('superseded')
 
-    // 放行最新一轮（seq=2）→ 打开流
-    await act(async () => {
-      deferreds[1]!({ preferred_model_id: 'm-local', default_context_level: 'focused' })
-    })
-    expect(streams).toHaveLength(1)
-    expect(streams[0].opts.request.query).toBe('第二问')
+    expect(streams).toHaveLength(2)
+    expect(streams[1].opts.request.model_id).toBe('m-a')
   })
 })

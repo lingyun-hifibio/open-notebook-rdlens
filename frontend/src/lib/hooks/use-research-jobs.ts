@@ -19,7 +19,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   cancelJob,
   createCompare,
-  getExecutionPreferences,
   getJob,
 } from '@/lib/research/api'
 import { canCancelJob, isJobTerminal } from '@/lib/research/jobs'
@@ -59,8 +58,17 @@ export interface UseResearchJobsResult {
   jobs: ResearchJob[]
   isCreating: boolean
   error: string | null
-  /** 返回 null 表示前置校验拒绝（未发请求） */
-  createCompare: (documentIds: readonly string[], groupSize?: number) => ResearchJob | null
+  /**
+   * Issue #243 §6.4：modelId 是 required——调用方必须传入调用时刻捕获的
+   * confirmed 全局模型快照。本 hook 不在执行时读取执行偏好，因此后续切换
+   * 模型不会影响已创建的 Job（不变量 4）。Compare 固定 workspace 上下文。
+   * 返回 null 表示前置校验拒绝（未发请求）。
+   */
+  createCompare: (
+    documentIds: readonly string[],
+    modelId: string,
+    groupSize?: number,
+  ) => ResearchJob | null
   cancel: (jobId: string) => void
 }
 
@@ -137,7 +145,11 @@ export function useResearchJobs({ projectId }: { projectId: string }): UseResear
     }
   }, [mergeJob, projectId])
 
-  const createCompareJob = useCallback((documentIds: readonly string[], groupSize?: number): ResearchJob | null => {
+  const createCompareJob = useCallback((
+    documentIds: readonly string[],
+    modelId: string,
+    groupSize?: number,
+  ): ResearchJob | null => {
     setError(null)
     const check = checkCompareSelection(documentIds)
     if (!check.ok) {
@@ -148,43 +160,30 @@ export function useResearchJobs({ projectId }: { projectId: string }): UseResear
       }
       return null
     }
+    if (!modelId) {
+      // fail-closed：无 confirmed 模型不创建（后端不隐式补值，不变量 2）
+      setError('Select a research model before starting a comparison')
+      return null
+    }
     setIsCreating(true)
-    // #238：v1 契约要求显式 model_id——读取已保存执行偏好；
-    // 无偏好阻止创建（后端不隐式补值，不变量 2）。
-    void (async () => {
-      let modelId: string | null = null
-      try {
-        const prefs = await getExecutionPreferences(projectId)
-        modelId = prefs?.preferred_model_id ?? null
-      } catch {
-        // 偏好读取失败 = fail-closed：不创建
-      }
-      if (!modelId) {
-        setIsCreating(false)
-        setError(
-          'Select and save a model preference in the search panel first',
-        )
-        return
-      }
-      createCompare(projectId, {
-        job_type: 'deep_compare', // 契约 §8.3 必填（RDLens JobCreateRequest）
-        document_ids: [...documentIds],
-        group_size: groupSize,
-        mode: 'deep_compare',
-        model_id: modelId,
+    createCompare(projectId, {
+      job_type: 'deep_compare', // 契约 §8.3 必填（RDLens JobCreateRequest）
+      document_ids: [...documentIds],
+      group_size: groupSize,
+      mode: 'deep_compare',
+      model_id: modelId,
+    })
+      .then(({ job_id }) => {
+        knownIdsRef.current.add(job_id)
+        writeStoredJobId(projectId, job_id)
+        return fetchJob(job_id)
       })
-        .then(({ job_id }) => {
-          knownIdsRef.current.add(job_id)
-          writeStoredJobId(projectId, job_id)
-          return fetchJob(job_id)
-        })
-        .catch((err: Error) => {
-          setError(err.message || 'compare.createFailed')
-        })
-        .finally(() => {
-          setIsCreating(false)
-        })
-    })()
+      .catch((err: Error) => {
+        setError(err.message || 'compare.createFailed')
+      })
+      .finally(() => {
+        setIsCreating(false)
+      })
     return null
   }, [fetchJob, projectId])
 

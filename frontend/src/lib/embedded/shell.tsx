@@ -6,6 +6,7 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { createEmbeddedSession, type SessionState } from './session'
 import { getEmbeddedParentOrigins } from './config'
 import { ResearchWorkspaceProvider } from './workspace-context'
+import { ResearchGlobalModelProvider } from '@/lib/hooks/use-research-global-model'
 
 /**
  * ResearchWorkspaceShell（UI-01，设计 §4.1/§4.2；REQ-EMB-01/02）。
@@ -77,11 +78,14 @@ export function ResearchWorkspaceShell({ children }: { children?: React.ReactNod
   }
 
   // UI-02：认证后把 Token claims 中的 projectId/role 注入工作台上下文
-  // （Gateway 路径与 Owner 写/Admin 只读矩阵数据源）
+  // （Gateway 路径与 Owner 写/Admin 只读矩阵数据源）。
+  // Issue #243 GMOD-FE-01：全局模型 provider 挂在已认证根节点，向下统一
+  // 提供 confirmed 模型、Search 上下文默认值与外发 consent single-flight
+  // guard（计划 §6.1/§6.8）；未认证时不挂载，避免空 projectId 查询。
   if (state.projectId !== undefined && state.role !== undefined) {
     return (
       <ResearchWorkspaceProvider projectId={state.projectId} role={state.role}>
-        {children}
+        <ResearchGlobalModelProvider>{children}</ResearchGlobalModelProvider>
       </ResearchWorkspaceProvider>
     )
   }

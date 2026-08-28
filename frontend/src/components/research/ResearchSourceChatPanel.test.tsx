@@ -2,13 +2,21 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { ResearchSourceChatPanel } from './ResearchSourceChatPanel'
 import { useResearchSourceChat } from '@/lib/hooks/use-research-source-chat'
+import {
+  resetGlobalModelStub,
+  setGlobalModelStub,
+} from '@/test/global-model-stub'
 
 // Issue #182 Red：Source Chat 面板——新会话/会话选择、消息气泡、citation
 // 点击高亮联动（onHighlightPage）、streaming 输入禁用、两类错误文案与重试。
+// #243 §6.4：发送走顶层守卫，模型不再由本面板提供（测试替身提供快照）。
 
 vi.mock('@/lib/hooks/use-research-source-chat', () => ({
   useResearchSourceChat: vi.fn(),
 }))
+
+// 被测对象不是全局模型本身
+vi.mock('@/lib/hooks/use-research-global-model')
 
 vi.mock('@/lib/hooks/use-translation', () => ({
   useTranslation: () => ({
@@ -43,6 +51,7 @@ function makeChatResult(overrides: Partial<UseResearchSourceChatResult> = {}): U
 describe('ResearchSourceChatPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    resetGlobalModelStub()
     vi.mocked(useResearchSourceChat).mockReturnValue(makeChatResult())
   })
 
@@ -241,12 +250,36 @@ describe('ResearchSourceChatPanel', () => {
     const input = screen.getByTestId('srcchat-input')
     fireEvent.change(input, { target: { value: '这篇论文的结论？' } })
     fireEvent.keyDown(input, { key: 'Enter' })
-    expect(chat.send).toHaveBeenCalledWith('这篇论文的结论？')
+    // 模型来自顶层 confirmed 全局模型快照（替身值）
+    expect(chat.send).toHaveBeenCalledWith('这篇论文的结论？', 'm-local')
+    expect(input).toHaveValue('')
 
     // 空白不发送
     vi.mocked(chat.send).mockClear()
     fireEvent.change(input, { target: { value: '   ' } })
     fireEvent.keyDown(input, { key: 'Enter' })
     expect(chat.send).not.toHaveBeenCalled()
+  })
+
+  it('#243 §6.4：待确认/无模型时发送被守卫拦下，输入与 send 均无副作用', () => {
+    const chat = makeChatResult()
+    vi.mocked(useResearchSourceChat).mockReturnValue(chat)
+    // 外部模型待确认：守卫只登记不执行（不变量 9）
+    setGlobalModelStub({ deferGuarded: true })
+    renderPanel()
+
+    const input = screen.getByTestId('srcchat-input')
+    fireEvent.change(input, { target: { value: '外发问题' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(chat.send).not.toHaveBeenCalled()
+    expect(input).toHaveValue('外发问题')
+  })
+
+  it('#243 §6.4：无 confirmed 模型时输入与发送按钮禁用（不变量 2/7）', () => {
+    vi.mocked(useResearchSourceChat).mockReturnValue(makeChatResult())
+    setGlobalModelStub({ confirmedModelId: null })
+    renderPanel()
+    expect(screen.getByTestId('srcchat-input')).toBeDisabled()
+    expect(screen.getByTestId('srcchat-send')).toBeDisabled()
   })
 })

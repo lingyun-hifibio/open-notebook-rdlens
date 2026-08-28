@@ -8,6 +8,9 @@ import { getResearchProjectId } from '@/lib/research/project'
 import { useIsDesktop, useMediaQuery } from '@/lib/hooks/use-media-query'
 import { ResearchWorkbench } from '@/components/research/ResearchWorkbench'
 import { ResearchWorkspace } from '@/components/research/ResearchWorkspace'
+import { ResearchGlobalModelBar } from '@/components/research/ResearchGlobalModelBar'
+import { ResearchEgressConsentDialog } from '@/components/research/ResearchEgressConsentDialog'
+import { ExportSection } from '@/components/research/ExportSection'
 import { ResearchSourceChatPanel } from '@/components/research/ResearchSourceChatPanel'
 import { ResearchLayout } from '@/components/research/ResearchLayout'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -83,8 +86,31 @@ export default function ResearchPage() {
   const compact = sourceMode ? !isDesktop : !hasUsableHeight
 
   return (
-    <div className="h-screen">
+    // Issue #243 GMOD-FE-01 §6.2：页面根 h-screen flex-col；顶层 Research
+    // header 为 shrink-0，下层 ResearchLayout 为 min-h-0 flex-1——新增头部
+    // 后不产生双滚动，也不会把底部输入框挤出视口。
+    <div className="flex h-screen flex-col">
       <ResearchWorkspaceShell>
+        <header
+          className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b px-4 py-2"
+          data-testid="research-top-bar"
+        >
+          <h1 className="text-base font-semibold">
+            {t('research.workbench.title')}
+          </h1>
+          <div className="flex min-w-0 items-center gap-2">
+            {/* 窄屏把研究模型设置收进浮层，避免横向溢出 */}
+            {isDesktop ? (
+              <ResearchGlobalModelBar />
+            ) : (
+              <ResearchGlobalModelBar layout="popover" />
+            )}
+            <ExportSection />
+          </div>
+        </header>
+        {/* 根级统一外发确认（§6.8 single-flight） */}
+        <ResearchEgressConsentDialog />
+        <div className="min-h-0 flex-1">
         <ResearchLayout
           layoutId={sourceDesktop ? 'source-desktop' : 'global'}
           axis={sourceDesktop ? 'horizontal' : 'vertical'}
@@ -131,6 +157,7 @@ export default function ResearchPage() {
             </div>,
           ]}
         </ResearchLayout>
+        </div>
       </ResearchWorkspaceShell>
     </div>
   )

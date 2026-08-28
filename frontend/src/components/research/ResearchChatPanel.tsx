@@ -27,7 +27,11 @@ export function ResearchChatPanel({
 }: {
   turns: ResearchChatTurn[]
   isStreaming: boolean
-  onSend: (query: string, selection?: ResearchChatSelection) => void
+  /**
+   * 返回是否已真正派发。Issue #243 §6.4：外部模型需确认时执行被推迟，
+   * 调用方据此决定「派发后」的清理（如清空输入），使取消零副作用。
+   */
+  onSend: (query: string, selection?: ResearchChatSelection) => Promise<boolean>
   selectedSourceIds: string[]
   selectedNoteIds: string[]
 }) {
@@ -37,8 +41,9 @@ export function ResearchChatPanel({
   const submit = () => {
     const trimmed = query.trim()
     if (!trimmed) return
-    onSend(trimmed, { sourceIds: selectedSourceIds, noteIds: selectedNoteIds })
-    setQuery('')
+    void onSend(trimmed, { sourceIds: selectedSourceIds, noteIds: selectedNoteIds }).then((sent) => {
+      if (sent) setQuery('')
+    })
   }
 
   return (
@@ -114,7 +119,7 @@ export function ResearchChatPanel({
                           size="sm"
                           onClick={() => {
                             const userTurn = turns[turns.indexOf(turn) - 1]
-                            onSend(userTurn?.content ?? '', {
+                            void onSend(userTurn?.content ?? '', {
                               sourceIds: selectedSourceIds,
                               noteIds: selectedNoteIds,
                             })

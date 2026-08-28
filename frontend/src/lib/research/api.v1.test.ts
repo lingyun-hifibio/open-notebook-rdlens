@@ -5,7 +5,14 @@
  * - 生成请求发送 `X-Research-Contract: v1` + `Idempotency-Key`；
  * - 按 HTTP status + Content-Type 分支：200 JSON = direct，202 JSON =
  *   background job（不能只看 body 字段）；
- * - 模型列表 / 执行偏好 GET/PUT / Context Preview 端点路径。
+ * - 模型列表（含 interactive_context_levels）/ 执行偏好 GET/PATCH /
+ *   Context Preview 端点路径。
+ *
+ * Issue #243 GMOD-FE-01：
+ * - 保存模型只 PATCH preferred_model_id；保存 Search 上下文只 PATCH
+ *   default_context_level（互不覆盖，§6.1）；
+ * - Preview / Chat / Compare / Transformation Run 的 TS 请求 builders 把
+ *   model_id 建模为 required（§6.7：不得依赖 undefined 触发旧默认）。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { InternalAxiosRequestConfig } from 'axios'
@@ -76,7 +83,7 @@ describe('contract v1 客户端（Phase 2b）', () => {
     expect(calls[0].method).toBe('GET')
   })
 
-  it('execution-preferences GET/PUT 路径正确', async () => {
+  it('execution-preferences GET/PATCH 路径正确；PATCH 只发送出现的字段', async () => {
     installAdapter(() => ({
       status: 200,
       data: {
@@ -88,28 +95,38 @@ describe('contract v1 客户端（Phase 2b）', () => {
       },
     }))
     await researchApi.getExecutionPreferences(P)
-    await researchApi.saveExecutionPreferences(P, {
-      default_context_level: 'document',
+    // 保存模型：只 PATCH preferred_model_id（不触碰 context，§6.1）
+    await researchApi.patchExecutionPreferences(P, {
       preferred_model_id: 'm-local',
+    })
+    // 显式清除：preferred_model_id: null 原样透传（后端区分缺失 vs null）
+    await researchApi.patchExecutionPreferences(P, {
+      preferred_model_id: null,
+    })
+    // 保存 Search 上下文：只 PATCH default_context_level（不触碰模型）
+    await researchApi.patchExecutionPreferences(P, {
+      default_context_level: 'document',
     })
     const path = `/v1/research/projects/${P}/execution-preferences`
     expect(calls[0].url).toBe(path)
     expect(calls[0].method).toBe('GET')
     expect(calls[1].url).toBe(path)
-    expect(calls[1].method).toBe('PUT')
-    expect(calls[1].data).toEqual({
-      default_context_level: 'document',
-      preferred_model_id: 'm-local',
-    })
+    expect(calls[1].method).toBe('PATCH')
+    expect(calls[1].data).toEqual({ preferred_model_id: 'm-local' })
+    expect(calls[2].method).toBe('PATCH')
+    expect(calls[2].data).toEqual({ preferred_model_id: null })
+    expect(calls[3].method).toBe('PATCH')
+    expect(calls[3].data).toEqual({ default_context_level: 'document' })
   })
 
-  it('contextPreview POST 只读端点', async () => {
+  it('contextPreview POST 只读端点；model_id 为 required（GMOD §6.7）', async () => {
     installAdapter(() => ({ status: 200, data: { source_count: 1 } }))
     await researchApi.fetchContextPreview(P, {
       context_level: 'focused',
       source_ids: ['d1'],
       note_ids: [],
       question: 'q',
+      model_id: 'm-local',
     })
     expect(calls[0].url).toBe(
       `/v1/research/projects/${P}/context-preview`,
@@ -120,6 +137,7 @@ describe('contract v1 客户端（Phase 2b）', () => {
       source_ids: ['d1'],
       note_ids: [],
       question: 'q',
+      model_id: 'm-local',
     })
   })
 
@@ -232,5 +250,23 @@ describe('contract v1 客户端（Phase 2b）', () => {
     expect(String(calls[0].headers['X-Research-Contract'])).toBe('v1')
     expect(String(calls[0].headers['Idempotency-Key'])).toBe('ik-1')
     expect((calls[0].data as { model_id?: string }).model_id).toBe('m1')
+  })
+
+  it('#243 runTransformation 请求体携带 required model_id（运行时模型快照）', async () => {
+    installAdapter(() => ({ status: 200, data: { request_id: 'r1' } }))
+    await researchApi.runTransformation(P, 'trans_1', {
+      source_ids: ['src_1'],
+      note_ids: [],
+      model_id: 'm-global',
+    })
+    expect(calls[0].method).toBe('POST')
+    expect(calls[0].url).toBe(
+      `/v1/research/projects/${P}/transformations/trans_1/run`,
+    )
+    expect(calls[0].data).toEqual({
+      source_ids: ['src_1'],
+      note_ids: [],
+      model_id: 'm-global',
+    })
   })
 })

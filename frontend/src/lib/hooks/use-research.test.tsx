@@ -107,11 +107,17 @@ describe('use-research hooks', () => {
     })
     const { wrapper } = makeWrapper()
     const { result } = renderHook(() => useRunResearchTransformation(P), { wrapper })
-    result.current.mutate({ transformationId: 'trans_1', sourceIds: ['src_1'], noteIds: [] })
+    result.current.mutate({
+      transformationId: 'trans_1',
+      sourceIds: ['src_1'],
+      noteIds: [],
+      modelId: 'm-global',
+    })
     await waitFor(() =>
       expect(researchApi.runTransformation).toHaveBeenCalledWith(P, 'trans_1', {
         source_ids: ['src_1'],
         note_ids: [],
+        model_id: 'm-global',
       }),
     )
     expect(researchApi.createTransformation).not.toHaveBeenCalled()

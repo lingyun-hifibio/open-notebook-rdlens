@@ -1,12 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import { ResearchWorkspace } from './ResearchWorkspace'
 import * as api from '@/lib/research/api'
 import * as tokenStore from '@/lib/embedded/token-store'
 import type { ResearchNote, ResearchSource } from '@/lib/types/research'
+import {
+  resetGlobalModelStub,
+  setGlobalModelStub,
+} from '@/test/global-model-stub'
 
 // UI-03 Red：工作区组合（REQ-SCOPE-04）——无项目上下文 fail-closed 错误态；
 // 有上下文时加载 Source/Note 并渲染四个面板 Tab。
+// #243 §6.4：Chat/Compare 的执行必须经顶层守卫（模型快照 + 外发确认）。
 
 vi.mock('@/lib/research/api', async (importOriginal) => {
   const actual = await importOriginal<typeof api>()
@@ -20,6 +25,9 @@ vi.mock('@/lib/research/api', async (importOriginal) => {
     openResearchChatStream: vi.fn(() => () => {}),
   }
 })
+
+// 被测对象不是全局模型本身：用测试替身提供 confirmed 模型（本地、可执行）
+vi.mock('@/lib/hooks/use-research-global-model')
 
 function b64url(input: string): string {
   return Buffer.from(input).toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_')
@@ -54,6 +62,7 @@ describe('ResearchWorkspace', () => {
   beforeEach(() => {
     localStorage.clear()
     vi.clearAllMocks()
+    resetGlobalModelStub()
     vi.mocked(api.listSources).mockResolvedValue({ items: [source], next_cursor: null })
     vi.mocked(api.listNotes).mockResolvedValue({ items: [note], next_cursor: null })
   })
@@ -114,6 +123,64 @@ describe('ResearchWorkspace', () => {
     expect(noteList).toHaveClass('max-h-[200px]', 'overflow-y-auto')
     expect(sourceList.contains(screen.getByTestId('source-src_12'))).toBe(true)
     expect(noteList.contains(screen.getByTestId('note-note_12'))).toBe(true)
+  })
+
+  it('#243 §6.4：Chat 发送经顶层守卫——待确认/无模型时不打开流、不留 turn', async () => {
+    tokenStore.setResearchToken(researchToken(), 9999999999)
+    // 外部模型待确认：守卫登记但不执行（不变量 9）
+    setGlobalModelStub({ deferGuarded: true })
+    render(<ResearchWorkspace />)
+    // Radix Tabs 在 jsdom 下按 mousedown 切换（fireEvent.click 不触发）
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'research.tabChat' }), {
+      button: 0,
+      ctrlKey: false,
+    })
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: '问题' } })
+    fireEvent.click(screen.getByRole('button', { name: 'research.chatSend' }))
+
+    expect(api.openResearchChatStream).not.toHaveBeenCalled()
+    // 输入未被清空：取消确认应零副作用
+    expect(screen.getByTestId('chat-input')).toHaveValue('问题')
+
+    // 守卫放行后同一条输入即被派发
+    resetGlobalModelStub()
+    fireEvent.click(screen.getByRole('button', { name: 'research.chatSend' }))
+    await waitFor(() => expect(api.openResearchChatStream).toHaveBeenCalledTimes(1))
+    expect(screen.getByTestId('chat-input')).toHaveValue('')
+  })
+
+  it('#243 §6.4：Compare 创建经顶层守卫——待确认时不发创建请求', async () => {
+    tokenStore.setResearchToken(researchToken(), 9999999999)
+    setGlobalModelStub({ deferGuarded: true })
+    vi.mocked(api.createCompare).mockResolvedValue({ job_id: 'job_1', status: 'queued' })
+    vi.mocked(api.getJob).mockResolvedValue({
+      job_id: 'job_1',
+      project_id: 'proj_1',
+      job_type: 'deep_compare',
+      status: 'queued',
+      stage: null,
+      progress: 0,
+      model_id: 'm-local',
+      generation_epoch: 1,
+      retry_count: 0,
+      last_error: null,
+      result_ref: null,
+      created_at: '2026-08-06T02:00:00Z',
+      updated_at: '2026-08-06T02:00:00Z',
+    })
+    render(<ResearchWorkspace />)
+    // 选中一个 Source（Compare 以 document_ids 入参）
+    fireEvent.click(await screen.findByRole('button', { name: 'research.layout.expandContext' }))
+    fireEvent.click(await screen.findByTestId('source-src_1'))
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'research.tabCompare' }), {
+      button: 0,
+      ctrlKey: false,
+    })
+    fireEvent.click(await screen.findByRole('button', { name: 'research.compareCreate' }))
+
+    // 守卫未放行：不创建 Job、不落 localStorage（不变量 9）
+    expect(api.createCompare).not.toHaveBeenCalled()
+    expect(localStorage.getItem('rdlens.research.jobs.proj_1')).toBeNull()
   })
 
   it('加载失败显示错误与重试按钮', async () => {

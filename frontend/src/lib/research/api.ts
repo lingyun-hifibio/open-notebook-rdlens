@@ -190,7 +190,7 @@ export async function createTransformation(
 export async function runTransformation(
   projectId: string,
   transformationId: string,
-  input: { source_ids: string[]; note_ids: string[] },
+  input: { source_ids: string[]; note_ids: string[]; model_id: string },
 ): Promise<TransformationRunResult> {
   const response = await apiClient.post<TransformationRunResult>(
     researchPath(projectId, 'transformations', transformationId, 'run'),
@@ -280,16 +280,22 @@ export async function getExecutionPreferences(
   return response.data
 }
 
-export interface SaveExecutionPreferencesInput {
-  default_context_level: ResearchExecutionPreferences['default_context_level']
-  preferred_model_id: string | null
+/**
+ * #243 GMOD：PATCH 部分更新输入——只携带请求实际出现的字段。保存模型
+ * 只 PATCH preferred_model_id；保存 Search 上下文只 PATCH
+ * default_context_level（互不覆盖，计划 §6.1）。显式 `null` 表示清除
+ * 模型选择（后端区分字段缺失与显式 null）。
+ */
+export interface PatchExecutionPreferencesInput {
+  preferred_model_id?: string | null
+  default_context_level?: ResearchExecutionPreferences['default_context_level']
 }
 
-export async function saveExecutionPreferences(
+export async function patchExecutionPreferences(
   projectId: string,
-  input: SaveExecutionPreferencesInput,
+  input: PatchExecutionPreferencesInput,
 ): Promise<ResearchExecutionPreferences> {
-  const response = await apiClient.put<ResearchExecutionPreferences>(
+  const response = await apiClient.patch<ResearchExecutionPreferences>(
     researchPath(projectId, 'execution-preferences'),
     input,
   )
@@ -301,6 +307,8 @@ export type ResearchContextPreviewRequest = {
   source_ids: string[]
   note_ids: string[]
   question: string
+  /** #243 GMOD §6.7：新正式前端 required——始终发送 confirmed global model */
+  model_id: string
 }
 
 export async function fetchContextPreview(
