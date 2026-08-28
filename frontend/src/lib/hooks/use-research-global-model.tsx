@@ -115,7 +115,6 @@ export interface UseResearchGlobalModelResult {
   confirmConsent: () => Promise<void>
   /** 最近一次确认失败的信息（弹窗内展示；登记保留可重试） */
   consentError: string | null
-  dismissConsentError: () => void
   /** Admin 只读：显示禁用控件，不发 PATCH，不执行 */
   isAdminReadonly: boolean
 }
@@ -214,12 +213,17 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
       await modelPatch.mutateAsync({ preferred_model_id: draftModelId })
     } catch (err) {
       setSaveModelError(err instanceof Error ? err.message : String(err))
-      // 失败丢弃 draft，回滚到服务端值（§6.1：refetch authority）
+      // 失败丢弃 draft，回滚到服务端值（§6.1：refetch authority）；
+      // 保存期间服务端值可能已变（如多标签页 refetch），闭包里的
+      // confirmedModelId 可能是陈旧回滚目标——invalidate 让权威值自愈
       setDraftModelId(confirmedModelId)
       setDraftTouched(false)
+      void queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.researchExecutionPreferences(projectId),
+      })
       throw err
     }
-  }, [confirmedModelId, draftModelId, isAdminReadonly, modelPatch])
+  }, [confirmedModelId, draftModelId, isAdminReadonly, modelPatch, projectId, queryClient])
 
   const clearModel = useCallback(async (): Promise<void> => {
     if (isAdminReadonly) return
@@ -290,6 +294,7 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
     if (!isConsentPromptOpen || consentInFlightRef.current) return
     consentInFlightRef.current = true
     setIsConsentInFlight(true)
+    let acknowledged = false
     try {
       // acknowledge 的响应即服务端权威 consent 状态（§6.8 第 4 步）
       const updated = await acknowledgeExternalEgressConsent(projectId)
@@ -297,31 +302,51 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
         QUERY_KEYS.researchEgressConsent(projectId),
         updated,
       )
-      setIsConsentPromptOpen(false)
-      // 用登记时捕获的快照执行——不重新读取当前 confirmed（不变量 4）
-      const operation = pendingOperationRef.current
-      const snapshot = pendingModelIdRef.current
-      pendingOperationRef.current = null
-      pendingModelIdRef.current = null
-      if (operation && snapshot) await operation(snapshot)
       setConsentError(null)
+      acknowledged = true
     } catch (err) {
       // acknowledge 失败：弹窗保持打开、登记保留可重试，并给出可见反馈
       //（不静默吞错，也不产生未处理 rejection）
       setConsentError(err instanceof Error ? err.message : String(err))
-    } finally {
-      consentInFlightRef.current = false
-      setIsConsentInFlight(false)
     }
-  }, [isConsentPromptOpen, projectId, queryClient])
+    // 用登记时捕获的快照执行——不重新读取当前 confirmed（不变量 4）；
+    // 登记仅在 acknowledge 成功后清除，失败时保留可重试
+    const operation = pendingOperationRef.current
+    const snapshot = pendingModelIdRef.current
+    if (acknowledged) {
+      setIsConsentPromptOpen(false)
+      pendingOperationRef.current = null
+      pendingModelIdRef.current = null
+    }
+    if (acknowledged && operation && snapshot) {
+      try {
+        await operation(snapshot)
+      } catch {
+        // 执行体错误与 consent 状态无关（acknowledge 已成功、弹窗已关）：
+        // 不写 consentError，避免下次弹窗误标「确认失败」；重拉服务端
+        // consent，让下一次执行重新走确认判断
+        void refetchConsent()
+      }
+    }
+    consentInFlightRef.current = false
+    setIsConsentInFlight(false)
+  }, [isConsentPromptOpen, projectId, queryClient, refetchConsent])
 
   const runGuarded = useCallback(
     async <T,>(operation: GuardedOperation<T>): Promise<T | undefined> => {
       const snapshot = confirmedModelId
       if (!canExecute || snapshot === null) return undefined
       if (!needsConsent) return operation(snapshot)
-      // 外部模型且 consent 未生效：single-flight，只登记不执行
-      if (consentInFlightRef.current || isConsentPromptOpen) return undefined
+      // 外部模型且 consent 未生效：single-flight，只登记不执行。
+      // pendingOperationRef（同步 ref）同时检查：同 tick 内第二次调用时
+      // isConsentPromptOpen 仍是旧值，若只查 state 会覆盖第一次的登记。
+      if (
+        consentInFlightRef.current ||
+        isConsentPromptOpen ||
+        pendingOperationRef.current !== null
+      ) {
+        return undefined
+      }
       pendingModelIdRef.current = snapshot
       pendingOperationRef.current = operation as GuardedOperation<unknown>
       setIsConsentPromptOpen(true)
@@ -357,7 +382,6 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
     cancelConsent,
     confirmConsent,
     consentError,
-    dismissConsentError: () => setConsentError(null),
     isAdminReadonly,
   }), [
     consentError,

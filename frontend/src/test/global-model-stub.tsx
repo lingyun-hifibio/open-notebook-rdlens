@@ -20,7 +20,7 @@ import type {
   ResearchModelBlockedReason,
   UseResearchGlobalModelResult,
 } from '@/lib/hooks/use-research-global-model'
-import type { ResearchModelOption } from '@/lib/research/types'
+import type { ResearchEgressConsentResponse, ResearchModelOption } from '@/lib/research/types'
 
 export const GLOBAL_MODEL_STUB_ID = 'm-local'
 
@@ -31,6 +31,16 @@ interface StubOverrides {
   /** true：runGuarded 登记后不执行（模拟等待/放弃确认） */
   deferGuarded?: boolean
   models?: ResearchModelOption[]
+  /** 以下字段供 ModelBar/ConsentDialog 组件测试覆盖（默认语义见 useResearchGlobalModel） */
+  draftModelId?: string | null
+  isSavingModel?: boolean
+  saveModelError?: string | null
+  needsConsent?: boolean
+  isConsentPromptOpen?: boolean
+  consentError?: string | null
+  consentResponse?: ResearchEgressConsentResponse | null
+  onCancelConsent?: () => void
+  onConfirmConsent?: () => Promise<void>
 }
 
 let overrides: StubOverrides = {}
@@ -86,9 +96,9 @@ export function useResearchGlobalModel(): UseResearchGlobalModelResult {
   const blockedReason: ResearchModelBlockedReason =
     overrides.blockedReason ?? (hasModel ? 'none' : 'no-model')
   const canExecute = overrides.canExecute ?? hasModel
-  const confirmedModelAvailability = (hasModel
-    ? 'available'
-    : 'none') as ResearchModelAvailability
+  // 与真实实现同语义：null → none；非 null 但不在目录 → unavailable
+  const confirmedModelAvailability: ResearchModelAvailability =
+    confirmedModelId === null ? 'none' : confirmedModel !== null ? 'available' : 'unavailable'
 
   const runGuarded = async <T,>(
     operation: GuardedOperation<T>,
@@ -100,15 +110,16 @@ export function useResearchGlobalModel(): UseResearchGlobalModelResult {
 
   return {
     confirmedModelId,
-    draftModelId: confirmedModelId,
+    draftModelId:
+      overrides.draftModelId === undefined ? confirmedModelId : overrides.draftModelId,
     setDraftModelId: () => undefined,
     searchContextDefault: 'focused',
     saveSearchContext: async () => undefined,
     saveModel: async () => undefined,
     clearModel: async () => undefined,
-    isSavingModel: false,
+    isSavingModel: overrides.isSavingModel ?? false,
     isLoadingModel: false,
-    saveModelError: null,
+    saveModelError: overrides.saveModelError ?? null,
     dismissSaveModelError: () => undefined,
     models,
     confirmedModel,
@@ -117,15 +128,15 @@ export function useResearchGlobalModel(): UseResearchGlobalModelResult {
     canExecute,
     blockedReason,
     runGuarded,
-    needsConsent: false,
-    isConsentPromptOpen: false,
+    needsConsent: overrides.needsConsent ?? false,
+    isConsentPromptOpen: overrides.isConsentPromptOpen ?? false,
     isConsentInFlight: false,
-    consentResponse: null,
+    consentResponse:
+      overrides.consentResponse === undefined ? null : overrides.consentResponse,
     invalidateConsent: () => undefined,
-    cancelConsent: () => undefined,
-    confirmConsent: async () => undefined,
-    consentError: null,
-    dismissConsentError: () => undefined,
+    cancelConsent: overrides.onCancelConsent ?? (() => undefined),
+    confirmConsent: overrides.onConfirmConsent ?? (async () => undefined),
+    consentError: overrides.consentError ?? null,
     isAdminReadonly: blockedReason === 'admin-readonly',
   }
 }

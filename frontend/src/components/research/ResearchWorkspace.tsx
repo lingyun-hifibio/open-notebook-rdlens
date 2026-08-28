@@ -77,6 +77,9 @@ export function ResearchWorkspace() {
   // #243 §6.4：Chat/Compare 统一走顶层执行守卫——传入调用时刻捕获的
   // confirmed 模型快照；外部模型需确认时只登记不执行，取消零副作用
   // （不发请求、不建 Job，不变量 9）。
+  // 注意：Chat/Source Chat 固定 focused、Compare 固定 workspace 的档位
+  // 是**省略** context_level 字段、依赖后端默认实现的（评审 Minor-6）——
+  // 前端不提供局部覆盖控件；若后端默认变化，需同步本注释并补显式字段。
   const { runGuarded, canExecute, blockedReason } = useResearchGlobalModel()
   // 各生成入口共用同一禁用文案映射（与 Search/SourceChat 一致）
   const blockedHint = researchModelBlockedHint(blockedReason, t)

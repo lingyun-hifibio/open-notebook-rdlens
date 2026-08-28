@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/select'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
-import { useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
+import { useResearchGlobalModel, researchModelBlockedHint } from '@/lib/hooks/use-research-global-model'
 import { useCreateResearchInsight, useResearchInsights } from '@/lib/hooks/use-research'
 import { AdminReadOnlyBanner } from './AdminReadOnlyBanner'
 
@@ -37,7 +37,7 @@ import { AdminReadOnlyBanner } from './AdminReadOnlyBanner'
 export function InsightsPanel() {
   const { t } = useTranslation()
   const { projectId, isAdminReadonly } = useResearchWorkspace()
-  const { canExecute, runGuarded } = useResearchGlobalModel()
+  const { canExecute, runGuarded, blockedReason } = useResearchGlobalModel()
   const { data, isLoading, isError } = useResearchInsights(projectId)
   const createMutation = useCreateResearchInsight(projectId)
 
@@ -129,10 +129,12 @@ export function InsightsPanel() {
                   </SelectContent>
                 </Select>
               </div>
-              {/* §6.5：模型输入已移除——AI 生成使用顶层 confirmed 全局模型 */}
+              {/* §6.5：模型输入已移除——AI 生成使用顶层 confirmed 全局模型；
+                  提示按 blockedReason 映射，admin 只读/保存中等场景不再误导为
+                  「请先选择模型」 */}
               {insightType === 'ai' && !canExecute && (
                 <p className="text-xs text-muted-foreground" data-testid="insight-model-blocked">
-                  {t('research.globalModel.selectModelHint')}
+                  {researchModelBlockedHint(blockedReason, t)}
                 </p>
               )}
             </div>
