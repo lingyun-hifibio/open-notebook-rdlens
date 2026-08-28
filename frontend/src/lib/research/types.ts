@@ -105,8 +105,8 @@ export interface ResearchSearchRequest {
   source_ids?: string[]
   note_ids?: string[]
   mode?: string
-  /** Issue #200 §14.2：v1 必填的显式模型 */
-  model_id?: string
+  /** Issue #243 §6.7：正式前端必填——顶层 confirmed 全局模型快照 */
+  model_id: string
   /** Issue #200 §8：三档上下文（focused/document/workspace） */
   context_level?: string
 }
@@ -163,7 +163,15 @@ export interface ResearchModelOption {
   context_window?: number | null
   /** Issue #202 Phase 3b：data_egress=true 表示外部模型（本地恒 false） */
   data_egress?: boolean | null
+  /**
+   * #243 GMOD §5.2：Search 交互式上下文档位（服务端真实能力，前端不得
+   * 按 provider/data_egress 自行猜测）。外部模型恒 ['focused']。
+   */
+  interactive_context_levels?: ResearchContextLevel[]
 }
+
+/** Search 交互式上下文档位（服务端能力声明子集） */
+export type ResearchContextLevel = 'focused' | 'document' | 'workspace'
 
 /** Issue #202 Phase 3b：Workspace 外发确认（§6.3 GET 契约形状） */
 export interface ResearchEgressConsent {
@@ -219,8 +227,8 @@ export interface ResearchChatRequest {
   source_ids?: string[]
   note_ids?: string[]
   session_id?: string
-  /** #238：v1 契约必填——显式透传已保存执行偏好（不变量 2：后端不隐式补值） */
-  model_id?: string
+  /** Issue #243 §6.7：正式前端必填——顶层 confirmed 全局模型快照（不变量 2） */
+  model_id: string
 }
 
 export interface ResearchCompareCreateRequest {
@@ -228,8 +236,8 @@ export interface ResearchCompareCreateRequest {
   document_ids: string[]
   group_size?: number
   mode?: string
-  /** #238：v1 契约必填——显式透传已保存执行偏好（不变量 2） */
-  model_id?: string
+  /** Issue #243 §6.7：正式前端必填——顶层 confirmed 全局模型快照（不变量 2） */
+  model_id: string
 }
 
 export interface ResearchCompareCreateResponse {

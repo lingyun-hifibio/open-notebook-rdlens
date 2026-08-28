@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { getResearchProjectId } from '@/lib/research/project'
 import { listNotes, listSources } from '@/lib/research/api'
 import { useResearchChat } from '@/lib/hooks/use-research-chat'
+import { researchModelBlockedHint, useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
 import { useResearchJobs } from '@/lib/hooks/use-research-jobs'
 import { SourceNoteSelector } from './SourceNoteSelector'
 import { ResearchSearchPanel } from './ResearchSearchPanel'
@@ -69,8 +70,50 @@ export function ResearchWorkspace() {
     )
   }, [])
 
-  const chat = useResearchChat({ projectId: projectId ?? '' })
-  const jobs = useResearchJobs({ projectId: projectId ?? '' })
+  const { turns, isStreaming, send: sendTurn } = useResearchChat({ projectId: projectId ?? '' })
+  const { jobs, isCreating, error: jobsError, createCompare: createCompareJob, cancel } = useResearchJobs({
+    projectId: projectId ?? '',
+  })
+  // #243 §6.4：Chat/Compare 统一走顶层执行守卫——传入调用时刻捕获的
+  // confirmed 模型快照；外部模型需确认时只登记不执行，取消零副作用
+  // （不发请求、不建 Job，不变量 9）。
+  // 注意：Chat/Source Chat 固定 focused、Compare 固定 workspace 的档位
+  // 是**省略** context_level 字段、依赖后端默认实现的（评审 Minor-6）——
+  // 前端不提供局部覆盖控件；若后端默认变化，需同步本注释并补显式字段。
+  const { runGuarded, canExecute, blockedReason } = useResearchGlobalModel()
+  // 各生成入口共用同一禁用文案映射（与 Search/SourceChat 一致）
+  const blockedHint = researchModelBlockedHint(blockedReason, t)
+
+  const sendChat = useCallback(
+    async (
+      query: string,
+      selection: Parameters<typeof sendTurn>[1],
+    ): Promise<boolean> => {
+      // sendTurn 返回 void，用 true 标记「已派发」，供调用方区分确认取消
+      const sent = await runGuarded((modelId) => {
+        sendTurn(query, selection, modelId)
+        return true
+      })
+      return sent === true
+    },
+    [sendTurn, runGuarded],
+  )
+
+  const createCompare = useCallback(
+    async (
+      documentIds: readonly string[],
+      groupSize?: number,
+    ): Promise<boolean> => {
+      // 与 sendChat 相同：返回「是否真正派发」，供面板区分 consent 取消，
+      // 取消时不显示「已创建」提示
+      const sent = await runGuarded((modelId) => {
+        createCompareJob(documentIds, modelId, groupSize)
+        return true
+      })
+      return sent === true
+    },
+    [createCompareJob, runGuarded],
+  )
 
   if (!projectId) {
     return (
@@ -102,7 +145,7 @@ export function ResearchWorkspace() {
             <TabsTrigger value="compare">{t('research.tabCompare')}</TabsTrigger>
             <TabsTrigger value="jobs">
               {t('research.tabJobs')}
-              {jobs.jobs.length > 0 ? ` (${jobs.jobs.length})` : ''}
+              {jobs.length > 0 ? ` (${jobs.length})` : ''}
             </TabsTrigger>
           </TabsList>
           <TabsContent value="search" className="min-h-0 flex-1">
@@ -118,24 +161,28 @@ export function ResearchWorkspace() {
           </TabsContent>
           <TabsContent value="chat" className="min-h-0 flex-1">
             <ResearchChatPanel
-              turns={chat.turns}
-              isStreaming={chat.isStreaming}
-              onSend={chat.send}
+              turns={turns}
+              isStreaming={isStreaming}
+              onSend={sendChat}
               selectedSourceIds={selectedSourceIds}
               selectedNoteIds={selectedNoteIds}
+              sendDisabled={!canExecute}
+              blockedHint={blockedHint}
             />
           </TabsContent>
           <TabsContent value="compare" className="min-h-0 flex-1">
             <ComparePanel
               sources={sources}
               selectedSourceIds={selectedSourceIds}
-              isCreating={jobs.isCreating}
-              error={jobs.error}
-              onCreate={(documentIds, groupSize) => jobs.createCompare(documentIds, groupSize)}
+              isCreating={isCreating}
+              error={jobsError}
+              onCreate={createCompare}
+              modelBlocked={!canExecute}
+              blockedHint={blockedHint}
             />
           </TabsContent>
           <TabsContent value="jobs" className="min-h-0 flex-1">
-            <ResearchJobList jobs={jobs.jobs} isCreating={jobs.isCreating} onCancel={jobs.cancel} />
+            <ResearchJobList jobs={jobs} isCreating={isCreating} onCancel={cancel} />
           </TabsContent>
         </Tabs>
       </div>

@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
 import { ResearchCitationList } from './ResearchCitationList'
 import { useResearchSourceChat, type ResearchSourceChatTurn } from '@/lib/hooks/use-research-source-chat'
+import { useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
 
 /**
  * Source-scoped Chat 面板（Issue #182，/research 下半屏选中 Source 时）。
@@ -33,12 +34,18 @@ export function ResearchSourceChatPanel({
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const chat = useResearchSourceChat({ projectId, sourceId })
+  // #243 §6.4：模型来自顶层全局设置；外部模型需确认时由守卫登记并弹窗，
+  // 未确认不发请求（不变量 9）。
+  const { canExecute, runGuarded } = useResearchGlobalModel()
 
   const submit = () => {
     const trimmed = query.trim()
     if (!trimmed || chat.isStreaming) return
-    chat.send(trimmed)
-    setQuery('')
+    // 确认通过后才清空输入：取消/待确认不留任何痕迹（不变量 9）
+    void runGuarded((modelId) => {
+      chat.send(trimmed, modelId)
+      setQuery('')
+    })
   }
 
   const localizedError = (turn: ResearchSourceChatTurn): string | null => {
@@ -201,11 +208,15 @@ export function ResearchSourceChatPanel({
           onKeyDown={(event) => {
             if (event.key === 'Enter') submit()
           }}
-          disabled={chat.isStreaming}
+          disabled={chat.isStreaming || !canExecute}
           placeholder={t('research.sourceChat.placeholder')}
           data-testid="srcchat-input"
         />
-        <Button onClick={submit} disabled={!query.trim() || chat.isStreaming} data-testid="srcchat-send">
+        <Button
+          onClick={submit}
+          disabled={!query.trim() || chat.isStreaming || !canExecute}
+          data-testid="srcchat-send"
+        >
           {t('research.sourceChat.send')}
         </Button>
       </div>

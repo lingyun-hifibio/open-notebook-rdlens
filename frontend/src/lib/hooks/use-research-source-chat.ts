@@ -27,7 +27,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
-  getExecutionPreferences,
   getSourceChatSession,
   listSourceChatSessions,
   newIdempotencyKey,
@@ -78,7 +77,12 @@ export interface ResearchSourceChatTurn {
 export interface UseResearchSourceChatResult {
   turns: ResearchSourceChatTurn[]
   isStreaming: boolean
-  send: (query: string) => void
+  /**
+   * Issue #243 §6.4：modelId 是 required——调用方必须传入调用时刻捕获的
+   * confirmed 全局模型快照。本 hook 不在执行时读取执行偏好，重放（retry）
+   * 也沿用同一快照，因此后续切换模型不会影响在途/重放 turn（不变量 4）。
+   */
+  send: (query: string, modelId: string) => void
   /** source-scoped 会话列表（首页 limit 20；不做游标翻页） */
   sessions: ResearchSourceChatSessionSummary[]
   /** 当前绑定会话；null = 新会话（尚未隐式创建） */
@@ -245,14 +249,10 @@ export function useResearchSourceChat({
   const [loadDetailError, setLoadDetailError] = useState<string | null>(null)
   const [retryableQuery, setRetryableQuery] = useState<string | null>(null)
   const activeRef = useRef<ActiveTurn | null>(null)
-  /** 单调 send 序号：偏好读取期间的新 send 使旧 turn 整体放弃（latest wins） */
-  const latestSeqRef = useRef(0)
-  /** 卸载守卫：偏好读取期间卸载不得再开流 */
-  const mountedRef = useRef(true)
   /** 跨轮次绑定的服务端 session（发送前预生成 / 冷恢复回填 / 回显采纳） */
   const sessionIdRef = useRef<string | null>(null)
-
-  useEffect(() => () => { mountedRef.current = false }, [])
+  /** 终态失败 turn 的模型快照：重放沿用同一快照，不随后续切换漂移（不变量 4） */
+  const retryModelRef = useRef<string | null>(null)
 
   const patchAssistant = useCallback((turnId: string, patch: Partial<ResearchSourceChatTurn>) => {
     setTurns((prev) => {
@@ -280,6 +280,7 @@ export function useResearchSourceChat({
     setActiveSessionId(null)
     setLoadDetailError(null)
     setRetryableQuery(null)
+    retryModelRef.current = null
     setTurns([])
   }, [sourceId, stopActive])
 
@@ -385,6 +386,7 @@ export function useResearchSourceChat({
           setActiveSessionId(current.sessionId)
           patch.status = 'done'
           setRetryableQuery(null)
+          retryModelRef.current = null
         } else if (sse.terminal === 'error') {
           patch.status = 'error'
           patch.errorCode = sse.errorCode
@@ -442,39 +444,20 @@ export function useResearchSourceChat({
     })
   }
 
-  const startTurn = async (seq: number, trimmed: string, sessionId: string, turnId: string): Promise<void> => {
-    // #238：v1 契约要求显式 model_id——读取已保存执行偏好；
-    // 无偏好阻止发送（后端不隐式补值，不变量 2）。
-    let modelId: string | null = null
-    try {
-      const prefs = await getExecutionPreferences(projectId)
-      modelId = prefs?.preferred_model_id ?? null
-    } catch {
-      // 偏好读取失败 = fail-closed：不发送
-    }
-    if (!mountedRef.current) {
-      patchAssistant(turnId, {
-        status: 'error',
-        errorCode: 'unmounted',
-        errorMessage: 'Component unmounted before the stream started',
-      })
-      return
-    }
-    if (seq !== latestSeqRef.current) {
-      // 偏好读取期间已被更新的 send 抢占 → 整体放弃并补终态
-      patchAssistant(turnId, {
-        status: 'error',
-        errorCode: 'superseded',
-        errorMessage: 'Superseded by a newer request',
-      })
-      return
-    }
+  const startTurn = (
+    trimmed: string,
+    sessionId: string,
+    turnId: string,
+    modelId: string,
+  ): void => {
+    // #243 §6.4：modelId 由调用方传入（confirmed 全局模型快照），本 hook
+    // 不再在执行时读取执行偏好——显示什么就执行什么，快照不随后续切换漂移。
     if (!modelId) {
+      // fail-closed：无 confirmed 模型不发请求（后端不隐式补值，不变量 2）
       patchAssistant(turnId, {
         status: 'error',
-        errorCode: 'model_preference_required',
-        errorMessage:
-          'Select and save a model preference in the search panel first',
+        errorCode: 'model_required',
+        errorMessage: 'Select a research model before sending',
       })
       return
     }
@@ -495,13 +478,21 @@ export function useResearchSourceChat({
     runTurn(active)
   }
 
-  const send = (query: string): void => {
+  const send = (query: string, modelId: string): void => {
     const trimmed = query.trim()
     if (!trimmed || !projectId || !sourceId) return
+    const previous = activeRef.current
     stopActive()
-    const seq = latestSeqRef.current + 1
-    latestSeqRef.current = seq
+    if (previous) {
+      // 抢占在途 turn 时补终态，避免其永久停留在 streaming（isStreaming 恒 true）
+      patchAssistant(previous.turnId, {
+        status: 'error',
+        errorCode: 'superseded',
+        errorMessage: 'Superseded by a newer request',
+      })
+    }
     setRetryableQuery(null)
+    retryModelRef.current = null
     if (sessionIdRef.current === null) {
       sessionIdRef.current = generateSourceChatSessionId()
     }
@@ -511,7 +502,8 @@ export function useResearchSourceChat({
     const turnId = randomTurnId()
     setTurns((prev) => [...prev, makeUserTurn(turnId, trimmed), emptyAssistantTurn(turnId)])
 
-    void startTurn(seq, trimmed, sessionId, turnId)
+    retryModelRef.current = modelId
+    startTurn(trimmed, sessionId, turnId, modelId)
   }
 
   const selectSession = useCallback((sessionId: string | null): void => {
@@ -519,6 +511,7 @@ export function useResearchSourceChat({
     sessionIdRef.current = sessionId
     setActiveSessionId(sessionId)
     setRetryableQuery(null)
+    retryModelRef.current = null
     setLoadDetailError(null)
     if (sessionId === null) {
       setTurns([])
@@ -538,7 +531,9 @@ export function useResearchSourceChat({
 
   const retry = (): void => {
     if (retryableQuery === null) return
-    send(retryableQuery)
+    const modelId = retryModelRef.current
+    if (modelId === null) return // 无快照可复用 → fail-closed，不重放
+    send(retryableQuery, modelId)
   }
 
   const isStreaming = turns.some((t) => t.status === 'streaming' || t.status === 'reconnecting')

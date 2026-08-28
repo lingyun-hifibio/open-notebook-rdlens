@@ -6,6 +6,10 @@ import { clearResearchToken, getResearchToken } from './token-store'
 
 // UI-01 Red：ResearchWorkspaceShell 加载/错误/就绪三态 + ready 握手 +
 // 卸载销毁（任务卡 Checklist：bootstrap、session state、销毁无残留）。
+// #243 §6.1：就绪态在 WorkspaceProvider 内再包一层全局模型 Provider——
+// 本文件被测对象是 shell 生命周期，用测试替身替换该 Provider。
+
+vi.mock('@/lib/hooks/use-research-global-model')
 
 const PARENT_ORIGIN = 'https://rdlens.example.com'
 

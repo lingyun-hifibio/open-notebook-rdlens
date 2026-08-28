@@ -119,14 +119,19 @@ describe('researchApi（Gateway 白名单契约）', () => {
     })
   })
 
-  it('runTransformation → POST .../transformations/{id}/run，输入仅 source_ids/note_ids（REQ-DIS-02）', async () => {
+  it('runTransformation → POST .../transformations/{id}/run，输入 source_ids/note_ids + 运行时 model_id（REQ-DIS-02；#243 §6.7 model_id 为 required）', async () => {
     const captured = await capture(() => researchApi.runTransformation(P, 'trans_1', {
       source_ids: ['src_1'],
       note_ids: [],
+      model_id: 'm-global',
     }))
     expect(captured.method).toBe('POST')
     expect(captured.url).toBe(`/v1/research/projects/${P}/transformations/trans_1/run`)
-    expect(captured.data).toEqual({ source_ids: ['src_1'], note_ids: [] })
+    expect(captured.data).toEqual({
+      source_ids: ['src_1'],
+      note_ids: [],
+      model_id: 'm-global',
+    })
   })
 
   it('createExport → GET .../export?artifacts=note,insight,transformation_result', async () => {

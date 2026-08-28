@@ -44,6 +44,10 @@ vi.mock('@/components/ui/markdown-renderer', () => ({
   ),
 }))
 
+// #243 §6.5/§6.6：工作台内的 Insight/Transformation 面板取用顶层 confirmed
+// 全局模型；本文件被测对象不是全局模型本身 → 用测试替身提供快照
+vi.mock('@/lib/hooks/use-research-global-model')
+
 function makeWrapper(role: 'owner' | 'admin_readonly' = 'owner') {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -166,10 +170,10 @@ describe('ResearchWorkbench', () => {
       />,
       { wrapper },
     )
-    const workspaceHeading = screen.getByRole('heading', { name: 'research.workbench.title' })
+    // #243 §6.2：工作台标题已上移到 /research 顶层 header，此处只断言
+    // 详情标题被聚焦
     const detailHeading = await screen.findByRole('heading', { name: 'Paper A' })
     await waitFor(() => expect(document.activeElement).toBe(detailHeading))
-    expect(document.activeElement).not.toBe(workspaceHeading)
 
     const backButton = screen.getByRole('button', { name: 'research.sources.back' })
     backButton.focus()
@@ -186,7 +190,7 @@ describe('ResearchWorkbench', () => {
       />,
     )
 
-    expect(screen.getByRole('heading', { name: 'research.workbench.title' })).toBe(workspaceHeading)
+    // 同一节点 = 未重挂载
     expect(screen.getByRole('heading', { name: 'Paper A' })).toBe(detailHeading)
     await waitFor(() => expect(document.activeElement).toBe(detailHeading))
   })
@@ -268,7 +272,7 @@ describe('ResearchWorkbench', () => {
     fireEvent.click(transTab)
     await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
-    fireEvent.click(await screen.findByRole('checkbox', { name: /egress/ }))
+    // #243 §6.6：外发确认不再是面板局部复选框（统一由顶层守卫处理）
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
     await waitFor(() => expect(screen.getByText('总结输出')).toBeInTheDocument())
     expect(screen.getByText('引用原文')).toBeInTheDocument()

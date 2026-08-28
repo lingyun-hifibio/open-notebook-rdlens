@@ -42,4 +42,8 @@ export const QUERY_KEYS = {
   researchNotes: (projectId: string) => ['research', projectId, 'notes'] as const,
   researchInsights: (projectId: string) => ['research', projectId, 'insights'] as const,
   researchTransformations: (projectId: string) => ['research', projectId, 'transformations'] as const,
+  // #243 GMOD：全局模型/偏好/外发确认（Research 根级 shared settings）
+  researchModelCatalog: (projectId: string) => ['research', projectId, 'model-catalog'] as const,
+  researchExecutionPreferences: (projectId: string) => ['research', projectId, 'execution-preferences'] as const,
+  researchEgressConsent: (projectId: string) => ['research', projectId, 'egress-consent'] as const,
 }

@@ -14,7 +14,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { getExecutionPreferences, newIdempotencyKey, openResearchChatStream } from '@/lib/research/api'
+import { newIdempotencyKey, openResearchChatStream } from '@/lib/research/api'
 import { applySseEvent, createSseState, type ResearchSseState } from '@/lib/research/sse'
 import type { ResearchCitation, ResearchSseEvent, ResearchTokenUsage } from '@/lib/research/types'
 
@@ -48,7 +48,17 @@ export interface ResearchChatSelection {
 export interface UseResearchChatResult {
   turns: ResearchChatTurn[]
   isStreaming: boolean
-  send: (query: string, selection?: ResearchChatSelection) => void
+  /**
+   * Issue #243 §6.4：modelId 是 required——调用方必须传入调用时刻捕获的
+   * confirmed 全局模型快照。本 hook 不再在执行时读取执行偏好（删除
+   * GET execution preferences），因此后来切换模型不会影响在途 turn，
+   * SSE 重连也继续沿用该快照（不变量 4）。
+   */
+  send: (
+    query: string,
+    selection: ResearchChatSelection | undefined,
+    modelId: string,
+  ) => void
 }
 
 interface ActiveTurn {
@@ -56,7 +66,8 @@ interface ActiveTurn {
   query: string
   sourceIds: string[]
   noteIds: string[]
-  modelId: string | null
+  /** startTurn 已 fail-closed（空 modelId 直接 error 不建 turn），重连必非空 */
+  modelId: string
   /** 每 turn 生成一次；断线重连必须复用同一键（后端同键同 hash 可重入，
    *  新键 = 新 Generation，首事件前断线会双扣） */
   idempotencyKey: string
@@ -84,14 +95,8 @@ function httpErrorMessage(status: number, body: unknown): string {
 export function useResearchChat({ projectId }: { projectId: string }): UseResearchChatResult {
   const [turns, setTurns] = useState<ResearchChatTurn[]>([])
   const activeRef = useRef<ActiveTurn | null>(null)
-  /** 单调 send 序号：偏好读取期间的新 send 使旧 turn 整体放弃（latest wins） */
-  const latestSeqRef = useRef(0)
   /** 跨轮次续接的服务端 session_id（done 事件记录） */
   const sessionIdRef = useRef<string | null>(null)
-  /** 卸载守卫：偏好读取期间卸载不得再开流（评审 LOW-4） */
-  const mountedRef = useRef(true)
-
-  useEffect(() => () => { mountedRef.current = false }, [])
 
   const patchAssistant = useCallback((turnId: string, patch: Partial<ResearchChatTurn>) => {
     setTurns((prev) => {
@@ -139,8 +144,10 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
         source_ids: active.sourceIds,
         note_ids: active.noteIds,
         session_id: active.sessionId ?? undefined,
-        // #238：v1 契约显式透传执行偏好（不变量 2：后端不隐式补值）
-        model_id: active.modelId ?? undefined,
+        // #238：v1 契约显式透传执行偏好（不变量 2：后端不隐式补值）；
+        // #243 §6.7：类型必填，快照缺失时 startTurn 已 fail-closed，重连
+        // 路径无 undefined 兜底
+        model_id: active.modelId,
       },
       idempotencyKey: active.idempotencyKey,
       lastEventId: active.lastEventId,
@@ -203,46 +210,20 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
     })
   }
 
-  const startTurn = async (
-    seq: number,
+  const startTurn = (
     trimmed: string,
     turnId: string,
-    selection?: ResearchChatSelection,
-  ): Promise<void> => {
-    // #238：v1 契约要求显式 model_id——读取已保存执行偏好；
-    // 无偏好阻止发送（后端不隐式补值，不变量 2）。
-    let modelId: string | null = null
-    try {
-      const prefs = await getExecutionPreferences(projectId)
-      modelId = prefs?.preferred_model_id ?? null
-    } catch {
-      // 偏好读取失败 = fail-closed：不发送
-    }
-    if (!mountedRef.current) {
-      // 组件已卸载：放弃并补终态，不留悬空 streaming
-      patchAssistant(turnId, {
-        status: 'error',
-        errorCode: 'unmounted',
-        errorMessage: 'Component unmounted before the stream started',
-      })
-      return
-    }
-    if (seq !== latestSeqRef.current) {
-      // 偏好读取期间已被更新的 send 抢占 → 整体放弃（latest wins）
-      // 评审 LOW-3：放弃的 turn 补终态，避免 isStreaming 恒 true
-      patchAssistant(turnId, {
-        status: 'error',
-        errorCode: 'superseded',
-        errorMessage: 'Superseded by a newer request',
-      })
-      return
-    }
+    selection: ResearchChatSelection | undefined,
+    modelId: string,
+  ): void => {
+    // #243 §6.4：modelId 由调用方传入（confirmed 全局模型快照），本 hook
+    // 不再读取执行偏好——显示什么就执行什么，且快照不随后续切换漂移。
     if (!modelId) {
+      // fail-closed：无 confirmed 模型不发请求（后端不隐式补值）
       patchAssistant(turnId, {
         status: 'error',
-        errorCode: 'model_preference_required',
-        errorMessage:
-          'Select and save a model preference in the search panel first',
+        errorCode: 'model_required',
+        errorMessage: 'Select a research model before sending',
       })
       return
     }
@@ -265,12 +246,23 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
     runTurn(active)
   }
 
-  const send = (query: string, selection?: ResearchChatSelection): void => {
+  const send = (
+    query: string,
+    selection: ResearchChatSelection | undefined,
+    modelId: string,
+  ): void => {
     const trimmed = query.trim()
     if (!trimmed) return
+    const previous = activeRef.current
     stopActive()
-    const seq = latestSeqRef.current + 1
-    latestSeqRef.current = seq
+    if (previous) {
+      // 抢占在途 turn 时补终态，避免其永久停留在 streaming（isStreaming 恒 true）
+      patchAssistant(previous.turnId, {
+        status: 'error',
+        errorCode: 'superseded',
+        errorMessage: 'Superseded by a newer request',
+      })
+    }
     const turnId = randomId()
     const userTurn: ResearchChatTurn = {
       id: `user_${turnId}`,
@@ -299,7 +291,7 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
       errorMessage: null,
     }
     setTurns((prev) => [...prev, userTurn, assistantTurn])
-    void startTurn(seq, trimmed, turnId, selection)
+    startTurn(trimmed, turnId, selection, modelId)
   }
 
   const isStreaming = turns.some((t) => t.status === 'streaming' || t.status === 'reconnecting')

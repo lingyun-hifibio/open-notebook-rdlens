@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import { ComparePanel } from './ComparePanel'
 import type { ResearchSource } from '@/lib/types/research'
 
@@ -25,7 +25,7 @@ function renderPanel(sources: ResearchSource[], selected: string[]) {
       selectedSourceIds={selected}
       isCreating={false}
       error={null}
-      onCreate={vi.fn()}
+      onCreate={vi.fn(async () => true)}
     />,
   )
 }
@@ -62,9 +62,9 @@ describe('ComparePanel', () => {
     expect(screen.getByRole('button', { name: /compare/ })).toBeDisabled()
   })
 
-  it('点击创建把选中 Source 映射为 document_ids 回调', () => {
+  it('点击创建把选中 Source 映射为 document_ids 回调，派发后显示已创建', async () => {
     const all = sources(3)
-    const onCreate = vi.fn()
+    const onCreate = vi.fn(async () => true)
     render(
       <ComparePanel
         sources={all}
@@ -75,8 +75,26 @@ describe('ComparePanel', () => {
       />,
     )
     fireEvent.click(screen.getByRole('button', { name: /compare/ }))
-    expect(onCreate).toHaveBeenCalledWith(['doc_0', 'doc_2'])
-    expect(screen.getByTestId('compare-submitted')).toBeInTheDocument()
+    await waitFor(() => expect(onCreate).toHaveBeenCalledWith(['doc_0', 'doc_2']))
+    expect(await screen.findByTestId('compare-submitted')).toBeInTheDocument()
+  })
+
+  it('守卫未派发（onCreate 返回 false）时不显示「已创建」（评审 MEDIUM-1）', async () => {
+    const all = sources(3)
+    const onCreate = vi.fn(async () => false)
+    render(
+      <ComparePanel
+        sources={all}
+        selectedSourceIds={['src_0', 'src_2']}
+        isCreating={false}
+        error={null}
+        onCreate={onCreate}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /compare/ }))
+    await waitFor(() => expect(onCreate).toHaveBeenCalledWith(['doc_0', 'doc_2']))
+    // consent 取消 = 未派发：不误报「已创建」
+    expect(screen.queryByTestId('compare-submitted')).toBeNull()
   })
 
   it('创建中禁用按钮并显示进度文案', () => {

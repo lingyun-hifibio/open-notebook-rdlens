@@ -9,11 +9,16 @@ import type { ResearchInsight } from '@/lib/types/research'
 // UI-02 Red：Insights 工作台（REQ-SCOPE-04/REQ-API-01，契约 §7.2）——
 // manual/ai 两类创建；Owner 可写，Admin 只读（无写入口）；保存不触发
 // Embedding（REQ-DIS-01 语义延伸）。
+// #243 §6.5：AI 类型不再有本面板的模型输入框——模型来自顶层全局设置
+// （测试替身提供 confirmed 模型），本文件断言「ai 创建携带顶层快照」。
 
 vi.mock('@/lib/research/api', () => ({
   listInsights: vi.fn(),
   createInsight: vi.fn(),
 }))
+
+// 被测对象不是全局模型本身：用测试替身提供 confirmed 模型（本地、可执行）
+vi.mock('@/lib/hooks/use-research-global-model')
 
 vi.mock('@/lib/hooks/use-translation', () => ({
   useTranslation: () => ({
@@ -101,15 +106,16 @@ describe('InsightsPanel', () => {
     // 选择 AI 类型（radix Select：点击触发器 → 点击选项）
     fireEvent.click(screen.getByLabelText('research.insights.typeLabel'))
     fireEvent.click(await screen.findByRole('option', { name: 'research.insights.typeAi' }))
-    const modelInput = screen.getByLabelText('research.insights.modelLabel')
-    fireEvent.change(modelInput, { target: { value: 'qwen3.6' } })
+    // #243 §6.5：模型输入已移除，面板内不再有第二处模型入口
+    expect(screen.queryByLabelText('research.insights.modelLabel')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'research.notes.save' }))
     await waitFor(() =>
       expect(researchApi.createInsight).toHaveBeenCalledWith('proj_1', {
         title: 'AI 发现',
         content: '生成内容',
         insight_type: 'ai',
-        model_id: 'qwen3.6',
+        // 顶层 confirmed 全局模型快照（替身值）
+        model_id: 'm-local',
       }),
     )
   })

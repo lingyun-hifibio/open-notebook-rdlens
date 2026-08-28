@@ -181,11 +181,19 @@ export function useRunResearchTransformation(projectId: string) {
       transformationId,
       sourceIds,
       noteIds,
+      modelId,
     }: {
       transformationId: string
       sourceIds: string[]
       noteIds: string[]
-    }) => runTransformation(projectId, transformationId, { source_ids: sourceIds, note_ids: noteIds }),
+      /** Issue #243 §6.6/§6.7：运行开始时的 confirmed 全局模型（required） */
+      modelId: string
+    }) =>
+      runTransformation(projectId, transformationId, {
+        source_ids: sourceIds,
+        note_ids: noteIds,
+        model_id: modelId,
+      }),
     onError,
   })
 }
