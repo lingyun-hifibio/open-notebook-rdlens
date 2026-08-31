@@ -90,6 +90,8 @@ export interface ResearchJob {
   result_ref: string | null
   created_at: string
   updated_at: string
+  /** COV-08：research_coverage Job 额外返回 coverage 段（§12.1） */
+  coverage?: ResearchCoverageJobView
 }
 
 export interface ResearchEvidenceItem {
@@ -229,6 +231,86 @@ export interface ResearchChatRequest {
   session_id?: string
   /** Issue #243 §6.7：正式前端必填——顶层 confirmed 全局模型快照（不变量 2） */
   model_id: string
+  /** COV-08 §12.1：显式合成范围；缺省 relevant（旧客户端兼容） */
+  synthesis_scope?: ResearchSynthesisScope
+}
+
+/** COV-08 §12.1：调用方显式选择相关证据回答或覆盖全部所选来源 */
+export type ResearchSynthesisScope = 'relevant' | 'all_selected'
+
+/** 逐文档目标结果（契约 §6.3；COV-08 Job 视图 target_results 元素） */
+export interface ResearchCoverageTargetResult {
+  target_kind: string
+  document_id: string
+  document_revision: string
+  status: 'analyzed' | 'failed'
+  failure_code: string | null
+}
+
+/** 目标覆盖计数（契约 §6.3；counts 从 target_results 推导，不由 LLM 填写） */
+export interface ResearchCoverageTargetCoverage {
+  requested: number
+  analyzed: number
+  failed: number
+  status: 'complete' | 'partial' | 'failed'
+}
+
+/** 提交时固定的 Source/revision snapshot（Manifest 条目，§7.5） */
+export interface ResearchCoverageManifestEntry {
+  source_id: string
+  document_id: string
+  document_revision: string
+}
+
+/** 关联 Generation 的稳定状态表达（outcome_unknown 的 API 形态，§12.2） */
+export interface ResearchCoverageGenerationView {
+  generation_id: string
+  state: string
+  failure_code: string | null
+}
+
+/** research_coverage Job 视图的 coverage 段（COV-08 GET /jobs/{id}） */
+export interface ResearchCoverageJobView {
+  synthesis_scope: ResearchSynthesisScope
+  contract_version: string | null
+  execution_plan_version: string | null
+  prompt_bundle_version: string | null
+  generation_id: string | null
+  retry_of_generation_id?: string
+  generation?: ResearchCoverageGenerationView | null
+  stages?: { name: string; status: string }[]
+  manifest?: { entries: ResearchCoverageManifestEntry[] }
+  target_results?: ResearchCoverageTargetResult[]
+  target_coverage?: ResearchCoverageTargetCoverage
+  verification_status?: 'verified' | 'critic_issues' | 'degraded'
+  critic_issues?: unknown[]
+  report_ref?: string
+  report_digest?: string
+  verified_draft_digest?: string
+  evidence_manifest_digest?: string
+}
+
+/** 报告 Citation（canonical ID + 服务端不可变 snapshot，§7.5/§12.1） */
+export interface ResearchCoverageCitation {
+  canonical_citation_id: string
+  snapshot: Record<string, unknown>
+}
+
+/** COV-08 GET /jobs/{id}/report 响应（仅 render_report 完成后可读） */
+export interface ResearchCoverageReportResponse {
+  job_id: string
+  generation_id?: string
+  status: string
+  verification_status?: string
+  report: { ref: string; markdown: string }
+  citations: ResearchCoverageCitation[]
+  report_digest?: string
+  verified_draft_digest?: string
+  evidence_manifest_digest?: string
+  target_coverage?: ResearchCoverageTargetCoverage
+  target_results?: ResearchCoverageTargetResult[]
+  manifest?: { entries: ResearchCoverageManifestEntry[] }
+  retry_of_generation_id?: string
 }
 
 export interface ResearchCompareCreateRequest {

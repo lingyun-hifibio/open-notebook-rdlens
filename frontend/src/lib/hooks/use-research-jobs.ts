@@ -20,6 +20,8 @@ import {
   cancelJob,
   createCompare,
   getJob,
+  newIdempotencyKey,
+  retryCoverageJob,
 } from '@/lib/research/api'
 import { canCancelJob, isJobTerminal } from '@/lib/research/jobs'
 import { checkCompareSelection, COMPARE_HARD_MAX } from '@/lib/research/compare'
@@ -70,6 +72,17 @@ export interface UseResearchJobsResult {
     groupSize?: number,
   ) => ResearchJob | null
   cancel: (jobId: string) => void
+  /**
+   * COV-09：把 all_selected 受理的 research_coverage Job 登记进本 hook 的
+   * 已知集合（localStorage + 立即回源）——Chat 创建的任务在 Jobs 页可见、
+   * 刷新后继续轮询同一 Job（§12.2/REQ-COV-09）。
+   */
+  registerCoverageJob: (jobId: string) => void
+  /**
+   * COV-09：outcome_unknown 显式人工重试（§12.2）。新幂等键 + 确认计费
+   * 风险；成功后立即回源（Job 重新 queued）。返回是否已受理。
+   */
+  retryCoverage: (jobId: string) => Promise<boolean>
 }
 
 export function useResearchJobs({ projectId }: { projectId: string }): UseResearchJobsResult {
@@ -206,5 +219,36 @@ export function useResearchJobs({ projectId }: { projectId: string }): UseResear
       })
   }, [fetchJob, jobs, mergeJob, projectId])
 
-  return { jobs, isCreating, error, createCompare: createCompareJob, cancel }
+  // COV-09：登记 all_selected 受理的 Job（Chat 侧创建；Jobs 页可见 + 轮询）
+  const registerCoverageJob = useCallback((jobId: string) => {
+    knownIdsRef.current.add(jobId)
+    writeStoredJobId(projectId, jobId)
+    fetchJob(jobId).catch(() => {
+      // 单 job 恢复失败不阻塞；下一轮轮询再试
+    })
+  }, [fetchJob, projectId])
+
+  // COV-09：outcome_unknown 显式人工重试（§12.2）——新幂等键 + 确认计费
+  // 风险；不得复用旧唯一键静默发送（复用 → 服务端 409）。
+  const retryCoverage = useCallback(async (jobId: string): Promise<boolean> => {
+    setError(null)
+    try {
+      await retryCoverageJob(projectId, jobId, newIdempotencyKey())
+      registerCoverageJob(jobId)
+      return true
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+      return false
+    }
+  }, [projectId, registerCoverageJob])
+
+  return {
+    jobs,
+    isCreating,
+    error,
+    createCompare: createCompareJob,
+    cancel,
+    registerCoverageJob,
+    retryCoverage,
+  }
 }

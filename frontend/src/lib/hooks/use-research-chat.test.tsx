@@ -274,3 +274,112 @@ describe('useResearchChat', () => {
     expect(streams[1].opts.request.model_id).toBe('m-a')
   })
 })
+// ── COV-09：all_selected 覆盖提交（202 持久 Job，不走 SSE；§12.1） ──
+
+describe('useResearchChat.sendCoverage（COV-09）', () => {
+  beforeEach(() => {
+    // 既有 afterEach restoreAllMocks 会清掉模块级实现，这里重新钉住
+    vi.mocked(newIdempotencyKey).mockImplementation(() => 'ik-turn')
+  })
+
+  interface CoverageCapture {
+    request: { query: string; source_ids: string[]; note_ids: string[]; model_id: string }
+    idempotencyKey: string
+    submit: (request: CoverageCapture['request'], idempotencyKey: string) => Promise<{ job_id: string }>
+    resolve: (result: { job_id: string }) => void
+    reject: (error: Error) => void
+  }
+
+  function captureSubmit() {
+    const captured: CoverageCapture[] = []
+    let resolveLast: ((r: { job_id: string }) => void) | null = null
+    let rejectLast: ((e: Error) => void) | null = null
+    const submit = vi.fn((request: CoverageCapture['request'], idempotencyKey: string) => {
+      const capture: CoverageCapture = {
+        request,
+        idempotencyKey,
+        submit,
+        resolve: (result: { job_id: string }) => resolveLast?.(result),
+        reject: (error: Error) => rejectLast?.(error),
+      }
+      captured.push(capture)
+      return new Promise<{ job_id: string }>((resolve, reject) => {
+        resolveLast = resolve
+        rejectLast = reject
+      })
+    })
+    return { submit, captured }
+  }
+
+  function sendCoverageNow(
+    result: ReturnType<typeof renderHook<ReturnType<typeof useResearchChat>, { projectId: string }>>['result'],
+    query: string,
+    submit: CoverageCapture['submit'],
+    selection?: Parameters<ReturnType<typeof useResearchChat>['send']>[1],
+  ) {
+    act(() => {
+      result.current.sendCoverage(query, selection, MODEL, submit)
+    })
+  }
+
+  it('202 成功：user + assistant 双 turn，coverageJobId 绑定、done 终态', async () => {
+    const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
+    const { submit, captured } = captureSubmit()
+    sendCoverageNow(result, '覆盖全部所选来源', submit, { sourceIds: ['src-1', 'src-2'], noteIds: [] })
+    expect(captured).toHaveLength(1)
+    expect(captured[0].request).toEqual({
+      query: '覆盖全部所选来源',
+      source_ids: ['src-1', 'src-2'],
+      note_ids: [],
+      model_id: MODEL,
+    })
+    expect(captured[0].idempotencyKey).toBe('ik-turn')
+
+    await act(async () => {
+      captured[0].resolve({ job_id: 'job_1' })
+    })
+    const assistant = lastAssistant(result.current.turns)
+    expect(assistant.coverageJobId).toBe('job_1')
+    expect(assistant.status).toBe('done')
+    expect(result.current.turns[0]).toMatchObject({ role: 'user', content: '覆盖全部所选来源' })
+  })
+
+  it('提交失败：error turn（code/message），coverageJobId 保持 null', async () => {
+    const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
+    const { submit, captured } = captureSubmit()
+    sendCoverageNow(result, '覆盖全部所选来源', submit)
+    await act(async () => {
+      captured[0].reject(new Error('coverage not enabled'))
+    })
+    const assistant = lastAssistant(result.current.turns)
+    expect(assistant.status).toBe('error')
+    expect(assistant.errorCode).toBe('coverage_submit_failed')
+    expect(assistant.errorMessage).toContain('coverage not enabled')
+    expect(assistant.coverageJobId).toBeNull()
+  })
+
+  it('#243 §6.4 扩展：无 confirmed 模型 → fail-closed error turn，不调用 submit', () => {
+    const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
+    const { submit } = captureSubmit()
+    // 只走无模型路径：不建 user turn 之外的状态，submit 绝不调用
+    act(() => {
+      result.current.sendCoverage('q', undefined, '', submit)
+    })
+    expect(submit).not.toHaveBeenCalled()
+    const last = result.current.turns[result.current.turns.length - 1]
+    expect(last).toMatchObject({ role: 'assistant', status: 'error', errorCode: 'model_required' })
+  })
+
+  it('抢占有在途 relevant SSE turn（补终态不悬挂）', () => {
+    const streams = openCapture()
+    const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
+    sendNow(result, '普通问答')
+    expect(streams).toHaveLength(1)
+    const { submit } = captureSubmit()
+    sendCoverageNow(result, '覆盖全部所选来源', submit)
+    const superseded = result.current.turns.find((t) => t.status === 'error')
+    expect(superseded).toMatchObject({ errorCode: 'superseded' })
+    // 覆盖率 turn 在最后
+    expect(result.current.turns[result.current.turns.length - 1].content).toBe('')
+  })
+})

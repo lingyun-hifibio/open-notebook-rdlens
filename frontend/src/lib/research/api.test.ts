@@ -21,6 +21,7 @@ interface Captured {
   method: string
   params?: Record<string, unknown>
   data?: unknown
+  headers?: Record<string, string>
 }
 
 const calls: Captured[] = []
@@ -40,6 +41,7 @@ function installAdapter() {
       method: String(config.method ?? 'get').toUpperCase(),
       params: config.params as Record<string, unknown> | undefined,
       data: typeof raw === 'string' ? JSON.parse(raw) : raw,
+      headers: (config.headers ?? {}) as Record<string, string>,
     })
     return { data: {}, status: 200, statusText: 'OK', headers: {}, config }
   }
@@ -152,6 +154,71 @@ describe('researchApi（Gateway 白名单契约）', () => {
     await researchApi.listNotes(P, {})
     await researchApi.listTransformations(P, {})
     await researchApi.listInsights(P, {})
+    for (const call of calls) {
+      expect(call.url.startsWith('/api/')).toBe(false)
+      expect(call.url.startsWith('/v1/research/')).toBe(true)
+    }
+  })
+})
+
+// ── COV-09：Coverage 提交 / 报告读取 / 人工重试（COV-08 §12.1/§12.2） ──
+
+describe('researchApi coverage（COV-09）', () => {
+  beforeEach(() => {
+    calls.length = 0
+    installAdapter()
+  })
+
+  it('createCoverageChat → POST /chat 携带 synthesis_scope=all_selected + v1 契约头', async () => {
+    const captured = await capture(() =>
+      researchApi.createCoverageChat(
+        P,
+        {
+          query: '覆盖全部所选来源',
+          source_ids: ['src-1', 'src-2'],
+          note_ids: [],
+          model_id: 'm-local',
+          synthesis_scope: 'all_selected',
+        },
+        'ui-key-1',
+      ),
+    )
+    expect(captured.method).toBe('POST')
+    expect(captured.url).toBe(`/v1/research/projects/${P}/chat`)
+    expect(captured.data).toMatchObject({
+      query: '覆盖全部所选来源',
+      source_ids: ['src-1', 'src-2'],
+      note_ids: [],
+      model_id: 'm-local',
+      synthesis_scope: 'all_selected',
+    })
+    const headers = captured.headers as Record<string, string> | undefined
+    expect(headers?.['X-Research-Contract']).toBe('v1')
+    expect(headers?.['Idempotency-Key']).toBe('ui-key-1')
+  })
+
+  it('getCoverageReport → GET .../jobs/{id}/report（渲染完成后只读）', async () => {
+    const captured = await capture(() => researchApi.getCoverageReport(P, 'job_1'))
+    expect(captured.method).toBe('GET')
+    expect(captured.url).toBe(`/v1/research/projects/${P}/jobs/job_1/report`)
+  })
+
+  it('retryCoverageJob → POST .../jobs/{id}/retry 确认计费风险 + 新幂等键', async () => {
+    const captured = await capture(() => researchApi.retryCoverageJob(P, 'job_1', 'ui-key-2'))
+    expect(captured.method).toBe('POST')
+    expect(captured.url).toBe(`/v1/research/projects/${P}/jobs/job_1/retry`)
+    expect(captured.data).toEqual({ confirm_billing_risk: true })
+    const headers = captured.headers as Record<string, string> | undefined
+    expect(headers?.['X-Research-Contract']).toBe('v1')
+    expect(headers?.['Idempotency-Key']).toBe('ui-key-2')
+  })
+
+  it('coverage 端点均未使用 /api 前缀（REQ-DEP-02）', async () => {
+    await researchApi.createCoverageChat(
+      P, { query: 'q', source_ids: ['s'], note_ids: [], model_id: 'm', synthesis_scope: 'all_selected' }, 'k',
+    )
+    await researchApi.getCoverageReport(P, 'job_1')
+    await researchApi.retryCoverageJob(P, 'job_1', 'k2')
     for (const call of calls) {
       expect(call.url.startsWith('/api/')).toBe(false)
       expect(call.url.startsWith('/v1/research/')).toBe(true)
