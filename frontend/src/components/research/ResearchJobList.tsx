@@ -5,21 +5,32 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { canCancelJob, jobProgressPercent } from '@/lib/research/jobs'
-import type { ResearchJob } from '@/lib/research/types'
+import { CoverageJobDetails } from './CoverageJobDetails'
+import type { ResearchCitationDisplayItem, ResearchJob } from '@/lib/research/types'
 
 /**
  * Job 列表（UI-03，契约 §10）。每张卡片是服务端 GET 快照的展示：
  * 状态/阶段/进度/结果引用（result_ref，正文不经 Job API 返回）。
  * 取消必须显式且仅 queued/running 可取消；终态（含 cancelling）无取消按钮。
+ *
+ * COV-09：research_coverage Job 额外展示 CoverageJobDetails（stage/
+ * progress、requested/analyzed/failed、逐文档状态、verification_status、
+ * outcome_unknown 人工重试、固定 snapshot 与最终报告，§12.3）。
  */
 export function ResearchJobList({
   jobs,
   isCreating,
   onCancel,
+  onCoverageRetry,
+  onCitationJump,
 }: {
   jobs: ResearchJob[]
   isCreating: boolean
   onCancel: (jobId: string) => void
+  /** COV-09：outcome_unknown 人工重试（§12.2） */
+  onCoverageRetry?: (jobId: string) => Promise<boolean>
+  /** COV-09：报告 Citation 跳转 */
+  onCitationJump?: (citation: ResearchCitationDisplayItem) => void
 }) {
   const { t } = useTranslation()
 
@@ -91,6 +102,14 @@ export function ResearchJobList({
             <div className="text-xs text-muted-foreground">
               {t('research.jobsResultRef')}: <code>{job.result_ref}</code>
             </div>
+          )}
+
+          {job.coverage !== undefined && (
+            <CoverageJobDetails
+              job={job}
+              onRetry={onCoverageRetry ?? (async () => false)}
+              onCitationJump={onCitationJump}
+            />
           )}
         </div>
       ))}

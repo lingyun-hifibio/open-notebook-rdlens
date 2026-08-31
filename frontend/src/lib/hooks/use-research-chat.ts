@@ -38,6 +38,8 @@ export interface ResearchChatTurn {
   reconnectCount: number
   errorCode: string | null
   errorMessage: string | null
+  /** COV-09：all_selected 覆盖任务关联的持久 Job（202 受理后绑定） */
+  coverageJobId: string | null
 }
 
 export interface ResearchChatSelection {
@@ -59,6 +61,29 @@ export interface UseResearchChatResult {
     selection: ResearchChatSelection | undefined,
     modelId: string,
   ) => void
+  /**
+   * COV-09：all_selected 覆盖提交（COV-08 §12.1）。不走 SSE——202 受理后
+   * 绑定持久 Job 标识，UI 经 GET /jobs/{id} 轮询展示 stage/progress/
+   * 逐文档状态/报告。submit 由调用方注入（apiClient 202 + Job 登记），
+   * 本 hook 只负责 turn 生命周期与错误表达。
+   */
+  sendCoverage: (
+    query: string,
+    selection: ResearchChatSelection | undefined,
+    modelId: string,
+    submit: (
+      request: CoverageSubmitRequest,
+      idempotencyKey: string,
+    ) => Promise<{ job_id: string }>,
+  ) => void
+}
+
+/** COV-09：all_selected 提交请求载荷（note_ids 恒空数组——Notes 不支持） */
+export interface CoverageSubmitRequest {
+  query: string
+  source_ids: string[]
+  note_ids: string[]
+  model_id: string
 }
 
 interface ActiveTurn {
@@ -276,6 +301,7 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
       reconnectCount: 0,
       errorCode: null,
       errorMessage: null,
+      coverageJobId: null,
     }
     const assistantTurn: ResearchChatTurn = {
       id: turnId,
@@ -289,12 +315,96 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
       reconnectCount: 0,
       errorCode: null,
       errorMessage: null,
+      coverageJobId: null,
     }
     setTurns((prev) => [...prev, userTurn, assistantTurn])
     startTurn(trimmed, turnId, selection, modelId)
   }
 
+  const sendCoverage = (
+    query: string,
+    selection: ResearchChatSelection | undefined,
+    modelId: string,
+    submit: (
+      request: CoverageSubmitRequest,
+      idempotencyKey: string,
+    ) => Promise<{ job_id: string }>,
+  ): void => {
+    const trimmed = query.trim()
+    if (!trimmed) return
+    const previous = activeRef.current
+    stopActive()
+    if (previous) {
+      patchAssistant(previous.turnId, {
+        status: 'error',
+        errorCode: 'superseded',
+        errorMessage: 'Superseded by a newer request',
+      })
+    }
+    const turnId = randomId()
+    const patch = (patch: Partial<ResearchChatTurn>): void => patchAssistant(turnId, patch)
+    const userTurn: ResearchChatTurn = {
+      id: `user_${turnId}`,
+      role: 'user',
+      content: trimmed,
+      thinking: '',
+      citations: [],
+      usage: null,
+      resolvedMode: null,
+      status: 'done',
+      reconnectCount: 0,
+      errorCode: null,
+      errorMessage: null,
+      coverageJobId: null,
+    }
+    const assistantTurn: ResearchChatTurn = {
+      id: turnId,
+      role: 'assistant',
+      content: '',
+      thinking: '',
+      citations: [],
+      usage: null,
+      resolvedMode: null,
+      status: 'streaming',
+      reconnectCount: 0,
+      errorCode: null,
+      errorMessage: null,
+      coverageJobId: null,
+    }
+    setTurns((prev) => [...prev, userTurn, assistantTurn])
+    if (!modelId) {
+      // fail-closed：无 confirmed 模型不发请求（与 send 一致，#243 §6.4）
+      patch({
+        status: 'error',
+        errorCode: 'model_required',
+        errorMessage: 'Select a research model before sending',
+      })
+      return
+    }
+    const idempotencyKey = newIdempotencyKey()
+    submit(
+      {
+        query: trimmed,
+        source_ids: selection?.sourceIds ?? [],
+        // Notes 不支持 Coverage（§6.1）：防御性恒空，即使调用方漏检
+        note_ids: [],
+        model_id: modelId,
+      },
+      idempotencyKey,
+    )
+      .then(({ job_id }) => {
+        patch({ status: 'done', coverageJobId: job_id })
+      })
+      .catch((error: Error) => {
+        patch({
+          status: 'error',
+          errorCode: 'coverage_submit_failed',
+          errorMessage: error.message || 'Coverage submission failed',
+        })
+      })
+  }
+
   const isStreaming = turns.some((t) => t.status === 'streaming' || t.status === 'reconnecting')
 
-  return { turns, isStreaming, send }
+  return { turns, isStreaming, send, sendCoverage }
 }

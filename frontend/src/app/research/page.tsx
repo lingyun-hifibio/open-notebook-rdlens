@@ -70,6 +70,16 @@ export default function ResearchPage() {
     setSourceCompactPanel('primary')
   }, [])
 
+  // COV-09：下半屏 Coverage 报告 Citation → 选中来源 + 高亮目标页
+  // （复用上半屏现有授权预览链路，与 Source Chat 面板 onHighlightPage 同构）
+  const handleCitationJump = useCallback((sourceId: string, pageIdx: number | null) => {
+    if (pageIdx === null) {
+      setSelectedSourceId(sourceId)
+      return
+    }
+    handleSelectSource(sourceId, { highlightPageIdx: pageIdx })
+  }, [handleSelectSource])
+
   useEffect(() => {
     if (!isEmbeddedMode()) {
       router.replace('/notebooks')
@@ -143,7 +153,7 @@ export default function ResearchPage() {
             {/* 全局工作区保持挂载：选中来源时以 hidden 包裹（display:none），
                 多篇 Chat 流与 Job 轮询本地状态不丢失；面板占满同一半屏槽位 */}
             <div className="h-full" hidden={selectedSourceId !== null}>
-              <ResearchWorkspace />
+              <ResearchWorkspace onCitationJump={handleCitationJump} />
             </div>
             {selectedSourceId !== null && (
               <div className="h-full">

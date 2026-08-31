@@ -4,8 +4,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { getResearchProjectId } from '@/lib/research/project'
-import { listNotes, listSources } from '@/lib/research/api'
-import { useResearchChat } from '@/lib/hooks/use-research-chat'
+import { createCoverageChat, listNotes, listSources } from '@/lib/research/api'
+import { useResearchChat, type CoverageSubmitRequest } from '@/lib/hooks/use-research-chat'
 import { researchModelBlockedHint, useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
 import { useResearchJobs } from '@/lib/hooks/use-research-jobs'
 import { SourceNoteSelector } from './SourceNoteSelector'
@@ -13,7 +13,9 @@ import { ResearchSearchPanel } from './ResearchSearchPanel'
 import { ResearchChatPanel } from './ResearchChatPanel'
 import { ComparePanel } from './ComparePanel'
 import { ResearchJobList } from './ResearchJobList'
-import type { ResearchNote, ResearchSource } from '@/lib/types/research'
+import { resolveCitationSource } from './citation-utils'
+import type { ResearchCitationDisplayItem } from '@/lib/research/types'
+import type { ResearchCitation, ResearchNote, ResearchSource } from '@/lib/types/research'
 
 /**
  * Research 工作区组合（UI-03，REQ-SCOPE-04，设计 §9.3）。
@@ -23,8 +25,17 @@ import type { ResearchNote, ResearchSource } from '@/lib/types/research'
  * Search/Chat/Compare 间共享；Chat 与 Job hooks 挂在工作区层，
  * 切换 Tab 不丢失流/轮询状态。Source/Note 列表复用 UI-02 的
  * `listSources/listNotes`（分页载荷 .items）。
+ *
+ * COV-09：all_selected 经 `sendCoverage`（202 受理 → Chat 任务卡 +
+ * Jobs 页登记，刷新后同一 Job 继续轮询）；报告 Citation 点击经
+ * `onCitationJump` 联动上半屏来源预览。
  */
-export function ResearchWorkspace() {
+export function ResearchWorkspace({
+  onCitationJump,
+}: {
+  /** COV-09：报告 Citation → 现有授权预览/来源链路（已解析 source_id + 页码） */
+  onCitationJump?: (sourceId: string, pageIdx: number | null) => void
+}) {
   const { t } = useTranslation()
   const projectId = getResearchProjectId()
 
@@ -70,8 +81,16 @@ export function ResearchWorkspace() {
     )
   }, [])
 
-  const { turns, isStreaming, send: sendTurn } = useResearchChat({ projectId: projectId ?? '' })
-  const { jobs, isCreating, error: jobsError, createCompare: createCompareJob, cancel } = useResearchJobs({
+  const { turns, isStreaming, send: sendTurn, sendCoverage } = useResearchChat({ projectId: projectId ?? '' })
+  const {
+    jobs,
+    isCreating,
+    error: jobsError,
+    createCompare: createCompareJob,
+    cancel,
+    registerCoverageJob,
+    retryCoverage,
+  } = useResearchJobs({
     projectId: projectId ?? '',
   })
   // #243 §6.4：Chat/Compare 统一走顶层执行守卫——传入调用时刻捕获的
@@ -113,6 +132,59 @@ export function ResearchWorkspace() {
       return sent === true
     },
     [createCompareJob, runGuarded],
+  )
+
+  // COV-09：all_selected 提交体——202 受理后把 Job 登记进 Jobs 页
+  // （localStorage + 轮询；刷新后同一 Job 与固定 snapshot 继续可见）。
+  const submitCoverage = useCallback(
+    async (request: CoverageSubmitRequest, idempotencyKey: string): Promise<{ job_id: string }> => {
+      const accepted = await createCoverageChat(
+        projectId ?? '',
+        {
+          query: request.query,
+          source_ids: request.source_ids,
+          note_ids: request.note_ids,
+          model_id: request.model_id,
+          synthesis_scope: 'all_selected',
+        },
+        idempotencyKey,
+      )
+      registerCoverageJob(accepted.job_id)
+      return { job_id: accepted.job_id }
+    },
+    [projectId, registerCoverageJob],
+  )
+
+  const sendCoverageChat = useCallback(
+    async (query: string): Promise<boolean> => {
+      // 与 sendChat 相同：经顶层执行守卫，传入调用时刻的 confirmed 模型快照
+      const sent = await runGuarded((modelId) => {
+        sendCoverage(
+          query,
+          { sourceIds: selectedSourceIds, noteIds: selectedNoteIds },
+          modelId,
+          submitCoverage,
+        )
+        return true
+      })
+      return sent === true
+    },
+    [runGuarded, selectedNoteIds, selectedSourceIds, sendCoverage, submitCoverage],
+  )
+
+  // COV-09：报告 Citation → 解析到项目内来源后联动上半屏预览（现有链路）；
+  // 传入已解析的 source_id（citation.doc_id 是 document_id，不能直接用作
+  // 来源选择键）
+  const handleCitationJump = useCallback(
+    (citation: ResearchCitationDisplayItem) => {
+      const source = resolveCitationSource(
+        sources,
+        citation as unknown as ResearchCitation,
+      )
+      if (!source || onCitationJump === undefined) return
+      onCitationJump(source.source_id, citation.page_idx)
+    },
+    [onCitationJump, sources],
   )
 
   if (!projectId) {
@@ -164,10 +236,14 @@ export function ResearchWorkspace() {
               turns={turns}
               isStreaming={isStreaming}
               onSend={sendChat}
+              onSendCoverage={sendCoverageChat}
               selectedSourceIds={selectedSourceIds}
               selectedNoteIds={selectedNoteIds}
               sendDisabled={!canExecute}
               blockedHint={blockedHint}
+              coverageJobs={jobs}
+              onCoverageRetry={retryCoverage}
+              onCitationJump={handleCitationJump}
             />
           </TabsContent>
           <TabsContent value="compare" className="min-h-0 flex-1">
@@ -182,7 +258,13 @@ export function ResearchWorkspace() {
             />
           </TabsContent>
           <TabsContent value="jobs" className="min-h-0 flex-1">
-            <ResearchJobList jobs={jobs} isCreating={isCreating} onCancel={cancel} />
+            <ResearchJobList
+              jobs={jobs}
+              isCreating={isCreating}
+              onCancel={cancel}
+              onCoverageRetry={retryCoverage}
+              onCitationJump={handleCitationJump}
+            />
           </TabsContent>
         </Tabs>
       </div>

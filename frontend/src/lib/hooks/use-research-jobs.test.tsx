@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useResearchJobs, POLL_INTERVAL_MS } from './use-research-jobs'
-import { createCompare, getJob, cancelJob } from '@/lib/research/api'
+import { createCompare, getJob, cancelJob, retryCoverageJob } from '@/lib/research/api'
 import type { ResearchJob } from '@/lib/research/types'
 
 /** #243 §6.4：调用方传入的 confirmed 全局模型快照 */
@@ -18,6 +18,8 @@ vi.mock('@/lib/research/api', () => ({
   createCompare: vi.fn(),
   getJob: vi.fn(),
   cancelJob: vi.fn(),
+  retryCoverageJob: vi.fn(),
+  newIdempotencyKey: vi.fn(() => 'ik-retry'),
 }))
 
 function job(id: string, status: ResearchJob['status'], overrides: Partial<ResearchJob> = {}): ResearchJob {
@@ -219,5 +221,67 @@ describe('useResearchJobs', () => {
     })
     expect(result.current.error).toBe('409 Conflict')
     expect(result.current.jobs[0].status).toBe('running')
+  })
+})
+
+// ── COV-09：Coverage Job 登记与 outcome_unknown 人工重试（§12.2） ──
+
+describe('useResearchJobs coverage（COV-09）', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    localStorage.clear()
+    vi.clearAllMocks()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.clearAllMocks()
+  })
+
+  it('registerCoverageJob：写 localStorage + 立即回源 + 进入轮询列表（刷新后可恢复）', async () => {
+    vi.mocked(getJob).mockResolvedValue(job('job_cov', 'queued', { job_type: 'research_coverage' }))
+    const { result } = renderHook(() => useResearchJobs({ projectId: 'proj_1' }))
+    await act(async () => {
+      result.current.registerCoverageJob('job_cov')
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(localStorage.getItem('rdlens.research.jobs.proj_1')).toContain('job_cov')
+    expect(getJob).toHaveBeenCalledWith('proj_1', 'job_cov')
+    expect(result.current.jobs).toHaveLength(1)
+    expect(result.current.jobs[0]).toMatchObject({ job_id: 'job_cov', job_type: 'research_coverage' })
+  })
+
+  it('retryCoverage 成功：新幂等键 + 确认计费风险 → 回源刷新，返回 true', async () => {
+    const queued = job('job_cov', 'queued', { job_type: 'research_coverage' })
+    vi.mocked(getJob).mockResolvedValue(queued)
+    vi.mocked(retryCoverageJob).mockResolvedValue({
+      job_id: 'job_cov', status: 'queued', generation_id: 'gen_new', session_id: 's1',
+      retry_of_generation_id: 'gen_old',
+    })
+    const { result } = renderHook(() => useResearchJobs({ projectId: 'proj_1' }))
+    await act(async () => {
+      result.current.registerCoverageJob('job_cov')
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    let ok = false
+    await act(async () => {
+      ok = await result.current.retryCoverage('job_cov')
+    })
+    expect(ok).toBe(true)
+    expect(retryCoverageJob).toHaveBeenCalledWith('proj_1', 'job_cov', 'ik-retry')
+    // 重试后立即回源刷新（Job 回到 queued，轮询继续）
+    expect(getJob).toHaveBeenCalledTimes(2)
+  })
+
+  it('retryCoverage 失败：返回 false 且 error 可见', async () => {
+    vi.mocked(getJob).mockResolvedValue(job('job_cov', 'failed', { job_type: 'research_coverage' }))
+    vi.mocked(retryCoverageJob).mockRejectedValue(new Error('409: reuse of old idempotency key'))
+    const { result } = renderHook(() => useResearchJobs({ projectId: 'proj_1' }))
+    let ok: boolean | null = null
+    await act(async () => {
+      ok = await result.current.retryCoverage('job_cov')
+    })
+    expect(ok).toBe(false)
+    expect(result.current.error).toContain('409')
   })
 })
