@@ -218,13 +218,17 @@ describe('useResearchChat', () => {
     expect(streams).toHaveLength(MAX_STREAM_ATTEMPTS)
   })
 
-  it('409 resume_after：按退避重试（次数计入重连预算）', async () => {
+  it('409 generation_in_progress：同键按退避重试（自愈到 completed-replay）', async () => {
     const streams = openCapture()
     const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
 
     sendNow(result, "问题")
     act(() => {
-      streams[0].httpFail(409, { detail: 'resume_after' })
+      // 评审 R-B：真实 wire 形态——同幂等键重试命中自己仍 running 的
+      // gen（首事件前断线防护机制）；detail 为对象且 code 匹配
+      streams[0].httpFail(409, {
+        detail: { code: 'generation_in_progress', state: 'running' },
+      })
     })
     await act(async () => {
       await vi.advanceTimersByTimeAsync(300)

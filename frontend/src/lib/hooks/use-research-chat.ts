@@ -431,28 +431,33 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
         const current = activeRef.current
         if (!current || current.turnId !== turnId) return
         if (status === 409) {
-          // 409 语义按 body 区分：带 resume_after 标记 = 缓冲不足需重连
-          // （§9.5）；无标记 = 会话级冲突（评审 HIGH-1——刷新恢复后续接
-          // 同一会话重发时，同会话仍有在途 turn 占用；服务端已把本 gen
-          // 收敛 failed，若按重连退避重试将命中 failed 行恒 409 死锁，
-          // reconnecting 永续锁死发送按钮）。冲突按终态错误呈现，用户
-          // 可稍后在旧轮完成后重发（每次 send 都是新幂等键）。
+          // 409 语义按 body 区分（评审 R-A/R-B：全局 /chat 的 409 detail
+          // 形态已核实——纯字符串 = begin_turn 会话占用；对象带
+          // code='generation_in_progress' = 同幂等键重试命中自己仍
+          // running 的 gen，必然自愈到 completed-replay（单次计费恢复
+          // 机制，须保留退避重连）；对象 code='chat_conflict'/failed
+          // state 等 = 终态门，重试恒 409）。
           const detail = (body as { detail?: unknown } | null)?.detail
-          const hasResumeMarker =
-            detail === 'resume_after' ||
-            (typeof detail === 'object' &&
-              detail !== null &&
-              'resume_after' in (detail as Record<string, unknown>))
-          if (!hasResumeMarker) {
-            patchAssistant(turnId, {
-              status: 'error',
-              errorCode: 'session_busy',
-              errorMessage: httpErrorMessage(status, body),
-            })
+          const detailCode =
+            typeof detail === 'object' && detail !== null
+              ? (detail as { code?: unknown }).code
+              : undefined
+          if (detailCode === 'generation_in_progress') {
+            // 同键重试自愈路径（首事件前断线的既有防护机制）：原 gen
+            // 完成后同键 POST 走 completed-replay 回放，不产生新轮
+            scheduleReconnect()
             return
           }
-          // 缓冲不足且任务进行中：按退避重试（resume_after）
-          scheduleReconnect()
+          // 其余 409 = 会话级冲突/终态门（评审 HIGH-1——刷新恢复后续接
+          // 同一会话重发时同会话仍有在途 turn 占用；服务端已把本 gen
+          // 收敛 failed，重试命中 failed 行恒 409 死锁，reconnecting
+          // 永续锁死发送按钮）。按终态错误呈现，用户可稍后在旧轮完成
+          // 后重发（每次 send 都是新幂等键）。
+          patchAssistant(turnId, {
+            status: 'error',
+            errorCode: 'conflict_busy',
+            errorMessage: httpErrorMessage(status, body),
+          })
           return
         }
         patchAssistant(turnId, {

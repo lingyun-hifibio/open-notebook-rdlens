@@ -443,9 +443,10 @@ describe('useResearchChat restore（Issue #302）', () => {
     })
     expect(streams).toHaveLength(1)
     act(() => {
-      // 会话冲突形（无 resume_after 标记）
+      // 真实 wire 形态（评审 R-B）：全局 /chat begin_turn 占用 409 的
+      // detail 是纯字符串（str(exc)），非对象
       streams[0].httpFail(409, {
-        detail: { code: 'chat_conflict', message: 'session busy' },
+        detail: "turn already in progress for session 'sess_r1'",
       })
     })
 
@@ -453,8 +454,8 @@ describe('useResearchChat restore（Issue #302）', () => {
     expect(busy).toBeTruthy()
     const turn = lastAssistant(result.current.turns)
     expect(turn.status).toBe('error')
-    expect(turn.errorCode).toBe('session_busy')
-    expect(turn.errorMessage).toBe('session busy')
+    expect(turn.errorCode).toBe('conflict_busy')
+    expect(turn.errorMessage).toMatch(/turn already in progress/)
 
     // 关键：绝不进入退避重连（旧逻辑会命中 failed 行恒 409 死锁）
     await act(async () => {
