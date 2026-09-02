@@ -1105,6 +1105,8 @@ export const plPL = {
     chatSend: "Send",
     chatThinking: "Thinking",
     chatNoAnswer: "No answer yet.",
+    chatRestoreRunning: "Generacja sprzed odświeżenia nadal działa w tle (rozłączenie ≠ anulowanie) — po zakończeniu odśwież ponownie.",
+    chatRestoreFailed: "Generacja sprzed odświeżenia nie została ukończona.",
     chatUsage: "Usage",
     chatReconnecting: "Reconnecting… (attempt {{count}})",
     chatRetryable: "Retryable",

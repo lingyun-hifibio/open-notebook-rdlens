@@ -10,7 +10,11 @@ import { ResearchCitationList } from './ResearchCitationList'
 import { COVERAGE_SOURCE_HARD_MAX, CoverageScopeSelector } from './CoverageScopeSelector'
 import { CoverageJobDetails } from './CoverageJobDetails'
 import { RETRYABLE_SSE_ERROR_CODES } from '@/lib/research/sse'
-import type { ResearchChatTurn, ResearchChatSelection } from '@/lib/hooks/use-research-chat'
+import type {
+  ResearchBackgroundNotice,
+  ResearchChatTurn,
+  ResearchChatSelection,
+} from '@/lib/hooks/use-research-chat'
 import type { ResearchCitationDisplayItem, ResearchJob, ResearchSynthesisScope } from '@/lib/research/types'
 
 /**
@@ -46,6 +50,7 @@ export function ResearchChatPanel({
   coverageJobs,
   onCoverageRetry,
   onCitationJump,
+  backgroundNotice,
 }: {
   turns: ResearchChatTurn[]
   isStreaming: boolean
@@ -67,6 +72,11 @@ export function ResearchChatPanel({
   onCoverageRetry?: (jobId: string) => Promise<boolean>
   /** COV-09：报告 Citation 跳转到现有授权预览/来源链路 */
   onCitationJump?: (citation: ResearchCitationDisplayItem) => void
+  /**
+   * Issue #302：刷新恢复后仍在后台/未完成的后台 Generation 提示——静态
+   * 如实呈现（绝不渲染为假「进行中」流式态）。
+   */
+  backgroundNotice?: ResearchBackgroundNotice | null
 }) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
@@ -99,6 +109,19 @@ export function ResearchChatPanel({
       <div className="flex-1 space-y-4 overflow-y-auto p-4">
         {turns.length === 0 && (
           <p className="text-sm text-muted-foreground">{t('research.chatEmpty')}</p>
+        )}
+        {backgroundNotice && (
+          <p
+            className="text-xs font-medium text-amber-600"
+            data-testid="chat-restore-notice"
+          >
+            {backgroundNotice.kind === 'running'
+              ? t('research.chatRestoreRunning')
+              : t('research.chatRestoreFailed')}
+            {backgroundNotice.kind === 'failed' && backgroundNotice.failureCode
+              ? ` · ${backgroundNotice.failureCode}`
+              : ''}
+          </p>
         )}
         {turns.map((turn) =>
           turn.role === 'user' ? (

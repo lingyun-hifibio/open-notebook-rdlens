@@ -1105,6 +1105,8 @@ export const frFR = {
     chatSend: "Send",
     chatThinking: "Thinking",
     chatNoAnswer: "No answer yet.",
+    chatRestoreRunning: "Une génération d'avant l'actualisation s'exécute encore en arrière-plan (déconnexion ≠ annulation) — actualisez à nouveau une fois terminé.",
+    chatRestoreFailed: "Une génération d'avant l'actualisation ne s'est pas terminée.",
     chatUsage: "Usage",
     chatReconnecting: "Reconnecting… (attempt {{count}})",
     chatRetryable: "Retryable",

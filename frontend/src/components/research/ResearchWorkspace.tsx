@@ -81,7 +81,13 @@ export function ResearchWorkspace({
     )
   }, [])
 
-  const { turns, isStreaming, send: sendTurn, sendCoverage } = useResearchChat({ projectId: projectId ?? '' })
+  const {
+    turns,
+    isStreaming,
+    backgroundNotice,
+    send: sendTurn,
+    sendCoverage,
+  } = useResearchChat({ projectId: projectId ?? '' })
   const {
     jobs,
     isCreating,
@@ -244,6 +250,7 @@ export function ResearchWorkspace({
               coverageJobs={jobs}
               onCoverageRetry={retryCoverage}
               onCitationJump={handleCitationJump}
+              backgroundNotice={backgroundNotice}
             />
           </TabsContent>
           <TabsContent value="compare" className="min-h-0 flex-1">

@@ -1105,6 +1105,8 @@ export const zhCN = {
     chatSend: "发送",
     chatThinking: "思考",
     chatNoAnswer: "暂无答案。",
+    chatRestoreRunning: "刷新前的一轮仍在后台生成（断开 ≠ 取消），完成后再次刷新即可看到。",
+    chatRestoreFailed: "刷新前的一轮生成未完成。",
     chatUsage: "用量",
     chatReconnecting: "重连中…（第 {{count}} 次）",
     chatRetryable: "可重试",

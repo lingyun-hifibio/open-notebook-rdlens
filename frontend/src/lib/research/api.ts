@@ -570,6 +570,64 @@ export async function getSourceChatSession(
   return response.data
 }
 
+// ── 全局 Chat 会话详情（Issue #302：刷新恢复读路径） ──
+
+/**
+ * 持久化消息行（GET .../chat/sessions/{session_id} 的 messages 元素；
+ * 字段与后端 router 载荷对齐）。Citation 为 17 字段快照（§13.2），
+ * 前端统一经展示最小结构归一后渲染。
+ */
+export interface ResearchGlobalChatMessage {
+  message_id: string
+  role: 'user' | 'assistant'
+  content: string
+  thinking?: string | null
+  citations?: Array<Record<string, unknown>> | null
+  usage?: ResearchTokenUsage | null
+  resolved_mode?: string | null
+  degradation_reasons?: string[] | null
+  created_at?: string | null
+}
+
+/** 后台 Generation 卡（未交付/未完成才出卡；completed 且已 delivered 不出） */
+export interface ResearchGlobalChatCard {
+  generation_id: string
+  job_id: string | null
+  status: string
+  failure_code: string | null
+  created_at?: string | null
+}
+
+/** GET 全局会话详情响应（消息按阅读顺序返回；next_cursor 分页游标） */
+export interface ResearchGlobalChatSessionDetail {
+  session: {
+    session_id: string
+    title: string | null
+    owner_user_id?: number | null
+    created_at?: string | null
+    updated_at?: string | null
+  }
+  messages: ResearchGlobalChatMessage[]
+  cards: ResearchGlobalChatCard[]
+  next_cursor: string | null
+}
+
+/**
+ * 拉取全局 Chat 会话详情（消息 + 在途/失败后台卡）。owner-only
+ * （后端 404 不泄露其他 Owner 会话存在性）。
+ */
+export async function getResearchChatSession(
+  projectId: string,
+  sessionId: string,
+  params: { cursor?: string } = {},
+): Promise<ResearchGlobalChatSessionDetail> {
+  const response = await apiClient.get<ResearchGlobalChatSessionDetail>(
+    researchPath(projectId, 'chat', 'sessions', sessionId),
+    { params },
+  )
+  return response.data
+}
+
 /** SSE 流 HTTP 错误分类（含 409 resume_after） */
 export class ResearchStreamHttpError extends Error {
   status: number

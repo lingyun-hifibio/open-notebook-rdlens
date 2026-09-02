@@ -1105,6 +1105,8 @@ export const caES = {
     chatSend: "Send",
     chatThinking: "Thinking",
     chatNoAnswer: "No answer yet.",
+    chatRestoreRunning: "Una generació anterior a l'actualització encara s'està executant en segon pla (desconnectar ≠ cancel·lar) — actualitzeu de nou quan acabi.",
+    chatRestoreFailed: "Una generació anterior a l'actualització no s'ha completat.",
     chatUsage: "Usage",
     chatReconnecting: "Reconnecting… (attempt {{count}})",
     chatRetryable: "Retryable",

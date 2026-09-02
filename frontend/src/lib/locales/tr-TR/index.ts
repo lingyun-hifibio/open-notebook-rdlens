@@ -1105,6 +1105,8 @@ export const trTR = {
     chatSend: "Send",
     chatThinking: "Thinking",
     chatNoAnswer: "No answer yet.",
+    chatRestoreRunning: "Yenilemeden önceki bir üretim arka planda hâlâ çalışıyor (bağlantı kesme ≠ iptal) — tamamlanınca sayfayı yenileyin.",
+    chatRestoreFailed: "Yenilemeden önceki bir üretim tamamlanamadı.",
     chatUsage: "Usage",
     chatReconnecting: "Reconnecting… (attempt {{count}})",
     chatRetryable: "Retryable",

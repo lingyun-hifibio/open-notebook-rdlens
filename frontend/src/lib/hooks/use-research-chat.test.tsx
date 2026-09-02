@@ -6,7 +6,8 @@ import type { ResearchSseEvent } from '@/lib/research/types'
 
 // UI-03 Red：Chat SSE 流状态机（契约 v0 §9）——乱序/重复事件经由 reducer
 // 去重排序、断线自动按 event_id 重连（Last-Event-ID）、终态恰好一次、
-// 409 resume_after 重试、错误码可重试标记。
+// 409 按 code 语义（generation_in_progress 重连 / 其余终态，评审 R-A/R-B）、
+// 错误码可重试标记。
 // #243 §6.4：modelId 由调用方（confirmed 全局模型快照）required 传入，
 // 本 hook 不在执行时读取执行偏好；无模型 fail-closed 不发请求。
 
@@ -218,13 +219,17 @@ describe('useResearchChat', () => {
     expect(streams).toHaveLength(MAX_STREAM_ATTEMPTS)
   })
 
-  it('409 resume_after：按退避重试（次数计入重连预算）', async () => {
+  it('409 generation_in_progress：同键按退避重试（自愈到 completed-replay）', async () => {
     const streams = openCapture()
     const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
 
     sendNow(result, "问题")
     act(() => {
-      streams[0].httpFail(409, { detail: 'resume_after' })
+      // 评审 R-B：真实 wire 形态——同幂等键重试命中自己仍 running 的
+      // gen（首事件前断线防护机制）；detail 为对象且 code 匹配
+      streams[0].httpFail(409, {
+        detail: { code: 'generation_in_progress', state: 'running' },
+      })
     })
     await act(async () => {
       await vi.advanceTimersByTimeAsync(300)
@@ -490,14 +495,17 @@ describe('useResearchChat #292 P0 终态生命周期', () => {
     expect(streams).toHaveLength(MAX_STREAM_ATTEMPTS + 1)
   })
 
-  it('409 resume_after 非终态：ref 保留，send next 仍正确抢占 superseded', async () => {
+  it('409 generation_in_progress 非终态：ref 保留，send next 仍正确抢占 superseded', async () => {
     const streams = openCapture()
     const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
 
     sendNow(result, '第一轮')
     const firstId = lastAssistant(result.current.turns).id
     act(() => {
-      streams[0].httpFail(409, { detail: 'resume_after' })
+      // 评审 R-B：真实 wire 形态（同键重试命中自己 running 的 gen）
+      streams[0].httpFail(409, {
+        detail: { code: 'generation_in_progress', state: 'running' },
+      })
     })
     expect(assistantById(result, firstId).status).toBe('reconnecting')
 

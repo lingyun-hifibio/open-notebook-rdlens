@@ -1105,6 +1105,8 @@ export const ptBR = {
     chatSend: "Send",
     chatThinking: "Thinking",
     chatNoAnswer: "No answer yet.",
+    chatRestoreRunning: "Uma geração anterior à atualização ainda está rodando em segundo plano (desconectar ≠ cancelar) — atualize novamente após concluir.",
+    chatRestoreFailed: "Uma geração anterior à atualização não foi concluída.",
     chatUsage: "Usage",
     chatReconnecting: "Reconnecting… (attempt {{count}})",
     chatRetryable: "Retryable",
