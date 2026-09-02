@@ -495,14 +495,17 @@ describe('useResearchChat #292 P0 终态生命周期', () => {
     expect(streams).toHaveLength(MAX_STREAM_ATTEMPTS + 1)
   })
 
-  it('409 resume_after 非终态：ref 保留，send next 仍正确抢占 superseded', async () => {
+  it('409 generation_in_progress 非终态：ref 保留，send next 仍正确抢占 superseded', async () => {
     const streams = openCapture()
     const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
 
     sendNow(result, '第一轮')
     const firstId = lastAssistant(result.current.turns).id
     act(() => {
-      streams[0].httpFail(409, { detail: 'resume_after' })
+      // 评审 R-B：真实 wire 形态（同键重试命中自己 running 的 gen）
+      streams[0].httpFail(409, {
+        detail: { code: 'generation_in_progress', state: 'running' },
+      })
     })
     expect(assistantById(result, firstId).status).toBe('reconnecting')
 
