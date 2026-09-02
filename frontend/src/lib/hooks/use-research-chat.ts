@@ -224,6 +224,14 @@ function httpErrorMessage(status: number, body: unknown): string {
   if (typeof detail === 'string' && detail) {
     return detail
   }
+  if (
+    typeof detail === 'object' &&
+    detail !== null &&
+    typeof (detail as { message?: unknown }).message === 'string' &&
+    (detail as { message: string }).message
+  ) {
+    return (detail as { message: string }).message
+  }
   return `Research stream HTTP ${status}`
 }
 
@@ -282,6 +290,7 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
 
     void (async () => {
       const rows: ResearchGlobalChatMessage[] = []
+      const seenMessageIds = new Set<string>()
       let cards: ResearchGlobalChatCard[] = []
       let cursor: string | null = null
       for (let page = 0; page < 1000; page += 1) {
@@ -302,9 +311,19 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
             clearStoredSessionId(projectId)
             sessionIdRef.current = null
           }
+          // 其余瞬时错误（5xx/网络）：保留存储 id（下次刷新重试），静默
+          // 空态符合 #302 验收（不弹错阻塞）；同 mount 不再重试
+          restoreStateRef.current = { projectId, done: true }
           return
         }
-        rows.push(...detail.messages)
+        // 评审 MEDIUM-1：分页窗口内 commit 会 UPSERT 重写 user 行
+        // created_at，键集游标下一页可能重复返回同一 message_id——
+        // 按 message_id 去重（首见保留），防重复 React key/气泡
+        for (const message of detail.messages) {
+          if (seenMessageIds.has(message.message_id)) continue
+          seenMessageIds.add(message.message_id)
+          rows.push(message)
+        }
         cards = detail.cards
         cursor = detail.next_cursor ?? null
         if (!cursor) break
@@ -412,6 +431,26 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
         const current = activeRef.current
         if (!current || current.turnId !== turnId) return
         if (status === 409) {
+          // 409 语义按 body 区分：带 resume_after 标记 = 缓冲不足需重连
+          // （§9.5）；无标记 = 会话级冲突（评审 HIGH-1——刷新恢复后续接
+          // 同一会话重发时，同会话仍有在途 turn 占用；服务端已把本 gen
+          // 收敛 failed，若按重连退避重试将命中 failed 行恒 409 死锁，
+          // reconnecting 永续锁死发送按钮）。冲突按终态错误呈现，用户
+          // 可稍后在旧轮完成后重发（每次 send 都是新幂等键）。
+          const detail = (body as { detail?: unknown } | null)?.detail
+          const hasResumeMarker =
+            detail === 'resume_after' ||
+            (typeof detail === 'object' &&
+              detail !== null &&
+              'resume_after' in (detail as Record<string, unknown>))
+          if (!hasResumeMarker) {
+            patchAssistant(turnId, {
+              status: 'error',
+              errorCode: 'session_busy',
+              errorMessage: httpErrorMessage(status, body),
+            })
+            return
+          }
           // 缓冲不足且任务进行中：按退避重试（resume_after）
           scheduleReconnect()
           return

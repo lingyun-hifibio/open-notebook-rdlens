@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { StrictMode } from 'react'
-import { useResearchChat } from './use-research-chat'
+import { useResearchChat, type ResearchChatTurn } from './use-research-chat'
 import {
   openResearchChatStream,
   getResearchChatSession,
@@ -65,10 +65,18 @@ function persistedTurn(
   }
 }
 
+function lastAssistant(turns: ResearchChatTurn[]): ResearchChatTurn {
+  for (let i = turns.length - 1; i >= 0; i -= 1) {
+    if (turns[i].role === 'assistant') return turns[i]
+  }
+  throw new Error('no assistant turn')
+}
+
 interface StreamCapture {
   opts: Parameters<typeof openResearchChatStream>[0]
   emitHeaders: (headers: Headers) => void
   emit: (event: Parameters<Parameters<typeof openResearchChatStream>[0]['onEvent']>[0]) => void
+  httpFail: (status: number, body?: unknown) => void
 }
 
 function openCapture(): StreamCapture[] {
@@ -78,6 +86,7 @@ function openCapture(): StreamCapture[] {
       opts,
       emitHeaders: (headers) => opts.onResponseMeta?.(headers),
       emit: (event) => opts.onEvent(event),
+      httpFail: (status, body) => opts.onHttpError?.(status, body),
     })
     return () => {}
   })
@@ -229,7 +238,7 @@ describe('useResearchChat restore（Issue #302）', () => {
     })
 
     // 首轮被 cleanup 取消、第二轮重新拉取（去重状态允许重跑）
-    expect(getResearchChatSession.mock.calls.length).toBeGreaterThanOrEqual(1)
+    expect(vi.mocked(getResearchChatSession).mock.calls.length).toBeGreaterThanOrEqual(1)
     expect(result.current.turns).toHaveLength(2)
     expect(result.current.turns[1].content).toBe('在的')
   })
@@ -398,6 +407,99 @@ describe('useResearchChat restore（Issue #302）', () => {
 
     expect(result.current.turns).toHaveLength(2)
     expect(result.current.turns[0].content).toBe('新问题')
+  })
+
+  it('评审 HIGH-1：running 卡恢复后发问遇首 409 → 终态 error（不按缓冲重连死锁）；旧轮结束后重发成功', async () => {
+    const streams = openCapture()
+    localStorage.setItem(storageKey('proj_1'), 'sess_r1')
+    vi.mocked(getResearchChatSession).mockResolvedValue(
+      detailWith(
+        [persistedTurn('user', 'msg_g1_user', { content: '旧问题' })],
+        [
+          {
+            generation_id: 'gen_2',
+            job_id: null,
+            status: 'running',
+            failure_code: null,
+            created_at: '2026-09-03T00:11:00Z',
+          },
+        ],
+      ),
+    )
+
+    const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(result.current.backgroundNotice).toEqual({
+      kind: 'running',
+      count: 1,
+      failureCode: null,
+    })
+
+    // 在途轮未结束时用户发问：首请求即 409（会话被占用）
+    act(() => {
+      result.current.send('继续', undefined, MODEL)
+    })
+    expect(streams).toHaveLength(1)
+    act(() => {
+      // 会话冲突形（无 resume_after 标记）
+      streams[0].httpFail(409, {
+        detail: { code: 'chat_conflict', message: 'session busy' },
+      })
+    })
+
+    const busy = streams[0]
+    expect(busy).toBeTruthy()
+    const turn = lastAssistant(result.current.turns)
+    expect(turn.status).toBe('error')
+    expect(turn.errorCode).toBe('session_busy')
+    expect(turn.errorMessage).toBe('session busy')
+
+    // 关键：绝不进入退避重连（旧逻辑会命中 failed 行恒 409 死锁）
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10000)
+    })
+    expect(streams).toHaveLength(1)
+    expect(result.current.isStreaming).toBe(false)
+
+    // 旧轮完成后用户重发（每次 send 新幂等键）→ 续接同一会话成功
+    act(() => {
+      result.current.send('再问', undefined, MODEL)
+    })
+    expect(streams).toHaveLength(2)
+    expect(streams[1].opts.request.session_id).toBe('sess_r1')
+    act(() => {
+      streams[1].emit({ event_id: 1, type: 'done', session_id: 'sess_r1' })
+    })
+    expect(lastAssistant(result.current.turns).status).toBe('done')
+  })
+
+  it('评审 MEDIUM-1：分页窗口内 commit 重写 created_at 致同 message_id 跨页重复 → 按 id 去重', async () => {
+    localStorage.setItem(storageKey('proj_1'), 'sess_r1')
+    const page1 = detailWith([
+      persistedTurn('user', 'msg_g1_user', { content: 'q1' }),
+      persistedTurn('assistant', 'msg_g1_assistant', { content: 'a1' }),
+    ])
+    page1.next_cursor = 'cursor-2'
+    // 第 2 页再次返回 msg_g1_user（键集游标在 UPSERT 后重定位）
+    const page2 = detailWith([
+      persistedTurn('user', 'msg_g1_user', { content: 'q1' }),
+      persistedTurn('assistant', 'msg_g2_assistant', { content: 'a2' }),
+    ])
+    vi.mocked(getResearchChatSession)
+      .mockResolvedValueOnce(page1)
+      .mockResolvedValueOnce(page2)
+
+    const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(result.current.turns).toHaveLength(3)
+    const ids = result.current.turns.map((t) => t.id)
+    expect(new Set(ids).size).toBe(3)
   })
 
   it('send 会清掉恢复期遗留的 backgroundNotice（新轮开始后不再提示旧的在途卡）', async () => {
