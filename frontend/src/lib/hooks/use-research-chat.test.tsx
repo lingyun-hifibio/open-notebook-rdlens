@@ -279,3 +279,316 @@ describe('useResearchChat', () => {
     expect(streams[1].opts.request.model_id).toBe('m-a')
   })
 })
+// ── COV-09：all_selected 覆盖提交（202 持久 Job，不走 SSE；§12.1） ──
+
+describe('useResearchChat.sendCoverage（COV-09）', () => {
+  beforeEach(() => {
+    // 既有 afterEach restoreAllMocks 会清掉模块级实现，这里重新钉住
+    vi.mocked(newIdempotencyKey).mockImplementation(() => 'ik-turn')
+  })
+
+  interface CoverageCapture {
+    request: { query: string; source_ids: string[]; note_ids: string[]; model_id: string }
+    idempotencyKey: string
+    submit: (request: CoverageCapture['request'], idempotencyKey: string) => Promise<{ job_id: string }>
+    resolve: (result: { job_id: string }) => void
+    reject: (error: Error) => void
+  }
+
+  function captureSubmit() {
+    const captured: CoverageCapture[] = []
+    let resolveLast: ((r: { job_id: string }) => void) | null = null
+    let rejectLast: ((e: Error) => void) | null = null
+    const submit = vi.fn((request: CoverageCapture['request'], idempotencyKey: string) => {
+      const capture: CoverageCapture = {
+        request,
+        idempotencyKey,
+        submit,
+        resolve: (result: { job_id: string }) => resolveLast?.(result),
+        reject: (error: Error) => rejectLast?.(error),
+      }
+      captured.push(capture)
+      return new Promise<{ job_id: string }>((resolve, reject) => {
+        resolveLast = resolve
+        rejectLast = reject
+      })
+    })
+    return { submit, captured }
+  }
+
+  function sendCoverageNow(
+    result: ReturnType<typeof renderHook<ReturnType<typeof useResearchChat>, { projectId: string }>>['result'],
+    query: string,
+    submit: CoverageCapture['submit'],
+    selection?: Parameters<ReturnType<typeof useResearchChat>['send']>[1],
+  ) {
+    act(() => {
+      result.current.sendCoverage(query, selection, MODEL, submit)
+    })
+  }
+
+  it('202 成功：user + assistant 双 turn，coverageJobId 绑定、done 终态', async () => {
+    const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
+    const { submit, captured } = captureSubmit()
+    sendCoverageNow(result, '覆盖全部所选来源', submit, { sourceIds: ['src-1', 'src-2'], noteIds: [] })
+    expect(captured).toHaveLength(1)
+    expect(captured[0].request).toEqual({
+      query: '覆盖全部所选来源',
+      source_ids: ['src-1', 'src-2'],
+      note_ids: [],
+      model_id: MODEL,
+    })
+    expect(captured[0].idempotencyKey).toBe('ik-turn')
+
+    await act(async () => {
+      captured[0].resolve({ job_id: 'job_1' })
+    })
+    const assistant = lastAssistant(result.current.turns)
+    expect(assistant.coverageJobId).toBe('job_1')
+    expect(assistant.status).toBe('done')
+    expect(result.current.turns[0]).toMatchObject({ role: 'user', content: '覆盖全部所选来源' })
+  })
+
+  it('提交失败：error turn（code/message），coverageJobId 保持 null', async () => {
+    const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
+    const { submit, captured } = captureSubmit()
+    sendCoverageNow(result, '覆盖全部所选来源', submit)
+    await act(async () => {
+      captured[0].reject(new Error('coverage not enabled'))
+    })
+    const assistant = lastAssistant(result.current.turns)
+    expect(assistant.status).toBe('error')
+    expect(assistant.errorCode).toBe('coverage_submit_failed')
+    expect(assistant.errorMessage).toContain('coverage not enabled')
+    expect(assistant.coverageJobId).toBeNull()
+  })
+
+  it('#243 §6.4 扩展：无 confirmed 模型 → fail-closed error turn，不调用 submit', () => {
+    const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
+    const { submit } = captureSubmit()
+    // 只走无模型路径：不建 user turn 之外的状态，submit 绝不调用
+    act(() => {
+      result.current.sendCoverage('q', undefined, '', submit)
+    })
+    expect(submit).not.toHaveBeenCalled()
+    const last = result.current.turns[result.current.turns.length - 1]
+    expect(last).toMatchObject({ role: 'assistant', status: 'error', errorCode: 'model_required' })
+  })
+
+  it('抢占有在途 relevant SSE turn（补终态不悬挂）', () => {
+    const streams = openCapture()
+    const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
+    sendNow(result, '普通问答')
+    expect(streams).toHaveLength(1)
+    const { submit } = captureSubmit()
+    sendCoverageNow(result, '覆盖全部所选来源', submit)
+    const superseded = result.current.turns.find((t) => t.status === 'error')
+    expect(superseded).toMatchObject({ errorCode: 'superseded' })
+    // 覆盖率 turn 在最后
+    expect(result.current.turns[result.current.turns.length - 1].content).toBe('')
+  })
+})
+
+// ── #292 P0：终态后 activeRef 生命周期 ──
+// 已终态（done/error/HTTP 终态/重连耗尽）的 turn 不得被下一次 send()
+// 改写为 superseded；只有真正在途的 turn 才被抢占；旧流迟到事件既不能
+// 覆盖也不能清理新 turn 的 activeRef（turnId guard）。
+
+describe('useResearchChat #292 P0 终态生命周期', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+    vi.mocked(newIdempotencyKey).mockImplementation(() => 'ik-turn')
+  })
+
+  function assistantById(
+    result: ReturnType<typeof renderHook<ReturnType<typeof useResearchChat>, { projectId: string }>>['result'],
+    id: string,
+  ): ReturnType<typeof lastAssistant> {
+    const turn = result.current.turns.find((t) => t.id === id)
+    if (!turn) throw new Error(`turn ${id} not found`)
+    return turn
+  }
+
+  it('done → send next：上一轮保持 done，errorCode/errorMessage 不被改写', () => {
+    const streams = openCapture()
+    const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
+
+    sendNow(result, '第一轮')
+    const firstId = lastAssistant(result.current.turns).id
+    act(() => {
+      streams[0].emit(ev(1, 'answer', { delta: 'A' }))
+      streams[0].emit(ev(2, 'done', { session_id: 's1', completion_status: 'success' }))
+    })
+
+    sendNow(result, '第二轮')
+    const first = assistantById(result, firstId)
+    expect(first.status).toBe('done')
+    expect(first.errorCode).toBeNull()
+    expect(first.errorMessage).toBeNull()
+    expect(first.content).toBe('A')
+    // 新一轮不受影响，正常在途
+    expect(lastAssistant(result.current.turns).status).toBe('streaming')
+  })
+
+  it('SSE error → send next：上一轮保留原错误码（daily_limit_exceeded 不被改写）', () => {
+    const streams = openCapture()
+    const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
+
+    sendNow(result, '第一轮')
+    const firstId = lastAssistant(result.current.turns).id
+    act(() => {
+      streams[0].emit(ev(1, 'error', { code: 'daily_limit_exceeded', message: 'external generation failed' }))
+    })
+
+    sendNow(result, '第二轮')
+    const first = assistantById(result, firstId)
+    expect(first.status).toBe('error')
+    expect(first.errorCode).toBe('daily_limit_exceeded')
+    expect(first.errorMessage).toBe('external generation failed')
+  })
+
+  it('非 409 HTTP 终态 → send next：上一轮保留 http_error，不被 superseded 覆盖', () => {
+    const streams = openCapture()
+    const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
+
+    sendNow(result, '第一轮')
+    const firstId = lastAssistant(result.current.turns).id
+    act(() => {
+      streams[0].httpFail(500, { detail: 'boom' })
+    })
+
+    sendNow(result, '第二轮')
+    const first = assistantById(result, firstId)
+    expect(first.status).toBe('error')
+    expect(first.errorCode).toBe('http_error')
+    expect(first.errorMessage).toBe('boom')
+  })
+
+  it('网络重连耗尽终态 → send next：上一轮保留 stream_lost', async () => {
+    const streams = openCapture()
+    const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
+
+    sendNow(result, '第一轮')
+    const firstId = lastAssistant(result.current.turns).id
+    for (let attempt = 1; attempt <= MAX_STREAM_ATTEMPTS; attempt += 1) {
+      act(() => {
+        streams[streams.length - 1].fail(new Error('socket reset'))
+      })
+      if (attempt < MAX_STREAM_ATTEMPTS) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(300 * 2 ** (attempt - 1))
+        })
+      }
+    }
+    expect(assistantById(result, firstId).errorCode).toBe('stream_lost')
+
+    sendNow(result, '第二轮')
+    const first = assistantById(result, firstId)
+    expect(first.status).toBe('error')
+    expect(first.errorCode).toBe('stream_lost')
+    expect(first.errorMessage).toContain('Connection lost')
+    expect(streams).toHaveLength(MAX_STREAM_ATTEMPTS + 1)
+  })
+
+  it('409 resume_after 非终态：ref 保留，send next 仍正确抢占 superseded', async () => {
+    const streams = openCapture()
+    const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
+
+    sendNow(result, '第一轮')
+    const firstId = lastAssistant(result.current.turns).id
+    act(() => {
+      streams[0].httpFail(409, { detail: 'resume_after' })
+    })
+    expect(assistantById(result, firstId).status).toBe('reconnecting')
+
+    sendNow(result, '第二轮')
+    // 409 重连中的 turn 仍属「真正在途」，抢占语义保留
+    expect(assistantById(result, firstId).errorCode).toBe('superseded')
+  })
+
+  it('streaming → send next：在途 turn 正确标记 superseded（ref 不变量修复后仍成立）', () => {
+    const streams = openCapture()
+    const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
+
+    sendNow(result, '第一轮')
+    const firstId = lastAssistant(result.current.turns).id
+    act(() => {
+      streams[0].emit(ev(1, 'answer', { delta: 'A' }))
+    })
+
+    sendNow(result, '第二轮')
+    const first = assistantById(result, firstId)
+    expect(first.status).toBe('error')
+    expect(first.errorCode).toBe('superseded')
+    expect(first.errorMessage).toBe('Superseded by a newer request')
+    // 新 turn 已在途
+    expect(streams).toHaveLength(2)
+    expect(lastAssistant(result.current.turns).status).toBe('streaming')
+  })
+
+  it('旧流迟到事件：既不覆盖新 turn，也不清理新 turn 的 activeRef', () => {
+    const streams = openCapture()
+    const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
+
+    sendNow(result, '第一轮')
+    const firstId = lastAssistant(result.current.turns).id
+    act(() => {
+      streams[0].emit(ev(1, 'answer', { delta: 'A' }))
+    })
+    sendNow(result, '第二轮')
+    const secondId = lastAssistant(result.current.turns).id
+
+    // 第一轮被抢占后，其旧流迟到 done：不能改写 turn1，也不能清理
+    // 指向 turn2 的 activeRef（turnId guard）
+    act(() => {
+      streams[0].emit(ev(2, 'done', { session_id: 'stale', completion_status: 'success' }))
+    })
+    expect(assistantById(result, firstId).errorCode).toBe('superseded')
+    expect(assistantById(result, firstId).content).toBe('A')
+
+    // activeRef 仍属于第二轮：正常事件继续生效
+    act(() => {
+      streams[1].emit(ev(1, 'answer', { delta: 'B' }))
+    })
+    expect(assistantById(result, secondId).content).toBe('B')
+    expect(assistantById(result, secondId).status).toBe('streaming')
+
+    // 旧流继续迟到的 answer 不再写入已终态/被抢占的 turn1
+    act(() => {
+      streams[0].emit(ev(3, 'answer', { delta: '迟到' }))
+    })
+    expect(assistantById(result, firstId).content).toBe('A')
+    expect(assistantById(result, secondId).content).toBe('B')
+  })
+
+  it('done 后 send next：不再 abort 已终态 turn（activeRef 已释放，stopActive 空转）', () => {
+    const streams = openCapture()
+    let aborted = 0
+    vi.mocked(openResearchChatStream).mockImplementation((opts) => {
+      streams.push({
+        opts,
+        emit: (event) => opts.onEvent(event),
+        fail: (error) => opts.onNetworkError?.(error),
+        httpFail: (status, body) => opts.onHttpError?.(status, body),
+      })
+      return () => {
+        aborted += 1
+      }
+    })
+    const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
+
+    sendNow(result, '第一轮')
+    act(() => {
+      streams[0].emit(ev(1, 'done', { session_id: 's1', completion_status: 'success' }))
+    })
+    sendNow(result, '第二轮')
+    // done 已清理 ref：第二轮 send 不应对第一轮流调用 abort（服务端已完成）
+    expect(aborted).toBe(0)
+    expect(streams).toHaveLength(2)
+  })
+})

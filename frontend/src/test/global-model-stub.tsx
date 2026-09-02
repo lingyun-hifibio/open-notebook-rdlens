@@ -41,6 +41,7 @@ interface StubOverrides {
   consentResponse?: ResearchEgressConsentResponse | null
   onCancelConsent?: () => void
   onConfirmConsent?: () => Promise<void>
+  onRunGuarded?: () => void
 }
 
 let overrides: StubOverrides = {}
@@ -104,6 +105,7 @@ export function useResearchGlobalModel(): UseResearchGlobalModelResult {
     operation: GuardedOperation<T>,
   ): Promise<T | undefined> => {
     if (!canExecute || confirmedModelId === null) return undefined
+    overrides.onRunGuarded?.()
     if (overrides.deferGuarded) return undefined
     return operation(confirmedModelId)
   }

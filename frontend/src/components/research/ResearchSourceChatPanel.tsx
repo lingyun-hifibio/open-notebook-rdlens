@@ -111,8 +111,10 @@ export function ResearchSourceChatPanel({
                   <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
                     {t('research.chatThinking')}
                   </summary>
-                  <div className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">
-                    {turn.thinking}
+                  {/* COV-09：raw Thinking 防御性丢弃——只展示固定进度摘要，
+                      不渲染后端 thinking 内容（§12.3） */}
+                  <div className="mt-2 text-sm text-muted-foreground">
+                    {t('research.chatThinkingNotice')}
                   </div>
                 </details>
               )}

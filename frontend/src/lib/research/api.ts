@@ -28,6 +28,7 @@ import type {
   ResearchCompareCreateRequest,
   ResearchCompareCreateResponse,
   ResearchContextPreview,
+  ResearchCoverageReportResponse,
   ResearchEgressConsentResponse,
   ResearchExecutionPreferences,
   ResearchJob,
@@ -432,6 +433,81 @@ export async function getJob(projectId: string, jobId: string): Promise<Research
 
 export async function cancelJob(projectId: string, jobId: string): Promise<void> {
   await apiClient.post(researchPath(projectId, 'jobs', jobId, 'cancel'))
+}
+
+// ── Coverage（COV-08 §12.1/§12.2；COV-09 UI 消费） ──
+
+/** all_selected 提交响应：202 JSON（Generation/Job 标识，不走 SSE） */
+export interface CoverageChatResponse {
+  generation_id: string
+  job_id: string
+  status: string
+  session_id: string
+}
+
+/**
+ * all_selected 提交：POST /chat 携带 synthesis_scope，202 返回持久
+ * research_coverage Job 标识。幂等键每次用户发起新覆盖任务一个键
+ * （同键同参数可重入，同键改参 409）。
+ */
+export async function createCoverageChat(
+  projectId: string,
+  request: {
+    query: string
+    source_ids: string[]
+    note_ids: string[]
+    model_id: string
+    session_id?: string
+    synthesis_scope: 'all_selected'
+  },
+  idempotencyKey: string,
+): Promise<CoverageChatResponse> {
+  const response = await apiClient.post<CoverageChatResponse>(
+    researchPath(projectId, 'chat'),
+    request,
+    {
+      headers: {
+        'X-Research-Contract': 'v1',
+        'Idempotency-Key': idempotencyKey,
+      },
+    },
+  )
+  return response.data
+}
+
+/** 最终报告 + Citation snapshot + 固定 snapshot（仅 render_report 完成后可读） */
+export async function getCoverageReport(
+  projectId: string,
+  jobId: string,
+): Promise<ResearchCoverageReportResponse> {
+  const response = await apiClient.get<ResearchCoverageReportResponse>(
+    researchPath(projectId, 'jobs', jobId, 'report'),
+  )
+  return response.data
+}
+
+/**
+ * outcome_unknown 显式人工重试（§12.2）：确认计费风险后创建新 run。
+ * 必须使用新幂等键（复用旧键 → 409）。
+ */
+export async function retryCoverageJob(
+  projectId: string,
+  jobId: string,
+  idempotencyKey: string,
+): Promise<CoverageChatResponse & { retry_of_generation_id?: string }> {
+  const response = await apiClient.post<
+    CoverageChatResponse & { retry_of_generation_id?: string }
+  >(
+    researchPath(projectId, 'jobs', jobId, 'retry'),
+    { confirm_billing_risk: true },
+    {
+      headers: {
+        'X-Research-Contract': 'v1',
+        'Idempotency-Key': idempotencyKey,
+      },
+    },
+  )
+  return response.data
 }
 
 // ── Source Chat 会话（Issue #182；owner-only，Gateway 化专属端点） ──

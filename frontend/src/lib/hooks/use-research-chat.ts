@@ -6,11 +6,14 @@
  * - 单轮 turn = 用户消息 + 助手消息；助手消息内容由 SSE reducer 维护
  *   （乱序/重复事件按 event_id 去重排序，终态恰好一次）。
  * - 断线（传输层）自动重连：第二次起携带 `Last-Event-ID`（§9.5）；
- *   409（缓冲不足且任务进行中）同样按退避重试。
+ *   409 按 body code 语义（评审 R-A/R-B：generation_in_progress 同键
+ *   自愈重连 / 其余终态 conflict_busy）。
  * - 服务端 `error` 终态不重连；可重试错误码由 UI 标记。
  * - 浏览器断开 ≠ 取消：中止 fetch 只是停止本地读取，服务端继续
  *   （§9.6）；本 hook 不提供 Chat 取消。
- * - `session_id` 在 done 事件后保留，供下一轮续接。
+ * - Issue #302：`session_id` 首知（响应头 X-Chat-Session-Id / done 事件）
+ *   即持久化 localStorage（key 含 project_id）；mount 时拉取会话详情
+ *   重放历史并续接同一会话（刷新恢复）。
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -107,6 +110,30 @@ function noticeFromCards(cards: ResearchGlobalChatCard[]): ResearchBackgroundNot
   return { kind: 'running', count: running.length, failureCode: null }
 }
 
+/** 断线/409 的最大重连尝试次数（含首次） */
+export const MAX_STREAM_ATTEMPTS = 3
+
+/** 重连退避基数（ms）；第 n 次重试等待 base * 2^(n-1) */
+export const RECONNECT_BACKOFF_MS = 300
+
+export type ResearchChatTurnStatus = 'streaming' | 'reconnecting' | 'done' | 'error'
+
+export interface ResearchChatTurn {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  thinking: string
+  citations: ResearchCitationDisplayItem[]
+  usage: ResearchTokenUsage | null
+  resolvedMode: string | null
+  status: ResearchChatTurnStatus
+  reconnectCount: number
+  errorCode: string | null
+  errorMessage: string | null
+  /** COV-09：all_selected 覆盖任务关联的持久 Job（202 受理后绑定） */
+  coverageJobId: string | null
+}
+
 /** 已持久化消息行 → 展示 turn（阅读顺序重放；completed 轮 status 恒 done） */
 function messageRowToTurn(row: ResearchGlobalChatMessage): ResearchChatTurn | null {
   if (row.role !== 'user' && row.role !== 'assistant') {
@@ -125,6 +152,7 @@ function messageRowToTurn(row: ResearchGlobalChatMessage): ResearchChatTurn | nu
     reconnectCount: 0,
     errorCode: null as string | null,
     errorMessage: null as string | null,
+    coverageJobId: null as string | null,
   }
   if (row.role === 'user') {
     return base
@@ -146,28 +174,6 @@ function messageRowToTurn(row: ResearchGlobalChatMessage): ResearchChatTurn | nu
         : null,
     resolvedMode: row.resolved_mode ?? null,
   }
-}
-
-/** 断线/409 的最大重连尝试次数（含首次） */
-export const MAX_STREAM_ATTEMPTS = 3
-
-/** 重连退避基数（ms）；第 n 次重试等待 base * 2^(n-1) */
-export const RECONNECT_BACKOFF_MS = 300
-
-export type ResearchChatTurnStatus = 'streaming' | 'reconnecting' | 'done' | 'error'
-
-export interface ResearchChatTurn {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  thinking: string
-  citations: ResearchCitationDisplayItem[]
-  usage: ResearchTokenUsage | null
-  resolvedMode: string | null
-  status: ResearchChatTurnStatus
-  reconnectCount: number
-  errorCode: string | null
-  errorMessage: string | null
 }
 
 export interface ResearchChatSelection {
@@ -194,6 +200,29 @@ export interface UseResearchChatResult {
     selection: ResearchChatSelection | undefined,
     modelId: string,
   ) => void
+  /**
+   * COV-09：all_selected 覆盖提交（COV-08 §12.1）。不走 SSE——202 受理后
+   * 绑定持久 Job 标识，UI 经 GET /jobs/{id} 轮询展示 stage/progress/
+   * 逐文档状态/报告。submit 由调用方注入（apiClient 202 + Job 登记），
+   * 本 hook 只负责 turn 生命周期与错误表达。
+   */
+  sendCoverage: (
+    query: string,
+    selection: ResearchChatSelection | undefined,
+    modelId: string,
+    submit: (
+      request: CoverageSubmitRequest,
+      idempotencyKey: string,
+    ) => Promise<{ job_id: string }>,
+  ) => void
+}
+
+/** COV-09：all_selected 提交请求载荷（note_ids 恒空数组——Notes 不支持） */
+export interface CoverageSubmitRequest {
+  query: string
+  source_ids: string[]
+  note_ids: string[]
+  model_id: string
 }
 
 interface ActiveTurn {
@@ -242,8 +271,8 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
   /** 跨轮次续接的服务端 session_id（done 事件/响应头/恢复记录） */
   const sessionIdRef = useRef<string | null>(null)
   /**
-   * Issue #302：本 project 已发生过用户发问（mount 后任何 send）——恢复
-   * 结果不得灌进已开始的对话（旧历史可能晚于新轮返回）。
+   * Issue #302：本 project 已发生过用户发问（mount 后任何 send/sendCoverage）
+   * ——恢复结果不得灌进已开始的对话（旧历史可能晚于新轮返回）。
    */
   const interactedRef = useRef(false)
   /**
@@ -270,6 +299,25 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
     if (!active) return
     if (active.abort) active.abort()
     if (active.reconnectTimer) clearTimeout(active.reconnectTimer)
+    activeRef.current = null
+  }, [])
+
+  /**
+   * #292 P0：不可恢复终态（SSE done/error、非 409 HTTP 错误、网络重连
+   * 耗尽）后释放 activeRef，且只对当前 turnId 生效——迟到事件来自旧 turn
+   * 时不得清理或覆盖新 turn 的 ref。修复后 activeRef 的不变量是「仅代表
+   * 真正仍在执行/重连的 turn」，send() 的抢占标记因此不会再改写已完成
+   * 或已失败的上一轮。409 generation_in_progress（同键自愈）与仍可重试
+   * 的网络错误不清理。
+   */
+  const clearActiveIfCurrent = useCallback((turnId: string) => {
+    const current = activeRef.current
+    if (!current || current.turnId !== turnId) return
+    if (current.reconnectTimer) {
+      clearTimeout(current.reconnectTimer)
+      current.reconnectTimer = null
+    }
+    current.abort = null
     activeRef.current = null
   }, [])
 
@@ -426,6 +474,11 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
           patch.status = 'streaming'
         }
         patchAssistant(turnId, patch)
+        // #292 P0：done/error 终态后在 identity guard 下释放 activeRef，
+        // 下一轮 send() 不再把已终态 turn 改写为 superseded
+        if (sse.terminal === 'done' || sse.terminal === 'error') {
+          clearActiveIfCurrent(turnId)
+        }
       },
       onHttpError: (status, body) => {
         const current = activeRef.current
@@ -458,6 +511,8 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
             errorCode: 'conflict_busy',
             errorMessage: httpErrorMessage(status, body),
           })
+          // #292 P0：冲突 409 是不可恢复终态
+          clearActiveIfCurrent(turnId)
           return
         }
         patchAssistant(turnId, {
@@ -465,6 +520,8 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
           errorCode: 'http_error',
           errorMessage: httpErrorMessage(status, body),
         })
+        // #292 P0：非 409 HTTP 错误是不可恢复终态
+        clearActiveIfCurrent(turnId)
       },
       onNetworkError: (error) => {
         const current = activeRef.current
@@ -475,6 +532,8 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
             errorCode: 'stream_lost',
             errorMessage: `Connection lost after ${MAX_STREAM_ATTEMPTS} attempts: ${error.message}`,
           })
+          // #292 P0：重连耗尽是不可恢复终态；仍可重试的断线不清理
+          clearActiveIfCurrent(turnId)
           return
         }
         scheduleReconnect()
@@ -551,6 +610,7 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
       reconnectCount: 0,
       errorCode: null,
       errorMessage: null,
+      coverageJobId: null,
     }
     const assistantTurn: ResearchChatTurn = {
       id: turnId,
@@ -564,12 +624,100 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
       reconnectCount: 0,
       errorCode: null,
       errorMessage: null,
+      coverageJobId: null,
     }
     setTurns((prev) => [...prev, userTurn, assistantTurn])
     startTurn(trimmed, turnId, selection, modelId)
   }
 
+  const sendCoverage = (
+    query: string,
+    selection: ResearchChatSelection | undefined,
+    modelId: string,
+    submit: (
+      request: CoverageSubmitRequest,
+      idempotencyKey: string,
+    ) => Promise<{ job_id: string }>,
+  ): void => {
+    const trimmed = query.trim()
+    if (!trimmed) return
+    // Issue #302：与 send 同语义——新工作开始后恢复结果（历史+在途卡）
+    // 不再灌入/提示本对话
+    interactedRef.current = true
+    setBackgroundNotice(null)
+    const previous = activeRef.current
+    stopActive()
+    if (previous) {
+      patchAssistant(previous.turnId, {
+        status: 'error',
+        errorCode: 'superseded',
+        errorMessage: 'Superseded by a newer request',
+      })
+    }
+    const turnId = randomId()
+    const patch = (patch: Partial<ResearchChatTurn>): void => patchAssistant(turnId, patch)
+    const userTurn: ResearchChatTurn = {
+      id: `user_${turnId}`,
+      role: 'user',
+      content: trimmed,
+      thinking: '',
+      citations: [],
+      usage: null,
+      resolvedMode: null,
+      status: 'done',
+      reconnectCount: 0,
+      errorCode: null,
+      errorMessage: null,
+      coverageJobId: null,
+    }
+    const assistantTurn: ResearchChatTurn = {
+      id: turnId,
+      role: 'assistant',
+      content: '',
+      thinking: '',
+      citations: [],
+      usage: null,
+      resolvedMode: null,
+      status: 'streaming',
+      reconnectCount: 0,
+      errorCode: null,
+      errorMessage: null,
+      coverageJobId: null,
+    }
+    setTurns((prev) => [...prev, userTurn, assistantTurn])
+    if (!modelId) {
+      // fail-closed：无 confirmed 模型不发请求（与 send 一致，#243 §6.4）
+      patch({
+        status: 'error',
+        errorCode: 'model_required',
+        errorMessage: 'Select a research model before sending',
+      })
+      return
+    }
+    const idempotencyKey = newIdempotencyKey()
+    submit(
+      {
+        query: trimmed,
+        source_ids: selection?.sourceIds ?? [],
+        // Notes 不支持 Coverage（§6.1）：防御性恒空，即使调用方漏检
+        note_ids: [],
+        model_id: modelId,
+      },
+      idempotencyKey,
+    )
+      .then(({ job_id }) => {
+        patch({ status: 'done', coverageJobId: job_id })
+      })
+      .catch((error: Error) => {
+        patch({
+          status: 'error',
+          errorCode: 'coverage_submit_failed',
+          errorMessage: error.message || 'Coverage submission failed',
+        })
+      })
+  }
+
   const isStreaming = turns.some((t) => t.status === 'streaming' || t.status === 'reconnecting')
 
-  return { turns, isStreaming, backgroundNotice, send }
+  return { turns, isStreaming, backgroundNotice, send, sendCoverage }
 }
