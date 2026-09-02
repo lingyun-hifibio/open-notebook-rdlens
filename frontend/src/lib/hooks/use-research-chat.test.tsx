@@ -6,7 +6,8 @@ import type { ResearchSseEvent } from '@/lib/research/types'
 
 // UI-03 Red：Chat SSE 流状态机（契约 v0 §9）——乱序/重复事件经由 reducer
 // 去重排序、断线自动按 event_id 重连（Last-Event-ID）、终态恰好一次、
-// 409 resume_after 重试、错误码可重试标记。
+// 409 按 code 语义（generation_in_progress 重连 / 其余终态，评审 R-A/R-B）、
+// 错误码可重试标记。
 // #243 §6.4：modelId 由调用方（confirmed 全局模型快照）required 传入，
 // 本 hook 不在执行时读取执行偏好；无模型 fail-closed 不发请求。
 
