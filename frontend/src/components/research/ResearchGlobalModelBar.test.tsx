@@ -122,6 +122,19 @@ describe('ResearchGlobalModelBar', () => {
     )
   })
 
+  it('待确认时提供显式外发确认入口', () => {
+    const onRunGuarded = vi.fn()
+    setGlobalModelStub({
+      needsConsent: true,
+      deferGuarded: true,
+      onRunGuarded,
+    })
+    render(<ResearchGlobalModelBar />)
+
+    fireEvent.click(screen.getByTestId('global-model-consent'))
+    expect(onRunGuarded).toHaveBeenCalledTimes(1)
+  })
+
   it('popover 布局提供窄屏等价入口（§6.10）', () => {
     render(<ResearchGlobalModelBar layout="popover" />)
 

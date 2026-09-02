@@ -44,6 +44,7 @@ export function ResearchGlobalModelBar({
     dismissSaveModelError,
     confirmedModelAvailability,
     needsConsent,
+    runGuarded,
     isAdminReadonly,
   } = useResearchGlobalModel()
 
@@ -126,6 +127,17 @@ export function ResearchGlobalModelBar({
       )}
 
       <div className="flex shrink-0 items-center gap-1.5">
+        {needsConsent && !isAdminReadonly && (
+          <Button
+            size="sm"
+            variant="outline"
+            data-testid="global-model-consent"
+            disabled={isSavingModel || isLoadingModel}
+            onClick={() => void runGuarded(() => undefined)}
+          >
+            {t('research.consentConfirm')}
+          </Button>
+        )}
         <Button
           size="sm"
           variant="outline"
