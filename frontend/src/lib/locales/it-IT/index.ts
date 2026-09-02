@@ -1110,6 +1110,8 @@ export const itIT = {
     chatRetryable: "Retryable",
     chatRetry: "Retry",
     chatStreaming: "Streaming…",
+    chatErrorDailyLimitExceeded: "Daily model usage limit reached — RDLens internal quota check; this request was not sent to the provider. Wait for the daily limit to reset (UTC) or ask an administrator to raise this provider's daily token limit.",
+    chatErrorSuperseded: "This request was superseded by a newer request.",
     compareTitle: "Compare documents",
     compareSelected: "Selected",
     compareHardMax: "Hard max",

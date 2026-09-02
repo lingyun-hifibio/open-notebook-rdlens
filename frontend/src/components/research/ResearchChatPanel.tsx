@@ -25,7 +25,15 @@ import type { ResearchCitationDisplayItem, ResearchJob, ResearchSynthesisScope }
  *   （客户端 i18n 文案），即使后端误发 reasoning 也不进入用户内容
  *   （§12.3 验收：raw Thinking、Prompt、内部 JSON 不可见）。
  * - 断线自动重连时显示重连徽标；错误终态展示 code/可重试标记。
+ * - #292 P0：error 且空正文不渲染「暂无答案」占位（交由错误卡片呈现）；
+ *   稳定错误码优先展示面向用户的本地化文案，errorMessage 仅作诊断行，
+ *   未知 code 原样兜底展示。
  */
+const CHAT_ERROR_USER_COPY: Record<string, string> = {
+  daily_limit_exceeded: 'research.chatErrorDailyLimitExceeded',
+  superseded: 'research.chatErrorSuperseded',
+}
+
 export function ResearchChatPanel({
   turns,
   isStreaming,
@@ -121,13 +129,17 @@ export function ResearchChatPanel({
                       </div>
                     </details>
                   )}
-                  <div className="rounded-lg border px-3 py-2 text-sm">
-                    {turn.content ? (
-                      <MarkdownRenderer>{turn.content}</MarkdownRenderer>
-                    ) : (
-                      <span className="text-muted-foreground">{t('research.chatNoAnswer')}</span>
-                    )}
-                  </div>
+                  {/* #292 P0：error 且空正文不渲染「暂无答案」——错误内容由
+                      下方错误卡片呈现，避免占位与错误框同屏误导 */}
+                  {(turn.content || turn.status !== 'error') && (
+                    <div className="rounded-lg border px-3 py-2 text-sm">
+                      {turn.content ? (
+                        <MarkdownRenderer>{turn.content}</MarkdownRenderer>
+                      ) : (
+                        <span className="text-muted-foreground">{t('research.chatNoAnswer')}</span>
+                      )}
+                    </div>
+                  )}
 
                   {(turn.usage || turn.resolvedMode) && (
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -158,7 +170,13 @@ export function ResearchChatPanel({
                   className="space-y-1 rounded-lg border border-destructive/50 px-3 py-2 text-xs"
                   data-testid="chat-error"
                 >
-                  <p className="font-medium text-destructive">{turn.errorCode}</p>
+                  {/* #292 P0：已知稳定码展示本地化用户文案（未知 code 原样
+                      兜底）；errorMessage 仅作诊断行，不作主要提示 */}
+                  <p className="font-medium text-destructive">
+                    {turn.errorCode
+                      ? t(CHAT_ERROR_USER_COPY[turn.errorCode] ?? turn.errorCode)
+                      : turn.errorCode}
+                  </p>
                   {turn.errorMessage && (
                     <p className="text-muted-foreground">{turn.errorMessage}</p>
                   )}

@@ -214,3 +214,50 @@ describe('ResearchChatPanel coverage scope（COV-09）', () => {
     expect(screen.getByTestId('coverage-target-doc-2')).toHaveTextContent('document_unit_terminal')
   })
 })
+
+// ── #292 P0：错误呈现——error 空正文不再显示「暂无答案」；稳定码展示
+// 面向用户的本地化文案（测试环境 t() 返回键名），errorMessage 仅作诊断行 ──
+
+describe('ResearchChatPanel #292 P0 错误呈现', () => {
+  afterEach(cleanup)
+
+  it('error 且空正文：不渲染「暂无答案」占位，仅错误卡片', () => {
+    renderPanel([
+      turn({ status: 'error', errorCode: 'daily_limit_exceeded', errorMessage: 'external generation failed' }),
+    ])
+    expect(screen.queryByText('research.chatNoAnswer')).toBeNull()
+    expect(screen.getByTestId('chat-error')).toBeInTheDocument()
+  })
+
+  it('非 error 空正文仍显示占位（done/streaming 不受影响）', () => {
+    renderPanel([turn({ status: 'done', content: '' })])
+    expect(screen.getByText('research.chatNoAnswer')).toBeInTheDocument()
+  })
+
+  it('daily_limit_exceeded：主提示为本地化用户文案，原始消息仅作诊断行', () => {
+    renderPanel([
+      turn({ status: 'error', errorCode: 'daily_limit_exceeded', errorMessage: 'external generation failed' }),
+    ])
+    expect(screen.getByText('research.chatErrorDailyLimitExceeded')).toBeInTheDocument()
+    // 原始 code 不再作为主提示；errorMessage 保留为诊断信息
+    expect(screen.queryByText('daily_limit_exceeded')).toBeNull()
+    expect(screen.getByText('external generation failed')).toBeInTheDocument()
+  })
+
+  it('superseded：展示本地化用户文案，不展示裸 code 主提示', () => {
+    renderPanel([
+      turn({ status: 'error', errorCode: 'superseded', errorMessage: 'Superseded by a newer request' }),
+    ])
+    expect(screen.getByText('research.chatErrorSuperseded')).toBeInTheDocument()
+    expect(screen.queryByText('superseded')).toBeNull()
+  })
+
+  it('error 但已有部分正文：正文与错误卡片共存', () => {
+    renderPanel([
+      turn({ status: 'error', content: '半截答案', errorCode: 'stream_lost', errorMessage: 'Connection lost' }),
+    ])
+    expect(screen.getByText('半截答案')).toBeInTheDocument()
+    expect(screen.getByTestId('chat-error')).toBeInTheDocument()
+    expect(screen.queryByText('research.chatNoAnswer')).toBeNull()
+  })
+})
