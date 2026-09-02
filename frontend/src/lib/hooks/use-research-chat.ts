@@ -141,6 +141,24 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
     activeRef.current = null
   }, [])
 
+  /**
+   * #292 P0：不可恢复终态（SSE done/error、非 409 HTTP 错误、网络重连
+   * 耗尽）后释放 activeRef，且只对当前 turnId 生效——迟到事件来自旧 turn
+   * 时不得清理或覆盖新 turn 的 ref。修复后 activeRef 的不变量是「仅代表
+   * 真正仍在执行/重连的 turn」，send() 的抢占标记因此不会再改写已完成
+   * 或已失败的上一轮。409 resume_after 与仍可重试的网络错误不清理。
+   */
+  const clearActiveIfCurrent = useCallback((turnId: string) => {
+    const current = activeRef.current
+    if (!current || current.turnId !== turnId) return
+    if (current.reconnectTimer) {
+      clearTimeout(current.reconnectTimer)
+      current.reconnectTimer = null
+    }
+    current.abort = null
+    activeRef.current = null
+  }, [])
+
   useEffect(() => stopActive, [stopActive])
 
   const runTurn = (active: ActiveTurn): void => {
@@ -204,12 +222,17 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
           patch.status = 'streaming'
         }
         patchAssistant(turnId, patch)
+        // #292 P0：done/error 终态后在 identity guard 下释放 activeRef，
+        // 下一轮 send() 不再把已终态 turn 改写为 superseded
+        if (sse.terminal === 'done' || sse.terminal === 'error') {
+          clearActiveIfCurrent(turnId)
+        }
       },
       onHttpError: (status, body) => {
         const current = activeRef.current
         if (!current || current.turnId !== turnId) return
         if (status === 409) {
-          // 缓冲不足且任务进行中：按退避重试（resume_after）
+          // 缓冲不足且任务进行中：按退避重试（resume_after）——非终态，不清理
           scheduleReconnect()
           return
         }
@@ -218,6 +241,8 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
           errorCode: 'http_error',
           errorMessage: httpErrorMessage(status, body),
         })
+        // #292 P0：非 409 HTTP 错误是不可恢复终态
+        clearActiveIfCurrent(turnId)
       },
       onNetworkError: (error) => {
         const current = activeRef.current
@@ -228,6 +253,8 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
             errorCode: 'stream_lost',
             errorMessage: `Connection lost after ${MAX_STREAM_ATTEMPTS} attempts: ${error.message}`,
           })
+          // #292 P0：重连耗尽是不可恢复终态；仍可重试的断线不清理
+          clearActiveIfCurrent(turnId)
           return
         }
         scheduleReconnect()

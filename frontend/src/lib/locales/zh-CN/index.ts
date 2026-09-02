@@ -1110,6 +1110,8 @@ export const zhCN = {
     chatRetryable: "可重试",
     chatRetry: "重试",
     chatStreaming: "生成中…",
+    chatErrorDailyLimitExceeded: "今日模型用量已达内部每日限额（外发前按最坏情况预算预检），本次请求未外发。请等待每日限额重置（按 UTC）或联系管理员提高该 Provider 的日额度。",
+    chatErrorSuperseded: "本次请求已被新发送的请求取代。",
     compareTitle: "对比文档",
     compareSelected: "已选",
     compareHardMax: "硬上限",
