@@ -1073,6 +1073,8 @@ export const esES = {
     chatSend: "Send",
     chatThinking: "Thinking",
     chatNoAnswer: "No answer yet.",
+    chatRestoreRunning: "Una generación anterior a la actualización sigue ejecutándose en segundo plano (desconectar ≠ cancelar) — actualice de nuevo cuando termine.",
+    chatRestoreFailed: "Una generación anterior a la actualización no se completó.",
     chatUsage: "Usage",
     chatReconnecting: "Reconnecting… (attempt {{count}})",
     chatRetryable: "Retryable",

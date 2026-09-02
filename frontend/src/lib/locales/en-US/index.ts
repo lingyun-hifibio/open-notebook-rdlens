@@ -1071,6 +1071,8 @@ export const enUS = {
     chatSend: "Send",
     chatThinking: "Thinking",
     chatNoAnswer: "No answer yet.",
+    chatRestoreRunning: "A generation from before the refresh is still running in the background (disconnecting ≠ cancelling) — refresh again after it completes to see it.",
+    chatRestoreFailed: "A generation from before the refresh did not complete.",
     chatUsage: "Usage",
     chatReconnecting: "Reconnecting… (attempt {{count}})",
     chatRetryable: "Retryable",

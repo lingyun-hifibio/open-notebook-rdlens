@@ -1075,6 +1075,8 @@ export const deDE = {
     chatSend: "Send",
     chatThinking: "Thinking",
     chatNoAnswer: "No answer yet.",
+    chatRestoreRunning: "Eine Generierung von vor dem Aktualisieren läuft noch im Hintergrund (Trennen ≠ Abbrechen) — aktualisieren Sie nach Abschluss erneut.",
+    chatRestoreFailed: "Eine Generierung von vor dem Aktualisieren wurde nicht abgeschlossen.",
     chatUsage: "Usage",
     chatReconnecting: "Reconnecting… (attempt {{count}})",
     chatRetryable: "Retryable",

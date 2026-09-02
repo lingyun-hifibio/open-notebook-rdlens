@@ -8,7 +8,11 @@ import { Input } from '@/components/ui/input'
 import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
 import { ResearchCitationList } from './ResearchCitationList'
 import { RETRYABLE_SSE_ERROR_CODES } from '@/lib/research/sse'
-import type { ResearchChatTurn, ResearchChatSelection } from '@/lib/hooks/use-research-chat'
+import type {
+  ResearchBackgroundNotice,
+  ResearchChatTurn,
+  ResearchChatSelection,
+} from '@/lib/hooks/use-research-chat'
 
 /**
  * Research Chat 面板（UI-03，REQ-ENG-04/REQ-API-02）。
@@ -26,6 +30,7 @@ export function ResearchChatPanel({
   selectedNoteIds,
   sendDisabled,
   blockedHint,
+  backgroundNotice,
 }: {
   turns: ResearchChatTurn[]
   isStreaming: boolean
@@ -39,6 +44,11 @@ export function ResearchChatPanel({
   /** #243：无可用全局模型时禁用发送（不变量 2/7 的 Chat 侧表达） */
   sendDisabled?: boolean
   blockedHint?: string | null
+  /**
+   * Issue #302：刷新恢复后仍在后台/未完成的后台 Generation 提示——静态
+   * 如实呈现（绝不渲染为假「进行中」流式态）。
+   */
+  backgroundNotice?: ResearchBackgroundNotice | null
 }) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
@@ -57,6 +67,19 @@ export function ResearchChatPanel({
       <div className="flex-1 space-y-4 overflow-y-auto p-4">
         {turns.length === 0 && (
           <p className="text-sm text-muted-foreground">{t('research.chatEmpty')}</p>
+        )}
+        {backgroundNotice && (
+          <p
+            className="text-xs font-medium text-amber-600"
+            data-testid="chat-restore-notice"
+          >
+            {backgroundNotice.kind === 'running'
+              ? t('research.chatRestoreRunning')
+              : t('research.chatRestoreFailed')}
+            {backgroundNotice.kind === 'failed' && backgroundNotice.failureCode
+              ? ` · ${backgroundNotice.failureCode}`
+              : ''}
+          </p>
         )}
         {turns.map((turn) =>
           turn.role === 'user' ? (

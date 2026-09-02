@@ -1072,6 +1072,8 @@ export const ruRU = {
     chatSend: "Send",
     chatThinking: "Thinking",
     chatNoAnswer: "No answer yet.",
+    chatRestoreRunning: "Генерация до обновления всё ещё выполняется в фоне (отключение ≠ отмена) — обновите снова после завершения.",
+    chatRestoreFailed: "Генерация до обновления не была завершена.",
     chatUsage: "Usage",
     chatReconnecting: "Reconnecting… (attempt {{count}})",
     chatRetryable: "Retryable",

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import { ResearchChatPanel } from './ResearchChatPanel'
-import type { ResearchChatTurn } from '@/lib/hooks/use-research-chat'
+import type { ResearchBackgroundNotice, ResearchChatTurn } from '@/lib/hooks/use-research-chat'
 import type { ResearchCitation } from '@/lib/research/types'
 
 // UI-03 Red：Chat 面板展示（REQ-ENG-04）——thinking/answer/citation/usage/
@@ -45,6 +45,19 @@ function renderPanel(turns: ResearchChatTurn[], send = vi.fn()) {
       onSend={send}
       selectedSourceIds={[]}
       selectedNoteIds={[]}
+    />,
+  )
+}
+
+function renderPanelWithNotice(notice: ResearchBackgroundNotice, send = vi.fn()) {
+  return render(
+    <ResearchChatPanel
+      turns={[]}
+      isStreaming={false}
+      onSend={send}
+      selectedSourceIds={[]}
+      selectedNoteIds={[]}
+      backgroundNotice={notice}
     />,
   )
 }
@@ -101,5 +114,29 @@ describe('ResearchChatPanel', () => {
   it('流式状态显示进行中标记', () => {
     renderPanel([turn({ status: 'streaming', content: '半截答案' })])
     expect(screen.getByText('半截答案')).toBeInTheDocument()
+  })
+
+  it('#302：恢复后在途后台轮显示静态提示，不渲染假「进行中」', () => {
+    renderPanelWithNotice({ kind: 'running', count: 1, failureCode: null })
+    const notice = screen.getByTestId('chat-restore-notice')
+    // 测试环境 i18n 渲染原始 key（既有用例同款约定）
+    expect(notice).toHaveTextContent('research.chatRestoreRunning')
+    expect(screen.queryByTestId('chat-streaming')).toBeNull()
+  })
+
+  it('#302：恢复后失败后台轮显示 failure_code（诚实呈现未完成）', () => {
+    renderPanelWithNotice({
+      kind: 'failed',
+      count: 1,
+      failureCode: 'delivery_dead_letter',
+    })
+    expect(screen.getByTestId('chat-restore-notice')).toHaveTextContent(
+      /research\.chatRestoreFailed · delivery_dead_letter/,
+    )
+  })
+
+  it('#302：未传 backgroundNotice（默认/无在途轮）不渲染提示', () => {
+    renderPanel([])
+    expect(screen.queryByTestId('chat-restore-notice')).toBeNull()
   })
 })

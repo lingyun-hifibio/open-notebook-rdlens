@@ -70,7 +70,7 @@ export function ResearchWorkspace() {
     )
   }, [])
 
-  const { turns, isStreaming, send: sendTurn } = useResearchChat({ projectId: projectId ?? '' })
+  const { turns, isStreaming, backgroundNotice, send: sendTurn } = useResearchChat({ projectId: projectId ?? '' })
   const { jobs, isCreating, error: jobsError, createCompare: createCompareJob, cancel } = useResearchJobs({
     projectId: projectId ?? '',
   })
@@ -168,6 +168,7 @@ export function ResearchWorkspace() {
               selectedNoteIds={selectedNoteIds}
               sendDisabled={!canExecute}
               blockedHint={blockedHint}
+              backgroundNotice={backgroundNotice}
             />
           </TabsContent>
           <TabsContent value="compare" className="min-h-0 flex-1">

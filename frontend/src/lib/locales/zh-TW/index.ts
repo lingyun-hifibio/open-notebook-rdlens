@@ -1072,6 +1072,8 @@ export const zhTW = {
     chatSend: "Send",
     chatThinking: "Thinking",
     chatNoAnswer: "No answer yet.",
+    chatRestoreRunning: "重新整理前的一輪仍在背景生成（中斷 ≠ 取消），完成後再次重新整理即可看到。",
+    chatRestoreFailed: "重新整理前的一輪生成未完成。",
     chatUsage: "Usage",
     chatReconnecting: "Reconnecting… (attempt {{count}})",
     chatRetryable: "Retryable",

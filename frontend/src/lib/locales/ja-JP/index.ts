@@ -1072,6 +1072,8 @@ export const jaJP = {
     chatSend: "Send",
     chatThinking: "Thinking",
     chatNoAnswer: "No answer yet.",
+    chatRestoreRunning: "更新前の生成がまだバックグラウンドで実行中です（切断 ≠ キャンセル）— 完了後に再度更新してください。",
+    chatRestoreFailed: "更新前の生成は完了しませんでした。",
     chatUsage: "Usage",
     chatReconnecting: "Reconnecting… (attempt {{count}})",
     chatRetryable: "Retryable",

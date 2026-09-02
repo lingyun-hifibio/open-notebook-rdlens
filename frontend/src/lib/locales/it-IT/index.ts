@@ -1072,6 +1072,8 @@ export const itIT = {
     chatSend: "Send",
     chatThinking: "Thinking",
     chatNoAnswer: "No answer yet.",
+    chatRestoreRunning: "Una generazione precedente all'aggiornamento è ancora in esecuzione in background (disconnessione ≠ annullamento) — aggiorna di nuovo al termine.",
+    chatRestoreFailed: "Una generazione precedente all'aggiornamento non è stata completata.",
     chatUsage: "Usage",
     chatReconnecting: "Reconnecting… (attempt {{count}})",
     chatRetryable: "Retryable",

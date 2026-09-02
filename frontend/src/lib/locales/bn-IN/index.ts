@@ -1073,6 +1073,8 @@ export const bnIN = {
     chatSend: "Send",
     chatThinking: "Thinking",
     chatNoAnswer: "No answer yet.",
+    chatRestoreRunning: "রিফ্রেশের আগের একটি জেনারেশন এখনও ব্যাকগ্রাউন্ডে চলছে (সংযোগ বিচ্ছিন্ন ≠ বাতিল) — শেষ হলে আবার রিফ্রেশ করুন।",
+    chatRestoreFailed: "রিফ্রেশের আগের একটি জেনারেশন সম্পূর্ণ হয়নি।",
     chatUsage: "Usage",
     chatReconnecting: "Reconnecting… (attempt {{count}})",
     chatRetryable: "Retryable",
