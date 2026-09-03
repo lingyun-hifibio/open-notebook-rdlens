@@ -27,6 +27,7 @@ import type {
   ResearchChatRequest,
   ResearchCompareCreateRequest,
   ResearchCompareCreateResponse,
+  ResearchCompareReportResponse,
   ResearchContextPreview,
   ResearchCoverageReportResponse,
   ResearchEgressConsentResponse,
@@ -481,6 +482,22 @@ export async function getCoverageReport(
   jobId: string,
 ): Promise<ResearchCoverageReportResponse> {
   const response = await apiClient.get<ResearchCoverageReportResponse>(
+    researchPath(projectId, 'jobs', jobId, 'report'),
+  )
+  return response.data
+}
+
+/**
+ * #307：deep_compare Job 最终报告读取（与 coverage 共用
+ * GET /jobs/{id}/report 端点，后端按 job_type 分支返回）。
+ * 仅 completed 且 result_ref 指向报告 Artifact 可读；
+ * 未完成/Artifact 不可读 → 409 report_unavailable。
+ */
+export async function getCompareReport(
+  projectId: string,
+  jobId: string,
+): Promise<ResearchCompareReportResponse> {
+  const response = await apiClient.get<ResearchCompareReportResponse>(
     researchPath(projectId, 'jobs', jobId, 'report'),
   )
   return response.data

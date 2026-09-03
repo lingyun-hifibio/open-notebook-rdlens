@@ -22,6 +22,11 @@ export function useCoverageReport(
   projectId: string,
   jobId: string | null,
   enabled: boolean,
+  /** #307：可注入同端点分支 fetcher（compare 报告复用同一读取时序） */
+  fetcher: (
+    projectId: string,
+    jobId: string,
+  ) => Promise<ResearchCoverageReportResponse> = getCoverageReport,
 ): UseCoverageReportState {
   const [state, setState] = useState<UseCoverageReportState>({
     report: null,
@@ -36,7 +41,7 @@ export function useCoverageReport(
     }
     let cancelled = false
     setState({ report: null, error: null, loading: true })
-    getCoverageReport(projectId, jobId)
+    fetcher(projectId, jobId)
       .then((report) => {
         if (!cancelled) setState({ report, error: null, loading: false })
       })

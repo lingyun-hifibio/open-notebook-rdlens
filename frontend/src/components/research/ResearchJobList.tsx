@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { canCancelJob, jobProgressPercent } from '@/lib/research/jobs'
 import { CoverageJobDetails } from './CoverageJobDetails'
+import { CompareReportView } from './CompareReportView'
 import type { ResearchCitationDisplayItem, ResearchJob } from '@/lib/research/types'
 
 /**
@@ -99,9 +100,14 @@ export function ResearchJobList({
           )}
 
           {job.status === 'completed' && job.result_ref && (
-            <div className="text-xs text-muted-foreground">
-              {t('research.jobsResultRef')}: <code>{job.result_ref}</code>
-            </div>
+            job.job_type === 'deep_compare' ? (
+              // #307：compare 完成后提供报告查看入口（替代裸 result_ref 文本）
+              <CompareReportView job={job} onCitationJump={onCitationJump} />
+            ) : (
+              <div className="text-xs text-muted-foreground">
+                {t('research.jobsResultRef')}: <code>{job.result_ref}</code>
+              </div>
+            )
           )}
 
           {job.coverage !== undefined && (

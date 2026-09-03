@@ -63,7 +63,8 @@ const COVERAGE_STATUS_KEYS: Record<string, string> = {
   failed: 'research.coverage.status.failed',
 }
 
-function toDisplayItem(citation: ResearchCoverageCitation): ResearchCitationDisplayItem {
+/** #307：coverage/compare 报告 Citation → 展示条目（复用） */
+export function toDisplayItem(citation: ResearchCoverageCitation): ResearchCitationDisplayItem {
   const snapshot = citation.snapshot
   const pageIdx = typeof snapshot.page_idx === 'number' ? snapshot.page_idx : null
   return {
