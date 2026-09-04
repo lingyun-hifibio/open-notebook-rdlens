@@ -381,6 +381,14 @@ describe('ResearchLayout', () => {
     expect(document.activeElement).toHaveTextContent('restore layout')
   })
 
+  it('keeps the expand control on the right edge for the horizontal axis', () => {
+    renderLayout({ axis: 'horizontal' })
+    const expandButton = screen.getByRole('button', { name: 'expand workspace' })
+    expect(expandButton).toHaveClass('right-3', 'top-1/2', '-translate-y-1/2')
+    expect(expandButton).not.toHaveClass('left-1/2')
+    expect(expandButton).not.toHaveClass('-translate-x-1/2')
+  })
+
   it('moves separator focus to the restore control before maximizing', () => {
     renderLayout()
     const separator = screen.getByRole('separator', { name: 'resize panels' })

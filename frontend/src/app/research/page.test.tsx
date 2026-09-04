@@ -98,12 +98,12 @@ describe('/research 页面骨架', () => {
     mediaQueryMocks.isDesktop.mockReturnValue(true)
   })
 
-  it('使用稳定的全局纵向布局槽位，工作台继续在内部裁剪溢出', () => {
+  it('使用稳定的全局横向布局槽位，工作台继续在内部裁剪溢出', () => {
     render(<ResearchPage />)
     const wrapper = screen.getByTestId('workbench').parentElement
     expect(wrapper).not.toBeNull()
     expect(wrapper).toHaveClass('h-full', 'min-h-0', 'overflow-hidden')
-    expect(screen.getByTestId('research-layout')).toHaveAttribute('data-axis', 'vertical')
+    expect(screen.getByTestId('research-layout')).toHaveAttribute('data-axis', 'horizontal')
     expect(screen.getByRole('separator', { name: 'research.layout.resizeWorkspace' })).toBeInTheDocument()
   })
 
