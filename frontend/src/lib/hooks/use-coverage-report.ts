@@ -53,7 +53,7 @@ export function useCoverageReport(
     return () => {
       cancelled = true
     }
-  }, [enabled, jobId, projectId])
+  }, [enabled, jobId, projectId, fetcher])
 
   return state
 }
