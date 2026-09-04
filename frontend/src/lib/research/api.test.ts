@@ -203,6 +203,12 @@ describe('researchApi coverage（COV-09）', () => {
     expect(captured.url).toBe(`/v1/research/projects/${P}/jobs/job_1/report`)
   })
 
+  it('getCompareReport → 同一 report 端点（#307 deep_compare 分支）', async () => {
+    const captured = await capture(() => researchApi.getCompareReport(P, 'job_1'))
+    expect(captured.method).toBe('GET')
+    expect(captured.url).toBe(`/v1/research/projects/${P}/jobs/job_1/report`)
+  })
+
   it('retryCoverageJob → POST .../jobs/{id}/retry 确认计费风险 + 新幂等键', async () => {
     const captured = await capture(() => researchApi.retryCoverageJob(P, 'job_1', 'ui-key-2'))
     expect(captured.method).toBe('POST')

@@ -327,3 +327,16 @@ export interface ResearchCompareCreateResponse {
   status: ResearchJobStatus
 }
 
+/**
+ * #307：GET /jobs/{id}/report（deep_compare 分支）——报告正文 + citations。
+ * 与 coverage 共用端点（后端按 job_type 分支），无 coverage 专属字段；
+ * 仅 completed 且 result_ref 指向报告 Artifact 可读，否则 409
+ * report_unavailable。
+ */
+export interface ResearchCompareReportResponse {
+  job_id: string
+  status: string
+  report: { ref: string; markdown: string }
+  citations: ResearchCoverageCitation[]
+}
+

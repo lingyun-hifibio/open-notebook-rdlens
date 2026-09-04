@@ -41,7 +41,9 @@ describe('ResearchJobList', () => {
   it('completed Job 展示 result_ref 引用且无取消按钮', () => {
     render(
       <ResearchJobList
-        jobs={[job({ status: 'completed', progress: 1, result_ref: 'art_compare_1' })]}
+        // #307：deep_compare completed 走 CompareReportView 入口，
+        // result_ref 文本展示仅适用于其它 Job 类型
+        jobs={[job({ job_type: 'research', status: 'completed', progress: 1, result_ref: 'art_compare_1' })]}
         isCreating={false}
         onCancel={vi.fn()}
       />,
