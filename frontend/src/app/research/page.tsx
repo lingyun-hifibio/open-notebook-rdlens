@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ResearchWorkspaceShell } from '@/lib/embedded/shell'
 import { isEmbeddedMode } from '@/lib/embedded/config'
 import { getResearchProjectId } from '@/lib/research/project'
-import { useIsDesktop, useMediaQuery } from '@/lib/hooks/use-media-query'
+import { useIsDesktop } from '@/lib/hooks/use-media-query'
 import { ResearchWorkbench } from '@/components/research/ResearchWorkbench'
 import { ResearchWorkspace } from '@/components/research/ResearchWorkspace'
 import { ResearchGlobalModelBar } from '@/components/research/ResearchGlobalModelBar'
@@ -20,18 +20,18 @@ import { useTranslation } from '@/lib/hooks/use-translation'
  *
  * 父页面（RDLens 主页面）以 iframe 嵌入本路由；嵌入式模式关闭时
  * 重定向回普通 Notebook 首页（上游行为不变）。合并 UI-02 + UI-03：
- * 上半屏为 Sources/Notes/Insights/Transformations 工作台
- * （ResearchWorkbench），下半屏为 Search/Chat/Compare/Jobs 工作区
+ * 左栏为 Sources/Notes/Insights/Transformations 工作台
+ * （ResearchWorkbench），右栏为 Search/Chat/Compare/Jobs 工作区
  * （ResearchWorkspace）；各自内部 Tab 切换，互不共享状态。
  *
  * Issue #182：`selectedSourceId`/`highlightPageIdx` 提升到组合层。
- * 上半屏选中 Source 时，下半屏切换为该 Source 专属的 Source Chat 面板；
+ * 左栏选中 Source 时，右栏切换为该 Source 专属的 Source Chat 面板；
  * 全局 Workspace 以 hidden 包裹**保持挂载**（多篇 Chat 流与 Job 轮询
  * 本地状态不丢失；浏览器隐藏期间轮询继续，服务端 turn 不受影响）。
  * 关闭来源后卸载面板并恢复全局工作区 tabs。面板内 citation 点击设置
- * `highlightPageIdx`，定位上半屏 SourceDetailPanel 对应 chunk/page；独立的
+ * `highlightPageIdx`，定位左栏 SourceDetailPanel 对应 chunk/page；独立的
  * `highlightRequestId` 保证重复点击同一页 Citation 也会再次移动焦点
- * （0-based 存储仅展示 +1，REQ-DATA-03）；不强制切换上半屏 tab。
+ * （0-based 存储仅展示 +1，REQ-DATA-03）；不强制切换左栏 tab。
  */
 export default function ResearchPage() {
   const router = useRouter()
@@ -40,7 +40,6 @@ export default function ResearchPage() {
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null)
   const [highlightPageIdx, setHighlightPageIdx] = useState<number | null>(null)
   const [highlightRequestId, setHighlightRequestId] = useState(0)
-  const hasUsableHeight = useMediaQuery('(min-height: 560px)')
   const isDesktop = useIsDesktop()
   const [globalCompactPanel, setGlobalCompactPanel] = useState<'primary' | 'secondary'>('secondary')
   const [sourceCompactPanel, setSourceCompactPanel] = useState<'primary' | 'secondary'>('primary')
@@ -70,8 +69,8 @@ export default function ResearchPage() {
     setSourceCompactPanel('primary')
   }, [])
 
-  // COV-09：下半屏 Coverage 报告 Citation → 选中来源 + 高亮目标页
-  // （复用上半屏现有授权预览链路，与 Source Chat 面板 onHighlightPage 同构）
+  // COV-09：右栏 Coverage 报告 Citation → 选中来源 + 高亮目标页
+  // （复用左栏现有授权预览链路，与 Source Chat 面板 onHighlightPage 同构）
   const handleCitationJump = useCallback((sourceId: string, pageIdx: number | null) => {
     if (pageIdx === null) {
       setSelectedSourceId(sourceId)
@@ -93,7 +92,7 @@ export default function ResearchPage() {
   const projectId = getResearchProjectId() ?? ''
   const sourceMode = selectedSourceId !== null
   const sourceDesktop = sourceMode && isDesktop
-  const compact = sourceMode ? !isDesktop : !hasUsableHeight
+  const compact = !isDesktop
 
   return (
     // Issue #243 GMOD-FE-01 §6.2：页面根 h-screen flex-col；顶层 Research
@@ -123,11 +122,11 @@ export default function ResearchPage() {
         <div className="min-h-0 flex-1">
         <ResearchLayout
           layoutId={sourceDesktop ? 'source-desktop' : 'global'}
-          axis={sourceDesktop ? 'horizontal' : 'vertical'}
+          axis="horizontal"
           compact={compact}
-          defaultRatio={sourceDesktop ? 55 : 40}
-          minPrimary={sourceDesktop ? 360 : 200}
-          minSecondary={sourceDesktop ? 360 : 300}
+          defaultRatio={sourceDesktop ? 55 : 35}
+          minPrimary={sourceDesktop ? 360 : 280}
+          minSecondary={sourceDesktop ? 360 : 420}
           primaryLabel={sourceMode ? t('research.layout.sourceContent') : t('research.layout.artifacts')}
           secondaryLabel={sourceMode ? t('research.layout.sourceChat') : t('research.layout.workspace')}
           separatorLabel={sourceMode ? t('research.layout.resizeSource') : t('research.layout.resizeWorkspace')}
@@ -149,9 +148,9 @@ export default function ResearchPage() {
               onCloseSource={handleCloseSource}
             />
             </div>,
-            <div key="workspace" className="h-full min-h-0 border-t">
+            <div key="workspace" className={`h-full min-h-0 ${compact ? '' : 'border-l'}`}>
             {/* 全局工作区保持挂载：选中来源时以 hidden 包裹（display:none），
-                多篇 Chat 流与 Job 轮询本地状态不丢失；面板占满同一半屏槽位 */}
+                多篇 Chat 流与 Job 轮询本地状态不丢失；面板占满同一栏槽位 */}
             <div className="h-full" hidden={selectedSourceId !== null}>
               <ResearchWorkspace onCitationJump={handleCitationJump} />
             </div>

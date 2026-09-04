@@ -40,7 +40,7 @@ export function SourceNoteSelector({
 
   return (
     <div className="border-b" data-testid="source-note-selector">
-      <div className="flex flex-wrap items-center gap-2 p-3">
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2">
         <Button
           type="button"
           variant="outline"

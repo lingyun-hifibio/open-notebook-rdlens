@@ -141,27 +141,27 @@ export function NotesPanel() {
         <p className="text-sm text-muted-foreground">{t('research.notes.empty')}</p>
       )}
 
-      <div className="space-y-2">
+      <ul className="divide-y divide-border" data-testid="note-list-rows">
         {items.map((item) => (
-          <Card key={item.note_id}>
-            <CardContent className="flex items-start justify-between gap-3 p-3">
-              <div className="min-w-0">
-                <p className="text-sm font-medium">{item.title}</p>
-                <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">
-                  {item.content}
-                </p>
-              </div>
-              {!isAdminReadonly && (
-                <>
-                  <Button size="sm" variant="ghost" onClick={() => startEdit(item)}>
-                    {t('research.notes.edit')}
-                  </Button>
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button size="sm" variant="ghost" aria-label={t('research.notes.delete')}>
-                        {t('research.notes.delete')}
-                      </Button>
-                    </AlertDialogTrigger>
+          <li
+            key={item.note_id}
+            className="group flex items-start gap-2 rounded px-2 py-1.5 hover:bg-accent/60"
+          >
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium">{item.title}</p>
+              <p className="truncate text-xs text-muted-foreground">{item.content}</p>
+            </div>
+            {!isAdminReadonly && (
+              <div className="flex shrink-0 gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                <Button size="sm" variant="ghost" onClick={() => startEdit(item)}>
+                  {t('research.notes.edit')}
+                </Button>
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button size="sm" variant="ghost" aria-label={t('research.notes.delete')}>
+                      {t('research.notes.delete')}
+                    </Button>
+                  </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>
                       <AlertDialogTitle>{t('research.notes.confirmDelete')}</AlertDialogTitle>
@@ -176,13 +176,12 @@ export function NotesPanel() {
                       </AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>
-                  </AlertDialog>
-                </>
-              )}
-            </CardContent>
-          </Card>
+                </AlertDialog>
+              </div>
+            )}
+          </li>
         ))}
-      </div>
+      </ul>
     </div>
   )
 }

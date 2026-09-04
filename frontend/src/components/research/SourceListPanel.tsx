@@ -2,7 +2,6 @@
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
 import { useResearchSources } from '@/lib/hooks/use-research'
@@ -49,43 +48,45 @@ export function SourceListPanel({
   }
 
   return (
-    <div className="space-y-2">
+    <ul className="divide-y divide-border" data-testid="source-list-rows">
       {items.map((item) => {
         const config = STATUS_CONFIG[item.status]
         return (
-          <Card key={item.source_id}>
-            <CardContent className="flex items-center justify-between gap-3 p-3">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium">{item.document_id}</p>
-                <p className="text-xs text-muted-foreground">
-                  {item.document_version}
-                  {item.synced_at ? ` · ${item.synced_at}` : ''}
+          <li
+            key={item.source_id}
+            className="group flex items-center gap-2 rounded px-2 py-1.5 hover:bg-accent/60"
+          >
+            <Badge variant={config.variant} className="shrink-0">
+              {t(config.labelKey)}
+            </Badge>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm">{item.document_id}</p>
+              {item.status === 'failed' && item.last_error && (
+                <p className="truncate text-xs text-destructive">
+                  {t('research.sources.lastError', { error: item.last_error })}
                 </p>
-                {item.status === 'failed' && item.last_error && (
-                  <p className="mt-1 text-xs text-destructive">
-                    {t('research.sources.lastError', { error: item.last_error })}
-                  </p>
-                )}
-                {item.status === 'failed' && (
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    {t('research.sources.retryHint')}
-                  </p>
-                )}
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <Badge variant={config.variant}>{t(config.labelKey)}</Badge>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => onOpenSource?.(item.source_id)}
-                >
-                  {t('research.sources.open')}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+              )}
+              {item.status === 'failed' && (
+                <p className="truncate text-xs text-muted-foreground">
+                  {t('research.sources.retryHint')}
+                </p>
+              )}
+            </div>
+            <span className="hidden shrink-0 text-xs text-muted-foreground md:inline">
+              {item.document_version}
+              {item.synced_at ? ` · ${item.synced_at}` : ''}
+            </span>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
+              onClick={() => onOpenSource?.(item.source_id)}
+            >
+              {t('research.sources.open')}
+            </Button>
+          </li>
         )
       })}
-    </div>
+    </ul>
   )
 }

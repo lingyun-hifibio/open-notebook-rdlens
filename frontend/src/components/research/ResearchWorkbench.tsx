@@ -97,7 +97,8 @@ export function ResearchWorkbench({
       {isAdminReadonly && <AdminReadOnlyBanner />}
 
       <Tabs value={tab} onValueChange={(value) => setTab(value as ResearchTab)} className="min-h-0 flex-1">
-        <TabsList>
+        {/* flex-wrap：窄栏（英文 locale 四标签超宽）时折行而非被裁剪 */}
+        <TabsList className="flex-wrap">
           <TabsTrigger value="sources">{t('research.workbench.tabSources')}</TabsTrigger>
           <TabsTrigger value="notes">{t('research.workbench.tabNotes')}</TabsTrigger>
           <TabsTrigger value="insights">{t('research.workbench.tabInsights')}</TabsTrigger>

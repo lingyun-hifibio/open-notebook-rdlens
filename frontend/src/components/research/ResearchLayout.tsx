@@ -394,11 +394,7 @@ export function ResearchLayout({
         ref={restoreRef}
         hidden={compact}
         type="button"
-        className={`absolute z-10 rounded border bg-background px-2 py-1 text-xs shadow-sm ${
-          isVertical
-            ? 'right-3 top-1/2 -translate-y-1/2'
-            : 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2'
-        }`}
+        className={`absolute z-10 rounded border bg-background px-2 py-1 text-xs shadow-sm right-3 top-1/2 -translate-y-1/2`}
         onClick={toggleMaximized}
       >
         {activeMaximized ? restoreLabel : expandSecondaryLabel}
