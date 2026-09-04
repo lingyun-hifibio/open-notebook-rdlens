@@ -1,8 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useResearchJobs, POLL_INTERVAL_MS } from './use-research-jobs'
-import { createCompare, getJob, cancelJob, retryCoverageJob } from '@/lib/research/api'
+import {
+  cancelJob,
+  createCompare,
+  getJob,
+  listJobs,
+  retryCoverageJob,
+} from '@/lib/research/api'
 import type { ResearchJob } from '@/lib/research/types'
+import type { ResearchPage } from '@/lib/types/research'
 
 /** #243 §6.4：调用方传入的 confirmed 全局模型快照 */
 const MODEL = 'm-local'
@@ -17,6 +24,12 @@ const MODEL = 'm-local'
 vi.mock('@/lib/research/api', () => ({
   createCompare: vi.fn(),
   getJob: vi.fn(),
+  // Issue #311：必须给默认空页——裸 vi.fn() 返回 undefined 会让
+  // refreshList 抛 TypeError 被静默 catch 吞掉，测试假绿
+  listJobs: vi.fn(async (): Promise<ResearchPage<ResearchJob>> => ({
+    items: [],
+    next_cursor: null,
+  })),
   cancelJob: vi.fn(),
   retryCoverageJob: vi.fn(),
   newIdempotencyKey: vi.fn(() => 'ik-retry'),
@@ -283,5 +296,211 @@ describe('useResearchJobs coverage（COV-09）', () => {
     })
     expect(ok).toBe(false)
     expect(result.current.error).toContain('409')
+  })
+})
+
+// ── Issue #311：服务端列表恢复（换设备不失联） ──
+
+/** 伪造 axios 404 错误（isAxiosError 按属性判定，plain object 即可） */
+function axios404(): Error {
+  return Object.assign(new Error('Request failed with status code 404'), {
+    isAxiosError: true,
+    response: { status: 404 },
+  })
+}
+
+describe('useResearchJobs 服务端列表恢复（Issue #311）', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    localStorage.clear()
+    vi.clearAllMocks()
+    // clearAllMocks 不清除工厂默认实现，这里显式恢复空页（防用例间泄漏）
+    vi.mocked(listJobs).mockResolvedValue({ items: [], next_cursor: null })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.clearAllMocks()
+  })
+
+  it('挂载合并服务端列表与 localStorage 去重（并集无重复；storage-only id 仍回源）', async () => {
+    vi.mocked(listJobs).mockResolvedValue({
+      items: [job('job_1', 'completed', { progress: 1 }), job('job_2', 'running', { progress: 0.5 })],
+      next_cursor: null,
+    })
+    localStorage.setItem('rdlens.research.jobs.proj_1', JSON.stringify(['job_2', 'job_3']))
+    vi.mocked(getJob).mockResolvedValue(job('job_3', 'queued'))
+
+    const { result } = renderHook(() => useResearchJobs({ projectId: 'proj_1' }))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+
+    expect(listJobs).toHaveBeenCalledWith('proj_1', { limit: 100 })
+    expect(getJob).toHaveBeenCalledWith('proj_1', 'job_3')
+    const ids = result.current.jobs.map((j) => j.job_id).sort()
+    expect(ids).toEqual(['job_1', 'job_2', 'job_3'])
+  })
+
+  it('listJobs 失败 → 静默回退 localStorage 恢复，error 为 null（旧后端兼容）', async () => {
+    vi.mocked(listJobs).mockRejectedValue(axios404())
+    localStorage.setItem('rdlens.research.jobs.proj_1', JSON.stringify(['job_9']))
+    vi.mocked(getJob).mockResolvedValue(job('job_9', 'completed', { progress: 1 }))
+
+    const { result } = renderHook(() => useResearchJobs({ projectId: 'proj_1' }))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+
+    expect(result.current.jobs).toHaveLength(1)
+    expect(result.current.jobs[0]).toMatchObject({ job_id: 'job_9' })
+    expect(result.current.error).toBeNull()
+  })
+
+  it('window focus 触发列表刷新：新 Job 入列并进入轮询（跨设备可见）', async () => {
+    vi.mocked(getJob).mockResolvedValue(job('job_focus', 'queued'))
+    const { result } = renderHook(() => useResearchJobs({ projectId: 'proj_1' }))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(listJobs).toHaveBeenCalledTimes(1)
+
+    vi.mocked(listJobs).mockResolvedValue({
+      items: [job('job_focus', 'queued', { progress: 0.2 })],
+      next_cursor: null,
+    })
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'))
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(listJobs).toHaveBeenCalledTimes(2)
+    expect(result.current.jobs.some((j) => j.job_id === 'job_focus')).toBe(true)
+
+    // 新 Job 进入轮询集合
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS)
+    })
+    expect(getJob).toHaveBeenCalledWith('proj_1', 'job_focus')
+  })
+
+  it('终态列表 Job 不参与轮询（terminalLockedRef）', async () => {
+    vi.mocked(listJobs).mockResolvedValue({
+      items: [job('job_done', 'completed', { progress: 1 })],
+      next_cursor: null,
+    })
+    vi.mocked(getJob).mockResolvedValue(job('job_done', 'completed', { progress: 1 }))
+
+    renderHook(() => useResearchJobs({ projectId: 'proj_1' }))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 2)
+    })
+    expect(getJob).not.toHaveBeenCalledWith('proj_1', 'job_done')
+  })
+
+  it('非终态列表 Job 进入轮询', async () => {
+    vi.mocked(listJobs).mockResolvedValue({
+      items: [job('job_run', 'running', { progress: 0.3 })],
+      next_cursor: null,
+    })
+    vi.mocked(getJob).mockResolvedValue(job('job_run', 'running', { progress: 0.6 }))
+
+    const { result } = renderHook(() => useResearchJobs({ projectId: 'proj_1' }))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS)
+    })
+    expect(getJob).toHaveBeenCalledWith('proj_1', 'job_run')
+    expect(result.current.jobs[0]).toMatchObject({ job_id: 'job_run', progress: 0.6 })
+  })
+
+  it('创建 Compare 成功后刷新服务端列表', async () => {
+    vi.mocked(createCompare).mockResolvedValue({ job_id: 'job_new', status: 'queued' })
+    vi.mocked(getJob).mockResolvedValue(job('job_new', 'queued'))
+
+    const { result } = renderHook(() => useResearchJobs({ projectId: 'proj_1' }))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(listJobs).toHaveBeenCalledTimes(1)
+    act(() => {
+      result.current.createCompare(['doc_1'], MODEL)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(listJobs).toHaveBeenCalledTimes(2)
+  })
+
+  it('getJob 404（Job 已 purge）→ 移出轮询集合，不再空轮询', async () => {
+    localStorage.setItem(
+      'rdlens.research.jobs.proj_1',
+      JSON.stringify(['job_dead', 'job_live']),
+    )
+    vi.mocked(getJob).mockImplementation(async (_pid, jid) => {
+      if (jid === 'job_dead') throw axios404()
+      return job(jid, 'queued')
+    })
+
+    renderHook(() => useResearchJobs({ projectId: 'proj_1' }))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 3)
+    })
+
+    const deadCalls = vi
+      .mocked(getJob)
+      .mock.calls.filter(([, jid]) => jid === 'job_dead').length
+    expect(deadCalls).toBe(1)
+    const liveCalls = vi
+      .mocked(getJob)
+      .mock.calls.filter(([, jid]) => jid === 'job_live').length
+    expect(liveCalls).toBeGreaterThanOrEqual(3)
+  })
+
+  it('projectId 切换：jobs 清空 + 旧项目在途列表响应不合并（跨项目污染守卫）', async () => {
+    let resolveP1:
+      | ((page: ResearchPage<ResearchJob>) => void)
+      | null = null
+    vi.mocked(getJob).mockResolvedValue(job('job_9', 'running'))
+    vi.mocked(listJobs).mockImplementation(async (pid) => {
+      if (pid === 'proj_1') {
+        return new Promise((resolve) => {
+          resolveP1 = resolve
+        })
+      }
+      return { items: [], next_cursor: null }
+    })
+
+    localStorage.setItem('rdlens.research.jobs.proj_1', JSON.stringify(['job_9']))
+    const { result, rerender } = renderHook(
+      ({ projectId }) => useResearchJobs({ projectId }),
+      { initialProps: { projectId: 'proj_1' } },
+    )
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.jobs).toHaveLength(1)
+
+    // 切换项目：视图立即清空
+    rerender({ projectId: 'proj_2' })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.jobs).toHaveLength(0)
+
+    // proj_1 的在途列表响应迟到返回：不得合并进 proj_2 视图
+    await act(async () => {
+      resolveP1?.({ items: [job('job_old_proj_1', 'running')], next_cursor: null })
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.jobs).toHaveLength(0)
+    expect(
+      result.current.jobs.some((j) => j.job_id === 'job_old_proj_1'),
+    ).toBe(false)
   })
 })
