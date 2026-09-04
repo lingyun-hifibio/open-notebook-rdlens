@@ -6,8 +6,13 @@
  * - Job 是服务端持久实体；本地只缓存最近一次 GET 快照 + job_id 集合。
  *   `localStorage` 仅存 job_id（浏览器关闭后恢复查看），**状态永远以
  *   服务端 GET 为准**——本地组件状态不是持久 Job 状态（任务卡验收）。
+ * - Issue #311：服务端列表恢复——mount 时拉 `GET .../jobs` 第一页
+ *   （limit=100 服务端上限，防老的非终态任务掉出默认页）∪ localStorage
+ *   job_id 并集，逐个回源；列表失败静默回退 localStorage（旧后端/离线
+ *   兼容，双端部署顺序无关）。
  * - 轮询非终态 Job（间隔 POLL_INTERVAL_MS）；终态一次：已观察到终态后，
- *   迟到的非终态响应不回归卡片。
+ *   迟到的非终态响应不回归卡片。GET 404（job 已随项目 purge）→ 从轮询
+ *   集合摘除，不做永久空轮询。
  * - 取消必须显式（POST /jobs/{id}/cancel；契约 §10.3）：queued/running →
  *   cancelling → cancelled；已终态取消即报错（completed → 409 语义），
  *   本地不做静默处理。
@@ -16,10 +21,12 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { isAxiosError } from 'axios'
 import {
   cancelJob,
   createCompare,
   getJob,
+  listJobs,
   newIdempotencyKey,
   retryCoverageJob,
 } from '@/lib/research/api'
@@ -30,6 +37,9 @@ import type { ResearchJob } from '@/lib/research/types'
 export const POLL_INTERVAL_MS = 3000
 
 const STORAGE_PREFIX = 'rdlens.research.jobs.'
+
+/** Issue #311：列表恢复拉满服务端单页上限（limit 合法域 1..100）。 */
+const LIST_FETCH_LIMIT = 100
 
 export function readStoredJobIds(projectId: string): string[] {
   try {
@@ -91,6 +101,9 @@ export function useResearchJobs({ projectId }: { projectId: string }): UseResear
   const [error, setError] = useState<string | null>(null)
   const terminalLockedRef = useRef<Set<string>>(new Set())
   const knownIdsRef = useRef<Set<string>>(new Set())
+  // Issue #311：项目切换守卫——在途 listJobs/getJob 响应返回时若项目已
+  // 切换则丢弃，防止旧项目任务卡污染新项目视图（并在轮询中跨项目 404）。
+  const projectIdRef = useRef<string>(projectId)
 
   /** 合并一次服务端快照；终态一次（非终态响应不得回归已终态卡片） */
   const mergeJob = useCallback((incoming: ResearchJob) => {
@@ -117,46 +130,85 @@ export function useResearchJobs({ projectId }: { projectId: string }): UseResear
     })
   }, [])
 
-  const fetchJob = useCallback(async (jobId: string) => {
-    const job = await getJob(projectId, jobId)
-    mergeJob(job)
-    return job
+  /**
+   * 单 Job 安全回源：成功 merge；404（Job 已 purge）→ 从轮询集合摘除；
+   * 其他错误保留上轮快照。项目已切换时丢弃响应（不 merge、不摘除）。
+   */
+  const getJobSafe = useCallback(async (jobId: string): Promise<ResearchJob | null> => {
+    const pid = projectId
+    try {
+      const job = await getJob(pid, jobId)
+      if (projectIdRef.current !== pid) return job
+      mergeJob(job)
+      return job
+    } catch (err) {
+      if (
+        isAxiosError(err)
+        && err.response?.status === 404
+        && projectIdRef.current === pid
+      ) {
+        knownIdsRef.current.delete(jobId)
+      }
+      return null
+    }
+  }, [mergeJob, projectId])
+
+  /**
+   * Issue #311：服务端列表刷新（mount / window focus / 创建登记后）。
+   * 失败静默回退 localStorage——不 setError、不阻塞工作区。
+   */
+  const refreshList = useCallback(async () => {
+    const pid = projectId
+    try {
+      const page = await listJobs(pid, { limit: LIST_FETCH_LIMIT })
+      if (projectIdRef.current !== pid) return
+      for (const item of page.items) {
+        knownIdsRef.current.add(item.job_id)
+        mergeJob(item)
+      }
+    } catch {
+      // 静默回退：列表端点失败（旧后端 404/网络）不影响 localStorage 恢复
+    }
   }, [mergeJob, projectId])
 
   useEffect(() => {
     if (!projectId) return undefined
-    let cancelled = false
+    projectIdRef.current = projectId
+    // 项目切换：清空视图状态（旧项目卡片不得残留到新项目）
+    setJobs([])
+    terminalLockedRef.current = new Set()
     knownIdsRef.current = new Set(readStoredJobIds(projectId))
 
-    // 恢复查看：重新打开后按 job_id 回源（REQ-JOB-02）
+    // 服务端列表第一页 ∪ localStorage 并集（Issue #311）
+    void refreshList()
+
+    // 恢复查看：localStorage 逐 job_id 回源（REQ-JOB-02；兜底旧后端与
+    // 超出列表第一页的 id）
     for (const jobId of knownIdsRef.current) {
-      getJob(projectId, jobId)
-        .then((job) => {
-          if (!cancelled) mergeJob(job)
-        })
-        .catch(() => {
-          // 单 job 恢复失败不阻塞工作区
-        })
+      void getJobSafe(jobId)
     }
 
     const timer = setInterval(() => {
       for (const jobId of knownIdsRef.current) {
         if (terminalLockedRef.current.has(jobId)) continue
-        getJob(projectId, jobId)
-          .then((job) => {
-            if (!cancelled) mergeJob(job)
-          })
-          .catch(() => {
-            // 轮询失败保留上次快照，下一轮再试
-          })
+        void getJobSafe(jobId)
       }
     }, POLL_INTERVAL_MS)
 
     return () => {
-      cancelled = true
       clearInterval(timer)
     }
-  }, [mergeJob, projectId])
+  }, [getJobSafe, refreshList, projectId])
+
+  // Issue #311：窗口重新聚焦 → 刷新服务端列表（跨设备新任务可见）
+  useEffect(() => {
+    if (!projectId) return undefined
+    const onFocus = () => {
+      void refreshList()
+    }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [refreshList, projectId])
 
   const createCompareJob = useCallback((
     documentIds: readonly string[],
@@ -189,7 +241,8 @@ export function useResearchJobs({ projectId }: { projectId: string }): UseResear
       .then(({ job_id }) => {
         knownIdsRef.current.add(job_id)
         writeStoredJobId(projectId, job_id)
-        return fetchJob(job_id)
+        void getJobSafe(job_id)
+        void refreshList()
       })
       .catch((err: Error) => {
         setError(err.message || 'compare.createFailed')
@@ -198,7 +251,7 @@ export function useResearchJobs({ projectId }: { projectId: string }): UseResear
         setIsCreating(false)
       })
     return null
-  }, [fetchJob, projectId])
+  }, [getJobSafe, projectId, refreshList])
 
   const cancel = useCallback((jobId: string) => {
     setError(null)
@@ -211,22 +264,21 @@ export function useResearchJobs({ projectId }: { projectId: string }): UseResear
     // 乐观展示 cancelling；真实状态以下一轮 GET 为准
     mergeJob({ ...existing, status: 'cancelling' })
     cancelJob(projectId, jobId)
-      .then(() => fetchJob(jobId))
+      .then(() => getJobSafe(jobId))
       .catch((err: Error) => {
         setError(err.message || 'job.cancelFailed')
         // 恢复服务端状态
-        fetchJob(jobId).catch(() => {})
+        getJobSafe(jobId)
       })
-  }, [fetchJob, jobs, mergeJob, projectId])
+  }, [getJobSafe, jobs, mergeJob, projectId])
 
   // COV-09：登记 all_selected 受理的 Job（Chat 侧创建；Jobs 页可见 + 轮询）
   const registerCoverageJob = useCallback((jobId: string) => {
     knownIdsRef.current.add(jobId)
     writeStoredJobId(projectId, jobId)
-    fetchJob(jobId).catch(() => {
-      // 单 job 恢复失败不阻塞；下一轮轮询再试
-    })
-  }, [fetchJob, projectId])
+    void getJobSafe(jobId)
+    void refreshList()
+  }, [getJobSafe, projectId, refreshList])
 
   // COV-09：outcome_unknown 显式人工重试（§12.2）——新幂等键 + 确认计费
   // 风险；不得复用旧唯一键静默发送（复用 → 服务端 409）。

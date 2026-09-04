@@ -432,6 +432,23 @@ export async function getJob(projectId: string, jobId: string): Promise<Research
   return response.data
 }
 
+/**
+ * 项目内 Job 列表（Issue #311：跨设备恢复查看；RDLens 后端 keyset
+ * 分页 created_at DESC）。读端点：与 getJob/listNotes 同款，不发
+ * X-Research-Contract v1 头。恢复/刷新路径调用方传 limit=100 拉满
+ * 服务端单页上限（老的非终态任务不掉出第一页）。
+ */
+export async function listJobs(
+  projectId: string,
+  params: { cursor?: string; limit?: number } = {},
+): Promise<ResearchPage<ResearchJob>> {
+  const response = await apiClient.get<ResearchPage<ResearchJob>>(
+    researchPath(projectId, 'jobs'),
+    { params },
+  )
+  return response.data
+}
+
 export async function cancelJob(projectId: string, jobId: string): Promise<void> {
   await apiClient.post(researchPath(projectId, 'jobs', jobId, 'cancel'))
 }
