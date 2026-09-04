@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, cleanup, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/react'
 import { ResearchJobList } from './ResearchJobList'
 import type { ResearchCompareReportResponse, ResearchJob } from '@/lib/research/types'
 
@@ -66,7 +65,7 @@ describe('ResearchJobList compare report entry（#307）', () => {
     expect(toggle).toBeTruthy()
     // 未展开前不拉取
     expect(getCompareReport).not.toHaveBeenCalled()
-    await userEvent.click(toggle)
+    fireEvent.click(toggle)
     await waitFor(() => {
       expect(screen.getByTestId('compare-report-content')).toBeTruthy()
     })
@@ -95,7 +94,7 @@ describe('ResearchJobList compare report entry（#307）', () => {
         onCancel={onCancel}
       />,
     )
-    await userEvent.click(screen.getByTestId('compare-report-toggle-job_cmp'))
+    fireEvent.click(screen.getByTestId('compare-report-toggle-job_cmp'))
     await waitFor(() => {
       expect(screen.getByText('research.compareReportError')).toBeTruthy()
     })
