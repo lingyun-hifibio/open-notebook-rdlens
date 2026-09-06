@@ -14,6 +14,7 @@
 export type ResearchRole = 'owner' | 'admin_readonly'
 
 export interface ResearchClaims {
+  userId: string
   projectId: string
   role: ResearchRole
   scopes: readonly string[]
@@ -58,7 +59,12 @@ export function decodeResearchClaims(token: string): ResearchClaims | null {
   if (payload === null) {
     return null
   }
-  if (typeof payload.project_id !== 'string' || payload.project_id.length === 0) {
+  if (
+    typeof payload.sub !== 'string' ||
+    payload.sub.length === 0 ||
+    typeof payload.project_id !== 'string' ||
+    payload.project_id.length === 0
+  ) {
     return null
   }
   if (payload.role !== 'owner' && payload.role !== 'admin_readonly') {
@@ -71,6 +77,7 @@ export function decodeResearchClaims(token: string): ResearchClaims | null {
     return null
   }
   return {
+    userId: payload.sub,
     projectId: payload.project_id,
     role: payload.role,
     scopes: payload.scopes as string[],

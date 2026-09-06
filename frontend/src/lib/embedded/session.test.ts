@@ -144,11 +144,12 @@ describe('createEmbeddedSession（REQ-EMB-01/02，契约 v0 §12）', () => {
 
   // ── UI-02：authenticated 携带 projectId/role（工作台路径与权限矩阵）──
 
-  it('合法 token 进入 authenticated 并携带 projectId 与 role（owner）', () => {
+  it('合法 token 进入 authenticated 并携带 userId、projectId 与 role（owner）', () => {
     const h = makeHarness()
     h.dispatch({ data: inboundMessage(h.posted[0].data) })
     const state = h.session.getState()
     expect(state.status).toBe('authenticated')
+    expect(state.userId).toBe('user_1')
     expect(state.projectId).toBe('proj_abc')
     expect(state.role).toBe('owner')
   })

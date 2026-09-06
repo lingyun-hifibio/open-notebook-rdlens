@@ -5,6 +5,8 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Badge } from '@/components/ui/badge'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import type { ResearchScopeMode } from '@/lib/research/scope'
 import type { ResearchNote, ResearchSource } from '@/lib/types/research'
 
 /**
@@ -14,8 +16,10 @@ import type { ResearchNote, ResearchSource } from '@/lib/types/research'
 export function SourceNoteSelector({
   sources,
   notes,
+  mode,
   selectedSourceIds,
   selectedNoteIds,
+  onModeChange,
   onToggleSource,
   onToggleNote,
   loading,
@@ -24,8 +28,10 @@ export function SourceNoteSelector({
 }: {
   sources: ResearchSource[]
   notes: ResearchNote[]
+  mode: ResearchScopeMode
   selectedSourceIds: string[]
   selectedNoteIds: string[]
+  onModeChange: (mode: ResearchScopeMode) => void
   onToggleSource: (sourceId: string) => void
   onToggleNote: (noteId: string) => void
   loading: boolean
@@ -34,9 +40,10 @@ export function SourceNoteSelector({
 }) {
   const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
-  const scope = selectedSourceIds.length === 0 && selectedNoteIds.length === 0
-    ? t('research.layout.projectScope')
-    : t('research.layout.selectedScope', { sources: selectedSourceIds.length, notes: selectedNoteIds.length })
+  const selectedCount = selectedSourceIds.length + selectedNoteIds.length
+  const scope = mode === 'entire_project'
+    ? t('research.layout.scope.entireProject')
+    : t('research.layout.scope.selectedSummary', { sources: selectedSourceIds.length, notes: selectedNoteIds.length })
 
   return (
     <div className="border-b" data-testid="source-note-selector">
@@ -65,6 +72,30 @@ export function SourceNoteSelector({
       </div>
 
       <div id="research-context-selection" hidden={!expanded} className="grid gap-4 px-4 pb-4 sm:grid-cols-2">
+      <RadioGroup
+        value={mode}
+        onValueChange={(value) => onModeChange(value as ResearchScopeMode)}
+        className="col-span-full flex flex-wrap gap-4"
+        aria-label={t('research.layout.scope.modeLabel')}
+      >
+        <label className="flex items-center gap-2 text-sm">
+          <RadioGroupItem value="entire_project" data-testid="scope-entire-project" />
+          {t('research.layout.scope.entireProject')}
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <RadioGroupItem
+            value="selected"
+            disabled={selectedCount === 0}
+            data-testid="scope-selected"
+          />
+          {t('research.layout.scope.selected')}
+        </label>
+      </RadioGroup>
+      {selectedCount === 0 && (
+        <p className="col-span-full text-xs text-muted-foreground" data-testid="scope-selection-required">
+          {t('research.layout.scope.selectItemRequired')}
+        </p>
+      )}
       <div className="space-y-2">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           {t('research.selectSources')}
@@ -81,6 +112,11 @@ export function SourceNoteSelector({
               <Checkbox
                 checked={selectedSourceIds.includes(source.source_id)}
                 onCheckedChange={() => onToggleSource(source.source_id)}
+                disabled={
+                  mode === 'selected' &&
+                  selectedCount === 1 &&
+                  selectedSourceIds.includes(source.source_id)
+                }
                 data-testid={`source-${source.source_id}`}
               />
               <span className="min-w-0 flex-1">
@@ -115,6 +151,11 @@ export function SourceNoteSelector({
               <Checkbox
                 checked={selectedNoteIds.includes(note.note_id)}
                 onCheckedChange={() => onToggleNote(note.note_id)}
+                disabled={
+                  mode === 'selected' &&
+                  selectedCount === 1 &&
+                  selectedNoteIds.includes(note.note_id)
+                }
                 data-testid={`note-${note.note_id}`}
               />
               <span className="min-w-0 flex-1">

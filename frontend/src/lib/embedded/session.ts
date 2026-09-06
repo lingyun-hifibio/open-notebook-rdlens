@@ -36,6 +36,8 @@ export interface SessionState {
   errorCode?: PmErrorCode
   errorMessage?: string
   tokenExpiresAt?: number
+  /** Token subject; only used to namespace browser-local Research Scope state. */
+  userId?: string
   /** UI-02：Token claims 中的项目 ID（工作台 Gateway 路径；服务端权威） */
   projectId?: string
   /** UI-02：Owner 写 / Admin 只读矩阵数据源（设计 §4.4） */
@@ -119,6 +121,7 @@ export function createEmbeddedSession(options: EmbeddedSessionOptions): Embedded
         setState({
           status: 'authenticated',
           tokenExpiresAt: message.expiresAt,
+          userId: claims.userId,
           projectId: claims.projectId,
           role: claims.role,
         })
