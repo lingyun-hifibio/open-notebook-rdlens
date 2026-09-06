@@ -2,6 +2,7 @@ import { act, render, renderHook, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   ResearchScopeProvider,
+  formatScopeLabel,
   scopeStorageKey,
   useResearchScope,
   validateResearchScope,
@@ -117,5 +118,40 @@ describe('ResearchScopeProvider', () => {
     )
     expect(screen.getByTestId('scope-probe')).toHaveTextContent('entire_project:')
     expect(localStorage.getItem(scopeStorageKey('user_1', 'project_2'))).toBeNull()
+  })
+})
+
+describe('formatScopeLabel（RWV2-11 K11）', () => {
+  // 与 ResearchSearchPanel.v1.test 同款 t() mock（key|opts），验证内容映射
+  const t = (key: string, opts?: Record<string, unknown>) =>
+    opts === undefined ? key : `${key}|${JSON.stringify(opts)}`
+
+  it('entire_project → Entire project 语义 key', () => {
+    expect(
+      formatScopeLabel({ mode: 'entire_project', sourceIds: [], noteIds: [] }, t),
+    ).toBe('research.scopeSummary.entireProject')
+  })
+
+  it('selected 单 Source → sourceOne', () => {
+    const label = formatScopeLabel(
+      { mode: 'selected', sourceIds: ['s1'], noteIds: [] },
+      t,
+    )
+    expect(label).toBe('research.scopeSummary.sourceOne')
+  })
+
+  it('selected 多 Source 单 Note → sourceMany + noteOne（join 有序）', () => {
+    const label = formatScopeLabel(
+      { mode: 'selected', sourceIds: ['s1', 's2'], noteIds: ['n1'] },
+      t,
+    )
+    expect(label).toBe(
+      'research.scopeSummary.sourceMany|{"count":2} · research.scopeSummary.noteOne',
+    )
+  })
+
+  it('selected 空（Provider 不变量下不可达）→ 防御性回退 selected 标签', () => {
+    const label = formatScopeLabel({ mode: 'selected', sourceIds: [], noteIds: [] }, t)
+    expect(label).toBe('research.layout.scope.selected')
   })
 })

@@ -23,6 +23,10 @@ import { useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
  * - 确认成功后 guard 用**调用时刻捕获的模型快照**执行原操作，不重新读取
  *   后来的全局模型（不变量 4）；
  * - 后端 dispatch gate 仍是最终权威——前端判断只决定是否先展示确认。
+ * - RWV2-11（K5/K10）：Scope 行只在本笔派发登记了 Scope 摘要
+ *   （`pendingScopeLabel` 非空）时展示——Search/Chat/Coverage/Compare
+ *   派发可见；未登记派发（SourceChat/Insights/Transformation/模型条空操作）
+ *   不显示，避免展示与派发无关的工作区范围。
  */
 export function ResearchEgressConsentDialog() {
   const { t } = useTranslation()
@@ -31,6 +35,7 @@ export function ResearchEgressConsentDialog() {
     isConsentInFlight,
     consentResponse,
     consentError,
+    pendingScopeLabel,
     confirmConsent,
     cancelConsent,
   } = useResearchGlobalModel()
@@ -73,6 +78,17 @@ export function ResearchEgressConsentDialog() {
               {(consentResponse?.required_scope.data_categories ?? []).join(', ')}
             </p>
           </div>
+          {pendingScopeLabel !== null && (
+            <div>
+              <p className="font-medium">{t('research.consentScopeTitle')}</p>
+              <p
+                className="mt-1 text-xs text-muted-foreground"
+                data-testid="egress-consent-scope"
+              >
+                {pendingScopeLabel}
+              </p>
+            </div>
+          )}
           <p className="text-xs text-muted-foreground">
             {t('research.consentPreviewNote')}
           </p>

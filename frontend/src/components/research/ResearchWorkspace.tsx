@@ -4,12 +4,12 @@ import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { createCoverageChat } from '@/lib/research/api'
-import { useResearchChat, type CoverageSubmitRequest } from '@/lib/hooks/use-research-chat'
+import { useResearchChat, type CoverageSubmitRequest, type ResearchChatSelection, deriveScopeSnapshot } from '@/lib/hooks/use-research-chat'
+import { formatScopeLabel, useResearchScope, type ResearchScopeSnapshot } from '@/lib/research/scope'
 import { researchModelBlockedHint, useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
 import { useResearchJobs } from '@/lib/hooks/use-research-jobs'
 import { useResearchNotes, useResearchSources } from '@/lib/hooks/use-research'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
-import { useResearchScope } from '@/lib/research/scope'
 import { SourceNoteSelector } from './SourceNoteSelector'
 import { ResearchSearchPanel } from './ResearchSearchPanel'
 import { ResearchChatPanel } from './ResearchChatPanel'
@@ -85,16 +85,22 @@ export function ResearchWorkspace({
   const sendChat = useCallback(
     async (
       query: string,
-      selection: Parameters<typeof sendTurn>[1],
+      selection: ResearchChatSelection | undefined,
     ): Promise<boolean> => {
-      // sendTurn 返回 void，用 true 标记「已派发」，供调用方区分确认取消
-      const sent = await runGuarded((modelId) => {
-        sendTurn(query, selection, modelId)
-        return true
-      })
+      // RWV2-11（K11）：consent 摘要由「面板转发来的 selection」推导（与
+      // 最终请求同一快照），禁止回读本组件 provider 态——弹窗摘要必须等
+      // 于派发载荷。
+      const scopeLabel = formatScopeLabel(deriveScopeSnapshot(selection), t)
+      const sent = await runGuarded(
+        (modelId) => {
+          sendTurn(query, selection, modelId)
+          return true
+        },
+        { scopeLabel },
+      )
       return sent === true
     },
-    [sendTurn, runGuarded],
+    [runGuarded, sendTurn, t],
   )
 
   const createCompare = useCallback(
@@ -102,15 +108,26 @@ export function ResearchWorkspace({
       documentIds: readonly string[],
       groupSize?: number,
     ): Promise<boolean> => {
-      // 与 sendChat 相同：返回「是否真正派发」，供面板区分 consent 取消，
-      // 取消时不显示「已创建」提示
-      const sent = await runGuarded((modelId) => {
-        createCompareJob(documentIds, modelId, groupSize)
-        return true
-      })
+      // RWV2-11（K11）：Compare 只走显式 `selected` 模式（K2）——摘要按
+      // 传入 document_ids 数量从快照形状推导（与入库载荷同源）。
+      const scopeLabel = formatScopeLabel(
+        {
+          mode: 'selected',
+          sourceIds: [...documentIds],
+          noteIds: [],
+        },
+        t,
+      )
+      const sent = await runGuarded(
+        (modelId) => {
+          createCompareJob(documentIds, modelId, groupSize)
+          return true
+        },
+        { scopeLabel },
+      )
       return sent === true
     },
-    [createCompareJob, runGuarded],
+    [createCompareJob, runGuarded, t],
   )
 
   // COV-09：all_selected 提交体——202 受理后把 Job 登记进 Jobs 页
@@ -135,20 +152,26 @@ export function ResearchWorkspace({
   )
 
   const sendCoverageChat = useCallback(
-    async (query: string): Promise<boolean> => {
-      // 与 sendChat 相同：经顶层执行守卫，传入调用时刻的 confirmed 模型快照
-      const sent = await runGuarded((modelId) => {
-        sendCoverage(
-          query,
-          { sourceIds: selectedSourceIds, noteIds: selectedNoteIds },
-          modelId,
-          submitCoverage,
-        )
-        return true
-      })
+    async (query: string, snapshot: ResearchScopeSnapshot): Promise<boolean> => {
+      // RWV2-11（K9/K11）：快照由面板在派发时刻冻结并转发——本组件不再
+      // 回读 provider 态；consent 摘要与该快照同源；note_ids 恒空（后端
+      // Notes 不支持 Coverage）。
+      const scopeLabel = formatScopeLabel(snapshot, t)
+      const sent = await runGuarded(
+        (modelId) => {
+          sendCoverage(
+            query,
+            { mode: snapshot.mode, sourceIds: [...snapshot.sourceIds], noteIds: [] },
+            modelId,
+            submitCoverage,
+          )
+          return true
+        },
+        { scopeLabel },
+      )
       return sent === true
     },
-    [runGuarded, selectedNoteIds, selectedSourceIds, sendCoverage, submitCoverage],
+    [runGuarded, sendCoverage, submitCoverage, t],
   )
 
   // COV-09：报告 Citation → 解析到项目内来源后联动上半屏预览（现有链路）；
@@ -202,8 +225,6 @@ export function ResearchWorkspace({
             ) : (
               <ResearchSearchPanel
                 projectId={projectId}
-                selectedSourceIds={selectedSourceIds}
-                selectedNoteIds={selectedNoteIds}
               />
             )}
           </TabsContent>
@@ -213,8 +234,6 @@ export function ResearchWorkspace({
               isStreaming={isStreaming}
               onSend={sendChat}
               onSendCoverage={sendCoverageChat}
-              selectedSourceIds={selectedSourceIds}
-              selectedNoteIds={selectedNoteIds}
               sendDisabled={!canExecute}
               blockedHint={blockedHint}
               coverageJobs={jobs}
@@ -226,7 +245,6 @@ export function ResearchWorkspace({
           <TabsContent value="compare" className="min-h-0 flex-1">
             <ComparePanel
               sources={sources}
-              selectedSourceIds={selectedSourceIds}
               isCreating={isCreating}
               error={jobsError}
               onCreate={createCompare}

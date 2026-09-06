@@ -16,6 +16,7 @@ import type {
   ResearchChatSelection,
 } from '@/lib/hooks/use-research-chat'
 import type { ResearchCitationDisplayItem, ResearchJob, ResearchSynthesisScope } from '@/lib/research/types'
+import { formatScopeLabel, useResearchScope, type ResearchScopeSnapshot } from '@/lib/research/scope'
 
 /**
  * Research Chat 面板（UI-03，REQ-ENG-04/REQ-API-02；COV-09 §12.3）。
@@ -43,8 +44,6 @@ export function ResearchChatPanel({
   isStreaming,
   onSend,
   onSendCoverage,
-  selectedSourceIds,
-  selectedNoteIds,
   sendDisabled,
   blockedHint,
   coverageJobs,
@@ -59,10 +58,8 @@ export function ResearchChatPanel({
    * 调用方据此决定「派发后」的清理（如清空输入），使取消零副作用。
    */
   onSend: (query: string, selection?: ResearchChatSelection) => Promise<boolean>
-  /** COV-09：all_selected 提交（返回是否已真正受理） */
-  onSendCoverage: (query: string) => Promise<boolean>
-  selectedSourceIds: string[]
-  selectedNoteIds: string[]
+  /** COV-09：all_selected 提交；RWV2-11（K9）携带派发时冻结的快照 */
+  onSendCoverage: (query: string, snapshot: ResearchScopeSnapshot) => Promise<boolean>
   /** #243：无可用全局模型时禁用发送（不变量 2/7 的 Chat 侧表达） */
   sendDisabled?: boolean
   blockedHint?: string | null
@@ -82,24 +79,43 @@ export function ResearchChatPanel({
   const [query, setQuery] = useState('')
   const [scope, setScope] = useState<ResearchSynthesisScope>('relevant')
   const generationBlocked = sendDisabled === true
-  // 与 CoverageScopeSelector 相同的预检条件（§12.3：1～50 Source 前端预检，
-  // Notes 禁用；服务端仍是权威）
+  // RWV2-11（K7）：Scope 真源唯一——面板直接消费共享 Provider
+  const { mode, getSnapshot } = useResearchScope()
+  // RWV2-11（K3）：all_selected 只适用于显式 selected 范围（1～50 Source、无
+  // Notes）。entire_project 无显式 Source 集合（后端空数组必 422
+  // coverage_sources_empty）——提交闸门单点（K3/W4），CoverageScopeSelector
+  // 只出 notice。
+  const dispatchSnapshot = getSnapshot()
   const coverageAllowed =
-    selectedNoteIds.length === 0 &&
-    selectedSourceIds.length > 0 &&
-    selectedSourceIds.length <= COVERAGE_SOURCE_HARD_MAX
+    mode === 'selected' &&
+    dispatchSnapshot.sourceIds.length > 0 &&
+    dispatchSnapshot.sourceIds.length <= COVERAGE_SOURCE_HARD_MAX &&
+    dispatchSnapshot.noteIds.length === 0
 
   const submit = () => {
     const trimmed = query.trim()
     if (!trimmed || generationBlocked) return
+    // RWV2-11（K8/K9）：派发时刻冻结快照——submit 单次读取，提交闸门与载荷
+    // 共用同一快照（P2-①，避免渲染期/提交期两次取值）；selection 携带 mode，
+    // turn 记录由 hook 推导，consent/幂等/最终请求全部同源（K11）。
+    const snapshot = getSnapshot()
     if (scope === 'all_selected') {
-      if (!coverageAllowed) return
-      void onSendCoverage(trimmed).then((sent) => {
+      const allowed =
+        mode === 'selected' &&
+        snapshot.sourceIds.length > 0 &&
+        snapshot.sourceIds.length <= COVERAGE_SOURCE_HARD_MAX &&
+        snapshot.noteIds.length === 0
+      if (!allowed) return
+      void onSendCoverage(trimmed, snapshot).then((sent) => {
         if (sent) setQuery('')
       })
       return
     }
-    void onSend(trimmed, { sourceIds: selectedSourceIds, noteIds: selectedNoteIds }).then((sent) => {
+    void onSend(trimmed, {
+      mode: snapshot.mode,
+      sourceIds: [...snapshot.sourceIds],
+      noteIds: [...snapshot.noteIds],
+    }).then((sent) => {
       if (sent) setQuery('')
     })
   }
@@ -125,10 +141,22 @@ export function ResearchChatPanel({
         )}
         {turns.map((turn) =>
           turn.role === 'user' ? (
-            <div key={turn.id} className="flex justify-end">
+            <div key={turn.id} className="flex flex-col items-end gap-1">
               <div className="max-w-[80%] rounded-lg bg-primary/10 px-3 py-2 text-sm">
                 {turn.content}
               </div>
+              {/* RWV2-11：会话内 turn 显示派发 Scope 徽标；刷新恢复 turn
+                  （scopeSnapshot null）如实不显示（B13/K6） */}
+              {turn.scopeSnapshot !== null && (
+                <span
+                  className="text-xs text-muted-foreground"
+                  data-testid="chat-turn-scope-badge"
+                >
+                  {t('research.chatScopeBadge', {
+                    scope: formatScopeLabel(turn.scopeSnapshot, t),
+                  })}
+                </span>
+              )}
             </div>
           ) : (
             <div key={turn.id} className="space-y-2">
@@ -204,24 +232,30 @@ export function ResearchChatPanel({
                     <p className="text-muted-foreground">{turn.errorMessage}</p>
                   )}
                   <div className="flex items-center gap-2">
-                    {turn.errorCode && RETRYABLE_SSE_ERROR_CODES.includes(turn.errorCode) && (
-                      <>
-                        <Badge variant="secondary">{t('research.chatRetryable')}</Badge>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            const userTurn = turns[turns.indexOf(turn) - 1]
-                            void onSend(userTurn?.content ?? '', {
-                              sourceIds: selectedSourceIds,
-                              noteIds: selectedNoteIds,
-                            })
-                          }}
-                        >
-                          {t('research.chatRetry')}
-                        </Button>
-                      </>
-                    )}
+                    {/* RWV2-11（K12）：重试必须复用原 turn 的冻结快照——派发后
+                        修改 Scope 不得影响重试；null（恢复轮）不渲染重试按钮，
+                        永不静默以空数组=全项目派发（P1-①）。 */}
+                    {turn.errorCode &&
+                      RETRYABLE_SSE_ERROR_CODES.includes(turn.errorCode) &&
+                      turn.scopeSnapshot !== null && (
+                        <>
+                          <Badge variant="secondary">{t('research.chatRetryable')}</Badge>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              const userTurn = turns[turns.indexOf(turn) - 1]
+                              void onSend(userTurn?.content ?? '', {
+                                mode: turn.scopeSnapshot!.mode,
+                                sourceIds: [...turn.scopeSnapshot!.sourceIds],
+                                noteIds: [...turn.scopeSnapshot!.noteIds],
+                              })
+                            }}
+                          >
+                            {t('research.chatRetry')}
+                          </Button>
+                        </>
+                      )}
                   </div>
                 </div>
               )}
@@ -248,8 +282,9 @@ export function ResearchChatPanel({
         <CoverageScopeSelector
           value={scope}
           onChange={setScope}
-          selectedSourceCount={selectedSourceIds.length}
-          selectedNoteCount={selectedNoteIds.length}
+          scopeMode={mode}
+          selectedSourceCount={dispatchSnapshot.sourceIds.length}
+          selectedNoteCount={dispatchSnapshot.noteIds.length}
         />
         <div className="flex gap-2">
           <Input

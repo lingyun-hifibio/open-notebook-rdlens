@@ -1,12 +1,20 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import { ResearchChatPanel } from './ResearchChatPanel'
+import { ResearchScopeProvider, scopeStorageKey, useResearchScope, type ResearchScopeSnapshot } from '@/lib/research/scope'
 import type { ResearchBackgroundNotice, ResearchChatTurn } from '@/lib/hooks/use-research-chat'
 import type { ResearchCitation, ResearchJob } from '@/lib/research/types'
 
 // UI-03 Red：Chat 面板展示（REQ-ENG-04）——thinking/answer/citation/usage/
 // resolved_mode 流式渲染；重连提示；错误可重试标记；Citation 页码按
 // page_idx + 1 展示（契约 §13.2，page_idx 0-based）。
+// RWV2-11（K7/K8/K12）：面板直接消费共享 ResearchScopeProvider——测试经
+// localStorage 预置范围；retry 复用 turn.scopeSnapshot（null 不渲染重试）；
+// Coverage 只允许 selected 模式 1..50 Source；entire_project 显示专属说明。
+
+const USER_ID = 'u1'
+const PROJECT_ID = 'p1'
+const SCOPE_A: ResearchScopeSnapshot = { mode: 'selected', sourceIds: ['src_1'], noteIds: [] }
 
 function turn(overrides: Partial<ResearchChatTurn>): ResearchChatTurn {
   return {
@@ -22,8 +30,17 @@ function turn(overrides: Partial<ResearchChatTurn>): ResearchChatTurn {
     errorCode: null,
     errorMessage: null,
     coverageJobId: null,
+    // RWV2-11（W5）：必填字段——测试工厂默认 null（恢复轮形态）
+    scopeSnapshot: null,
     ...overrides,
   }
+}
+
+function seedScope(scope: { mode: 'entire_project' | 'selected'; sourceIds: readonly string[]; noteIds: readonly string[] }): void {
+  localStorage.setItem(
+    scopeStorageKey(USER_ID, PROJECT_ID),
+    JSON.stringify({ version: 1, ...scope }),
+  )
 }
 
 const citation: ResearchCitation = {
@@ -42,44 +59,78 @@ function renderPanel(
   turns: ResearchChatTurn[],
   send = vi.fn(),
   overrides: Partial<{
-    onSendCoverage: (q: string) => Promise<boolean>
-    selectedSourceIds: string[]
-    selectedNoteIds: string[]
+    onSendCoverage: (q: string, snapshot: ResearchScopeSnapshot) => Promise<boolean>
+    scope: { mode: 'entire_project' | 'selected'; sourceIds: string[]; noteIds: string[] }
     coverageJobs: ResearchJob[]
     onCoverageRetry: (jobId: string) => Promise<boolean>
   }> = {},
 ) {
+  if (overrides.scope) seedScope(overrides.scope)
   return render(
-    <ResearchChatPanel
-      turns={turns}
-      isStreaming={false}
-      onSend={send}
-      onSendCoverage={overrides.onSendCoverage ?? vi.fn(async () => true)}
-      selectedSourceIds={overrides.selectedSourceIds ?? []}
-      selectedNoteIds={overrides.selectedNoteIds ?? []}
-      coverageJobs={overrides.coverageJobs}
-      onCoverageRetry={overrides.onCoverageRetry ?? vi.fn(async () => true)}
-    />,
+    <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+      <ResearchChatPanel
+        turns={turns}
+        isStreaming={false}
+        onSend={send}
+        onSendCoverage={overrides.onSendCoverage ?? vi.fn(async () => true)}
+        coverageJobs={overrides.coverageJobs}
+        onCoverageRetry={overrides.onCoverageRetry ?? vi.fn(async () => true)}
+      />
+    </ResearchScopeProvider>,
   )
 }
 
-function renderPanelWithNotice(notice: ResearchBackgroundNotice, send = vi.fn()) {
+function renderPanelWithNotice(notice: ResearchBackgroundNotice) {
   return render(
-    <ResearchChatPanel
-      turns={[]}
-      isStreaming={false}
-      onSend={send}
-      onSendCoverage={vi.fn(async () => true)}
-      selectedSourceIds={[]}
-      selectedNoteIds={[]}
-      coverageJobs={undefined}
-      backgroundNotice={notice}
-    />,
+    <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+      <ResearchChatPanel
+        turns={[]}
+        isStreaming={false}
+        onSend={vi.fn()}
+        onSendCoverage={vi.fn(async () => true)}
+        backgroundNotice={notice}
+      />
+    </ResearchScopeProvider>,
+  )
+}
+
+/**
+ * RWV2-11（P1-2）：面板旁挂一个真实驱动 Provider 的 toggle——测试必须通过
+ * Provider 方法改变当前 Scope（localStorage 预置只在挂载时生效，挂载后再写
+ * localStorage 对已挂载 Provider 无效，无法制造「当前 Scope ≠ turn 快照」）。
+ */
+function ToggleNoteHarness() {
+  const { toggleNote } = useResearchScope()
+  return (
+    <button type="button" data-testid="add-note" onClick={() => toggleNote('n1')}>
+      add note n1
+    </button>
+  )
+}
+
+function renderPanelWithNoteHarness(turns: ResearchChatTurn[], send = vi.fn()) {
+  return render(
+    <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+      <ResearchChatPanel
+        turns={turns}
+        isStreaming={false}
+        onSend={send}
+        onSendCoverage={vi.fn(async () => true)}
+      />
+      <ToggleNoteHarness />
+    </ResearchScopeProvider>,
   )
 }
 
 describe('ResearchChatPanel', () => {
-  afterEach(cleanup)
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  afterEach(() => {
+    cleanup()
+    localStorage.clear()
+  })
 
   it('渲染 thinking/answer/citation/usage/resolved_mode（REQ-ENG-04；COV-09 raw Thinking 防御性丢弃）', () => {
     const turns = [
@@ -106,22 +157,65 @@ describe('ResearchChatPanel', () => {
     expect(screen.getByText(/1200/)).toBeInTheDocument()
   })
 
+  it('会话内 turn 显示派发 Scope 徽标；恢复 turn（null 快照）不显示', () => {
+    renderPanel([
+      { ...turn({ role: 'user', content: '问题', id: 'u1', scopeSnapshot: SCOPE_A }) },
+      turn({ status: 'done' }),
+    ])
+    // P2-③：徽标外层 key 在此文件平 mock 下直接可见；标签内容（"1 source"）
+    // 的正确性由 formatScopeLabel 单测覆盖（scope.test.tsx）
+    expect(screen.getByTestId('chat-turn-scope-badge')).toHaveTextContent(
+      'research.chatScopeBadge',
+    )
+    // 恢复轮（scopeSnapshot null）不显示徽标
+    cleanup()
+    renderPanel([
+      { ...turn({ role: 'user', content: '恢复问题', id: 'u2' }) },
+      turn({ status: 'done' }),
+    ])
+    expect(screen.queryAllByTestId('chat-turn-scope-badge')).toHaveLength(0)
+  })
+
   it('重连中显示重连徽标与次数', () => {
     renderPanel([turn({ status: 'reconnecting', reconnectCount: 2 })])
     expect(screen.getByText(/reconnect/i)).toBeInTheDocument()
   })
 
-  it('错误终态显示 code 与可重试标记；重试按钮重新发送', () => {
+  it('错误终态显示 code 与可重试标记；重试按钮用 turn 快照重新发送（R1）', () => {
     const send = vi.fn()
     const turns = [
       { ...turn({ role: 'user', content: '原问题', id: 'u1' }) },
-      turn({ status: 'error', errorCode: 'admission_unavailable', errorMessage: '容量不足' }),
+      turn({
+        status: 'error',
+        errorCode: 'admission_unavailable',
+        errorMessage: '容量不足',
+        scopeSnapshot: SCOPE_A,
+      }),
     ]
-    renderPanel(turns, send)
+    // P1-2：先按 turn 快照 A（src_1）预置，再通过真实 Provider toggle 加入
+    // note n1 ——当前 Scope 变为 {src_1, n1} ≠ turn 快照 A。旧实现（重试读
+    // 当前 Provider）会发送 {src_1, n1}，新实现（读 turn 快照）发送 A——
+    // 断言可真实区分 K12 行为。
+    seedScope(SCOPE_A)
+    renderPanelWithNoteHarness(turns, send)
     expect(screen.getByText('admission_unavailable')).toBeInTheDocument()
     expect(screen.getByText(/retryable/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('add-note'))
     fireEvent.click(screen.getByRole('button', { name: /retry/i }))
-    expect(send).toHaveBeenCalledWith('原问题', expect.anything())
+    expect(send).toHaveBeenCalledWith('原问题', {
+      mode: 'selected',
+      sourceIds: ['src_1'],
+      noteIds: [],
+    })
+  })
+
+  it('可重试错误但 turn 快照为 null（恢复轮）不渲染重试按钮（R5/K12）', () => {
+    renderPanel([
+      { ...turn({ role: 'user', content: '原问题', id: 'u1' }) },
+      turn({ status: 'error', errorCode: 'admission_unavailable', errorMessage: 'x' }),
+    ])
+    expect(screen.getByTestId('chat-error')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /retry/i })).toBeNull()
   })
 
   it('非可重试错误（project_deleted）不显示重试按钮', () => {
@@ -161,8 +255,15 @@ describe('ResearchChatPanel', () => {
 
 // ── COV-09：合成范围选择与 Coverage 任务卡（§12.3） ──
 
-describe('ResearchChatPanel coverage scope（COV-09）', () => {
-  afterEach(cleanup)
+describe('ResearchChatPanel coverage scope（COV-09 + RWV2-11 K3）', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  afterEach(() => {
+    cleanup()
+    localStorage.clear()
+  })
 
   function coverageJob(): ResearchJob {
     return {
@@ -201,42 +302,62 @@ describe('ResearchChatPanel coverage scope（COV-09）', () => {
   })
 
   it('选择 Notes 时 all_selected 选项禁用 + 可访问文字说明（不只颜色）', () => {
-    renderPanel([], vi.fn(), { selectedNoteIds: ['n1'] })
+    renderPanel([], vi.fn(), { scope: { mode: 'selected', sourceIds: [], noteIds: ['n1'] } })
     const option = screen.getByTestId('scope-all-selected-option')
     expect(option).toBeDisabled()
     expect(screen.getByTestId('coverage-scope-notice')).toHaveTextContent('research.coverage.notesNotSupported')
   })
 
-  it('0 Source：提示选择来源；51+ Source：前端预检文案且不可提交', () => {
-    renderPanel([], vi.fn(), {})
-    // 0 个 Source：hint 可见
-    expect(screen.getByTestId('coverage-scope-notice')).toHaveTextContent('research.coverage.noSourcesHint')
-    // 51 个 Source：预检错误文案
-    cleanup()
-    renderPanel([], vi.fn(), { selectedSourceIds: Array.from({ length: 51 }, (_, i) => `src-${i}`) })
+  it('entire_project 模式：专属说明（不命中旧 noSourcesHint）+ 提交禁用（R4/W4）', () => {
+    renderPanel([], vi.fn(), { scope: { mode: 'entire_project', sourceIds: [], noteIds: [] } })
+    const notice = screen.getByTestId('coverage-scope-notice')
+    expect(notice).toHaveTextContent('research.coverage.entireProjectNotice')
+    expect(notice).not.toHaveTextContent('research.coverage.noSourcesHint')
+    // 切到 all_selected 后提交仍被模式闸门禁用
+    fireEvent.click(screen.getByTestId('scope-all-selected-option'))
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: '覆盖全部' } })
+    expect(screen.getByTestId('chat-send')).toBeDisabled()
+  })
+
+  it('selected 51+ Source：前端预检文案且不可提交', () => {
+    renderPanel([], vi.fn(), {
+      scope: {
+        mode: 'selected',
+        sourceIds: Array.from({ length: 51 }, (_, i) => `src-${i}`),
+        noteIds: [],
+      },
+    })
     expect(screen.getByTestId('coverage-scope-notice')).toHaveTextContent('research.coverage.tooManySources')
     expect(screen.getByTestId('chat-send')).toBeDisabled()
   })
 
-  it('all_selected 提交：调用 onSendCoverage（202 受理后清空输入）', async () => {
+  it('all_selected 提交：经 onSendCoverage 携带派发快照（202 受理后清空输入）', async () => {
     const onSendCoverage = vi.fn(async () => true)
     renderPanel([], vi.fn(), {
       onSendCoverage,
-      selectedSourceIds: ['src-1'],
+      scope: { mode: 'selected', sourceIds: ['src-1'], noteIds: [] },
     })
     fireEvent.click(screen.getByTestId('scope-all-selected-option'))
     fireEvent.change(screen.getByTestId('chat-input'), { target: { value: '覆盖全部所选来源' } })
     fireEvent.click(screen.getByTestId('chat-send'))
-    expect(onSendCoverage).toHaveBeenCalledWith('覆盖全部所选来源')
+    expect(onSendCoverage).toHaveBeenCalledWith('覆盖全部所选来源', {
+      mode: 'selected',
+      sourceIds: ['src-1'],
+      noteIds: [],
+    })
     await waitFor(() => expect(screen.getByTestId('chat-input')).toHaveValue(''))
   })
 
-  it('relevant 提交：仍然走 onSend（旧路径不变）', () => {
+  it('relevant 提交：仍然走 onSend（快照 selection 携带 mode）', () => {
     const onSend = vi.fn(async () => true)
-    renderPanel([], onSend, { selectedSourceIds: ['src-1'] })
+    renderPanel([], onSend, { scope: { mode: 'selected', sourceIds: ['src-1'], noteIds: [] } })
     fireEvent.change(screen.getByTestId('chat-input'), { target: { value: '普通问题' } })
     fireEvent.click(screen.getByTestId('chat-send'))
-    expect(onSend).toHaveBeenCalledWith('普通问题', { sourceIds: ['src-1'], noteIds: [] })
+    expect(onSend).toHaveBeenCalledWith('普通问题', {
+      mode: 'selected',
+      sourceIds: ['src-1'],
+      noteIds: [],
+    })
   })
 
   it('coverage turn：渲染 CoverageJobDetails（逐文档状态）', () => {
@@ -258,7 +379,14 @@ describe('ResearchChatPanel coverage scope（COV-09）', () => {
 // 面向用户的本地化文案（测试环境 t() 返回键名），errorMessage 仅作诊断行 ──
 
 describe('ResearchChatPanel #292 P0 错误呈现', () => {
-  afterEach(cleanup)
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  afterEach(() => {
+    cleanup()
+    localStorage.clear()
+  })
 
   it('error 且空正文：不渲染「暂无答案」占位，仅错误卡片', () => {
     renderPanel([

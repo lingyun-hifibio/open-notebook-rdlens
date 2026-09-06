@@ -1,5 +1,4 @@
 import type { TranslationShape } from '../en-US';
-
 export const zhTW = {
   common: {
     search: "搜尋...",
@@ -984,6 +983,7 @@ export const zhTW = {
       scopeAllSelected: "覆蓋全部所選來源",
       notesNotSupported: "本階段不支援對 Notes 使用「覆蓋全部所選來源」——請取消選取 Notes 後再使用。",
       noSourcesHint: "請至少選取一個來源。",
+      entireProjectNotice: "Coverage runs on a selected Source set — switch to Selected sources to use it.",
       tooManySources: "最多可覆蓋 {{max}} 個來源（目前已選 {{count}} 個）。",
       syncing: "任務已受理——正在同步狀態…",
       targetCoverage: "目標覆蓋",
@@ -1050,6 +1050,14 @@ export const zhTW = {
     selectNotes: "Notes",
     sourcesEmpty: "No sources synced yet.",
     notesEmpty: "No notes yet.",
+    scopeSummary: {
+      entireProject: "Entire project",
+      sourceOne: "1 source",
+      sourceMany: "{{count}} sources",
+      noteOne: "1 note",
+      noteMany: "{{count}} notes",
+    },
+    searchDocumentNeedsSourcesHint: "Document context requires an explicit source selection — switch to Selected sources.",
     searchEmpty: "Enter a query to search the selected sources and notes.",
     searchPlaceholder: "Search selected sources…",
     searchRun: "Search",
@@ -1071,6 +1079,7 @@ export const zhTW = {
     consentDestinations: "数据将发送至以下目的地",
     consentCategories: "数据类别",
     consentPreviewNote: "发送前可查看 Context Preview；确认后该范围持续有效，撤销或范围变化后需重新确认。",
+    consentScopeTitle: "Scope",
     consentConfirm: "确认并继续",
     consentCancel: "取消",
     consentRequired: "使用外部模型需要 Workspace 外发确认。",
@@ -1099,6 +1108,7 @@ export const zhTW = {
     citations: "Citations",
     citationPage: "p.",
     chatEmpty: "Ask a question about the selected sources and notes.",
+    chatScopeBadge: "Scope: {{scope}}",
     chatPlaceholder: "Ask about your sources…",
     chatSend: "Send",
     chatThinking: "Thinking",
@@ -1124,6 +1134,7 @@ export const zhTW = {
     compareOverDefault: "Exceeds the default limit of 30 — allowed up to the hard cap of 50.",
     compareOverHard: "Maximum 50 documents (selected {{count}}).",
     compareEmpty: "Select at least one source to compare.",
+    compareEntireProjectRequiresSelection: "Compare requires an explicit source selection — switch to Selected sources to compare specific documents.",
     compareCreated: "Compare job created — it runs in the background; see the Jobs tab for progress.",
     jobsEmpty: "No research jobs yet.",
     jobsCancel: "Cancel",

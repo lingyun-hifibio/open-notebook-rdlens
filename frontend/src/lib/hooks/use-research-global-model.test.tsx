@@ -307,6 +307,62 @@ describe('useResearchGlobalModel（GMOD §6.1 draft/confirmed）', () => {
     expect(result.current.isConsentPromptOpen).toBe(false)
   })
 
+  it('RWV2-11（K10/P1-②）：注册带 scopeLabel → 弹窗期间可见；取消后清空，下次无 label 派发不残留', async () => {
+    vi.mocked(getExecutionPreferences).mockResolvedValue({
+      ...PREFS_M_LOCAL,
+      preferred_model_id: 'm-ext',
+    })
+    vi.mocked(getExternalEgressConsent).mockResolvedValue(CONSENT_MISSING)
+    const { result } = renderGlobalModel()
+    await waitFor(() => expect(result.current.isLoadingModel).toBe(false))
+
+    const opWithLabel = vi.fn(async () => 'a')
+    await act(async () => {
+      await result.current.runGuarded(opWithLabel, { scopeLabel: '2 sources' })
+    })
+    expect(result.current.pendingScopeLabel).toBe('2 sources')
+
+    // 取消 → 登记与摘要同弃（单记录生命周期）
+    await act(async () => {
+      result.current.cancelConsent()
+    })
+    expect(result.current.pendingScopeLabel).toBeNull()
+    expect(opWithLabel).not.toHaveBeenCalled()
+
+    // 下一次无 label 派发：摘要保持 null（不陈标泄漏）
+    const opNoLabel = vi.fn(async () => 'b')
+    await act(async () => {
+      await result.current.runGuarded(opNoLabel)
+    })
+    expect(result.current.pendingScopeLabel).toBeNull()
+    await act(async () => {
+      await result.current.cancelConsent()
+    })
+    expect(result.current.pendingScopeLabel).toBeNull()
+  })
+
+  it('RWV2-11（K10）：确认成功后摘要在登记清除时一并清空，不残留到下笔', async () => {
+    vi.mocked(getExecutionPreferences).mockResolvedValue({
+      ...PREFS_M_LOCAL,
+      preferred_model_id: 'm-ext',
+    })
+    vi.mocked(getExternalEgressConsent).mockResolvedValue(CONSENT_MISSING)
+    const { result } = renderGlobalModel()
+    await waitFor(() => expect(result.current.isLoadingModel).toBe(false))
+
+    const operation = vi.fn(async () => 'ok')
+    await act(async () => {
+      await result.current.runGuarded(operation, { scopeLabel: 'Entire project' })
+    })
+    expect(result.current.pendingScopeLabel).toBe('Entire project')
+    await act(async () => {
+      await result.current.confirmConsent()
+    })
+    expect(operation).toHaveBeenCalledTimes(1)
+    expect(result.current.pendingScopeLabel).toBeNull()
+    expect(result.current.isConsentPromptOpen).toBe(false)
+  })
+
   it('consent 取消：不执行、不 acknowledge、无残留状态', async () => {
     vi.mocked(getExecutionPreferences).mockResolvedValue({
       ...PREFS_M_LOCAL,

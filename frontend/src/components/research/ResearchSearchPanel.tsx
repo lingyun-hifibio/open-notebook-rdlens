@@ -14,6 +14,7 @@ import {
 } from './SearchContextSelector'
 import { fetchContextPreview, newIdempotencyKey, searchV1 } from '@/lib/research/api'
 import { researchModelBlockedHint, useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
+import { formatScopeLabel, useResearchScope } from '@/lib/research/scope'
 import type {
   ResearchContextLevel,
   ResearchContextPreview,
@@ -51,12 +52,8 @@ const CONSENT_ERROR_CODES = [
 
 export function ResearchSearchPanel({
   projectId,
-  selectedSourceIds,
-  selectedNoteIds,
 }: {
   projectId: string
-  selectedSourceIds: string[]
-  selectedNoteIds: string[]
 }) {
   const { t } = useTranslation()
   const {
@@ -71,6 +68,8 @@ export function ResearchSearchPanel({
     invalidateConsent,
     runGuarded,
   } = useResearchGlobalModel()
+  // RWV2-11（K7）：Scope 真源唯一——本面板不再持有/接收独立选择状态
+  const { mode, selectedSourceIds, selectedNoteIds, getSnapshot } = useResearchScope()
 
   const [query, setQuery] = useState('')
   const [result, setResult] = useState<ResearchSearchResponse | null>(null)
@@ -242,22 +241,57 @@ export function ResearchSearchPanel({
   const run = useCallback(() => {
     const trimmed = query.trim()
     if (!trimmed || loading) return
-    // 快照模型与档位：外部模型需确认时执行被推迟，不能采用确认后的新值
+    // RWV2-11（K1/K11）：派发时刻冻结不可变 Scope 快照——模型/档位/Scope
+    // 三快照一并进入 runGuarded 登记与最终请求；确认被推迟时不得采用
+    // 确认后的新值（不变量 4），consent 弹窗摘要与最终请求同源（K5）。
+    const scopeSnapshot = getSnapshot()
     const levelSnapshot = selectedLevel
-    const sourceSnapshot = [...selectedSourceIds]
-    const noteSnapshot = [...selectedNoteIds]
-    void runGuarded((modelId) =>
-      executeSearch(trimmed, modelId, levelSnapshot, sourceSnapshot, noteSnapshot),
+    const sourceSnapshot = [...scopeSnapshot.sourceIds]
+    const noteSnapshot = [...scopeSnapshot.noteIds]
+    void runGuarded(
+      (modelId) =>
+        executeSearch(trimmed, modelId, levelSnapshot, sourceSnapshot, noteSnapshot),
+      { scopeLabel: formatScopeLabel(scopeSnapshot, t) },
     )
   }, [
     executeSearch,
+    getSnapshot,
     loading,
     query,
     runGuarded,
     selectedLevel,
-    selectedNoteIds,
-    selectedSourceIds,
+    t,
   ])
+
+  // RWV2-11（K13）：`document` 档位依赖显式 Source 选择；entire_project 下空
+  // ID 后端必 422（runner.py document context requires sources）。
+  // P1-1：收敛使用**独立的 scope 归因提示**（documentLevelAdjusted），不写入
+  // adjustedFrom——后者驱动「模型能力」横幅，避免把 scope 收敛错误归因于模型
+  // 且 EP→selected 切换后残留谎称模型不支持。
+  // P2-⑥：仅当模型本身支持 document 时收敛；不支持时交由模型能力 effect
+  // 接管清除（防两 effect 互相回弹死循环）。
+  const [documentLevelAdjusted, setDocumentLevelAdjusted] = useState(false)
+  useEffect(() => {
+    if (mode !== 'entire_project') setDocumentLevelAdjusted(false)
+  }, [mode])
+  // P3-1：模型切换时清除 scope 归因提示（能力 effect 可能主动挪档位）
+  useEffect(() => {
+    setDocumentLevelAdjusted(false)
+  }, [confirmedModelId])
+
+  useEffect(() => {
+    if (
+      mode === 'entire_project' &&
+      selectedLevel === 'document' &&
+      // P2-⑥：收敛前提是「document 受支持且目标 focused 受支持」——缺一
+      // 则由模型能力 effect 全权接管清除（防 K13↔能力 effect 回弹死循环）
+      supportedLevels.includes('document') &&
+      supportedLevels.includes('focused')
+    ) {
+      setDocumentLevelAdjusted(true)
+      setSelectedLevel('focused')
+    }
+  }, [mode, selectedLevel, supportedLevels])
 
   const blockedHint = researchModelBlockedHint(blockedReason, t)
 
@@ -271,6 +305,7 @@ export function ResearchSearchPanel({
           onSelectLevel={(level) => {
             interactedRef.current = true
             setAdjustedFrom(null)
+            setDocumentLevelAdjusted(false)
             setSelectedLevel(level)
           }}
           onSaveContext={(level) => void handleSaveContext(level)}
@@ -280,6 +315,14 @@ export function ResearchSearchPanel({
         {adjustedFrom !== null && (
           <p className="mt-1 text-xs text-amber-600" data-testid="context-auto-adjusted">
             {t('research.searchContext.autoAdjusted', { level: adjustedFrom })}
+          </p>
+        )}
+        {/* RWV2-11（K13/P1-1）：entire_project 下 document 档位无显式 Source，
+            收敛到 focused 并给出独立归因（scope）的明确英文说明；模型能力
+            横幅（adjustedFrom）不受影响、不会同时误显示 */}
+        {documentLevelAdjusted && (
+          <p className="mt-1 text-xs text-muted-foreground" data-testid="document-needs-sources-hint">
+            {t('research.searchDocumentNeedsSourcesHint')}
           </p>
         )}
         {blockedHint && (

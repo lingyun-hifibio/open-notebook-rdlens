@@ -9,6 +9,7 @@ import {
   COMPARE_DEFAULT_MAX,
   COMPARE_HARD_MAX,
 } from '@/lib/research/compare'
+import { useResearchScope } from '@/lib/research/scope'
 import type { ResearchSource } from '@/lib/types/research'
 
 /**
@@ -18,10 +19,17 @@ import type { ResearchSource } from '@/lib/types/research'
  * 31–50 提示超默认、>50（51+）禁用创建（服务端 422 的前置客户端校验）、
  * 空选禁用。创建即提交持久 Job（服务端执行，浏览器关闭继续）；
  * 提交反馈为本地 UI 状态，Job 真实状态以 Jobs 面板轮询为准。
+ *
+ * RWV2-11（K2/K7）：Scope 真源唯一——面板直接消费共享 Provider；
+ * `entire_project` 模式无显式 Source 集合（Compare 是 Source-only 动作，且
+ * 当前来源列表受 20 条/页限制，全量映射必静默截断）→ **mode 前置判断**
+ * 产生 `reason:'entire_project'` 明确英文消息并禁用创建，不落入通用
+ * `empty`；`selected` 模式从快照 ID 映射 document_ids（`sources` prop 来自
+ * 查询缓存单源；映射基于已加载列表，列表外的 selected source 静默不参与
+ * ——删除/失效清理属 RWV2-14，此处如实登记为已知限制）。
  */
 export function ComparePanel({
   sources,
-  selectedSourceIds,
   isCreating,
   error,
   onCreate,
@@ -29,7 +37,6 @@ export function ComparePanel({
   blockedHint,
 }: {
   sources: ResearchSource[]
-  selectedSourceIds: string[]
   isCreating: boolean
   error: string | null
   /** 返回是否真正派发（守卫未确认/取消时为 false），避免取消后误报已创建 */
@@ -40,11 +47,20 @@ export function ComparePanel({
 }) {
   const { t } = useTranslation()
   const [submitted, setSubmitted] = useState(false)
+  const { mode, getSnapshot } = useResearchScope()
 
-  const selectedDocuments = sources
-    .filter((source) => selectedSourceIds.includes(source.source_id))
-    .map((source) => source.document_id)
-  const check = checkCompareSelection(selectedDocuments)
+  // K2 前置：entire_project → 明确消息；selected → 快照 ID 映射 + 既有边界
+  const snapshot = getSnapshot()
+  const selectedDocuments =
+    mode === 'selected'
+      ? sources
+          .filter((source) => snapshot.sourceIds.includes(source.source_id))
+          .map((source) => source.document_id)
+      : []
+  const check =
+    mode === 'entire_project'
+      ? ({ ok: false, reason: 'entire_project', count: 0 } as const)
+      : checkCompareSelection(selectedDocuments)
 
   const modelBlocked = modelBlockedProp === true
 
@@ -89,6 +105,11 @@ export function ComparePanel({
       {!check.ok && check.reason === 'empty' && (
         <Alert variant="default" data-testid="compare-empty">
           <AlertDescription>{t('research.compareEmpty')}</AlertDescription>
+        </Alert>
+      )}
+      {!check.ok && check.reason === 'entire_project' && (
+        <Alert variant="default" data-testid="compare-entire-project">
+          <AlertDescription>{t('research.compareEntireProjectRequiresSelection')}</AlertDescription>
         </Alert>
       )}
       {modelBlocked && blockedHint && (

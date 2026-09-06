@@ -30,6 +30,7 @@ import type {
   ResearchSseEvent,
   ResearchTokenUsage,
 } from '@/lib/research/types'
+import type { ResearchScopeMode, ResearchScopeSnapshot } from '@/lib/research/scope'
 
 /** Issue #302：刷新恢复的持久化键（key 含 project_id 维度，防跨项目串会话） */
 const LAST_SESSION_STORAGE_PREFIX = 'rdlens.research.chat.last-session.'
@@ -132,6 +133,12 @@ export interface ResearchChatTurn {
   errorMessage: string | null
   /** COV-09：all_selected 覆盖任务关联的持久 Job（202 受理后绑定） */
   coverageJobId: string | null
+  /**
+   * RWV2-11（K8/K12）：本次派发时冻结的不可变 Scope 快照（mode + source/note
+   * IDs）。会话内 turn 必有值；刷新恢复的 turn（messageRowToTurn）为 null——
+   * 重试入口据此判定（null 不渲染重试，防静默以空数组=全项目派发）。
+   */
+  scopeSnapshot: ResearchScopeSnapshot | null
 }
 
 /** 已持久化消息行 → 展示 turn（阅读顺序重放；completed 轮 status 恒 done） */
@@ -153,6 +160,8 @@ function messageRowToTurn(row: ResearchGlobalChatMessage): ResearchChatTurn | nu
     errorCode: null as string | null,
     errorMessage: null as string | null,
     coverageJobId: null as string | null,
+    // RWV2-11：恢复行无法证明原始 Scope——如实置 null（K6/K12）
+    scopeSnapshot: null,
   }
   if (row.role === 'user') {
     return base
@@ -179,6 +188,26 @@ function messageRowToTurn(row: ResearchGlobalChatMessage): ResearchChatTurn | nu
 export interface ResearchChatSelection {
   sourceIds?: string[]
   noteIds?: string[]
+  /** RWV2-11（K8）：本次派发时的 Scope 模式；缺省按 ID 推导（非空=selected，空=entire_project） */
+  mode?: ResearchScopeMode
+}
+
+/**
+ * RWV2-11（K8/K12）：由派发时的 selection 推导冻结的不可变 Scope 快照。
+ * - mode 缺省推导与 payload 语义一致（空 ID = entire_project）；
+ * - 返回对象/数组均为冻结副本（与 `getSnapshot()` 同形态），只读不漂移；
+ * - 会话内 turn 在创建时写入该快照，供 Scope 徽标、重试与元数据展示使用。
+ */
+export function deriveScopeSnapshot(
+  selection: ResearchChatSelection | undefined,
+): ResearchScopeSnapshot {
+  // 复制数组：快照不得与调用方/后续 selection 数组别名（K1 不可变语义）
+  const sourceIds = [...(selection?.sourceIds ?? [])]
+  const noteIds = [...(selection?.noteIds ?? [])]
+  const mode: ResearchScopeMode =
+    selection?.mode ??
+    (sourceIds.length + noteIds.length > 0 ? 'selected' : 'entire_project')
+  return { mode, sourceIds, noteIds }
 }
 
 export interface UseResearchChatResult {
@@ -598,6 +627,8 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
       })
     }
     const turnId = randomId()
+    // RWV2-11（K8）：派发时刻冻结快照，写入 user/assistant turn 永久记录
+    const scopeSnapshot = deriveScopeSnapshot(selection)
     const userTurn: ResearchChatTurn = {
       id: `user_${turnId}`,
       role: 'user',
@@ -611,6 +642,7 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
       errorCode: null,
       errorMessage: null,
       coverageJobId: null,
+      scopeSnapshot,
     }
     const assistantTurn: ResearchChatTurn = {
       id: turnId,
@@ -625,6 +657,7 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
       errorCode: null,
       errorMessage: null,
       coverageJobId: null,
+      scopeSnapshot,
     }
     setTurns((prev) => [...prev, userTurn, assistantTurn])
     startTurn(trimmed, turnId, selection, modelId)
@@ -656,6 +689,8 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
     }
     const turnId = randomId()
     const patch = (patch: Partial<ResearchChatTurn>): void => patchAssistant(turnId, patch)
+    // RWV2-11（K8）：与 send 同语义——派发时刻冻结快照写入 turn 记录
+    const scopeSnapshot = deriveScopeSnapshot(selection)
     const userTurn: ResearchChatTurn = {
       id: `user_${turnId}`,
       role: 'user',
@@ -669,6 +704,7 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
       errorCode: null,
       errorMessage: null,
       coverageJobId: null,
+      scopeSnapshot,
     }
     const assistantTurn: ResearchChatTurn = {
       id: turnId,
@@ -683,6 +719,7 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
       errorCode: null,
       errorMessage: null,
       coverageJobId: null,
+      scopeSnapshot,
     }
     setTurns((prev) => [...prev, userTurn, assistantTurn])
     if (!modelId) {

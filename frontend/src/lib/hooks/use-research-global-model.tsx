@@ -99,8 +99,21 @@ export interface UseResearchGlobalModelResult {
    * §6.8 统一执行闸门。本地模型直接执行；外部模型且 consent 未生效时
    * 只登记操作并打开确认弹窗，确认完成后用捕获的快照执行。返回
    * `undefined` 表示本次未执行（被禁用、或等待/放弃确认）。
+   *
+   * RWV2-11（K10/K11）：`options.scopeLabel` 为派发时登记的 Scope 摘要
+   * （如 "2 sources · 1 note"），随登记单记录存续，弹窗只在有值且本次
+   * 派发已登记时展示（K5）——禁止回读 provider 推导（弹窗摘要必须与
+   * 最终请求同一快照）。
    */
-  runGuarded: <T>(operation: GuardedOperation<T>) => Promise<T | undefined>
+  runGuarded: <T>(
+    operation: GuardedOperation<T>,
+    options?: { scopeLabel?: string },
+  ) => Promise<T | undefined>
+  /**
+   * RWV2-11（K10）：本次待确认派发登记的 Scope 摘要；弹窗仅在其非空时
+   * 显示 Scope 行。取消/确认/未登记派发 → null（不显示，防陈标泄漏）。
+   */
+  pendingScopeLabel: string | null
   /** consent 状态（§6.8） */
   needsConsent: boolean
   isConsentPromptOpen: boolean
@@ -132,9 +145,17 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
   const [isConsentInFlight, setIsConsentInFlight] = useState(false)
   /** §6.8 single-flight：同一时刻只允许一个确认流程在途 */
   const consentInFlightRef = useRef(false)
-  /** 确认前登记的执行体与其模型快照；取消时整体丢弃 */
-  const pendingOperationRef = useRef<GuardedOperation<unknown> | null>(null)
-  const pendingModelIdRef = useRef<string | null>(null)
+  /**
+   * RWV2-11（K10）：确认前登记的「执行体 + 模型快照 + 派发 Scope 摘要」单
+   * 记录——三者同生共死，取消/确认成功时整体丢弃，杜绝 Scope 摘要陈标
+   * 泄漏到下一次未登记派发（SourceChat/Insights/Transformation 等）。
+   */
+  interface PendingConsentRegistration {
+    operation: GuardedOperation<unknown>
+    modelId: string
+    scopeLabel: string | null
+  }
+  const pendingRegistrationRef = useRef<PendingConsentRegistration | null>(null)
 
   const modelsQuery = useQuery({
     queryKey: QUERY_KEYS.researchModelCatalog(projectId),
@@ -283,9 +304,8 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
   const cancelConsent = useCallback(() => {
     // 已在途的确认不可取消（避免半执行），只丢弃尚未开始的登记
     if (isConsentInFlight) return
-    // 不变量 9：取消不创建/不改变任何执行状态
-    pendingOperationRef.current = null
-    pendingModelIdRef.current = null
+    // 不变量 9：取消不创建/不改变任何执行状态；单记录整体丢弃（K10）
+    pendingRegistrationRef.current = null
     setIsConsentPromptOpen(false)
     setConsentError(null)
   }, [isConsentInFlight])
@@ -310,17 +330,15 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
       setConsentError(err instanceof Error ? err.message : String(err))
     }
     // 用登记时捕获的快照执行——不重新读取当前 confirmed（不变量 4）；
-    // 登记仅在 acknowledge 成功后清除，失败时保留可重试
-    const operation = pendingOperationRef.current
-    const snapshot = pendingModelIdRef.current
+    // 登记仅在 acknowledge 成功后清除，失败时保留可重试（K10）
+    const registration = pendingRegistrationRef.current
     if (acknowledged) {
       setIsConsentPromptOpen(false)
-      pendingOperationRef.current = null
-      pendingModelIdRef.current = null
+      pendingRegistrationRef.current = null
     }
-    if (acknowledged && operation && snapshot) {
+    if (acknowledged && registration && registration.modelId) {
       try {
-        await operation(snapshot)
+        await registration.operation(registration.modelId)
       } catch {
         // 执行体错误与 consent 状态无关（acknowledge 已成功、弹窗已关）：
         // 不写 consentError，避免下次弹窗误标「确认失败」；重拉服务端
@@ -333,27 +351,40 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
   }, [isConsentPromptOpen, projectId, queryClient, refetchConsent])
 
   const runGuarded = useCallback(
-    async <T,>(operation: GuardedOperation<T>): Promise<T | undefined> => {
+    async <T,>(
+      operation: GuardedOperation<T>,
+      options?: { scopeLabel?: string },
+    ): Promise<T | undefined> => {
       const snapshot = confirmedModelId
       if (!canExecute || snapshot === null) return undefined
       if (!needsConsent) return operation(snapshot)
       // 外部模型且 consent 未生效：single-flight，只登记不执行。
-      // pendingOperationRef（同步 ref）同时检查：同 tick 内第二次调用时
+      // pendingRegistrationRef（同步 ref）同时检查：同 tick 内第二次调用时
       // isConsentPromptOpen 仍是旧值，若只查 state 会覆盖第一次的登记。
       if (
         consentInFlightRef.current ||
         isConsentPromptOpen ||
-        pendingOperationRef.current !== null
+        pendingRegistrationRef.current !== null
       ) {
         return undefined
       }
-      pendingModelIdRef.current = snapshot
-      pendingOperationRef.current = operation as GuardedOperation<unknown>
+      // K10：执行体 + 模型快照 + 派发 Scope 摘要单记录登记
+      pendingRegistrationRef.current = {
+        operation: operation as GuardedOperation<unknown>,
+        modelId: snapshot,
+        scopeLabel: options?.scopeLabel ?? null,
+      }
       setIsConsentPromptOpen(true)
       return undefined
     },
     [canExecute, confirmedModelId, isConsentPromptOpen, needsConsent],
   )
+
+  // K10：弹窗仅在打开且本次派发登记了 Scope 摘要时展示（K5）；未登记派发
+  // （SourceChat/Insights/Transformation/GlobalModelBar 空操作）→ null。
+  const pendingScopeLabel = isConsentPromptOpen
+    ? pendingRegistrationRef.current?.scopeLabel ?? null
+    : null
 
   const value = useMemo<UseResearchGlobalModelResult>(() => ({
     confirmedModelId,
@@ -374,6 +405,7 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
     canExecute,
     blockedReason,
     runGuarded,
+    pendingScopeLabel,
     needsConsent,
     isConsentPromptOpen,
     isConsentInFlight,
@@ -403,6 +435,7 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
     isAdminReadonly,
     models,
     needsConsent,
+    pendingScopeLabel,
     runGuarded,
     saveModel,
     saveModelError,

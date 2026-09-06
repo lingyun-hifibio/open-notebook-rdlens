@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useResearchChat, MAX_STREAM_ATTEMPTS } from './use-research-chat'
+import { useResearchChat, deriveScopeSnapshot, MAX_STREAM_ATTEMPTS } from './use-research-chat'
 import { newIdempotencyKey, openResearchChatStream } from '@/lib/research/api'
 import type { ResearchSseEvent } from '@/lib/research/types'
 
@@ -593,5 +593,36 @@ describe('useResearchChat #292 P0 终态生命周期', () => {
     // done 已清理 ref：第二轮 send 不应对第一轮流调用 abort（服务端已完成）
     expect(aborted).toBe(0)
     expect(streams).toHaveLength(2)
+  })
+})
+
+describe('deriveScopeSnapshot（RWV2-11 K8）', () => {
+  it('显式 mode 优先；数组复制不共享引用', () => {
+    const sourceIds = ['src_1', 'src_2']
+    const snapshot = deriveScopeSnapshot({
+      mode: 'selected',
+      sourceIds,
+      noteIds: ['n1'],
+    })
+    expect(snapshot).toEqual({ mode: 'selected', sourceIds: ['src_1', 'src_2'], noteIds: ['n1'] })
+    expect(snapshot.sourceIds).not.toBe(sourceIds)
+  })
+
+  it('mode 缺省按 ID 推导：非空 = selected，空 = entire_project', () => {
+    expect(deriveScopeSnapshot({ sourceIds: ['s1'], noteIds: [] })).toEqual({
+      mode: 'selected',
+      sourceIds: ['s1'],
+      noteIds: [],
+    })
+    expect(deriveScopeSnapshot(undefined)).toEqual({
+      mode: 'entire_project',
+      sourceIds: [],
+      noteIds: [],
+    })
+    expect(deriveScopeSnapshot({ sourceIds: [], noteIds: [] })).toEqual({
+      mode: 'entire_project',
+      sourceIds: [],
+      noteIds: [],
+    })
   })
 })

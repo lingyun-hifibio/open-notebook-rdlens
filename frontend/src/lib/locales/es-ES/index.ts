@@ -1,5 +1,4 @@
 import type { TranslationShape } from '../en-US';
-
 export const esES = {
   common: {
     search: "Buscar...",
@@ -985,6 +984,7 @@ export const esES = {
       scopeAllSelected: "Cubrir todas las fuentes seleccionadas",
       notesNotSupported: "Cubrir todas las fuentes seleccionadas no está disponible para Notas en esta fase — deseleccione las Notas para usarlo.",
       noSourcesHint: "Seleccione al menos una fuente.",
+      entireProjectNotice: "Coverage runs on a selected Source set — switch to Selected sources to use it.",
       tooManySources: "Se pueden cubrir como máximo {{max}} fuentes ({{count}} seleccionadas).",
       syncing: "Tarea aceptada — sincronizando estado…",
       targetCoverage: "Cobertura objetivo",
@@ -1051,6 +1051,14 @@ export const esES = {
     selectNotes: "Notes",
     sourcesEmpty: "No sources synced yet.",
     notesEmpty: "No notes yet.",
+    scopeSummary: {
+      entireProject: "Entire project",
+      sourceOne: "1 source",
+      sourceMany: "{{count}} sources",
+      noteOne: "1 note",
+      noteMany: "{{count}} notes",
+    },
+    searchDocumentNeedsSourcesHint: "Document context requires an explicit source selection — switch to Selected sources.",
     searchEmpty: "Enter a query to search the selected sources and notes.",
     searchPlaceholder: "Search selected sources…",
     searchRun: "Search",
@@ -1072,6 +1080,7 @@ export const esES = {
     consentDestinations: "Data will be sent to the following destinations",
     consentCategories: "Data categories",
     consentPreviewNote: "You can review the Context Preview before sending; once acknowledged, this scope stays valid until revoked or changed.",
+    consentScopeTitle: "Scope",
     consentConfirm: "Acknowledge & continue",
     consentCancel: "Cancel",
     consentRequired: "External models require workspace egress consent.",
@@ -1100,6 +1109,7 @@ export const esES = {
     citations: "Citations",
     citationPage: "p.",
     chatEmpty: "Ask a question about the selected sources and notes.",
+    chatScopeBadge: "Scope: {{scope}}",
     chatPlaceholder: "Ask about your sources…",
     chatSend: "Send",
     chatThinking: "Thinking",
@@ -1125,6 +1135,7 @@ export const esES = {
     compareOverDefault: "Exceeds the default limit of 30 — allowed up to the hard cap of 50.",
     compareOverHard: "Maximum 50 documents (selected {{count}}).",
     compareEmpty: "Select at least one source to compare.",
+    compareEntireProjectRequiresSelection: "Compare requires an explicit source selection — switch to Selected sources to compare specific documents.",
     compareCreated: "Compare job created — it runs in the background; see the Jobs tab for progress.",
     jobsEmpty: "No research jobs yet.",
     jobsCancel: "Cancel",
