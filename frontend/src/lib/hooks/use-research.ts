@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { QUERY_KEYS } from '@/lib/api/query-client'
 import { useToast } from '@/lib/hooks/use-toast'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { collectResearchPages, RESEARCH_PAGE_LIMIT } from '@/lib/research/pagination'
 import {
   createExport,
   createInsight,
@@ -50,7 +51,13 @@ function useMutationErrorToast() {
 export function useResearchSources(projectId: string) {
   return useQuery({
     queryKey: QUERY_KEYS.researchSources(projectId),
-    queryFn: () => listSources(projectId),
+    queryFn: () => collectResearchPages(
+      (cursor) => listSources(projectId, {
+        limit: RESEARCH_PAGE_LIMIT,
+        ...(cursor ? { cursor } : {}),
+      }),
+      (source) => source.source_id,
+    ),
     enabled: !!projectId,
   })
 }
@@ -68,7 +75,14 @@ export function useResearchSource(projectId: string, sourceId: string | null) {
 export function useResearchNotes(projectId: string, search?: string) {
   return useQuery({
     queryKey: [...QUERY_KEYS.researchNotes(projectId), search ?? ''] as const,
-    queryFn: () => listNotes(projectId, search ? { q: search } : {}),
+    queryFn: () => collectResearchPages(
+      (cursor) => listNotes(projectId, {
+        ...(search ? { q: search } : {}),
+        limit: RESEARCH_PAGE_LIMIT,
+        ...(cursor ? { cursor } : {}),
+      }),
+      (note) => note.note_id,
+    ),
     enabled: !!projectId,
   })
 }

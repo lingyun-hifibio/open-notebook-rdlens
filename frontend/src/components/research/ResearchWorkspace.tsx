@@ -1,11 +1,12 @@
 'use client'
 
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { useToast } from '@/lib/hooks/use-toast'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { createCoverageChat } from '@/lib/research/api'
 import { useResearchChat, type CoverageSubmitRequest, type ResearchChatSelection, deriveScopeSnapshot } from '@/lib/hooks/use-research-chat'
-import { formatScopeLabel, type ResearchScopeSnapshot } from '@/lib/research/scope'
+import { formatScopeLabel, useResearchScope, type ResearchScopeSnapshot } from '@/lib/research/scope'
 import { researchModelBlockedHint, useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
 import { useResearchJobs } from '@/lib/hooks/use-research-jobs'
 import { useResearchNotes, useResearchSources } from '@/lib/hooks/use-research'
@@ -45,13 +46,32 @@ export function ResearchWorkspace({
   onEditScope?: () => void
 }) {
   const { t } = useTranslation()
+  const { toast } = useToast()
   const { projectId } = useResearchWorkspace()
+  const { reconcileSelection } = useResearchScope()
   const sourcesQuery = useResearchSources(projectId)
   const notesQuery = useResearchNotes(projectId)
   const sources = useMemo(() => sourcesQuery.data?.items ?? [], [sourcesQuery.data])
+  const notes = useMemo(() => notesQuery.data?.items ?? [], [notesQuery.data])
   const loading = sourcesQuery.isLoading || notesQuery.isLoading
   const loadError = sourcesQuery.error ?? notesQuery.error
   const [tab, setTab] = useState('search')
+
+  useEffect(() => {
+    if (!sourcesQuery.isSuccess || !notesQuery.isSuccess) return
+    const removed = reconcileSelection(
+      sources
+        .filter((source) => source.status === 'ready' || source.status === 'stale')
+        .map((source) => source.source_id),
+      notes.map((note) => note.note_id),
+    )
+    if (removed.sourceIds.length + removed.noteIds.length > 0) {
+      toast({
+        title: t('research.layout.scope.modeLabel'),
+        description: t('research.layout.scope.reconciled'),
+      })
+    }
+  }, [notes, notesQuery.isSuccess, reconcileSelection, sources, sourcesQuery.isSuccess, t, toast])
 
   const {
     turns,

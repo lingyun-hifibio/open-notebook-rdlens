@@ -3,11 +3,13 @@ import { renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   useResearchSources,
+  useResearchNotes,
   useCreateResearchNote,
   useDeleteResearchNote,
   useRunResearchTransformation,
 } from './use-research'
 import * as researchApi from '@/lib/research/api'
+import type { ResearchNote, ResearchSource } from '@/lib/types/research'
 
 // UI-02 Red：项目级 research hooks（REQ-API-01）——查询/写入全部经
 // Gateway API 模块；mutation 失败（403 Admin 写拒绝）以 toast 呈现，
@@ -53,6 +55,26 @@ function makeWrapper() {
 
 const P = 'proj_1'
 
+const source = (index: number): ResearchSource => ({
+  source_id: `src_${index}`,
+  document_id: `doc_${index}`,
+  document_version: 'v1',
+  status: 'ready',
+  content_hash: null,
+  synced_at: null,
+  last_error: null,
+})
+
+const note = (index: number): ResearchNote => ({
+  note_id: `note_${index}`,
+  project_id: P,
+  title: `Note ${index}`,
+  content: `Body ${index}`,
+  note_type: 'human',
+  created_at: null,
+  updated_at: null,
+})
+
 describe('use-research hooks', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -64,7 +86,68 @@ describe('use-research hooks', () => {
     const { wrapper } = makeWrapper()
     const { result } = renderHook(() => useResearchSources(P), { wrapper })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
-    expect(researchApi.listSources).toHaveBeenCalledWith(P)
+    expect(researchApi.listSources).toHaveBeenCalledWith(P, { limit: 100 })
+  })
+
+  it('useResearchSources follows every cursor and exposes more than 100 sources in one shared cache', async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) => source(index + 1))
+    vi.mocked(researchApi.listSources).mockImplementation(async (_projectId, params = {}) => {
+      if (params.cursor === 'cursor_100') {
+        return { items: [source(101)], next_cursor: null }
+      }
+      return { items: firstPage, next_cursor: 'cursor_100' }
+    })
+    const { wrapper } = makeWrapper()
+    const { result } = renderHook(() => useResearchSources(P), { wrapper })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(result.current.data?.items).toHaveLength(101)
+    expect(researchApi.listSources).toHaveBeenNthCalledWith(1, P, { limit: 100 })
+    expect(researchApi.listSources).toHaveBeenNthCalledWith(2, P, {
+      cursor: 'cursor_100',
+      limit: 100,
+    })
+  })
+
+  it('useResearchNotes follows search result cursors without losing the query', async () => {
+    const firstPage = Array.from({ length: 20 }, (_, index) => note(index + 1))
+    vi.mocked(researchApi.listNotes).mockImplementation(async (_projectId, params = {}) => {
+      if (params.cursor === 'cursor_20') {
+        return { items: [note(21)], next_cursor: null }
+      }
+      return { items: firstPage, next_cursor: 'cursor_20' }
+    })
+    const { wrapper } = makeWrapper()
+    const { result } = renderHook(() => useResearchNotes(P, 'kinase'), { wrapper })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(result.current.data?.items).toHaveLength(21)
+    expect(researchApi.listNotes).toHaveBeenNthCalledWith(1, P, {
+      q: 'kinase',
+      limit: 100,
+    })
+    expect(researchApi.listNotes).toHaveBeenNthCalledWith(2, P, {
+      q: 'kinase',
+      cursor: 'cursor_20',
+      limit: 100,
+    })
+  })
+
+  it('note mutation invalidation refreshes unfiltered and searched scope consumers', async () => {
+    vi.mocked(researchApi.listNotes).mockResolvedValue({ items: [], next_cursor: null })
+    vi.mocked(researchApi.deleteNote).mockResolvedValue(undefined)
+    const { wrapper } = makeWrapper()
+    const unfiltered = renderHook(() => useResearchNotes(P), { wrapper })
+    const searched = renderHook(() => useResearchNotes(P, 'target'), { wrapper })
+    await waitFor(() => expect(researchApi.listNotes).toHaveBeenCalledTimes(2))
+
+    const mutation = renderHook(() => useDeleteResearchNote(P), { wrapper })
+    mutation.result.current.mutate('note_1')
+
+    await waitFor(() => expect(mutation.result.current.isSuccess).toBe(true))
+    await waitFor(() => expect(researchApi.listNotes).toHaveBeenCalledTimes(4))
+    expect(unfiltered.result.current.isSuccess).toBe(true)
+    expect(searched.result.current.isSuccess).toBe(true)
   })
 
   it('createNote mutation 调用 Gateway createNote（保存不触发 Embedding）', async () => {

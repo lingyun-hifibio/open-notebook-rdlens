@@ -127,7 +127,9 @@ describe('ResearchWorkbench', () => {
     const notesTab = screen.getByRole('tab', { name: 'research.workbench.tabNotes' })
     fireEvent.mouseDown(notesTab)
     fireEvent.click(notesTab)
-    await waitFor(() => expect(researchApi.listNotes).toHaveBeenCalledWith('proj_1', {}))
+    await waitFor(() =>
+      expect(researchApi.listNotes).toHaveBeenCalledWith('proj_1', { limit: 100 }),
+    )
   })
 
   it('Tabs 容器链带滚动约束（防面板内容超出半屏后叠画到下半屏）', async () => {

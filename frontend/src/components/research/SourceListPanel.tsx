@@ -1,5 +1,7 @@
 'use client'
 
+import { useEffect, useState } from 'react'
+
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -34,6 +36,8 @@ const STATUS_CONFIG: Record<
   failed: { labelKey: 'research.sources.statusFailed', variant: 'destructive' },
 }
 
+const DISPLAY_PAGE_SIZE = 20
+
 export function SourceListPanel({
   onOpenSource,
 }: {
@@ -41,7 +45,8 @@ export function SourceListPanel({
 }) {
   const { t } = useTranslation()
   const { projectId } = useResearchWorkspace()
-  const { data, isLoading, isError } = useResearchSources(projectId)
+  const { data, isLoading, isError, refetch } = useResearchSources(projectId)
+  const [visibleCount, setVisibleCount] = useState(DISPLAY_PAGE_SIZE)
   const {
     mode,
     selectedSourceIds,
@@ -50,69 +55,101 @@ export function SourceListPanel({
   } = useResearchScope()
   const selectedCount = selectedSourceIds.length + selectedNoteIds.length
 
+  useEffect(() => {
+    setVisibleCount(DISPLAY_PAGE_SIZE)
+  }, [projectId])
+
   if (isLoading) {
     return <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
   }
   if (isError) {
-    return <p className="text-sm text-destructive">{t('research.workbench.loadFailed')}</p>
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-sm text-destructive">{t('research.workbench.loadFailed')}</p>
+        <Button size="sm" variant="outline" onClick={() => void refetch()}>
+          {t('research.retry')}
+        </Button>
+      </div>
+    )
   }
   const items = data?.items ?? []
   if (items.length === 0) {
     return <p className="text-sm text-muted-foreground">{t('research.sources.empty')}</p>
   }
 
+  const visibleItems = items.slice(0, visibleCount)
+
   return (
-    <ul className="divide-y divide-border" data-testid="source-list-rows">
-      {items.map((item) => {
-        const config = STATUS_CONFIG[item.status]
-        return (
-          <li
-            key={item.source_id}
-            className="group flex items-center gap-2 rounded px-2 py-1.5 hover:bg-accent/60"
-          >
-            <Checkbox
-              checked={selectedSourceIds.includes(item.source_id)}
-              onCheckedChange={() => toggleSource(item.source_id)}
-              disabled={
-                mode === 'selected' &&
-                selectedCount === 1 &&
-                selectedSourceIds.includes(item.source_id)
-              }
-              aria-label={t('research.sources.scopeSelect', { name: item.document_id })}
-              data-testid={`source-scope-${item.source_id}`}
-              className="shrink-0"
-            />
-            <Badge variant={config.variant} className="shrink-0">
-              {t(config.labelKey)}
-            </Badge>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm">{item.document_id}</p>
-              {item.status === 'failed' && item.last_error && (
-                <p className="truncate text-xs text-destructive">
-                  {t('research.sources.lastError', { error: item.last_error })}
-                </p>
-              )}
-              {item.status === 'failed' && (
-                <p className="truncate text-xs text-muted-foreground">
-                  {t('research.sources.retryHint')}
-                </p>
-              )}
-            </div>
-            <span className="hidden shrink-0 text-xs text-muted-foreground md:inline">
-              {item.document_version}
-              {item.synced_at ? ` · ${item.synced_at}` : ''}
-            </span>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
-              onClick={() => onOpenSource?.(item.source_id)}
+    <div className="min-w-0 space-y-2">
+      <ul className="divide-y divide-border" data-testid="source-list-rows">
+        {visibleItems.map((item) => {
+          const config = STATUS_CONFIG[item.status]
+          const isSelectable = item.status === 'ready' || item.status === 'stale'
+          return (
+            <li
+              key={item.source_id}
+              className="group flex items-center gap-2 rounded px-2 py-1.5 hover:bg-accent/60"
             >
-              {t('research.sources.open')}
-            </Button>
-          </li>
-        )
-      })}
-    </ul>
+              <Checkbox
+                checked={selectedSourceIds.includes(item.source_id)}
+                onCheckedChange={() => toggleSource(item.source_id)}
+                disabled={
+                  !isSelectable ||
+                  mode === 'selected' &&
+                  selectedCount === 1 &&
+                  selectedSourceIds.includes(item.source_id)
+                }
+                aria-label={t('research.sources.scopeSelect', { name: item.document_id })}
+                data-testid={`source-scope-${item.source_id}`}
+                className="shrink-0"
+              />
+              <Badge variant={config.variant} className="shrink-0">
+                {t(config.labelKey)}
+              </Badge>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm">{item.document_id}</p>
+                {item.status === 'failed' && item.last_error && (
+                  <p className="truncate text-xs text-destructive">
+                    {t('research.sources.lastError', { error: item.last_error })}
+                  </p>
+                )}
+                {item.status === 'failed' && (
+                  <p className="truncate text-xs text-muted-foreground">
+                    {t('research.sources.retryHint')}
+                  </p>
+                )}
+                {item.status === 'stale' && (
+                  <p className="truncate text-xs text-amber-700 dark:text-amber-400">
+                    {t('research.sources.staleSelectionWarning')}
+                  </p>
+                )}
+              </div>
+              <span className="hidden shrink-0 text-xs text-muted-foreground md:inline">
+                {item.document_version}
+                {item.synced_at ? ` · ${item.synced_at}` : ''}
+              </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
+                onClick={() => onOpenSource?.(item.source_id)}
+              >
+                {t('research.sources.open')}
+              </Button>
+            </li>
+          )
+        })}
+      </ul>
+      {visibleItems.length < items.length && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="w-full"
+          onClick={() => setVisibleCount((count) => count + DISPLAY_PAGE_SIZE)}
+        >
+          {t('research.pagination.loadMore')}
+        </Button>
+      )}
+    </div>
   )
 }

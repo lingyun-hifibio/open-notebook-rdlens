@@ -18,6 +18,11 @@ export interface ResearchScopeState {
 
 export type ResearchScopeSnapshot = ResearchScopeState
 
+export interface ResearchScopeReconciliation {
+  sourceIds: string[]
+  noteIds: string[]
+}
+
 /**
  * RWV2-11（K11）：把冻结快照格式化为用户可见的英文 Scope 摘要（i18n key
  * 驱动，不硬编码）。用途：consent 弹窗派发摘要、Chat turn 徽标、面板提示。
@@ -46,7 +51,8 @@ export function formatScopeLabel(
         : t('research.scopeSummary.noteMany', { count: snapshot.noteIds.length }),
     )
   }
-  // selected 空在 Provider 不变量下不可达；防御性回退到显式范围标签
+  // Reconciliation can intentionally leave selected empty so execution stays
+  // blocked instead of silently expanding to the entire project.
   return parts.join(' · ') || t('research.layout.scope.selected')
 }
 
@@ -114,8 +120,7 @@ function restoreScope(userId: string, projectId: string): ResearchScopeState {
     if (parsed.mode === 'entire_project') {
       return sourceIds.length + noteIds.length === 0 ? ENTIRE_PROJECT_SCOPE : discard()
     }
-    const scope: ResearchScopeState = { mode: 'selected', sourceIds, noteIds }
-    return validateResearchScope(scope).valid ? scope : discard()
+    return { mode: 'selected', sourceIds, noteIds }
   } catch {
     return discard()
   }
@@ -143,6 +148,11 @@ interface ResearchScopeValue {
   setMode: (mode: ResearchScopeMode) => void
   toggleSource: (sourceId: string) => void
   toggleNote: (noteId: string) => void
+  reconcileSelection: (
+    selectableSourceIds: readonly string[],
+    validNoteIds: readonly string[],
+  ) => ResearchScopeReconciliation
+  removeNote: (noteId: string) => boolean
   validate: (scope?: ResearchScopeState) => ResearchScopeValidation
   getSnapshot: () => ResearchScopeSnapshot
 }
@@ -219,6 +229,38 @@ function ResearchScopeProviderForIdentity({
 
   const toggleSource = useCallback((sourceId: string) => toggle('sourceIds', sourceId), [toggle])
   const toggleNote = useCallback((noteId: string) => toggle('noteIds', noteId), [toggle])
+  const reconcileSelection = useCallback((
+    selectableSourceIds: readonly string[],
+    validNoteIds: readonly string[],
+  ): ResearchScopeReconciliation => {
+    const current = scopeRef.current
+    if (current.mode !== 'selected') return { sourceIds: [], noteIds: [] }
+
+    const selectableSources = new Set(selectableSourceIds)
+    const validNotes = new Set(validNoteIds)
+    const sourceIds = current.sourceIds.filter((id) => selectableSources.has(id))
+    const noteIds = current.noteIds.filter((id) => validNotes.has(id))
+    const removed = {
+      sourceIds: current.sourceIds.filter((id) => !selectableSources.has(id)),
+      noteIds: current.noteIds.filter((id) => !validNotes.has(id)),
+    }
+    if (removed.sourceIds.length + removed.noteIds.length > 0) {
+      // An empty selected scope is intentionally retained: it is invalid and
+      // must block execution instead of silently broadening to Entire project.
+      updateScope({ mode: 'selected', sourceIds, noteIds })
+    }
+    return removed
+  }, [updateScope])
+  const removeNote = useCallback((noteId: string): boolean => {
+    const current = scopeRef.current
+    if (!current.noteIds.includes(noteId)) return false
+    updateScope({
+      mode: current.mode,
+      sourceIds: current.sourceIds,
+      noteIds: current.noteIds.filter((id) => id !== noteId),
+    })
+    return true
+  }, [updateScope])
   const validate = useCallback((candidate?: ResearchScopeState) => validateResearchScope(candidate ?? scopeRef.current), [])
   const getSnapshot = useCallback((): ResearchScopeSnapshot => {
     const current = scopeRef.current
@@ -238,6 +280,8 @@ function ResearchScopeProviderForIdentity({
         setMode,
         toggleSource,
         toggleNote,
+        reconcileSelection,
+        removeNote,
         validate,
         getSnapshot,
       }}
