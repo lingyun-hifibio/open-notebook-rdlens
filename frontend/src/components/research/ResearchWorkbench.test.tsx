@@ -1,9 +1,10 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { useState } from 'react'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ResearchWorkbench } from './ResearchWorkbench'
 import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
+import { ResearchScopeProvider, scopeStorageKey } from '@/lib/research/scope'
 import * as researchApi from '@/lib/research/api'
 
 // UI-02 Red：研究工作台容器（REQ-SCOPE-04/REQ-DATA-03/04）——Tabs 面板
@@ -54,12 +55,22 @@ function makeWrapper(role: 'owner' | 'admin_readonly' = 'owner') {
   })
   const wrapper = ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>
-      <ResearchWorkspaceProvider projectId="proj_1" role={role}>
-        {children}
+      <ResearchWorkspaceProvider userId="u1" projectId="proj_1" role={role}>
+        <ResearchScopeProvider userId="u1" projectId="proj_1">
+          {children}
+        </ResearchScopeProvider>
       </ResearchWorkspaceProvider>
     </QueryClientProvider>
   )
   return { wrapper, queryClient }
+}
+
+/** 预置 provider 持久化 Scope（RWV2-12：Transformation 运行共享 Scope）。 */
+function seedScope(mode: 'entire_project' | 'selected', sourceIds: string[] = []) {
+  localStorage.setItem(
+    scopeStorageKey('u1', 'proj_1'),
+    JSON.stringify({ version: 1, mode, sourceIds, noteIds: [] }),
+  )
 }
 
 /**
@@ -95,6 +106,7 @@ function ControlledWorkbench() {
 
 describe('ResearchWorkbench', () => {
   beforeEach(() => {
+    localStorage.clear()
     vi.clearAllMocks()
     toastMock.mockClear()
     Element.prototype.scrollIntoView = vi.fn()
@@ -264,14 +276,21 @@ describe('ResearchWorkbench', () => {
     })
 
     const { wrapper } = makeWrapper()
+    seedScope('selected', ['src_1'])
     render(<ControlledWorkbench />, { wrapper })
 
-    // 打开 Transformations 并运行
+    // 打开 Transformations 并运行（RWV2-12：scope 来自共享 provider 快照）
     const transTab = screen.getByRole('tab', { name: 'research.workbench.tabTransformations' })
     fireEvent.mouseDown(transTab)
     fireEvent.click(transTab)
     await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
+    // RWV2-12：对话框只读展示当前 Scope 摘要（无局部选择复选框）
+    await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
+    // checkbox 断言限定在对话框内，避免文档级断言被背景面板破坏
+    expect(
+      within(screen.getByRole('dialog')).queryByRole('checkbox'),
+    ).toBeNull()
     // #243 §6.6：外发确认不再是面板局部复选框（统一由顶层守卫处理）
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
     await waitFor(() => expect(screen.getByText('总结输出')).toBeInTheDocument())
@@ -290,5 +309,41 @@ describe('ResearchWorkbench', () => {
     const highlighted = screen.getByTestId('chunk-highlight')
     expect(highlighted).toBeInTheDocument()
     expect(screen.getByText(/research.sources.chunkPage:4/)).toBeInTheDocument()
+  })
+
+  it('RWV2-12：运行对话框 Edit scope 仅关闭对话框，不重置全局 Scope', async () => {
+    seedScope('selected', ['src_1'])
+    vi.mocked(researchApi.listSources).mockResolvedValue({ items: [], next_cursor: null })
+    vi.mocked(researchApi.listNotes).mockResolvedValue({ items: [], next_cursor: null })
+    vi.mocked(researchApi.listTransformations).mockResolvedValue({
+      items: [{
+        transformation_id: 'trans_1',
+        project_id: 'proj_1',
+        name: '总结模板',
+        prompt_template: '请总结：',
+        model_id: 'qwen3.6',
+        scope: 'project_private',
+        created_at: null,
+      }],
+      next_cursor: null,
+    })
+    const { wrapper } = makeWrapper()
+    render(<ControlledWorkbench />, { wrapper })
+
+    const transTab = screen.getByRole('tab', { name: 'research.workbench.tabTransformations' })
+    fireEvent.mouseDown(transTab)
+    fireEvent.click(transTab)
+    await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
+    await waitFor(() =>
+      expect(screen.getByTestId('run-scope-summary')).toHaveTextContent('selectedSummary'),
+    )
+    // Edit scope：关闭对话框；全局 Scope 保持不变
+    fireEvent.click(screen.getByTestId('run-edit-scope'))
+    await waitFor(() => expect(screen.queryByTestId('run-scope-summary')).toBeNull())
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
+    await waitFor(() =>
+      expect(screen.getByTestId('run-scope-summary')).toHaveTextContent('selectedSummary'),
+    )
   })
 })
