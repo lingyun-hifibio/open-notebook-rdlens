@@ -18,6 +18,38 @@ export interface ResearchScopeState {
 
 export type ResearchScopeSnapshot = ResearchScopeState
 
+/**
+ * RWV2-11（K11）：把冻结快照格式化为用户可见的英文 Scope 摘要（i18n key
+ * 驱动，不硬编码）。用途：consent 弹窗派发摘要、Chat turn 徽标、面板提示。
+ * 语义与 payload 一致：entire_project → "Entire project"；selected →
+ * "N sources · M notes"（任一为零则省略）。
+ */
+export function formatScopeLabel(
+  snapshot: ResearchScopeSnapshot,
+  t: (key: string, opts?: Record<string, unknown>) => string,
+): string {
+  if (snapshot.mode === 'entire_project') {
+    return t('research.scopeSummary.entireProject')
+  }
+  const parts: string[] = []
+  if (snapshot.sourceIds.length > 0) {
+    parts.push(
+      snapshot.sourceIds.length === 1
+        ? t('research.scopeSummary.sourceOne')
+        : t('research.scopeSummary.sourceMany', { count: snapshot.sourceIds.length }),
+    )
+  }
+  if (snapshot.noteIds.length > 0) {
+    parts.push(
+      snapshot.noteIds.length === 1
+        ? t('research.scopeSummary.noteOne')
+        : t('research.scopeSummary.noteMany', { count: snapshot.noteIds.length }),
+    )
+  }
+  // selected 空在 Provider 不变量下不可达；防御性回退到显式范围标签
+  return parts.join(' · ') || t('research.layout.scope.selected')
+}
+
 export type ResearchScopeValidation =
   | { valid: true }
   | { valid: false; reason: 'empty_selected_scope' }

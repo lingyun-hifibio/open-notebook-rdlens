@@ -4,12 +4,15 @@ import { CoverageScopeSelector } from './CoverageScopeSelector'
 
 // COV-09：合成范围选择器（§12.3）——显式二选一、Notes 禁用 + 可访问
 // 文字说明（不只依赖颜色）、0/超限 Source 预检文案、onChange 契约。
+// RWV2-11（K3/W4）：entire_project 模式显示专属说明（优先级高于通用
+// noSourcesHint）；提交闸门在 ChatPanel，本组件只出通知。
 
 describe('CoverageScopeSelector', () => {
   afterEach(cleanup)
 
   function renderSelector(overrides: Partial<{
     value: 'relevant' | 'all_selected'
+    scopeMode: 'entire_project' | 'selected'
     selectedSourceCount: number
     selectedNoteCount: number
   }> = {}) {
@@ -18,6 +21,7 @@ describe('CoverageScopeSelector', () => {
       <CoverageScopeSelector
         value={overrides.value ?? 'relevant'}
         onChange={onChange}
+        scopeMode={overrides.scopeMode ?? 'selected'}
         selectedSourceCount={overrides.selectedSourceCount ?? 0}
         selectedNoteCount={overrides.selectedNoteCount ?? 0}
       />,
@@ -41,7 +45,15 @@ describe('CoverageScopeSelector', () => {
     expect(notice).toHaveAttribute('id', 'coverage-scope-notice')
   })
 
-  it('0 Source：提示选择来源（不阻止切换，由提交侧拦截）', () => {
+  it('RWV2-11（W4）：entire_project 模式显示专属说明，优先级高于 noSourcesHint', () => {
+    renderSelector({ scopeMode: 'entire_project' })
+    const notice = screen.getByTestId('coverage-scope-notice')
+    expect(notice).toHaveTextContent('research.coverage.entireProjectNotice')
+    expect(notice).not.toHaveTextContent('research.coverage.noSourcesHint')
+    expect(screen.getByTestId('scope-all-selected-option')).not.toBeDisabled()
+  })
+
+  it('0 Source（selected 模式）：提示选择来源（不阻止切换，由提交侧拦截）', () => {
     renderSelector()
     expect(screen.getByTestId('coverage-scope-notice')).toHaveTextContent('research.coverage.noSourcesHint')
     expect(screen.getByTestId('scope-all-selected-option')).not.toBeDisabled()
@@ -52,7 +64,7 @@ describe('CoverageScopeSelector', () => {
     expect(screen.getByTestId('coverage-scope-notice')).toHaveTextContent('research.coverage.tooManySources')
   })
 
-  it('正常选择（有 Source 无 Notes）：无提示', () => {
+  it('正常选择（有 Source 无 Notes，selected 模式）：无提示', () => {
     renderSelector({ selectedSourceCount: 3 })
     expect(screen.queryByTestId('coverage-scope-notice')).not.toBeInTheDocument()
   })

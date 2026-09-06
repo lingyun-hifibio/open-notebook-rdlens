@@ -15,8 +15,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { ResearchSearchPanel } from './ResearchSearchPanel'
 import { ResearchEgressConsentDialog } from './ResearchEgressConsentDialog'
+import { ResearchSearchPanel } from './ResearchSearchPanel'
+import { ResearchScopeProvider, scopeStorageKey } from '@/lib/research/scope'
 import { ResearchGlobalModelProvider } from '@/lib/hooks/use-research-global-model'
 import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
 
@@ -128,22 +129,32 @@ import type { ResearchModelOption } from '@/lib/research/types'
 
 let keySeq = 0
 
-/** 复现页面真实结构：provider → 面板 + 根级确认弹窗。 */
-function renderPanel() {
+/** 复现页面真实结构：provider → 面板 + 根级确认弹窗。`selection=null` 表示
+ *  entire_project 模式；默认 selected ['d1']（保持既有用例语义）。 */
+function renderPanel(selection: string[] | null = ['d1']) {
+  // RWV2-11（K7/W6）：面板直接消费共享 Provider——选择经 localStorage 预置
+  // （仿 scope.test.tsx 模式）。
+  localStorage.setItem(
+    scopeStorageKey('u1', 'p1'),
+    JSON.stringify({
+      version: 1,
+      mode: selection === null ? 'entire_project' : 'selected',
+      sourceIds: selection === null ? [] : selection,
+      noteIds: [],
+    }),
+  )
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   return render(
     <QueryClientProvider client={queryClient}>
       <ResearchWorkspaceProvider projectId="p1" role="owner">
-        <ResearchGlobalModelProvider>
-          <ResearchSearchPanel
-            projectId="p1"
-            selectedSourceIds={['d1']}
-            selectedNoteIds={[]}
-          />
-          <ResearchEgressConsentDialog />
-        </ResearchGlobalModelProvider>
+        <ResearchScopeProvider userId="u1" projectId="p1">
+          <ResearchGlobalModelProvider>
+            <ResearchSearchPanel projectId="p1" />
+            <ResearchEgressConsentDialog />
+          </ResearchGlobalModelProvider>
+        </ResearchScopeProvider>
       </ResearchWorkspaceProvider>
     </QueryClientProvider>,
   )
@@ -163,6 +174,7 @@ async function typeAndWaitReady(value: string) {
 
 describe('ResearchSearchPanel（GMOD §6.3 全局模型接线）', () => {
   beforeEach(() => {
+    localStorage.clear()
     // reset 后重建默认实现：clearAllMocks 在本仓库 Vitest 版本下会清掉实现
     vi.resetAllMocks()
     keySeq = 0
@@ -419,6 +431,11 @@ describe('ResearchSearchPanel（GMOD §6.3 全局模型接线）', () => {
     expect(screen.getByTestId('egress-consent-categories').textContent).toContain(
       'focused_context',
     )
+    // RWV2-11（R2/K5/K11）：弹窗显示本次派发登记的 Scope 摘要（与最终请求
+    // 同一快照；测试环境 t() 返回 key，选中 1 个 Source → sourceOne 文案）
+    expect(screen.getByTestId('egress-consent-scope').textContent).toContain(
+      'research.scopeSummary.sourceOne',
+    )
 
     // 取消：查询保留，不执行、不 acknowledge、无排队/结果状态
     fireEvent.click(screen.getByTestId('egress-consent-cancel'))
@@ -491,5 +508,85 @@ describe('ResearchSearchPanel（GMOD §6.3 全局模型接线）', () => {
       ),
     )
     expect(searchV1).toHaveBeenCalledTimes(1)
+  })
+
+  it('RWV2-11（G10）：selected 模式 payload 携带精确 source/note ID', async () => {
+    vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
+    vi.mocked(searchV1).mockResolvedValue({
+      kind: 'direct',
+      result: {
+        request_id: 'r3',
+        resolved_mode: 'direct_context',
+        evidence: [],
+        citations: [],
+        usage: { input_tokens: 10, output_tokens: 5, estimated: true },
+        degradation_reason: null,
+        conclusion: 'ok',
+      },
+    })
+    renderPanel(['d1', 'd2'])
+    await typeAndWaitReady('exact ids')
+    fireEvent.click(runButton())
+    await waitFor(() => expect(screen.getByTestId('search-result')).toBeTruthy())
+    expect(searchV1).toHaveBeenCalledWith(
+      'p1',
+      expect.objectContaining({ source_ids: ['d1', 'd2'], note_ids: [] }),
+      expect.anything(),
+    )
+  })
+
+  it('RWV2-11（G10）：entire_project 模式 payload 使用空数组（后端全项目相关检索语义）', async () => {
+    vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
+    vi.mocked(searchV1).mockResolvedValue({
+      kind: 'direct',
+      result: {
+        request_id: 'r4',
+        resolved_mode: 'hybrid_rag',
+        evidence: [],
+        citations: [],
+        usage: { input_tokens: 10, output_tokens: 5, estimated: true },
+        degradation_reason: null,
+        conclusion: 'ok',
+      },
+    })
+    renderPanel(null)
+    await typeAndWaitReady('whole project')
+    fireEvent.click(runButton())
+    await waitFor(() => expect(screen.getByTestId('search-result')).toBeTruthy())
+    expect(searchV1).toHaveBeenCalledWith(
+      'p1',
+      expect.objectContaining({ source_ids: [], note_ids: [] }),
+      expect.anything(),
+    )
+  })
+
+  it('RWV2-11（K13）：entire_project 模式选择 document 档位收敛到 focused 并提示', async () => {
+    vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
+    vi.mocked(searchV1).mockResolvedValue({
+      kind: 'direct',
+      result: {
+        request_id: 'r5',
+        resolved_mode: 'hybrid_rag',
+        evidence: [],
+        citations: [],
+        usage: { input_tokens: 10, output_tokens: 5, estimated: true },
+        degradation_reason: null,
+        conclusion: 'ok',
+      },
+    })
+    renderPanel(null)
+    await waitFor(() =>
+      expect(screen.getByTestId('search-context-selector')).toBeTruthy(),
+    )
+    fireEvent.change(screen.getByTestId('context-select'), {
+      target: { value: 'document' },
+    })
+    // 收敛 + 明确英文提示（K13）
+    expect(screen.getByTestId('document-needs-sources-hint')).toHaveTextContent(
+      'research.searchDocumentNeedsSourcesHint',
+    )
+    expect((screen.getByTestId('context-select') as HTMLSelectElement).value).toBe(
+      'focused',
+    )
   })
 })

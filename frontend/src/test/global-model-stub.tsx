@@ -39,6 +39,8 @@ interface StubOverrides {
   isConsentPromptOpen?: boolean
   consentError?: string | null
   consentResponse?: ResearchEgressConsentResponse | null
+  /** RWV2-11：派发登记的 Scope 摘要（弹窗展示用） */
+  pendingScopeLabel?: string | null
   onCancelConsent?: () => void
   onConfirmConsent?: () => Promise<void>
   onRunGuarded?: () => void
@@ -130,6 +132,8 @@ export function useResearchGlobalModel(): UseResearchGlobalModelResult {
     canExecute,
     blockedReason,
     runGuarded,
+    // RWV2-11（F5 同步）：接口新增字段，stub 必须提供（防 tsc 失败）
+    pendingScopeLabel: overrides.pendingScopeLabel ?? null,
     needsConsent: overrides.needsConsent ?? false,
     isConsentPromptOpen: overrides.isConsentPromptOpen ?? false,
     isConsentInFlight: false,

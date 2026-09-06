@@ -1,5 +1,4 @@
 import type { TranslationShape } from '../en-US';
-
 export const zhCN = {
   common: {
     search: "搜索...",
@@ -984,6 +983,7 @@ export const zhCN = {
       scopeAllSelected: "覆盖全部所选来源",
       notesNotSupported: "本阶段不支持对 Notes 使用「覆盖全部所选来源」——请取消选择 Notes 后再使用。",
       noSourcesHint: "请至少选择一个来源。",
+      entireProjectNotice: "Coverage runs on a selected Source set — switch to Selected sources to use it.",
       tooManySources: "最多可覆盖 {{max}} 个来源（当前已选 {{count}} 个）。",
       syncing: "任务已受理——正在同步状态…",
       targetCoverage: "目标覆盖",
@@ -1050,6 +1050,14 @@ export const zhCN = {
     selectNotes: "笔记",
     sourcesEmpty: "暂无已同步来源。",
     notesEmpty: "暂无笔记。",
+    scopeSummary: {
+      entireProject: "Entire project",
+      sourceOne: "1 source",
+      sourceMany: "{{count}} sources",
+      noteOne: "1 note",
+      noteMany: "{{count}} notes",
+    },
+    searchDocumentNeedsSourcesHint: "Document context requires an explicit source selection — switch to Selected sources.",
     searchEmpty: "输入查询以在选中的来源与笔记中搜索。",
     searchPlaceholder: "搜索选中的来源…",
     searchRun: "搜索",
@@ -1071,6 +1079,7 @@ export const zhCN = {
     consentDestinations: "数据将发送至以下目的地",
     consentCategories: "数据类别",
     consentPreviewNote: "发送前可查看 Context Preview；确认后该范围持续有效，撤销或范围变化后需重新确认。",
+    consentScopeTitle: "Scope",
     consentConfirm: "确认并继续",
     consentCancel: "取消",
     consentRequired: "使用外部模型需要 Workspace 外发确认。",
@@ -1099,6 +1108,7 @@ export const zhCN = {
     citations: "引用",
     citationPage: "第",
     chatEmpty: "就选中的来源与笔记提问。",
+    chatScopeBadge: "Scope: {{scope}}",
     chatPlaceholder: "就你的来源提问…",
     chatSend: "发送",
     chatThinking: "思考",
@@ -1124,6 +1134,7 @@ export const zhCN = {
     compareOverDefault: "超出默认上限 30 篇——允许创建，但不超过硬上限 50 篇。",
     compareOverHard: "最多 50 篇（当前已选 {{count}} 篇）。",
     compareEmpty: "请至少选择一个来源进行对比。",
+    compareEntireProjectRequiresSelection: "Compare requires an explicit source selection — switch to Selected sources to compare specific documents.",
     compareCreated: "对比任务已创建——后台继续运行，请在任务页查看进度。",
     jobsEmpty: "暂无研究任务。",
     jobsCancel: "取消",

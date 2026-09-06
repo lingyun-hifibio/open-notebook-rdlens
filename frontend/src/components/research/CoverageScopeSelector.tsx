@@ -4,6 +4,7 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import type { ResearchSynthesisScope } from '@/lib/research/types'
+import type { ResearchScopeMode } from '@/lib/research/scope'
 
 /**
  * COV-09：合成范围显式选择（§12.3/REQ-COV-01）——「相关证据回答」与
@@ -12,7 +13,10 @@ import type { ResearchSynthesisScope } from '@/lib/research/types'
  * - 选择 Notes 时 all_selected 选项禁用，并展示可访问的文字说明
  *   （不只依赖颜色，验收标准）——Notes Coverage 首期不支持（§6.1）；
  * - 0 个 Source：all_selected 可选中但提交前给出提示（提交按钮禁用）；
- * - 超过 50 个 Source：前端预检文案（服务端仍是权威，422 兜底）。
+ * - 超过 50 个 Source：前端预检文案（服务端仍是权威，422 兜底）；
+ * - RWV2-11（K3/W4）：`entire_project` 无显式 Source 集合——通知文案
+ *   优先于通用 noSourcesHint，说明需切换到 Selected 才能覆盖；提交闸门
+ *   在 ChatPanel 单点（本组件只出通知）。
  */
 
 export const COVERAGE_SOURCE_HARD_MAX = 50
@@ -20,6 +24,8 @@ export const COVERAGE_SOURCE_HARD_MAX = 50
 export interface CoverageScopeSelectorProps {
   value: ResearchSynthesisScope
   onChange: (scope: ResearchSynthesisScope) => void
+  /** RWV2-11（K3）：当前 Scope 模式——entire_project 下显示专属说明 */
+  scopeMode: ResearchScopeMode
   selectedSourceCount: number
   selectedNoteCount: number
 }
@@ -27,6 +33,7 @@ export interface CoverageScopeSelectorProps {
 export function CoverageScopeSelector({
   value,
   onChange,
+  scopeMode,
   selectedSourceCount,
   selectedNoteCount,
 }: CoverageScopeSelectorProps) {
@@ -43,6 +50,9 @@ export function CoverageScopeSelector({
       count: selectedSourceCount,
       max: COVERAGE_SOURCE_HARD_MAX,
     })
+  } else if (scopeMode === 'entire_project') {
+    // RWV2-11（K3/W4）：entire_project 优先级高于通用 noSourcesHint
+    notice = t('research.coverage.entireProjectNotice')
   } else if (noSources) {
     notice = t('research.coverage.noSourcesHint')
   }

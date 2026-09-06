@@ -1022,6 +1022,14 @@ export const enUS = {
     selectNotes: "Notes",
     sourcesEmpty: "No sources synced yet.",
     notesEmpty: "No notes yet.",
+    scopeSummary: {
+      entireProject: "Entire project",
+      sourceOne: "1 source",
+      sourceMany: "{{count}} sources",
+      noteOne: "1 note",
+      noteMany: "{{count}} notes",
+    },
+    searchDocumentNeedsSourcesHint: "Document context requires an explicit source selection — switch to Selected sources.",
     searchEmpty: "Enter a query to search the selected sources and notes.",
     searchPlaceholder: "Search selected sources…",
     searchRun: "Search",
@@ -1043,6 +1051,7 @@ export const enUS = {
     consentDestinations: "Data will be sent to the following destinations",
     consentCategories: "Data categories",
     consentPreviewNote: "You can review the Context Preview before sending; once acknowledged, this scope stays valid until revoked or changed.",
+    consentScopeTitle: "Scope",
     consentConfirm: "Acknowledge & continue",
     consentCancel: "Cancel",
     consentRequired: "External models require workspace egress consent.",
@@ -1071,6 +1080,7 @@ export const enUS = {
     citations: "Citations",
     citationPage: "p.",
     chatEmpty: "Ask a question about the selected sources and notes.",
+    chatScopeBadge: "Scope: {{scope}}",
     chatPlaceholder: "Ask about your sources…",
     chatSend: "Send",
     chatThinking: "Thinking",
@@ -1096,6 +1106,7 @@ export const enUS = {
     compareOverDefault: "Exceeds the default limit of 30 — allowed up to the hard cap of 50.",
     compareOverHard: "Maximum 50 documents (selected {{count}}).",
     compareEmpty: "Select at least one source to compare.",
+    compareEntireProjectRequiresSelection: "Compare requires an explicit source selection — switch to Selected sources to compare specific documents.",
     compareCreated: "Compare job created — it runs in the background; see the Jobs tab for progress.",
     jobsEmpty: "No research jobs yet.",
     jobsCancel: "Cancel",
@@ -1110,6 +1121,7 @@ export const enUS = {
       scopeAllSelected: "Cover all selected sources",
       notesNotSupported: "Coverage of all selected sources is not supported for Notes in this phase — deselect Notes to use it.",
       noSourcesHint: "Select at least one source to cover.",
+      entireProjectNotice: "Coverage runs on a selected Source set — switch to Selected sources to use it.",
       tooManySources: "At most {{max}} sources can be covered (selected {{count}}).",
       syncing: "Task accepted — syncing status…",
       targetCoverage: "Target coverage",
@@ -1140,7 +1152,6 @@ export const enUS = {
       fixedSnapshot: "Fixed source snapshot at submission",
       finalReport: "Final report",
     },
-
     loading: "Loading research workspace…",
     errorTitle: "Research workspace unavailable",
     errorMessage: "The research session could not be established. Please return to RDLens and try again.",
@@ -1222,7 +1233,6 @@ export const enUS = {
     },
   },
 }
-
 // Compile-time shape of the en-US translations. Every other locale must
 // `satisfies` this type so missing or extra keys fail `tsc`, not just the
 // runtime parity test.

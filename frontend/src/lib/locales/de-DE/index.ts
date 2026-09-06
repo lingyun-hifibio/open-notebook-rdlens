@@ -1,8 +1,6 @@
 import type { TranslationShape } from '../en-US';
-
 // German locale.
 // Translate values only; do not change keys, placeholders or structure.
-
 export const deDE = {
   common: {
     search: "Suchen...",
@@ -987,6 +985,7 @@ export const deDE = {
       scopeAllSelected: "Alle ausgewählten Quellen abdecken",
       notesNotSupported: "Das Abdecken aller ausgewählten Quellen wird für Notizen in dieser Phase nicht unterstützt — deaktivieren Sie die Notizauswahl, um es zu verwenden.",
       noSourcesHint: "Wählen Sie mindestens eine Quelle aus.",
+      entireProjectNotice: "Coverage runs on a selected Source set — switch to Selected sources to use it.",
       tooManySources: "Höchstens {{max}} Quellen können abgedeckt werden ({{count}} ausgewählt).",
       syncing: "Aufgabe angenommen — Status wird synchronisiert…",
       targetCoverage: "Zielabdeckung",
@@ -1053,6 +1052,14 @@ export const deDE = {
     selectNotes: "Notes",
     sourcesEmpty: "No sources synced yet.",
     notesEmpty: "No notes yet.",
+    scopeSummary: {
+      entireProject: "Entire project",
+      sourceOne: "1 source",
+      sourceMany: "{{count}} sources",
+      noteOne: "1 note",
+      noteMany: "{{count}} notes",
+    },
+    searchDocumentNeedsSourcesHint: "Document context requires an explicit source selection — switch to Selected sources.",
     searchEmpty: "Enter a query to search the selected sources and notes.",
     searchPlaceholder: "Search selected sources…",
     searchRun: "Search",
@@ -1074,6 +1081,7 @@ export const deDE = {
     consentDestinations: "Data will be sent to the following destinations",
     consentCategories: "Data categories",
     consentPreviewNote: "You can review the Context Preview before sending; once acknowledged, this scope stays valid until revoked or changed.",
+    consentScopeTitle: "Scope",
     consentConfirm: "Acknowledge & continue",
     consentCancel: "Cancel",
     consentRequired: "External models require workspace egress consent.",
@@ -1102,6 +1110,7 @@ export const deDE = {
     citations: "Citations",
     citationPage: "p.",
     chatEmpty: "Ask a question about the selected sources and notes.",
+    chatScopeBadge: "Scope: {{scope}}",
     chatPlaceholder: "Ask about your sources…",
     chatSend: "Send",
     chatThinking: "Thinking",
@@ -1127,6 +1136,7 @@ export const deDE = {
     compareOverDefault: "Exceeds the default limit of 30 — allowed up to the hard cap of 50.",
     compareOverHard: "Maximum 50 documents (selected {{count}}).",
     compareEmpty: "Select at least one source to compare.",
+    compareEntireProjectRequiresSelection: "Compare requires an explicit source selection — switch to Selected sources to compare specific documents.",
     compareCreated: "Compare job created — it runs in the background; see the Jobs tab for progress.",
     jobsEmpty: "No research jobs yet.",
     jobsCancel: "Cancel",

@@ -14,6 +14,7 @@ import {
 } from './SearchContextSelector'
 import { fetchContextPreview, newIdempotencyKey, searchV1 } from '@/lib/research/api'
 import { researchModelBlockedHint, useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
+import { formatScopeLabel, useResearchScope } from '@/lib/research/scope'
 import type {
   ResearchContextLevel,
   ResearchContextPreview,
@@ -51,12 +52,8 @@ const CONSENT_ERROR_CODES = [
 
 export function ResearchSearchPanel({
   projectId,
-  selectedSourceIds,
-  selectedNoteIds,
 }: {
   projectId: string
-  selectedSourceIds: string[]
-  selectedNoteIds: string[]
 }) {
   const { t } = useTranslation()
   const {
@@ -71,6 +68,8 @@ export function ResearchSearchPanel({
     invalidateConsent,
     runGuarded,
   } = useResearchGlobalModel()
+  // RWV2-11（K7）：Scope 真源唯一——本面板不再持有/接收独立选择状态
+  const { mode, selectedSourceIds, selectedNoteIds, getSnapshot } = useResearchScope()
 
   const [query, setQuery] = useState('')
   const [result, setResult] = useState<ResearchSearchResponse | null>(null)
@@ -242,22 +241,37 @@ export function ResearchSearchPanel({
   const run = useCallback(() => {
     const trimmed = query.trim()
     if (!trimmed || loading) return
-    // 快照模型与档位：外部模型需确认时执行被推迟，不能采用确认后的新值
+    // RWV2-11（K1/K11）：派发时刻冻结不可变 Scope 快照——模型/档位/Scope
+    // 三快照一并进入 runGuarded 登记与最终请求；确认被推迟时不得采用
+    // 确认后的新值（不变量 4），consent 弹窗摘要与最终请求同源（K5）。
+    const scopeSnapshot = getSnapshot()
     const levelSnapshot = selectedLevel
-    const sourceSnapshot = [...selectedSourceIds]
-    const noteSnapshot = [...selectedNoteIds]
-    void runGuarded((modelId) =>
-      executeSearch(trimmed, modelId, levelSnapshot, sourceSnapshot, noteSnapshot),
+    const sourceSnapshot = [...scopeSnapshot.sourceIds]
+    const noteSnapshot = [...scopeSnapshot.noteIds]
+    void runGuarded(
+      (modelId) =>
+        executeSearch(trimmed, modelId, levelSnapshot, sourceSnapshot, noteSnapshot),
+      { scopeLabel: formatScopeLabel(scopeSnapshot, t) },
     )
   }, [
     executeSearch,
+    getSnapshot,
     loading,
     query,
     runGuarded,
     selectedLevel,
-    selectedNoteIds,
-    selectedSourceIds,
+    t,
   ])
+
+  // RWV2-11（K13）：`document` 档位依赖显式 Source 选择；entire_project
+  // 下空 ID 后端必 422（runner.py document context requires sources）——复用
+  // 既有 adjustedFrom 收敛模式（与模型能力收敛同一提示形态），不静默写回。
+  useEffect(() => {
+    if (mode === 'entire_project' && selectedLevel === 'document') {
+      setAdjustedFrom('document')
+      setSelectedLevel('focused')
+    }
+  }, [mode, selectedLevel])
 
   const blockedHint = researchModelBlockedHint(blockedReason, t)
 
@@ -280,6 +294,13 @@ export function ResearchSearchPanel({
         {adjustedFrom !== null && (
           <p className="mt-1 text-xs text-amber-600" data-testid="context-auto-adjusted">
             {t('research.searchContext.autoAdjusted', { level: adjustedFrom })}
+          </p>
+        )}
+        {/* RWV2-11（K13）：entire_project 下 document 档位无显式 Source，
+            收敛到 focused 并给出明确英文说明（后端对空 ID 恒 422） */}
+        {mode === 'entire_project' && adjustedFrom === 'document' && (
+          <p className="mt-1 text-xs text-muted-foreground" data-testid="document-needs-sources-hint">
+            {t('research.searchDocumentNeedsSourcesHint')}
           </p>
         )}
         {blockedHint && (
