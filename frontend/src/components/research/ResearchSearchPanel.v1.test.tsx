@@ -460,6 +460,12 @@ describe('ResearchSearchPanel（GMOD §6.3 全局模型接线）', () => {
     await waitFor(() =>
       expect(screen.getByTestId('search-result')).toBeTruthy(),
     )
+    // P1-③：同一笔派发的弹窗摘要（sourceOne = 1 个 Source）与最终请求载荷
+    // （source_ids: ['d1']）来自同一快照——同流断言，一致性非仅靠构造保证
+    expect(vi.mocked(searchV1).mock.calls[0]?.[1]).toMatchObject({
+      source_ids: ['d1'],
+      note_ids: [],
+    })
   })
 
   it('外部模型已有有效确认时 Run 直接执行，不弹确认框', async () => {
@@ -588,5 +594,7 @@ describe('ResearchSearchPanel（GMOD §6.3 全局模型接线）', () => {
     expect((screen.getByTestId('context-select') as HTMLSelectElement).value).toBe(
       'focused',
     )
+    // P1-1 回归：scope 收敛不得借模型能力横幅（adjustedFrom），避免错误归因
+    expect(screen.queryByTestId('context-auto-adjusted')).toBeNull()
   })
 })

@@ -263,15 +263,28 @@ export function ResearchSearchPanel({
     t,
   ])
 
-  // RWV2-11（K13）：`document` 档位依赖显式 Source 选择；entire_project
-  // 下空 ID 后端必 422（runner.py document context requires sources）——复用
-  // 既有 adjustedFrom 收敛模式（与模型能力收敛同一提示形态），不静默写回。
+  // RWV2-11（K13）：`document` 档位依赖显式 Source 选择；entire_project 下空
+  // ID 后端必 422（runner.py document context requires sources）。
+  // P1-1：收敛使用**独立的 scope 归因提示**（documentLevelAdjusted），不写入
+  // adjustedFrom——后者驱动「模型能力」横幅，避免把 scope 收敛错误归因于模型
+  // 且 EP→selected 切换后残留谎称模型不支持。
+  // P2-⑥：仅当模型本身支持 document 时收敛；不支持时交由模型能力 effect
+  // 接管清除（防两 effect 互相回弹死循环）。
+  const [documentLevelAdjusted, setDocumentLevelAdjusted] = useState(false)
   useEffect(() => {
-    if (mode === 'entire_project' && selectedLevel === 'document') {
-      setAdjustedFrom('document')
+    if (mode !== 'entire_project') setDocumentLevelAdjusted(false)
+  }, [mode])
+
+  useEffect(() => {
+    if (
+      mode === 'entire_project' &&
+      selectedLevel === 'document' &&
+      supportedLevels.includes('document')
+    ) {
+      setDocumentLevelAdjusted(true)
       setSelectedLevel('focused')
     }
-  }, [mode, selectedLevel])
+  }, [mode, selectedLevel, supportedLevels])
 
   const blockedHint = researchModelBlockedHint(blockedReason, t)
 
@@ -285,6 +298,7 @@ export function ResearchSearchPanel({
           onSelectLevel={(level) => {
             interactedRef.current = true
             setAdjustedFrom(null)
+            setDocumentLevelAdjusted(false)
             setSelectedLevel(level)
           }}
           onSaveContext={(level) => void handleSaveContext(level)}
@@ -296,9 +310,10 @@ export function ResearchSearchPanel({
             {t('research.searchContext.autoAdjusted', { level: adjustedFrom })}
           </p>
         )}
-        {/* RWV2-11（K13）：entire_project 下 document 档位无显式 Source，
-            收敛到 focused 并给出明确英文说明（后端对空 ID 恒 422） */}
-        {mode === 'entire_project' && adjustedFrom === 'document' && (
+        {/* RWV2-11（K13/P1-1）：entire_project 下 document 档位无显式 Source，
+            收敛到 focused 并给出独立归因（scope）的明确英文说明；模型能力
+            横幅（adjustedFrom）不受影响、不会同时误显示 */}
+        {documentLevelAdjusted && (
           <p className="mt-1 text-xs text-muted-foreground" data-testid="document-needs-sources-hint">
             {t('research.searchDocumentNeedsSourcesHint')}
           </p>

@@ -95,11 +95,17 @@ export function ResearchChatPanel({
   const submit = () => {
     const trimmed = query.trim()
     if (!trimmed || generationBlocked) return
-    // RWV2-11（K8）：派发时刻冻结快照——selection 携带 mode，turn 记录由
-    // hook 推导，consent/幂等/最终请求全部同源（K11）。
+    // RWV2-11（K8/K9）：派发时刻冻结快照——submit 单次读取，提交闸门与载荷
+    // 共用同一快照（P2-①，避免渲染期/提交期两次取值）；selection 携带 mode，
+    // turn 记录由 hook 推导，consent/幂等/最终请求全部同源（K11）。
     const snapshot = getSnapshot()
     if (scope === 'all_selected') {
-      if (!coverageAllowed) return
+      const allowed =
+        mode === 'selected' &&
+        snapshot.sourceIds.length > 0 &&
+        snapshot.sourceIds.length <= COVERAGE_SOURCE_HARD_MAX &&
+        snapshot.noteIds.length === 0
+      if (!allowed) return
       void onSendCoverage(trimmed, snapshot).then((sent) => {
         if (sent) setQuery('')
       })

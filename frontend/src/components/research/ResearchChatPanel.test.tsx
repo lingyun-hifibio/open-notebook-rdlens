@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import { ResearchChatPanel } from './ResearchChatPanel'
-import { ResearchScopeProvider, scopeStorageKey, type ResearchScopeSnapshot } from '@/lib/research/scope'
+import { ResearchScopeProvider, scopeStorageKey, useResearchScope, type ResearchScopeSnapshot } from '@/lib/research/scope'
 import type { ResearchBackgroundNotice, ResearchChatTurn } from '@/lib/hooks/use-research-chat'
 import type { ResearchCitation, ResearchJob } from '@/lib/research/types'
 
@@ -36,7 +36,7 @@ function turn(overrides: Partial<ResearchChatTurn>): ResearchChatTurn {
   }
 }
 
-function seedScope(scope: { mode: 'entire_project' | 'selected'; sourceIds: string[]; noteIds: string[] }): void {
+function seedScope(scope: { mode: 'entire_project' | 'selected'; sourceIds: readonly string[]; noteIds: readonly string[] }): void {
   localStorage.setItem(
     scopeStorageKey(USER_ID, PROJECT_ID),
     JSON.stringify({ version: 1, ...scope }),
@@ -94,6 +94,34 @@ function renderPanelWithNotice(notice: ResearchBackgroundNotice) {
   )
 }
 
+/**
+ * RWV2-11（P1-2）：面板旁挂一个真实驱动 Provider 的 toggle——测试必须通过
+ * Provider 方法改变当前 Scope（localStorage 预置只在挂载时生效，挂载后再写
+ * localStorage 对已挂载 Provider 无效，无法制造「当前 Scope ≠ turn 快照」）。
+ */
+function ToggleNoteHarness() {
+  const { toggleNote } = useResearchScope()
+  return (
+    <button type="button" data-testid="add-note" onClick={() => toggleNote('n1')}>
+      add note n1
+    </button>
+  )
+}
+
+function renderPanelWithNoteHarness(turns: ResearchChatTurn[], send = vi.fn()) {
+  return render(
+    <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+      <ResearchChatPanel
+        turns={turns}
+        isStreaming={false}
+        onSend={send}
+        onSendCoverage={vi.fn(async () => true)}
+      />
+      <ToggleNoteHarness />
+    </ResearchScopeProvider>,
+  )
+}
+
 describe('ResearchChatPanel', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -134,7 +162,11 @@ describe('ResearchChatPanel', () => {
       { ...turn({ role: 'user', content: '问题', id: 'u1', scopeSnapshot: SCOPE_A }) },
       turn({ status: 'done' }),
     ])
-    expect(screen.getByTestId('chat-turn-scope-badge')).toHaveTextContent('research.chatScopeBadge')
+    // P2-③：徽标外层 key 在此文件平 mock 下直接可见；标签内容（"1 source"）
+    // 的正确性由 formatScopeLabel 单测覆盖（scope.test.tsx）
+    expect(screen.getByTestId('chat-turn-scope-badge')).toHaveTextContent(
+      'research.chatScopeBadge',
+    )
     // 恢复轮（scopeSnapshot null）不显示徽标
     cleanup()
     renderPanel([
@@ -160,12 +192,15 @@ describe('ResearchChatPanel', () => {
         scopeSnapshot: SCOPE_A,
       }),
     ]
-    renderPanel(turns, send)
+    // P1-2：先按 turn 快照 A（src_1）预置，再通过真实 Provider toggle 加入
+    // note n1 ——当前 Scope 变为 {src_1, n1} ≠ turn 快照 A。旧实现（重试读
+    // 当前 Provider）会发送 {src_1, n1}，新实现（读 turn 快照）发送 A——
+    // 断言可真实区分 K12 行为。
+    seedScope(SCOPE_A)
+    renderPanelWithNoteHarness(turns, send)
     expect(screen.getByText('admission_unavailable')).toBeInTheDocument()
     expect(screen.getByText(/retryable/i)).toBeInTheDocument()
-    // RWV2-11（K12/R1）：派发后修改 Scope 不影响重试——即使当前 provider
-    // scope 已是另一组 ID，重试仍用 turn 记录的原始快照
-    seedScope({ mode: 'selected', sourceIds: ['src_2'], noteIds: [] })
+    fireEvent.click(screen.getByTestId('add-note'))
     fireEvent.click(screen.getByRole('button', { name: /retry/i }))
     expect(send).toHaveBeenCalledWith('原问题', {
       mode: 'selected',
