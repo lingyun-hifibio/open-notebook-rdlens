@@ -44,8 +44,9 @@ import { resolveCitationSource } from './citation-utils'
  *   code/tool/url（REQ-DIS-03，后端 extra="forbid" 422 双保险）；
  * - **运行不再维护第三套 Sources/Notes 选择**：运行对话框只读展示当前
  *   Research Scope 摘要（Entire project / Selected: N sources, M notes）
- *   + `Edit scope` 入口（关闭对话框回到右栏共享选择器；RWV2-13 后指向
- *   左栏编辑面）。Scope 权威只来自根级 ResearchScopeProvider。
+ *   + `Edit scope` 入口（关闭对话框回到**左栏唯一编辑面**——RWV2-13
+ *   Issue #34 已把模式与 Sources/Notes 复选框迁入左栏，右栏仅留紧凑
+ *   Scope Summary）。Scope 权威只来自根级 ResearchScopeProvider。
  * - **派发冻结**：点击 Confirm 时一次性把 Scope 快照解析为显式 id 全集
  *   （entire_project 分页枚举；selected 透传）并冻结；confirmed 全局模型
  *   由 runGuarded 在调用时刻捕获；response language 按模板单 Prompt 在

@@ -25,6 +25,10 @@ export interface ResearchLayoutProps {
   restoreLabel: string
   compactPrimaryLabel: string
   compactSecondaryLabel: string
+  /** RWV2-13：受控最大化（可选）——缺省时内部状态行为不变 */
+  maximized?: boolean
+  /** RWV2-13：受控最大化变化回调（Edit scope 入口经此退出最大化） */
+  onMaximizedChange?: (next: boolean) => void
   compactPanel?: 'primary' | 'secondary'
   onCompactPanelChange?: (panel: 'primary' | 'secondary') => void
   children: [React.ReactNode, React.ReactNode]
@@ -49,6 +53,8 @@ export function ResearchLayout({
   restoreLabel,
   compactPrimaryLabel,
   compactSecondaryLabel,
+  maximized: controlledMaximized,
+  onMaximizedChange,
   compactPanel: controlledCompactPanel,
   onCompactPanelChange,
   children,
@@ -75,10 +81,11 @@ export function ResearchLayout({
   const bodyStyleRef = useRef<{ cursor: string; userSelect: string } | null>(null)
   const [ratio, setRatio] = useState(defaultRatio)
   const [bounds, setBounds] = useState({ min: 0, max: 100 })
-  const [maximized, setMaximized] = useState(false)
+  const [internalMaximized, setInternalMaximized] = useState(false)
   const [uncontrolledCompactPanel, setUncontrolledCompactPanel] = useState<'primary' | 'secondary'>('secondary')
   const compactPanel = controlledCompactPanel ?? uncontrolledCompactPanel
-  const activeMaximized = maximized && !compact
+  const effectiveMaximized = controlledMaximized ?? internalMaximized
+  const activeMaximized = effectiveMaximized && !compact
   const setCompactPanel = (panel: 'primary' | 'secondary') => {
     if (controlledCompactPanel === undefined) setUncontrolledCompactPanel(panel)
     onCompactPanelChange?.(panel)
@@ -223,7 +230,12 @@ export function ResearchLayout({
 
   const toggleMaximized = () => {
     if (!activeMaximized) focusRestoreIfNeeded()
-    setMaximized((value) => !value)
+    const next = !effectiveMaximized
+    if (onMaximizedChange !== undefined) {
+      onMaximizedChange(next)
+    } else {
+      setInternalMaximized(next)
+    }
   }
 
   useLayoutEffect(() => {
@@ -265,8 +277,14 @@ export function ResearchLayout({
       const selectedTab = compactPanel === 'primary' ? compactPrimaryTabRef.current : compactSecondaryTabRef.current
       selectedTab?.focus()
     }
-    if (maximized) setMaximized(false)
-  }, [compact, compactPanel, maximized])
+    if (effectiveMaximized) {
+      if (onMaximizedChange !== undefined) {
+        onMaximizedChange(false)
+      } else {
+        setInternalMaximized(false)
+      }
+    }
+  }, [compact, compactPanel, effectiveMaximized, onMaximizedChange])
 
   useEffect(() => {
     const host = hostRef.current

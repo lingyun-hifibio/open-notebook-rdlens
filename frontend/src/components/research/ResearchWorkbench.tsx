@@ -7,6 +7,7 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
 import { useResearchSources } from '@/lib/hooks/use-research'
 import { AdminReadOnlyBanner } from './AdminReadOnlyBanner'
+import { ResearchScopeEditor } from './ResearchScopeEditor'
 import { SourceListPanel } from './SourceListPanel'
 import { SourceDetailPanel } from './SourceDetailPanel'
 import { NotesPanel } from './NotesPanel'
@@ -40,6 +41,8 @@ export interface ResearchWorkbenchProps {
   highlightRequestId: number
   onSelectSource: (sourceId: string, opts?: { highlightPageIdx?: number | null }) => void
   onCloseSource: () => void
+  /** RWV2-13：右栏 Edit scope 请求序号——递增时聚焦左栏编辑面 */
+  scopeEditRequest?: number
 }
 
 export function ResearchWorkbench({
@@ -49,6 +52,7 @@ export function ResearchWorkbench({
   highlightRequestId,
   onSelectSource,
   onCloseSource,
+  scopeEditRequest,
 }: ResearchWorkbenchProps) {
   const { t } = useTranslation()
   const { projectId, isAdminReadonly } = useResearchWorkspace()
@@ -95,6 +99,11 @@ export function ResearchWorkbench({
     <div className="flex h-full flex-col gap-3 p-4">
       {/* Issue #243 §6.2：标题与导出入口已上移到顶层 Research header */}
       {isAdminReadonly && <AdminReadOnlyBanner />}
+
+      {/* RWV2-13：左栏唯一 Scope 编辑面（模式控件）；Sources/Notes 面板
+          行首复选框承担项目选择。常驻展示：从 Insights/Transformations
+          返回时模式/选择仍可见可改（单一真源，不因 Tab 切换丢失） */}
+      <ResearchScopeEditor scopeEditRequest={scopeEditRequest} />
 
       <Tabs value={tab} onValueChange={(value) => setTab(value as ResearchTab)} className="min-h-0 flex-1">
         {/* flex-wrap：窄栏（英文 locale 四标签超宽）时折行而非被裁剪 */}

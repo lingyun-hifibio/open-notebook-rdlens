@@ -3,22 +3,26 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SourceListPanel } from './SourceListPanel'
 import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
+import { ResearchScopeProvider, useResearchScope } from '@/lib/research/scope'
 import * as researchApi from '@/lib/research/api'
 import type { ResearchSource } from '@/lib/types/research'
 
 // UI-02 Red：Sources 状态面板（REQ-SRC-04/05，契约 §6）——pending/ready/
 // stale/failed 全部可见；failed 附 last_error；retry 可见性（Owner 无重试
 // 入口，仅提示管理员可重试）；stale 提示内容更新中。
+// RWV2-13（Issue #34）：行首复选框承担 Scope 选择（唯一编辑面）；选中写
+// 入根级 ResearchScopeProvider；预览（Open）与选择互不干扰。
 
 vi.mock('@/lib/research/api', () => ({
   listSources: vi.fn(),
   getSource: vi.fn(),
+  listNotes: vi.fn(),
 }))
 
 vi.mock('@/lib/hooks/use-translation', () => ({
   useTranslation: () => ({
     t: (key: string, opts?: Record<string, unknown>) =>
-      opts ? `${key}:${String(opts.error ?? opts.page ?? '')}` : key,
+      opts ? `${key}:${String(opts.error ?? opts.page ?? opts.name ?? '')}` : key,
   }),
 }))
 
@@ -40,15 +44,28 @@ function makeWrapper() {
   const wrapper = ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>
       <ResearchWorkspaceProvider projectId="proj_1" role="owner">
-        {children}
+        <ResearchScopeProvider userId="u1" projectId="proj_1">
+          {children}
+        </ResearchScopeProvider>
       </ResearchWorkspaceProvider>
     </QueryClientProvider>
   )
   return { wrapper, queryClient }
 }
 
+function ScopeProbe() {
+  const { mode, selectedSourceIds } = useResearchScope()
+  return (
+    <div>
+      <span data-testid="probe-mode">{mode}</span>
+      <span data-testid="probe-selected">{selectedSourceIds.join(',')}</span>
+    </div>
+  )
+}
+
 describe('SourceListPanel', () => {
   beforeEach(() => {
+    localStorage.clear()
     vi.clearAllMocks()
   })
 
@@ -95,7 +112,7 @@ describe('SourceListPanel', () => {
     await waitFor(() => expect(screen.getByText('research.sources.empty')).toBeInTheDocument())
   })
 
-  it('紧凑单行列表：每来源一个 listitem（状态徽标 + 标题 + 打开按钮）', async () => {
+  it('紧凑单行列表：每来源一个 listitem（选择复选框 + 状态徽标 + 标题 + 打开按钮）', async () => {
     vi.mocked(researchApi.listSources).mockResolvedValue({
       items: [
         source({ source_id: 's1', document_id: 'doc_a', status: 'ready' }),
@@ -113,40 +130,93 @@ describe('SourceListPanel', () => {
     // 状态徽标在行首，标题截断展示，每行一个打开按钮
     expect(within(items[0]).getByText('research.sources.statusReady')).toBeInTheDocument()
     expect(within(items[0]).getByText('doc_a')).toBeInTheDocument()
+    expect(within(items[0]).getByRole('checkbox')).toBeInTheDocument()
     expect(within(items[1]).getByText(/research.sources.lastError:e/)).toBeInTheDocument()
     fireEvent.click(within(items[1]).getByRole('button', { name: /research.sources.open/ }))
     expect(onOpenSource).toHaveBeenCalledWith('s2')
   })
 
-  it('点击来源行回调 onOpenSource(sourceId)', async () => {
+  it('点击来源行回调 onOpenSource(sourceId)，与选择复选框互不干扰', async () => {
     vi.mocked(researchApi.listSources).mockResolvedValue({
       items: [source()],
       next_cursor: null,
     })
     const onOpenSource = vi.fn()
     const { wrapper } = makeWrapper()
-    render(<SourceListPanel onOpenSource={onOpenSource} />, { wrapper })
+    render(
+      <>
+        <SourceListPanel onOpenSource={onOpenSource} />
+        <ScopeProbe />
+      </>,
+      { wrapper },
+    )
     await waitFor(() => {
       fireEvent.click(screen.getByRole('button', { name: /research.sources.open/ }))
     })
     expect(onOpenSource).toHaveBeenCalledWith('src_1')
+    // 打开预览不改变选择状态（选择仍空）
+    expect(screen.getByTestId('probe-selected')).toHaveTextContent('')
   })
 
-  it('紧凑单行列表：每来源一个 listitem，badge 与标题同行', async () => {
+  it('行首复选框进入/退出选中：写入 provider 并切换到 selected 模式（左栏编辑）', async () => {
     vi.mocked(researchApi.listSources).mockResolvedValue({
       items: [source(), source({ source_id: 's2', document_id: 'doc_2' })],
       next_cursor: null,
     })
     const { wrapper } = makeWrapper()
+    render(
+      <>
+        <SourceListPanel />
+        <ScopeProbe />
+      </>,
+      { wrapper },
+    )
+    const checkboxes = await screen.findAllByRole('checkbox')
+    expect(checkboxes).toHaveLength(2)
+    fireEvent.click(checkboxes[0])
+    expect(screen.getByTestId('probe-mode')).toHaveTextContent('selected')
+    expect(screen.getByTestId('probe-selected')).toHaveTextContent('src_1')
+    expect(screen.getByTestId('source-scope-src_1')).toHaveAttribute('data-state', 'checked')
+    // 再点取消（多选时移除一项）→ 选择更新为剩余项
+    fireEvent.click(screen.getByTestId('source-scope-s2'))
+    expect(screen.getByTestId('probe-selected')).toHaveTextContent('s2')
+    fireEvent.click(screen.getByTestId('source-scope-s2'))
+    expect(screen.getByTestId('probe-selected')).toHaveTextContent('src_1')
+  })
+
+  it('selected 模式最后一项不可取消（复选框禁用，仍保持 ≥1 有效选择）', async () => {
+    vi.mocked(researchApi.listSources).mockResolvedValue({
+      items: [source()],
+      next_cursor: null,
+    })
+    const { wrapper } = makeWrapper()
+    // 预置 provider：selected 且选中 src_1
+    localStorage.setItem(
+      'rdlens.research.scope.v1/u1/proj_1',
+      JSON.stringify({ version: 1, mode: 'selected', sourceIds: ['src_1'], noteIds: [] }),
+    )
+    render(
+      <>
+        <SourceListPanel />
+        <ScopeProbe />
+      </>,
+      { wrapper },
+    )
+    const checkbox = await screen.findByTestId('source-scope-src_1')
+    expect(checkbox).toBeDisabled()
+    expect(screen.getByTestId('probe-selected')).toHaveTextContent('src_1')
+  })
+
+  it('每行复选框带可访问名称（aria-label 含文档名，屏幕阅读器语义）', async () => {
+    vi.mocked(researchApi.listSources).mockResolvedValue({
+      items: [source({ document_id: 'doc_a' })],
+      next_cursor: null,
+    })
+    const { wrapper } = makeWrapper()
     render(<SourceListPanel />, { wrapper })
-    const rows = await screen.findByTestId('source-list-rows')
-    expect(rows).toBeInTheDocument()
-    const items = within(rows).getAllByRole('listitem')
-    expect(items).toHaveLength(2)
-    // 每行内 badge 与 open 按钮同处一个 listitem（单行密度契约）
-    expect(within(items[0]).getByText('research.sources.statusReady')).toBeInTheDocument()
-    expect(within(items[0]).getByText('doc_1')).toBeInTheDocument()
-    expect(within(items[0]).getByRole('button', { name: /research.sources.open/ })).toBeInTheDocument()
+    const checkbox = await screen.findByTestId('source-scope-src_1')
+    expect(checkbox).toHaveAttribute('aria-label', 'research.sources.scopeSelect:doc_a')
+    expect(checkbox).toHaveAttribute('role', 'checkbox')
   })
 
   it('加载失败展示错误状态（不静默）', async () => {

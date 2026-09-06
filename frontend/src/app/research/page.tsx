@@ -40,9 +40,20 @@ export default function ResearchPage() {
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null)
   const [highlightPageIdx, setHighlightPageIdx] = useState<number | null>(null)
   const [highlightRequestId, setHighlightRequestId] = useState(0)
+  // RWV2-13：全局（非 Source 专注）布局的最大化状态提升到组合层受控——
+  // 右栏 Scope Summary 的 `Edit scope` 经此退出最大化，回到左栏唯一编辑面
+  const [globalMaximized, setGlobalMaximized] = useState(false)
+  // Edit scope 聚焦请求序号：递增让左栏编辑面把焦点移到模式单选（编辑面
+  // 常驻可见时也获得明确的键盘可达入口）
+  const [scopeEditRequest, setScopeEditRequest] = useState(0)
   const isDesktop = useIsDesktop()
   const [globalCompactPanel, setGlobalCompactPanel] = useState<'primary' | 'secondary'>('secondary')
   const [sourceCompactPanel, setSourceCompactPanel] = useState<'primary' | 'secondary'>('primary')
+
+  const handleEditScope = useCallback(() => {
+    setGlobalMaximized(false)
+    setScopeEditRequest((request) => request + 1)
+  }, [])
 
   const handleSelectSource = useCallback(
     (sourceId: string, opts?: { highlightPageIdx?: number | null }) => {
@@ -136,6 +147,8 @@ export default function ResearchPage() {
           compactSecondaryLabel={sourceMode ? t('research.layout.chat') : t('research.layout.workspace')}
           compactPanel={sourceMode ? sourceCompactPanel : globalCompactPanel}
           onCompactPanelChange={sourceMode ? setSourceCompactPanel : setGlobalCompactPanel}
+          maximized={sourceDesktop ? undefined : globalMaximized}
+          onMaximizedChange={sourceDesktop ? undefined : setGlobalMaximized}
         >
           {[
             <div key="workbench" className="h-full min-h-0 overflow-hidden">
@@ -146,13 +159,14 @@ export default function ResearchPage() {
               highlightRequestId={highlightRequestId}
               onSelectSource={handleSelectSource}
               onCloseSource={handleCloseSource}
+              scopeEditRequest={scopeEditRequest}
             />
             </div>,
             <div key="workspace" className={`h-full min-h-0 ${compact ? '' : 'border-l'}`}>
             {/* 全局工作区保持挂载：选中来源时以 hidden 包裹（display:none），
                 多篇 Chat 流与 Job 轮询本地状态不丢失；面板占满同一栏槽位 */}
             <div className="h-full" hidden={selectedSourceId !== null}>
-              <ResearchWorkspace onCitationJump={handleCitationJump} />
+              <ResearchWorkspace onCitationJump={handleCitationJump} onEditScope={handleEditScope} />
             </div>
             {selectedSourceId !== null && (
               <div className="h-full">
