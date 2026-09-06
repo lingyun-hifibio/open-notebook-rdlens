@@ -120,6 +120,7 @@ export function TransformationsPanel({
 
   const openRun = (template: ResearchTransformation) => {
     runGenerationRef.current += 1
+    setIsResolvingRun(false)
     runTargetRef.current = template
     setRunTarget(template)
     setRunResult(null)
@@ -158,7 +159,10 @@ export function TransformationsPanel({
       })
       return
     } finally {
-      setIsResolvingRun(false)
+      // 只有当前代执行流才允许复位解析标志（陈旧流不得清掉新流的标志）
+      if (runGenerationRef.current === generation) {
+        setIsResolvingRun(false)
+      }
     }
     if (resolved === null) return
     // 对话框已关闭/重开同一模板：令牌失效 → 放弃派发（对象同一性比较可被

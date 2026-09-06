@@ -290,8 +290,15 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
       expect(screen.getByTestId('run-empty-project-blocked')).toBeInTheDocument(),
     )
     expect(researchApi.runTransformation).not.toHaveBeenCalled()
-    // 对话框保持打开（用户可关掉后改 scope）
+    // 对话框保持打开（用户可关掉后改 scope）；阻断后 Confirm 禁用防重复枚举
     expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'research.transformations.confirmRun' })).toBeDisabled()
+    // 重开后阻断状态复位，Confirm 恢复可点
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByTestId('run-scope-summary')).toBeNull())
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
+    await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: 'research.transformations.confirmRun' })).not.toBeDisabled()
   })
 
   it('AC-4：派发后修改 Scope 不影响在途运行，且摘要显示派发时快照', async () => {
@@ -396,18 +403,25 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
     seedScope('entire_project')
     const { wrapper } = makeWrapper()
     const d = deferred<{ items: ResearchSource[]; next_cursor: string | null }>()
-    vi.mocked(researchApi.listSources).mockReturnValueOnce(d.promise)
     vi.mocked(researchApi.listNotes).mockResolvedValue({ items: [], next_cursor: null })
     render(<TransformationsPanel />, { wrapper })
     await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
 
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
     await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
+    // 渲染后挂 deferred：挂载查询已消费 beforeEach 持久默认，第一次枚举
+    // （listSources('proj_1', { limit: 100 })）将消费本 Once → 枚举真实挂起
+    vi.mocked(researchApi.listSources).mockReturnValueOnce(d.promise)
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
-    // 解析在途（枚举 pending）：Esc 关闭对话框
+    // 枚举在途（第 2 次 listSources，带 limit）已挂起
+    await waitFor(() =>
+      expect(researchApi.listSources).toHaveBeenCalledWith('proj_1', { limit: 100 }),
+    )
+    // Esc 关闭对话框
     fireEvent.keyDown(document, { key: 'Escape' })
     await waitFor(() => expect(screen.queryByTestId('run-scope-summary')).toBeNull())
-    // 枚举返回后：令牌失效 → 不派发
+    // 枚举返回后：令牌失效 → 不派发（旧代码在此路径也会拦截：
+    // 判别责任在下一个用例的击穿场景）
     d.resolve({ items: [source()], next_cursor: null })
     await waitFor(() => expect(researchApi.runTransformation).not.toHaveBeenCalled())
   })
@@ -416,7 +430,6 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
     seedScope('entire_project')
     const { wrapper } = makeWrapper()
     const d = deferred<{ items: ResearchSource[]; next_cursor: string | null }>()
-    vi.mocked(researchApi.listSources).mockReturnValueOnce(d.promise)
     vi.mocked(researchApi.listNotes).mockResolvedValue({ items: [], next_cursor: null })
     vi.mocked(researchApi.runTransformation).mockResolvedValue(runResult())
     render(<TransformationsPanel />, { wrapper })
@@ -424,16 +437,25 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
     await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
+    // 挂 deferred 到第一次枚举（渲染后；挂载查询已消费默认）
+    vi.mocked(researchApi.listSources).mockReturnValueOnce(d.promise)
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
-    // 解析在途：Esc 关闭 + 重开同一模板（对象同一性守卫曾被击穿的路径）
+    await waitFor(() =>
+      expect(researchApi.listSources).toHaveBeenCalledWith('proj_1', { limit: 100 }),
+    )
+    // 枚举在途：Esc 关闭 + 重开同一模板（对象同一性守卫曾被击穿的路径）
     fireEvent.keyDown(document, { key: 'Escape' })
     await waitFor(() => expect(screen.queryByTestId('run-scope-summary')).toBeNull())
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
     await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
-    // 旧枚举返回：旧执行流必须废弃（不派发）
+    // 旧枚举返回：runTargetRef 已重新指向同一模板对象——对象同一性守卫
+    // 会放行（修复前代码此处必红）；令牌守卫必须废弃旧执行流。
+    // 先冲刷宏任务让陈旧流 continuation 确定性执行，避免 waitFor 首次
+    // 同步检查与微任务 continuation 竞速产生假绿（实测时序抖动）。
     d.resolve({ items: [source()], next_cursor: null })
+    await new Promise((r) => setTimeout(r, 50))
     await waitFor(() => expect(researchApi.runTransformation).not.toHaveBeenCalled())
-    // 新的 Confirm 正常派发（当前快照）
+    // 新的 Confirm 正常派发（当前快照；枚举走 beforeEach 持久默认）
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
     await waitFor(() =>
       expect(researchApi.runTransformation).toHaveBeenCalledWith('proj_1', 'trans_1', {
