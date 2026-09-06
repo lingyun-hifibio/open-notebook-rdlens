@@ -58,12 +58,14 @@ export function ResearchWorkspace({
   const [tab, setTab] = useState('search')
 
   useEffect(() => {
-    if (!sourcesQuery.isSuccess || !notesQuery.isSuccess) return
+    if (!sourcesQuery.isSuccess && !notesQuery.isSuccess) return
     const removed = reconcileSelection(
-      sources
-        .filter((source) => source.status === 'ready' || source.status === 'stale')
-        .map((source) => source.source_id),
-      notes.map((note) => note.note_id),
+      sourcesQuery.isSuccess
+        ? sources
+          .filter((source) => source.status === 'ready' || source.status === 'stale')
+          .map((source) => source.source_id)
+        : undefined,
+      notesQuery.isSuccess ? notes.map((note) => note.note_id) : undefined,
     )
     if (removed.sourceIds.length + removed.noteIds.length > 0) {
       toast({

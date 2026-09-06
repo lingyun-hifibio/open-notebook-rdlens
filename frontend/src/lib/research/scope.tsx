@@ -149,8 +149,8 @@ interface ResearchScopeValue {
   toggleSource: (sourceId: string) => void
   toggleNote: (noteId: string) => void
   reconcileSelection: (
-    selectableSourceIds: readonly string[],
-    validNoteIds: readonly string[],
+    selectableSourceIds?: readonly string[],
+    validNoteIds?: readonly string[],
   ) => ResearchScopeReconciliation
   removeNote: (noteId: string) => boolean
   validate: (scope?: ResearchScopeState) => ResearchScopeValidation
@@ -230,19 +230,29 @@ function ResearchScopeProviderForIdentity({
   const toggleSource = useCallback((sourceId: string) => toggle('sourceIds', sourceId), [toggle])
   const toggleNote = useCallback((noteId: string) => toggle('noteIds', noteId), [toggle])
   const reconcileSelection = useCallback((
-    selectableSourceIds: readonly string[],
-    validNoteIds: readonly string[],
+    selectableSourceIds?: readonly string[],
+    validNoteIds?: readonly string[],
   ): ResearchScopeReconciliation => {
     const current = scopeRef.current
     if (current.mode !== 'selected') return { sourceIds: [], noteIds: [] }
 
-    const selectableSources = new Set(selectableSourceIds)
-    const validNotes = new Set(validNoteIds)
-    const sourceIds = current.sourceIds.filter((id) => selectableSources.has(id))
-    const noteIds = current.noteIds.filter((id) => validNotes.has(id))
+    const selectableSources = selectableSourceIds === undefined
+      ? null
+      : new Set(selectableSourceIds)
+    const validNotes = validNoteIds === undefined ? null : new Set(validNoteIds)
+    const sourceIds = selectableSources === null
+      ? current.sourceIds
+      : current.sourceIds.filter((id) => selectableSources.has(id))
+    const noteIds = validNotes === null
+      ? current.noteIds
+      : current.noteIds.filter((id) => validNotes.has(id))
     const removed = {
-      sourceIds: current.sourceIds.filter((id) => !selectableSources.has(id)),
-      noteIds: current.noteIds.filter((id) => !validNotes.has(id)),
+      sourceIds: selectableSources === null
+        ? []
+        : current.sourceIds.filter((id) => !selectableSources.has(id)),
+      noteIds: validNotes === null
+        ? []
+        : current.noteIds.filter((id) => !validNotes.has(id)),
     }
     if (removed.sourceIds.length + removed.noteIds.length > 0) {
       // An empty selected scope is intentionally retained: it is invalid and

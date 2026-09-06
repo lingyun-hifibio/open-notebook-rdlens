@@ -214,6 +214,45 @@ describe('use-research hooks', () => {
     })
   })
 
+  it('delete also cancels a search started while the mutation is in flight', async () => {
+    let resolveDelete: (() => void) | undefined
+    let resolveSearch: ((page: { items: ResearchNote[]; next_cursor: null }) => void) | undefined
+    let searchSignal: AbortSignal | undefined
+    let searchCalls = 0
+    vi.mocked(researchApi.deleteNote).mockImplementation(() => new Promise<void>((resolve) => {
+      resolveDelete = resolve
+    }))
+    vi.mocked(researchApi.listNotes).mockImplementation((_projectId, _params, signal) => {
+      searchCalls += 1
+      if (searchCalls === 1) {
+        searchSignal = signal
+        return new Promise((resolve) => { resolveSearch = resolve })
+      }
+      return Promise.resolve({ items: [], next_cursor: null })
+    })
+    const { wrapper, queryClient } = makeWrapper()
+    const mutation = renderHook(() => useDeleteResearchNote(P), { wrapper })
+    mutation.result.current.mutate('note_1')
+    await waitFor(() => expect(resolveDelete).toBeTypeOf('function'))
+
+    renderHook(() => useResearchNotes(P, 'during-delete'), { wrapper })
+    await waitFor(() => expect(resolveSearch).toBeTypeOf('function'))
+    await act(async () => {
+      resolveDelete?.()
+    })
+
+    await waitFor(() => expect(mutation.result.current.isSuccess).toBe(true))
+    expect(searchSignal?.aborted).toBe(true)
+    expect(searchCalls).toBe(2)
+    await act(async () => {
+      resolveSearch?.({ items: [note(1)], next_cursor: null })
+      await Promise.resolve()
+    })
+    expect(queryClient.getQueryData<{ items: ResearchNote[] }>([
+      'research', P, 'notes', 'during-delete',
+    ])?.items).toEqual([])
+  })
+
   it('createNote mutation 调用 Gateway createNote（保存不触发 Embedding）', async () => {
     vi.mocked(researchApi.createNote).mockResolvedValue({
       note_id: 'note_1',

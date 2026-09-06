@@ -103,8 +103,9 @@ export function useCreateResearchNote(projectId: string) {
     onMutate: () => queryClient.cancelQueries({
       queryKey: QUERY_KEYS.researchNotes(projectId),
     }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.researchNotes(projectId) })
+    onSuccess: async () => {
+      await queryClient.cancelQueries({ queryKey: QUERY_KEYS.researchNotes(projectId) })
+      await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.researchNotes(projectId) })
       toast({ title: t('common.success'), description: t('research.workbench.noteCreated') })
     },
     onError,
@@ -122,8 +123,9 @@ export function useUpdateResearchNote(projectId: string) {
     onMutate: () => queryClient.cancelQueries({
       queryKey: QUERY_KEYS.researchNotes(projectId),
     }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.researchNotes(projectId) })
+    onSuccess: async () => {
+      await queryClient.cancelQueries({ queryKey: QUERY_KEYS.researchNotes(projectId) })
+      await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.researchNotes(projectId) })
       toast({ title: t('common.success'), description: t('research.workbench.noteUpdated') })
     },
     onError,
@@ -140,8 +142,9 @@ export function useDeleteResearchNote(projectId: string) {
     onMutate: () => queryClient.cancelQueries({
       queryKey: QUERY_KEYS.researchNotes(projectId),
     }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: QUERY_KEYS.researchNotes(projectId) })
+    onSuccess: async () => {
+      await queryClient.cancelQueries({ queryKey: QUERY_KEYS.researchNotes(projectId) })
+      await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.researchNotes(projectId) })
       toast({ title: t('common.success'), description: t('research.workbench.noteDeleted') })
     },
     onError,

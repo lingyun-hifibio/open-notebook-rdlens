@@ -273,6 +273,40 @@ describe('ResearchWorkspace', () => {
     )
   })
 
+  it('Notes 加载失败时仍独立清理已变为 failed 的 Source，并保留 Note IDs', async () => {
+    seedScope('selected', ['src_1'], ['note_1'])
+    vi.mocked(api.listNotes).mockRejectedValue(new Error('notes unavailable'))
+    render(
+      <>
+        <ResearchWorkspace />
+        <ScopeProbe />
+      </>,
+      { wrapper: workspaceWrapper },
+    )
+    await waitFor(() => {
+      expect(screen.getByTestId('scope-reconcile-probe')).toHaveTextContent(
+        'selected:src_1:note_1:true',
+      )
+    })
+
+    vi.mocked(api.listSources).mockResolvedValue({
+      items: [{ ...source, status: 'failed', last_error: 'sync failed' }],
+      next_cursor: null,
+    })
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.researchSources('proj_1') })
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('scope-reconcile-probe')).toHaveTextContent(
+        'selected::note_1:true',
+      )
+    })
+    expect(toastMock).toHaveBeenCalledWith(
+      expect.objectContaining({ description: 'research.layout.scope.reconciled' }),
+    )
+  })
+
   it('#243 §6.4：Chat 发送经顶层守卫——待确认/无模型时不打开流、不留 turn', async () => {
     tokenStore.setResearchToken(researchToken(), 9999999999)
     // 外部模型待确认：守卫登记但不执行（不变量 9）
