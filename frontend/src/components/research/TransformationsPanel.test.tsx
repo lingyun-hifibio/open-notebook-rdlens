@@ -150,7 +150,10 @@ function makeWrapper(role: 'owner' | 'admin_readonly' = 'owner') {
 describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
   beforeEach(() => {
     localStorage.clear()
-    vi.clearAllMocks()
+    // resetAllMocks 同时清除 mockReturnValueOnce 队列（B1 用例依赖『挂载
+    // 查询消费持久默认』的接线前提，Once 残留会污染下一用例；clearAllMocks
+    // 只清调用记录不清实现）——见 vitest-factory-mock-reset 模式
+    vi.resetAllMocks()
     toastMock.mockClear()
     resetGlobalModelStub()
     vi.mocked(researchApi.listTransformations).mockResolvedValue({
@@ -335,7 +338,20 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
 
   it('AC-6：外部模型 consent 取消零副作用——不派发、runSnapshot 未设置', async () => {
     seedScope('selected', ['src_1'], [])
-    setGlobalModelStub({ confirmedModelId: 'm-ext', needsConsent: true, deferGuarded: true })
+    // models 必须含 m-ext（data_egress）且 confirmed=m-ext → canExecute=true、
+    // needsConsent=true，Confirm 可点，deferGuarded 才真正模拟「待确认/取消」
+    // 路径（否则按钮禁用、用例悬空）
+    setGlobalModelStub({
+      confirmedModelId: 'm-ext',
+      needsConsent: true,
+      deferGuarded: true,
+      models: [{
+        model_id: 'm-ext',
+        display_name: 'Ext M',
+        data_egress: true,
+        interactive_context_levels: ['focused'],
+      }],
+    })
     const { wrapper } = makeWrapper()
     render(<TransformationsPanel />, { wrapper })
     await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
