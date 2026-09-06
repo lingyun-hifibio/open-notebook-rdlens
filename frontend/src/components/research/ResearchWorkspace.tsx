@@ -1,13 +1,15 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { getResearchProjectId } from '@/lib/research/project'
-import { createCoverageChat, listNotes, listSources } from '@/lib/research/api'
+import { createCoverageChat } from '@/lib/research/api'
 import { useResearchChat, type CoverageSubmitRequest } from '@/lib/hooks/use-research-chat'
 import { researchModelBlockedHint, useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
 import { useResearchJobs } from '@/lib/hooks/use-research-jobs'
+import { useResearchNotes, useResearchSources } from '@/lib/hooks/use-research'
+import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
+import { useResearchScope } from '@/lib/research/scope'
 import { SourceNoteSelector } from './SourceNoteSelector'
 import { ResearchSearchPanel } from './ResearchSearchPanel'
 import { ResearchChatPanel } from './ResearchChatPanel'
@@ -15,16 +17,14 @@ import { ComparePanel } from './ComparePanel'
 import { ResearchJobList } from './ResearchJobList'
 import { resolveCitationSource } from './citation-utils'
 import type { ResearchCitationDisplayItem } from '@/lib/research/types'
-import type { ResearchCitation, ResearchNote, ResearchSource } from '@/lib/types/research'
+import type { ResearchCitation } from '@/lib/types/research'
 
 /**
  * Research 工作区组合（UI-03，REQ-SCOPE-04，设计 §9.3）。
  *
- * 项目上下文从内存 Research Token 的 payload 读取（project.ts，
- * REQ-AUTH-03）；无上下文 fail-closed 错误态。Source/Note 选择在
- * Search/Chat/Compare 间共享；Chat 与 Job hooks 挂在工作区层，
- * 切换 Tab 不丢失流/轮询状态。Source/Note 列表复用 UI-02 的
- * `listSources/listNotes`（分页载荷 .items）。
+ * 项目上下文由认证 Shell 注入；缺少 Provider 时 fail-closed。Source/Note
+ * 查询复用 Query Cache，选择由根级 ResearchScopeProvider 共享；Chat 与 Job
+ * hooks 挂在工作区层，切换 Tab 不丢失流/轮询状态。
  *
  * COV-09：all_selected 经 `sendCoverage`（202 受理 → Chat 任务卡 +
  * Jobs 页登记，刷新后同一 Job 继续轮询）；报告 Citation 点击经
@@ -37,49 +37,22 @@ export function ResearchWorkspace({
   onCitationJump?: (sourceId: string, pageIdx: number | null) => void
 }) {
   const { t } = useTranslation()
-  const projectId = getResearchProjectId()
-
-  const [sources, setSources] = useState<ResearchSource[]>([])
-  const [notes, setNotes] = useState<ResearchNote[]>([])
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([])
-  const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([])
+  const { projectId } = useResearchWorkspace()
+  const {
+    mode,
+    selectedSourceIds,
+    selectedNoteIds,
+    setMode,
+    toggleSource,
+    toggleNote,
+  } = useResearchScope()
+  const sourcesQuery = useResearchSources(projectId)
+  const notesQuery = useResearchNotes(projectId)
+  const sources = useMemo(() => sourcesQuery.data?.items ?? [], [sourcesQuery.data])
+  const notes = useMemo(() => notesQuery.data?.items ?? [], [notesQuery.data])
+  const loading = sourcesQuery.isLoading || notesQuery.isLoading
+  const loadError = sourcesQuery.error ?? notesQuery.error
   const [tab, setTab] = useState('search')
-
-  const load = useCallback(async () => {
-    if (!projectId) return
-    setLoading(true)
-    setLoadError(null)
-    try {
-      const [sourcePage, notePage] = await Promise.all([
-        listSources(projectId),
-        listNotes(projectId),
-      ])
-      setSources(sourcePage.items)
-      setNotes(notePage.items)
-    } catch (err) {
-      setLoadError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setLoading(false)
-    }
-  }, [projectId])
-
-  useEffect(() => {
-    void load()
-  }, [load])
-
-  const toggleSource = useCallback((sourceId: string) => {
-    setSelectedSourceIds((prev) =>
-      prev.includes(sourceId) ? prev.filter((id) => id !== sourceId) : [...prev, sourceId],
-    )
-  }, [])
-
-  const toggleNote = useCallback((noteId: string) => {
-    setSelectedNoteIds((prev) =>
-      prev.includes(noteId) ? prev.filter((id) => id !== noteId) : [...prev, noteId],
-    )
-  }, [])
 
   const {
     turns,
@@ -193,26 +166,23 @@ export function ResearchWorkspace({
     [onCitationJump, sources],
   )
 
-  if (!projectId) {
-    return (
-      <div role="alert" className="p-8 text-center text-sm text-destructive">
-        {t('research.noProjectContext')}
-      </div>
-    )
-  }
-
   return (
     <div className="flex h-full flex-col">
       <SourceNoteSelector
         sources={sources}
         notes={notes}
+        mode={mode}
         selectedSourceIds={selectedSourceIds}
         selectedNoteIds={selectedNoteIds}
+        onModeChange={setMode}
         onToggleSource={toggleSource}
         onToggleNote={toggleNote}
         loading={loading}
-        loadError={loadError}
-        onRetry={() => void load()}
+        loadError={loadError instanceof Error ? loadError.message : loadError === null ? null : String(loadError)}
+        onRetry={() => {
+          void sourcesQuery.refetch()
+          void notesQuery.refetch()
+        }}
       />
 
       <div className="min-h-0 flex-1 border-t">

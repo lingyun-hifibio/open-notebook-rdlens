@@ -7,6 +7,7 @@ import { createEmbeddedSession, type SessionState } from './session'
 import { getEmbeddedParentOrigins } from './config'
 import { ResearchWorkspaceProvider } from './workspace-context'
 import { ResearchGlobalModelProvider } from '@/lib/hooks/use-research-global-model'
+import { ResearchScopeProvider } from '@/lib/research/scope'
 
 /**
  * ResearchWorkspaceShell（UI-01，设计 §4.1/§4.2；REQ-EMB-01/02）。
@@ -82,10 +83,12 @@ export function ResearchWorkspaceShell({ children }: { children?: React.ReactNod
   // Issue #243 GMOD-FE-01：全局模型 provider 挂在已认证根节点，向下统一
   // 提供 confirmed 模型、Search 上下文默认值与外发 consent single-flight
   // guard（计划 §6.1/§6.8）；未认证时不挂载，避免空 projectId 查询。
-  if (state.projectId !== undefined && state.role !== undefined) {
+  if (state.userId !== undefined && state.projectId !== undefined && state.role !== undefined) {
     return (
-      <ResearchWorkspaceProvider projectId={state.projectId} role={state.role}>
-        <ResearchGlobalModelProvider>{children}</ResearchGlobalModelProvider>
+      <ResearchWorkspaceProvider userId={state.userId} projectId={state.projectId} role={state.role}>
+        <ResearchScopeProvider userId={state.userId} projectId={state.projectId}>
+          <ResearchGlobalModelProvider>{children}</ResearchGlobalModelProvider>
+        </ResearchScopeProvider>
       </ResearchWorkspaceProvider>
     )
   }

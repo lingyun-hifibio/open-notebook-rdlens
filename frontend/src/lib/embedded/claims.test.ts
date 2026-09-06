@@ -28,6 +28,7 @@ describe('decodeResearchClaims', () => {
     })
     const claims = decodeResearchClaims(token)
     expect(claims).not.toBeNull()
+    expect(claims?.userId).toBe('user_1')
     expect(claims?.projectId).toBe('proj_abc')
     expect(claims?.role).toBe('owner')
     expect(claims?.scopes).toEqual(['workspace:read', 'notes:write', 'research:run'])
@@ -73,6 +74,15 @@ describe('decodeResearchClaims', () => {
       nbf: 0,
       exp: 300,
       jti: 'j_1',
+    })
+    expect(decodeResearchClaims(token)).toBeNull()
+  })
+
+  it('缺 sub 返回 null（Scope 持久化不能跨用户串用）', () => {
+    const token = encodePayload({
+      project_id: 'proj_abc',
+      role: 'owner',
+      scopes: ['workspace:read'],
     })
     expect(decodeResearchClaims(token)).toBeNull()
   })

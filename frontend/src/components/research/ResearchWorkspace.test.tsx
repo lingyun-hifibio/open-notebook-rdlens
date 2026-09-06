@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
+import { act, render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ResearchWorkspace } from './ResearchWorkspace'
+import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
+import { ResearchScopeProvider } from '@/lib/research/scope'
+import { useResearchNotes, useResearchSources } from '@/lib/hooks/use-research'
+import { QUERY_KEYS } from '@/lib/api/query-client'
 import * as api from '@/lib/research/api'
 import * as tokenStore from '@/lib/embedded/token-store'
 import type { ResearchNote, ResearchSource } from '@/lib/types/research'
@@ -58,9 +63,30 @@ const note: ResearchNote = {
   updated_at: '2026-08-06T02:00:00Z',
 }
 
+const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+
+function workspaceWrapper({ children }: { children: React.ReactNode }) {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <ResearchWorkspaceProvider userId="u1" projectId="proj_1" role="owner">
+        <ResearchScopeProvider userId="u1" projectId="proj_1">
+          {children}
+        </ResearchScopeProvider>
+      </ResearchWorkspaceProvider>
+    </QueryClientProvider>
+  )
+}
+
+function SharedQueryConsumer() {
+  useResearchSources('proj_1')
+  useResearchNotes('proj_1')
+  return null
+}
+
 describe('ResearchWorkspace', () => {
   beforeEach(() => {
     localStorage.clear()
+    queryClient.clear()
     vi.clearAllMocks()
     resetGlobalModelStub()
     vi.mocked(api.listSources).mockResolvedValue({ items: [source], next_cursor: null })
@@ -72,17 +98,16 @@ describe('ResearchWorkspace', () => {
     tokenStore.clearResearchToken()
   })
 
-  it('无项目上下文（无 Token）显示错误态而非面板', async () => {
+  it('认证 Shell 注入项目上下文后不再依赖 Token 二次解码', async () => {
     tokenStore.clearResearchToken()
-    render(<ResearchWorkspace />)
-    expect(await screen.findByText('research.noProjectContext')).toBeInTheDocument()
-    expect(screen.queryByRole('tab', { name: /chat/i })).toBeNull()
+    render(<ResearchWorkspace />, { wrapper: workspaceWrapper })
+    expect(await screen.findByRole('tab', { name: 'research.tabChat' })).toBeInTheDocument()
   })
 
   it('有 Token 时默认收起选择器，展开后显示 Source/Note 与四个 Tab', async () => {
     tokenStore.setResearchToken(researchToken(), 9999999999)
-    render(<ResearchWorkspace />)
-    expect(await screen.findByTestId('research-context-scope')).toHaveTextContent('research.layout.projectScope')
+    render(<ResearchWorkspace />, { wrapper: workspaceWrapper })
+    expect(await screen.findByTestId('research-context-scope')).toHaveTextContent('research.layout.scope.entireProject')
     expect(screen.getByText('Note One').closest('#research-context-selection')).toHaveAttribute('hidden')
     const contextButton = screen.getByRole('button', { name: 'research.layout.expandContext' })
     expect(contextButton).toHaveClass('border', 'bg-background', 'shadow-sm')
@@ -96,7 +121,53 @@ describe('ResearchWorkspace', () => {
       'research.tabJobs',
     ])
     expect(api.listSources).toHaveBeenCalledWith('proj_1')
-    expect(api.listNotes).toHaveBeenCalledWith('proj_1')
+    expect(api.listNotes).toHaveBeenCalledWith('proj_1', {})
+  })
+
+  it('范围模式显式可见：首次 Entire project，首项选择进入 Selected，不能移除最后一项', async () => {
+    render(<ResearchWorkspace />, { wrapper: workspaceWrapper })
+    fireEvent.click(await screen.findByRole('button', { name: 'research.layout.expandContext' }))
+
+    expect(screen.getByTestId('scope-entire-project')).toHaveAttribute('data-state', 'checked')
+    expect(screen.getByTestId('scope-selected')).toBeDisabled()
+
+    fireEvent.click(await screen.findByTestId('source-src_1'))
+    expect(screen.getByTestId('scope-selected')).toHaveAttribute('data-state', 'checked')
+    expect(screen.getByTestId('source-src_1')).toBeDisabled()
+
+    fireEvent.click(screen.getByTestId('scope-entire-project'))
+    expect(screen.getByTestId('scope-entire-project')).toHaveAttribute('data-state', 'checked')
+    expect(screen.getByTestId('scope-selected')).toBeDisabled()
+  })
+
+  it('右侧与第二个消费者共享一次查询，且 Query cache 更新即时替换 selector 行', async () => {
+    render(
+      <>
+        <ResearchWorkspace />
+        <SharedQueryConsumer />
+      </>,
+      { wrapper: workspaceWrapper },
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'research.layout.expandContext' }))
+    expect(await screen.findByText('Note One')).toBeInTheDocument()
+    expect(api.listSources).toHaveBeenCalledTimes(1)
+    expect(api.listNotes).toHaveBeenCalledTimes(1)
+
+    act(() => {
+      queryClient.setQueryData(QUERY_KEYS.researchSources('proj_1'), {
+        items: [{ ...source, source_id: 'src_2', document_id: 'doc_2' }],
+        next_cursor: null,
+      })
+      queryClient.setQueryData([...QUERY_KEYS.researchNotes('proj_1'), ''], {
+        items: [{ ...note, note_id: 'note_2', title: 'Note Two' }],
+        next_cursor: null,
+      })
+    })
+
+    expect(await screen.findByText('doc_2')).toBeInTheDocument()
+    expect(await screen.findByText('Note Two')).toBeInTheDocument()
+    expect(screen.queryByText('doc_1')).toBeNull()
+    expect(screen.queryByText('Note One')).toBeNull()
   })
 
   it('Source/Note 长列表在各自最多 200px 的区域内纵向滚动', async () => {
@@ -114,7 +185,7 @@ describe('ResearchWorkspace', () => {
     vi.mocked(api.listNotes).mockResolvedValue({ items: notes, next_cursor: null })
     tokenStore.setResearchToken(researchToken(), 9999999999)
 
-    render(<ResearchWorkspace />)
+    render(<ResearchWorkspace />, { wrapper: workspaceWrapper })
     fireEvent.click(await screen.findByRole('button', { name: 'research.layout.expandContext' }))
 
     const sourceList = screen.getByTestId('source-selection-list')
@@ -129,7 +200,7 @@ describe('ResearchWorkspace', () => {
     tokenStore.setResearchToken(researchToken(), 9999999999)
     // 外部模型待确认：守卫登记但不执行（不变量 9）
     setGlobalModelStub({ deferGuarded: true })
-    render(<ResearchWorkspace />)
+    render(<ResearchWorkspace />, { wrapper: workspaceWrapper })
     // Radix Tabs 在 jsdom 下按 mousedown 切换（fireEvent.click 不触发）
     fireEvent.mouseDown(await screen.findByRole('tab', { name: 'research.tabChat' }), {
       button: 0,
@@ -168,7 +239,7 @@ describe('ResearchWorkspace', () => {
       created_at: '2026-08-06T02:00:00Z',
       updated_at: '2026-08-06T02:00:00Z',
     })
-    render(<ResearchWorkspace />)
+    render(<ResearchWorkspace />, { wrapper: workspaceWrapper })
     // 选中一个 Source（Compare 以 document_ids 入参）
     fireEvent.click(await screen.findByRole('button', { name: 'research.layout.expandContext' }))
     fireEvent.click(await screen.findByTestId('source-src_1'))
@@ -188,7 +259,7 @@ describe('ResearchWorkspace', () => {
   it('#243：无可用全局模型时 Chat 输入/发送禁用并展示引导（评审 Important-2）', async () => {
     tokenStore.setResearchToken(researchToken(), 9999999999)
     setGlobalModelStub({ confirmedModelId: null })
-    render(<ResearchWorkspace />)
+    render(<ResearchWorkspace />, { wrapper: workspaceWrapper })
     fireEvent.mouseDown(await screen.findByRole('tab', { name: 'research.tabChat' }), {
       button: 0,
       ctrlKey: false,
@@ -205,7 +276,7 @@ describe('ResearchWorkspace', () => {
   it('#243：无可用全局模型时 Compare 创建禁用并展示引导（评审 Important-2）', async () => {
     tokenStore.setResearchToken(researchToken(), 9999999999)
     setGlobalModelStub({ confirmedModelId: null })
-    render(<ResearchWorkspace />)
+    render(<ResearchWorkspace />, { wrapper: workspaceWrapper })
     fireEvent.click(await screen.findByRole('button', { name: 'research.layout.expandContext' }))
     fireEvent.click(await screen.findByTestId('source-src_1'))
     fireEvent.mouseDown(await screen.findByRole('tab', { name: 'research.tabCompare' }), {
@@ -223,7 +294,7 @@ describe('ResearchWorkspace', () => {
   it('加载失败显示错误与重试按钮', async () => {
     tokenStore.setResearchToken(researchToken(), 9999999999)
     vi.mocked(api.listSources).mockRejectedValue(new Error('network down'))
-    render(<ResearchWorkspace />)
+    render(<ResearchWorkspace />, { wrapper: workspaceWrapper })
     expect(await screen.findByRole('button', { name: /retry/i })).toBeInTheDocument()
   })
 })

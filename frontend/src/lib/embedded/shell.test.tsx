@@ -3,6 +3,7 @@ import { act } from 'react'
 import { render, screen, cleanup } from '@testing-library/react'
 import { ResearchWorkspaceShell } from './shell'
 import { clearResearchToken, getResearchToken } from './token-store'
+import { useResearchScope } from '@/lib/research/scope'
 
 // UI-01 Red：ResearchWorkspaceShell 加载/错误/就绪三态 + ready 握手 +
 // 卸载销毁（任务卡 Checklist：bootstrap、session state、销毁无残留）。
@@ -66,6 +67,11 @@ function validTokenMessage(nonce: string, channel: string, overrides: Record<str
   }
 }
 
+function ScopeProbe() {
+  const { mode } = useResearchScope()
+  return <span data-testid="scope-probe">{mode}</span>
+}
+
 describe('ResearchWorkspaceShell', () => {
   beforeEach(() => {
     clearResearchToken()
@@ -97,6 +103,14 @@ describe('ResearchWorkspaceShell', () => {
     const ready = captures.posted[0].data
     dispatchMessage(validTokenMessage(String(ready.nonce), String(ready.channel)))
     expect(screen.getByText('workspace-panels')).toBeInTheDocument()
+  })
+
+  it('认证根只挂载一个可用的 Research Scope Provider，初始模式明确为 entire project', () => {
+    const captures = stubParentWindow()
+    render(<ResearchWorkspaceShell><ScopeProbe /></ResearchWorkspaceShell>)
+    const ready = captures.posted[0].data
+    dispatchMessage(validTokenMessage(String(ready.nonce), String(ready.channel)))
+    expect(screen.getByTestId('scope-probe')).toHaveTextContent('entire_project')
   })
 
   it('error 消息显示错误面板（含 code 与本地化文案）', () => {

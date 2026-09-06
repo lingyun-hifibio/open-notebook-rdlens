@@ -16,6 +16,7 @@ import type { ResearchRole } from './claims'
  */
 
 export interface ResearchWorkspaceValue {
+  userId?: string
   projectId: string
   role: ResearchRole
   isOwner: boolean
@@ -25,15 +26,18 @@ export interface ResearchWorkspaceValue {
 const ResearchWorkspaceContext = createContext<ResearchWorkspaceValue | null>(null)
 
 export function ResearchWorkspaceProvider({
+  userId = '',
   projectId,
   role,
   children,
 }: {
+  userId?: string
   projectId: string
   role: ResearchRole
   children: React.ReactNode
 }): React.ReactNode {
   const value: ResearchWorkspaceValue = {
+    userId,
     projectId,
     role,
     isOwner: role === 'owner',
