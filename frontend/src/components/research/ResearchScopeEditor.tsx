@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useRef } from 'react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { useResearchScope, type ResearchScopeMode } from '@/lib/research/scope'
@@ -16,10 +17,23 @@ import { useResearchScope, type ResearchScopeMode } from '@/lib/research/scope'
  * - `min-w-0 + flex-wrap`：桌面最小栏宽（1024px 视口、分隔条最窄
  *   280px）不隐藏标题、不产生横向页面滚动（AC：窄分栏位置）。
  */
-export function ResearchScopeEditor() {
+export function ResearchScopeEditor({
+  scopeEditRequest,
+}: {
+  /** 递增序号：右栏 `Edit scope` 请求聚焦本编辑面（含退出最大化后） */
+  scopeEditRequest?: number
+}) {
   const { t } = useTranslation()
   const { mode, selectedSourceIds, selectedNoteIds, setMode } = useResearchScope()
   const selectedCount = selectedSourceIds.length + selectedNoteIds.length
+  const radioGroupRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (scopeEditRequest === undefined) return
+    // RWV2-13：Edit scope 的键盘可达目标——聚焦首个模式单选，供后续
+    // 方向键/读屏继续操作（编辑面在最大化态恢复后仍然可聚焦）
+    radioGroupRef.current?.querySelector<HTMLElement>('[role="radio"]')?.focus()
+  }, [scopeEditRequest])
 
   return (
     <div className="min-w-0 space-y-2 border-b pb-3" data-testid="research-scope-editor">
@@ -27,6 +41,7 @@ export function ResearchScopeEditor() {
         {t('research.layout.scope.modeLabel')}
       </p>
       <RadioGroup
+        ref={radioGroupRef}
         value={mode}
         onValueChange={(value) => setMode(value as ResearchScopeMode)}
         className="flex min-w-0 flex-wrap gap-x-4 gap-y-2"

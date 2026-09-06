@@ -218,4 +218,13 @@ describe('SourceListPanel', () => {
     expect(checkbox).toHaveAttribute('aria-label', 'research.sources.scopeSelect:doc_a')
     expect(checkbox).toHaveAttribute('role', 'checkbox')
   })
+
+  it('加载失败展示错误状态（不静默）', async () => {
+    vi.mocked(researchApi.listSources).mockRejectedValue(new Error('network'))
+    const { wrapper } = makeWrapper()
+    render(<SourceListPanel />, { wrapper })
+    await waitFor(() => {
+      expect(screen.getByText('research.workbench.loadFailed')).toBeInTheDocument()
+    })
+  })
 })

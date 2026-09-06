@@ -675,4 +675,14 @@ describe('ResearchLayout', () => {
     rerender(layout({ maximized: false, onMaximizedChange }))
     expect(screen.getByLabelText('primary')).not.toHaveAttribute('hidden')
   })
+
+  it('RWV2-13：受控 maximized 进入 compact 时经回调复位（不残留隐藏态）', () => {
+    const onMaximizedChange = vi.fn()
+    const { rerender } = renderLayout({
+      maximized: true,
+      onMaximizedChange,
+    })
+    rerender(layout({ compact: true, maximized: true, onMaximizedChange }))
+    expect(onMaximizedChange).toHaveBeenCalledWith(false)
+  })
 })

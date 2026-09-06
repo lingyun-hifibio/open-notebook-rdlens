@@ -210,6 +210,68 @@ describe('ResearchWorkbench', () => {
     expect(screen.getByTestId('scope-selected')).toHaveAttribute('data-state', 'checked')
   })
 
+  it('RWV2-13：Edit scope 请求聚焦左栏编辑面（scopeEditRequest 递增 → 模式单选获得焦点）', async () => {
+    vi.mocked(researchApi.listSources).mockResolvedValue({ items: [], next_cursor: null })
+    vi.mocked(researchApi.listNotes).mockResolvedValue({ items: [], next_cursor: null })
+    vi.mocked(researchApi.listInsights).mockResolvedValue({ items: [], next_cursor: null })
+    vi.mocked(researchApi.listTransformations).mockResolvedValue({ items: [], next_cursor: null })
+    const { wrapper } = makeWrapper()
+    const { rerender } = render(
+      <ResearchWorkbench
+        displayMode="workbench"
+        selectedSourceId={null}
+        highlightPageIdx={null}
+        highlightRequestId={0}
+        onSelectSource={vi.fn()}
+        onCloseSource={vi.fn()}
+      />,
+      { wrapper },
+    )
+    expect(screen.getByTestId('scope-entire-project')).not.toHaveFocus()
+    rerender(
+      <ResearchWorkbench
+        displayMode="workbench"
+        selectedSourceId={null}
+        highlightPageIdx={null}
+        highlightRequestId={0}
+        onSelectSource={vi.fn()}
+        onCloseSource={vi.fn()}
+        scopeEditRequest={1}
+      />,
+    )
+    expect(screen.getByTestId('scope-entire-project')).toHaveFocus()
+  })
+
+  it('RWV2-13：跨来源/笔记合计的最后一项不可取消（provider + UI 禁用一致）', async () => {
+    seedScope('selected', ['src_1'])
+    vi.mocked(researchApi.listSources).mockResolvedValue({
+      items: [{ source_id: 'src_1', document_id: 'doc_1', document_version: 'v3', status: 'ready', content_hash: 'h', synced_at: null, last_error: null }],
+      next_cursor: null,
+    })
+    vi.mocked(researchApi.listNotes).mockResolvedValue({
+      items: [{ note_id: 'note_1', project_id: 'proj_1', title: '第一篇', content: '正文', note_type: 'human', created_at: null, updated_at: null }],
+      next_cursor: null,
+    })
+    vi.mocked(researchApi.listInsights).mockResolvedValue({ items: [], next_cursor: null })
+    vi.mocked(researchApi.listTransformations).mockResolvedValue({ items: [], next_cursor: null })
+    const { wrapper } = makeWrapper()
+    render(<ControlledWorkbench />, { wrapper })
+
+    // 合计 1 项（src_1）：该来源复选框禁用；note 复选框可加入（合计 >1）
+    const sourceCheckbox = await screen.findByTestId('source-scope-src_1')
+    expect(sourceCheckbox).toBeDisabled()
+    const notesTab = screen.getByRole('tab', { name: 'research.workbench.tabNotes' })
+    fireEvent.mouseDown(notesTab)
+    fireEvent.click(notesTab)
+    const noteCheckbox = await screen.findByTestId('note-scope-note_1')
+    expect(noteCheckbox).not.toBeDisabled()
+    fireEvent.click(noteCheckbox)
+    // 加入 note 后合计 2：来源复选框重新可用（仍可再做调整）
+    fireEvent.mouseDown(screen.getByRole('tab', { name: 'research.workbench.tabSources' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'research.workbench.tabSources' }))
+    await waitFor(() => expect(screen.getByTestId('source-scope-src_1')).not.toBeDisabled())
+  })
+
   it.each([1024, 1280, 1440, 1920])(
     'RWV2-13：%ipx 桌面视口下左侧编辑面与行复选框无横向溢出设计（min-w-0/flex-wrap）',
     async (width) => {

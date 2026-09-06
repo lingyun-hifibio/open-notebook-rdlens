@@ -43,12 +43,16 @@ export default function ResearchPage() {
   // RWV2-13：全局（非 Source 专注）布局的最大化状态提升到组合层受控——
   // 右栏 Scope Summary 的 `Edit scope` 经此退出最大化，回到左栏唯一编辑面
   const [globalMaximized, setGlobalMaximized] = useState(false)
+  // Edit scope 聚焦请求序号：递增让左栏编辑面把焦点移到模式单选（编辑面
+  // 常驻可见时也获得明确的键盘可达入口）
+  const [scopeEditRequest, setScopeEditRequest] = useState(0)
   const isDesktop = useIsDesktop()
   const [globalCompactPanel, setGlobalCompactPanel] = useState<'primary' | 'secondary'>('secondary')
   const [sourceCompactPanel, setSourceCompactPanel] = useState<'primary' | 'secondary'>('primary')
 
   const handleEditScope = useCallback(() => {
     setGlobalMaximized(false)
+    setScopeEditRequest((request) => request + 1)
   }, [])
 
   const handleSelectSource = useCallback(
@@ -155,6 +159,7 @@ export default function ResearchPage() {
               highlightRequestId={highlightRequestId}
               onSelectSource={handleSelectSource}
               onCloseSource={handleCloseSource}
+              scopeEditRequest={scopeEditRequest}
             />
             </div>,
             <div key="workspace" className={`h-full min-h-0 ${compact ? '' : 'border-l'}`}>
