@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TransformationsPanel } from './TransformationsPanel'
 import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
+import { ResearchScopeProvider, scopeStorageKey, useResearchScope } from '@/lib/research/scope'
 import {
   resetGlobalModelStub,
   setGlobalModelStub,
@@ -10,12 +11,15 @@ import {
 import * as researchApi from '@/lib/research/api'
 import type { ResearchSource, ResearchTransformation } from '@/lib/types/research'
 
-// UI-02 Red：Transformations 工作台（REQ-SCOPE-04/REQ-DIS-02/03/
-// REQ-API-01，契约 §7.3）——模板仅 prompt-only 字段（无 code/tool/url）；
-// 运行只走 Gateway run 端点；结果含 Citation（CitationCard）；
-// Admin 只读不可运行。
-// #243 §6.6：模型来自顶层全局设置（测试替身提供 confirmed 模型），
-// 面板内没有模型输入，也没有局部外发确认复选框（§4 单一 consent 逻辑）。
+// RWV2-12 Red：TransformationsPanel 迁移到共享 Research Scope。
+// - 运行对话框只读展示当前 Scope 摘要（Entire project / Selected: N sources, M notes）
+//   + Edit scope 入口；不再有第三套 Sources/Notes 复选框。
+// - 请求载荷使用 provider 快照：selected=快照 ids；entire_project=派发时
+//   分页枚举的全部授权 id（resolveScopeSelection）。
+// - 打开/关闭/Edit scope 均不重置全局 Scope；空（entire_project 空项目）
+//   阻断并英文引导；派发后修改 Scope/模型不影响在途运行；外部模型
+//   consent 取消零副作用（runSnapshot 不设置，摘要仍为 live）。
+// - 结果/Citation/requires_job 降级与 Admin 只读行为保持。
 
 vi.mock('@/lib/research/api', () => ({
   listSources: vi.fn(),
@@ -39,7 +43,7 @@ vi.mock('@/lib/hooks/use-research-global-model')
 vi.mock('@/lib/hooks/use-translation', () => ({
   useTranslation: () => ({
     t: (key: string, opts?: Record<string, unknown>) =>
-      opts ? `${key}:${String(opts.reason ?? '')}` : key,
+      opts ? `${key}:${JSON.stringify(opts)}` : key,
   }),
 }))
 
@@ -70,25 +74,91 @@ const source = (overrides: Partial<ResearchSource> = {}): ResearchSource => ({
   ...overrides,
 })
 
+const runResult = () => ({
+  request_id: 'req_1',
+  transformation_id: 'trans_1',
+  requires_job: false,
+  degradation_reason: null,
+  result_id: 'r_1',
+  model_id: 'qwen3.6-35b-a3b-fp8',
+  source_refs: ['src_1'],
+  usage: { input_tokens: 10, output_tokens: 5 },
+  citations: [{
+    citation_id: 'c_1',
+    claim: '引用声明',
+    chunk_id: 'chunk_1',
+    doc_id: 'doc_1',
+    doc_version: 'v3',
+    page_idx: 3,
+    section: null,
+    original_text: '引用原文',
+    citation_type: null,
+    confidence: null,
+    doc_display_name: 'Paper A',
+    short_name: 'A',
+    doc_type: 'pdf',
+    project_id: 'proj_1',
+    vlm_bboxes: null,
+    minio_uri: null,
+    source_path: null,
+  }],
+  output: '总结输出',
+})
+
+const USER = 'u1'
+const PROJECT = 'proj_1'
+
+/** 预置 provider 的持久化 Scope（与 provider restoreScope 同构）。 */
+function seedScope(mode: 'entire_project' | 'selected', sourceIds: string[] = [], noteIds: string[] = []) {
+  localStorage.setItem(
+    scopeStorageKey(USER, PROJECT),
+    JSON.stringify({ version: 1, mode, sourceIds, noteIds }),
+  )
+}
+
+/** 变更 provider scope 的探针（在途隔离用例用）。 */
+function ScopeProbe() {
+  const { toggleSource, toggleNote } = useResearchScope()
+  return (
+    <div>
+      <button type="button" data-testid="probe-toggle-src-2" onClick={() => toggleSource('src_2')}>
+        toggle-src-2
+      </button>
+      <button type="button" data-testid="probe-toggle-note-2" onClick={() => toggleNote('note_2')}>
+        toggle-note-2
+      </button>
+    </div>
+  )
+}
+
 function makeWrapper(role: 'owner' | 'admin_readonly' = 'owner') {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   const wrapper = ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>
-      <ResearchWorkspaceProvider projectId="proj_1" role={role}>
-        {children}
+      <ResearchWorkspaceProvider userId={USER} projectId={PROJECT} role={role}>
+        <ResearchScopeProvider userId={USER} projectId={PROJECT}>
+          {children}
+        </ResearchScopeProvider>
       </ResearchWorkspaceProvider>
     </QueryClientProvider>
   )
   return { wrapper, queryClient }
 }
 
-describe('TransformationsPanel', () => {
+describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
   beforeEach(() => {
+    localStorage.clear()
     vi.clearAllMocks()
     toastMock.mockClear()
     resetGlobalModelStub()
+    vi.mocked(researchApi.listTransformations).mockResolvedValue({
+      items: [template()],
+      next_cursor: null,
+    })
+    vi.mocked(researchApi.listSources).mockResolvedValue({ items: [source()], next_cursor: null })
+    vi.mocked(researchApi.listNotes).mockResolvedValue({ items: [], next_cursor: null })
   })
 
   it('Owner：创建模板仅提交 prompt-only 四字段（无 code/tool/url，REQ-DIS-03）', async () => {
@@ -105,94 +175,181 @@ describe('TransformationsPanel', () => {
     fireEvent.change(screen.getByLabelText('research.transformations.promptLabel'), {
       target: { value: '请总结：' },
     })
-    // §6.6：面板内不再有模型输入
     expect(screen.queryByLabelText('research.transformations.modelLabel')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.save' }))
     await waitFor(() =>
       expect(researchApi.createTransformation).toHaveBeenCalledWith('proj_1', {
         name: '总结模板',
         prompt_template: '请总结：',
-        // 顶层 confirmed 全局模型快照（创建时的 provenance）
         model_id: 'm-local',
         scope: 'project_private',
       }),
     )
   })
 
-  it('Owner：运行流程——先展示数据外发提示，确认后只调用 Gateway run 端点（REQ-DIS-02）', async () => {
-    vi.mocked(researchApi.listTransformations).mockResolvedValue({
-      items: [template()],
-      next_cursor: null,
-    })
-    vi.mocked(researchApi.listSources).mockResolvedValue({ items: [source()], next_cursor: null })
-    vi.mocked(researchApi.listNotes).mockResolvedValue({ items: [], next_cursor: null })
-    vi.mocked(researchApi.runTransformation).mockResolvedValue({
-      request_id: 'req_1',
-      transformation_id: 'trans_1',
-      requires_job: false,
-      degradation_reason: null,
-      result_id: 'r_1',
-      model_id: 'qwen3.6-35b-a3b-fp8',
-      source_refs: ['src_1'],
-      usage: { input_tokens: 10, output_tokens: 5 },
-      citations: [{
-        citation_id: 'c_1',
-        claim: '引用声明',
-        chunk_id: 'chunk_1',
-        doc_id: 'doc_1',
-        doc_version: 'v3',
-        page_idx: 3,
-        section: null,
-        original_text: '引用原文',
-        citation_type: null,
-        confidence: null,
-        doc_display_name: 'Paper A',
-        short_name: 'A',
-        doc_type: 'pdf',
+  it('AC-1 selected：运行对话框只读展示 Scope 摘要，载荷=provider 快照 ids，无第三套复选框', async () => {
+    seedScope('selected', ['src_1'], [])
+    const { wrapper } = makeWrapper()
+    vi.mocked(researchApi.runTransformation).mockResolvedValue(runResult())
+    render(<TransformationsPanel />, { wrapper })
+    await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
+    await waitFor(() =>
+      expect(screen.getByTestId('run-scope-summary')).toHaveTextContent('selectedSummary'),
+    )
+    expect(screen.getByTestId('run-scope-summary').textContent).toContain('"sources":1')
+    // 不再渲染来源/笔记复选框（第三套选择状态删除）
+    expect(screen.queryByRole('checkbox')).toBeNull()
+    // Language 行：按模板单 Prompt 检测（RFC §4.2）
+    expect(screen.getByTestId('run-language').textContent).toContain('zh')
+
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
+    await waitFor(() =>
+      expect(researchApi.runTransformation).toHaveBeenCalledWith('proj_1', 'trans_1', {
+        source_ids: ['src_1'],
+        note_ids: [],
+        model_id: 'm-local',
+      }),
+    )
+    // 结果与 Citation 展示（回归：引用原文保留）
+    await waitFor(() => expect(screen.getByText('总结输出')).toBeInTheDocument())
+    expect(screen.getByText('引用原文')).toBeInTheDocument()
+  })
+
+  it('AC-1 entire_project：载荷=派发时分页枚举的全部授权 id（Entire project 摘要）', async () => {
+    seedScope('entire_project')
+    const { wrapper } = makeWrapper()
+    vi.mocked(researchApi.runTransformation).mockResolvedValue(runResult())
+    render(<TransformationsPanel />, { wrapper })
+    await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
+    await waitFor(() =>
+      expect(screen.getByTestId('run-scope-summary')).toHaveTextContent('entireProject'),
+    )
+    // 挂载查询已消费默认 mock；枚举在点击时追加跨页序列
+    vi.mocked(researchApi.listSources)
+      .mockResolvedValueOnce({ items: [source()], next_cursor: 'c_2' })
+      .mockResolvedValueOnce({ items: [source({ source_id: 'src_2', document_id: 'doc_2' })], next_cursor: null })
+    vi.mocked(researchApi.listNotes)
+      .mockResolvedValueOnce({ items: [{
+        note_id: 'note_1',
         project_id: 'proj_1',
-        vlm_bboxes: null,
-        minio_uri: null,
-        source_path: null,
-      }],
-      output: '总结输出',
-    })
+        title: 'Note One',
+        content: 'body',
+        note_type: 'human',
+        created_at: '2026-08-06T02:00:00Z',
+        updated_at: '2026-08-06T02:00:00Z',
+      }], next_cursor: null })
+
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
+    await waitFor(() =>
+      expect(researchApi.runTransformation).toHaveBeenCalledWith('proj_1', 'trans_1', {
+        source_ids: ['src_1', 'src_2'],
+        note_ids: ['note_1'],
+        model_id: 'm-local',
+      }),
+    )
+  })
+
+  it('AC-2：打开/关闭（含 Edit scope）运行对话框永不重置全局 Scope', async () => {
+    seedScope('selected', ['src_1'], [])
     const { wrapper } = makeWrapper()
     render(<TransformationsPanel />, { wrapper })
     await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
 
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
-    // §6.6：外发确认不再是本面板的局部复选框
-    expect(screen.queryByText('research.transformations.egressTitle')).toBeNull()
-    // 勾选来源输入（等待来源查询加载完成）
-    fireEvent.click(await screen.findByRole('checkbox', { name: /doc_1/ }))
-    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
+    await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
+    // Edit scope：仅关闭对话框，不改 provider 状态
+    fireEvent.click(screen.getByTestId('run-edit-scope'))
+    await waitFor(() => expect(screen.queryByTestId('run-scope-summary')).toBeNull())
 
+    // 重新打开：摘要仍是预置的 selected（1 source）
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
     await waitFor(() =>
-      expect(researchApi.runTransformation).toHaveBeenCalledWith('proj_1', 'trans_1', {
-        source_ids: ['src_1'],
-        note_ids: [],
-        // 运行时刻的顶层模型快照（非模板历史模型）
-        model_id: 'm-local',
-      }),
+      expect(screen.getByTestId('run-scope-summary')).toHaveTextContent('selectedSummary'),
     )
-    // 结果与 Citation 展示（原文保留）
-    await waitFor(() => expect(screen.getByText('总结输出')).toBeInTheDocument())
-    expect(screen.getByText('引用原文')).toBeInTheDocument()
+    expect(screen.getByTestId('run-scope-summary').textContent).toContain('"sources":1')
   })
 
-  it('#243 §6.6：无 confirmed 全局模型时不可创建也不可运行（不变量 2/7）', async () => {
-    setGlobalModelStub({ confirmedModelId: null })
-    vi.mocked(researchApi.listTransformations).mockResolvedValue({
-      items: [template()],
-      next_cursor: null,
-    })
-    vi.mocked(researchApi.listSources).mockResolvedValue({ items: [source()], next_cursor: null })
-    vi.mocked(researchApi.listNotes).mockResolvedValue({ items: [], next_cursor: null })
+  it('AC-3 可达分支：entire_project 空项目 → 阻断 + 英文引导，不派发', async () => {
+    seedScope('entire_project')
     const { wrapper } = makeWrapper()
     render(<TransformationsPanel />, { wrapper })
     await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
 
-    // 面板内没有模型输入，也没有局部外发确认入口
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
+    await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
+    // 枚举返回空项目
+    vi.mocked(researchApi.listSources).mockResolvedValue({ items: [], next_cursor: null })
+    vi.mocked(researchApi.listNotes).mockResolvedValue({ items: [], next_cursor: null })
+
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
+    await waitFor(() =>
+      expect(screen.getByTestId('run-empty-project-blocked')).toBeInTheDocument(),
+    )
+    expect(researchApi.runTransformation).not.toHaveBeenCalled()
+    // 对话框保持打开（用户可关掉后改 scope）
+    expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument()
+  })
+
+  it('AC-4：派发后修改 Scope 不影响在途运行，且摘要显示派发时快照', async () => {
+    seedScope('selected', ['src_1'], [])
+    const { wrapper } = makeWrapper()
+    const d = deferred<ReturnType<typeof runResult>>()
+    vi.mocked(researchApi.runTransformation).mockReturnValue(d.promise)
+    render(
+      <>
+        <TransformationsPanel />
+        <ScopeProbe />
+      </>,
+      { wrapper },
+    )
+    await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
+    await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
+    // 在途：变更全局 Scope（toggle 追加 src_2）
+    fireEvent.click(screen.getByTestId('probe-toggle-src-2'))
+    d.resolve(runResult())
+    await waitFor(() => expect(screen.getByText('总结输出')).toBeInTheDocument())
+
+    // 载荷仍是派发时快照（仅 src_1）
+    expect(researchApi.runTransformation).toHaveBeenCalledWith('proj_1', 'trans_1', {
+      source_ids: ['src_1'],
+      note_ids: [],
+      model_id: 'm-local',
+    })
+    // 摘要显示派发时快照（1 source），而非 live（2 sources）
+    expect(screen.getByTestId('run-scope-summary').textContent).toContain('"sources":1')
+  })
+
+  it('AC-6：外部模型 consent 取消零副作用——不派发、runSnapshot 未设置', async () => {
+    seedScope('selected', ['src_1'], [])
+    setGlobalModelStub({ confirmedModelId: 'm-ext', needsConsent: true, deferGuarded: true })
+    const { wrapper } = makeWrapper()
+    render(<TransformationsPanel />, { wrapper })
+    await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
+    await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
+
+    // 未派发、无结果、摘要仍为 live（runSnapshot 未设置）
+    expect(researchApi.runTransformation).not.toHaveBeenCalled()
+    expect(screen.queryByText('总结输出')).toBeNull()
+    expect(screen.getByTestId('run-scope-summary').textContent).toContain('"sources":1')
+  })
+
+  it('#243 §6.6：无 confirmed 全局模型时不可创建也不可运行（不变量 2/7）', async () => {
+    setGlobalModelStub({ confirmedModelId: null })
+    seedScope('selected', ['src_1'], [])
+    const { wrapper } = makeWrapper()
+    render(<TransformationsPanel />, { wrapper })
+    await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
+
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
     const confirmButton = screen.getByRole('button', { name: 'research.transformations.confirmRun' })
     expect(confirmButton).toBeDisabled()
@@ -201,10 +358,6 @@ describe('TransformationsPanel', () => {
   })
 
   it('Admin：模板可见但不可创建、不可运行', async () => {
-    vi.mocked(researchApi.listTransformations).mockResolvedValue({
-      items: [template()],
-      next_cursor: null,
-    })
     const { wrapper } = makeWrapper('admin_readonly')
     render(<TransformationsPanel />, { wrapper })
     await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
@@ -213,13 +366,9 @@ describe('TransformationsPanel', () => {
     expect(screen.getByText('research.workbench.adminBanner')).toBeInTheDocument()
   })
 
-  it('run 返回 requires_job → 展示持久化任务降级提示', async () => {
-    vi.mocked(researchApi.listTransformations).mockResolvedValue({
-      items: [template()],
-      next_cursor: null,
-    })
-    vi.mocked(researchApi.listSources).mockResolvedValue({ items: [source()], next_cursor: null })
-    vi.mocked(researchApi.listNotes).mockResolvedValue({ items: [], next_cursor: null })
+  it('run 返回 requires_job → 展示持久化任务降级提示（回归）', async () => {
+    seedScope('selected', ['src_1'], [])
+    const { wrapper } = makeWrapper()
     vi.mocked(researchApi.runTransformation).mockResolvedValue({
       request_id: 'req_1',
       transformation_id: 'trans_1',
@@ -232,13 +381,23 @@ describe('TransformationsPanel', () => {
       citations: [],
       output: null,
     })
-    const { wrapper } = makeWrapper()
     render(<TransformationsPanel />, { wrapper })
     await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
+    await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
     await waitFor(() =>
-      expect(screen.getByText(/research.transformations.degraded:output_too_large/)).toBeInTheDocument(),
+      expect(screen.getByText(/research\.transformations\.degraded/)).toBeInTheDocument(),
     )
   })
 })
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}

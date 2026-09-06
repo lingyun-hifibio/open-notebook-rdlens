@@ -1,12 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
-import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -16,12 +15,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { useToast } from '@/lib/hooks/use-toast'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
 import { useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
+import { useResearchScope, type ResearchScopeSnapshot } from '@/lib/research/scope'
+import { detectResponseLanguage, resolveScopeSelection } from '@/lib/research/scope-utils'
 import {
   useCreateResearchTransformation,
   useResearchSources,
-  useResearchNotes,
   useResearchTransformations,
   useRunResearchTransformation,
 } from '@/lib/hooks/use-research'
@@ -36,23 +37,26 @@ import { resolveCitationSource } from './citation-utils'
 
 /**
  * Transformations 工作台（UI-02，REQ-SCOPE-04/REQ-DIS-02/03/REQ-API-01，
- * 契约 §7.3，设计 §8/§12）。
+ * 契约 §7.3，设计 §8/§12；RWV2-12 Issue #33 迁移共享 Scope）。
  *
+ * RWV2-12（RFC §3 唯一 Scope 契约）：
  * - 模板仅 prompt-only：name/prompt_template/model_id/scope 四字段，无
  *   code/tool/url（REQ-DIS-03，后端 extra="forbid" 422 双保险）；
- * - 运行：输入 Source/Note 服务端授权；运行只走 Gateway run 端点
- *   （REQ-DIS-02，无上游 Provider）；
+ * - **运行不再维护第三套 Sources/Notes 选择**：运行对话框只读展示当前
+ *   Research Scope 摘要（Entire project / Selected: N sources, M notes）
+ *   + `Edit scope` 入口（关闭对话框回到右栏共享选择器；RWV2-13 后指向
+ *   左栏编辑面）。Scope 权威只来自根级 ResearchScopeProvider。
+ * - **派发冻结**：点击 Confirm 时一次性把 Scope 快照解析为显式 id 全集
+ *   （entire_project 分页枚举；selected 透传）并冻结；confirmed 全局模型
+ *   由 runGuarded 在调用时刻捕获；response language 按模板单 Prompt 在
+ *   派发时刻检测并固定（RFC §4.2；请求字段由 RWV2-M3 接线）。派发后
+ *   修改 Scope/模型不影响在途运行（不变量 5/6）。
+ * - 外部 consent 统一由根级 runGuarded 处理（§6.8，不变量 9）：取消
+ *   零副作用，runSnapshot 不设置、摘要仍为 live。
  * - 结果展示 output + Citation（CitationCard，失效降级保留原文）；
- * - requires_job 降级提示（输出超预算 → 持久化任务，UI-03 查看）。
- *
- * Issue #243 GMOD-FE-01 §6.6：
- * - Create/Run 表单不再提供模型输入：模型来自 Research 顶层 confirmed
- *   全局模型（页面内唯一入口，不变量 1）；
- * - 模板继续保存创建时的历史 `model_id` 作为 provenance，但它不是以后
- *   每次运行的固定执行模型；Run 显式发送运行开始时的模型快照；
- * - 外发确认不再是本面板的局部复选框（§4：不创建第二套 consent 逻辑），
- *   统一由根级 `runGuarded` 在首次实际执行前弹出（不变量 9）；
- * - 切换顶层模型不修改已有模板，也不影响在途 Transformation。
+ *   requires_job 降级提示（输出超预算 → 持久化任务，UI-03 查看）。
+ * - 空范围引导：selected 空态（provider 不变量下防御性）与
+ *   entire_project 空项目（解析后可达）均英文阻断，不派发。
  */
 export function TransformationsPanel({
   onCitationJump,
@@ -61,8 +65,10 @@ export function TransformationsPanel({
   onCitationJump?: (citation: ResearchCitation) => void
 }) {
   const { t } = useTranslation()
+  const { toast } = useToast()
   const { projectId, isAdminReadonly } = useResearchWorkspace()
   const { confirmedModelId, canExecute, runGuarded } = useResearchGlobalModel()
+  const { mode, selectedSourceIds, selectedNoteIds, validate, getSnapshot } = useResearchScope()
   const { data, isLoading, isError } = useResearchTransformations(projectId)
   const createMutation = useCreateResearchTransformation(projectId)
   const runMutation = useRunResearchTransformation(projectId)
@@ -71,25 +77,28 @@ export function TransformationsPanel({
   const [name, setName] = useState('')
   const [prompt, setPrompt] = useState('')
 
-  // 运行对话框状态
+  // 运行对话框状态（Scope 权威在 provider；本面板只读，不再维护局部选择）
   const [runTarget, setRunTarget] = useState<ResearchTransformation | null>(null)
-  const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([])
-  const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([])
+  const runTargetRef = useRef<ResearchTransformation | null>(null)
   const [runResult, setRunResult] = useState<TransformationRunResult | null>(null)
   /** 本次运行实际采用的模型快照（展示用；模板历史模型只是 provenance） */
   const [runModelId, setRunModelId] = useState<string | null>(null)
+  /** 派发确实发生后的 Scope/语言快照（展示用；本地与 consent 确认路径
+   *  均在 operation 体内设置；取消/未派发不设置） */
+  const [runSnapshot, setRunSnapshot] = useState<ResearchScopeSnapshot | null>(null)
+  const [runLanguage, setRunLanguage] = useState<'zh' | 'en' | null>(null)
+  /** 解析中（entire_project 分页枚举），防止重复派发 */
+  const [isResolvingRun, setIsResolvingRun] = useState(false)
+  /** 可达阻断：entire_project 空项目（selected 空态用渲染期条件） */
+  const [blockedReason, setBlockedReason] = useState<'empty_project' | null>(null)
 
-  const { data: sourcesData } = useResearchSources(runTarget ? projectId : '')
-  const { data: notesData } = useResearchNotes(runTarget ? projectId : '', '')
+  const { data: sourcesData } = useResearchSources(projectId)
 
   const submitCreate = () => {
-    // §6.6：模板创建使用顶层 confirmed 全局模型；无模型时不允许创建
     if (!name.trim() || !prompt.trim() || confirmedModelId === null) return
     createMutation.mutate({
       name: name.trim(),
       prompt_template: prompt.trim(),
-      // 模板继续保存历史模型字段（provenance），但它不是以后每次运行的
-      // 固定执行模型——运行模型由 Run 请求显式携带
       model_id: confirmedModelId,
       scope: 'project_private',
     })
@@ -98,36 +107,89 @@ export function TransformationsPanel({
     setShowForm(false)
   }
 
+  const closeRunDialog = useCallback(() => {
+    setRunTarget(null)
+    runTargetRef.current = null
+  }, [])
+
   const openRun = (template: ResearchTransformation) => {
+    runTargetRef.current = template
     setRunTarget(template)
-    setSelectedSourceIds([])
-    setSelectedNoteIds([])
     setRunResult(null)
     setRunModelId(null)
+    setRunSnapshot(null)
+    setRunLanguage(null)
+    setBlockedReason(null)
   }
 
-  const toggle = (list: string[], id: string): string[] =>
-    list.includes(id) ? list.filter((x) => x !== id) : [...list, id]
-
-  const executeRun = () => {
-    if (!runTarget) return
-    // 快照来源/笔记与模板：外部模型需确认时执行被推迟，不能采用确认后的新值
-    const target = runTarget
-    const sourceSnapshot = [...selectedSourceIds]
-    const noteSnapshot = [...selectedNoteIds]
-    void runGuarded(async (modelId) => {
-      const result = await runMutation.mutateAsync({
-        transformationId: target.transformation_id,
-        sourceIds: sourceSnapshot,
-        noteIds: noteSnapshot,
-        modelId,
+  /**
+   * RWV2-12 派发：Confirm 时刻一次性解析并冻结 Scope（RFC §3 不变量 5/6）。
+   *
+   * - selected：快照 ids 透传；entire_project：分页枚举全部授权 id。
+   * - 解析在 runGuarded 之前完成：外部模型 consent 确认前后不再二次
+   *   解析（快照不漂移）；entire_project 空项目在入闸门前阻断。
+   * - runSnapshot/runLanguage 在 operation 体内设置——operation 只在
+   *   真正派发时执行（本地立即路径与 consent 确认路径均覆盖），consent
+   *   取消则不设置（零副作用证据）。
+   */
+  const executeRun = async () => {
+    const target = runTargetRef.current
+    if (!target) return
+    const snapshot = getSnapshot()
+    if (snapshot.mode === 'selected' && !validate(snapshot).valid) return
+    setIsResolvingRun(true)
+    setBlockedReason(null)
+    let resolved: { sourceIds: string[]; noteIds: string[] } | null = null
+    try {
+      resolved = await resolveScopeSelection(projectId, snapshot)
+    } catch {
+      toast({
+        title: t('common.error'),
+        description: t('research.workbench.actionFailed'),
+        variant: 'destructive',
       })
-      setRunResult(result)
-      setRunModelId(modelId)
-    })
+      return
+    } finally {
+      setIsResolvingRun(false)
+    }
+    if (resolved === null) return
+    // 对话框已被关闭（X/Esc/Edit scope/取消）：放弃派发
+    if (runTargetRef.current !== target) return
+    if (snapshot.mode === 'entire_project' && resolved.sourceIds.length + resolved.noteIds.length === 0) {
+      setBlockedReason('empty_project')
+      return
+    }
+    const { sourceIds, noteIds } = resolved
+    const lang = detectResponseLanguage(target.prompt_template)
+    try {
+      await runGuarded(async (modelId) => {
+        setRunSnapshot(snapshot)
+        setRunLanguage(lang)
+        const result = await runMutation.mutateAsync({
+          transformationId: target.transformation_id,
+          sourceIds,
+          noteIds,
+          modelId,
+        })
+        setRunResult(result)
+        setRunModelId(modelId)
+        return true
+      })
+    } catch {
+      // run 失败已由 mutation onError toast；此处静默吸收避免双弹
+    }
   }
 
   const items = data?.items ?? []
+
+  // 对话框 Scope 摘要：派发后展示派发时快照；未派发展示 live 上下文
+  const summarySnapshot = runSnapshot ?? {
+    mode,
+    sourceIds: selectedSourceIds,
+    noteIds: selectedNoteIds,
+  }
+  const scopeInvalidSelected =
+    mode === 'selected' && selectedSourceIds.length + selectedNoteIds.length === 0
 
   return (
     <div className="space-y-3">
@@ -157,7 +219,6 @@ export function TransformationsPanel({
                 rows={4}
               />
             </div>
-            {/* §6.6：模型输入已移除——模板使用顶层 confirmed 全局模型 */}
             <div className="flex gap-2">
               <Button
                 size="sm"
@@ -208,13 +269,41 @@ export function TransformationsPanel({
         ))}
       </div>
 
-      {/* 运行对话框：输入选择 + 数据外发提示（首次硬门槛）+ 结果 */}
-      <Dialog open={runTarget !== null} onOpenChange={(open) => !open && setRunTarget(null)}>
+      {/* 运行对话框：只读 Scope 摘要 + Edit scope + 数据外发提示（根级） + 结果 */}
+      <Dialog
+        open={runTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) closeRunDialog()
+        }}
+      >
         <DialogContent className="max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{t('research.transformations.run')}: {runTarget?.name}</DialogTitle>
-            <DialogDescription>{t('research.transformations.selectInputs')}</DialogDescription>
+            <DialogDescription>{t('research.transformations.runDescription')}</DialogDescription>
           </DialogHeader>
+
+          {/* RWV2-12：只读 Scope 摘要（权威在 provider；本面板不写 Scope） */}
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground">
+              {t('research.transformations.scopeSummary')}
+            </p>
+            <p className="text-sm" data-testid="run-scope-summary">
+              {summarySnapshot.mode === 'entire_project'
+                ? t('research.layout.scope.entireProject')
+                : t('research.layout.scope.selectedSummary', {
+                    sources: summarySnapshot.sourceIds.length,
+                    notes: summarySnapshot.noteIds.length,
+                  })}
+            </p>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={closeRunDialog}
+              data-testid="run-edit-scope"
+            >
+              {t('research.transformations.editScope')}
+            </Button>
+          </div>
 
           {/* §6.6：本次运行模型由顶层 confirmed 全局模型决定；外部模型的外发
               确认由根级统一弹窗处理，本面板不再维护局部确认状态 */}
@@ -223,39 +312,30 @@ export function TransformationsPanel({
             {runModelId ?? confirmedModelId ?? '—'}
           </p>
 
-          <div className="space-y-1">
-            <p className="text-xs font-medium text-muted-foreground">
-              {t('research.transformations.sourceIds')}
-            </p>
-            {(sourcesData?.items ?? []).map((sourceItem) => (
-              <label key={sourceItem.source_id} className="flex items-center gap-2 text-sm">
-                <Checkbox
-                  checked={selectedSourceIds.includes(sourceItem.source_id)}
-                  onCheckedChange={() =>
-                    setSelectedSourceIds((prev) => toggle(prev, sourceItem.source_id))
-                  }
-                />
-                {sourceItem.document_id}
-              </label>
-            ))}
-          </div>
+          {/* RFC §4.2：响应语言在派发时刻固定（请求字段由 RWV2-M3 接线） */}
+          <p className="text-xs text-muted-foreground" data-testid="run-language">
+            {t('research.transformations.language')}:{' '}
+            {runLanguage ?? detectResponseLanguage(runTarget?.prompt_template ?? '')}
+          </p>
 
-          <div className="space-y-1">
-            <p className="text-xs font-medium text-muted-foreground">
-              {t('research.transformations.noteIds')}
+          {blockedReason === 'empty_project' && (
+            <p
+              className="text-xs font-medium text-destructive"
+              role="alert"
+              data-testid="run-empty-project-blocked"
+            >
+              {t('research.transformations.emptyProjectBlocked')}
             </p>
-            {(notesData?.items ?? []).map((noteItem) => (
-              <label key={noteItem.note_id} className="flex items-center gap-2 text-sm">
-                <Checkbox
-                  checked={selectedNoteIds.includes(noteItem.note_id)}
-                  onCheckedChange={() =>
-                    setSelectedNoteIds((prev) => toggle(prev, noteItem.note_id))
-                  }
-                />
-                {noteItem.title}
-              </label>
-            ))}
-          </div>
+          )}
+          {scopeInvalidSelected && (
+            <p
+              className="text-xs font-medium text-destructive"
+              role="alert"
+              data-testid="run-empty-scope-blocked"
+            >
+              {t('research.transformations.emptyScopeBlocked')}
+            </p>
+          )}
 
           {runResult && (
             <div className="space-y-2 rounded-md border p-3">
@@ -289,17 +369,18 @@ export function TransformationsPanel({
           )}
 
           <DialogFooter>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setRunTarget(null)}
-            >
+            <Button size="sm" variant="outline" onClick={closeRunDialog}>
               {t('research.notes.cancel')}
             </Button>
             <Button
               size="sm"
-              onClick={executeRun}
-              disabled={!canExecute || runMutation.isPending}
+              onClick={() => void executeRun()}
+              disabled={
+                !canExecute ||
+                runMutation.isPending ||
+                isResolvingRun ||
+                scopeInvalidSelected
+              }
               data-testid="transformation-run-confirm"
             >
               {t('research.transformations.confirmRun')}
