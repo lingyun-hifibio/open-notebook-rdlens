@@ -353,17 +353,30 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
       }],
     })
     const { wrapper } = makeWrapper()
-    render(<TransformationsPanel />, { wrapper })
+    render(
+      <>
+        <TransformationsPanel />
+        <ScopeProbe />
+      </>,
+      { wrapper },
+    )
     await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
 
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
     await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
+    // N1 栅栏：Confirm 必须可点，否则本例静默退回悬空（canExecute 回归即红）
+    expect(
+      screen.getByRole('button', { name: 'research.transformations.confirmRun' }),
+    ).not.toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
 
-    // 未派发、无结果、摘要仍为 live（runSnapshot 未设置）
+    // 未派发、无结果（deferGuarded 下 operation 未执行）
     expect(researchApi.runTransformation).not.toHaveBeenCalled()
     expect(screen.queryByText('总结输出')).toBeNull()
-    expect(screen.getByTestId('run-scope-summary').textContent).toContain('"sources":1')
+    // N2 判别：变更 live scope 后摘要跟随 live（runSnapshot 未设置才会
+    // 显示 sources:2；若错误设置了派发快照则冻结在 sources:1）
+    fireEvent.click(screen.getByTestId('probe-toggle-src-2'))
+    expect(screen.getByTestId('run-scope-summary').textContent).toContain('"sources":2')
   })
 
   it('#243 §6.6：无 confirmed 全局模型时不可创建也不可运行（不变量 2/7）', async () => {
