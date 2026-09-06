@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { useState } from 'react'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ResearchWorkbench } from './ResearchWorkbench'
 import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
@@ -287,7 +287,10 @@ describe('ResearchWorkbench', () => {
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
     // RWV2-12：对话框只读展示当前 Scope 摘要（无局部选择复选框）
     await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
-    expect(screen.queryByRole('checkbox')).toBeNull()
+    // checkbox 断言限定在对话框内，避免文档级断言被背景面板破坏
+    expect(
+      within(screen.getByRole('dialog')).queryByRole('checkbox'),
+    ).toBeNull()
     // #243 §6.6：外发确认不再是面板局部复选框（统一由顶层守卫处理）
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
     await waitFor(() => expect(screen.getByText('总结输出')).toBeInTheDocument())

@@ -80,6 +80,11 @@ export function TransformationsPanel({
   // 运行对话框状态（Scope 权威在 provider；本面板只读，不再维护局部选择）
   const [runTarget, setRunTarget] = useState<ResearchTransformation | null>(null)
   const runTargetRef = useRef<ResearchTransformation | null>(null)
+  /** 派发生命周期令牌：openRun/closeRunDialog 各 +1；executeRun 捕获起始
+   *  值，解析返回后与 op 体内（mutateAsync 前）校验——对话框已关闭/重开
+   *  同一模板时旧执行流必须废弃（对象同一性比较会被「重开同一模板」击穿，
+   *  令牌不依赖对象身份；consent 注册后对话框关闭的路径由 op 内校验拦截） */
+  const runGenerationRef = useRef(0)
   const [runResult, setRunResult] = useState<TransformationRunResult | null>(null)
   /** 本次运行实际采用的模型快照（展示用；模板历史模型只是 provenance） */
   const [runModelId, setRunModelId] = useState<string | null>(null)
@@ -108,11 +113,13 @@ export function TransformationsPanel({
   }
 
   const closeRunDialog = useCallback(() => {
+    runGenerationRef.current += 1
     setRunTarget(null)
     runTargetRef.current = null
   }, [])
 
   const openRun = (template: ResearchTransformation) => {
+    runGenerationRef.current += 1
     runTargetRef.current = template
     setRunTarget(template)
     setRunResult(null)
@@ -135,6 +142,7 @@ export function TransformationsPanel({
   const executeRun = async () => {
     const target = runTargetRef.current
     if (!target) return
+    const generation = runGenerationRef.current
     const snapshot = getSnapshot()
     if (snapshot.mode === 'selected' && !validate(snapshot).valid) return
     setIsResolvingRun(true)
@@ -153,8 +161,9 @@ export function TransformationsPanel({
       setIsResolvingRun(false)
     }
     if (resolved === null) return
-    // 对话框已被关闭（X/Esc/Edit scope/取消）：放弃派发
-    if (runTargetRef.current !== target) return
+    // 对话框已关闭/重开同一模板：令牌失效 → 放弃派发（对象同一性比较可被
+    // 重开击穿，令牌不依赖对象身份）
+    if (runGenerationRef.current !== generation) return
     if (snapshot.mode === 'entire_project' && resolved.sourceIds.length + resolved.noteIds.length === 0) {
       setBlockedReason('empty_project')
       return
@@ -163,6 +172,9 @@ export function TransformationsPanel({
     const lang = detectResponseLanguage(target.prompt_template)
     try {
       await runGuarded(async (modelId) => {
+        // consent 注册/确认前置路径：对话框已关闭则零派发（B2 结构与
+        // 实现双保险——即使外部模型 consent 已登记，此处令牌失效即中止）
+        if (runGenerationRef.current !== generation) return
         setRunSnapshot(snapshot)
         setRunLanguage(lang)
         const result = await runMutation.mutateAsync({
@@ -379,7 +391,8 @@ export function TransformationsPanel({
                 !canExecute ||
                 runMutation.isPending ||
                 isResolvingRun ||
-                scopeInvalidSelected
+                scopeInvalidSelected ||
+                blockedReason !== null
               }
               data-testid="transformation-run-confirm"
             >

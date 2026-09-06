@@ -386,8 +386,61 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
     await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
+    await waitFor(() => {
+      const degraded = screen.getByText(/research\.transformations\.degraded/)
+      expect(degraded.textContent).toContain('output_too_large')
+    })
+  })
+
+  it('B1 派发中止：entire_project 解析在途时关闭对话框 → 不派发', async () => {
+    seedScope('entire_project')
+    const { wrapper } = makeWrapper()
+    const d = deferred<{ items: ResearchSource[]; next_cursor: string | null }>()
+    vi.mocked(researchApi.listSources).mockReturnValueOnce(d.promise)
+    vi.mocked(researchApi.listNotes).mockResolvedValue({ items: [], next_cursor: null })
+    render(<TransformationsPanel />, { wrapper })
+    await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
+    await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
+    // 解析在途（枚举 pending）：Esc 关闭对话框
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByTestId('run-scope-summary')).toBeNull())
+    // 枚举返回后：令牌失效 → 不派发
+    d.resolve({ items: [source()], next_cursor: null })
+    await waitFor(() => expect(researchApi.runTransformation).not.toHaveBeenCalled())
+  })
+
+  it('B1 击穿修复：解析在途关闭并重开同一模板 → 旧流不派发，新确认正常派发', async () => {
+    seedScope('entire_project')
+    const { wrapper } = makeWrapper()
+    const d = deferred<{ items: ResearchSource[]; next_cursor: string | null }>()
+    vi.mocked(researchApi.listSources).mockReturnValueOnce(d.promise)
+    vi.mocked(researchApi.listNotes).mockResolvedValue({ items: [], next_cursor: null })
+    vi.mocked(researchApi.runTransformation).mockResolvedValue(runResult())
+    render(<TransformationsPanel />, { wrapper })
+    await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
+    await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
+    // 解析在途：Esc 关闭 + 重开同一模板（对象同一性守卫曾被击穿的路径）
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByTestId('run-scope-summary')).toBeNull())
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
+    await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
+    // 旧枚举返回：旧执行流必须废弃（不派发）
+    d.resolve({ items: [source()], next_cursor: null })
+    await waitFor(() => expect(researchApi.runTransformation).not.toHaveBeenCalled())
+    // 新的 Confirm 正常派发（当前快照）
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
     await waitFor(() =>
-      expect(screen.getByText(/research\.transformations\.degraded/)).toBeInTheDocument(),
+      expect(researchApi.runTransformation).toHaveBeenCalledWith('proj_1', 'trans_1', {
+        source_ids: ['src_1'],
+        note_ids: [],
+        model_id: 'm-local',
+      }),
     )
   })
 })
