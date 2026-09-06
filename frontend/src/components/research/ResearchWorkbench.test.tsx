@@ -228,6 +228,20 @@ describe('ResearchWorkbench', () => {
       { wrapper },
     )
     expect(screen.getByTestId('scope-entire-project')).not.toHaveFocus()
+    // 传 0（初始挂载序号）不得抢焦点（复审 N1）
+    rerender(
+      <ResearchWorkbench
+        displayMode="workbench"
+        selectedSourceId={null}
+        highlightPageIdx={null}
+        highlightRequestId={0}
+        onSelectSource={vi.fn()}
+        onCloseSource={vi.fn()}
+        scopeEditRequest={0}
+      />,
+    )
+    expect(screen.getByTestId('scope-entire-project')).not.toHaveFocus()
+    // 明确的编辑请求（≥1）才聚焦
     rerender(
       <ResearchWorkbench
         displayMode="workbench"

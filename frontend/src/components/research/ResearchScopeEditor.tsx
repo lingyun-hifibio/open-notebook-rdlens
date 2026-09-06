@@ -29,8 +29,10 @@ export function ResearchScopeEditor({
   const radioGroupRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (scopeEditRequest === undefined) return
-    // RWV2-13：Edit scope 的键盘可达目标——聚焦首个模式单选，供后续
+    // RWV2-13：只在明确的编辑请求（序号 ≥1）时聚焦；初始挂载/重挂载
+    // 传 0 或 undefined 均不得抢焦点（a11y：不做焦点窃取，复审 N1 修复）
+    if (scopeEditRequest === undefined || scopeEditRequest <= 0) return
+    // Edit scope 的键盘可达目标——聚焦首个模式单选，供后续
     // 方向键/读屏继续操作（编辑面在最大化态恢复后仍然可聚焦）
     radioGroupRef.current?.querySelector<HTMLElement>('[role="radio"]')?.focus()
   }, [scopeEditRequest])
