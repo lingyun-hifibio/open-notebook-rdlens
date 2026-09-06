@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
@@ -19,6 +20,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
+import { useResearchScope } from '@/lib/research/scope'
 import {
   useCreateResearchNote,
   useDeleteResearchNote,
@@ -35,10 +37,22 @@ import type { ResearchNote } from '@/lib/types/research'
  * Embedding，REQ-DIS-01）；Admin：只读列表 + 提示横幅，无写入口；即使
  * 写请求意外发出，后端 403 也会由 hook 以 toast 呈现（禁用入口不替代
  * 后端授权）。搜索为 Gateway 词法搜索（?q=，项目过滤后执行，不生成向量）。
+ *
+ * RWV2-13（Issue #34）：行首复选框承担 Note 的 Scope 选择（唯一编辑面；
+ * 写入根级 provider，与右栏摘要即时同步）；**搜索过滤只改变可见行，隐藏
+ * 选择保留在 provider**（AC：Search/filter/tab 变化不得清空隐藏选择）；
+ * Edit/Delete 与选择互不干扰。
  */
 export function NotesPanel() {
   const { t } = useTranslation()
   const { projectId, isAdminReadonly } = useResearchWorkspace()
+  const {
+    mode,
+    selectedSourceIds,
+    selectedNoteIds,
+    toggleNote,
+  } = useResearchScope()
+  const selectedCount = selectedSourceIds.length + selectedNoteIds.length
   const [search, setSearch] = useState('')
   const { data, isLoading, isError } = useResearchNotes(projectId, search)
   const createMutation = useCreateResearchNote(projectId)
@@ -147,6 +161,18 @@ export function NotesPanel() {
             key={item.note_id}
             className="group flex items-start gap-2 rounded px-2 py-1.5 hover:bg-accent/60"
           >
+            <Checkbox
+              checked={selectedNoteIds.includes(item.note_id)}
+              onCheckedChange={() => toggleNote(item.note_id)}
+              disabled={
+                mode === 'selected' &&
+                selectedCount === 1 &&
+                selectedNoteIds.includes(item.note_id)
+              }
+              aria-label={t('research.notes.scopeSelect', { title: item.title })}
+              data-testid={`note-scope-${item.note_id}`}
+              className="mt-0.5 shrink-0"
+            />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">{item.title}</p>
               <p className="truncate text-xs text-muted-foreground">{item.content}</p>

@@ -657,4 +657,22 @@ describe('ResearchLayout', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'artifacts' }))
     expect(screen.getByLabelText('secondary')).toHaveAttribute('hidden')
   })
+
+  it('RWV2-13：受控 maximized——外部状态驱动隐藏/恢复，Edit scope 可经回调退出最大化', () => {
+    const onMaximizedChange = vi.fn()
+    const { rerender } = renderLayout({
+      maximized: true,
+      onMaximizedChange,
+    })
+    // 受控值 true：主面板隐藏（工作区最大化，左栏编辑面不可见）
+    expect(screen.getByLabelText('primary')).toHaveAttribute('hidden')
+
+    // Edit scope（右栏 Scope Summary 的按钮经组合层调用）→ 回调携带 false
+    fireEvent.click(screen.getByRole('button', { name: 'restore layout' }))
+    expect(onMaximizedChange).toHaveBeenCalledWith(false)
+
+    // 组合层已把受控值复位为 false → 主面板重新可见
+    rerender(layout({ maximized: false, onMaximizedChange }))
+    expect(screen.getByLabelText('primary')).not.toHaveAttribute('hidden')
+  })
 })

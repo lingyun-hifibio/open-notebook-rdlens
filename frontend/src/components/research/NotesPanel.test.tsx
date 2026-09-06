@@ -3,12 +3,15 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { NotesPanel } from './NotesPanel'
 import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
+import { ResearchScopeProvider, useResearchScope } from '@/lib/research/scope'
 import * as researchApi from '@/lib/research/api'
 import type { ResearchNote } from '@/lib/types/research'
 
 // UI-02 Red：Notes 工作台（REQ-SCOPE-04/REQ-API-01/REQ-DIS-01，设计
 // §4.4）——Owner 可 CRUD；Admin 只读（无写入口）且 403 写入失败仍以
 // toast 呈现（验收：不得把后端 403 仅靠隐藏按钮替代）。
+// RWV2-13（Issue #34）：行首复选框承担 Scope 选择；搜索/筛选只影响可见
+// 行，不丢失隐藏选择；Edit/Delete 与选择互不干扰。
 
 vi.mock('@/lib/research/api', () => ({
   listSources: vi.fn(),
@@ -28,7 +31,8 @@ vi.mock('@/lib/research/api', () => ({
 
 vi.mock('@/lib/hooks/use-translation', () => ({
   useTranslation: () => ({
-    t: (key: string) => key,
+    t: (key: string, opts?: Record<string, unknown>) =>
+      opts ? `${key}:${String(opts.title ?? '')}` : key,
   }),
 }))
 
@@ -55,15 +59,28 @@ function makeWrapper(role: 'owner' | 'admin_readonly' = 'owner') {
   const wrapper = ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>
       <ResearchWorkspaceProvider projectId="proj_1" role={role}>
-        {children}
+        <ResearchScopeProvider userId="u1" projectId="proj_1">
+          {children}
+        </ResearchScopeProvider>
       </ResearchWorkspaceProvider>
     </QueryClientProvider>
   )
   return { wrapper, queryClient }
 }
 
+function ScopeProbe() {
+  const { mode, selectedNoteIds } = useResearchScope()
+  return (
+    <div>
+      <span data-testid="probe-note-mode">{mode}</span>
+      <span data-testid="probe-note-selected">{selectedNoteIds.join(',')}</span>
+    </div>
+  )
+}
+
 describe('NotesPanel', () => {
   beforeEach(() => {
+    localStorage.clear()
     vi.clearAllMocks()
     toastMock.mockClear()
   })
@@ -144,5 +161,72 @@ describe('NotesPanel', () => {
         expect.objectContaining({ q: '蛋白' }),
       ),
     )
+  })
+
+  it('行首复选框进入/退出选中：写入 provider 并切换 selected 模式（左栏编辑）', async () => {
+    vi.mocked(researchApi.listNotes).mockResolvedValue({
+      items: [note(), note({ note_id: 'note_2', title: '第二篇' })],
+      next_cursor: null,
+    })
+    const { wrapper } = makeWrapper()
+    render(
+      <>
+        <NotesPanel />
+        <ScopeProbe />
+      </>,
+      { wrapper },
+    )
+    const checkboxes = await screen.findAllByRole('checkbox')
+    expect(checkboxes).toHaveLength(2)
+    fireEvent.click(screen.getByTestId('note-scope-note_1'))
+    expect(screen.getByTestId('probe-note-mode')).toHaveTextContent('selected')
+    expect(screen.getByTestId('probe-note-selected')).toHaveTextContent('note_1')
+    fireEvent.click(screen.getByTestId('note-scope-note_2'))
+    expect(screen.getByTestId('probe-note-selected')).toHaveTextContent('note_1,note_2')
+    fireEvent.click(screen.getByTestId('note-scope-note_2'))
+    expect(screen.getByTestId('probe-note-selected')).toHaveTextContent('note_1')
+  })
+
+  it('搜索/筛选不丢失隐藏选择：过滤后 provider 选择保持（RWV2-13 不变量）', async () => {
+    vi.mocked(researchApi.listNotes).mockResolvedValue({
+      items: [note({ note_id: 'note_1', title: '目标' }), note({ note_id: 'note_2', title: '其他' })],
+      next_cursor: null,
+    })
+    const { wrapper } = makeWrapper()
+    render(
+      <>
+        <NotesPanel />
+        <ScopeProbe />
+      </>,
+      { wrapper },
+    )
+    await waitFor(() => expect(screen.getByTestId('note-scope-note_1')).toBeInTheDocument())
+    // 选中两篇
+    fireEvent.click(screen.getByTestId('note-scope-note_1'))
+    fireEvent.click(screen.getByTestId('note-scope-note_2'))
+    expect(screen.getByTestId('probe-note-selected')).toHaveTextContent('note_1,note_2')
+    // 搜索只剩「目标」：note_2 行被过滤（隐藏选择仍在 provider）
+    vi.mocked(researchApi.listNotes).mockResolvedValue({
+      items: [note({ note_id: 'note_1', title: '目标' })],
+      next_cursor: null,
+    })
+    fireEvent.change(screen.getByPlaceholderText('research.notes.search'), {
+      target: { value: '目标' },
+    })
+    await waitFor(() => {
+      expect(screen.queryByTestId('note-scope-note_2')).toBeNull()
+    })
+    expect(screen.getByTestId('probe-note-selected')).toHaveTextContent('note_1,note_2')
+  })
+
+  it('每行复选框带可访问名称且与 CRUD 按钮区分（aria-label 含标题）', async () => {
+    vi.mocked(researchApi.listNotes).mockResolvedValue({ items: [note({ title: '阅读笔记' })], next_cursor: null })
+    const { wrapper } = makeWrapper()
+    render(<NotesPanel />, { wrapper })
+    const checkbox = await screen.findByTestId('note-scope-note_1')
+    expect(checkbox).toHaveAttribute('aria-label', 'research.notes.scopeSelect:阅读笔记')
+    expect(checkbox).toHaveAttribute('role', 'checkbox')
+    expect(screen.getByRole('button', { name: 'research.notes.edit' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'research.notes.delete' })).toBeInTheDocument()
   })
 })

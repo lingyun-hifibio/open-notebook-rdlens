@@ -2,9 +2,11 @@
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
 import { useResearchSources } from '@/lib/hooks/use-research'
+import { useResearchScope } from '@/lib/research/scope'
 import type { ResearchSourceStatus } from '@/lib/types/research'
 
 /**
@@ -15,6 +17,11 @@ import type { ResearchSourceStatus } from '@/lib/types/research'
  * - failed 附 last_error（可审计，不含正文）；同步重试仅 Admin（契约 §6，
  *   UI-04 管理员入口），Owner 面板只提示 retry 可见性，不放重试按钮；
  * - 项目隔离：source_id 服务端解析，跨项目 404（REQ-SCOPE-02）。
+ *
+ * RWV2-13（Issue #34）：行首复选框是本面板唯一的 Scope 选择入口（写入根级
+ * ResearchScopeProvider，与右栏摘要/所有动作即时同步）；「View content」
+ * 打开预览与选择互不干扰；selected 模式最后一项不可取消（provider 不变量
+ * D3，复选框禁用给出可见状态）。
  */
 
 const STATUS_CONFIG: Record<
@@ -35,6 +42,13 @@ export function SourceListPanel({
   const { t } = useTranslation()
   const { projectId } = useResearchWorkspace()
   const { data, isLoading, isError } = useResearchSources(projectId)
+  const {
+    mode,
+    selectedSourceIds,
+    selectedNoteIds,
+    toggleSource,
+  } = useResearchScope()
+  const selectedCount = selectedSourceIds.length + selectedNoteIds.length
 
   if (isLoading) {
     return <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
@@ -56,6 +70,18 @@ export function SourceListPanel({
             key={item.source_id}
             className="group flex items-center gap-2 rounded px-2 py-1.5 hover:bg-accent/60"
           >
+            <Checkbox
+              checked={selectedSourceIds.includes(item.source_id)}
+              onCheckedChange={() => toggleSource(item.source_id)}
+              disabled={
+                mode === 'selected' &&
+                selectedCount === 1 &&
+                selectedSourceIds.includes(item.source_id)
+              }
+              aria-label={t('research.sources.scopeSelect', { name: item.document_id })}
+              data-testid={`source-scope-${item.source_id}`}
+              className="shrink-0"
+            />
             <Badge variant={config.variant} className="shrink-0">
               {t(config.labelKey)}
             </Badge>

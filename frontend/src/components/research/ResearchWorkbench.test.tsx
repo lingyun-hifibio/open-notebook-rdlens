@@ -164,6 +164,93 @@ describe('ResearchWorkbench', () => {
     expect(screen.getByText('research.workbench.adminBanner')).toBeInTheDocument()
   })
 
+  it('RWV2-13：workbench 渲染唯一 Scope 编辑面；Sources 复选框即时写入 provider 并联动模式单选', async () => {
+    vi.mocked(researchApi.listSources).mockResolvedValue({
+      items: [{ source_id: 'src_1', document_id: 'doc_1', document_version: 'v3', status: 'ready', content_hash: 'h', synced_at: null, last_error: null }],
+      next_cursor: null,
+    })
+    vi.mocked(researchApi.listNotes).mockResolvedValue({ items: [], next_cursor: null })
+    vi.mocked(researchApi.listInsights).mockResolvedValue({ items: [], next_cursor: null })
+    vi.mocked(researchApi.listTransformations).mockResolvedValue({ items: [], next_cursor: null })
+    const { wrapper } = makeWrapper()
+    render(<ControlledWorkbench />, { wrapper })
+
+    // 唯一编辑面：左栏顶部 Scope 编辑块 + 模式单选（首次显式 Entire project）
+    const editor = screen.getByTestId('research-scope-editor')
+    expect(editor).toBeInTheDocument()
+    expect(screen.getByTestId('scope-entire-project')).toHaveAttribute('data-state', 'checked')
+    expect(screen.getByTestId('scope-selected')).toBeDisabled()
+
+    // 行首复选框选择来源 → provider 进入 selected，编辑面单选联动
+    fireEvent.click(await screen.findByTestId('source-scope-src_1'))
+    expect(screen.getByTestId('scope-selected')).toHaveAttribute('data-state', 'checked')
+    expect(screen.getByTestId('source-scope-src_1')).toHaveAttribute('data-state', 'checked')
+
+    // 切回 Entire project → 选择清空（provider 单一真源，观察者全部同步）
+    fireEvent.click(screen.getByTestId('scope-entire-project'))
+    expect(screen.getByTestId('scope-entire-project')).toHaveAttribute('data-state', 'checked')
+    expect(screen.getByTestId('source-scope-src_1')).not.toHaveAttribute('data-state', 'checked')
+  })
+
+  it('RWV2-13：Notes Tab 复选框同样进入 selected 模式（跨 Tab 单一编辑面）', async () => {
+    vi.mocked(researchApi.listSources).mockResolvedValue({ items: [], next_cursor: null })
+    vi.mocked(researchApi.listNotes).mockResolvedValue({
+      items: [{ note_id: 'note_1', project_id: 'proj_1', title: '第一篇', content: '正文', note_type: 'human', created_at: null, updated_at: null }],
+      next_cursor: null,
+    })
+    vi.mocked(researchApi.listInsights).mockResolvedValue({ items: [], next_cursor: null })
+    vi.mocked(researchApi.listTransformations).mockResolvedValue({ items: [], next_cursor: null })
+    const { wrapper } = makeWrapper()
+    render(<ControlledWorkbench />, { wrapper })
+
+    const notesTab = screen.getByRole('tab', { name: 'research.workbench.tabNotes' })
+    fireEvent.mouseDown(notesTab)
+    fireEvent.click(notesTab)
+    fireEvent.click(await screen.findByTestId('note-scope-note_1'))
+    expect(screen.getByTestId('scope-selected')).toHaveAttribute('data-state', 'checked')
+  })
+
+  it.each([1024, 1280, 1440, 1920])(
+    'RWV2-13：%ipx 桌面视口下左侧编辑面与行复选框无横向溢出设计（min-w-0/flex-wrap）',
+    async (width) => {
+      // 记录受测视口：jsdom 不做像素布局，宽度用于标注 AC 视口集合与
+      // 类契约锁定（min-w-0/flex-wrap 是防横向溢出的设计证据）
+      Object.defineProperty(window, 'innerWidth', { value: width, configurable: true, writable: true })
+      vi.mocked(researchApi.listSources).mockResolvedValue({
+        items: [
+          { source_id: 'src_1', document_id: 'doc_1', document_version: 'v3', status: 'ready', content_hash: 'h', synced_at: null, last_error: null },
+          { source_id: 'src_2', document_id: 'doc_2', document_version: 'v1', status: 'ready', content_hash: 'h', synced_at: null, last_error: null },
+        ],
+        next_cursor: null,
+      })
+      vi.mocked(researchApi.listNotes).mockResolvedValue({
+        items: [{ note_id: 'note_1', project_id: 'proj_1', title: '第一篇', content: '正文', note_type: 'human', created_at: null, updated_at: null }],
+        next_cursor: null,
+      })
+      vi.mocked(researchApi.listInsights).mockResolvedValue({ items: [], next_cursor: null })
+      vi.mocked(researchApi.listTransformations).mockResolvedValue({ items: [], next_cursor: null })
+      // 最小左栏宽度 280px（分隔条最窄位置）仍不隐藏标题/不横向溢出
+      const { wrapper } = makeWrapper()
+      render(<ControlledWorkbench />, { wrapper })
+
+      const editor = screen.getByTestId('research-scope-editor')
+      expect(editor).toHaveClass('min-w-0')
+      const radioGroup = editor.querySelector('[role="radiogroup"]') ?? editor.querySelector('[data-slot="radio-group"]')
+      expect(radioGroup).toHaveClass('flex-wrap')
+
+      const sourceCheckbox = await screen.findByTestId('source-scope-src_1')
+      expect(sourceCheckbox).toBeInTheDocument()
+      const rows = screen.getByTestId('source-list-rows')
+      // 每行：复选框 shrink-0 + 标题 min-w-0（长标题截断不推挤兄弟节点）
+      const rowItems = within(rows).getAllByRole('listitem')
+      expect(rowItems).toHaveLength(2)
+      for (const row of rowItems) {
+        expect(row.querySelector('[data-slot="checkbox"]')).not.toBeNull()
+      }
+      expect(within(rowItems[0]).getByText('doc_1')).toBeInTheDocument()
+    },
+  )
+
   it('Source 专注模式对同页 Citation 的每次请求都重新聚焦详情标题，且不重挂载', async () => {
     vi.mocked(researchApi.listSources).mockResolvedValue({ items: [], next_cursor: null })
     vi.mocked(researchApi.getSource).mockResolvedValue({

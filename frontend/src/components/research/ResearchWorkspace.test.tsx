@@ -1,11 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ResearchWorkspace } from './ResearchWorkspace'
 import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
-import { ResearchScopeProvider } from '@/lib/research/scope'
+import { ResearchScopeProvider, scopeStorageKey } from '@/lib/research/scope'
 import { useResearchNotes, useResearchSources } from '@/lib/hooks/use-research'
-import { QUERY_KEYS } from '@/lib/api/query-client'
 import * as api from '@/lib/research/api'
 import * as tokenStore from '@/lib/embedded/token-store'
 import type { ResearchNote, ResearchSource } from '@/lib/types/research'
@@ -16,7 +15,8 @@ import {
 
 // UI-03 Red：工作区组合（REQ-SCOPE-04）——无项目上下文 fail-closed 错误态；
 // 有上下文时加载 Source/Note 并渲染四个面板 Tab。
-// #243 §6.4：Chat/Compare 的执行必须经顶层守卫（模型快照 + 外发确认）。
+// RWV2-13（Issue #34）：右栏顶部的完整 Sources/Notes 选择器替换为紧凑
+// Scope Summary + Edit scope；模式与选择编辑迁移到左栏（唯一编辑面）。
 
 vi.mock('@/lib/research/api', async (importOriginal) => {
   const actual = await importOriginal<typeof api>()
@@ -83,6 +83,13 @@ function SharedQueryConsumer() {
   return null
 }
 
+function seedScope(mode: 'entire_project' | 'selected', sourceIds: string[] = [], noteIds: string[] = []) {
+  localStorage.setItem(
+    scopeStorageKey('u1', 'proj_1'),
+    JSON.stringify({ version: 1, mode, sourceIds, noteIds }),
+  )
+}
+
 describe('ResearchWorkspace', () => {
   beforeEach(() => {
     localStorage.clear()
@@ -104,15 +111,15 @@ describe('ResearchWorkspace', () => {
     expect(await screen.findByRole('tab', { name: 'research.tabChat' })).toBeInTheDocument()
   })
 
-  it('有 Token 时默认收起选择器，展开后显示 Source/Note 与四个 Tab', async () => {
-    tokenStore.setResearchToken(researchToken(), 9999999999)
+  it('右栏渲染紧凑 Scope Summary（无完整选择器）与四个 Tab；entire_project 显式可见', async () => {
     render(<ResearchWorkspace />, { wrapper: workspaceWrapper })
+    // 摘要常驻（不再折叠）：首次显式显示 Entire project（D2 不隐式推导）
     expect(await screen.findByTestId('research-context-scope')).toHaveTextContent('research.layout.scope.entireProject')
-    expect(screen.getByText('Note One').closest('#research-context-selection')).toHaveAttribute('hidden')
-    const contextButton = screen.getByRole('button', { name: 'research.layout.expandContext' })
-    expect(contextButton).toHaveClass('border', 'bg-background', 'shadow-sm')
-    fireEvent.click(contextButton)
-    expect(await screen.findByText('Note One')).toBeInTheDocument()
+    // 右栏无完整选择器：无模式单选、无来源/笔记复选框列表
+    expect(screen.queryByTestId('source-note-selector')).toBeNull()
+    expect(screen.queryByTestId('source-selection-list')).toBeNull()
+    expect(screen.queryByTestId('note-selection-list')).toBeNull()
+    expect(screen.queryByTestId('scope-entire-project')).toBeNull()
     const tabs = screen.getAllByRole('tab').map((tab) => tab.textContent)
     expect(tabs).toEqual([
       'research.tabSearch',
@@ -124,23 +131,30 @@ describe('ResearchWorkspace', () => {
     expect(api.listNotes).toHaveBeenCalledWith('proj_1', {})
   })
 
-  it('范围模式显式可见：首次 Entire project，首项选择进入 Selected，不能移除最后一项', async () => {
+  it('selected 模式摘要显示来源与笔记计数（来自共享 provider）', async () => {
+    seedScope('selected', ['src_1'], ['note_1'])
     render(<ResearchWorkspace />, { wrapper: workspaceWrapper })
-    fireEvent.click(await screen.findByRole('button', { name: 'research.layout.expandContext' }))
-
-    expect(screen.getByTestId('scope-entire-project')).toHaveAttribute('data-state', 'checked')
-    expect(screen.getByTestId('scope-selected')).toBeDisabled()
-
-    fireEvent.click(await screen.findByTestId('source-src_1'))
-    expect(screen.getByTestId('scope-selected')).toHaveAttribute('data-state', 'checked')
-    expect(screen.getByTestId('source-src_1')).toBeDisabled()
-
-    fireEvent.click(screen.getByTestId('scope-entire-project'))
-    expect(screen.getByTestId('scope-entire-project')).toHaveAttribute('data-state', 'checked')
-    expect(screen.getByTestId('scope-selected')).toBeDisabled()
+    expect(await screen.findByTestId('research-context-scope')).toHaveTextContent(
+      'research.layout.scope.selectedSummary',
+    )
   })
 
-  it('右侧与第二个消费者共享一次查询，且 Query cache 更新即时替换 selector 行', async () => {
+  it('Edit scope 触发组合层回调（退出最大化回到左栏编辑面，不持有第二套状态）', async () => {
+    const onEditScope = vi.fn()
+    render(<ResearchWorkspace onEditScope={onEditScope} />, { wrapper: workspaceWrapper })
+    fireEvent.click(await screen.findByTestId('scope-edit-button'))
+    expect(onEditScope).toHaveBeenCalledTimes(1)
+  })
+
+  it('右栏不渲染任何复选框（唯一编辑面在左栏 Sources/Notes）', async () => {
+    seedScope('selected', ['src_1'], ['note_1'])
+    render(<ResearchWorkspace />, { wrapper: workspaceWrapper })
+    await screen.findByTestId('research-context-scope')
+    // Chat/Search 面板在未派发时不渲染局部复选框；工作区顶层无 checkbox
+    expect(screen.queryByRole('checkbox')).toBeNull()
+  })
+
+  it('右栏与第二个消费者共享一次查询（单一查询缓存）', async () => {
     render(
       <>
         <ResearchWorkspace />
@@ -148,52 +162,9 @@ describe('ResearchWorkspace', () => {
       </>,
       { wrapper: workspaceWrapper },
     )
-    fireEvent.click(await screen.findByRole('button', { name: 'research.layout.expandContext' }))
-    expect(await screen.findByText('Note One')).toBeInTheDocument()
+    await screen.findByTestId('research-context-scope')
     expect(api.listSources).toHaveBeenCalledTimes(1)
     expect(api.listNotes).toHaveBeenCalledTimes(1)
-
-    act(() => {
-      queryClient.setQueryData(QUERY_KEYS.researchSources('proj_1'), {
-        items: [{ ...source, source_id: 'src_2', document_id: 'doc_2' }],
-        next_cursor: null,
-      })
-      queryClient.setQueryData([...QUERY_KEYS.researchNotes('proj_1'), ''], {
-        items: [{ ...note, note_id: 'note_2', title: 'Note Two' }],
-        next_cursor: null,
-      })
-    })
-
-    expect(await screen.findByText('doc_2')).toBeInTheDocument()
-    expect(await screen.findByText('Note Two')).toBeInTheDocument()
-    expect(screen.queryByText('doc_1')).toBeNull()
-    expect(screen.queryByText('Note One')).toBeNull()
-  })
-
-  it('Source/Note 长列表在各自最多 200px 的区域内纵向滚动', async () => {
-    const sources = Array.from({ length: 12 }, (_, index): ResearchSource => ({
-      ...source,
-      source_id: `src_${index + 1}`,
-      document_id: `doc_${index + 1}`,
-    }))
-    const notes = Array.from({ length: 12 }, (_, index): ResearchNote => ({
-      ...note,
-      note_id: `note_${index + 1}`,
-      title: `Note ${index + 1}`,
-    }))
-    vi.mocked(api.listSources).mockResolvedValue({ items: sources, next_cursor: null })
-    vi.mocked(api.listNotes).mockResolvedValue({ items: notes, next_cursor: null })
-    tokenStore.setResearchToken(researchToken(), 9999999999)
-
-    render(<ResearchWorkspace />, { wrapper: workspaceWrapper })
-    fireEvent.click(await screen.findByRole('button', { name: 'research.layout.expandContext' }))
-
-    const sourceList = screen.getByTestId('source-selection-list')
-    const noteList = screen.getByTestId('note-selection-list')
-    expect(sourceList).toHaveClass('max-h-[200px]', 'overflow-y-auto')
-    expect(noteList).toHaveClass('max-h-[200px]', 'overflow-y-auto')
-    expect(sourceList.contains(screen.getByTestId('source-src_12'))).toBe(true)
-    expect(noteList.contains(screen.getByTestId('note-note_12'))).toBe(true)
   })
 
   it('#243 §6.4：Chat 发送经顶层守卫——待确认/无模型时不打开流、不留 turn', async () => {
@@ -223,6 +194,7 @@ describe('ResearchWorkspace', () => {
   it('#243 §6.4：Compare 创建经顶层守卫——待确认时不发创建请求', async () => {
     tokenStore.setResearchToken(researchToken(), 9999999999)
     setGlobalModelStub({ deferGuarded: true })
+    seedScope('selected', ['src_1'])
     vi.mocked(api.createCompare).mockResolvedValue({ job_id: 'job_1', status: 'queued' })
     vi.mocked(api.getJob).mockResolvedValue({
       job_id: 'job_1',
@@ -240,9 +212,7 @@ describe('ResearchWorkspace', () => {
       updated_at: '2026-08-06T02:00:00Z',
     })
     render(<ResearchWorkspace />, { wrapper: workspaceWrapper })
-    // 选中一个 Source（Compare 以 document_ids 入参）
-    fireEvent.click(await screen.findByRole('button', { name: 'research.layout.expandContext' }))
-    fireEvent.click(await screen.findByTestId('source-src_1'))
+    // Compare 从共享 Scope 快照取 selected source（左栏编辑面已选中 src_1）
     fireEvent.mouseDown(await screen.findByRole('tab', { name: 'research.tabCompare' }), {
       button: 0,
       ctrlKey: false,
@@ -276,9 +246,8 @@ describe('ResearchWorkspace', () => {
   it('#243：无可用全局模型时 Compare 创建禁用并展示引导（评审 Important-2）', async () => {
     tokenStore.setResearchToken(researchToken(), 9999999999)
     setGlobalModelStub({ confirmedModelId: null })
+    seedScope('selected', ['src_1'])
     render(<ResearchWorkspace />, { wrapper: workspaceWrapper })
-    fireEvent.click(await screen.findByRole('button', { name: 'research.layout.expandContext' }))
-    fireEvent.click(await screen.findByTestId('source-src_1'))
     fireEvent.mouseDown(await screen.findByRole('tab', { name: 'research.tabCompare' }), {
       button: 0,
       ctrlKey: false,

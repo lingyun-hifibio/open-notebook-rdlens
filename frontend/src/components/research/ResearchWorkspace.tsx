@@ -5,12 +5,12 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { createCoverageChat } from '@/lib/research/api'
 import { useResearchChat, type CoverageSubmitRequest, type ResearchChatSelection, deriveScopeSnapshot } from '@/lib/hooks/use-research-chat'
-import { formatScopeLabel, useResearchScope, type ResearchScopeSnapshot } from '@/lib/research/scope'
+import { formatScopeLabel, type ResearchScopeSnapshot } from '@/lib/research/scope'
 import { researchModelBlockedHint, useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
 import { useResearchJobs } from '@/lib/hooks/use-research-jobs'
 import { useResearchNotes, useResearchSources } from '@/lib/hooks/use-research'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
-import { SourceNoteSelector } from './SourceNoteSelector'
+import { ResearchScopeSummary } from './ResearchScopeSummary'
 import { ResearchSearchPanel } from './ResearchSearchPanel'
 import { ResearchChatPanel } from './ResearchChatPanel'
 import { ComparePanel } from './ComparePanel'
@@ -26,30 +26,29 @@ import type { ResearchCitation } from '@/lib/types/research'
  * 查询复用 Query Cache，选择由根级 ResearchScopeProvider 共享；Chat 与 Job
  * hooks 挂在工作区层，切换 Tab 不丢失流/轮询状态。
  *
+ * RWV2-13（Issue #34）：右栏顶部的完整 Sources/Notes 选择器替换为紧凑
+ * Scope Summary（模式 + 计数 + Edit scope）——唯一完整编辑面在左栏
+ * Sources/Notes 面板（ResearchScopeEditor + 行首复选框）；`onEditScope`
+ * 由组合层接线（退出最大化回到左栏编辑面），本组件不持有第二套选择状态。
+ *
  * COV-09：all_selected 经 `sendCoverage`（202 受理 → Chat 任务卡 +
  * Jobs 页登记，刷新后同一 Job 继续轮询）；报告 Citation 点击经
  * `onCitationJump` 联动上半屏来源预览。
  */
 export function ResearchWorkspace({
   onCitationJump,
+  onEditScope,
 }: {
   /** COV-09：报告 Citation → 现有授权预览/来源链路（已解析 source_id + 页码） */
   onCitationJump?: (sourceId: string, pageIdx: number | null) => void
+  /** RWV2-13：右栏 Edit scope → 组合层退出最大化并回到左栏编辑面 */
+  onEditScope?: () => void
 }) {
   const { t } = useTranslation()
   const { projectId } = useResearchWorkspace()
-  const {
-    mode,
-    selectedSourceIds,
-    selectedNoteIds,
-    setMode,
-    toggleSource,
-    toggleNote,
-  } = useResearchScope()
   const sourcesQuery = useResearchSources(projectId)
   const notesQuery = useResearchNotes(projectId)
   const sources = useMemo(() => sourcesQuery.data?.items ?? [], [sourcesQuery.data])
-  const notes = useMemo(() => notesQuery.data?.items ?? [], [notesQuery.data])
   const loading = sourcesQuery.isLoading || notesQuery.isLoading
   const loadError = sourcesQuery.error ?? notesQuery.error
   const [tab, setTab] = useState('search')
@@ -191,21 +190,15 @@ export function ResearchWorkspace({
 
   return (
     <div className="flex h-full flex-col">
-      <SourceNoteSelector
-        sources={sources}
-        notes={notes}
-        mode={mode}
-        selectedSourceIds={selectedSourceIds}
-        selectedNoteIds={selectedNoteIds}
-        onModeChange={setMode}
-        onToggleSource={toggleSource}
-        onToggleNote={toggleNote}
+      {/* RWV2-13：紧凑 Scope Summary——模式/计数常驻 + Edit scope；唯一编辑面在左栏 */}
+      <ResearchScopeSummary
         loading={loading}
         loadError={loadError instanceof Error ? loadError.message : loadError === null ? null : String(loadError)}
         onRetry={() => {
           void sourcesQuery.refetch()
           void notesQuery.refetch()
         }}
+        onEditScope={onEditScope ?? (() => {})}
       />
 
       <div className="min-h-0 flex-1 border-t">
