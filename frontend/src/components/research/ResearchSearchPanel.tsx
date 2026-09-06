@@ -274,12 +274,19 @@ export function ResearchSearchPanel({
   useEffect(() => {
     if (mode !== 'entire_project') setDocumentLevelAdjusted(false)
   }, [mode])
+  // P3-1：模型切换时清除 scope 归因提示（能力 effect 可能主动挪档位）
+  useEffect(() => {
+    setDocumentLevelAdjusted(false)
+  }, [confirmedModelId])
 
   useEffect(() => {
     if (
       mode === 'entire_project' &&
       selectedLevel === 'document' &&
-      supportedLevels.includes('document')
+      // P2-⑥：收敛前提是「document 受支持且目标 focused 受支持」——缺一
+      // 则由模型能力 effect 全权接管清除（防 K13↔能力 effect 回弹死循环）
+      supportedLevels.includes('document') &&
+      supportedLevels.includes('focused')
     ) {
       setDocumentLevelAdjusted(true)
       setSelectedLevel('focused')
