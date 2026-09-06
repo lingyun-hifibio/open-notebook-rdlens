@@ -60,9 +60,13 @@ const researchPath = (projectId: string, ...segments: string[]): string =>
 
 // ── Sources（契约 §6；只读；status: pending/ready/stale/failed） ──
 
-export async function listSources(projectId: string): Promise<ResearchPage<ResearchSource>> {
+export async function listSources(
+  projectId: string,
+  params: { cursor?: string; limit?: number } = {},
+): Promise<ResearchPage<ResearchSource>> {
   const response = await apiClient.get<ResearchPage<ResearchSource>>(
     researchPath(projectId, 'sources'),
+    { params },
   )
   return response.data
 }
