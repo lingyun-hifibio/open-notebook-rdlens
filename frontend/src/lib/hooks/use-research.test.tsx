@@ -1,5 +1,5 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { renderHook, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   useResearchSources,
@@ -7,6 +7,7 @@ import {
   useCreateResearchNote,
   useDeleteResearchNote,
   useRunResearchTransformation,
+  RESEARCH_SOURCE_REFRESH_MS,
 } from './use-research'
 import * as researchApi from '@/lib/research/api'
 import type { ResearchNote, ResearchSource } from '@/lib/types/research'
@@ -81,12 +82,20 @@ describe('use-research hooks', () => {
     toastMock.mockClear()
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('useResearchSources 经 Gateway listSources 拉取项目 Source', async () => {
     vi.mocked(researchApi.listSources).mockResolvedValue({ items: [], next_cursor: null })
     const { wrapper } = makeWrapper()
     const { result } = renderHook(() => useResearchSources(P), { wrapper })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
-    expect(researchApi.listSources).toHaveBeenCalledWith(P, { limit: 100 })
+    expect(researchApi.listSources).toHaveBeenCalledWith(
+      P,
+      { limit: 100 },
+      expect.any(AbortSignal),
+    )
   })
 
   it('useResearchSources follows every cursor and exposes more than 100 sources in one shared cache', async () => {
@@ -102,11 +111,35 @@ describe('use-research hooks', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
     expect(result.current.data?.items).toHaveLength(101)
-    expect(researchApi.listSources).toHaveBeenNthCalledWith(1, P, { limit: 100 })
+    expect(researchApi.listSources).toHaveBeenNthCalledWith(
+      1,
+      P,
+      { limit: 100 },
+      expect.any(AbortSignal),
+    )
     expect(researchApi.listSources).toHaveBeenNthCalledWith(2, P, {
       cursor: 'cursor_100',
       limit: 100,
+    }, expect.any(AbortSignal))
+  })
+
+  it('active source consumers automatically observe status transitions', async () => {
+    vi.useFakeTimers()
+    vi.mocked(researchApi.listSources)
+      .mockResolvedValueOnce({ items: [source(1)], next_cursor: null })
+      .mockResolvedValueOnce({
+        items: [{ ...source(1), status: 'failed', last_error: 'sync failed' }],
+        next_cursor: null,
+      })
+    const { wrapper } = makeWrapper()
+    const { result } = renderHook(() => useResearchSources(P), { wrapper })
+
+    await vi.waitFor(() => expect(result.current.data?.items[0]?.status).toBe('ready'))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(RESEARCH_SOURCE_REFRESH_MS)
     })
+    await vi.waitFor(() => expect(result.current.data?.items[0]?.status).toBe('failed'))
+    expect(researchApi.listSources).toHaveBeenCalledTimes(2)
   })
 
   it('useResearchNotes follows search result cursors without losing the query', async () => {
@@ -125,12 +158,12 @@ describe('use-research hooks', () => {
     expect(researchApi.listNotes).toHaveBeenNthCalledWith(1, P, {
       q: 'kinase',
       limit: 100,
-    })
+    }, expect.any(AbortSignal))
     expect(researchApi.listNotes).toHaveBeenNthCalledWith(2, P, {
       q: 'kinase',
       cursor: 'cursor_20',
       limit: 100,
-    })
+    }, expect.any(AbortSignal))
   })
 
   it('note mutation invalidation refreshes unfiltered and searched scope consumers', async () => {
@@ -148,6 +181,37 @@ describe('use-research hooks', () => {
     await waitFor(() => expect(researchApi.listNotes).toHaveBeenCalledTimes(4))
     expect(unfiltered.result.current.isSuccess).toBe(true)
     expect(searched.result.current.isSuccess).toBe(true)
+  })
+
+  it('delete cancels an older search so its late response cannot restore a deleted note', async () => {
+    let resolveOld: ((page: { items: ResearchNote[]; next_cursor: null }) => void) | undefined
+    let oldSignal: AbortSignal | undefined
+    vi.mocked(researchApi.listNotes).mockImplementation((_projectId, _params, signal) => {
+      if (resolveOld === undefined) {
+        oldSignal = signal
+        return new Promise((resolve) => { resolveOld = resolve })
+      }
+      return Promise.resolve({ items: [], next_cursor: null })
+    })
+    vi.mocked(researchApi.deleteNote).mockResolvedValue(undefined)
+    const { wrapper, queryClient } = makeWrapper()
+    renderHook(() => useResearchNotes(P, 'deleted'), { wrapper })
+    await waitFor(() => expect(resolveOld).toBeTypeOf('function'))
+
+    const mutation = renderHook(() => useDeleteResearchNote(P), { wrapper })
+    mutation.result.current.mutate('note_1')
+    await waitFor(() => expect(mutation.result.current.isSuccess).toBe(true))
+    expect(oldSignal?.aborted).toBe(true)
+
+    await act(async () => {
+      resolveOld?.({ items: [note(1)], next_cursor: null })
+      await Promise.resolve()
+    })
+    await waitFor(() => {
+      expect(queryClient.getQueryData<{ items: ResearchNote[] }>([
+        'research', P, 'notes', 'deleted',
+      ])?.items).toEqual([])
+    })
   })
 
   it('createNote mutation 调用 Gateway createNote（保存不触发 Embedding）', async () => {

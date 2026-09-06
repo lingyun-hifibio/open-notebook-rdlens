@@ -88,7 +88,7 @@ export function SourceListPanel({
           return (
             <li
               key={item.source_id}
-              className="group flex items-center gap-2 rounded px-2 py-1.5 hover:bg-accent/60"
+              className="group flex min-w-0 items-center gap-2 overflow-hidden rounded px-2 py-1.5 hover:bg-accent/60"
             >
               <Checkbox
                 checked={selectedSourceIds.includes(item.source_id)}
@@ -108,6 +108,10 @@ export function SourceListPanel({
               </Badge>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm">{item.document_id}</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {item.document_version}
+                  {item.synced_at ? ` · ${item.synced_at}` : ''}
+                </p>
                 {item.status === 'failed' && item.last_error && (
                   <p className="truncate text-xs text-destructive">
                     {t('research.sources.lastError', { error: item.last_error })}
@@ -124,10 +128,6 @@ export function SourceListPanel({
                   </p>
                 )}
               </div>
-              <span className="hidden shrink-0 text-xs text-muted-foreground md:inline">
-                {item.document_version}
-                {item.synced_at ? ` · ${item.synced_at}` : ''}
-              </span>
               <Button
                 size="sm"
                 variant="ghost"

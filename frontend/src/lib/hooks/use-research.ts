@@ -48,17 +48,23 @@ function useMutationErrorToast() {
 
 // ── Sources（只读；REQ-SRC-04：失败只表现为 Workspace stale/failed） ──
 
+export const RESEARCH_SOURCE_REFRESH_MS = 30_000
+
 export function useResearchSources(projectId: string) {
   return useQuery({
     queryKey: QUERY_KEYS.researchSources(projectId),
-    queryFn: () => collectResearchPages(
+    queryFn: ({ signal }) => collectResearchPages(
       (cursor) => listSources(projectId, {
         limit: RESEARCH_PAGE_LIMIT,
         ...(cursor ? { cursor } : {}),
-      }),
+      }, signal),
       (source) => source.source_id,
     ),
     enabled: !!projectId,
+    // Source sync can be initiated outside this component. Active workspaces
+    // periodically observe status transitions so invalid selected IDs are
+    // reconciled without relying on a manual cache invalidation.
+    refetchInterval: RESEARCH_SOURCE_REFRESH_MS,
   })
 }
 
@@ -75,12 +81,12 @@ export function useResearchSource(projectId: string, sourceId: string | null) {
 export function useResearchNotes(projectId: string, search?: string) {
   return useQuery({
     queryKey: [...QUERY_KEYS.researchNotes(projectId), search ?? ''] as const,
-    queryFn: () => collectResearchPages(
+    queryFn: ({ signal }) => collectResearchPages(
       (cursor) => listNotes(projectId, {
         ...(search ? { q: search } : {}),
         limit: RESEARCH_PAGE_LIMIT,
         ...(cursor ? { cursor } : {}),
-      }),
+      }, signal),
       (note) => note.note_id,
     ),
     enabled: !!projectId,
@@ -94,6 +100,9 @@ export function useCreateResearchNote(projectId: string) {
   const { t } = useTranslation()
   return useMutation({
     mutationFn: (input: CreateNoteInput) => createNote(projectId, input),
+    onMutate: () => queryClient.cancelQueries({
+      queryKey: QUERY_KEYS.researchNotes(projectId),
+    }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.researchNotes(projectId) })
       toast({ title: t('common.success'), description: t('research.workbench.noteCreated') })
@@ -110,6 +119,9 @@ export function useUpdateResearchNote(projectId: string) {
   return useMutation({
     mutationFn: ({ noteId, input }: { noteId: string; input: UpdateNoteInput }) =>
       updateNote(projectId, noteId, input),
+    onMutate: () => queryClient.cancelQueries({
+      queryKey: QUERY_KEYS.researchNotes(projectId),
+    }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.researchNotes(projectId) })
       toast({ title: t('common.success'), description: t('research.workbench.noteUpdated') })
@@ -125,6 +137,9 @@ export function useDeleteResearchNote(projectId: string) {
   const { t } = useTranslation()
   return useMutation({
     mutationFn: (noteId: string) => deleteNote(projectId, noteId),
+    onMutate: () => queryClient.cancelQueries({
+      queryKey: QUERY_KEYS.researchNotes(projectId),
+    }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.researchNotes(projectId) })
       toast({ title: t('common.success'), description: t('research.workbench.noteDeleted') })

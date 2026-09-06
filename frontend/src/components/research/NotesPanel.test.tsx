@@ -159,11 +159,13 @@ describe('NotesPanel', () => {
     expect(researchApi.listNotes).not.toHaveBeenCalledWith(
       'proj_1',
       expect.objectContaining({ q: '蛋白' }),
+      expect.any(AbortSignal),
     )
     await waitFor(() =>
       expect(researchApi.listNotes).toHaveBeenLastCalledWith(
         'proj_1',
         expect.objectContaining({ q: '蛋白', limit: 100 }),
+        expect.any(AbortSignal),
       ),
     )
     expect(

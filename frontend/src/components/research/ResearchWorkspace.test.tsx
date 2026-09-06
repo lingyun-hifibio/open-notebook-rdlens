@@ -143,8 +143,16 @@ describe('ResearchWorkspace', () => {
       'research.tabCompare',
       'research.tabJobs',
     ])
-    expect(api.listSources).toHaveBeenCalledWith('proj_1', { limit: 100 })
-    expect(api.listNotes).toHaveBeenCalledWith('proj_1', { limit: 100 })
+    expect(api.listSources).toHaveBeenCalledWith(
+      'proj_1',
+      { limit: 100 },
+      expect.any(AbortSignal),
+    )
+    expect(api.listNotes).toHaveBeenCalledWith(
+      'proj_1',
+      { limit: 100 },
+      expect.any(AbortSignal),
+    )
   })
 
   it('selected 模式摘要显示来源与笔记计数（来自共享 provider）', async () => {

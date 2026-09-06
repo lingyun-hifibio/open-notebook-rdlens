@@ -236,7 +236,22 @@ describe('SourceListPanel', () => {
     expect(researchApi.listSources).toHaveBeenCalledWith('proj_1', {
       cursor: 'cursor_20',
       limit: 100,
+    }, expect.any(AbortSignal))
+  })
+
+  it('恰好 20 项全部可见且不显示 Load more', async () => {
+    vi.mocked(researchApi.listSources).mockResolvedValue({
+      items: Array.from({ length: 20 }, (_, index) =>
+        source({ source_id: `exact-${index + 1}`, document_id: `doc-${index + 1}` }),
+      ),
+      next_cursor: null,
     })
+    const { wrapper } = makeWrapper()
+    render(<SourceListPanel />, { wrapper })
+
+    const rows = await screen.findByTestId('source-list-rows')
+    await waitFor(() => expect(within(rows).getAllByRole('listitem')).toHaveLength(20))
+    expect(screen.queryByRole('button', { name: 'research.pagination.loadMore' })).toBeNull()
   })
 
   it('selected 模式最后一项不可取消（复选框禁用，仍保持 ≥1 有效选择）', async () => {

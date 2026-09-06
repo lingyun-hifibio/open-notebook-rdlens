@@ -128,7 +128,11 @@ describe('ResearchWorkbench', () => {
     fireEvent.mouseDown(notesTab)
     fireEvent.click(notesTab)
     await waitFor(() =>
-      expect(researchApi.listNotes).toHaveBeenCalledWith('proj_1', { limit: 100 }),
+      expect(researchApi.listNotes).toHaveBeenCalledWith(
+        'proj_1',
+        { limit: 100 },
+        expect.any(AbortSignal),
+      ),
     )
   })
 
@@ -323,6 +327,7 @@ describe('ResearchWorkbench', () => {
       const rowItems = within(rows).getAllByRole('listitem')
       expect(rowItems).toHaveLength(2)
       for (const row of rowItems) {
+        expect(row).toHaveClass('min-w-0', 'overflow-hidden')
         expect(row.querySelector('[data-slot="checkbox"]')).not.toBeNull()
       }
       expect(within(rowItems[0]).getByText('doc_1')).toBeInTheDocument()
