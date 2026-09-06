@@ -66,6 +66,15 @@ describe('researchApi（Gateway 白名单契约）', () => {
     expect(captured.url.startsWith('/api/')).toBe(false)
   })
 
+  it('listSources 支持 cursor/limit 分页参数（RWV2-12 枚举 entire_project 用）', async () => {
+    const captured = await capture(() =>
+      researchApi.listSources(P, { limit: 100, cursor: 'c_aGVsbG8' }),
+    )
+    expect(captured.method).toBe('GET')
+    expect(captured.url).toBe(`/v1/research/projects/${P}/sources`)
+    expect(captured.params).toEqual({ limit: 100, cursor: 'c_aGVsbG8' })
+  })
+
   it('getSource → GET .../sources/{source_id}', async () => {
     const captured = await capture(() => researchApi.getSource(P, 'src_1'))
     expect(captured.method).toBe('GET')
