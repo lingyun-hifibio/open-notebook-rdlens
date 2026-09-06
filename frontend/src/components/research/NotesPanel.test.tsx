@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { NotesPanel } from './NotesPanel'
 import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
@@ -148,19 +148,60 @@ describe('NotesPanel', () => {
     expect(screen.getByText('research.workbench.adminBanner')).toBeInTheDocument()
   })
 
-  it('搜索框输入触发带 q 的 Gateway 词法搜索', async () => {
+  it('搜索框输入经过 300ms 防抖后才触发带 q 的 Gateway 词法搜索', async () => {
     vi.mocked(researchApi.listNotes).mockResolvedValue({ items: [], next_cursor: null })
     const { wrapper } = makeWrapper()
     render(<NotesPanel />, { wrapper })
     await waitFor(() => expect(researchApi.listNotes).toHaveBeenCalled())
     const searchInput = screen.getByPlaceholderText('research.notes.search')
+    fireEvent.change(searchInput, { target: { value: '蛋' } })
     fireEvent.change(searchInput, { target: { value: '蛋白' } })
+    expect(researchApi.listNotes).not.toHaveBeenCalledWith(
+      'proj_1',
+      expect.objectContaining({ q: '蛋白' }),
+      expect.any(AbortSignal),
+    )
     await waitFor(() =>
       expect(researchApi.listNotes).toHaveBeenLastCalledWith(
         'proj_1',
-        expect.objectContaining({ q: '蛋白' }),
+        expect.objectContaining({ q: '蛋白', limit: 100 }),
+        expect.any(AbortSignal),
       ),
     )
+    expect(
+      vi.mocked(researchApi.listNotes).mock.calls.filter(([, params]) => params?.q === '蛋白'),
+    ).toHaveLength(1)
+  })
+
+  it('较旧搜索响应晚到时不会覆盖较新的搜索结果', async () => {
+    let resolveOld: ((value: { items: ResearchNote[]; next_cursor: null }) => void) | undefined
+    let resolveNew: ((value: { items: ResearchNote[]; next_cursor: null }) => void) | undefined
+    vi.mocked(researchApi.listNotes).mockImplementation(async (_projectId, params = {}) => {
+      if (params.q === 'old') {
+        return new Promise((resolve) => { resolveOld = resolve })
+      }
+      if (params.q === 'new') {
+        return new Promise((resolve) => { resolveNew = resolve })
+      }
+      return { items: [], next_cursor: null }
+    })
+    const { wrapper } = makeWrapper()
+    render(<NotesPanel />, { wrapper })
+    const searchInput = screen.getByPlaceholderText('research.notes.search')
+
+    fireEvent.change(searchInput, { target: { value: 'old' } })
+    await waitFor(() => expect(resolveOld).toBeTypeOf('function'))
+    fireEvent.change(searchInput, { target: { value: 'new' } })
+    await waitFor(() => expect(resolveNew).toBeTypeOf('function'))
+    await act(async () => {
+      resolveNew?.({ items: [note({ note_id: 'new', title: 'New result' })], next_cursor: null })
+    })
+    expect(await screen.findByText('New result')).toBeInTheDocument()
+    await act(async () => {
+      resolveOld?.({ items: [note({ note_id: 'old', title: 'Old result' })], next_cursor: null })
+    })
+    expect(screen.getByText('New result')).toBeInTheDocument()
+    expect(screen.queryByText('Old result')).toBeNull()
   })
 
   it('行首复选框进入/退出选中：写入 provider 并切换 selected 模式（左栏编辑）', async () => {
@@ -217,6 +258,76 @@ describe('NotesPanel', () => {
       expect(screen.queryByTestId('note-scope-note_2')).toBeNull()
     })
     expect(screen.getByTestId('probe-note-selected')).toHaveTextContent('note_1,note_2')
+  })
+
+  it('21 项分两批浏览，跨页选择保持且计数准确', async () => {
+    const firstPage = Array.from({ length: 20 }, (_, index) =>
+      note({ note_id: `n${index + 1}`, title: `Note ${index + 1}` }),
+    )
+    vi.mocked(researchApi.listNotes).mockImplementation(async (_projectId, params = {}) => {
+      if (params.cursor === 'cursor_20') {
+        return {
+          items: [note({ note_id: 'n21', title: 'Note 21' })],
+          next_cursor: null,
+        }
+      }
+      return { items: firstPage, next_cursor: 'cursor_20' }
+    })
+    const { wrapper } = makeWrapper()
+    render(
+      <>
+        <NotesPanel />
+        <ScopeProbe />
+      </>,
+      { wrapper },
+    )
+
+    const rows = await screen.findByTestId('note-list-rows')
+    await waitFor(() => expect(within(rows).getAllByRole('listitem')).toHaveLength(20))
+    fireEvent.click(screen.getByTestId('note-scope-n1'))
+    fireEvent.click(screen.getByRole('button', { name: 'research.pagination.loadMore' }))
+    expect(within(rows).getAllByRole('listitem')).toHaveLength(21)
+    fireEvent.click(screen.getByTestId('note-scope-n21'))
+    expect(screen.getByTestId('probe-note-selected')).toHaveTextContent('n1,n21')
+  })
+
+  it('删除已选 Note 后保持 selected 模式、清理 ID 并显示 Scope 更新反馈', async () => {
+    localStorage.setItem(
+      'rdlens.research.scope.v1/u1/proj_1',
+      JSON.stringify({ version: 1, mode: 'selected', sourceIds: [], noteIds: ['note_1'] }),
+    )
+    vi.mocked(researchApi.listNotes).mockResolvedValue({ items: [note()], next_cursor: null })
+    vi.mocked(researchApi.deleteNote).mockResolvedValue(undefined)
+    const { wrapper } = makeWrapper()
+    render(
+      <>
+        <NotesPanel />
+        <ScopeProbe />
+      </>,
+      { wrapper },
+    )
+    await screen.findByText('阅读笔记')
+    fireEvent.click(screen.getByRole('button', { name: 'research.notes.delete' }))
+    fireEvent.click(screen.getByRole('button', { name: 'common.confirm' }))
+
+    await waitFor(() => expect(screen.getByTestId('probe-note-selected')).toHaveTextContent(''))
+    expect(screen.getByTestId('probe-note-mode')).toHaveTextContent('selected')
+    expect(toastMock).toHaveBeenCalledWith(
+      expect.objectContaining({ description: 'research.layout.scope.reconciled' }),
+    )
+  })
+
+  it('加载失败显示重试且不伪装为空数据', async () => {
+    vi.mocked(researchApi.listNotes)
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValueOnce({ items: [], next_cursor: null })
+    const { wrapper } = makeWrapper()
+    render(<NotesPanel />, { wrapper })
+
+    expect(await screen.findByText('research.workbench.loadFailed')).toBeInTheDocument()
+    expect(screen.queryByText('research.notes.empty')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'research.retry' }))
+    await waitFor(() => expect(screen.getByText('research.notes.empty')).toBeInTheDocument())
   })
 
   it('每行复选框带可访问名称且与 CRUD 按钮区分（aria-label 含标题）', async () => {

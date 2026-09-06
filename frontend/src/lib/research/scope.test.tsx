@@ -64,14 +64,74 @@ describe('ResearchScopeProvider', () => {
     expect(result.current.validate()).toEqual({ valid: true })
   })
 
-  it('discards malformed persisted data rather than applying it to this session', () => {
+  it('keeps an empty selected scope explicit after invalid selections were reconciled', () => {
     const key = scopeStorageKey(userId, projectId)
     localStorage.setItem(key, JSON.stringify({ version: 1, mode: 'selected', sourceIds: [], noteIds: [] }))
 
     const { result } = renderHook(() => useResearchScope(), { wrapper })
 
-    expect(result.current.mode).toBe('entire_project')
-    expect(localStorage.getItem(key)).toBeNull()
+    expect(result.current.mode).toBe('selected')
+    expect(result.current.selectedSourceIds).toEqual([])
+    expect(result.current.selectedNoteIds).toEqual([])
+    expect(result.current.validate()).toEqual({ valid: false, reason: 'empty_selected_scope' })
+    expect(localStorage.getItem(key)).not.toBeNull()
+  })
+
+  it('reconciles missing and non-selectable IDs while preserving selected mode', () => {
+    localStorage.setItem(
+      scopeStorageKey(userId, projectId),
+      JSON.stringify({
+        version: 1,
+        mode: 'selected',
+        sourceIds: ['src_ready', 'src_stale', 'src_pending', 'src_missing'],
+        noteIds: ['note_live', 'note_missing'],
+      }),
+    )
+    const { result } = renderHook(() => useResearchScope(), { wrapper })
+
+    let removed: { sourceIds: string[]; noteIds: string[] } | undefined
+    act(() => {
+      removed = result.current.reconcileSelection(
+        ['src_ready', 'src_stale'],
+        ['note_live'],
+      )
+    })
+
+    expect(removed).toEqual({
+      sourceIds: ['src_pending', 'src_missing'],
+      noteIds: ['note_missing'],
+    })
+    expect(result.current.mode).toBe('selected')
+    expect(result.current.selectedSourceIds).toEqual(['src_ready', 'src_stale'])
+    expect(result.current.selectedNoteIds).toEqual(['note_live'])
+    expect(JSON.parse(localStorage.getItem(scopeStorageKey(userId, projectId)) ?? '{}')).toEqual({
+      version: 1,
+      mode: 'selected',
+      sourceIds: ['src_ready', 'src_stale'],
+      noteIds: ['note_live'],
+    })
+  })
+
+  it('does not silently expand to entire project when every persisted ID is invalid', () => {
+    localStorage.setItem(
+      scopeStorageKey(userId, projectId),
+      JSON.stringify({
+        version: 1,
+        mode: 'selected',
+        sourceIds: ['src_missing'],
+        noteIds: ['note_missing'],
+      }),
+    )
+    const { result } = renderHook(() => useResearchScope(), { wrapper })
+
+    act(() => {
+      result.current.reconcileSelection([], [])
+    })
+
+    expect(result.current.mode).toBe('selected')
+    expect(result.current.selectedSourceIds).toEqual([])
+    expect(result.current.selectedNoteIds).toEqual([])
+    expect(result.current.validate()).toEqual({ valid: false, reason: 'empty_selected_scope' })
   })
 
   it('returns a frozen dispatch snapshot that cannot drift with later scope edits', () => {
@@ -150,7 +210,7 @@ describe('formatScopeLabel（RWV2-11 K11）', () => {
     )
   })
 
-  it('selected 空（Provider 不变量下不可达）→ 防御性回退 selected 标签', () => {
+  it('selected 空（失效 ID 清理后）→ 显式回退 selected 标签', () => {
     const label = formatScopeLabel({ mode: 'selected', sourceIds: [], noteIds: [] }, t)
     expect(label).toBe('research.layout.scope.selected')
   })

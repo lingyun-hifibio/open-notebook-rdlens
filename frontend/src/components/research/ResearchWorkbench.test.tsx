@@ -127,7 +127,13 @@ describe('ResearchWorkbench', () => {
     const notesTab = screen.getByRole('tab', { name: 'research.workbench.tabNotes' })
     fireEvent.mouseDown(notesTab)
     fireEvent.click(notesTab)
-    await waitFor(() => expect(researchApi.listNotes).toHaveBeenCalledWith('proj_1', {}))
+    await waitFor(() =>
+      expect(researchApi.listNotes).toHaveBeenCalledWith(
+        'proj_1',
+        { limit: 100 },
+        expect.any(AbortSignal),
+      ),
+    )
   })
 
   it('Tabs 容器链带滚动约束（防面板内容超出半屏后叠画到下半屏）', async () => {
@@ -321,6 +327,7 @@ describe('ResearchWorkbench', () => {
       const rowItems = within(rows).getAllByRole('listitem')
       expect(rowItems).toHaveLength(2)
       for (const row of rowItems) {
+        expect(row).toHaveClass('min-w-0', 'overflow-hidden')
         expect(row.querySelector('[data-slot="checkbox"]')).not.toBeNull()
       }
       expect(within(rowItems[0]).getByText('doc_1')).toBeInTheDocument()

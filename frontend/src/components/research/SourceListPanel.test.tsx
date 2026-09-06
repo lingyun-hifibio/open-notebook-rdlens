@@ -91,6 +91,26 @@ describe('SourceListPanel', () => {
     expect(screen.getByText(/research.sources.lastError:boom/)).toBeInTheDocument()
   })
 
+  it('ready/stale 可选择，pending/failed 不可选择，stale 显示英文风险提示', async () => {
+    vi.mocked(researchApi.listSources).mockResolvedValue({
+      items: [
+        source({ source_id: 'pending', status: 'pending' }),
+        source({ source_id: 'ready', status: 'ready' }),
+        source({ source_id: 'stale', status: 'stale' }),
+        source({ source_id: 'failed', status: 'failed' }),
+      ],
+      next_cursor: null,
+    })
+    const { wrapper } = makeWrapper()
+    render(<SourceListPanel />, { wrapper })
+
+    expect(await screen.findByTestId('source-scope-pending')).toBeDisabled()
+    expect(screen.getByTestId('source-scope-failed')).toBeDisabled()
+    expect(screen.getByTestId('source-scope-ready')).not.toBeDisabled()
+    expect(screen.getByTestId('source-scope-stale')).not.toBeDisabled()
+    expect(screen.getByText('research.sources.staleSelectionWarning')).toBeInTheDocument()
+  })
+
   it('failed 状态展示管理员可重试提示（retry-visible；Owner 无重试按钮）', async () => {
     vi.mocked(researchApi.listSources).mockResolvedValue({
       items: [source({ status: 'failed', last_error: 'x' })],
@@ -184,6 +204,56 @@ describe('SourceListPanel', () => {
     expect(screen.getByTestId('probe-selected')).toHaveTextContent('src_1')
   })
 
+  it('21 项分两批浏览，跨页选择保持且计数准确', async () => {
+    const firstPage = Array.from({ length: 20 }, (_, index) =>
+      source({ source_id: `s${index + 1}`, document_id: `doc_${index + 1}` }),
+    )
+    vi.mocked(researchApi.listSources).mockImplementation(async (_projectId, params = {}) => {
+      if (params.cursor === 'cursor_20') {
+        return {
+          items: [source({ source_id: 's21', document_id: 'doc_21' })],
+          next_cursor: null,
+        }
+      }
+      return { items: firstPage, next_cursor: 'cursor_20' }
+    })
+    const { wrapper } = makeWrapper()
+    render(
+      <>
+        <SourceListPanel />
+        <ScopeProbe />
+      </>,
+      { wrapper },
+    )
+
+    const rows = await screen.findByTestId('source-list-rows')
+    expect(within(rows).getAllByRole('listitem')).toHaveLength(20)
+    fireEvent.click(screen.getByTestId('source-scope-s1'))
+    fireEvent.click(screen.getByRole('button', { name: 'research.pagination.loadMore' }))
+    expect(within(rows).getAllByRole('listitem')).toHaveLength(21)
+    fireEvent.click(screen.getByTestId('source-scope-s21'))
+    expect(screen.getByTestId('probe-selected')).toHaveTextContent('s1,s21')
+    expect(researchApi.listSources).toHaveBeenCalledWith('proj_1', {
+      cursor: 'cursor_20',
+      limit: 100,
+    }, expect.any(AbortSignal))
+  })
+
+  it('恰好 20 项全部可见且不显示 Load more', async () => {
+    vi.mocked(researchApi.listSources).mockResolvedValue({
+      items: Array.from({ length: 20 }, (_, index) =>
+        source({ source_id: `exact-${index + 1}`, document_id: `doc-${index + 1}` }),
+      ),
+      next_cursor: null,
+    })
+    const { wrapper } = makeWrapper()
+    render(<SourceListPanel />, { wrapper })
+
+    const rows = await screen.findByTestId('source-list-rows')
+    await waitFor(() => expect(within(rows).getAllByRole('listitem')).toHaveLength(20))
+    expect(screen.queryByRole('button', { name: 'research.pagination.loadMore' })).toBeNull()
+  })
+
   it('selected 模式最后一项不可取消（复选框禁用，仍保持 ≥1 有效选择）', async () => {
     vi.mocked(researchApi.listSources).mockResolvedValue({
       items: [source()],
@@ -219,12 +289,15 @@ describe('SourceListPanel', () => {
     expect(checkbox).toHaveAttribute('role', 'checkbox')
   })
 
-  it('加载失败展示错误状态（不静默）', async () => {
-    vi.mocked(researchApi.listSources).mockRejectedValue(new Error('network'))
+  it('加载失败展示错误状态与重试，绝不伪装为空数据', async () => {
+    vi.mocked(researchApi.listSources)
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValueOnce({ items: [], next_cursor: null })
     const { wrapper } = makeWrapper()
     render(<SourceListPanel />, { wrapper })
-    await waitFor(() => {
-      expect(screen.getByText('research.workbench.loadFailed')).toBeInTheDocument()
-    })
+    expect(await screen.findByText('research.workbench.loadFailed')).toBeInTheDocument()
+    expect(screen.queryByText('research.sources.empty')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'research.retry' }))
+    await waitFor(() => expect(screen.getByText('research.sources.empty')).toBeInTheDocument())
   })
 })

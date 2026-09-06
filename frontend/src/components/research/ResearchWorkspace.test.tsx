@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
+import { act, render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ResearchWorkspace } from './ResearchWorkspace'
 import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
-import { ResearchScopeProvider, scopeStorageKey } from '@/lib/research/scope'
+import { ResearchScopeProvider, scopeStorageKey, useResearchScope } from '@/lib/research/scope'
 import { useResearchNotes, useResearchSources } from '@/lib/hooks/use-research'
 import * as api from '@/lib/research/api'
 import * as tokenStore from '@/lib/embedded/token-store'
+import { QUERY_KEYS } from '@/lib/api/query-client'
 import type { ResearchNote, ResearchSource } from '@/lib/types/research'
 import {
   resetGlobalModelStub,
@@ -33,6 +34,11 @@ vi.mock('@/lib/research/api', async (importOriginal) => {
 
 // 被测对象不是全局模型本身：用测试替身提供 confirmed 模型（本地、可执行）
 vi.mock('@/lib/hooks/use-research-global-model')
+
+const toastMock = vi.fn()
+vi.mock('@/lib/hooks/use-toast', () => ({
+  useToast: () => ({ toast: toastMock }),
+}))
 
 function b64url(input: string): string {
   return Buffer.from(input).toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_')
@@ -83,6 +89,15 @@ function SharedQueryConsumer() {
   return null
 }
 
+function ScopeProbe() {
+  const { mode, selectedSourceIds, selectedNoteIds, validate } = useResearchScope()
+  return (
+    <output data-testid="scope-reconcile-probe">
+      {`${mode}:${selectedSourceIds.join(',')}:${selectedNoteIds.join(',')}:${validate().valid}`}
+    </output>
+  )
+}
+
 function seedScope(mode: 'entire_project' | 'selected', sourceIds: string[] = [], noteIds: string[] = []) {
   localStorage.setItem(
     scopeStorageKey('u1', 'proj_1'),
@@ -95,6 +110,7 @@ describe('ResearchWorkspace', () => {
     localStorage.clear()
     queryClient.clear()
     vi.clearAllMocks()
+    toastMock.mockClear()
     resetGlobalModelStub()
     vi.mocked(api.listSources).mockResolvedValue({ items: [source], next_cursor: null })
     vi.mocked(api.listNotes).mockResolvedValue({ items: [note], next_cursor: null })
@@ -127,8 +143,16 @@ describe('ResearchWorkspace', () => {
       'research.tabCompare',
       'research.tabJobs',
     ])
-    expect(api.listSources).toHaveBeenCalledWith('proj_1')
-    expect(api.listNotes).toHaveBeenCalledWith('proj_1', {})
+    expect(api.listSources).toHaveBeenCalledWith(
+      'proj_1',
+      { limit: 100 },
+      expect.any(AbortSignal),
+    )
+    expect(api.listNotes).toHaveBeenCalledWith(
+      'proj_1',
+      { limit: 100 },
+      expect.any(AbortSignal),
+    )
   })
 
   it('selected 模式摘要显示来源与笔记计数（来自共享 provider）', async () => {
@@ -165,6 +189,122 @@ describe('ResearchWorkspace', () => {
     await screen.findByTestId('research-context-scope')
     expect(api.listSources).toHaveBeenCalledTimes(1)
     expect(api.listNotes).toHaveBeenCalledTimes(1)
+  })
+
+  it('恢复时移除 missing/pending/failed IDs，保留 ready/stale 与 selected 模式并反馈', async () => {
+    seedScope(
+      'selected',
+      ['src_1', 'src_stale', 'src_pending', 'src_failed', 'src_missing'],
+      ['note_1', 'note_missing'],
+    )
+    vi.mocked(api.listSources).mockResolvedValue({
+      items: [
+        source,
+        { ...source, source_id: 'src_stale', status: 'stale' },
+        { ...source, source_id: 'src_pending', status: 'pending' },
+        { ...source, source_id: 'src_failed', status: 'failed' },
+      ],
+      next_cursor: null,
+    })
+    render(
+      <>
+        <ResearchWorkspace />
+        <ScopeProbe />
+      </>,
+      { wrapper: workspaceWrapper },
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('scope-reconcile-probe')).toHaveTextContent(
+        'selected:src_1,src_stale:note_1:true',
+      )
+    })
+    expect(toastMock).toHaveBeenCalledWith(
+      expect.objectContaining({ description: 'research.layout.scope.reconciled' }),
+    )
+  })
+
+  it('全部持久 ID 失效时保留显式 selected 空范围并阻止执行，不扩大为 entire project', async () => {
+    seedScope('selected', ['src_missing'], ['note_missing'])
+    render(
+      <>
+        <ResearchWorkspace />
+        <ScopeProbe />
+      </>,
+      { wrapper: workspaceWrapper },
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('scope-reconcile-probe')).toHaveTextContent('selected:::false')
+    })
+    expect(screen.getByTestId('research-context-scope')).toHaveTextContent(
+      'research.layout.scope.selectedSummary',
+    )
+  })
+
+  it('已选 Source 从 ready 转为 failed 时清理 ID、保留 selected 并反馈', async () => {
+    seedScope('selected', ['src_1'])
+    render(
+      <>
+        <ResearchWorkspace />
+        <ScopeProbe />
+      </>,
+      { wrapper: workspaceWrapper },
+    )
+    await waitFor(() => {
+      expect(screen.getByTestId('scope-reconcile-probe')).toHaveTextContent(
+        'selected:src_1::true',
+      )
+    })
+
+    vi.mocked(api.listSources).mockResolvedValue({
+      items: [{ ...source, status: 'failed', last_error: 'sync failed' }],
+      next_cursor: null,
+    })
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.researchSources('proj_1') })
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('scope-reconcile-probe')).toHaveTextContent('selected:::false')
+    })
+    expect(toastMock).toHaveBeenCalledWith(
+      expect.objectContaining({ description: 'research.layout.scope.reconciled' }),
+    )
+  })
+
+  it('Notes 加载失败时仍独立清理已变为 failed 的 Source，并保留 Note IDs', async () => {
+    seedScope('selected', ['src_1'], ['note_1'])
+    vi.mocked(api.listNotes).mockRejectedValue(new Error('notes unavailable'))
+    render(
+      <>
+        <ResearchWorkspace />
+        <ScopeProbe />
+      </>,
+      { wrapper: workspaceWrapper },
+    )
+    await waitFor(() => {
+      expect(screen.getByTestId('scope-reconcile-probe')).toHaveTextContent(
+        'selected:src_1:note_1:true',
+      )
+    })
+
+    vi.mocked(api.listSources).mockResolvedValue({
+      items: [{ ...source, status: 'failed', last_error: 'sync failed' }],
+      next_cursor: null,
+    })
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.researchSources('proj_1') })
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('scope-reconcile-probe')).toHaveTextContent(
+        'selected::note_1:true',
+      )
+    })
+    expect(toastMock).toHaveBeenCalledWith(
+      expect.objectContaining({ description: 'research.layout.scope.reconciled' }),
+    )
   })
 
   it('#243 §6.4：Chat 发送经顶层守卫——待确认/无模型时不打开流、不留 turn', async () => {

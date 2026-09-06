@@ -63,10 +63,11 @@ const researchPath = (projectId: string, ...segments: string[]): string =>
 export async function listSources(
   projectId: string,
   params: { cursor?: string; limit?: number } = {},
+  signal?: AbortSignal,
 ): Promise<ResearchPage<ResearchSource>> {
   const response = await apiClient.get<ResearchPage<ResearchSource>>(
     researchPath(projectId, 'sources'),
-    { params },
+    { params, ...(signal ? { signal } : {}) },
   )
   return response.data
 }
@@ -96,10 +97,11 @@ export interface UpdateNoteInput {
 export async function listNotes(
   projectId: string,
   params: { q?: string; cursor?: string; limit?: number } = {},
+  signal?: AbortSignal,
 ): Promise<ResearchPage<ResearchNote>> {
   const response = await apiClient.get<ResearchPage<ResearchNote>>(
     researchPath(projectId, 'notes'),
-    { params },
+    { params, ...(signal ? { signal } : {}) },
   )
   return response.data
 }

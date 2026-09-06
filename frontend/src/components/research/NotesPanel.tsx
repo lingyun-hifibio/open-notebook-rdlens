@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useDebounce } from 'use-debounce'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -19,6 +20,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { useToast } from '@/lib/hooks/use-toast'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
 import { useResearchScope } from '@/lib/research/scope'
 import {
@@ -29,6 +31,8 @@ import {
 } from '@/lib/hooks/use-research'
 import { AdminReadOnlyBanner } from './AdminReadOnlyBanner'
 import type { ResearchNote } from '@/lib/types/research'
+
+const DISPLAY_PAGE_SIZE = 20
 
 /**
  * Notes 工作台（UI-02，REQ-SCOPE-04/REQ-API-01/REQ-DIS-01，设计 §4.4）。
@@ -45,16 +49,19 @@ import type { ResearchNote } from '@/lib/types/research'
  */
 export function NotesPanel() {
   const { t } = useTranslation()
+  const { toast } = useToast()
   const { projectId, isAdminReadonly } = useResearchWorkspace()
   const {
     mode,
     selectedSourceIds,
     selectedNoteIds,
     toggleNote,
+    removeNote,
   } = useResearchScope()
   const selectedCount = selectedSourceIds.length + selectedNoteIds.length
   const [search, setSearch] = useState('')
-  const { data, isLoading, isError } = useResearchNotes(projectId, search)
+  const [debouncedSearch] = useDebounce(search, 300)
+  const { data, isLoading, isError, refetch } = useResearchNotes(projectId, debouncedSearch)
   const createMutation = useCreateResearchNote(projectId)
   const updateMutation = useUpdateResearchNote(projectId)
   const deleteMutation = useDeleteResearchNote(projectId)
@@ -63,6 +70,11 @@ export function NotesPanel() {
   const [editingNote, setEditingNote] = useState<ResearchNote | null>(null)
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
+  const [visibleCount, setVisibleCount] = useState(DISPLAY_PAGE_SIZE)
+
+  useEffect(() => {
+    setVisibleCount(DISPLAY_PAGE_SIZE)
+  }, [debouncedSearch, projectId])
 
   const startEdit = (note: ResearchNote) => {
     setEditingNote(note)
@@ -92,13 +104,27 @@ export function NotesPanel() {
   }
 
   const items = data?.items ?? []
+  const visibleItems = items.slice(0, visibleCount)
+
+  const deleteSelectedNote = (noteId: string) => {
+    deleteMutation.mutate(noteId, {
+      onSuccess: () => {
+        if (removeNote(noteId)) {
+          toast({
+            title: t('research.layout.scope.modeLabel'),
+            description: t('research.layout.scope.reconciled'),
+          })
+        }
+      },
+    })
+  }
 
   return (
     <div className="space-y-3">
       {isAdminReadonly && <AdminReadOnlyBanner />}
 
       {!isAdminReadonly && (
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
           <Input
             placeholder={t('research.notes.search')}
             value={search}
@@ -149,14 +175,21 @@ export function NotesPanel() {
       )}
 
       {isLoading && <p className="text-sm text-muted-foreground">{t('common.loading')}</p>}
-      {isError && <p className="text-sm text-destructive">{t('research.workbench.loadFailed')}</p>}
+      {isError && (
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-sm text-destructive">{t('research.workbench.loadFailed')}</p>
+          <Button size="sm" variant="outline" onClick={() => void refetch()}>
+            {t('research.retry')}
+          </Button>
+        </div>
+      )}
 
       {!isLoading && !isError && items.length === 0 && (
         <p className="text-sm text-muted-foreground">{t('research.notes.empty')}</p>
       )}
 
       <ul className="divide-y divide-border" data-testid="note-list-rows">
-        {items.map((item) => (
+        {visibleItems.map((item) => (
           <li
             key={item.note_id}
             className="group flex items-start gap-2 rounded px-2 py-1.5 hover:bg-accent/60"
@@ -196,7 +229,7 @@ export function NotesPanel() {
                     <AlertDialogFooter>
                       <AlertDialogCancel>{t('research.notes.cancel')}</AlertDialogCancel>
                       <AlertDialogAction
-                        onClick={() => deleteMutation.mutate(item.note_id)}
+                        onClick={() => deleteSelectedNote(item.note_id)}
                       >
                         {t('common.confirm')}
                       </AlertDialogAction>
@@ -208,6 +241,16 @@ export function NotesPanel() {
           </li>
         ))}
       </ul>
+      {visibleItems.length < items.length && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="w-full"
+          onClick={() => setVisibleCount((count) => count + DISPLAY_PAGE_SIZE)}
+        >
+          {t('research.pagination.loadMore')}
+        </Button>
+      )}
     </div>
   )
 }
