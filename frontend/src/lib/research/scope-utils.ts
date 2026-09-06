@@ -61,7 +61,7 @@ async function collectIds<T>(
         ids.push(id)
       }
     }
-    if (page.next_cursor === null) break
+    if (page.next_cursor == null) break
     if (page.next_cursor === cursor) {
       throw new Error('pagination cursor did not advance')
     }

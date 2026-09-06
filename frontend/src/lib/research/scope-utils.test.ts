@@ -107,10 +107,12 @@ describe('resolveScopeSelection', () => {
     })
     expect(result.sourceIds).toEqual(['s1', 's2', 's3', 's4'])
     expect(result.noteIds).toEqual(['n1', 'n2', 'n3'])
-    expect(sourcesFetcher).toHaveBeenNthCalledWith(1, 'proj_1', { limit: 100 })
+    // 首页断言用 toStrictEqual：toHaveBeenNthCalledWith 为 toEqual 语义，
+    // 无法区分 { cursor: undefined } 与缺键（vitest 实验证实）
+    expect(sourcesFetcher.mock.calls[0]?.[1]).toStrictEqual({ limit: 100 })
     expect(sourcesFetcher).toHaveBeenNthCalledWith(2, 'proj_1', { limit: 100, cursor: 'c1' })
     expect(sourcesFetcher).toHaveBeenNthCalledWith(3, 'proj_1', { limit: 100, cursor: 'c2' })
-    expect(notesFetcher).toHaveBeenNthCalledWith(1, 'proj_1', { limit: 100 })
+    expect(notesFetcher.mock.calls[0]?.[1]).toStrictEqual({ limit: 100 })
     expect(notesFetcher).toHaveBeenNthCalledWith(2, 'proj_1', { limit: 100, cursor: 'c3' })
   })
 
