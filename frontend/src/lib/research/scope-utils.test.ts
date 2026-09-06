@@ -107,11 +107,57 @@ describe('resolveScopeSelection', () => {
     })
     expect(result.sourceIds).toEqual(['s1', 's2', 's3', 's4'])
     expect(result.noteIds).toEqual(['n1', 'n2', 'n3'])
-    expect(sourcesFetcher).toHaveBeenNthCalledWith(1, 'proj_1', { limit: 100, cursor: undefined })
+    expect(sourcesFetcher).toHaveBeenNthCalledWith(1, 'proj_1', { limit: 100 })
     expect(sourcesFetcher).toHaveBeenNthCalledWith(2, 'proj_1', { limit: 100, cursor: 'c1' })
     expect(sourcesFetcher).toHaveBeenNthCalledWith(3, 'proj_1', { limit: 100, cursor: 'c2' })
-    expect(notesFetcher).toHaveBeenNthCalledWith(1, 'proj_1', { limit: 100, cursor: undefined })
+    expect(notesFetcher).toHaveBeenNthCalledWith(1, 'proj_1', { limit: 100 })
     expect(notesFetcher).toHaveBeenNthCalledWith(2, 'proj_1', { limit: 100, cursor: 'c3' })
+  })
+
+  it('entire_project：单页含 items 且首页 next_cursor=null 直接终止', async () => {
+    const result = await resolveScopeSelection('proj_1', snapshot('entire_project'), {
+      listSources: vi.fn().mockResolvedValue(page([source('s1')], null)),
+      listNotes: vi.fn().mockResolvedValue(page([note('n1')], null)),
+    })
+    expect(result).toEqual({ sourceIds: ['s1'], noteIds: ['n1'] })
+  })
+
+  it('entire_project：notes 侧跨页重复 id 只保留一份', async () => {
+    const notesFetcher = vi
+      .fn()
+      .mockResolvedValueOnce(page([note('n1')], 'c3'))
+      .mockResolvedValueOnce(page([note('n1'), note('n2')], null))
+    const result = await resolveScopeSelection('proj_1', snapshot('entire_project'), {
+      listSources: vi.fn().mockResolvedValue(page([], null)),
+      listNotes: notesFetcher,
+    })
+    expect(result.noteIds).toEqual(['n1', 'n2'])
+  })
+
+  it('entire_project：notes 枚举中途失败同样向上冒泡', async () => {
+    const notesFetcher = vi
+      .fn()
+      .mockResolvedValueOnce(page([note('n1')], 'c3'))
+      .mockRejectedValueOnce(new Error('notes gateway down'))
+    await expect(
+      resolveScopeSelection('proj_1', snapshot('entire_project'), {
+        listSources: vi.fn().mockResolvedValue(page([source('s1')], null)),
+        listNotes: notesFetcher,
+      }),
+    ).rejects.toThrow('notes gateway down')
+  })
+
+  it('entire_project：游标不前进视为协议错误并抛错（防无界翻页）', async () => {
+    const sourcesFetcher = vi
+      .fn()
+      .mockResolvedValueOnce(page([source('s1')], 'c1'))
+      .mockResolvedValueOnce(page([source('s2')], 'c1'))
+    await expect(
+      resolveScopeSelection('proj_1', snapshot('entire_project'), {
+        listSources: sourcesFetcher,
+        listNotes: vi.fn().mockResolvedValue(page([], null)),
+      }),
+    ).rejects.toThrow('pagination cursor did not advance')
   })
 
   it('entire_project：跨页重复 id 只保留一份（去重防抖）', async () => {

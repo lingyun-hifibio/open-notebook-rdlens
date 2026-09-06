@@ -13,7 +13,7 @@
  */
 
 import type { ResearchScopeSnapshot } from '@/lib/research/scope'
-import type { ResearchNote, ResearchSource } from '@/lib/types/research'
+import type { ResearchNote, ResearchPage, ResearchSource } from '@/lib/types/research'
 import { listNotes, listSources } from '@/lib/research/api'
 
 export interface ScopeSelectionFetchers {
@@ -38,13 +38,15 @@ export function detectResponseLanguage(text: string): 'zh' | 'en' {
   return cjk > asciiAlpha ? 'zh' : 'en'
 }
 
-interface CursorPage<T> {
-  items: T[]
-  next_cursor: string | null
-}
-
+/**
+ * 游标分页收集全部 id（契约 §3.4 keyset 分页）。
+ *
+ * 终止条件：`next_cursor === null`；并显式断言游标严格前进——keyset
+ * 单调性是后端实现保证，前端不依赖「同 cursor 重复出现」的未定义语义，
+ * 一旦游标不前进按协议错误抛错，避免无界翻页。
+ */
 async function collectIds<T>(
-  fetchPage: (cursor: string | null) => Promise<CursorPage<T>>,
+  fetchPage: (cursor: string | null) => Promise<ResearchPage<T>>,
   pickId: (item: T) => string,
 ): Promise<string[]> {
   const ids: string[] = []
@@ -59,8 +61,11 @@ async function collectIds<T>(
         ids.push(id)
       }
     }
+    if (page.next_cursor === null) break
+    if (page.next_cursor === cursor) {
+      throw new Error('pagination cursor did not advance')
+    }
     cursor = page.next_cursor
-    if (cursor === null) break
   }
   return ids
 }
@@ -87,7 +92,7 @@ export async function resolveScopeSelection(
     (cursor) =>
       fetchers.listSources(projectId, {
         limit: ENUMERATION_PAGE_SIZE,
-        cursor: cursor ?? undefined,
+        ...(cursor !== null ? { cursor } : {}),
       }),
     (item) => item.source_id,
   )
@@ -95,7 +100,7 @@ export async function resolveScopeSelection(
     (cursor) =>
       fetchers.listNotes(projectId, {
         limit: ENUMERATION_PAGE_SIZE,
-        cursor: cursor ?? undefined,
+        ...(cursor !== null ? { cursor } : {}),
       }),
     (item) => item.note_id,
   )
