@@ -1223,6 +1223,11 @@ export const deDE = {
       degraded: "Überschreitet das Einzelaufruf-Budget; wird als persistenter Auftrag ausgeführt (degradiert: {{reason}})",
       citations: "Zitate",
       confirmRun: "Ausführen",
+      bilingual: "Bilingual",
+      createdWith: "Created with {{model}}",
+      runLanguage: "Response language",
+      variantEn: "English",
+      variantZh: "Chinese",
     },
   },
 } satisfies TranslationShape;

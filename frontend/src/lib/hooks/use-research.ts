@@ -214,17 +214,22 @@ export function useRunResearchTransformation(projectId: string) {
       sourceIds,
       noteIds,
       modelId,
+      responseLanguage,
     }: {
       transformationId: string
       sourceIds: string[]
       noteIds: string[]
       /** Issue #243 §6.6/§6.7：运行开始时的 confirmed 全局模型（required） */
       modelId: string
+      /** RWV2-35：admin 双语模板的变体语言选择（选择器选中才发；
+       *  单 prompt 模板不发，服务端按 content 检测） */
+      responseLanguage?: 'zh' | 'en'
     }) =>
       runTransformation(projectId, transformationId, {
         source_ids: sourceIds,
         note_ids: noteIds,
         model_id: modelId,
+        ...(responseLanguage ? { response_language: responseLanguage } : {}),
       }),
     onError,
   })

@@ -1221,6 +1221,11 @@ export const zhTW = {
       degraded: "超出單次呼叫預算，將以持久化任務執行（降級：{{reason}}）",
       citations: "引用",
       confirmRun: "確認執行",
+      bilingual: "Bilingual",
+      createdWith: "Created with {{model}}",
+      runLanguage: "Response language",
+      variantEn: "English",
+      variantZh: "Chinese",
     },
   },
 } satisfies TranslationShape;

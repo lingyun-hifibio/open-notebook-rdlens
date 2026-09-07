@@ -1221,6 +1221,11 @@ export const caES = {
       degraded: "Supera el pressupost d’una sola crida; s’executarà com a tasca persistent (degradat: {{reason}})",
       citations: "Citacions",
       confirmRun: "Executa",
+      bilingual: "Bilingual",
+      createdWith: "Created with {{model}}",
+      runLanguage: "Response language",
+      variantEn: "English",
+      variantZh: "Chinese",
     },
   },
 } satisfies TranslationShape;

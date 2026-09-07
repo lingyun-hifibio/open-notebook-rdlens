@@ -1221,6 +1221,11 @@ export const zhCN = {
       degraded: "超出单次调用预算，将以持久化任务运行（降级：{{reason}}）",
       citations: "引用",
       confirmRun: "确认运行",
+      bilingual: "Bilingual",
+      createdWith: "Created with {{model}}",
+      runLanguage: "Response language",
+      variantEn: "English",
+      variantZh: "Chinese",
     },
   },
 } satisfies TranslationShape;

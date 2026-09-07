@@ -1221,6 +1221,11 @@ export const plPL = {
       degraded: "Przekracza budżet pojedynczego wywołania; zostanie uruchomione jako trwałe zadanie (degradacja: {{reason}})",
       citations: "Cytaty",
       confirmRun: "Uruchom",
+      bilingual: "Bilingual",
+      createdWith: "Created with {{model}}",
+      runLanguage: "Response language",
+      variantEn: "English",
+      variantZh: "Chinese",
     },
   },
 } satisfies TranslationShape;

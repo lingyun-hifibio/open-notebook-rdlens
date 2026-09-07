@@ -1233,6 +1233,11 @@ export const enUS = {
       degraded: "Exceeds the single-call budget; it will run as a persistent job (degraded: {{reason}})",
       citations: "Citations",
       confirmRun: "Run",
+      bilingual: "Bilingual",
+      createdWith: "Created with {{model}}",
+      runLanguage: "Response language",
+      variantEn: "English",
+      variantZh: "Chinese",
     },
   },
 }

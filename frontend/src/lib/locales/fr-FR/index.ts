@@ -1221,6 +1221,11 @@ export const frFR = {
       degraded: "Dépasse le budget d’un seul appel ; exécuté comme tâche persistante (dégradé : {{reason}})",
       citations: "Citations",
       confirmRun: "Exécuter",
+      bilingual: "Bilingual",
+      createdWith: "Created with {{model}}",
+      runLanguage: "Response language",
+      variantEn: "English",
+      variantZh: "Chinese",
     },
   },
 } satisfies TranslationShape;

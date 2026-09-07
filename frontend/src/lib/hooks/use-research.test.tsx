@@ -309,6 +309,38 @@ describe('use-research hooks', () => {
     expect(researchApi.createTransformation).not.toHaveBeenCalled()
   })
 
+  it('RWV2-35：useRunResearchTransformation 显式 responseLanguage 直通 runTransformation（双语变体选择）', async () => {
+    vi.mocked(researchApi.runTransformation).mockResolvedValue({
+      request_id: 'req_1',
+      transformation_id: 'trans_1',
+      requires_job: false,
+      degradation_reason: null,
+      result_id: 'r_1',
+      model_id: 'qwen3.6',
+      source_refs: ['src_1'],
+      usage: { input_tokens: 1, output_tokens: 1 },
+      citations: [],
+      output: 'out',
+    })
+    const { wrapper } = makeWrapper()
+    const { result } = renderHook(() => useRunResearchTransformation(P), { wrapper })
+    result.current.mutate({
+      transformationId: 'trans_1',
+      sourceIds: ['src_1'],
+      noteIds: [],
+      modelId: 'm-global',
+      responseLanguage: 'zh',
+    })
+    await waitFor(() =>
+      expect(researchApi.runTransformation).toHaveBeenCalledWith(P, 'trans_1', {
+        source_ids: ['src_1'],
+        note_ids: [],
+        model_id: 'm-global',
+        response_language: 'zh',
+      }),
+    )
+  })
+
   it('403 写入失败 → toast 呈现 adminWriteDenied（禁用按钮不替代后端授权）', async () => {
     vi.mocked(researchApi.createNote).mockRejectedValue({ response: { status: 403 } })
     const { wrapper } = makeWrapper()
