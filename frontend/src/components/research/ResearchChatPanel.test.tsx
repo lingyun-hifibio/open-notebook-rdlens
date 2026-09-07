@@ -198,7 +198,13 @@ describe('ResearchChatPanel', () => {
     // 断言可真实区分 K12 行为。
     seedScope(SCOPE_A)
     renderPanelWithNoteHarness(turns, send)
-    expect(screen.getByText('admission_unavailable')).toBeInTheDocument()
+    // RWV2-42：主提示为集中映射文案（t() 返回键名），raw code 不作主消息；
+    // errorMessage 保留为诊断行
+    expect(
+      screen.getByText('research.errors.admissionUnavailable'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('admission_unavailable')).toBeNull()
+    expect(screen.getByText('容量不足')).toBeInTheDocument()
     expect(screen.getByText(/retryable/i)).toBeInTheDocument()
     fireEvent.click(screen.getByTestId('add-note'))
     fireEvent.click(screen.getByRole('button', { name: /retry/i }))

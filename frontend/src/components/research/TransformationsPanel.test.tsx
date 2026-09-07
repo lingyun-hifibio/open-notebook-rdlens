@@ -335,6 +335,8 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
 
   it('AC-4：派发后修改 Scope 不影响在途运行，且摘要显示派发时快照', async () => {
     seedScope('selected', ['src_1'], [])
+    const onGuardedOptions = vi.fn()
+    setGlobalModelStub({ onGuardedOptions })
     const { wrapper } = makeWrapper()
     const d = deferred<ReturnType<typeof runResult>>()
     vi.mocked(researchApi.runTransformation).mockReturnValue(d.promise)
@@ -363,6 +365,12 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
     })
     // 摘要显示派发时快照（1 source），而非 live（2 sources）
     expect(screen.getByTestId('run-scope-summary').textContent).toContain('"sources":1')
+    // RWV2-42（D4）：派发经 runGuarded 并携带同源 Scope 摘要（供 consent
+    // 弹窗 Scope 行；sourceIds=[src_1] → scopeSummary.sourceOne key）
+    expect(onGuardedOptions).toHaveBeenCalledTimes(1)
+    expect(onGuardedOptions.mock.calls[0][0]?.scopeLabel).toContain(
+      'research.scopeSummary.sourceOne',
+    )
   })
 
   it('AC-6：外部模型 consent 取消零副作用——不派发、runSnapshot 未设置', async () => {
@@ -420,6 +428,22 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
     expect(confirmButton).toBeDisabled()
     fireEvent.click(confirmButton)
     expect(researchApi.runTransformation).not.toHaveBeenCalled()
+  })
+
+  it('RWV2-42：无 confirmed 模型时创建模板表单显示原因引导（不静默禁用）', async () => {
+    setGlobalModelStub({ confirmedModelId: null })
+    vi.mocked(researchApi.listTransformations).mockResolvedValue({
+      items: [template()],
+      next_cursor: null,
+    })
+    const { wrapper } = makeWrapper()
+    render(<TransformationsPanel />, { wrapper })
+    await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.newTemplate' }))
+    expect(screen.getByTestId('transformation-create-submit')).toBeDisabled()
+    expect(screen.getByTestId('transformation-create-requires-model').textContent).toContain(
+      'research.transformations.createRequiresModel',
+    )
   })
 
   it('RWV2-35 卡片：admin 双语模板显示 Bilingual badge + zh/en 变体 + Created-with provenance；project 单 prompt 不受影响', async () => {

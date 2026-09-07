@@ -31,6 +31,9 @@ vi.mock('@/lib/hooks/use-toast', () => ({
   useToast: () => ({ toast: toastMock }),
 }))
 
+// RWV2-42（M7）：覆盖模型态（saving/unavailable）只阻断 AI 生成的锚用例
+import { setGlobalModelStub } from '@/test/global-model-stub'
+
 const insight = (overrides: Partial<ResearchInsight> = {}): ResearchInsight => ({
   insight_id: 'ins_1',
   project_id: 'proj_1',
@@ -127,5 +130,46 @@ describe('InsightsPanel', () => {
     await waitFor(() => expect(screen.getByText('关键发现')).toBeInTheDocument())
     expect(screen.queryByRole('button', { name: 'research.insights.newInsight' })).toBeNull()
     expect(screen.getByText('research.workbench.adminBanner')).toBeInTheDocument()
+  })
+
+  it('RWV2-42（M7）：模型保存中只阻断 AI 生成，Manual Insight 创建仍可用', async () => {
+    vi.mocked(researchApi.listInsights).mockResolvedValue({ items: [], next_cursor: null })
+    vi.mocked(researchApi.createInsight).mockResolvedValue(insight({ insight_id: 'ins_m' }))
+    setGlobalModelStub({
+      confirmedModelId: 'm-local',
+      isSavingModel: true,
+      canExecute: false,
+      blockedReason: 'saving',
+    })
+    const { wrapper } = makeWrapper()
+    render(<InsightsPanel />, { wrapper })
+    await waitFor(() => expect(researchApi.listInsights).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: 'research.insights.newInsight' }))
+    fireEvent.change(screen.getByLabelText('research.notes.titleLabel'), {
+      target: { value: '手动记录' },
+    })
+    fireEvent.change(screen.getByLabelText('research.notes.contentLabel'), {
+      target: { value: '人工内容' },
+    })
+    // Manual 不受模型态影响：可提交
+    const save = screen.getByRole('button', { name: 'research.notes.save' })
+    expect(save).not.toBeDisabled()
+    fireEvent.click(save)
+    await waitFor(() =>
+      expect(researchApi.createInsight).toHaveBeenCalledWith('proj_1', {
+        title: '手动记录',
+        content: '人工内容',
+        insight_type: 'manual',
+      }),
+    )
+
+    // 切到 AI：生成被阻断（按钮禁用 + blockedHint 可见）
+    fireEvent.click(screen.getByRole('button', { name: 'research.insights.newInsight' }))
+    fireEvent.click(screen.getByLabelText('research.insights.typeLabel'))
+    fireEvent.click(await screen.findByRole('option', { name: 'research.insights.typeAi' }))
+    expect(screen.getByRole('button', { name: 'research.notes.save' })).toBeDisabled()
+    expect(screen.getByTestId('insight-model-blocked').textContent).toContain(
+      'research.globalModel.saving',
+    )
   })
 })

@@ -114,6 +114,13 @@ export interface UseResearchGlobalModelResult {
    * 显示 Scope 行。取消/确认/未登记派发 → null（不显示，防陈标泄漏）。
    */
   pendingScopeLabel: string | null
+  /**
+   * RWV2-42：本次待确认派发登记的**模型快照**（弹窗 Model 行数据源）。
+   * 与执行使用同一快照（登记时捕获），绝不读 live confirmed——当前模型
+   * 在登记后被改（跨标签/focus refetch）时，本值仍指向将实际执行的模型。
+   * 取消/确认/未登记 → null。
+   */
+  pendingModelId: string | null
   /** consent 状态（§6.8） */
   needsConsent: boolean
   isConsentPromptOpen: boolean
@@ -310,6 +317,20 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
     setConsentError(null)
   }, [isConsentInFlight])
 
+  // RWV2-42（评审 R7-1）：登记后当前权威模型被改变（跨标签页 / focus
+  // refetch）时，弹窗行与最终派发将不一致（Model 行=登记模型，目的地/
+  // 类别=新模型 scope）→ 自动取消本次登记（零副作用，用户重试重新走
+  // 确认）。ack 在途时跳过（cancelConsent 本身 no-op）。服务端 dispatch
+  // gate（consent_scope_changed 403）仍是最终安全网。
+  useEffect(() => {
+    if (!isConsentPromptOpen || isConsentInFlight) return
+    const registration = pendingRegistrationRef.current
+    if (!registration) return
+    if (confirmedModelId !== registration.modelId) {
+      cancelConsent()
+    }
+  }, [cancelConsent, confirmedModelId, isConsentInFlight, isConsentPromptOpen])
+
   const confirmConsent = useCallback(async (): Promise<void> => {
     if (!isConsentPromptOpen || consentInFlightRef.current) return
     consentInFlightRef.current = true
@@ -386,6 +407,11 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
     ? pendingRegistrationRef.current?.scopeLabel ?? null
     : null
 
+  // RWV2-42：弹窗 Model 行数据源 = 登记快照模型（与执行同源，非 live）。
+  const pendingModelId = isConsentPromptOpen
+    ? pendingRegistrationRef.current?.modelId ?? null
+    : null
+
   const value = useMemo<UseResearchGlobalModelResult>(() => ({
     confirmedModelId,
     draftModelId,
@@ -406,6 +432,7 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
     blockedReason,
     runGuarded,
     pendingScopeLabel,
+    pendingModelId,
     needsConsent,
     isConsentPromptOpen,
     isConsentInFlight,
@@ -436,6 +463,7 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
     models,
     needsConsent,
     pendingScopeLabel,
+    pendingModelId,
     runGuarded,
     saveModel,
     saveModelError,

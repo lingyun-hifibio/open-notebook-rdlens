@@ -10,7 +10,15 @@ import {
   COMPARE_HARD_MAX,
 } from '@/lib/research/compare'
 import { useResearchScope } from '@/lib/research/scope'
+import { userErrorMessageKey } from '@/lib/research/errors'
 import type { ResearchSource } from '@/lib/types/research'
+
+/** RWV2-42：jobs hook 本地防御性前置码 → 与面板专用 Alert 同文案 key */
+const PRE_CHECK_USER_COPY: Record<string, string> = {
+  'compare-empty': 'research.compareEmpty',
+  'compare-over-hard': 'research.compareOverHard',
+  'no-model': 'research.globalModel.selectModelHint',
+}
 
 /**
  * Compare 面板（UI-03，REQ-QUOTA-01，设计 §7.4/§13）。
@@ -32,6 +40,7 @@ export function ComparePanel({
   sources,
   isCreating,
   error,
+  errorCode,
   onCreate,
   modelBlocked: modelBlockedProp,
   blockedHint,
@@ -39,6 +48,8 @@ export function ComparePanel({
   sources: ResearchSource[]
   isCreating: boolean
   error: string | null
+  /** RWV2-42：错误稳定码（HTTP detail.code 或本地前置码），驱动主文案映射 */
+  errorCode?: string | null
   /** 返回是否真正派发（守卫未确认/取消时为 false），避免取消后误报已创建 */
   onCreate: (documentIds: string[], groupSize?: number) => Promise<boolean>
   /** #243：无可用全局模型时禁用创建（不变量 2/7 的 Compare 侧表达） */
@@ -117,9 +128,17 @@ export function ComparePanel({
           <AlertDescription>{blockedHint}</AlertDescription>
         </Alert>
       )}
-      {error && (
+      {/* RWV2-42（R4-H2）：仅当 UI 前置校验通过且模型可用时才渲染 hook 错误行
+          ——避免与专用 Alert（empty/over-hard/entire-project/modelBlocked）
+          同场景双文案；raw 消息仅作次级诊断行 */}
+      {error && error.trim() !== '' && check.ok && !modelBlocked && (
         <Alert variant="destructive" data-testid="compare-error">
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription className="space-y-1">
+            <span className="font-medium">
+              {t(errorCode ? PRE_CHECK_USER_COPY[errorCode] ?? userErrorMessageKey(errorCode) : 'research.errors.generic')}
+            </span>
+            <span className="block text-xs opacity-80">{error}</span>
+          </AlertDescription>
         </Alert>
       )}
       {submitted && !error && (

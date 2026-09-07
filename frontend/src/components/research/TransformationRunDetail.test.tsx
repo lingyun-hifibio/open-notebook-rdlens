@@ -324,12 +324,14 @@ describe('TransformationRunDetail（RWV2-21 detail + rerun）', () => {
   it('consent 登记后在途关闭/卸载 → 重放 op 零派发（评审 Medium-3 守卫 #2）', async () => {
     seedScope('selected', ['src_1'], [])
     let registeredOp: ((modelId: string) => unknown) | undefined
+    const onGuardedOptions = vi.fn()
     // deferGuarded 模拟外部模型 consent「登记不执行」（与 TransformationsPanel
     // AC-6 同款 stub 语义）；onGuardedRegistered 捕获登记的执行体供重放
     setGlobalModelStub({
       confirmedModelId: 'm-ext',
       needsConsent: true,
       deferGuarded: true,
+      onGuardedOptions,
       models: [{
         model_id: 'm-ext',
         display_name: 'Ext M',
@@ -346,6 +348,12 @@ describe('TransformationRunDetail（RWV2-21 detail + rerun）', () => {
     fireEvent.click(screen.getByTestId('rerun-btn'))
     // consent 弹窗打开 = 已登记未执行（真实 provider confirmConsent 前不执行 op）
     await waitFor(() => expect(registeredOp).toBeDefined())
+    // RWV2-42（H6）：rerun 派发携带与本次重派发快照同源的 Scope 摘要
+    // （resolve 前 getSnapshot：selected src_1 → sourceOne）
+    expect(onGuardedOptions).toHaveBeenCalledTimes(1)
+    expect(onGuardedOptions.mock.calls[0][0]?.scopeLabel).toContain(
+      'research.scopeSummary.sourceOne',
+    )
     // 详情关闭 → 卸载 → 令牌失效
     unmount()
     // 模拟用户确认 consent：执行登记的执行体——op 内 mutateAsync 前守卫须拦截

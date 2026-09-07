@@ -15,6 +15,7 @@ import {
 import { fetchContextPreview, newIdempotencyKey, searchV1 } from '@/lib/research/api'
 import { researchModelBlockedHint, useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
 import { formatScopeLabel, useResearchScope } from '@/lib/research/scope'
+import { extractResearchErrorCode, userErrorMessageKey } from '@/lib/research/errors'
 import type {
   ResearchContextLevel,
   ResearchContextPreview,
@@ -83,7 +84,12 @@ export function ResearchSearchPanel({
   const [result, setResult] = useState<ResearchSearchResponse | null>(null)
   const [background, setBackground] = useState<BackgroundNotice | null>(null)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  /** RWV2-42：结构化错误——code 驱动主文案映射（AC8），message 仅次级诊断 */
+  interface SearchError {
+    code: string | null
+    message: string
+  }
+  const [error, setError] = useState<SearchError | null>(null)
   const [savingContext, setSavingContext] = useState(false)
 
   // 局部档位：初始取服务端默认值；用户手动改过之后不再被服务端值覆盖
@@ -175,7 +181,7 @@ export function ResearchSearchPanel({
         interactedRef.current = false
         setError(null)
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
+        setError({ code: null, message: err instanceof Error ? err.message : String(err) })
       } finally {
         setSavingContext(false)
       }
@@ -229,19 +235,22 @@ export function ResearchSearchPanel({
         // 网络层错误（无 response，结果真未知）保留同键防双跑；
         // 服务端已给确定性结局（有 response）→ 重置允许新执行
         const hasServerResponse = !!(err as { response?: unknown } | null)?.response
+        const detailCode = extractResearchErrorCode(err)
         if (hasServerResponse) {
           idempotencyKeyRef.current = null
           keyInputsRef.current = ''
           // 后端 dispatch gate 判定授权失效 → 让 consent 重新生效判定，
           // 下一次执行由根级 guard 重新弹确认；不在此处自行重试或改模型。
-          const detailCode =
-            ((err as { response?: { data?: { detail?: { code?: string } } } })
-              ?.response?.data?.detail?.code ?? '')
-          if (CONSENT_ERROR_CODES.includes(detailCode)) {
+          if (detailCode !== null && CONSENT_ERROR_CODES.includes(detailCode)) {
             invalidateConsent()
           }
         }
-        setError(err instanceof Error ? err.message : String(err))
+        // RWV2-42（AC8）：raw code/消息不作主消息——code 驱动映射主文案，
+        // 原文仅次级诊断行
+        setError({
+          code: detailCode,
+          message: err instanceof Error ? err.message : String(err),
+        })
       } finally {
         setLoading(false)
       }
@@ -368,8 +377,18 @@ export function ResearchSearchPanel({
         )}
 
         {error && (
-          <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
+          <Alert variant="destructive" data-testid="search-error">
+            <AlertDescription className="space-y-1">
+              {/* RWV2-42（AC8）：主消息 = 稳定码映射的英文用户文案（未知→通用） */}
+              <span className="font-medium">{t(userErrorMessageKey(error.code))}</span>
+              {error.message && (
+                <span className="block text-xs opacity-80">{error.message}</span>
+              )}
+              {/* R5-2：下一步引导文案；Search 按钮/Enter 即重试入口，不新增按钮 */}
+              <span className="block text-xs opacity-80">
+                {t('research.searchRunErrorHint')}
+              </span>
+            </AlertDescription>
           </Alert>
         )}
 

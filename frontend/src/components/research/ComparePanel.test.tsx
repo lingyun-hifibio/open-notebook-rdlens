@@ -151,7 +151,7 @@ describe('ComparePanel', () => {
     expect(screen.getByRole('button', { name: /compare/ })).toBeDisabled()
   })
 
-  it('错误信息透出', () => {
+  it('错误信息透出：generic 主文案 + raw 仅次级诊断（RWV2-42 AC8）', () => {
     const all = sources(2)
     seedScope('selected', all.map((s) => s.source_id))
     render(
@@ -164,6 +164,46 @@ describe('ComparePanel', () => {
         />
       </ResearchScopeProvider>,
     )
+    // 主消息 = 通用文案 key；旧伪 key 字面量只作次级诊断行，不再是主消息
+    expect(screen.getByText('research.errors.generic')).toBeInTheDocument()
     expect(screen.getByText('compare.createFailed')).toBeInTheDocument()
+  })
+
+  it('RWV2-42：HTTP 稳定码 → 映射主文案；raw code 不作主消息', () => {
+    const all = sources(2)
+    seedScope('selected', all.map((s) => s.source_id))
+    render(
+      <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+        <ComparePanel
+          sources={all}
+          isCreating={false}
+          error="engine down"
+          errorCode="engine_unavailable"
+          onCreate={vi.fn()}
+        />
+      </ResearchScopeProvider>,
+    )
+    expect(screen.getByText('research.errors.engineUnavailable')).toBeInTheDocument()
+    expect(screen.queryByText('engine_unavailable')).toBeNull()
+    expect(screen.getByText('engine down')).toBeInTheDocument()
+  })
+
+  it('RWV2-42（R4-H2）：专用状态 Alert 可见时不渲染 hook 错误行（防双文案）', () => {
+    // selected 空 → 面板显示 compare-empty Alert；hook 陈旧错误不得叠加
+    seedScope('selected', [])
+    render(
+      <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+        <ComparePanel
+          sources={sources(2)}
+          isCreating={false}
+          error="stale error"
+          errorCode="quota_exceeded"
+          onCreate={vi.fn()}
+        />
+      </ResearchScopeProvider>,
+    )
+    expect(screen.getByTestId('compare-empty')).toBeInTheDocument()
+    expect(screen.queryByTestId('compare-error')).toBeNull()
+    expect(screen.queryByText('stale error')).toBeNull()
   })
 })

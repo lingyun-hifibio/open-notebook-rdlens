@@ -27,6 +27,7 @@ import { useToast } from '@/lib/hooks/use-toast'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
 import { useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
 import { useResearchScope, type ResearchScopeSnapshot } from '@/lib/research/scope'
+import { formatScopeLabel } from '@/lib/research/scope'
 import { detectResponseLanguage, resolveScopeSelection } from '@/lib/research/scope-utils'
 import {
   useCreateResearchTransformation,
@@ -198,25 +199,30 @@ export function TransformationsPanel({
     const bilingual = target.bilingual === true
     const lang = bilingual ? runVariant : detectResponseLanguage(target.prompt_template)
     try {
-      await runGuarded(async (modelId) => {
-        // consent 注册/确认前置路径：对话框已关闭则零派发（B2 结构与
-        // 实现双保险——即使外部模型 consent 已登记，此处令牌失效即中止）
-        if (runGenerationRef.current !== generation) return
-        setRunSnapshot(snapshot)
-        setRunLanguage(lang)
-        const result = await runMutation.mutateAsync({
-          transformationId: target.transformation_id,
-          sourceIds,
-          noteIds,
-          modelId,
-          // RWV2-35：仅双语模板发送显式变体语言；单 prompt 不发
-          // （服务端按 content 检测，legacy 语义不变）
-          ...(bilingual ? { responseLanguage: runVariant } : {}),
-        })
-        setRunResult(result)
-        setRunModelId(modelId)
-        return true
-      })
+      await runGuarded(
+        async (modelId) => {
+          // consent 注册/确认前置路径：对话框已关闭则零派发（B2 结构与
+          // 实现双保险——即使外部模型 consent 已登记，此处令牌失效即中止）
+          if (runGenerationRef.current !== generation) return
+          setRunSnapshot(snapshot)
+          setRunLanguage(lang)
+          const result = await runMutation.mutateAsync({
+            transformationId: target.transformation_id,
+            sourceIds,
+            noteIds,
+            modelId,
+            // RWV2-35：仅双语模板发送显式变体语言；单 prompt 不发
+            // （服务端按 content 检测，legacy 语义不变）
+            ...(bilingual ? { responseLanguage: runVariant } : {}),
+          })
+          setRunResult(result)
+          setRunModelId(modelId)
+          return true
+        },
+        // RWV2-42：consent 弹窗 Scope 行 = 本笔派发冻结快照（resolve 前
+        // getSnapshot() 同一对象），与最终请求同源（K11）
+        { scopeLabel: formatScopeLabel(snapshot, t) },
+      )
     } catch {
       // run 失败已由 mutation onError toast；此处静默吸收避免双弹
     }
@@ -274,6 +280,15 @@ export function TransformationsPanel({
                 {t('research.notes.cancel')}
               </Button>
             </div>
+            {/* RWV2-42：无 confirmed 模型时创建被禁用——显式原因（不静默禁用） */}
+            {confirmedModelId === null && (
+              <p
+                className="text-xs text-muted-foreground"
+                data-testid="transformation-create-requires-model"
+              >
+                {t('research.transformations.createRequiresModel')}
+              </p>
+            )}
           </CardContent>
         </Card>
       )}

@@ -265,7 +265,8 @@ describe('ResearchSourceChatPanel', () => {
     const chat = makeChatResult()
     vi.mocked(useResearchSourceChat).mockReturnValue(chat)
     // 外部模型待确认：守卫只登记不执行（不变量 9）
-    setGlobalModelStub({ deferGuarded: true })
+    const onGuardedOptions = vi.fn()
+    setGlobalModelStub({ deferGuarded: true, onGuardedOptions })
     renderPanel()
 
     const input = screen.getByTestId('srcchat-input')
@@ -273,6 +274,11 @@ describe('ResearchSourceChatPanel', () => {
     fireEvent.keyDown(input, { key: 'Enter' })
     expect(chat.send).not.toHaveBeenCalled()
     expect(input).toHaveValue('外发问题')
+    // RWV2-42（D5a）：派发携带固定来源摘要（consent Scope 行 = 该来源）
+    expect(onGuardedOptions).toHaveBeenCalledTimes(1)
+    expect(onGuardedOptions.mock.calls[0][0]?.scopeLabel).toContain(
+      'research.scopeSummary.sourceOne',
+    )
   })
 
   it('#243 §6.4：无 confirmed 模型时输入与发送按钮禁用（不变量 2/7）', () => {

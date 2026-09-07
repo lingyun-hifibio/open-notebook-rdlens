@@ -5,6 +5,7 @@ import { QUERY_KEYS } from '@/lib/api/query-client'
 import { useToast } from '@/lib/hooks/use-toast'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { collectResearchPages, RESEARCH_PAGE_LIMIT } from '@/lib/research/pagination'
+import { extractResearchErrorCode, RESEARCH_ERROR_USER_COPY } from '@/lib/research/errors'
 import {
   createExport,
   createInsight,
@@ -40,10 +41,15 @@ function useMutationErrorToast() {
   return (error: unknown) => {
     // 403：Admin 只读被服务端拒绝（REQ-AUTH-04/§4.4 矩阵，双保险）
     const status = (error as { response?: { status?: number } })?.response?.status
+    // RWV2-42（M4）：非 403 时优先按稳定码映射任务导向文案（未知回落通用）
+    const code = extractResearchErrorCode(error)
+    const mappedKey = code === null ? null : RESEARCH_ERROR_USER_COPY[code]
     const message =
       status === 403
         ? t('research.workbench.adminWriteDenied')
-        : t('research.workbench.actionFailed')
+        : mappedKey !== null && mappedKey !== undefined
+          ? t(mappedKey)
+          : t('research.workbench.actionFailed')
     toast({ title: t('common.error'), description: message, variant: 'destructive' })
   }
 }

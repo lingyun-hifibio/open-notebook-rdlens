@@ -52,11 +52,13 @@ export function ResearchGlobalModelBar({
   const options = useMemo(() => {
     const available = models.map((model) => ({
       value: model.model_id,
+      // RWV2-42：本地/外部身份显式可见（data_egress=true=外部模型，
+      // 恒 false=本地部署内，不出域）；UI 不得暗示 embedding 离境。
       label:
         (model.display_name || model.model_id) +
         (model.data_egress === true
           ? ` (${t('research.globalModel.external')})`
-          : ''),
+          : ` (${t('research.globalModel.local')})`),
     }))
     if (
       confirmedModelId !== null &&

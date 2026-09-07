@@ -10,6 +10,7 @@ import { ResearchCitationList } from './ResearchCitationList'
 import { COVERAGE_SOURCE_HARD_MAX, CoverageScopeSelector } from './CoverageScopeSelector'
 import { CoverageJobDetails } from './CoverageJobDetails'
 import { RETRYABLE_SSE_ERROR_CODES } from '@/lib/research/sse'
+import { userErrorMessageKey } from '@/lib/research/errors'
 import type {
   ResearchBackgroundNotice,
   ResearchChatTurn,
@@ -31,14 +32,9 @@ import { formatScopeLabel, useResearchScope, type ResearchScopeSnapshot } from '
  *   （§12.3 验收：raw Thinking、Prompt、内部 JSON 不可见）。
  * - 断线自动重连时显示重连徽标；错误终态展示 code/可重试标记。
  * - #292 P0：error 且空正文不渲染「暂无答案」占位（交由错误卡片呈现）；
- *   稳定错误码优先展示面向用户的本地化文案，errorMessage 仅作诊断行，
- *   未知 code 原样兜底展示。
+ *   RWV2-42（AC8）：稳定错误码统一走集中表映射（lib/research/errors），
+ *   raw code/errorMessage 仅作诊断行，不作主消息（未知码回落通用文案）。
  */
-const CHAT_ERROR_USER_COPY: Record<string, string> = {
-  daily_limit_exceeded: 'research.chatErrorDailyLimitExceeded',
-  superseded: 'research.chatErrorSuperseded',
-}
-
 export function ResearchChatPanel({
   turns,
   isStreaming,
@@ -221,12 +217,10 @@ export function ResearchChatPanel({
                   className="space-y-1 rounded-lg border border-destructive/50 px-3 py-2 text-xs"
                   data-testid="chat-error"
                 >
-                  {/* #292 P0：已知稳定码展示本地化用户文案（未知 code 原样
-                      兜底）；errorMessage 仅作诊断行，不作主要提示 */}
+                  {/* #292 P0：稳定码展示本地化用户文案（集中映射，RWV2-42）；
+                      未知码回落通用文案；errorMessage 仅作诊断行，不作主要提示 */}
                   <p className="font-medium text-destructive">
-                    {turn.errorCode
-                      ? t(CHAT_ERROR_USER_COPY[turn.errorCode] ?? turn.errorCode)
-                      : turn.errorCode}
+                    {t(userErrorMessageKey(turn.errorCode))}
                   </p>
                   {turn.errorMessage && (
                     <p className="text-muted-foreground">{turn.errorMessage}</p>
