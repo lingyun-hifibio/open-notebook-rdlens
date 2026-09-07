@@ -218,6 +218,7 @@ export function useRunResearchTransformation(projectId: string) {
       noteIds,
       modelId,
       idempotencyKey,
+      responseLanguage,
     }: {
       transformationId: string
       sourceIds: string[]
@@ -226,12 +227,23 @@ export function useRunResearchTransformation(projectId: string) {
       modelId: string
       /** RWV2-21：Rerun=新建派发，必须每次传新幂等键（复用旧 key → 幂等重放/409） */
       idempotencyKey?: string
-    }) =>
-      runTransformation(projectId, transformationId, {
+      /** RWV2-35：admin 双语模板的变体语言选择（选择器选中才发；
+       *  单 prompt 模板不发，服务端按 content 检测） */
+      responseLanguage?: 'zh' | 'en'
+    }) => {
+      const input = {
         source_ids: sourceIds,
         note_ids: noteIds,
         model_id: modelId,
-      }, { idempotencyKey }),
+        ...(responseLanguage ? { response_language: responseLanguage } : {}),
+      }
+      // RWV2-21：Rerun 显式新幂等键 → 传 options 覆盖 api 默认生成；
+      // 未显式提供（普通 run flow）→ 不传，api.ts 内 newIdempotencyKey()
+      // 保证每次新建派发仍持新键 + v1 契约头（幂等语义不变）。
+      return idempotencyKey !== undefined
+        ? runTransformation(projectId, transformationId, input, { idempotencyKey })
+        : runTransformation(projectId, transformationId, input)
+    },
     // RWV2-21/Medium-7：run（含 Rerun）成功后新结果必须出现在历史列表——
     // 只失效 results key（精确 key，不连带模板/templates 或其他 research 键）。
     onSuccess: () => {

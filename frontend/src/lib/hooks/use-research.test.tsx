@@ -311,7 +311,7 @@ describe('use-research hooks', () => {
         source_ids: ['src_1'],
         note_ids: [],
         model_id: 'm-global',
-      }, { idempotencyKey: undefined }),
+      }),
     )
     expect(researchApi.createTransformation).not.toHaveBeenCalled()
     // Medium-7：成功后只失效 results key，使新行在历史列表可见
@@ -417,6 +417,38 @@ describe('use-research hooks', () => {
     )
     await waitFor(() => expect(researchApi.getTransformationResult).toHaveBeenCalledWith(P, 'tres_42'))
     expect(enabled.current.data?.result_id).toBe('tres_42')
+  })
+
+  it('RWV2-35：useRunResearchTransformation 显式 responseLanguage 直通 runTransformation（双语变体选择）', async () => {
+    vi.mocked(researchApi.runTransformation).mockResolvedValue({
+      request_id: 'req_1',
+      transformation_id: 'trans_1',
+      requires_job: false,
+      degradation_reason: null,
+      result_id: 'r_1',
+      model_id: 'qwen3.6',
+      source_refs: ['src_1'],
+      usage: { input_tokens: 1, output_tokens: 1 },
+      citations: [],
+      output: 'out',
+    })
+    const { wrapper } = makeWrapper()
+    const { result } = renderHook(() => useRunResearchTransformation(P), { wrapper })
+    result.current.mutate({
+      transformationId: 'trans_1',
+      sourceIds: ['src_1'],
+      noteIds: [],
+      modelId: 'm-global',
+      responseLanguage: 'zh',
+    })
+    await waitFor(() =>
+      expect(researchApi.runTransformation).toHaveBeenCalledWith(P, 'trans_1', {
+        source_ids: ['src_1'],
+        note_ids: [],
+        model_id: 'm-global',
+        response_language: 'zh',
+      }),
+    )
   })
 
   it('403 写入失败 → toast 呈现 adminWriteDenied（禁用按钮不替代后端授权）', async () => {

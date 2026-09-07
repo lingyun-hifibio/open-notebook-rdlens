@@ -60,7 +60,16 @@ export interface ResearchTransformation {
   transformation_id: string
   project_id: string
   name: string
+  /** 标量兼容投影（RWV2-35 契约）：project/legacy 单 prompt = content；
+   *  admin 双语行 = en 变体（旧 fork 只读此键仍可渲染，AC8）。 */
   prompt_template: string
+  /** RWV2-35：admin 双语模板的 zh 变体；仅当 bilingual===true 存在 */
+  prompt_template_zh?: string
+  /** RWV2-35：admin 双语模板的 en 变体；仅当 bilingual===true 存在 */
+  prompt_template_en?: string
+  /** RWV2-35：true = admin 双语成对模板。缺省/undefined（旧后端无此键）
+   *  与 false 等价 → 一律按单 prompt 处理（回滚天然兼容）。 */
+  bilingual?: boolean
   model_id: string | null
   scope: ResearchTransformationScope
   created_at: string | null

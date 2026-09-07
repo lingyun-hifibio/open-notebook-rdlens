@@ -1235,6 +1235,11 @@ export const jaJP = {
       rerun: "Rerun",
       rerunSuccess: "The transformation was rerun.",
       rerunUnavailable: "The original template is no longer available, so this run cannot be repeated.",
+      bilingual: "Bilingual",
+      createdWith: "Created with {{model}}",
+      runLanguage: "Response language",
+      variantEn: "English",
+      variantZh: "Chinese",
     },
   },
 } satisfies TranslationShape;

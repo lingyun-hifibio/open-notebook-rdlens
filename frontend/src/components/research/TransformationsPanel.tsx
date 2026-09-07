@@ -2,10 +2,18 @@
 
 import { useCallback, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   Dialog,
   DialogContent,
@@ -78,6 +86,9 @@ export function TransformationsPanel({
   const [name, setName] = useState('')
   const [prompt, setPrompt] = useState('')
 
+  /** RWV2-35：双语 admin 模板的 Run 变体语言（选择器；默认 en） */
+  const [runVariant, setRunVariant] = useState<'zh' | 'en'>('en')
+
   // 运行对话框状态（Scope 权威在 provider；本面板只读，不再维护局部选择）
   const [runTarget, setRunTarget] = useState<ResearchTransformation | null>(null)
   const runTargetRef = useRef<ResearchTransformation | null>(null)
@@ -128,6 +139,7 @@ export function TransformationsPanel({
     setRunModelId(null)
     setRunSnapshot(null)
     setRunLanguage(null)
+    setRunVariant('en')
     setBlockedReason(null)
   }
 
@@ -174,7 +186,10 @@ export function TransformationsPanel({
       return
     }
     const { sourceIds, noteIds } = resolved
-    const lang = detectResponseLanguage(target.prompt_template)
+    // RWV2-35：双语 admin 模板按选择器变体语言（Confirm 时刻冻结）；
+    // 单 prompt（project/legacy）按 content 检测（R3-D 语义）。
+    const bilingual = target.bilingual === true
+    const lang = bilingual ? runVariant : detectResponseLanguage(target.prompt_template)
     try {
       await runGuarded(async (modelId) => {
         // consent 注册/确认前置路径：对话框已关闭则零派发（B2 结构与
@@ -187,6 +202,9 @@ export function TransformationsPanel({
           sourceIds,
           noteIds,
           modelId,
+          // RWV2-35：仅双语模板发送显式变体语言；单 prompt 不发
+          // （服务端按 content 检测，legacy 语义不变）
+          ...(bilingual ? { responseLanguage: runVariant } : {}),
         })
         setRunResult(result)
         setRunModelId(modelId)
@@ -261,29 +279,64 @@ export function TransformationsPanel({
       )}
 
       <div className="space-y-2">
-        {items.map((item) => (
-          <Card key={item.transformation_id}>
-            <CardContent className="flex items-center justify-between gap-3 p-3">
-              <div className="min-w-0">
-                <p className="text-sm font-medium">{item.name}</p>
-                <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                  {item.prompt_template}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {item.model_id ?? '—'} ·{' '}
-                  {item.scope === 'admin_template'
-                    ? t('research.transformations.scopeAdmin')
-                    : t('research.transformations.scopePrivate')}
-                </p>
-              </div>
-              {!isAdminReadonly && (
-                <Button size="sm" variant="outline" onClick={() => openRun(item)}>
-                  {t('research.transformations.run')}
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-        ))}
+        {items.map((item) => {
+          // RWV2-35：门控键 = bilingual（与 run 对话框/executeRun 一致）；
+          // 现契约下双语行必为 admin_template，去掉 scope 合取防未来漂移
+          const isBilingualTemplate = item.bilingual === true
+          const scopeLabel = t(
+            item.scope === 'admin_template'
+              ? 'research.transformations.scopeAdmin'
+              : 'research.transformations.scopePrivate',
+          )
+          return (
+            <Card key={item.transformation_id}>
+              <CardContent className="flex items-center justify-between gap-3 p-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium">{item.name}</p>
+                    {isBilingualTemplate && (
+                      <Badge variant="outline" className="shrink-0 text-[10px]">
+                        {t('research.transformations.bilingual')}
+                      </Badge>
+                    )}
+                  </div>
+                  {isBilingualTemplate ? (
+                    <>
+                      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground" data-testid="template-variant-zh">
+                        <span className="mr-1 font-semibold">
+                          {t('research.transformations.variantZh')}
+                        </span>
+                        <span>{item.prompt_template_zh}</span>
+                      </p>
+                      <p className="line-clamp-2 text-xs text-muted-foreground" data-testid="template-variant-en">
+                        <span className="mr-1 font-semibold">
+                          {t('research.transformations.variantEn')}
+                        </span>
+                        <span>{item.prompt_template_en ?? item.prompt_template}</span>
+                      </p>
+                    </>
+                  ) : (
+                    <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                      {item.prompt_template}
+                    </p>
+                  )}
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {isBilingualTemplate
+                      ? `${t('research.transformations.createdWith', {
+                          model: item.model_id ?? '—',
+                        })} · ${scopeLabel}`
+                      : `${item.model_id ?? '—'} · ${scopeLabel}`}
+                  </p>
+                </div>
+                {!isAdminReadonly && (
+                  <Button size="sm" variant="outline" onClick={() => openRun(item)}>
+                    {t('research.transformations.run')}
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          )
+        })}
       </div>
 
       {/* 运行对话框：只读 Scope 摘要 + Edit scope + 数据外发提示（根级） + 结果 */}
@@ -329,11 +382,46 @@ export function TransformationsPanel({
             {runModelId ?? confirmedModelId ?? '—'}
           </p>
 
-          {/* RFC §4.2：响应语言在派发时刻固定（请求字段由 RWV2-M3 接线） */}
-          <p className="text-xs text-muted-foreground" data-testid="run-language">
-            {t('research.transformations.language')}:{' '}
-            {runLanguage ?? detectResponseLanguage(runTarget?.prompt_template ?? '')}
-          </p>
+          {/* RFC §4.2 / RWV2-35：双语 admin 模板 → 语言/变体选择器（默认
+              en，Confirm 时刻随 runVariant 冻结并发送 response_language）；
+              单 prompt（project/legacy）无选择器 → 派发时按 content 检测
+              （R3-D：键 = bilingual，legacy admin 单 prompt 行同此路径） */}
+          {runTarget?.bilingual === true ? (
+            <div className="space-y-1">
+              <div className="flex items-center gap-2" data-testid="run-language-select">
+                <p className="text-xs font-medium text-muted-foreground">
+                  {t('research.transformations.runLanguage')}
+                </p>
+                <Select
+                  value={runVariant}
+                  onValueChange={(value) => setRunVariant(value as 'zh' | 'en')}
+                  // LOW-3：Scope 解析在途/派发中禁用选择器——派发语言在
+                  // Confirm 时刻冻结，解析窗口内切换只改显示不改在途载荷
+                  disabled={isResolvingRun || runMutation.isPending}
+                >
+                  <SelectTrigger aria-label="run-language-variant" className="h-8 w-36">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="en">{t('research.transformations.variantEn')}</SelectItem>
+                    <SelectItem value="zh">{t('research.transformations.variantZh')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {/* LOW-3：派发后回读实际冻结语言（双语分支——单 prompt 走下方
+                  detect 行）；Consent 取消不派发则不显示 */}
+              {runLanguage && (
+                <p className="text-xs text-muted-foreground" data-testid="run-language-frozen">
+                  {t('research.transformations.language')}: {runLanguage}
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground" data-testid="run-language">
+              {t('research.transformations.language')}:{' '}
+              {runLanguage ?? detectResponseLanguage(runTarget?.prompt_template ?? '')}
+            </p>
+          )}
 
           {blockedReason === 'empty_project' && (
             <p
