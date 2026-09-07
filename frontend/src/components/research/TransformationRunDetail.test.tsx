@@ -139,7 +139,10 @@ describe('TransformationRunDetail（RWV2-21 detail + rerun）', () => {
     expect(screen.getByTestId('detail-status').textContent).toContain('completed')
     expect(screen.getByTestId('detail-language').textContent).toContain('—') // null → 占位
     expect(screen.getByTestId('detail-output').textContent).toContain('ORR was 45%')
-    expect(screen.getByText('1 sources · 0 notes')).toBeTruthy()
+    // 输入计数经 i18n sourceNoteCount（评审 Low：不硬编码 sources/notes）
+    expect(screen.getByTestId('detail-inputs-summary').textContent).toContain(
+      'research.transformations.sourceNoteCount',
+    )
     // 不可编辑：无注入
     expect(screen.queryByRole('textbox')).toBeNull()
     expect(screen.queryByRole('combobox')).toBeNull()
@@ -221,6 +224,63 @@ describe('TransformationRunDetail（RWV2-21 detail + rerun）', () => {
       expect(toastMock).toHaveBeenCalledWith(expect.objectContaining({ variant: 'destructive' }))
     })
     expect(onSuccess).not.toHaveBeenCalled()
+  })
+
+  it('Rerun requires_job job 化成功（result_id null）→ 可见 degraded/job 提示，不回调成功（评审 Medium-2）', async () => {
+    seedScope('selected', ['src_1'], [])
+    vi.mocked(researchApi.runTransformation).mockResolvedValue({
+      request_id: 'req_2',
+      transformation_id: 'trans_1',
+      requires_job: true,
+      degradation_reason: 'output_too_large',
+      result_id: null,
+      model_id: 'm-local',
+      source_refs: ['src_1'],
+      usage: { input_tokens: 1, output_tokens: 1 },
+      citations: [],
+      output: null,
+    })
+    const onSuccess = vi.fn()
+    const { wrapper } = makeWrapper()
+    render(
+      <TransformationRunDetail record={record()} sources={[]} showRerun onRerunSuccess={onSuccess} />,
+      { wrapper },
+    )
+    fireEvent.click(screen.getByTestId('rerun-btn'))
+    // degraded 提示可见（与既有 run flow 一致），成功回调不被触发（无新行可高亮）
+    await waitFor(() => {
+      const degraded = screen.getByTestId('rerun-degraded')
+      expect(degraded.textContent).toContain('degraded')
+      expect(degraded.textContent).toContain('output_too_large')
+    })
+    expect(onSuccess).not.toHaveBeenCalled()
+    expect(screen.queryByText('research.transformations.rerunSuccess')).toBeNull()
+  })
+
+  it('详情在 scope 解析在途时关闭/卸载 → 不派发（评审 Medium-3 生命周期守卫）', async () => {
+    seedScope('entire_project')
+    const { wrapper } = makeWrapper()
+    let resolveSources!: (v: { items: never[]; next_cursor: string | null }) => void
+    // 先挂起 sources 枚举（resolveScopeSelection 第一段）
+    vi.mocked(researchApi.listSources).mockReturnValue(
+      new Promise((res) => { resolveSources = res }),
+    )
+    vi.mocked(researchApi.listNotes).mockResolvedValue({ items: [], next_cursor: null })
+    const { unmount } = render(
+      <TransformationRunDetail record={record()} sources={[]} showRerun />,
+      { wrapper },
+    )
+    fireEvent.click(screen.getByTestId('rerun-btn'))
+    // 枚举在途（listSources 已被调用但未返回）
+    await waitFor(() =>
+      expect(researchApi.listSources).toHaveBeenCalledWith('proj_1', { limit: 100 }),
+    )
+    // 详情关闭 → 组件卸载 → cleanup 使令牌失效
+    unmount()
+    // 枚举返回后：令牌失效 → 不派发（修复前此路径会继续 mutateAsync）
+    resolveSources({ items: [], next_cursor: null })
+    await new Promise((r) => setTimeout(r, 50))
+    expect(researchApi.runTransformation).not.toHaveBeenCalled()
   })
 
   it('!canExecute（无 confirmed 模型）→ Rerun 禁用 + 提示，点按零派发（Medium-11）', async () => {

@@ -173,6 +173,30 @@ describe('TransformationRunsPanel（RWV2-21 history）', () => {
     expect(after).toBeGreaterThan(before)
   })
 
+  it('response_language null（legacy/RWV2-31 前）→ meta 显示 — 而非误标 en（评审 Medium-1）', async () => {
+    const r = record(1) // response_language: null
+    vi.mocked(researchApi.listTransformationResults).mockResolvedValue({
+      items: [r], next_cursor: null,
+    })
+    const { wrapper } = makeWrapper()
+    render(<TransformationRunsPanel />, { wrapper })
+    const meta = await screen.findByTestId('run-row-meta-tres_01')
+    expect(meta.textContent).toContain('—')
+    // 不能把未知历史语言冒充 'en'（旧实现 ?? 'en' 的回归红线）
+    expect(meta.textContent).not.toContain('en')
+  })
+
+  it('response_language 有值 → meta 显示真实语言（评审 Medium-1 对照组）', async () => {
+    const r = { ...record(1), response_language: 'zh' }
+    vi.mocked(researchApi.listTransformationResults).mockResolvedValue({
+      items: [r], next_cursor: null,
+    })
+    const { wrapper } = makeWrapper()
+    render(<TransformationRunsPanel />, { wrapper })
+    const meta = await screen.findByTestId('run-row-meta-tres_01')
+    expect(meta.textContent).toContain('zh')
+  })
+
   it('点行打开只读详情（TransformationRunDetail）并渲染冻结元数据', async () => {
     const r = record(1)
     vi.mocked(researchApi.listTransformationResults).mockResolvedValue({

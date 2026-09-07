@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useToast } from '@/lib/hooks/use-toast'
@@ -29,6 +29,10 @@ import { resolveCitationSource } from './citation-utils'
  *   - 新建派发：新 `newIdempotencyKey()` + v1 契约头（仿 createCompare）；
  *   - 前置守卫（Medium-9）：legacy `transformation_id=null` → 禁用；
  *   - 可用性守卫（Medium-11）：`!canExecute` → 禁用 + 提示；
+ *   - 生命周期守卫（评审 Medium-3）：详情关闭/卸载后，仍在途的 scope
+ *     解析或外部模型 consent 不再派发（令牌在 unmount 时失效）；
+ *   - 降级响应（评审 Medium-2）：`requires_job: true` 成功时 `result_id`
+ *     为 null（job 化），给可见的 degraded/job 消息而不是静默；
  *   - 成功 UX（Medium-12）：关闭前由父层在列表高亮新行（本组件回调
  *     `onRerunSuccess(result_id)`）；"无新行"= 非 200 reject（High-4）。
  */
@@ -55,6 +59,19 @@ export function TransformationRunDetail({
   const { getSnapshot, validate } = useResearchScope()
   const runMutation = useRunResearchTransformation(projectId)
   const [isResolvingRerun, setIsResolvingRerun] = useState(false)
+  /** 降级任务提示（评审 Medium-2：requires_job job 化的可见反馈） */
+  const [rerunDegraded, setRerunDegraded] = useState<string | null>(null)
+  // 生命周期守卫（评审 Medium-3，同 TransformationsPanel B1/B2 令牌语义）：
+  // 详情关闭/组件卸载后，仍在途的 scope 解析与外部模型 consent 确认都不得
+  // 继续派发。卸载 cleanup 使令牌失效；rerun 捕获起始值，在解析返回后与
+  // runGuarded op 内（mutateAsync 前）各校验一次。
+  const rerunAliveRef = useRef(true)
+  useEffect(() => {
+    rerunAliveRef.current = true
+    return () => {
+      rerunAliveRef.current = false
+    }
+  }, [])
 
   const citations = normalizePersistedCitations(record.citations)
   const rerunnable = showRerun === true && record.transformation_id !== null
@@ -65,6 +82,7 @@ export function TransformationRunDetail({
     const snapshot = getSnapshot()
     if (snapshot.mode === 'selected' && !validate(snapshot).valid) return
     setIsResolvingRerun(true)
+    setRerunDegraded(null)
     let resolved: { sourceIds: string[]; noteIds: string[] }
     try {
       resolved = await resolveScopeSelection(projectId, snapshot)
@@ -78,8 +96,13 @@ export function TransformationRunDetail({
       })
       return
     } finally {
-      setIsResolvingRerun(false)
+      // 只有组件仍存活才复位解析标志（卸载后不触碰状态）
+      if (rerunAliveRef.current) {
+        setIsResolvingRerun(false)
+      }
     }
+    // 评审 Medium-3：scope 解析返回时详情已关闭/卸载 → 不再派发
+    if (!rerunAliveRef.current) return
     const { sourceIds, noteIds } = resolved
     if (snapshot.mode === 'entire_project' && sourceIds.length + noteIds.length === 0) {
       toast({ title: t('common.error'), description: t('research.transformations.emptyProjectBlocked'), variant: 'destructive' })
@@ -87,6 +110,9 @@ export function TransformationRunDetail({
     }
     try {
       await runGuarded(async (modelId) => {
+        // 评审 Medium-3：外部模型 consent 确认期间详情已关闭/卸载 →
+        // op 内（mutateAsync 前）再校验，零派发（与既有 run dialog B2 同构）
+        if (!rerunAliveRef.current) return
         const result = await runMutation.mutateAsync({
           transformationId: record.transformation_id as string,
           sourceIds,
@@ -95,7 +121,14 @@ export function TransformationRunDetail({
           // 新建派发：必须新幂等键（复用旧 key → 后端幂等重放/409）
           idempotencyKey: newIdempotencyKey(),
         })
-        // High-4：200 必有 result_id；此处只可能在成功分支
+        // High-4：非 job 化 200 必有 result_id；job 化（requires_job）成功
+        // 响应 result_id 为 null——评审 Medium-2 指出旧代码在此静默：既不给
+        // 确认也不提示 job。与既有 run flow 的 degraded 处理对齐：可见的
+        // job/降级消息（新结果将由持久任务异步产出，历史列表随后出现）。
+        if (result.requires_job) {
+          setRerunDegraded(result.degradation_reason ?? 'requires_job')
+          return true
+        }
         if (result.result_id) {
           onRerunSuccess?.(result.result_id)
           toast({
@@ -130,7 +163,12 @@ export function TransformationRunDetail({
           <dt>{t('research.transformations.language')}</dt>
           <dd data-testid="detail-language">{record.response_language ?? '—'}</dd>
           <dt>{t('research.transformations.inputs')}</dt>
-          <dd>{record.source_ids.length} sources · {record.note_ids.length} notes</dd>
+          <dd data-testid="detail-inputs-summary">
+            {t('research.transformations.sourceNoteCount', {
+              sources: record.source_ids.length,
+              notes: record.note_ids.length,
+            })}
+          </dd>
           <dt>{t('research.transformations.createdAt')}</dt>
           <dd>{record.created_at ?? '—'}</dd>
         </dl>
@@ -188,6 +226,11 @@ export function TransformationRunDetail({
           {rerunnable && blockedHint !== '' && (
             <p className="text-xs font-medium text-destructive" data-testid="rerun-blocked-hint" role="alert">
               {blockedHint}
+            </p>
+          )}
+          {rerunDegraded !== null && (
+            <p className="text-xs font-medium text-muted-foreground" data-testid="rerun-degraded" role="status">
+              {t('research.transformations.degraded', { reason: rerunDegraded })}
             </p>
           )}
           <Button

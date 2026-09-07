@@ -120,10 +120,18 @@ export function TransformationRunsPanel({
                 onClick={() => openDetail(record)}
               >
                 <p className="truncate text-sm font-medium">{record.title ?? '—'}</p>
-                <p className="mt-1 truncate text-xs text-muted-foreground">
-                  {record.response_language ?? 'en'} ·{' '}
+                <p
+                  className="mt-1 truncate text-xs text-muted-foreground"
+                  data-testid={`run-row-meta-${record.result_id}`}
+                >
+                  {/* 评审 Medium-1：response_language 可 null（RWV2-31 前恒
+                      null / legacy 行），未知语言不能误标为 'en'——与详情
+                      的 '—' 占位保持一致。 */}
+                  {record.response_language ?? '—'} ·{' '}
                   {record.created_at ?? '—'} ·{' '}
-                  {record.source_ids.length + record.note_ids.length} inputs
+                  {t('research.transformations.inputsCount', {
+                    count: record.source_ids.length + record.note_ids.length,
+                  })}
                 </p>
               </button>
             </CardContent>

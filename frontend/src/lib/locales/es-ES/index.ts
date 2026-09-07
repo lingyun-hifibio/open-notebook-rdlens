@@ -1230,6 +1230,8 @@ export const esES = {
       templateConfigRef: "Template version",
       generationId: "Generation",
       inputs: "Inputs",
+      inputsCount: "{{count}} inputs",
+      sourceNoteCount: "{{sources}} sources · {{notes}} notes",
       createdAt: "Created",
       rerun: "Rerun",
       rerunSuccess: "The transformation was rerun.",
