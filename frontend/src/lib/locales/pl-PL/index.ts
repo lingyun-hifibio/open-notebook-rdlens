@@ -1229,4 +1229,3 @@ export const plPL = {
     },
   },
 } satisfies TranslationShape;
-

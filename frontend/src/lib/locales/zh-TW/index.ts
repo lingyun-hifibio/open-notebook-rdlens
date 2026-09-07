@@ -1229,4 +1229,3 @@ export const zhTW = {
     },
   },
 } satisfies TranslationShape;
-

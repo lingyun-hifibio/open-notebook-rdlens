@@ -280,8 +280,9 @@ export function TransformationsPanel({
 
       <div className="space-y-2">
         {items.map((item) => {
-          const isBilingualTemplate =
-            item.bilingual === true && item.scope === 'admin_template'
+          // RWV2-35：门控键 = bilingual（与 run 对话框/executeRun 一致）；
+          // 现契约下双语行必为 admin_template，去掉 scope 合取防未来漂移
+          const isBilingualTemplate = item.bilingual === true
           const scopeLabel = t(
             item.scope === 'admin_template'
               ? 'research.transformations.scopeAdmin'
@@ -301,7 +302,7 @@ export function TransformationsPanel({
                   </div>
                   {isBilingualTemplate ? (
                     <>
-                      <p className="mt-1 text-xs text-muted-foreground" data-testid="template-variant-zh">
+                      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground" data-testid="template-variant-zh">
                         <span className="mr-1 font-semibold">
                           {t('research.transformations.variantZh')}
                         </span>
@@ -386,22 +387,34 @@ export function TransformationsPanel({
               单 prompt（project/legacy）无选择器 → 派发时按 content 检测
               （R3-D：键 = bilingual，legacy admin 单 prompt 行同此路径） */}
           {runTarget?.bilingual === true ? (
-            <div className="flex items-center gap-2" data-testid="run-language-select">
-              <p className="text-xs font-medium text-muted-foreground">
-                {t('research.transformations.runLanguage')}
-              </p>
-              <Select
-                value={runVariant}
-                onValueChange={(value) => setRunVariant(value as 'zh' | 'en')}
-              >
-                <SelectTrigger aria-label="run-language-variant" className="h-8 w-36">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="en">{t('research.transformations.variantEn')}</SelectItem>
-                  <SelectItem value="zh">{t('research.transformations.variantZh')}</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2" data-testid="run-language-select">
+                <p className="text-xs font-medium text-muted-foreground">
+                  {t('research.transformations.runLanguage')}
+                </p>
+                <Select
+                  value={runVariant}
+                  onValueChange={(value) => setRunVariant(value as 'zh' | 'en')}
+                  // LOW-3：Scope 解析在途/派发中禁用选择器——派发语言在
+                  // Confirm 时刻冻结，解析窗口内切换只改显示不改在途载荷
+                  disabled={isResolvingRun || runMutation.isPending}
+                >
+                  <SelectTrigger aria-label="run-language-variant" className="h-8 w-36">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="en">{t('research.transformations.variantEn')}</SelectItem>
+                    <SelectItem value="zh">{t('research.transformations.variantZh')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {/* LOW-3：派发后回读实际冻结语言（双语分支——单 prompt 走下方
+                  detect 行）；Consent 取消不派发则不显示 */}
+              {runLanguage && (
+                <p className="text-xs text-muted-foreground" data-testid="run-language-frozen">
+                  {t('research.transformations.language')}: {runLanguage}
+                </p>
+              )}
             </div>
           ) : (
             <p className="text-xs text-muted-foreground" data-testid="run-language">

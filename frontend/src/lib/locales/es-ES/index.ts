@@ -1230,4 +1230,3 @@ export const esES = {
     },
   },
 } satisfies TranslationShape;
-

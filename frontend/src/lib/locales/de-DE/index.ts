@@ -1231,4 +1231,3 @@ export const deDE = {
     },
   },
 } satisfies TranslationShape;
-

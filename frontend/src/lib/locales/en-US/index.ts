@@ -1245,4 +1245,3 @@ export const enUS = {
 // `satisfies` this type so missing or extra keys fail `tsc`, not just the
 // runtime parity test.
 export type TranslationShape = typeof enUS;
-

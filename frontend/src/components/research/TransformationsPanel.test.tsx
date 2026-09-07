@@ -467,6 +467,10 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
         response_language: 'en',
       }),
     )
+    // LOW-3：派发后回读冻结语言（双语分支）
+    await waitFor(() =>
+      expect(screen.getByTestId('run-language-frozen')).toHaveTextContent('en'),
+    )
   })
 
   it('RWV2-35 run：双语选择器切 zh → Confirm 发 response_language=zh', async () => {
@@ -492,6 +496,10 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
         model_id: 'm-local',
         response_language: 'zh',
       }),
+    )
+    // LOW-3：冻结语言随切 zh 回读 zh
+    await waitFor(() =>
+      expect(screen.getByTestId('run-language-frozen')).toHaveTextContent('zh'),
     )
   })
 
@@ -521,7 +529,8 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
     )
   })
 
-  it('Admin：模板可见但不可创建、不可运行', async () => {    const { wrapper } = makeWrapper('admin_readonly')
+  it('Admin：模板可见但不可创建、不可运行', async () => {
+    const { wrapper } = makeWrapper('admin_readonly')
     render(<TransformationsPanel />, { wrapper })
     await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
     expect(screen.queryByRole('button', { name: 'research.transformations.newTemplate' })).toBeNull()

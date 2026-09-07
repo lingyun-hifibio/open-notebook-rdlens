@@ -1230,4 +1230,3 @@ export const bnIN = {
     },
   },
 } satisfies TranslationShape;
-
