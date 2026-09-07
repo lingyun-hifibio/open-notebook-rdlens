@@ -27,6 +27,7 @@ import {
 } from './use-research-global-model'
 
 vi.mock('@/lib/research/api', () => ({
+  saveResultFromResult: vi.fn(),
   listModels: vi.fn(),
   getExecutionPreferences: vi.fn(),
   patchExecutionPreferences: vi.fn(),

@@ -22,6 +22,7 @@ import type { ResearchPage, ResearchSource, TransformationResultRecord } from '@
 //   新 result_id（父层关详情/高亮）；非 200 reject → 不 invalidate、toast。
 
 vi.mock('@/lib/research/api', () => ({
+  saveResultFromResult: vi.fn(),
   listSources: vi.fn(),
   getSource: vi.fn(),
   listNotes: vi.fn(),

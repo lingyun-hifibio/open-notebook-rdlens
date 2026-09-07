@@ -7,6 +7,7 @@ import type { ResearchCompareReportResponse, ResearchJob } from '@/lib/research/
 // 展开后读取 report 端点并渲染 markdown + citations；未完成不渲染入口。
 
 vi.mock('@/lib/research/api', () => ({
+  saveResultFromResult: vi.fn(),
   getCoverageReport: vi.fn(),
   getCompareReport: vi.fn(),
 }))

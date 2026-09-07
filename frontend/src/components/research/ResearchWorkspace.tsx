@@ -127,6 +127,7 @@ export function ResearchWorkspace({
     backgroundNotice,
     send: sendTurn,
     sendCoverage,
+    resolveChatOrigin,
   } = useResearchChat({ projectId: projectId ?? '' })
 
   // #243 §6.4：Chat/Compare 统一走顶层执行守卫（invariant 9）
@@ -287,6 +288,7 @@ export function ResearchWorkspace({
             onCoverageRetry={isAdminReadonly ? undefined : retryCoverage}
             onCitationJump={handleCitationJump}
             backgroundNotice={backgroundNotice}
+            resolveChatOrigin={resolveChatOrigin}
           />
         )
       case 'compare':

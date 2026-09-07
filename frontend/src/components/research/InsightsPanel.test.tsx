@@ -13,6 +13,7 @@ import type { ResearchInsight } from '@/lib/types/research'
 // （测试替身提供 confirmed 模型），本文件断言「ai 创建携带顶层快照」。
 
 vi.mock('@/lib/research/api', () => ({
+  saveResultFromResult: vi.fn(),
   listInsights: vi.fn(),
   createInsight: vi.fn(),
 }))

@@ -14,6 +14,7 @@ import type { ResearchNote } from '@/lib/types/research'
 // 行，不丢失隐藏选择；Edit/Delete 与选择互不干扰。
 
 vi.mock('@/lib/research/api', () => ({
+  saveResultFromResult: vi.fn(),
   listSources: vi.fn(),
   getSource: vi.fn(),
   listNotes: vi.fn(),

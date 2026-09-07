@@ -22,6 +22,7 @@ const MODEL = 'm-local'
 // 无模型 fail-closed 不发请求，重放沿用同一快照。
 
 vi.mock('@/lib/research/api', () => ({
+  saveResultFromResult: vi.fn(),
   openResearchChatStream: vi.fn(),
   listSourceChatSessions: vi.fn(),
   getSourceChatSession: vi.fn(),

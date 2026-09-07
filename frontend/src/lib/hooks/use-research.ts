@@ -20,12 +20,18 @@ import {
   listTransformations,
   listTransformationResults,
   runTransformation,
+  saveResultFromResult,
   updateNote,
   type CreateInsightInput,
   type CreateNoteInput,
   type CreateTransformationInput,
   type UpdateNoteInput,
 } from '@/lib/research/api'
+import type {
+  ResearchSaveDestinationKind,
+  ResearchSaveOriginKind,
+  ResearchSaveResultResponse,
+} from '@/lib/types/research'
 
 /**
  * Research Gateway 项目级 hooks（UI-02，REQ-API-01；契约 §7）。
@@ -296,4 +302,74 @@ export function useCreateResearchExport(projectId: string) {
     mutationFn: () => createExport(projectId),
     onError,
   })
+}
+
+// ── Save-as-Insight/Note（RWV2-22/Issue #331；RWV2-23/Issue #43 消费） ──
+
+export interface SaveFromResultInput {
+  originKind: ResearchSaveOriginKind
+  originId: string
+  destinationKind: ResearchSaveDestinationKind
+  title?: string
+}
+
+/** 保存展示态缓存的查询键（仅作跨实例/重开展示，去重由确定性幂等键承担）。 */
+export function savedResultEntryKey(
+  projectId: string,
+  originKind: ResearchSaveOriginKind,
+  originId: string,
+  destinationKind: ResearchSaveDestinationKind,
+): readonly unknown[] {
+  return ['research', projectId, 'saved-result', originKind, originId, destinationKind]
+}
+
+/**
+ * 显式保存已持久化结果为 Insight/Note（RWV2-23 D3/D4）。
+ *
+ * - mutation 变量即保存语义（origin/destination/title）；
+ * - 成功（201/200 幂等重放）后写入展示态缓存并失效对应列表查询
+ *   （notes → Materials Notes；insights → Results Insights），使新条目
+ *   首刷可见（服务端 created_at DESC 排序，列表已核实）；
+ * - 错误不在此 toast——由 ResultActions 按状态码呈现（per-result 状态机）。
+ */
+export function useSaveResearchResult(projectId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: SaveFromResultInput) =>
+      saveResultFromResult(projectId, {
+        origin_kind: input.originKind,
+        origin_id: input.originId,
+        destination_kind: input.destinationKind,
+        ...(input.title ? { title: input.title } : {}),
+      }),
+    onSuccess: (saved, input) => {
+      queryClient.setQueryData(
+        savedResultEntryKey(
+          projectId,
+          input.originKind,
+          input.originId,
+          input.destinationKind,
+        ),
+        saved,
+      )
+      const key =
+        input.destinationKind === 'note'
+          ? QUERY_KEYS.researchNotes(projectId)
+          : QUERY_KEYS.researchInsights(projectId)
+      void queryClient.invalidateQueries({ queryKey: key })
+    },
+  })
+}
+
+/** 读取保存展示态缓存条目（重开结果/跨实例展示用；null = 本会话未保存过）。 */
+export function useSavedResultEntry(
+  projectId: string,
+  originKind: ResearchSaveOriginKind,
+  originId: string | null,
+  destinationKind: ResearchSaveDestinationKind,
+): ResearchSaveResultResponse | null | undefined {
+  const queryClient = useQueryClient()
+  return queryClient.getQueryData<ResearchSaveResultResponse>(
+    savedResultEntryKey(projectId, originKind, originId ?? '', destinationKind),
+  )
 }

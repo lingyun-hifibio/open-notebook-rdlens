@@ -96,6 +96,7 @@ const MODELS: ResearchModelOption[] = [
 ]
 
 vi.mock('@/lib/research/api', () => ({
+  saveResultFromResult: vi.fn(),
   listModels: vi.fn(async () => ({ models: MODELS })),
   getExecutionPreferences: vi.fn(async () => noPrefs),
   patchExecutionPreferences: vi.fn(async (_projectId, input) => ({ ...noPrefs, ...input })),

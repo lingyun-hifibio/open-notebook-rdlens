@@ -19,6 +19,7 @@ import type { ResearchNote, ResearchSource } from '@/lib/types/research'
 // 前端禁用不替代后端授权。
 
 vi.mock('@/lib/research/api', () => ({
+  saveResultFromResult: vi.fn(),
   listSources: vi.fn(),
   getSource: vi.fn(),
   listNotes: vi.fn(),

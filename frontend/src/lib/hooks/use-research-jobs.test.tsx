@@ -22,6 +22,7 @@ const MODEL = 'm-local'
 // 不在执行时读取执行偏好；无模型 fail-closed 不创建。
 
 vi.mock('@/lib/research/api', () => ({
+  saveResultFromResult: vi.fn(),
   createCompare: vi.fn(),
   getJob: vi.fn(),
   // Issue #311：必须给默认空页——裸 vi.fn() 返回 undefined 会让

@@ -7,6 +7,7 @@ import type { ResearchJob } from '@/lib/research/types'
 // verification/outcome_unknown 重试/固定 snapshot（§12.3）；普通 Job 不变。
 
 vi.mock('@/lib/research/api', () => ({
+  saveResultFromResult: vi.fn(),
   getCoverageReport: vi.fn(),
 }))
 

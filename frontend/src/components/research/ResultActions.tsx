@@ -1,0 +1,304 @@
+'use client'
+
+import { useCallback, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { Button } from '@/components/ui/button'
+import { useTranslation } from '@/lib/hooks/use-translation'
+import { useToast } from '@/lib/hooks/use-toast'
+import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
+import {
+  savedResultEntryKey,
+  useSaveResearchResult,
+} from '@/lib/hooks/use-research'
+import { buildResultCopyText, type ResultCopyCitation } from './result-copy'
+import type {
+  ResearchSaveDestinationKind,
+  ResearchSaveOriginKind,
+  ResearchSaveResultResponse,
+} from '@/lib/types/research'
+
+/**
+ * RWV2-23（Issue #43）：跨 Search/Chat/Transformation 结果面共享的动作条。
+ *
+ * - Save as Insight / Save as Note：走 RWV2-22（POST save-result）；幂等键
+ *   由 api 层确定性生成（D3）——pending/网络未知期间的重复点击被并发抑制，
+ *   确定性终态后错误可重试，成功后同源同目标不再发请求；
+ * - 成功 UI 仅在 mutation resolve（后端 201/200）后出现，并依据当前信息架构
+ *   回调 View（跳转 Results/Insights 或 Materials/Notes，AC3）；
+ * - per-result 状态存于组件实例（saved 初值来自展示态缓存，跨实例/重开
+ *   结果可见）；未保存绝不误报为已保存；
+ * - Copy：只含正文 + Citation（D7），clipboard 存在性守卫；
+ * - 权限：Owner 可写/继续；Admin（isAdminReadonly）只保留 Copy（AC7），后端
+ *   403 仍是权威（此处错误按状态码呈现，不透传后端 detail）；
+ * - 文案全部走 i18n（AC8）。
+ */
+export interface ResultActionsProps {
+  originKind: ResearchSaveOriginKind
+  /** 不可用（null）时写动作默认隐藏；配合 showSave/resolveOriginId 可呈现 */
+  originId: string | null
+  /**
+   * originId 暂缺时的惰性解析器（chat live 轮：点击 Save 先 resolve
+   * generation_id 再保存；成功前 pending 状态如实呈现）。返回 null → 保存
+   * 不可用错误文案。
+   */
+  resolveOriginId?: () => Promise<string | null>
+  title?: string | null
+  content: string
+  /** 展示归一化后的 Citation 行（chat/search display；Transformation 经归一化） */
+  citations?: readonly ResultCopyCitation[] | null
+  /** 显式强制渲染 Save 按钮（即使 originId 暂缺，用于不可用态说明） */
+  showSave?: boolean
+  saveDisabledReasonKey?: string | null
+  onViewInsight?: (insightId: string) => void
+  onViewNote?: (noteId: string) => void
+  onContinueResearch?: () => void
+}
+
+type SavePhase =
+  | { dest: ResearchSaveDestinationKind; state: 'pending' }
+  | { dest: ResearchSaveDestinationKind; state: 'error'; messageKey: string }
+
+/** 后端错误 → 英文通用 key（专用文案，绝不把后端 detail 当 key 直译）。 */
+export function classifySaveErrorKey(error: unknown): string {
+  const status = (error as { response?: { status?: number } } | null)?.response
+    ?.status
+  if (status === undefined || status >= 500 || status === 404 || status === 503) {
+    // 网络未知 / 瞬时服务端 / 结果缺失或路由缺失（旧后端）→ “暂时不可存”
+    return 'research.resultActions.saveUnavailable'
+  }
+  // 403/409/422 及其它确定失败 → 通用失败
+  return 'research.resultActions.saveFailed'
+}
+
+export function ResultActions({
+  originKind,
+  originId,
+  resolveOriginId,
+  title,
+  content,
+  citations,
+  showSave,
+  saveDisabledReasonKey,
+  onViewInsight,
+  onViewNote,
+  onContinueResearch,
+}: ResultActionsProps) {
+  const { t } = useTranslation()
+  const { toast } = useToast()
+  const { projectId, isAdminReadonly } = useResearchWorkspace()
+  const queryClient = useQueryClient()
+  const saveMutation = useSaveResearchResult(projectId)
+
+  const owner = !isAdminReadonly
+  const canResolve = resolveOriginId !== undefined
+  const saveAvailable = originId !== null || canResolve
+  // originId 与 resolver 均缺 → 写动作禁用 + 原因文案（如 chat 恢复行不可解析）
+  const saveBlocked = !saveAvailable
+  const renderSave = showSave === true ? true : saveAvailable && owner
+  const renderContinue = owner && onContinueResearch !== undefined
+  const pending = saveMutation.isPending
+
+  // 初值：读取展示态缓存（跨实例/重开结果显示已保存 + View）
+  const [saved, setSaved] = useState<
+    Partial<Record<ResearchSaveDestinationKind, ResearchSaveResultResponse>>
+  >(() => {
+    const seed: Partial<Record<ResearchSaveDestinationKind, ResearchSaveResultResponse>> = {}
+    if (originId !== null) {
+      const note = queryClient.getQueryData<ResearchSaveResultResponse>(
+        savedResultEntryKey(projectId, originKind, originId, 'note'),
+      )
+      const insight = queryClient.getQueryData<ResearchSaveResultResponse>(
+        savedResultEntryKey(projectId, originKind, originId, 'insight'),
+      )
+      if (note !== undefined && note !== null) seed.note = note
+      if (insight !== undefined && insight !== null) seed.insight = insight
+    }
+    return seed
+  })
+
+  const [phase, setPhase] = useState<SavePhase | null>(null)
+
+  const handleSave = useCallback(
+    async (destinationKind: ResearchSaveDestinationKind) => {
+      if (pending || phase?.state === 'pending' || saved[destinationKind]) return
+      let effectiveOriginId = originId
+      if (effectiveOriginId === null && canResolve) {
+        effectiveOriginId = await resolveOriginId()
+      }
+      if (effectiveOriginId === null) {
+        setPhase({
+          dest: destinationKind,
+          state: 'error',
+          messageKey: 'research.resultActions.saveUnavailable',
+        })
+        return
+      }
+      setPhase({ dest: destinationKind, state: 'pending' })
+      try {
+        const result = await saveMutation.mutateAsync({
+          originKind,
+          originId: effectiveOriginId,
+          destinationKind,
+          ...(title ? { title } : {}),
+        })
+        setSaved((prev) => ({ ...prev, [destinationKind]: result }))
+        setPhase(null)
+      } catch (error) {
+        setPhase({
+          dest: destinationKind,
+          state: 'error',
+          messageKey: classifySaveErrorKey(error),
+        })
+      }
+    },
+    [originId, originKind, pending, phase?.state, saveMutation, saved, title, canResolve, resolveOriginId],
+  )
+
+  const [copying, setCopying] = useState(false)
+  const handleCopy = useCallback(async () => {
+    if (copying) return
+    const text = buildResultCopyText({ content, citations })
+    if (text === '') {
+      toast({ title: t('research.resultActions.copyFailed'), variant: 'destructive' })
+      return
+    }
+    if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+      toast({ title: t('research.resultActions.copyFailed'), variant: 'destructive' })
+      return
+    }
+    setCopying(true)
+    try {
+      await navigator.clipboard.writeText(text)
+      toast({ title: t('research.resultActions.copySuccess') })
+    } catch {
+      toast({ title: t('research.resultActions.copyFailed'), variant: 'destructive' })
+    } finally {
+      setCopying(false)
+    }
+  }, [content, citations, copying, toast, t])
+
+  const savedNote = saved.note
+  const savedInsight = saved.insight
+  // 判别联合收窄：note/insight detail 视图以互斥 id 键区分
+  const savedInsightId =
+    savedInsight !== undefined && 'insight_id' in savedInsight
+      ? savedInsight.insight_id
+      : null
+  const savedNoteId =
+    savedNote !== undefined && 'note_id' in savedNote ? savedNote.note_id : null
+  const hasSavedInsight = savedInsightId !== null
+  const hasSavedNote = savedNoteId !== null
+
+  return (
+    <div className="space-y-2" data-testid="result-actions">
+      <div className="flex flex-wrap items-center gap-2">
+        {renderSave && (
+          <>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              data-testid="save-as-insight"
+              disabled={hasSavedInsight || pending || saveBlocked}
+              title={
+                saveDisabledReasonKey && saveBlocked
+                  ? t(saveDisabledReasonKey)
+                  : undefined
+              }
+              onClick={() => void handleSave('insight')}
+            >
+              {pending && phase?.dest === 'insight'
+                ? t('research.resultActions.saving')
+                : t('research.resultActions.saveAsInsight')}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              data-testid="save-as-note"
+              disabled={hasSavedNote || pending || saveBlocked}
+              title={
+                saveDisabledReasonKey && saveBlocked
+                  ? t(saveDisabledReasonKey)
+                  : undefined
+              }
+              onClick={() => void handleSave('note')}
+            >
+              {pending && phase?.dest === 'note'
+                ? t('research.resultActions.saving')
+                : t('research.resultActions.saveAsNote')}
+            </Button>
+          </>
+        )}
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          data-testid="copy-result"
+          disabled={copying}
+          onClick={() => void handleCopy()}
+        >
+          {t('research.resultActions.copy')}
+        </Button>
+        {renderContinue && (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            data-testid="continue-research"
+            onClick={onContinueResearch}
+          >
+            {t('research.resultActions.continueResearch')}
+          </Button>
+        )}
+      </div>
+
+      <div aria-live="polite" data-testid="result-action-status" className="text-xs">
+        {saveDisabledReasonKey && saveBlocked && phase === null && !hasSavedInsight && !hasSavedNote && (
+          <p className="text-muted-foreground" role="status">
+            {t(saveDisabledReasonKey)}
+          </p>
+        )}
+        {phase?.state === 'error' && (
+          <p className="text-destructive" role="alert" data-testid="save-error">
+            {t(phase.messageKey)}
+          </p>
+        )}
+        {hasSavedInsight && savedInsightId !== null && (
+          <p className="text-muted-foreground" role="status" data-testid="saved-insight">
+            {t('research.resultActions.savedAsInsight')}
+            {onViewInsight !== undefined && (
+              <Button
+                type="button"
+                size="sm"
+                variant="link"
+                className="px-1"
+                data-testid="view-insight"
+                onClick={() => onViewInsight(savedInsightId)}
+              >
+                {t('research.resultActions.viewInsight')}
+              </Button>
+            )}
+          </p>
+        )}
+        {hasSavedNote && savedNoteId !== null && (
+          <p className="text-muted-foreground" role="status" data-testid="saved-note">
+            {t('research.resultActions.savedAsNote')}
+            {onViewNote !== undefined && (
+              <Button
+                type="button"
+                size="sm"
+                variant="link"
+                className="px-1"
+                data-testid="view-note"
+                onClick={() => onViewNote(savedNoteId)}
+              >
+                {t('research.resultActions.viewNote')}
+              </Button>
+            )}
+          </p>
+        )}
+      </div>
+    </div>
+  )
+}

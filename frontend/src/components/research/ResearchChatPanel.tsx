@@ -7,12 +7,14 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
 import { ResearchCitationList } from './ResearchCitationList'
+import { ResultActions } from './ResultActions'
 import { COVERAGE_SOURCE_HARD_MAX, CoverageScopeSelector } from './CoverageScopeSelector'
 import { CoverageJobDetails } from './CoverageJobDetails'
 import { RETRYABLE_SSE_ERROR_CODES } from '@/lib/research/sse'
 import { userErrorMessageKey } from '@/lib/research/errors'
 import type {
   ResearchBackgroundNotice,
+  ResearchChatSaveOrigin,
   ResearchChatTurn,
   ResearchChatSelection,
 } from '@/lib/hooks/use-research-chat'
@@ -46,6 +48,9 @@ export function ResearchChatPanel({
   onCoverageRetry,
   onCitationJump,
   backgroundNotice,
+  resolveChatOrigin,
+  onViewInsight,
+  onViewNote,
 }: {
   turns: ResearchChatTurn[]
   isStreaming: boolean
@@ -70,6 +75,11 @@ export function ResearchChatPanel({
    * 如实呈现（绝不渲染为假「进行中」流式态）。
    */
   backgroundNotice?: ResearchBackgroundNotice | null
+  /** RWV2-23（D2）：live 轮 Save 的惰性 chat origin 解析（generation_id） */
+  resolveChatOrigin?: (turnId: string) => Promise<ResearchChatSaveOrigin | null>
+  /** RWV2-23（AC3）：保存成功后跳转 Results/Insights 或 Materials/Notes */
+  onViewInsight?: (insightId: string) => void
+  onViewNote?: (noteId: string) => void
 }) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
@@ -203,6 +213,43 @@ export function ResearchChatPanel({
                   )}
 
                   <ResearchCitationList citations={turn.citations} />
+
+                  {/* RWV2-23：已完成 Chat 答案的结果动作（Save/Copy）。
+                      - generationId 已解析（恢复行或 live 完成即绑定）→ 直存；
+                      - live 轮未解析 → 点击 Save 时经 resolveChatOrigin 惰性
+                        解析（成功前 pending，失败给不可用文案）；
+                      - 恢复行但 message_id 非 gen 形态 → 禁存 + 原因文案，
+                        不猜测、不向后端发必然 404 的请求。 */}
+                  {turn.status === 'done' &&
+                    turn.content !== '' &&
+                    turn.coverageJobId === null && (
+                      <ResultActions
+                        originKind="chat"
+                        originId={turn.generationId}
+                        resolveOriginId={
+                          turn.generationId === null && turn.serverMessageId === null
+                            ? () => (resolveChatOrigin
+                                ? resolveChatOrigin(turn.id).then(
+                                    (origin) => origin?.generationId ?? null,
+                                  )
+                                : Promise.resolve(null))
+                            : undefined
+                        }
+                        showSave={
+                          turn.generationId !== null ||
+                          turn.serverMessageId !== null
+                        }
+                        saveDisabledReasonKey={
+                          turn.generationId === null && turn.serverMessageId !== null
+                            ? 'research.resultActions.chatSaveUnavailable'
+                            : null
+                        }
+                        content={turn.content}
+                        citations={turn.citations}
+                        onViewInsight={onViewInsight}
+                        onViewNote={onViewNote}
+                      />
+                    )}
                 </>
               )}
 

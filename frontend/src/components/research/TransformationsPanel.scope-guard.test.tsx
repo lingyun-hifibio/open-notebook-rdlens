@@ -23,6 +23,7 @@ vi.mock('@/lib/research/scope', () => ({
 }))
 
 vi.mock('@/lib/research/api', () => ({
+  saveResultFromResult: vi.fn(),
   listSources: vi.fn(),
   getSource: vi.fn(),
   listNotes: vi.fn(),

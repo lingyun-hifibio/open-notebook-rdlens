@@ -18,6 +18,7 @@ import type { TransformationResultRecord } from '@/lib/types/research'
 // - 点行打开只读详情（TransformationRunDetail）。
 
 vi.mock('@/lib/research/api', () => ({
+  saveResultFromResult: vi.fn(),
   listSources: vi.fn(),
   getSource: vi.fn(),
   listNotes: vi.fn(),

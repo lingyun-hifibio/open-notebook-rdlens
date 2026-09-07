@@ -14,6 +14,7 @@ import type { ResearchGlobalChatMessage } from '@/lib/research/api'
 import type { ResearchSseEvent } from '@/lib/research/types'
 
 vi.mock('@/lib/research/api', () => ({
+  saveResultFromResult: vi.fn(),
   newIdempotencyKey: vi.fn(() => 'ik-turn'),
   openResearchChatStream: vi.fn(),
   getResearchChatSession: vi.fn(),
@@ -124,7 +125,8 @@ describe('useResearchChat.resolveChatOrigin（RWV2-23 D2）', () => {
     expect(result.current.turns[1].generationId).toBe(GEN)
     expect(result.current.turns[1].serverMessageId).toBe(`msg_${GEN}_assistant`)
     await act(async () => {
-      await result.current.resolveChatOrigin(turnId)
+      const again = await result.current.resolveChatOrigin(turnId)
+      expect(again).toEqual({ messageId: `msg_${GEN}_assistant`, generationId: GEN })
     })
     expect(vi.mocked(getResearchChatSession)).toHaveBeenCalledTimes(1)
   })
