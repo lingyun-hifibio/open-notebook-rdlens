@@ -1,15 +1,11 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useToast } from '@/lib/hooks/use-toast'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
-import {
-  savedResultEntryKey,
-  useSaveResearchResult,
-} from '@/lib/hooks/use-research'
+import { useSaveResearchResult, useSavedResultEntry } from '@/lib/hooks/use-research'
 import { buildResultCopyText, type ResultCopyCitation } from './result-copy'
 import type {
   ResearchSaveDestinationKind,
@@ -86,7 +82,6 @@ export function ResultActions({
   const { t } = useTranslation()
   const { toast } = useToast()
   const { projectId, isAdminReadonly } = useResearchWorkspace()
-  const queryClient = useQueryClient()
   const saveMutation = useSaveResearchResult(projectId)
 
   const owner = !isAdminReadonly
@@ -99,23 +94,18 @@ export function ResultActions({
   const renderSave = owner && (showSave === true || saveAvailable)
   const renderContinue = owner && onContinueResearch !== undefined
 
-  // 初值：读取展示态缓存（跨实例/重开结果显示已保存 + View）
-  const [saved, setSaved] = useState<
-    Partial<Record<ResearchSaveDestinationKind, ResearchSaveResultResponse>>
-  >(() => {
-    const seed: Partial<Record<ResearchSaveDestinationKind, ResearchSaveResultResponse>> = {}
-    if (originId !== null) {
-      const note = queryClient.getQueryData<ResearchSaveResultResponse>(
-        savedResultEntryKey(projectId, originKind, originId, 'note'),
-      )
-      const insight = queryClient.getQueryData<ResearchSaveResultResponse>(
-        savedResultEntryKey(projectId, originKind, originId, 'insight'),
-      )
-      if (note !== undefined && note !== null) seed.note = note
-      if (insight !== undefined && insight !== null) seed.insight = insight
-    }
-    return seed
-  })
+  // saved 展示态：反应式订阅缓存条目（useSaveResearchResult.onSuccess 写入；
+  // 删除 Note 后 removeQueries 会实时回到“未保存”，允许再次保存——round-2）。
+  // 惰性解析（chat live）成功后把真实 origin_id 提升为本实例 saved-entry 的
+  // 查询键（round-2：使删除 reconcile 对已解析实例同样生效）。
+  const [resolvedOriginId, setResolvedOriginId] = useState<string | null>(null)
+  const effectiveOriginId = originId ?? resolvedOriginId
+  const noteEntry = useSavedResultEntry(projectId, originKind, effectiveOriginId ?? '', 'note')
+  const insightEntry = useSavedResultEntry(projectId, originKind, effectiveOriginId ?? '', 'insight')
+  const savedFor = (d: ResearchSaveDestinationKind): boolean =>
+    d === 'note'
+      ? noteEntry !== null && 'note_id' in noteEntry
+      : insightEntry !== null && 'insight_id' in insightEntry
 
   const [phase, setPhase] = useState<SavePhase | null>(null)
   const busy = saveMutation.isPending || phase?.state === 'pending'
@@ -135,17 +125,17 @@ export function ResultActions({
 
   const handleSave = useCallback(
     async (destinationKind: ResearchSaveDestinationKind) => {
-      if (saveBusyRef.current || saved[destinationKind]) return
+      if (saveBusyRef.current || savedFor(destinationKind)) return
       saveBusyRef.current = true
       try {
         if (!aliveRef.current) return
         setPhase({ dest: destinationKind, state: 'pending' })
-        let effectiveOriginId = originId
-        if (effectiveOriginId === null && canResolve) {
-          effectiveOriginId = await resolveOriginId()
+        let originToUse = originId
+        if (originToUse === null && canResolve) {
+          originToUse = await resolveOriginId()
         }
         if (!aliveRef.current) return
-        if (effectiveOriginId === null) {
+        if (originToUse === null) {
           setPhase({
             dest: destinationKind,
             state: 'error',
@@ -153,14 +143,17 @@ export function ResultActions({
           })
           return
         }
-        const result = await saveMutation.mutateAsync({
+        if (aliveRef.current && originToUse !== originId) {
+          // chat live 轮：解析成功后提升 saved-entry 查询键
+          setResolvedOriginId(originToUse)
+        }
+        await saveMutation.mutateAsync({
           originKind,
-          originId: effectiveOriginId,
+          originId: originToUse,
           destinationKind,
           ...(title ? { title } : {}),
         })
         if (aliveRef.current) {
-          setSaved((prev) => ({ ...prev, [destinationKind]: result }))
           setPhase(null)
         }
       } catch (error) {
@@ -175,7 +168,7 @@ export function ResultActions({
         saveBusyRef.current = false
       }
     },
-    [originId, originKind, saveMutation, saved, title, canResolve, resolveOriginId],
+    [originId, originKind, saveMutation, savedFor, title, canResolve, resolveOriginId],
   )
 
   const [copying, setCopying] = useState(false)
@@ -209,15 +202,14 @@ export function ResultActions({
     }
   }, [content, citations, copying, toast, t])
 
-  const savedNote = saved.note
-  const savedInsight = saved.insight
-  // 判别联合收窄：note/insight detail 视图以互斥 id 键区分
+  // 判别联合收窄：note/insight detail 视图以互斥 id 键区分；originId 缺省时
+  // 禁用查询返回 null，等同“未保存”。
   const savedInsightId =
-    savedInsight !== undefined && 'insight_id' in savedInsight
-      ? savedInsight.insight_id
+    insightEntry !== null && 'insight_id' in insightEntry
+      ? insightEntry.insight_id
       : null
   const savedNoteId =
-    savedNote !== undefined && 'note_id' in savedNote ? savedNote.note_id : null
+    noteEntry !== null && 'note_id' in noteEntry ? noteEntry.note_id : null
   const hasSavedInsight = savedInsightId !== null
   const hasSavedNote = savedNoteId !== null
 

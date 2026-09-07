@@ -2,8 +2,9 @@
  * RWV2-23（Issue #43，U2）：chat-origin 绑定纯逻辑。
  *
  * 覆盖：message_id 形状守卫（gen vs req）；恢复行解析；live 轮
- * content/前一 user 行双约束；同文双轮取最新；迟到后台行（无相邻
- * user 行）被 content 约束跳过；孤儿 user 行不误绑；无唯一命中 null。
+ * content/前一 user 行双约束；同文双轮（不同答案取强约束唯一命中）；
+ * 同文双轮且内容相同 / 同文迟到行 → 唯一性失败返回 null（不猜测）；
+ * 迟到后台行（无相邻 user 行）被 content 约束跳过；无唯一命中 null。
  */
 import { describe, expect, it } from 'vitest'
 import {

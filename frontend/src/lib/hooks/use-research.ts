@@ -30,6 +30,7 @@ import {
 import type {
   ResearchSaveDestinationKind,
   ResearchSaveOriginKind,
+  ResearchSaveResultResponse,
 } from '@/lib/types/research'
 
 /**
@@ -340,6 +341,28 @@ export function savedResultEntryKey(
   destinationKind: ResearchSaveDestinationKind,
 ): readonly unknown[] {
   return [...savedResultPrefix(projectId), originKind, originId, destinationKind]
+}
+
+/**
+ * 反应式读取保存展示态条目（review round-2：删除 reconcile 经 removeQueries
+ * 清除后，所有已挂载的结果面都会实时回到“未保存”并允许再次保存；跨实例/
+ * 重开结果亦可见）。条目由 useSaveResearchResult.onSuccess 写入。
+ */
+export function useSavedResultEntry(
+  projectId: string,
+  originKind: ResearchSaveOriginKind,
+  originId: string,
+  destinationKind: ResearchSaveDestinationKind,
+): ResearchSaveResultResponse | null {
+  return (
+    useQuery({
+      queryKey: savedResultEntryKey(projectId, originKind, originId, destinationKind),
+      queryFn: () => null,
+      enabled: !!projectId && originId !== '',
+      staleTime: Infinity,
+      gcTime: Infinity,
+    }).data ?? null
+  )
 }
 
 /**

@@ -280,3 +280,44 @@ describe('ResultActions review fixes', () => {
     expect(api).not.toHaveBeenCalled()
   })
 })
+
+describe('ResultActions admin + forced showSave（round-2 Low）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('Admin：即使 showSave=true（chat 不可解析说明态）也不渲染 Save 按钮', () => {
+    renderActions(
+      {
+        originId: null,
+        showSave: true,
+        saveDisabledReasonKey: 'research.resultActions.chatSaveUnavailable',
+      },
+      { role: 'admin_readonly' },
+    )
+    expect(screen.queryByTestId('save-as-insight')).toBeNull()
+    expect(screen.queryByTestId('save-as-note')).toBeNull()
+    expect(screen.getByTestId('copy-result')).toBeTruthy()
+  })
+})
+
+describe('ResultActions saved-state reactivity（round-2 Medium-1）', () => {
+  it('外部删除（removeQueries）后：已挂载实例实时回到“未保存”并允许再次保存', async () => {
+    const api = vi.mocked(saveResultFromResult)
+    api.mockResolvedValue(NOTE_RESULT as never)
+    const queryClient = makeQueryClient()
+    queryClient.setQueryData(savedResultEntryKey(P, 'search', GEN, 'note'), NOTE_RESULT)
+    renderActions({}, { queryClient })
+    expect(screen.getByTestId('saved-note')).toBeTruthy()
+    expect((screen.getByTestId('save-as-note') as HTMLButtonElement).disabled).toBe(true)
+    // NotesPanel 删除 → 缓存条目被清理
+    queryClient.removeQueries({ queryKey: savedResultEntryKey(P, 'search', GEN, 'note') })
+    await waitFor(() => {
+      expect(screen.queryByTestId('saved-note')).toBeNull()
+    })
+    expect((screen.getByTestId('save-as-note') as HTMLButtonElement).disabled).toBe(false)
+    fireEvent.click(screen.getByTestId('save-as-note'))
+    await waitFor(() => expect(screen.getByTestId('saved-note')).toBeTruthy())
+    expect(api).toHaveBeenCalledTimes(1)
+  })
+})
