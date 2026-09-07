@@ -179,7 +179,22 @@ export function useResearchJobs({ projectId }: { projectId: string }): UseResear
   const projectIdRef = useRef<string>(projectId)
 
   /** 合并一次服务端快照；终态一次（非终态响应不得回归已终态卡片）。 */
-  const mergeJob = useCallback((incoming: ResearchJob) => {
+  /**
+   * 合并一次服务端快照；终态一次（非终态响应不得回归已终态卡片）。
+   *
+   * RWV2-41（审查 F1）：服务端列表行是**部分形状**——research_coverage
+   * 行不含 `coverage` 段（仅 GET /jobs/{id} 返回）。若用列表行整体替换
+   * 已富化行，会把已附着的 `coverage` 抹掉，导致报告重开/outcome_unknown
+   * 重试在后续任意列表刷新后消失；因此合并同一 coverage Job 时保留既有
+   * `coverage`（轮询的完整 GET 会携带新值覆盖）。
+   *
+   * RWV2-41（审查 F2）：`bypassTerminalLock` 仅供显式人工重试成功后的
+   * 强制回源使用（用户动作是权威，区别于迟到的轮询响应）。
+   */
+  const mergeJob = useCallback((
+    incoming: ResearchJob,
+    opts?: { bypassTerminalLock?: boolean },
+  ) => {
     setJobs((prev) => {
       if (removedIdsRef.current.has(incoming.job_id)) {
         // purge 墓碑：拒绝迟到/非权威响应复活幽灵
@@ -194,15 +209,24 @@ export function useResearchJobs({ projectId }: { projectId: string }): UseResear
       }
       const existing = prev[index]
       const existingTerminal = isJobTerminal(existing.status)
-      if (existingTerminal && !isJobTerminal(incoming.status)) {
-        // 终态一次：忽略迟到的非终态响应
+      if (existingTerminal && !isJobTerminal(incoming.status) && !opts?.bypassTerminalLock) {
+        // 终态一次：忽略迟到的非终态响应（显式重试除外）
         return prev
       }
       if (isJobTerminal(incoming.status)) {
         terminalLockedRef.current.add(incoming.job_id)
       }
+      // F1：保留既有 coverage 段（列表行是部分形状）
+      let merged = incoming
+      if (
+        incoming.job_type === 'research_coverage'
+        && incoming.coverage === undefined
+        && existing.coverage !== undefined
+      ) {
+        merged = { ...incoming, coverage: existing.coverage }
+      }
       const next = [...prev]
-      next[index] = incoming
+      next[index] = merged
       return next
     })
   }, [])
@@ -248,14 +272,21 @@ export function useResearchJobs({ projectId }: { projectId: string }): UseResear
   /**
    * 单 Job 安全回源：成功 merge；404（Job 已 purge）→ 摘轮询 + 延时确认；
    * 其他错误保留上轮快照。项目已切换时丢弃响应。墓碑 id 不发请求。
+   *
+   * `opts.bypassTerminalLock`：仅供显式人工重试成功后的强制回源使用
+   * （F2：failed+outcome_unknown → retry 后服务端把同一 Job 重新 queued，
+   * 终态一次守卫不得拦住这次权威回源）。
    */
-  const getJobSafe = useCallback(async (jobId: string): Promise<ResearchJob | null> => {
+  const getJobSafe = useCallback(async (
+    jobId: string,
+    opts?: { bypassTerminalLock?: boolean },
+  ): Promise<ResearchJob | null> => {
     if (removedIdsRef.current.has(jobId)) return null
     const pid = projectId
     try {
       const job = await getJob(pid, jobId)
       if (projectIdRef.current !== pid) return job
-      mergeJob(job)
+      mergeJob(job, opts?.bypassTerminalLock ? { bypassTerminalLock: true } : undefined)
       return job
     } catch (err) {
       if (
@@ -378,13 +409,17 @@ export function useResearchJobs({ projectId }: { projectId: string }): UseResear
     void refreshFull()
   }, [refreshFull])
 
-  /** coverage 富化：对指定可见 job 回源详情（去重，成功后才记 enriched）。 */
+  /** coverage 富化：对指定可见 job 回源详情（去重，仅在覆盖段真正附着后记入）。 */
   const ensureCoverageDetails = useCallback((jobIds: readonly string[]) => {
     for (const jobId of jobIds) {
       if (enrichedIdsRef.current.has(jobId)) continue
       if (removedIdsRef.current.has(jobId)) continue
       void getJobSafe(jobId).then((job) => {
-        if (job !== null) enrichedIdsRef.current.add(jobId)
+        // 只有返回的 coverage 段真实存在才记 enriched（否则下次仍可重试，
+        // 不会因一次失败/竞态被永久跳过——审查 F1(b)）
+        if (job !== null && job.coverage !== undefined) {
+          enrichedIdsRef.current.add(jobId)
+        }
       })
     }
   }, [getJobSafe])
@@ -535,16 +570,26 @@ export function useResearchJobs({ projectId }: { projectId: string }): UseResear
     setErrorCode(null)
     setActionError(null)
     try {
-      await retryCoverageJob(projectId, jobId, newIdempotencyKey())
-      registerCoverageJob(jobId)
+      const created = await retryCoverageJob(projectId, jobId, newIdempotencyKey())
+      if (created.job_id !== undefined && created.job_id !== jobId) {
+        // 服务端以新 Job 承接重试：登记新 id（旧 failed 行保留为历史）
+        registerCoverageJob(created.job_id)
+        return true
+      }
+      // 同一 Job 重新 queued（契约 §10 注释：failed → queued 显式重试）：
+      // 清除终态一次锁并以权威回源强制并入（审查 F2），恢复轮询可见性
+      terminalLockedRef.current.delete(jobId)
+      void getJobSafe(jobId, { bypassTerminalLock: true })
+      void refreshPage1()
       return true
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       setError(message)
+      setErrorCode(extractResearchErrorCode(err))
       setActionError(message)
       return false
     }
-  }, [projectId, registerCoverageJob])
+  }, [getJobSafe, projectId, refreshPage1, registerCoverageJob])
 
   return {
     jobs,

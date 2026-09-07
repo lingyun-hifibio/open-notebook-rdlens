@@ -714,6 +714,28 @@ describe('useResearchJobs RWV2-41 全量枚举与触发矩阵', () => {
     expect(result.current.jobs.some((j) => j.job_id === 'job_after_retry')).toBe(true)
   })
 
+  it('页数上限截断：达 MAX_JOB_LIST_PAGES 后停止翻页、状态 ready、不死循环', async () => {
+    // 制造 200 页长链；页面数远超上限
+    vi.mocked(listJobs).mockImplementation(async (_pid, params) => {
+      const idx = params?.cursor === undefined ? 0 : Number(params.cursor.slice(1))
+      const next = idx + 1 < 200 ? `c${idx + 1}` : null
+      return {
+        items: [job(`job_page_${idx}`, 'completed', { progress: 1 })],
+        next_cursor: next,
+      }
+    })
+
+    const { result } = renderHook(() => useResearchJobs({ projectId: 'proj_1' }))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    // 上限 100 页：请求数受控（不无限翻页）；截断后不进入 error
+    expect(vi.mocked(listJobs).mock.calls.length).toBe(100)
+    expect(result.current.listStatus).toBe('ready')
+    expect(result.current.listError).toBeNull()
+    expect(result.current.jobs.length).toBeGreaterThan(0)
+  })
+
   it('projectId 切换：清空 purge timer/集合，旧项目延时确认不再触发', async () => {
     localStorage.setItem('rdlens.research.jobs.proj_1', JSON.stringify(['job_dead_switch']))
     vi.mocked(getJob).mockRejectedValue(axios404())
@@ -880,5 +902,136 @@ describe('useResearchJobs RWV2-41 coverage 富化与权威对账', () => {
     })
     expect(retried).toBe(false)
     expect(result.current.actionError).toBe('retry failed')
+  })
+
+  it('F1 回归：coverage 富化后，后续无 coverage 段的列表合并不得抹掉已附着段', async () => {
+    // 列表行：research_coverage 终态（无 coverage 段）
+    vi.mocked(listJobs).mockResolvedValue({
+      items: [job('job_cov', 'completed', { job_type: 'research_coverage', result_ref: 'art_cov_1', progress: 1 })],
+      next_cursor: null,
+    })
+    vi.mocked(getJob).mockResolvedValue(coverageJob('job_cov'))
+
+    const { result } = renderHook(() => useResearchJobs({ projectId: 'proj_1' }))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    result.current.ensureCoverageDetails(['job_cov'])
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.jobs.find((j) => j.job_id === 'job_cov')?.coverage).toBeDefined()
+
+    // 再次全量枚举：服务端列表行仍无 coverage 段 → merge 必须保留既有段
+    await act(async () => {
+      result.current.refreshActivity()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.jobs.find((j) => j.job_id === 'job_cov')?.coverage).toBeDefined()
+    expect(result.current.listStatus).toBe('ready')
+  })
+
+  it('F2 回归：failed+outcome_unknown 显式重试成功（同 job 重新 queued）→ 解锁并恢复轮询', async () => {
+    const failedCov = coverageJob('job_cov', {
+      status: 'failed',
+      last_error: 'outcome unknown',
+      progress: 0.8,
+      coverage: {
+        synthesis_scope: 'all_selected',
+        contract_version: null,
+        execution_plan_version: null,
+        prompt_bundle_version: null,
+        generation_id: 'gen_old',
+        generation: { generation_id: 'gen_old', state: 'outcome_unknown', failure_code: null },
+      },
+    })
+    vi.mocked(listJobs).mockResolvedValue({
+      items: [failedCov],
+      next_cursor: null,
+    })
+    // 重试回源：同一 job 回到 queued（带 coverage 视图）
+    vi.mocked(getJob).mockResolvedValue(
+      coverageJob('job_cov', {
+        status: 'queued',
+        progress: 0,
+        coverage: {
+          synthesis_scope: 'all_selected',
+          contract_version: null,
+          execution_plan_version: null,
+          prompt_bundle_version: null,
+          generation_id: 'gen_new',
+        },
+      }),
+    )
+    vi.mocked(retryCoverageJob).mockResolvedValue({
+      job_id: 'job_cov',
+      status: 'queued',
+      generation_id: 'gen_new',
+      session_id: 's1',
+    })
+
+    const { result } = renderHook(() => useResearchJobs({ projectId: 'proj_1' }))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.jobs.find((j) => j.job_id === 'job_cov')?.status).toBe('failed')
+
+    // 服务端已受理重试（同一行回到 queued）：后续列表/单查均反映新状态
+    vi.mocked(listJobs).mockResolvedValue({
+      items: [
+        coverageJob('job_cov', {
+          status: 'queued',
+          progress: 0,
+          coverage: {
+            synthesis_scope: 'all_selected',
+            contract_version: null,
+            execution_plan_version: null,
+            prompt_bundle_version: null,
+            generation_id: 'gen_new',
+          },
+        }),
+      ],
+      next_cursor: null,
+    })
+
+    let ok = false
+    await act(async () => {
+      ok = await result.current.retryCoverage('job_cov')
+    })
+    expect(ok).toBe(true)
+    // 终态锁解除 + 权威回源：卡片回到 queued 并恢复轮询
+    expect(result.current.jobs.find((j) => j.job_id === 'job_cov')?.status).toBe('queued')
+    const callsBeforePoll = vi.mocked(getJob).mock.calls.filter(([, jid]) => jid === 'job_cov').length
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS)
+    })
+    const callsAfterPoll = vi.mocked(getJob).mock.calls.filter(([, jid]) => jid === 'job_cov').length
+    expect(callsAfterPoll).toBeGreaterThan(callsBeforePoll)
+  })
+
+  it('重试以新 Job 承接（响应不同 job_id）→ 登记新 id 进入轮询', async () => {
+    vi.mocked(listJobs).mockResolvedValue({ items: [], next_cursor: null })
+    vi.mocked(getJob).mockResolvedValue(job('job_new', 'queued', { job_type: 'research_coverage' }))
+    vi.mocked(retryCoverageJob).mockResolvedValue({
+      job_id: 'job_new',
+      status: 'queued',
+      generation_id: 'gen_new',
+      session_id: 's1',
+    })
+    const { result } = renderHook(() => useResearchJobs({ projectId: 'proj_1' }))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    let ok = false
+    await act(async () => {
+      ok = await result.current.retryCoverage('job_old')
+    })
+    expect(ok).toBe(true)
+    expect(localStorage.getItem('rdlens.research.jobs.proj_1')).toContain('job_new')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS)
+    })
+    expect(result.current.jobs.some((j) => j.job_id === 'job_new')).toBe(true)
+    expect(getJob).toHaveBeenCalledWith('proj_1', 'job_new')
   })
 })

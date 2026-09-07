@@ -81,6 +81,22 @@ function coverageJobWithDetails(id: string): ResearchJob {
   })
 }
 
+function failedOutcomeCoverage(id: string): ResearchJob {
+  return job(id, 'failed', {
+    job_type: 'research_coverage',
+    progress: 0.8,
+    last_error: 'outcome unknown',
+    coverage: {
+      synthesis_scope: 'all_selected',
+      contract_version: null,
+      execution_plan_version: null,
+      prompt_bundle_version: null,
+      generation_id: 'gen_old',
+      generation: { generation_id: 'gen_old', state: 'outcome_unknown', failure_code: null },
+    },
+  })
+}
+
 function wrapper(role: 'owner' | 'admin_readonly' = 'owner') {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -234,5 +250,21 @@ describe('ResearchActivityCenter（RWV2-41）', () => {
     // coverage 段附着后升级为富详情（scope 行 + coverage 详情）
     await waitFor(() => expect(screen.getByTestId('job-scope')).toBeInTheDocument())
     await waitFor(() => expect(screen.getByTestId('coverage-job-details')).toBeInTheDocument())
+  })
+
+  it('Admin 消费层省略 coverage outcome_unknown 重试入口（Owner 保留，服务端仍权威）', async () => {
+    setJobs([job('job_cov_fail', 'failed', { job_type: 'research_coverage', last_error: 'x' })])
+    vi.mocked(api.getJob).mockResolvedValue(failedOutcomeCoverage('job_cov_fail'))
+
+    // Owner：富化后 outcome_unknown 块给出显式重试入口
+    render(<ResearchActivityCenter />, { wrapper: wrapper('owner') })
+    await waitFor(() => expect(screen.getByTestId('coverage-outcome-unknown')).toBeInTheDocument())
+    expect(screen.getByTestId('coverage-retry-trigger')).toBeInTheDocument()
+    cleanup()
+
+    // Admin：同内容，无 cancel/retry 回调 → 不渲染可点的重试入口
+    render(<ResearchActivityCenter />, { wrapper: wrapper('admin_readonly') })
+    await waitFor(() => expect(screen.getByTestId('coverage-outcome-unknown')).toBeInTheDocument())
+    expect(screen.queryByTestId('coverage-retry-trigger')).toBeNull()
   })
 })
