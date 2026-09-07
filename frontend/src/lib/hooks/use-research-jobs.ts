@@ -72,10 +72,11 @@ export interface UseResearchJobsResult {
   isCreating: boolean
   error: string | null
   /**
-   * RWV2-42：最近一次创建/取消错误的稳定码（HTTP detail.code 或本地
-   * 前置码 compare-empty/compare-over-hard/no-model）；raw message 语义
-   * 不变（error），code 仅供消费端映射主文案（AC8）。additive，不破坏
-   * 既有 string 消费端。
+   * RWV2-42：最近一次创建/取消错误的稳定码（HTTP detail.code）；本地
+   * 防御性前置校验（compare-empty/compare-over-hard/no-model）也写入本字段，
+   * 但按面板门控结构（check.ok && !modelBlocked）通常到不了 error 行——
+   * 它们只作 fail-closed 语义与诊断用。raw message 语义不变（error）。
+   * additive，不破坏既有 string 消费端。
    */
   errorCode: string | null
   /**
