@@ -9,7 +9,7 @@ import {
   setGlobalModelStub,
 } from '@/test/global-model-stub'
 import * as researchApi from '@/lib/research/api'
-import type { TransformationResultRecord } from '@/lib/types/research'
+import type { ResearchPage, ResearchSource, TransformationResultRecord } from '@/lib/types/research'
 
 // RWV2-21 Red：Transformation Run 只读详情 + Rerun。
 // - AC-3/AC-5：从选中 result 的不可变数据渲染冻结元数据，改当前
@@ -87,6 +87,17 @@ const snapshotCitation = (overrides: Record<string, unknown> = {}) => ({
   original_text: '引用原文',
   citation_type: 'direct',
   confidence: 'high',
+  ...overrides,
+})
+
+const source = (overrides: Partial<ResearchSource> = {}): ResearchSource => ({
+  source_id: 'src_1',
+  document_id: 'doc_1',
+  document_version: 'v3',
+  status: 'ready',
+  content_hash: 'h',
+  synced_at: null,
+  last_error: null,
   ...overrides,
 })
 
@@ -257,14 +268,40 @@ describe('TransformationRunDetail（RWV2-21 detail + rerun）', () => {
     expect(screen.queryByText('research.transformations.rerunSuccess')).toBeNull()
   })
 
+  it('Rerun requires_job 且 degradation_reason=null → 兜底 requires_job 提示（评审 N3）', async () => {
+    seedScope('selected', ['src_1'], [])
+    vi.mocked(researchApi.runTransformation).mockResolvedValue({
+      request_id: 'req_3',
+      transformation_id: 'trans_1',
+      requires_job: true,
+      degradation_reason: null,
+      result_id: null,
+      model_id: 'm-local',
+      source_refs: ['src_1'],
+      usage: { input_tokens: 1, output_tokens: 1 },
+      citations: [],
+      output: null,
+    })
+    const { wrapper } = makeWrapper()
+    render(
+      <TransformationRunDetail record={record()} sources={[]} showRerun />,
+      { wrapper },
+    )
+    fireEvent.click(screen.getByTestId('rerun-btn'))
+    await waitFor(() => {
+      const degraded = screen.getByTestId('rerun-degraded')
+      // stub t 渲染为 `key:{"reason":"requires_job"}`——断言兜底字面量进入插值
+      expect(degraded.textContent).toContain('requires_job')
+    })
+  })
+
   it('详情在 scope 解析在途时关闭/卸载 → 不派发（评审 Medium-3 生命周期守卫）', async () => {
     seedScope('entire_project')
     const { wrapper } = makeWrapper()
-    let resolveSources!: (v: { items: { source_id: string }[]; next_cursor: string | null }) => void
-    // 先挂起 sources 枚举（resolveScopeSelection 第一段）
-    vi.mocked(researchApi.listSources).mockReturnValue(
-      new Promise((res) => { resolveSources = res }),
-    )
+    const d = deferred<ResearchPage<ResearchSource>>()
+    // 先挂起 sources 枚举（resolveScopeSelection 第一段）。挂 mounted 前无
+    // listSources 调用，故 Once 首个消费者即本 rerun 的枚举。
+    vi.mocked(researchApi.listSources).mockReturnValueOnce(d.promise)
     vi.mocked(researchApi.listNotes).mockResolvedValue({ items: [], next_cursor: null })
     const { unmount } = render(
       <TransformationRunDetail record={record()} sources={[]} showRerun />,
@@ -279,8 +316,40 @@ describe('TransformationRunDetail（RWV2-21 detail + rerun）', () => {
     unmount()
     // 枚举返回非空（若无守卫，旧实现会越过 empty-project 分支直接派发；
     // 守卫必须拦截在 empty-project 检查之前——红测试判别点）
-    resolveSources({ items: [{ source_id: 'src_1' }], next_cursor: null })
+    d.resolve({ items: [source()], next_cursor: null })
     await new Promise((r) => setTimeout(r, 50))
+    expect(researchApi.runTransformation).not.toHaveBeenCalled()
+  })
+
+  it('consent 登记后在途关闭/卸载 → 重放 op 零派发（评审 Medium-3 守卫 #2）', async () => {
+    seedScope('selected', ['src_1'], [])
+    let registeredOp: ((modelId: string) => unknown) | undefined
+    // deferGuarded 模拟外部模型 consent「登记不执行」（与 TransformationsPanel
+    // AC-6 同款 stub 语义）；onGuardedRegistered 捕获登记的执行体供重放
+    setGlobalModelStub({
+      confirmedModelId: 'm-ext',
+      needsConsent: true,
+      deferGuarded: true,
+      models: [{
+        model_id: 'm-ext',
+        display_name: 'Ext M',
+        data_egress: true,
+        interactive_context_levels: ['focused'],
+      }],
+      onGuardedRegistered: (op) => { registeredOp = op },
+    })
+    const { wrapper } = makeWrapper()
+    const { unmount } = render(
+      <TransformationRunDetail record={record()} sources={[]} showRerun />,
+      { wrapper },
+    )
+    fireEvent.click(screen.getByTestId('rerun-btn'))
+    // consent 弹窗打开 = 已登记未执行（真实 provider confirmConsent 前不执行 op）
+    await waitFor(() => expect(registeredOp).toBeDefined())
+    // 详情关闭 → 卸载 → 令牌失效
+    unmount()
+    // 模拟用户确认 consent：执行登记的执行体——op 内 mutateAsync 前守卫须拦截
+    await registeredOp!('m-ext')
     expect(researchApi.runTransformation).not.toHaveBeenCalled()
   })
 
@@ -302,3 +371,13 @@ describe('TransformationRunDetail（RWV2-21 detail + rerun）', () => {
     expect(screen.queryByTestId('rerun-btn')).toBeNull()
   })
 })
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}

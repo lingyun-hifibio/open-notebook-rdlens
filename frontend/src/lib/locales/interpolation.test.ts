@@ -43,4 +43,19 @@ describe('i18next interpolation', () => {
       i18n.t('sources.selectedCount', { count: 4, lng: 'pt-BR' }),
     ).toContain('4')
   })
+
+  it('RWV2-21 inputsCount / sourceNoteCount 占位符渲染（评审 N5）', () => {
+    expect(i18n.t('research.transformations.inputsCount', { count: 3 })).toBe(
+      '3 inputs',
+    )
+    expect(
+      i18n.t('research.transformations.sourceNoteCount', { sources: 2, notes: 1 }),
+    ).toBe('2 sources · 1 notes')
+  })
+
+  it('RWV2-21 degraded 的 reason 插值不被吞（评审 N3 兜底可读）', () => {
+    expect(
+      i18n.t('research.transformations.degraded', { reason: 'requires_job' }),
+    ).toContain('requires_job')
+  })
 })
