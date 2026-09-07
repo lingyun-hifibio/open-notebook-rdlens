@@ -32,6 +32,10 @@ function turn(overrides: Partial<ResearchChatTurn>): ResearchChatTurn {
     coverageJobId: null,
     // RWV2-11（W5）：必填字段——测试工厂默认 null（恢复轮形态）
     scopeSnapshot: null,
+    // RWV2-23（D2）：默认未解析（live 轮形态）；用例需要恢复轮时显式传
+    // serverMessageId/generationId
+    serverMessageId: null,
+    generationId: null,
     ...overrides,
   }
 }
