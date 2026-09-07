@@ -1041,10 +1041,19 @@ export const zhCN = {
     loadFailed: "工作区数据加载失败",
     retry: "重试",
     pagination: { loadMore: "Load more", loadingMore: "Loading more…" },
+    header: {
+      project: "Project",
+    },
+    mainActions: {
+      runTemplate: "Run Template",
+    },
+    activity: {
+      title: "Activity",
+      description: "Research jobs and activity.",
+    },
     tabSearch: "搜索",
     tabChat: "对话",
     tabCompare: "对比",
-    tabJobs: "任务",
     scopeSummary: {
       entireProject: "Entire project",
       sourceOne: "1 source",
@@ -1141,12 +1150,14 @@ export const zhCN = {
     errorTitle: "研究工作区不可用",
     errorMessage: "无法建立研究会话，请返回 RDLens 后重试。",
     workbench: {
-      title: "研究工作台",
       tabSources: "来源",
       tabNotes: "笔记",
       tabInsights: "洞察",
-      tabTransformations: "转换",
       tabRuns: "Runs",
+      groupMaterials: "Materials",
+      groupResults: "Results",
+      groupTools: "Tools",
+      tabTemplates: "Research templates",
       adminBanner: "您正以管理员身份查看（只读）",
       adminBannerDesc: "创建、编辑与运行不可用；查看与导出仍可用。",
       adminWriteDenied: "只读会话：写入被拒绝",

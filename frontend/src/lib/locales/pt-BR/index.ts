@@ -1041,10 +1041,19 @@ export const ptBR = {
     loadFailed: "Failed to load workspace data",
     retry: "Retry",
     pagination: { loadMore: "Load more", loadingMore: "Loading more…" },
+    header: {
+      project: "Project",
+    },
+    mainActions: {
+      runTemplate: "Run Template",
+    },
+    activity: {
+      title: "Activity",
+      description: "Research jobs and activity.",
+    },
     tabSearch: "Search",
     tabChat: "Chat",
     tabCompare: "Compare",
-    tabJobs: "Jobs",
     scopeSummary: {
       entireProject: "Entire project",
       sourceOne: "1 source",
@@ -1141,12 +1150,14 @@ export const ptBR = {
     errorTitle: "Espaço de pesquisa indisponível",
     errorMessage: "Não foi possível estabelecer a sessão de pesquisa. Volte ao RDLens e tente novamente.",
     workbench: {
-      title: "Espaço de trabalho de pesquisa",
       tabSources: "Fontes",
       tabNotes: "Notas",
       tabInsights: "Insights",
-      tabTransformations: "Transformações",
       tabRuns: "Runs",
+      groupMaterials: "Materials",
+      groupResults: "Results",
+      groupTools: "Tools",
+      tabTemplates: "Research templates",
       adminBanner: "Você está vendo como administrador (somente leitura)",
       adminBannerDesc: "Criar, editar e executar não estão disponíveis; visualizar e exportar permanecem disponíveis.",
       adminWriteDenied: "Sessão somente leitura: escrita negada",

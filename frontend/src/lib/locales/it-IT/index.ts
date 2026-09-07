@@ -1041,10 +1041,19 @@ export const itIT = {
     loadFailed: "Failed to load workspace data",
     retry: "Retry",
     pagination: { loadMore: "Load more", loadingMore: "Loading more…" },
+    header: {
+      project: "Project",
+    },
+    mainActions: {
+      runTemplate: "Run Template",
+    },
+    activity: {
+      title: "Activity",
+      description: "Research jobs and activity.",
+    },
     tabSearch: "Search",
     tabChat: "Chat",
     tabCompare: "Compare",
-    tabJobs: "Jobs",
     scopeSummary: {
       entireProject: "Entire project",
       sourceOne: "1 source",
@@ -1141,12 +1150,14 @@ export const itIT = {
     errorTitle: "Area di ricerca non disponibile",
     errorMessage: "Impossibile stabilire la sessione di ricerca. Torna a RDLens e riprova.",
     workbench: {
-      title: "Area di lavoro di ricerca",
       tabSources: "Fonti",
       tabNotes: "Note",
       tabInsights: "Approfondimenti",
-      tabTransformations: "Trasformazioni",
       tabRuns: "Runs",
+      groupMaterials: "Materials",
+      groupResults: "Results",
+      groupTools: "Tools",
+      tabTemplates: "Research templates",
       adminBanner: "Visualizzazione come amministratore (sola lettura)",
       adminBannerDesc: "Creazione, modifica ed esecuzione non disponibili; visualizzazione ed esportazione disponibili.",
       adminWriteDenied: "Sessione di sola lettura: scrittura negata",

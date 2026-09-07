@@ -1041,10 +1041,19 @@ export const plPL = {
     loadFailed: "Failed to load workspace data",
     retry: "Retry",
     pagination: { loadMore: "Load more", loadingMore: "Loading more…" },
+    header: {
+      project: "Project",
+    },
+    mainActions: {
+      runTemplate: "Run Template",
+    },
+    activity: {
+      title: "Activity",
+      description: "Research jobs and activity.",
+    },
     tabSearch: "Search",
     tabChat: "Chat",
     tabCompare: "Compare",
-    tabJobs: "Jobs",
     scopeSummary: {
       entireProject: "Entire project",
       sourceOne: "1 source",
@@ -1141,12 +1150,14 @@ export const plPL = {
     errorTitle: "Przestrzeń badawcza niedostępna",
     errorMessage: "Nie udało się nawiązać sesji badawczej. Wróć do RDLens i spróbuj ponownie.",
     workbench: {
-      title: "Przestrzeń robocza badań",
       tabSources: "Źródła",
       tabNotes: "Notatki",
       tabInsights: "Wnioski",
-      tabTransformations: "Transformacje",
       tabRuns: "Runs",
+      groupMaterials: "Materials",
+      groupResults: "Results",
+      groupTools: "Tools",
+      tabTemplates: "Research templates",
       adminBanner: "Przeglądasz jako administrator (tylko do odczytu)",
       adminBannerDesc: "Tworzenie, edycja i uruchamianie są niedostępne; przeglądanie i eksport pozostają dostępne.",
       adminWriteDenied: "Sesja tylko do odczytu: zapis odrzucony",

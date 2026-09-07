@@ -3,51 +3,82 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useToast } from '@/lib/hooks/use-toast'
+import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { cn } from '@/lib/utils'
 import { createCoverageChat } from '@/lib/research/api'
-import { useResearchChat, type CoverageSubmitRequest, type ResearchChatSelection, deriveScopeSnapshot } from '@/lib/hooks/use-research-chat'
+import {
+  useResearchChat,
+  type CoverageSubmitRequest,
+  type ResearchChatSelection,
+  deriveScopeSnapshot,
+} from '@/lib/hooks/use-research-chat'
 import { formatScopeLabel, useResearchScope, type ResearchScopeSnapshot } from '@/lib/research/scope'
 import { researchModelBlockedHint, useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
-import { useResearchJobs } from '@/lib/hooks/use-research-jobs'
 import { useResearchNotes, useResearchSources } from '@/lib/hooks/use-research'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
-import { ResearchScopeSummary } from './ResearchScopeSummary'
+import { useResearchJobsController } from './ResearchJobsProvider'
 import { ResearchSearchPanel } from './ResearchSearchPanel'
 import { ResearchChatPanel } from './ResearchChatPanel'
 import { ComparePanel } from './ComparePanel'
-import { ResearchJobList } from './ResearchJobList'
+import { TransformationsPanel } from './TransformationsPanel'
+import {
+  RESEARCH_MAIN_ACTIONS,
+  type ResearchMainAction,
+} from './research-main-action'
 import { resolveCitationSource } from './citation-utils'
 import type { ResearchCitationDisplayItem } from '@/lib/research/types'
 import type { ResearchCitation } from '@/lib/types/research'
 
 /**
- * Research 工作区组合（UI-03，REQ-SCOPE-04，设计 §9.3）。
+ * RWV2-40（Fork #44）：主工作区（Main workspace）组合。
  *
- * 项目上下文由认证 Shell 注入；缺少 Provider 时 fail-closed。Source/Note
- * 查询复用 Query Cache，选择由根级 ResearchScopeProvider 共享；Chat 与 Job
- * hooks 挂在工作区层，切换 Tab 不丢失流/轮询状态。
+ * 目标 IA（RFC §2，v9 冻结）：主区固定为四个研究动作——
+ * evidence-search / research-chat / compare / run-template（Jobs 迁往
+ * Header 的 Activity 兼容壳，不再占用主区动作位）。动作与保活由组合根
+ * （ResearchPageContent）控制：`activeAction` 受控下发，本组件维护
+ * `visited` 集合 + 渲染期派生，实现「首次访问后保活」。
  *
- * RWV2-13（Issue #34）：右栏顶部的完整 Sources/Notes 选择器替换为紧凑
- * Scope Summary（模式 + 计数 + Edit scope）——唯一完整编辑面在左栏
- * Sources/Notes 面板（ResearchScopeEditor + 行首复选框）；`onEditScope`
- * 由组合层接线（退出最大化回到左栏编辑面），本组件不持有第二套选择状态。
+ * 资源查询（useResearchSources/Notes）与 reconcile 逻辑留在本组件
+ * （R8-1a 选 a：与 Header 同 key 多 observer，共享单一查询缓存；Header
+ * 的 Current scope 摘要只观察状态，不产生第二网络请求）。
  *
- * COV-09：all_selected 经 `sendCoverage`（202 受理 → Chat 任务卡 +
- * Jobs 页登记，刷新后同一 Job 继续轮询）；报告 Citation 点击经
- * `onCitationJump` 联动上半屏来源预览。
+ * keep-alive 实现（Radix Tabs + forceMount + data-state）：
+ * - `visited` 保存已访问动作；渲染期求并集（visited ∪ {activeAction}），
+ *   保证切换动作的同一帧就挂载对应 pane（避免空帧）；
+ * - 已访问的非活动 pane 加 `forceMount` + `data-[state=inactive]:hidden`
+ *   （保持 DOM、隐藏但不卸载），活动 pane 不加隐藏；
+ * - 未访问动作不渲染 TabsContent —— 不产生空请求，首访才挂载内容
+ *   （如 TransformationsPanel 只在首次进入 run-template 时挂载一次）；
+ * - 注意：useResearchChat/useResearchJobsController/useResearchSources 等
+ *   全部保持在组件层，绝不放入会被卸载的 TabsContent 内（保活前提）。
+ *
+ * Admin 只读（isAdminReadonly）：Chat 的 coverage retry 回调省略（叶子
+ * 组件在无回调时不渲染按钮）；Compare 维持 modelBlocked（canExecute 已
+ * 含 admin-readonly）；后端授权仍是最终权威。
  */
+export interface ResearchWorkspaceProps {
+  /** 主区当前动作（组合根控制；跨区 Tools→run-template 也经此） */
+  activeAction: ResearchMainAction
+  onActiveActionChange: (action: ResearchMainAction) => void
+  /** 全局工作区可见（!sourceFocusActive）；隐藏时 Search preview 停 */
+  surfaceActive: boolean
+  /** Citation → 组合根：选源 + source focus + 高亮目标页 */
+  onCitationJump: (sourceId: string, pageIdx: number | null) => void
+  /** Edit scope → 组合根统一链路（退 focus/最大化 → 左栏编辑面） */
+  onEditScopeAllStates: () => void
+}
+
 export function ResearchWorkspace({
+  activeAction,
+  onActiveActionChange,
+  surfaceActive,
   onCitationJump,
-  onEditScope,
-}: {
-  /** COV-09：报告 Citation → 现有授权预览/来源链路（已解析 source_id + 页码） */
-  onCitationJump?: (sourceId: string, pageIdx: number | null) => void
-  /** RWV2-13：右栏 Edit scope → 组合层退出最大化并回到左栏编辑面 */
-  onEditScope?: () => void
-}) {
+  onEditScopeAllStates,
+}: ResearchWorkspaceProps) {
   const { t } = useTranslation()
   const { toast } = useToast()
-  const { projectId } = useResearchWorkspace()
+  const { projectId, isAdminReadonly } = useResearchWorkspace()
   const { reconcileSelection } = useResearchScope()
   const sourcesQuery = useResearchSources(projectId)
   const notesQuery = useResearchNotes(projectId)
@@ -55,15 +86,17 @@ export function ResearchWorkspace({
   const notes = useMemo(() => notesQuery.data?.items ?? [], [notesQuery.data])
   const loading = sourcesQuery.isLoading || notesQuery.isLoading
   const loadError = sourcesQuery.error ?? notesQuery.error
-  const [tab, setTab] = useState('search')
+  const loadErrorText =
+    loadError instanceof Error ? loadError.message : loadError === null ? null : String(loadError)
 
+  // R8-1a：资源查询留在本组件 —— reconcile 成功后清理失效选中并 toast。
   useEffect(() => {
     if (!sourcesQuery.isSuccess && !notesQuery.isSuccess) return
     const removed = reconcileSelection(
       sourcesQuery.isSuccess
         ? sources
-          .filter((source) => source.status === 'ready' || source.status === 'stale')
-          .map((source) => source.source_id)
+            .filter((source) => source.status === 'ready' || source.status === 'stale')
+            .map((source) => source.source_id)
         : undefined,
       notesQuery.isSuccess ? notes.map((note) => note.note_id) : undefined,
     )
@@ -75,6 +108,18 @@ export function ResearchWorkspace({
     }
   }, [notes, notesQuery.isSuccess, reconcileSelection, sources, sourcesQuery.isSuccess, t, toast])
 
+  // ── Jobs 控制器（ResearchJobsProvider 唯一实例化点；Chat coverage /
+  //    Compare 创建共享同一 3s 轮询控制器） ──
+  const {
+    jobs,
+    isCreating,
+    error: jobsError,
+    createCompare: createCompareJob,
+    registerCoverageJob,
+    retryCoverage,
+  } = useResearchJobsController()
+
+  // Chat SSE 状态机保持组件层（切动作/隐藏不中断流与刷新恢复）
   const {
     turns,
     isStreaming,
@@ -82,26 +127,26 @@ export function ResearchWorkspace({
     send: sendTurn,
     sendCoverage,
   } = useResearchChat({ projectId: projectId ?? '' })
-  const {
-    jobs,
-    isCreating,
-    error: jobsError,
-    createCompare: createCompareJob,
-    cancel,
-    registerCoverageJob,
-    retryCoverage,
-  } = useResearchJobs({
-    projectId: projectId ?? '',
-  })
-  // #243 §6.4：Chat/Compare 统一走顶层执行守卫——传入调用时刻捕获的
-  // confirmed 模型快照；外部模型需确认时只登记不执行，取消零副作用
-  // （不发请求、不建 Job，不变量 9）。
-  // 注意：Chat/Source Chat 固定 focused、Compare 固定 workspace 的档位
-  // 是**省略** context_level 字段、依赖后端默认实现的（评审 Minor-6）——
-  // 前端不提供局部覆盖控件；若后端默认变化，需同步本注释并补显式字段。
+
+  // #243 §6.4：Chat/Compare 统一走顶层执行守卫（invariant 9）
   const { runGuarded, canExecute, blockedReason } = useResearchGlobalModel()
-  // 各生成入口共用同一禁用文案映射（与 Search/SourceChat 一致）
   const blockedHint = researchModelBlockedHint(blockedReason, t)
+
+  // ── keep-alive visited 集合：渲染期并集保证新动作首帧即挂载 ──
+  const [visited, setVisited] = useState<ResearchMainAction[]>(() => [activeAction])
+  useEffect(() => {
+    setVisited((prev) => (prev.includes(activeAction) ? prev : [...prev, activeAction]))
+  }, [activeAction])
+  const mountedActions = useMemo(() => {
+    const set = new Set(visited)
+    set.add(activeAction)
+    return [...set]
+  }, [visited, activeAction])
+
+  const retryResources = useCallback(() => {
+    void sourcesQuery.refetch()
+    void notesQuery.refetch()
+  }, [notesQuery, sourcesQuery])
 
   const sendChat = useCallback(
     async (
@@ -109,8 +154,7 @@ export function ResearchWorkspace({
       selection: ResearchChatSelection | undefined,
     ): Promise<boolean> => {
       // RWV2-11（K11）：consent 摘要由「面板转发来的 selection」推导（与
-      // 最终请求同一快照），禁止回读本组件 provider 态——弹窗摘要必须等
-      // 于派发载荷。
+      // 最终请求同一快照），禁止回读本组件 provider 态。
       const scopeLabel = formatScopeLabel(deriveScopeSnapshot(selection), t)
       const sent = await runGuarded(
         (modelId) => {
@@ -129,8 +173,6 @@ export function ResearchWorkspace({
       documentIds: readonly string[],
       groupSize?: number,
     ): Promise<boolean> => {
-      // RWV2-11（K11）：Compare 只走显式 `selected` 模式（K2）——摘要按
-      // 传入 document_ids 数量从快照形状推导（与入库载荷同源）。
       const scopeLabel = formatScopeLabel(
         {
           mode: 'selected',
@@ -151,8 +193,7 @@ export function ResearchWorkspace({
     [createCompareJob, runGuarded, t],
   )
 
-  // COV-09：all_selected 提交体——202 受理后把 Job 登记进 Jobs 页
-  // （localStorage + 轮询；刷新后同一 Job 与固定 snapshot 继续可见）。
+  // COV-09：all_selected 受理后登记进 Jobs 控制器（localStorage + 轮询）
   const submitCoverage = useCallback(
     async (request: CoverageSubmitRequest, idempotencyKey: string): Promise<{ job_id: string }> => {
       const accepted = await createCoverageChat(
@@ -174,9 +215,6 @@ export function ResearchWorkspace({
 
   const sendCoverageChat = useCallback(
     async (query: string, snapshot: ResearchScopeSnapshot): Promise<boolean> => {
-      // RWV2-11（K9/K11）：快照由面板在派发时刻冻结并转发——本组件不再
-      // 回读 provider 态；consent 摘要与该快照同源；note_ids 恒空（后端
-      // Notes 不支持 Coverage）。
       const scopeLabel = formatScopeLabel(snapshot, t)
       const sent = await runGuarded(
         (modelId) => {
@@ -195,87 +233,153 @@ export function ResearchWorkspace({
     [runGuarded, sendCoverage, submitCoverage, t],
   )
 
-  // COV-09：报告 Citation → 解析到项目内来源后联动上半屏预览（现有链路）；
-  // 传入已解析的 source_id（citation.doc_id 是 document_id，不能直接用作
-  // 来源选择键）
+  // Chat 报告 Citation → 解析到项目内来源后联动上半屏预览
   const handleCitationJump = useCallback(
     (citation: ResearchCitationDisplayItem) => {
       const source = resolveCitationSource(
         sources,
         citation as unknown as ResearchCitation,
       )
-      if (!source || onCitationJump === undefined) return
+      if (!source) return
       onCitationJump(source.source_id, citation.page_idx)
     },
     [onCitationJump, sources],
   )
 
-  return (
-    <div className="flex h-full flex-col">
-      {/* RWV2-13：紧凑 Scope Summary——模式/计数常驻 + Edit scope；唯一编辑面在左栏 */}
-      <ResearchScopeSummary
-        loading={loading}
-        loadError={loadError instanceof Error ? loadError.message : loadError === null ? null : String(loadError)}
-        onRetry={() => {
-          void sourcesQuery.refetch()
-          void notesQuery.refetch()
-        }}
-        onEditScope={onEditScope ?? (() => {})}
-      />
+  // run-template（TransformationsPanel）Citation → 同一条组合根链路
+  const handleTransformationCitation = useCallback(
+    (citation: ResearchCitation) => {
+      const source = resolveCitationSource(sources, citation)
+      if (!source) return
+      onCitationJump(source.source_id, citation.page_idx)
+    },
+    [onCitationJump, sources],
+  )
 
-      <div className="min-h-0 flex-1 border-t">
-        <Tabs value={tab} onValueChange={setTab} className="flex h-full flex-col">
-          <TabsList className="mx-4 mt-2 w-fit">
-            <TabsTrigger value="search">{t('research.tabSearch')}</TabsTrigger>
-            <TabsTrigger value="chat">{t('research.tabChat')}</TabsTrigger>
-            <TabsTrigger value="compare">{t('research.tabCompare')}</TabsTrigger>
-            <TabsTrigger value="jobs">
-              {t('research.tabJobs')}
-              {jobs.length > 0 ? ` (${jobs.length})` : ''}
-            </TabsTrigger>
-          </TabsList>
-          <TabsContent value="search" className="min-h-0 flex-1">
-            {loading ? (
-              <p className="p-4 text-sm text-muted-foreground">{t('research.loading')}</p>
-            ) : (
+  const loadingPlaceholder = (
+    <p className="p-4 text-sm text-muted-foreground">{t('research.loading')}</p>
+  )
+
+  // 资源失败时不渲染 ComparePane（禁止把失败当空 Scope）；错误 + 重试在
+  // 主区顶部资源条呈现（与 Header 同 key 查询共享，重试刷新同一缓存）。
+  const renderPane = (action: ResearchMainAction) => {
+    switch (action) {
+      case 'evidence-search':
+        return loading
+          ? loadingPlaceholder
+          : (
               <ResearchSearchPanel
                 projectId={projectId}
+                active={surfaceActive && activeAction === 'evidence-search'}
               />
-            )}
-          </TabsContent>
-          <TabsContent value="chat" className="min-h-0 flex-1">
-            <ResearchChatPanel
-              turns={turns}
-              isStreaming={isStreaming}
-              onSend={sendChat}
-              onSendCoverage={sendCoverageChat}
-              sendDisabled={!canExecute}
-              blockedHint={blockedHint}
-              coverageJobs={jobs}
-              onCoverageRetry={retryCoverage}
-              onCitationJump={handleCitationJump}
-              backgroundNotice={backgroundNotice}
-            />
-          </TabsContent>
-          <TabsContent value="compare" className="min-h-0 flex-1">
-            <ComparePanel
-              sources={sources}
-              isCreating={isCreating}
-              error={jobsError}
-              onCreate={createCompare}
-              modelBlocked={!canExecute}
-              blockedHint={blockedHint}
-            />
-          </TabsContent>
-          <TabsContent value="jobs" className="min-h-0 flex-1">
-            <ResearchJobList
-              jobs={jobs}
-              isCreating={isCreating}
-              onCancel={cancel}
-              onCoverageRetry={retryCoverage}
-              onCitationJump={handleCitationJump}
-            />
-          </TabsContent>
+            )
+      case 'research-chat':
+        return (
+          <ResearchChatPanel
+            turns={turns}
+            isStreaming={isStreaming}
+            onSend={sendChat}
+            onSendCoverage={sendCoverageChat}
+            sendDisabled={!canExecute}
+            blockedHint={blockedHint}
+            coverageJobs={jobs}
+            onCoverageRetry={isAdminReadonly ? undefined : retryCoverage}
+            onCitationJump={handleCitationJump}
+            backgroundNotice={backgroundNotice}
+          />
+        )
+      case 'compare':
+        // M1 修复：Compare 只消费 sources（document_ids），失败/加载守卫仅
+        // 依赖 sourcesQuery——notes 失败不应禁用 source-only Compare（顶部
+        // workspace-resources-error 仍聚合两者并给整体重试）。
+        if (sourcesQuery.isError && !sourcesQuery.isSuccess) {
+          return (
+            <div
+              role="alert"
+              className="space-y-3 p-4 text-sm text-destructive"
+              data-testid="compare-resources-error"
+            >
+              {t('research.loadFailed')}
+            </div>
+          )
+        }
+        if (sourcesQuery.isLoading && !sourcesQuery.isSuccess) {
+          return (
+            <p className="p-4 text-sm text-muted-foreground" data-testid="compare-loading">
+              {t('research.loading')}
+            </p>
+          )
+        }
+        return (
+          <ComparePanel
+            sources={sources}
+            isCreating={isCreating}
+            error={jobsError}
+            onCreate={createCompare}
+            modelBlocked={!canExecute}
+            blockedHint={blockedHint}
+          />
+        )
+      case 'run-template':
+        return (
+          <TransformationsPanel
+            onCitationJump={handleTransformationCitation}
+            onEditScope={onEditScopeAllStates}
+          />
+        )
+    }
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      {/* RWV2-40：主区资源查询状态（Scope Summary 已迁 Header；查询仍在本
+          组件 R8-1a）。只显示失败 + 重试（加载由 evidence pane 占位呈现），
+          不渲染 Scope 模式摘要/Edit scope（那是 Header Current scope 段）。 */}
+      {loadErrorText !== null && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center gap-2 border-b px-3 py-2"
+          data-testid="workspace-resources-error"
+        >
+          <span className="text-xs text-destructive">{t('research.loadFailed')}</span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={retryResources}
+            data-testid="workspace-resources-retry"
+          >
+            {t('research.retry')}
+          </Button>
+        </div>
+      )}
+
+      <div className="min-h-0 flex-1 border-t">
+        <Tabs
+          value={activeAction}
+          onValueChange={(value) => onActiveActionChange(value as ResearchMainAction)}
+          className="flex h-full flex-col"
+        >
+          <TabsList className="mx-4 mt-2 w-fit">
+            <TabsTrigger value="evidence-search">{t('research.tabSearch')}</TabsTrigger>
+            <TabsTrigger value="research-chat">{t('research.tabChat')}</TabsTrigger>
+            <TabsTrigger value="compare">{t('research.tabCompare')}</TabsTrigger>
+            <TabsTrigger value="run-template">{t('research.mainActions.runTemplate')}</TabsTrigger>
+          </TabsList>
+
+          {RESEARCH_MAIN_ACTIONS.filter((action) => mountedActions.includes(action)).map((action) => {
+            const isActive = action === activeAction
+            return (
+              <TabsContent
+                key={action}
+                value={action}
+                forceMount
+                className={cn('min-h-0 flex-1', !isActive && 'data-[state=inactive]:hidden')}
+              >
+                {renderPane(action)}
+              </TabsContent>
+            )
+          })}
         </Tabs>
       </div>
     </div>

@@ -1042,10 +1042,19 @@ export const bnIN = {
     loadFailed: "Failed to load workspace data",
     retry: "Retry",
     pagination: { loadMore: "Load more", loadingMore: "Loading more…" },
+    header: {
+      project: "Project",
+    },
+    mainActions: {
+      runTemplate: "Run Template",
+    },
+    activity: {
+      title: "Activity",
+      description: "Research jobs and activity.",
+    },
     tabSearch: "Search",
     tabChat: "Chat",
     tabCompare: "Compare",
-    tabJobs: "Jobs",
     scopeSummary: {
       entireProject: "Entire project",
       sourceOne: "1 source",
@@ -1142,12 +1151,14 @@ export const bnIN = {
     errorTitle: "গবেষণা কর্মক্ষেত্র উপলব্ধ নয়",
     errorMessage: "গবেষণা সেশন প্রতিষ্ঠা করা যায়নি। অনুগ্রহ করে RDLens-এ ফিরে আবার চেষ্টা করুন।",
     workbench: {
-      title: "গবেষণা কর্মক্ষেত্র",
       tabSources: "উৎস",
       tabNotes: "নোট",
       tabInsights: "অন্তর্দৃষ্টি",
-      tabTransformations: "রূপান্তর",
       tabRuns: "Runs",
+      groupMaterials: "Materials",
+      groupResults: "Results",
+      groupTools: "Tools",
+      tabTemplates: "Research templates",
       adminBanner: "আপনি প্রশাসক হিসেবে দেখছেন (শুধু-পঠন)",
       adminBannerDesc: "তৈরি, সম্পাদনা ও চালানো অনুপলব্ধ; দেখা ও রপ্তানি উপলব্ধ।",
       adminWriteDenied: "শুধু-পঠন সেশন: লেখা প্রত্যাখ্যাত",

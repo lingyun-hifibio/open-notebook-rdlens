@@ -52,8 +52,16 @@ const CONSENT_ERROR_CODES = [
 
 export function ResearchSearchPanel({
   projectId,
+  active = true,
 }: {
   projectId: string
+  /**
+   * RWV2-40：面板是否处于可见且激活的主动作。隐藏（Source focus / 切到
+   * 其它动作）时停止 Context Preview 的 debounce 与新请求、清空临时
+   * preview；重新激活后按当前输入重新计算。正式提交的 Search、Chat SSE
+   * 与 Jobs 轮询不受影响（不变量：隐藏 ≠ 取消）。
+   */
+  active?: boolean
 }) {
   const { t } = useTranslation()
   const {
@@ -128,7 +136,10 @@ export function ResearchSearchPanel({
 
   useEffect(() => {
     const trimmed = query.trim()
-    if (!trimmed || confirmedModelId === null) {
+    // RWV2-40：inactive（隐藏/非主动作）时不发起 Context Preview——
+    // 清除 debounce、清空临时 preview、不启动新请求；重新激活后再算。
+    // 正式 Search 执行走 executeSearch（run 回调），不因隐藏而取消。
+    if (!active || !trimmed || confirmedModelId === null) {
       setPreview(null)
       return
     }
@@ -153,7 +164,7 @@ export function ResearchSearchPanel({
       cancelled = true
       clearTimeout(timer)
     }
-  }, [query, projectId, selectedLevel, selectedSourceIds, selectedNoteIds, confirmedModelId])
+  }, [active, query, projectId, selectedLevel, selectedSourceIds, selectedNoteIds, confirmedModelId])
 
   const handleSaveContext = useCallback(
     async (level: ResearchContextLevel) => {

@@ -1041,10 +1041,19 @@ export const ruRU = {
     loadFailed: "Failed to load workspace data",
     retry: "Retry",
     pagination: { loadMore: "Load more", loadingMore: "Loading more…" },
+    header: {
+      project: "Project",
+    },
+    mainActions: {
+      runTemplate: "Run Template",
+    },
+    activity: {
+      title: "Activity",
+      description: "Research jobs and activity.",
+    },
     tabSearch: "Search",
     tabChat: "Chat",
     tabCompare: "Compare",
-    tabJobs: "Jobs",
     scopeSummary: {
       entireProject: "Entire project",
       sourceOne: "1 source",
@@ -1141,12 +1150,14 @@ export const ruRU = {
     errorTitle: "Исследовательское пространство недоступно",
     errorMessage: "Не удалось установить исследовательский сеанс. Вернитесь в RDLens и попробуйте снова.",
     workbench: {
-      title: "Рабочее пространство исследований",
       tabSources: "Источники",
       tabNotes: "Заметки",
       tabInsights: "Инсайты",
-      tabTransformations: "Преобразования",
       tabRuns: "Runs",
+      groupMaterials: "Materials",
+      groupResults: "Results",
+      groupTools: "Tools",
+      tabTemplates: "Research templates",
       adminBanner: "Просмотр от имени администратора (только чтение)",
       adminBannerDesc: "Создание, изменение и запуск недоступны; просмотр и экспорт доступны.",
       adminWriteDenied: "Сеанс только для чтения: запись запрещена",

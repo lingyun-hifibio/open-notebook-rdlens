@@ -1041,10 +1041,19 @@ export const frFR = {
     loadFailed: "Failed to load workspace data",
     retry: "Retry",
     pagination: { loadMore: "Load more", loadingMore: "Loading more…" },
+    header: {
+      project: "Project",
+    },
+    mainActions: {
+      runTemplate: "Run Template",
+    },
+    activity: {
+      title: "Activity",
+      description: "Research jobs and activity.",
+    },
     tabSearch: "Search",
     tabChat: "Chat",
     tabCompare: "Compare",
-    tabJobs: "Jobs",
     scopeSummary: {
       entireProject: "Entire project",
       sourceOne: "1 source",
@@ -1141,12 +1150,14 @@ export const frFR = {
     errorTitle: "Espace de recherche indisponible",
     errorMessage: "La session de recherche n'a pas pu être établie. Veuillez revenir à RDLens et réessayer.",
     workbench: {
-      title: "Espace de travail de recherche",
       tabSources: "Sources",
       tabNotes: "Notes",
       tabInsights: "Informations",
-      tabTransformations: "Transformations",
       tabRuns: "Runs",
+      groupMaterials: "Materials",
+      groupResults: "Results",
+      groupTools: "Tools",
+      tabTemplates: "Research templates",
       adminBanner: "Vous consultez en tant qu’administrateur (lecture seule)",
       adminBannerDesc: "Créer, modifier et exécuter sont indisponibles ; consulter et exporter restent disponibles.",
       adminWriteDenied: "Session en lecture seule : écriture refusée",

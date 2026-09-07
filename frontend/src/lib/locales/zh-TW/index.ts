@@ -1041,10 +1041,19 @@ export const zhTW = {
     loadFailed: "Failed to load workspace data",
     retry: "Retry",
     pagination: { loadMore: "Load more", loadingMore: "Loading more…" },
+    header: {
+      project: "Project",
+    },
+    mainActions: {
+      runTemplate: "Run Template",
+    },
+    activity: {
+      title: "Activity",
+      description: "Research jobs and activity.",
+    },
     tabSearch: "Search",
     tabChat: "Chat",
     tabCompare: "Compare",
-    tabJobs: "Jobs",
     scopeSummary: {
       entireProject: "Entire project",
       sourceOne: "1 source",
@@ -1141,12 +1150,14 @@ export const zhTW = {
     errorTitle: "研究工作區無法使用",
     errorMessage: "無法建立研究工作階段，請返回 RDLens 後重試。",
     workbench: {
-      title: "研究工作台",
       tabSources: "來源",
       tabNotes: "筆記",
       tabInsights: "洞察",
-      tabTransformations: "轉換",
       tabRuns: "Runs",
+      groupMaterials: "Materials",
+      groupResults: "Results",
+      groupTools: "Tools",
+      tabTemplates: "Research templates",
       adminBanner: "您正以管理員身分檢視（唯讀）",
       adminBannerDesc: "建立、編輯與執行不可用；檢視與匯出仍可用。",
       adminWriteDenied: "唯讀工作階段：拒絕寫入",

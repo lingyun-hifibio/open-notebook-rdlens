@@ -1042,10 +1042,19 @@ export const esES = {
     loadFailed: "Failed to load workspace data",
     retry: "Retry",
     pagination: { loadMore: "Load more", loadingMore: "Loading more…" },
+    header: {
+      project: "Project",
+    },
+    mainActions: {
+      runTemplate: "Run Template",
+    },
+    activity: {
+      title: "Activity",
+      description: "Research jobs and activity.",
+    },
     tabSearch: "Search",
     tabChat: "Chat",
     tabCompare: "Compare",
-    tabJobs: "Jobs",
     scopeSummary: {
       entireProject: "Entire project",
       sourceOne: "1 source",
@@ -1142,12 +1151,14 @@ export const esES = {
     errorTitle: "Espacio de investigación no disponible",
     errorMessage: "No se pudo establecer la sesión de investigación. Vuelva a RDLens e inténtelo de nuevo.",
     workbench: {
-      title: "Espacio de trabajo de investigación",
       tabSources: "Fuentes",
       tabNotes: "Notas",
       tabInsights: "Información",
-      tabTransformations: "Transformaciones",
       tabRuns: "Runs",
+      groupMaterials: "Materials",
+      groupResults: "Results",
+      groupTools: "Tools",
+      tabTemplates: "Research templates",
       adminBanner: "Está viendo como administrador (solo lectura)",
       adminBannerDesc: "Crear, editar y ejecutar no están disponibles; ver y exportar siguen disponibles.",
       adminWriteDenied: "Sesión de solo lectura: escritura denegada",

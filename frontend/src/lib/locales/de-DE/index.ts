@@ -1043,10 +1043,19 @@ export const deDE = {
     loadFailed: "Failed to load workspace data",
     retry: "Retry",
     pagination: { loadMore: "Load more", loadingMore: "Loading more…" },
+    header: {
+      project: "Project",
+    },
+    mainActions: {
+      runTemplate: "Run Template",
+    },
+    activity: {
+      title: "Activity",
+      description: "Research jobs and activity.",
+    },
     tabSearch: "Search",
     tabChat: "Chat",
     tabCompare: "Compare",
-    tabJobs: "Jobs",
     scopeSummary: {
       entireProject: "Entire project",
       sourceOne: "1 source",
@@ -1143,12 +1152,14 @@ export const deDE = {
     errorTitle: "Forschungsworkspace nicht verfügbar",
     errorMessage: "Die Forschungssitzung konnte nicht eingerichtet werden. Bitte kehren Sie zu RDLens zurück und versuchen Sie es erneut.",
     workbench: {
-      title: "Forschungsworkspace",
       tabSources: "Quellen",
       tabNotes: "Notizen",
       tabInsights: "Erkenntnisse",
-      tabTransformations: "Transformationen",
       tabRuns: "Runs",
+      groupMaterials: "Materials",
+      groupResults: "Results",
+      groupTools: "Tools",
+      tabTemplates: "Research templates",
       adminBanner: "Sie sehen als Administrator (nur lesen)",
       adminBannerDesc: "Erstellen, Bearbeiten und Ausführen sind nicht verfügbar; Anzeigen und Export bleiben verfügbar.",
       adminWriteDenied: "Nur-Lese-Sitzung: Schreiben verweigert",

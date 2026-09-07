@@ -1,0 +1,180 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
+import { ResearchScopeProvider } from '@/lib/research/scope'
+import { ResearchJobsProvider } from './ResearchJobsProvider'
+import { ResearchHeader } from './ResearchHeader'
+import { ResearchActivityDialog } from './ResearchActivityDialog'
+import * as api from '@/lib/research/api'
+import type { ResearchJob } from '@/lib/research/types'
+
+// RWV2-40 Red：Header 五段（Project | Current scope | Global model | Activity |
+// Export）与 Activity 兼容壳（JobList；Admin 无 cancel/retry；关闭 Dialog 后
+// Citation → 组合根路由）。
+
+vi.mock('@/lib/hooks/use-translation', () => ({
+  useTranslation: () => ({
+    t: (key: string, opts?: Record<string, unknown>) =>
+      opts ? `${key}:${String(opts.count ?? opts.name ?? '')}` : key,
+  }),
+}))
+
+const toastMock = vi.fn()
+vi.mock('@/lib/hooks/use-toast', () => ({
+  useToast: () => ({ toast: toastMock }),
+}))
+
+vi.mock('@/lib/research/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof api>()
+  return {
+    ...actual,
+    listSources: vi.fn(async () => ({ items: [], next_cursor: null })),
+    listNotes: vi.fn(async () => ({ items: [], next_cursor: null })),
+    listJobs: vi.fn(async () => ({ items: [], next_cursor: null })),
+    getJob: vi.fn(async (_pid: string, jobId: string) => {
+      const known = activeJobsRef.current.find((j) => j.job_id === jobId)
+      return known ?? ({} as ResearchJob)
+    }),
+    cancelJob: vi.fn(async () => undefined),
+    retryCoverageJob: vi.fn(async () => undefined),
+    createCompare: vi.fn(),
+  }
+})
+
+const mediaQueryMocks = vi.hoisted(() => ({ isDesktop: vi.fn(() => true) }))
+vi.mock('@/lib/hooks/use-media-query', () => ({
+  useIsDesktop: () => mediaQueryMocks.isDesktop(),
+}))
+
+vi.mock('@/lib/hooks/use-research-global-model')
+
+vi.mock('@/components/ui/markdown-renderer', () => ({
+  MarkdownRenderer: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="markdown">{children}</div>
+  ),
+}))
+
+// 供 listJobs/getJob mock 读取的活动任务集合（跨 test 重置）
+const activeJobsRef: { current: ResearchJob[] } = { current: [] }
+
+function setActiveJobs(jobs: ResearchJob[]) {
+  activeJobsRef.current = jobs
+  vi.mocked(api.listJobs).mockResolvedValue({ items: jobs, next_cursor: null })
+  vi.mocked(api.getJob).mockImplementation(async (_pid: string, jobId: string) => {
+    const known = activeJobsRef.current.find((j) => j.job_id === jobId)
+    return known ?? ({} as ResearchJob)
+  })
+}
+
+function job(overrides: Partial<ResearchJob>): ResearchJob {
+  return {
+    job_id: 'job_1',
+    project_id: 'p1',
+    job_type: 'deep_compare',
+    status: 'running',
+    stage: 'group_evidence',
+    progress: 0.4,
+    model_id: 'm1',
+    generation_epoch: 7,
+    retry_count: 0,
+    last_error: null,
+    result_ref: null,
+    created_at: '2026-08-06T02:00:00Z',
+    updated_at: '2026-08-06T02:00:00Z',
+    ...overrides,
+  }
+}
+
+function wrapper(role: 'owner' | 'admin_readonly' = 'owner') {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
+  const w = ({ children }: { children: React.ReactNode }) => (
+    <QueryClientProvider client={queryClient}>
+      <ResearchWorkspaceProvider userId="u1" projectId="proj_1" role={role}>
+        <ResearchJobsProvider>
+          <ResearchScopeProvider userId="u1" projectId="proj_1">
+            {children}
+          </ResearchScopeProvider>
+        </ResearchJobsProvider>
+      </ResearchWorkspaceProvider>
+    </QueryClientProvider>
+  )
+  return w
+}
+
+describe('ResearchHeader（RWV2-40 五段）', () => {
+  beforeEach(() => {
+    toastMock.mockClear()
+    mediaQueryMocks.isDesktop.mockReturnValue(true)
+  })
+  afterEach(cleanup)
+
+  it('渲染 Project 段（完整 projectId 文本）与 Current scope 段', async () => {
+    render(
+      <ResearchHeader onEditScopeAllStates={() => {}} onCitationJump={() => {}} />,
+      { wrapper: wrapper() },
+    )
+    expect(screen.getByTestId('research-header')).toBeInTheDocument()
+    expect(screen.getByTestId('header-project')).toHaveTextContent('proj_1')
+    await waitFor(() =>
+      expect(screen.getByTestId('research-context-scope')).toBeInTheDocument(),
+    )
+    expect(screen.getByTestId('scope-edit-button')).toBeInTheDocument()
+  })
+
+  it('Header 五段可用（Edit scope 触发组合根统一链路）', async () => {
+    const onEdit = vi.fn()
+    render(<ResearchHeader onEditScopeAllStates={onEdit} onCitationJump={() => {}} />, {
+      wrapper: wrapper(),
+    })
+    await waitFor(() => expect(screen.getByTestId('scope-edit-button')).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId('scope-edit-button'))
+    expect(onEdit).toHaveBeenCalledTimes(1)
+  })
+
+  it('Activity trigger 打开 Activity Dialog', async () => {
+    render(
+      <ResearchHeader onEditScopeAllStates={() => {}} onCitationJump={() => {}} />,
+      { wrapper: wrapper() },
+    )
+    fireEvent.click(screen.getByTestId('activity-trigger'))
+    await waitFor(() => expect(screen.getByTestId('activity-dialog')).toBeInTheDocument())
+  })
+})
+
+describe('ResearchActivityDialog（Jobs 兼容壳）', () => {
+  beforeEach(() => {
+    toastMock.mockClear()
+    vi.mocked(api.listJobs).mockClear()
+    vi.mocked(api.cancelJob).mockClear()
+    setActiveJobs([])
+    localStorage.clear()
+  })
+  afterEach(cleanup)
+
+  it('Owner：渲染 JobList；运行中 Job 可 cancel（真回调）', async () => {
+    setActiveJobs([job({})])
+    render(
+      <ResearchActivityDialog open onOpenChange={() => {}} onCitationJump={() => {}} />,
+      { wrapper: wrapper('owner') },
+    )
+    await waitFor(() => expect(screen.getByTestId('job-job_1')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'research.jobsCancel' }))
+    await waitFor(() =>
+      expect(api.cancelJob).toHaveBeenCalledWith('proj_1', 'job_1'),
+    )
+  })
+
+  it('Admin：JobList 可见但无 cancel/retry 按钮（消费层省略回调）', async () => {
+    setActiveJobs([job({})])
+    render(
+      <ResearchActivityDialog open onOpenChange={() => {}} onCitationJump={() => {}} />,
+      { wrapper: wrapper('admin_readonly') },
+    )
+    await waitFor(() => expect(screen.getByTestId('job-job_1')).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: 'research.jobsCancel' })).toBeNull()
+  })
+
+})

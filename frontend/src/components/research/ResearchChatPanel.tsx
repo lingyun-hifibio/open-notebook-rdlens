@@ -163,7 +163,7 @@ export function ResearchChatPanel({
               {turn.coverageJobId !== null ? (
                 <CoverageJobDetails
                   job={coverageJobs?.find((j) => j.job_id === turn.coverageJobId)}
-                  onRetry={onCoverageRetry ?? (async () => false)}
+                  onRetry={onCoverageRetry}
                   onCitationJump={onCitationJump}
                 />
               ) : (

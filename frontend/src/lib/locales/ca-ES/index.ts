@@ -1041,10 +1041,19 @@ export const caES = {
     loadFailed: "Failed to load workspace data",
     retry: "Retry",
     pagination: { loadMore: "Load more", loadingMore: "Loading more…" },
+    header: {
+      project: "Project",
+    },
+    mainActions: {
+      runTemplate: "Run Template",
+    },
+    activity: {
+      title: "Activity",
+      description: "Research jobs and activity.",
+    },
     tabSearch: "Search",
     tabChat: "Chat",
     tabCompare: "Compare",
-    tabJobs: "Jobs",
     scopeSummary: {
       entireProject: "Entire project",
       sourceOne: "1 source",
@@ -1141,12 +1150,14 @@ export const caES = {
     errorTitle: "Espai de recerca no disponible",
     errorMessage: "No s'ha pogut establir la sessió de recerca. Torna a RDLens i torna-ho a provar.",
     workbench: {
-      title: "Espai de treball de recerca",
       tabSources: "Fonts",
       tabNotes: "Notes",
       tabInsights: "Informacions",
-      tabTransformations: "Transformacions",
       tabRuns: "Runs",
+      groupMaterials: "Materials",
+      groupResults: "Results",
+      groupTools: "Tools",
+      tabTemplates: "Research templates",
       adminBanner: "Esteu veient com a administrador (només lectura)",
       adminBannerDesc: "Crear, editar i executar no estan disponibles; veure i exportar continuen disponibles.",
       adminWriteDenied: "Sessió de només lectura: escriptura denegada",

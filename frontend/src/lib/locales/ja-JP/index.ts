@@ -1041,10 +1041,19 @@ export const jaJP = {
     loadFailed: "Failed to load workspace data",
     retry: "Retry",
     pagination: { loadMore: "Load more", loadingMore: "Loading more…" },
+    header: {
+      project: "Project",
+    },
+    mainActions: {
+      runTemplate: "Run Template",
+    },
+    activity: {
+      title: "Activity",
+      description: "Research jobs and activity.",
+    },
     tabSearch: "Search",
     tabChat: "Chat",
     tabCompare: "Compare",
-    tabJobs: "Jobs",
     scopeSummary: {
       entireProject: "Entire project",
       sourceOne: "1 source",
@@ -1141,12 +1150,14 @@ export const jaJP = {
     errorTitle: "研究ワークスペースを利用できません",
     errorMessage: "研究セッションを確立できませんでした。RDLens に戻ってもう一度お試しください。",
     workbench: {
-      title: "研究ワークスペース",
       tabSources: "ソース",
       tabNotes: "ノート",
       tabInsights: "インサイト",
-      tabTransformations: "変換",
       tabRuns: "Runs",
+      groupMaterials: "Materials",
+      groupResults: "Results",
+      groupTools: "Tools",
+      tabTemplates: "Research templates",
       adminBanner: "管理者（読み取り専用）として表示しています",
       adminBannerDesc: "作成・編集・実行は利用できません。表示とエクスポートは利用できます。",
       adminWriteDenied: "読み取り専用セッション：書き込みは拒否されました",

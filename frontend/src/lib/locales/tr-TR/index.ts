@@ -1041,10 +1041,19 @@ export const trTR = {
     loadFailed: "Failed to load workspace data",
     retry: "Retry",
     pagination: { loadMore: "Load more", loadingMore: "Loading more…" },
+    header: {
+      project: "Project",
+    },
+    mainActions: {
+      runTemplate: "Run Template",
+    },
+    activity: {
+      title: "Activity",
+      description: "Research jobs and activity.",
+    },
     tabSearch: "Search",
     tabChat: "Chat",
     tabCompare: "Compare",
-    tabJobs: "Jobs",
     scopeSummary: {
       entireProject: "Entire project",
       sourceOne: "1 source",
@@ -1141,12 +1150,14 @@ export const trTR = {
     errorTitle: "Araştırma çalışma alanı kullanılamıyor",
     errorMessage: "Araştırma oturumu kurulamadı. Lütfen RDLens'e dönüp tekrar deneyin.",
     workbench: {
-      title: "Araştırma çalışma alanı",
       tabSources: "Kaynaklar",
       tabNotes: "Notlar",
       tabInsights: "İçgörüler",
-      tabTransformations: "Dönüşümler",
       tabRuns: "Runs",
+      groupMaterials: "Materials",
+      groupResults: "Results",
+      groupTools: "Tools",
+      tabTemplates: "Research templates",
       adminBanner: "Yönetici olarak görüntülüyorsunuz (salt okunur)",
       adminBannerDesc: "Oluşturma, düzenleme ve çalıştırma kullanılamaz; görüntüleme ve dışa aktarma kullanılabilir.",
       adminWriteDenied: "Salt okunur oturum: yazma reddedildi",
