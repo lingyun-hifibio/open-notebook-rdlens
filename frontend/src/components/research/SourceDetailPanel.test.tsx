@@ -10,6 +10,7 @@ import * as researchApi from '@/lib/research/api'
 // 时展示降级态（Citation 原文由卡片保留）。
 
 vi.mock('@/lib/research/api', () => ({
+  saveResultFromResult: vi.fn(),
   listSources: vi.fn(),
   getSource: vi.fn(),
 }))

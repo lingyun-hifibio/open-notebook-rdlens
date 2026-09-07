@@ -33,9 +33,15 @@ import { TransformationRunDetail } from './TransformationRunDetail'
  */
 export function TransformationRunsPanel({
   onCitationJump,
+  onRevealSavedArtifact,
+  onOpenResearchChatDraft,
 }: {
   /** Citation 跳转回调（工作台提供：解析来源并定位目标页；右栏契约不同源） */
   onCitationJump?: (citation: ResearchCitation) => void
+  /** RWV2-23（AC3）：保存成功后跳转左栏 Notes/Insights（关闭详情后） */
+  onRevealSavedArtifact?: (kind: 'note' | 'insight', artifactId: string) => void
+  /** RWV2-23（AC4）：Continue research —— 关闭详情并打开 Chat 预填 */
+  onOpenResearchChatDraft?: (text: string) => void
 }) {
   const { t } = useTranslation()
   const { projectId, isAdminReadonly } = useResearchWorkspace()
@@ -165,6 +171,37 @@ export function TransformationRunsPanel({
               showRerun={!isAdminReadonly}
               onCitationJump={onCitationJump}
               onRerunSuccess={handleRerunSuccess}
+              onViewInsight={
+                onRevealSavedArtifact !== undefined
+                  ? (insightId) => {
+                      closeDetail()
+                      onRevealSavedArtifact('insight', insightId)
+                    }
+                  : undefined
+              }
+              onViewNote={
+                onRevealSavedArtifact !== undefined
+                  ? (noteId) => {
+                      closeDetail()
+                      onRevealSavedArtifact('note', noteId)
+                    }
+                  : undefined
+              }
+              onContinueResearch={
+                onOpenResearchChatDraft !== undefined
+                  ? () => {
+                      const output = selected.output ?? ''
+                      // AC4：预填为可编辑的续研上下文（引用本结果输出摘录），
+                      // 不自动派发；真正 Send 仍走既有守卫/当前 Scope。
+                      const excerpt = output.trim().slice(0, 400)
+                      const draft = excerpt !== ''
+                        ? `Continue from this result: ${excerpt}`
+                        : 'Continue research on this result.'
+                      closeDetail()
+                      onOpenResearchChatDraft(draft)
+                    }
+                  : undefined
+              }
             />
           )}
         </DialogContent>

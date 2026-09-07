@@ -67,6 +67,12 @@ export interface ResearchWorkspaceProps {
   onCitationJump: (sourceId: string, pageIdx: number | null) => void
   /** Edit scope → 组合根统一链路（退 focus/最大化 → 左栏编辑面） */
   onEditScopeAllStates: () => void
+  /** RWV2-23（AC4）：Continue research → 打开 Chat 并预填（根级 draft） */
+  onOpenResearchChatDraft?: (text: string) => void
+  /** RWV2-23（AC3）：保存成功后跳转左栏 Notes/Insights 并高亮 */
+  onRevealSavedArtifact?: (kind: 'note' | 'insight', artifactId: string) => void
+  /** RWV2-23（AC4）：Chat composer 预填草稿（seq 递增触发） */
+  chatPrefill?: { text: string; seq: number } | null
 }
 
 export function ResearchWorkspace({
@@ -75,6 +81,9 @@ export function ResearchWorkspace({
   surfaceActive,
   onCitationJump,
   onEditScopeAllStates,
+  onOpenResearchChatDraft,
+  onRevealSavedArtifact,
+  chatPrefill,
 }: ResearchWorkspaceProps) {
   const { t } = useTranslation()
   const { toast } = useToast()
@@ -127,6 +136,7 @@ export function ResearchWorkspace({
     backgroundNotice,
     send: sendTurn,
     sendCoverage,
+    resolveChatOrigin,
   } = useResearchChat({ projectId: projectId ?? '' })
 
   // #243 §6.4：Chat/Compare 统一走顶层执行守卫（invariant 9）
@@ -272,6 +282,21 @@ export function ResearchWorkspace({
               <ResearchSearchPanel
                 projectId={projectId}
                 active={surfaceActive && activeAction === 'evidence-search'}
+                onContinueResearch={
+                  onOpenResearchChatDraft !== undefined
+                    ? (text) => onOpenResearchChatDraft(text)
+                    : undefined
+                }
+                onViewInsight={
+                  onRevealSavedArtifact !== undefined
+                    ? (insightId) => onRevealSavedArtifact('insight', insightId)
+                    : undefined
+                }
+                onViewNote={
+                  onRevealSavedArtifact !== undefined
+                    ? (noteId) => onRevealSavedArtifact('note', noteId)
+                    : undefined
+                }
               />
             )
       case 'research-chat':
@@ -287,6 +312,18 @@ export function ResearchWorkspace({
             onCoverageRetry={isAdminReadonly ? undefined : retryCoverage}
             onCitationJump={handleCitationJump}
             backgroundNotice={backgroundNotice}
+            resolveChatOrigin={resolveChatOrigin}
+            prefill={chatPrefill}
+            onViewInsight={
+              onRevealSavedArtifact !== undefined
+                ? (insightId) => onRevealSavedArtifact('insight', insightId)
+                : undefined
+            }
+            onViewNote={
+              onRevealSavedArtifact !== undefined
+                ? (noteId) => onRevealSavedArtifact('note', noteId)
+                : undefined
+            }
           />
         )
       case 'compare':

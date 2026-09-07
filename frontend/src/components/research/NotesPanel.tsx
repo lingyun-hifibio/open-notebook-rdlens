@@ -47,7 +47,15 @@ const DISPLAY_PAGE_SIZE = 20
  * 选择保留在 provider**（AC：Search/filter/tab 变化不得清空隐藏选择）；
  * Edit/Delete 与选择互不干扰。
  */
-export function NotesPanel() {
+export function NotesPanel({
+  revealId = null,
+  revealSeq = null,
+}: {
+  /** RWV2-23（AC3）：保存为 Note 后的左栏高亮目标（行 ring） */
+  revealId?: string | null
+  /** RWV2-23：reveal 递增序号——触发清除活跃搜索词（否则过滤会隐藏新条目） */
+  revealSeq?: number | null
+}) {
   const { t } = useTranslation()
   const { toast } = useToast()
   const { projectId, isAdminReadonly } = useResearchWorkspace()
@@ -62,6 +70,14 @@ export function NotesPanel() {
   const [search, setSearch] = useState('')
   const [debouncedSearch] = useDebounce(search, 300)
   const { data, isLoading, isError, refetch } = useResearchNotes(projectId, debouncedSearch)
+
+  // RWV2-23（R2-5/R3-3）：reveal 时若存在活跃搜索词，新 Note 会被过滤而不
+  // 可见——先复位搜索词（本地输入 + debounce 参数由同一 state 驱动）。
+  useEffect(() => {
+    if (revealSeq !== null && revealSeq !== undefined) {
+      setSearch('')
+    }
+  }, [revealSeq])
   const createMutation = useCreateResearchNote(projectId)
   const updateMutation = useUpdateResearchNote(projectId)
   const deleteMutation = useDeleteResearchNote(projectId)
@@ -192,7 +208,10 @@ export function NotesPanel() {
         {visibleItems.map((item) => (
           <li
             key={item.note_id}
-            className="group flex items-start gap-2 rounded px-2 py-1.5 hover:bg-accent/60"
+            data-testid={`note-row-${item.note_id}`}
+            className={`group flex items-start gap-2 rounded px-2 py-1.5 hover:bg-accent/60${
+              item.note_id === revealId ? ' ring-1 ring-primary' : ''
+            }`}
           >
             <Checkbox
               checked={selectedNoteIds.includes(item.note_id)}

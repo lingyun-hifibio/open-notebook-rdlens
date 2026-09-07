@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
@@ -60,6 +60,12 @@ export interface ResearchWorkbenchProps {
   transformationRuns?: React.ReactNode
   /** 递增序号：Edit scope 请求聚焦左栏编辑面 */
   scopeEditRequest?: number
+  /** RWV2-23（AC3）：保存成功后跳转 Notes/Insights 高亮 */
+  onRevealSavedArtifact?: (kind: 'note' | 'insight', artifactId: string) => void
+  /** RWV2-23（AC4）：Continue research → 打开主区 Chat 并预填 */
+  onOpenResearchChatDraft?: (text: string) => void
+  /** RWV2-23：pane reveal 请求（根级 seq 递增；pane 与高亮目标） */
+  paneReveal?: { pane: 'notes' | 'insights'; artifactId: string; seq: number } | null
 }
 
 const MATERIALS_ITEMS: readonly { pane: 'sources' | 'notes'; labelKey: string }[] = [
@@ -83,10 +89,26 @@ export function ResearchWorkbench({
   onOpenResearchTemplates,
   transformationRuns,
   scopeEditRequest,
+  onRevealSavedArtifact,
+  onOpenResearchChatDraft,
+  paneReveal,
 }: ResearchWorkbenchProps) {
   const { t } = useTranslation()
   const { projectId, isAdminReadonly } = useResearchWorkspace()
   const [pane, setPane] = useState<ResearchWorkbenchPane>('sources')
+  // RWV2-23（AC3）：reveal 请求 → 切 pane + 记录高亮目标（Notes/Insights
+  // 行 ring；新条目按服务端 created_at DESC 恒在首行，滚动无需特判）。
+  const [reveal, setReveal] = useState<{
+    pane: 'notes' | 'insights'
+    artifactId: string
+  } | null>(null)
+  useEffect(() => {
+    if (paneReveal !== null && paneReveal !== undefined) {
+      setPane(paneReveal.pane)
+      setReveal({ pane: paneReveal.pane, artifactId: paneReveal.artifactId })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅响应根级 seq
+  }, [paneReveal?.seq])
   // #44 + #48：Runs 面板 Citation → 解析到项目内来源后经组合根 source-focus
   // 跳转。查询与 RunsPanel 内部共享（同 key 缓存，不双拉）。
   const sourcesQuery = useResearchSources(projectId)
@@ -127,16 +149,29 @@ export function ResearchWorkbench({
       case 'sources':
         return <SourceListPanel onOpenSource={onOpenSource} />
       case 'notes':
-        return <NotesPanel />
+        return (
+          <NotesPanel
+            revealId={reveal?.pane === 'notes' ? reveal.artifactId : null}
+            revealSeq={paneReveal?.seq ?? null}
+          />
+        )
       case 'insights':
-        return <InsightsPanel />
+        return (
+          <InsightsPanel
+            revealId={reveal?.pane === 'insights' ? reveal.artifactId : null}
+          />
+        )
       case 'transformation-runs':
         // #48 已合入：默认消费 TransformationRunsPanel（durable runs 历史 +
         // Rerun/详情 + citation 跳转）。组合根可用 transformationRuns 插槽覆盖。
         return transformationRuns !== undefined ? (
           transformationRuns
         ) : (
-          <TransformationRunsPanel onCitationJump={handleRunsCitationJump} />
+          <TransformationRunsPanel
+            onCitationJump={handleRunsCitationJump}
+            onRevealSavedArtifact={onRevealSavedArtifact}
+            onOpenResearchChatDraft={onOpenResearchChatDraft}
+          />
         )
     }
   }

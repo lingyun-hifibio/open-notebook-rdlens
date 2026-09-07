@@ -9,6 +9,7 @@ import type { ResearchJob } from '@/lib/research/types'
 // 人工重试（§12.2）、固定 revision snapshot、最终报告与 Citation。
 
 vi.mock('@/lib/research/api', () => ({
+  saveResultFromResult: vi.fn(),
   getCoverageReport: vi.fn(),
 }))
 

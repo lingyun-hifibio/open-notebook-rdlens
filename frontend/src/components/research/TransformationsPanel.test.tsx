@@ -22,6 +22,7 @@ import type { ResearchSource, ResearchTransformation } from '@/lib/types/researc
 // - 结果/Citation/requires_job 降级与 Admin 只读行为保持。
 
 vi.mock('@/lib/research/api', () => ({
+  saveResultFromResult: vi.fn(),
   listSources: vi.fn(),
   getSource: vi.fn(),
   listNotes: vi.fn(),

@@ -1,9 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ResearchChatPanel } from './ResearchChatPanel'
+import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
 import { ResearchScopeProvider, scopeStorageKey, useResearchScope, type ResearchScopeSnapshot } from '@/lib/research/scope'
 import type { ResearchBackgroundNotice, ResearchChatTurn } from '@/lib/hooks/use-research-chat'
 import type { ResearchCitation, ResearchJob } from '@/lib/research/types'
+
+vi.mock('@/lib/research/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/research/api')>()
+  return { ...actual, saveResultFromResult: vi.fn() }
+})
+import { saveResultFromResult } from '@/lib/research/api'
 
 // UI-03 Red：Chat 面板展示（REQ-ENG-04）——thinking/answer/citation/usage/
 // resolved_mode 流式渲染；重连提示；错误可重试标记；Citation 页码按
@@ -32,6 +40,10 @@ function turn(overrides: Partial<ResearchChatTurn>): ResearchChatTurn {
     coverageJobId: null,
     // RWV2-11（W5）：必填字段——测试工厂默认 null（恢复轮形态）
     scopeSnapshot: null,
+    // RWV2-23（D2）：默认未解析（live 轮形态）；用例需要恢复轮时显式传
+    // serverMessageId/generationId
+    serverMessageId: null,
+    generationId: null,
     ...overrides,
   }
 }
@@ -63,10 +75,14 @@ function renderPanel(
     scope: { mode: 'entire_project' | 'selected'; sourceIds: string[]; noteIds: string[] }
     coverageJobs: ResearchJob[]
     onCoverageRetry: (jobId: string) => Promise<boolean>
+    resolveChatOrigin: (turnId: string) => Promise<{ messageId: string; generationId: string } | null>
   }> = {},
 ) {
   if (overrides.scope) seedScope(overrides.scope)
+  const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
   return render(
+    <QueryClientProvider client={queryClient}>
+    <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
     <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
       <ResearchChatPanel
         turns={turns}
@@ -75,22 +91,30 @@ function renderPanel(
         onSendCoverage={overrides.onSendCoverage ?? vi.fn(async () => true)}
         coverageJobs={overrides.coverageJobs}
         onCoverageRetry={overrides.onCoverageRetry ?? vi.fn(async () => true)}
+        resolveChatOrigin={overrides.resolveChatOrigin}
       />
-    </ResearchScopeProvider>,
+    </ResearchScopeProvider>
+    </ResearchWorkspaceProvider>
+    </QueryClientProvider>,
   )
 }
 
 function renderPanelWithNotice(notice: ResearchBackgroundNotice) {
+  const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
   return render(
-    <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
-      <ResearchChatPanel
-        turns={[]}
-        isStreaming={false}
-        onSend={vi.fn()}
-        onSendCoverage={vi.fn(async () => true)}
-        backgroundNotice={notice}
-      />
-    </ResearchScopeProvider>,
+    <QueryClientProvider client={queryClient}>
+      <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
+        <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+          <ResearchChatPanel
+            turns={[]}
+            isStreaming={false}
+            onSend={vi.fn()}
+            onSendCoverage={vi.fn(async () => true)}
+            backgroundNotice={notice}
+          />
+        </ResearchScopeProvider>
+      </ResearchWorkspaceProvider>
+    </QueryClientProvider>,
   )
 }
 
@@ -109,16 +133,21 @@ function ToggleNoteHarness() {
 }
 
 function renderPanelWithNoteHarness(turns: ResearchChatTurn[], send = vi.fn()) {
+  const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
   return render(
-    <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
-      <ResearchChatPanel
-        turns={turns}
-        isStreaming={false}
-        onSend={send}
-        onSendCoverage={vi.fn(async () => true)}
-      />
-      <ToggleNoteHarness />
-    </ResearchScopeProvider>,
+    <QueryClientProvider client={queryClient}>
+      <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
+        <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+          <ResearchChatPanel
+            turns={turns}
+            isStreaming={false}
+            onSend={send}
+            onSendCoverage={vi.fn(async () => true)}
+          />
+          <ToggleNoteHarness />
+        </ResearchScopeProvider>
+      </ResearchWorkspaceProvider>
+    </QueryClientProvider>,
   )
 }
 
@@ -432,5 +461,133 @@ describe('ResearchChatPanel #292 P0 错误呈现', () => {
     expect(screen.getByText('半截答案')).toBeInTheDocument()
     expect(screen.getByTestId('chat-error')).toBeInTheDocument()
     expect(screen.queryByText('research.chatNoAnswer')).toBeNull()
+  })
+})
+describe('ResearchChatPanel RWV2-23 result actions', () => {
+  const GEN = 'gen_' + 'a'.repeat(32)
+
+  it('完成的 Chat 答案（有 generationId）提供 Save as Insight/Note 与 Copy', () => {
+    renderPanel([
+      turn({ role: 'user', content: 'q?', id: 'user_t1' }),
+      turn({ id: 't1', content: 'answer', status: 'done', generationId: GEN }),
+    ])
+    expect(screen.getByTestId('save-as-insight')).toBeTruthy()
+    expect(screen.getByTestId('save-as-note')).toBeTruthy()
+    expect(screen.getByTestId('copy-result')).toBeTruthy()
+  })
+
+  it('live 轮未解析：点击 Save 先 resolve 再保存（成功显示已保存态）', async () => {
+    const GEN2 = 'gen_' + 'b'.repeat(32)
+    const api = vi.mocked(saveResultFromResult)
+    api.mockResolvedValue({
+      note_id: 'note_x', project_id: PROJECT_ID, title: 'Saved chat result',
+      content: 'answer', note_type: 'human', created_at: null, updated_at: null,
+      citations: [], provenance: { envelope_version: 1, kind: 'save_from_result', origin_kind: 'chat', origin_id: GEN2, destination_kind: 'note', scope: { source_ids: [], note_ids: [] }, model_id: 'm', response_language: 'en', saved_at: 'x', saved_by_user_id: 1, source_timestamps: {} },
+    })
+    const resolve = vi.fn(async () => ({ messageId: `msg_${GEN2}_assistant`, generationId: GEN2 }))
+    renderPanel([
+      turn({ role: 'user', content: 'q?', id: 'user_t1' }),
+      turn({ id: 't1', content: 'answer', status: 'done' }),
+    ], vi.fn(), { resolveChatOrigin: resolve })
+    // live 未解析（serverMessageId/generationId null）：经 resolveOriginId 惰性解析
+    fireEvent.click(screen.getByTestId('save-as-note'))
+    await waitFor(() => expect(screen.getByTestId('saved-note')).toBeTruthy())
+    expect(resolve).toHaveBeenCalledWith('t1')
+    expect(api).toHaveBeenCalledWith(PROJECT_ID, {
+      origin_kind: 'chat',
+      origin_id: GEN2,
+      destination_kind: 'note',
+    })
+  })
+
+  it('恢复行但 message_id 不可解析：Save 禁用并显示英文原因文案（不猜测）', () => {
+    renderPanel([
+      turn({ role: 'user', content: 'q?', id: 'user_t1' }),
+      turn({
+        id: 't1', content: 'answer', status: 'done',
+        serverMessageId: `msg_req_${'1'.repeat(16)}_assistant`, generationId: null,
+      }),
+    ])
+    expect((screen.getByTestId('save-as-insight') as HTMLButtonElement).disabled).toBe(true)
+    expect((screen.getByTestId('save-as-note') as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByTestId('result-action-status')).toHaveTextContent(
+      'research.resultActions.chatSaveUnavailable',
+    )
+  })
+
+  it('coverage turn / streaming / error 轮不渲染结果动作', () => {
+    renderPanel([
+      turn({ role: 'user', content: 'q', id: 'u0' }),
+      turn({ id: 't0', content: '', status: 'streaming' }),
+      turn({ id: 't1', content: 'err', status: 'error', errorCode: 'http_error' }),
+      turn({ id: 't2', content: 'cov', status: 'done', coverageJobId: 'j1' }),
+    ])
+    expect(screen.queryAllByTestId('result-actions')).toHaveLength(0)
+  })
+})
+
+describe('ResearchChatPanel continue-research prefill（RWV2-23 AC4）', () => {
+  it('无 prefill：composer 保持空', () => {
+    renderPanel([])
+    expect((screen.getByTestId('chat-input') as HTMLInputElement).value).toBe('')
+  })
+
+  it('带 prefill 的渲染会预填 composer 文本', () => {
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
+          <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+            <ResearchChatPanel
+              turns={[]}
+              isStreaming={false}
+              onSend={vi.fn(async () => true)}
+              onSendCoverage={vi.fn(async () => true)}
+              prefill={{ text: 'Continue from this result: excerpt', seq: 1 }}
+            />
+          </ResearchScopeProvider>
+        </ResearchWorkspaceProvider>
+      </QueryClientProvider>,
+    )
+    expect((screen.getByTestId('chat-input') as HTMLInputElement).value).toBe(
+      'Continue from this result: excerpt',
+    )
+    // 不自动派发
+    expect(screen.getByTestId('chat-send')).toBeTruthy()
+  })
+
+  it('prefill seq 递增更新 composer（keep-alive 轮）', () => {
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
+    const { rerender } = render(
+      <QueryClientProvider client={queryClient}>
+        <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
+          <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+            <ResearchChatPanel
+              turns={[]}
+              isStreaming={false}
+              onSend={vi.fn(async () => true)}
+              onSendCoverage={vi.fn(async () => true)}
+              prefill={{ text: 'draft v1', seq: 1 }}
+            />
+          </ResearchScopeProvider>
+        </ResearchWorkspaceProvider>
+      </QueryClientProvider>,
+    )
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
+          <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+            <ResearchChatPanel
+              turns={[]}
+              isStreaming={false}
+              onSend={vi.fn(async () => true)}
+              onSendCoverage={vi.fn(async () => true)}
+              prefill={{ text: 'draft v2', seq: 2 }}
+            />
+          </ResearchScopeProvider>
+        </ResearchWorkspaceProvider>
+      </QueryClientProvider>,
+    )
+    expect((screen.getByTestId('chat-input') as HTMLInputElement).value).toBe('draft v2')
   })
 })

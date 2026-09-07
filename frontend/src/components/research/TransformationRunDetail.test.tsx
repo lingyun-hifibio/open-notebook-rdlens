@@ -22,6 +22,7 @@ import type { ResearchPage, ResearchSource, TransformationResultRecord } from '@
 //   新 result_id（父层关详情/高亮）；非 200 reject → 不 invalidate、toast。
 
 vi.mock('@/lib/research/api', () => ({
+  saveResultFromResult: vi.fn(),
   listSources: vi.fn(),
   getSource: vi.fn(),
   listNotes: vi.fn(),
@@ -389,3 +390,55 @@ function deferred<T>() {
   })
   return { promise, resolve, reject }
 }
+
+describe('TransformationRunDetail RWV2-23 result actions', () => {
+  beforeEach(() => {
+    vi.mocked(researchApi.saveResultFromResult).mockResolvedValue({
+      insight_id: 'insight_s1', project_id: P, title: 'Summarizer',
+      content: 'ORR was 45%.', insight_type: 'ai', model_id: 'm-local',
+      created_at: null, updated_at: null, citations: [],
+      provenance: { envelope_version: 1, kind: 'save_from_result', origin_kind: 'transformation', origin_id: 'gen_1', destination_kind: 'insight', scope: { source_ids: ['src_1'], note_ids: [] }, model_id: 'm-local', response_language: null, saved_at: 'x', saved_by_user_id: 1, source_timestamps: {} },
+    } as never)
+  })
+
+  it('Owner：completed 结果提供 Save/Copy；保存 origin 恒为 record.generation_id（AC6）', async () => {
+    const rec = record()
+    const onViewInsight = vi.fn()
+    const { wrapper } = makeWrapper()
+    render(
+      <TransformationRunDetail
+        record={rec}
+        sources={[]}
+        showRerun
+        onViewInsight={onViewInsight}
+      />,
+      { wrapper },
+    )
+    expect(screen.getByTestId('save-as-insight')).toBeTruthy()
+    fireEvent.click(screen.getByTestId('save-as-insight'))
+    await waitFor(() => expect(screen.getByTestId('saved-insight')).toBeTruthy())
+    expect(researchApi.saveResultFromResult).toHaveBeenCalledWith(
+      P,
+      { origin_kind: 'transformation', origin_id: 'gen_1', destination_kind: 'insight' },
+    )
+    fireEvent.click(screen.getByTestId('view-insight'))
+    expect(onViewInsight).toHaveBeenCalledWith('insight_s1')
+  })
+
+  it('legacy 行（generation_id=null）：无写动作，仅 Copy（不猜测）', async () => {
+    const rec = record({ generation_id: null, transformation_id: null })
+    const { wrapper } = makeWrapper()
+    render(<TransformationRunDetail record={rec} sources={[]} showRerun />, { wrapper })
+    expect(screen.queryByTestId('save-as-insight')).toBeNull()
+    expect(screen.queryByTestId('save-as-note')).toBeNull()
+    expect(screen.getByTestId('copy-result')).toBeTruthy()
+  })
+
+  it('Admin（admin_readonly）：无 Save/Continue，仅 Copy（AC7，后端仍权威）', async () => {
+    const rec = record()
+    const { wrapper } = makeWrapper('admin_readonly')
+    render(<TransformationRunDetail record={rec} sources={[]} showRerun={false} />, { wrapper })
+    expect(screen.queryByTestId('save-as-insight')).toBeNull()
+    expect(screen.getByTestId('copy-result')).toBeTruthy()
+  })
+})

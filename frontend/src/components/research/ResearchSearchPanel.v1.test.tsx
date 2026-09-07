@@ -96,6 +96,7 @@ const MODELS: ResearchModelOption[] = [
 ]
 
 vi.mock('@/lib/research/api', () => ({
+  saveResultFromResult: vi.fn(),
   listModels: vi.fn(async () => ({ models: MODELS })),
   getExecutionPreferences: vi.fn(async () => noPrefs),
   patchExecutionPreferences: vi.fn(async (_projectId, input) => ({ ...noPrefs, ...input })),
@@ -123,6 +124,7 @@ import {
   listModels,
   newIdempotencyKey,
   patchExecutionPreferences,
+  saveResultFromResult,
   searchV1,
 } from '@/lib/research/api'
 import type { ResearchModelOption } from '@/lib/research/types'
@@ -131,7 +133,10 @@ let keySeq = 0
 
 /** 复现页面真实结构：provider → 面板 + 根级确认弹窗。`selection=null` 表示
  *  entire_project 模式；默认 selected ['d1']（保持既有用例语义）。 */
-function renderPanel(selection: string[] | null = ['d1']) {
+function renderPanel(
+  selection: string[] | null = ['d1'],
+  callbacks: { onContinueResearch?: (text: string) => void } = {},
+) {
   // RWV2-11（K7/W6）：面板直接消费共享 Provider——选择经 localStorage 预置
   // （仿 scope.test.tsx 模式）。
   localStorage.setItem(
@@ -151,7 +156,10 @@ function renderPanel(selection: string[] | null = ['d1']) {
       <ResearchWorkspaceProvider projectId="p1" role="owner">
         <ResearchScopeProvider userId="u1" projectId="p1">
           <ResearchGlobalModelProvider>
-            <ResearchSearchPanel projectId="p1" />
+            <ResearchSearchPanel
+              projectId="p1"
+              onContinueResearch={callbacks.onContinueResearch}
+            />
             <ResearchEgressConsentDialog />
           </ResearchGlobalModelProvider>
         </ResearchScopeProvider>
@@ -642,5 +650,89 @@ describe('ResearchSearchPanel（GMOD §6.3 全局模型接线）', () => {
     vi.mocked(searchV1).mockRejectedValueOnce(new Error('offline'))
     fireEvent.click(runButton())
     await waitFor(() => expect(screen.getByText('offline')).toBeInTheDocument())
+  })
+})
+
+describe('ResearchSearchPanel RWV2-23 result actions', () => {
+  const GEN = 'gen_' + 'c'.repeat(32)
+
+  const directResult = (extra: Record<string, unknown> = {}) => ({
+    kind: 'direct' as const,
+    result: {
+      request_id: 'r-x',
+      resolved_mode: 'direct_context',
+      evidence: [],
+      citations: [
+        {
+          citation_id: 1,
+          claim: 'claim-1',
+          doc_id: 'd1',
+          doc_version: 'v1',
+          chunk_id: 'ch1',
+          page_idx: 2,
+          original_text: 'quote-1',
+          citation_type: 'direct',
+          confidence: 'high',
+        },
+      ],
+      usage: { input_tokens: 10, output_tokens: 5, estimated: true },
+      degradation_reason: null,
+      conclusion: 'conclusion text',
+      model_id: 'm-local',
+      provider_id: 'local-sglang',
+      context_level: 'focused',
+      generation_id: GEN,
+      ...extra,
+    },
+  })
+
+  beforeEach(() => {
+    vi.mocked(saveResultFromResult).mockReset()
+  })
+
+  it('direct 结果含 generation_id：提供 Save/Copy；保存成功后仅后端 resolve 才显示已保存态', async () => {
+    vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
+    vi.mocked(searchV1).mockResolvedValue(directResult() as never)
+    vi.mocked(saveResultFromResult).mockResolvedValue({
+      note_id: 'note_s1', project_id: 'p1', title: 'Saved search result',
+      content: 'conclusion text', note_type: 'human', created_at: null,
+      updated_at: null, citations: [], provenance: { envelope_version: 1, kind: 'save_from_result', origin_kind: 'search', origin_id: GEN, destination_kind: 'note', scope: { source_ids: [], note_ids: [] }, model_id: 'm-local', response_language: 'en', saved_at: 'x', saved_by_user_id: 1, source_timestamps: {} },
+    } as never)
+    renderPanel()
+    await typeAndWaitReady('what is ORR?')
+    fireEvent.click(runButton())
+    await waitFor(() => expect(screen.getByTestId('search-result')).toBeTruthy())
+    expect(screen.getByTestId('save-as-note')).toBeTruthy()
+    expect(screen.queryByTestId('result-action-status')).toBeTruthy()
+    fireEvent.click(screen.getByTestId('save-as-note'))
+    await waitFor(() => expect(screen.getByTestId('saved-note')).toBeTruthy())
+    expect(saveResultFromResult).toHaveBeenCalledWith(
+      'p1',
+      { origin_kind: 'search', origin_id: GEN, destination_kind: 'note' },
+    )
+  })
+
+  it('无 generation_id（旧后端）不渲染保存动作，不猜测', async () => {
+    vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
+    vi.mocked(searchV1).mockResolvedValue(directResult({ generation_id: undefined }) as never)
+    renderPanel()
+    await typeAndWaitReady('q')
+    fireEvent.click(runButton())
+    await waitFor(() => expect(screen.getByTestId('search-result')).toBeTruthy())
+    expect(screen.queryByTestId('result-actions')).toBeNull()
+  })
+
+  it('Continue research 预填**派发时** query（改输入框不影响，R3-4）', async () => {
+    vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
+    vi.mocked(searchV1).mockResolvedValue(directResult() as never)
+    const onContinue = vi.fn()
+    renderPanel(['d1'], { onContinueResearch: onContinue })
+    await typeAndWaitReady('original question')
+    fireEvent.click(runButton())
+    await waitFor(() => expect(screen.getByTestId('search-result')).toBeTruthy())
+    // 用户随后改写了输入框
+    fireEvent.change(screen.getByTestId('search-input'), { target: { value: 'edited question' } })
+    fireEvent.click(screen.getByTestId('continue-research'))
+    expect(onContinue).toHaveBeenCalledWith('original question')
   })
 })

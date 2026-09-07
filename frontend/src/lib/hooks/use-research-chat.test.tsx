@@ -12,6 +12,7 @@ import type { ResearchSseEvent } from '@/lib/research/types'
 // 本 hook 不在执行时读取执行偏好；无模型 fail-closed 不发请求。
 
 vi.mock('@/lib/research/api', () => ({
+  saveResultFromResult: vi.fn(),
   newIdempotencyKey: vi.fn(() => 'ik-turn'),
   openResearchChatStream: vi.fn(),
 }))

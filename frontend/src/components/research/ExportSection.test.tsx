@@ -10,6 +10,7 @@ import * as researchApi from '@/lib/research/api'
 // API）；审计由后端承担。
 
 vi.mock('@/lib/research/api', () => ({
+  saveResultFromResult: vi.fn(),
   listSources: vi.fn(),
   getSource: vi.fn(),
   listNotes: vi.fn(),

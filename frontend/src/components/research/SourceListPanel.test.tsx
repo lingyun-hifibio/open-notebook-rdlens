@@ -14,6 +14,7 @@ import type { ResearchSource } from '@/lib/types/research'
 // 入根级 ResearchScopeProvider；预览（Open）与选择互不干扰。
 
 vi.mock('@/lib/research/api', () => ({
+  saveResultFromResult: vi.fn(),
   listSources: vi.fn(),
   getSource: vi.fn(),
   listNotes: vi.fn(),

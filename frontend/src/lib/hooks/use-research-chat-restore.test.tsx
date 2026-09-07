@@ -15,6 +15,7 @@ import {
 // 续接同一会话；在途后台轮经 cards 如实呈现（不显示假进行中）。
 
 vi.mock('@/lib/research/api', () => ({
+  saveResultFromResult: vi.fn(),
   newIdempotencyKey: vi.fn(() => 'ik-turn'),
   openResearchChatStream: vi.fn(),
   getResearchChatSession: vi.fn(),

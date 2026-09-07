@@ -25,6 +25,11 @@ import {
   type ResearchGlobalChatMessage,
 } from '@/lib/research/api'
 import { applySseEvent, createSseState, type ResearchSseState } from '@/lib/research/sse'
+import {
+  parseGenerationIdFromMessageId,
+  selectBoundAssistantRow,
+  type ChatOriginRow,
+} from '@/lib/research/chat-origin'
 import type {
   ResearchCitationDisplayItem,
   ResearchSseEvent,
@@ -114,6 +119,12 @@ function noticeFromCards(cards: ResearchGlobalChatCard[]): ResearchBackgroundNot
 /** 断线/409 的最大重连尝试次数（含首次） */
 export const MAX_STREAM_ATTEMPTS = 3
 
+/**
+ * 会话读取页数上限（restore 与 origin 解析共用，review #8）——防御异常会话，
+ * 不依赖单会话规模假设。每页 ≤50 行。
+ */
+const SESSION_READ_PAGE_CAP = 1000
+
 /** 重连退避基数（ms）；第 n 次重试等待 base * 2^(n-1) */
 export const RECONNECT_BACKOFF_MS = 300
 
@@ -139,6 +150,15 @@ export interface ResearchChatTurn {
    * 重试入口据此判定（null 不渲染重试，防静默以空数组=全项目派发）。
    */
   scopeSnapshot: ResearchScopeSnapshot | null
+  /**
+   * RWV2-23（Issue #43，D2）：该轮持久化 assistant message_id 与解析出的
+   * generation_id（Save-as-Insight/Note 的 chat origin_id，见 chat-origin.ts）。
+   * - 恢复/重开行在 messageRowToTurn 直接回填（message_id → gen 解析）；
+   * - live 轮由 resolveChatOrigin 惰性解析后回填；解析成功前为 null → UI 不
+   *   猜测、如实呈现“保存不可用/解析中”。
+   */
+  serverMessageId: string | null
+  generationId: string | null
 }
 
 /** 已持久化消息行 → 展示 turn（阅读顺序重放；completed 轮 status 恒 done） */
@@ -162,13 +182,19 @@ function messageRowToTurn(row: ResearchGlobalChatMessage): ResearchChatTurn | nu
     coverageJobId: null as string | null,
     // RWV2-11：恢复行无法证明原始 Scope——如实置 null（K6/K12）
     scopeSnapshot: null,
+    // RWV2-23：恢复行只有持久化 message_id；generation_id 由 id 形状解析
+    serverMessageId: null,
+    generationId: null,
   }
   if (row.role === 'user') {
     return base
   }
+  const generationId = parseGenerationIdFromMessageId(row.message_id)
   return {
     ...base,
     thinking: row.thinking ?? '',
+    serverMessageId: row.message_id ?? null,
+    generationId,
     citations: Array.isArray(row.citations)
       ? row.citations
         .filter(
@@ -190,6 +216,15 @@ export interface ResearchChatSelection {
   noteIds?: string[]
   /** RWV2-11（K8）：本次派发时的 Scope 模式；缺省按 ID 推导（非空=selected，空=entire_project） */
   mode?: ResearchScopeMode
+}
+
+/**
+ * RWV2-23（Issue #43，D2）：chat origin 解析结果——持久化 assistant 行
+ * message_id + 解析出的 generation_id（Save 请求的 origin_id）。
+ */
+export interface ResearchChatSaveOrigin {
+  messageId: string
+  generationId: string
 }
 
 /**
@@ -244,6 +279,15 @@ export interface UseResearchChatResult {
       idempotencyKey: string,
     ) => Promise<{ job_id: string }>,
   ) => void
+  /**
+   * RWV2-23（Issue #43，D2）：解析某 assistant turn 的持久化 origin
+   * （message_id + generation_id），供 Save-as-Insight/Note 使用。
+   * - 恢复/重开行：直接回填（messageRowToTurn 已解析），无需网络；
+   * - live 行：按需拉取当前会话（复用恢复逻辑的按 message_id 去重与键集
+   *   游标续读，上限保护），以 content/前一 user 行约束绑定后回填 turn；
+   * - 无法唯一绑定/会话不可达 → null（UI 如实显示不可存，不猜测）。
+   */
+  resolveChatOrigin: (turnId: string) => Promise<ResearchChatSaveOrigin | null>
 }
 
 /** COV-09：all_selected 提交请求载荷（note_ids 恒空数组——Notes 不支持） */
@@ -313,6 +357,28 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
     done: false,
   })
 
+  /**
+   * RWV2-23（D2）：会话 origin 解析缓存——按阅读顺序累积的行、已见
+   * message_id 集合与上次键集游标（无 end-cursor token 时以“已见去重 +
+   * 单调行列表”续读，会话 ≤50 行时单次 GET）。惰性：仅在用户点 Save
+   * 且目标 turn 尚未解析时拉取。
+   */
+  const sessionOriginCacheRef = useRef<{
+    sessionId: string | null
+    rows: ChatOriginRow[]
+    seen: Set<string>
+    lastCursor: string | null
+  }>({ sessionId: null, rows: [], seen: new Set(), lastCursor: null })
+  const originInflightRef = useRef<
+    Map<string, Promise<ResearchChatSaveOrigin | null>>
+  >(new Map())
+  // turn 最新快照镜像：解析回调内读取目标 turn 的 user query / assistant
+  // content（避免闭包读到过期 turns）。
+  const turnsRef = useRef<ResearchChatTurn[]>([])
+  useEffect(() => {
+    turnsRef.current = turns
+  }, [turns])
+
   const patchAssistant = useCallback((turnId: string, patch: Partial<ResearchChatTurn>) => {
     setTurns((prev) => {
       const index = prev.findIndex((t) => t.id === turnId)
@@ -322,6 +388,98 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
       return next
     })
   }, [])
+
+  /**
+   * RWV2-23（D2）：解析 assistant turn 的持久化 origin（message_id +
+   * generation_id）。恢复行在 messageRowToTurn 已解析；live 行按需拉取
+   * 会话行并用 chat-origin 纯规则绑定；不可解析/网络瞬时失败 → null。
+   * 同一 turn 的并发解析共享同一 in-flight promise（防双拉）。
+   */
+  const resolveChatOrigin = useCallback(
+    async (turnId: string): Promise<ResearchChatSaveOrigin | null> => {
+      const inflight = originInflightRef.current.get(turnId)
+      if (inflight) return inflight
+      const promise = (async (): Promise<ResearchChatSaveOrigin | null> => {
+        const index = turnsRef.current.findIndex((t) => t.id === turnId)
+        if (index < 0) return null
+        const assistant = turnsRef.current[index]
+        if (assistant.role !== 'assistant') return null
+        const userTurn = index > 0 ? turnsRef.current[index - 1] : null
+        if (userTurn === null || userTurn.role !== 'user') return null
+        // 已解析（恢复/重开/此前成功回填）：直接返回，不再拉取。
+        if (assistant.generationId !== null && assistant.serverMessageId !== null) {
+          return { messageId: assistant.serverMessageId, generationId: assistant.generationId }
+        }
+        // 恢复行但 message_id 形状不可解析（非 gen_ 形态）：无可解析路径。
+        if (assistant.serverMessageId !== null && assistant.generationId === null) {
+          return null
+        }
+        const query = userTurn.content
+        const content = assistant.content
+        if (!query.trim() || !content.trim()) return null
+        const sessionId = sessionIdRef.current
+        if (!sessionId) return null
+        const cache = sessionOriginCacheRef.current
+        if (cache.sessionId !== sessionId) {
+          cache.sessionId = sessionId
+          cache.rows = []
+          cache.seen = new Set()
+          cache.lastCursor = null
+        }
+        const fromCache = selectBoundAssistantRow(cache.rows, query, content)
+        if (fromCache !== null) {
+          patchAssistant(turnId, {
+            serverMessageId: fromCache.messageId,
+            generationId: fromCache.generationId,
+          })
+          return fromCache
+        }
+        // 从上次键集游标续读（首次=page1）。RDLens 会话读取在末页返回
+        // next_cursor=null（无“末行之后”的续读 token），故以 message_id
+        // 去重 + 单调行列表保证不重复绑定；页数保护与 restore 同常量。
+        let cursor: string | null = cache.lastCursor
+        for (let page = 0; page < SESSION_READ_PAGE_CAP; page += 1) {
+          let detail
+          try {
+            detail = await getResearchChatSession(
+              projectId,
+              sessionId,
+              cursor ? { cursor } : {},
+            )
+          } catch {
+            // 瞬时失败（5xx/网络）：保留已拉行按现状匹配；不抛、不猜测
+            break
+          }
+          for (const message of detail.messages) {
+            if (cache.seen.has(message.message_id)) continue
+            cache.seen.add(message.message_id)
+            cache.rows.push(message)
+          }
+          if (detail.next_cursor) {
+            cache.lastCursor = detail.next_cursor
+            cursor = detail.next_cursor
+          }
+          if (!detail.next_cursor) break
+        }
+        const found = selectBoundAssistantRow(cache.rows, query, content)
+        if (found !== null) {
+          patchAssistant(turnId, {
+            serverMessageId: found.messageId,
+            generationId: found.generationId,
+          })
+        }
+        return found
+      })()
+      originInflightRef.current.set(turnId, promise)
+      // settle 后移除：并发点击共享同一次解析；成功后字段已回填（不再调用），
+      // 失败后允许用户再次点击重试（行缓存使重复解析近乎零成本）。
+      void promise.finally(() => {
+        originInflightRef.current.delete(turnId)
+      })
+      return promise
+    },
+    [patchAssistant, projectId],
+  )
 
   const stopActive = useCallback(() => {
     const active = activeRef.current
@@ -370,7 +528,7 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
       const seenMessageIds = new Set<string>()
       let cards: ResearchGlobalChatCard[] = []
       let cursor: string | null = null
-      for (let page = 0; page < 1000; page += 1) {
+      for (let page = 0; page < SESSION_READ_PAGE_CAP; page += 1) {
         let detail
         try {
           detail = await getResearchChatSession(
@@ -643,6 +801,8 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
       errorMessage: null,
       coverageJobId: null,
       scopeSnapshot,
+      serverMessageId: null,
+      generationId: null,
     }
     const assistantTurn: ResearchChatTurn = {
       id: turnId,
@@ -658,6 +818,8 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
       errorMessage: null,
       coverageJobId: null,
       scopeSnapshot,
+      serverMessageId: null,
+      generationId: null,
     }
     setTurns((prev) => [...prev, userTurn, assistantTurn])
     startTurn(trimmed, turnId, selection, modelId)
@@ -705,6 +867,8 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
       errorMessage: null,
       coverageJobId: null,
       scopeSnapshot,
+      serverMessageId: null,
+      generationId: null,
     }
     const assistantTurn: ResearchChatTurn = {
       id: turnId,
@@ -720,6 +884,8 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
       errorMessage: null,
       coverageJobId: null,
       scopeSnapshot,
+      serverMessageId: null,
+      generationId: null,
     }
     setTurns((prev) => [...prev, userTurn, assistantTurn])
     if (!modelId) {
@@ -756,5 +922,12 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
 
   const isStreaming = turns.some((t) => t.status === 'streaming' || t.status === 'reconnecting')
 
-  return { turns, isStreaming, backgroundNotice, send, sendCoverage }
+  return {
+    turns,
+    isStreaming,
+    backgroundNotice,
+    send,
+    sendCoverage,
+    resolveChatOrigin,
+  }
 }
