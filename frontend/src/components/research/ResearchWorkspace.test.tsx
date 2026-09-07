@@ -373,6 +373,27 @@ describe('ResearchWorkspace（RWV2-40 四动作主区）', () => {
     )
   })
 
+  it('M1：notes 失败不应禁用 source-only Compare（Compare 守卫只看 sources 查询）', async () => {
+    vi.mocked(api.listNotes).mockRejectedValue(new Error('notes unavailable'))
+    renderHarness()
+    switchTo('compare')
+
+    // notes 失败 → Compare 仍可用（不出 compare-resources-error；等待
+    // sources 查询成功把 compare-create 渲染出来）
+    await waitFor(() => expect(screen.getByTestId('compare-create')).toBeInTheDocument())
+    expect(screen.queryByTestId('compare-resources-error')).not.toBeInTheDocument()
+    expect(api.createCompare).not.toHaveBeenCalled()
+  })
+
+  it('M1：sources 查询失败 → Compare 明确错误且不可创建（不回落 empty）', async () => {
+    vi.mocked(api.listSources).mockRejectedValue(new Error('sources down'))
+    renderHarness()
+    switchTo('compare')
+    await waitFor(() => expect(screen.getByTestId('compare-resources-error')).toBeInTheDocument())
+    expect(screen.queryByTestId('compare-create')).toBeNull()
+    expect(screen.queryByTestId('compare-empty')).toBeNull()
+  })
+
   it('#243 §6.4：Chat 发送经顶层守卫——待确认/无模型时不打开流、不留 turn', async () => {
     tokenStore.setResearchToken(researchToken(), 9999999999)
     setGlobalModelStub({ deferGuarded: true })

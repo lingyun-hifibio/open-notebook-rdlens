@@ -289,15 +289,28 @@ export function ResearchWorkspace({
           />
         )
       case 'compare':
-        return loadErrorText !== null ? (
-          <div
-            role="alert"
-            className="space-y-3 p-4 text-sm text-destructive"
-            data-testid="compare-resources-error"
-          >
-            {t('research.loadFailed')}
-          </div>
-        ) : (
+        // M1 修复：Compare 只消费 sources（document_ids），失败/加载守卫仅
+        // 依赖 sourcesQuery——notes 失败不应禁用 source-only Compare（顶部
+        // workspace-resources-error 仍聚合两者并给整体重试）。
+        if (sourcesQuery.isError && !sourcesQuery.isSuccess) {
+          return (
+            <div
+              role="alert"
+              className="space-y-3 p-4 text-sm text-destructive"
+              data-testid="compare-resources-error"
+            >
+              {t('research.loadFailed')}
+            </div>
+          )
+        }
+        if (sourcesQuery.isLoading && !sourcesQuery.isSuccess) {
+          return (
+            <p className="p-4 text-sm text-muted-foreground" data-testid="compare-loading">
+              {t('research.loading')}
+            </p>
+          )
+        }
+        return (
           <ComparePanel
             sources={sources}
             isCreating={isCreating}

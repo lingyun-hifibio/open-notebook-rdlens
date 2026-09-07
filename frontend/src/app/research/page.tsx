@@ -33,7 +33,8 @@ import { useTranslation } from '@/lib/hooks/use-translation'
  *   保持一致组件能力。
  *
  * 状态划分（冻结）：
- * - `activeMainAction` + visited 集合原子写（同一对象），保证首访即渲染；
+ * - 组合根持有 `activeMainAction`；保活 visited 集合由 ResearchWorkspace
+ *   内部维护并以渲染期并集（visited∪{active}）保证首访动作同帧挂载；
  * - highlightPageIdx/highlightRequestId 线程保留（同页重复 Citation 再次聚焦）；
  * - 根级 handleEditScopeAllStates/onCitationJump/onOpenResearchTemplates 统一链。
  */
@@ -41,11 +42,10 @@ export default function ResearchPage() {
   const router = useRouter()
   const { t } = useTranslation()
 
-  // activeMainAction + visited 原子写（单对象；visited⊇active 恒真）
-  const [mainNav, setMainNav] = useState<{
-    active: ResearchMainAction
-    visited: ResearchMainAction[]
-  }>({ active: 'evidence-search', visited: ['evidence-search'] })
+  // 主区当前动作（组合根受控；保活的 visited 集合由 ResearchWorkspace
+  // 内部维护——渲染期并集 visited∪{active} 保证首访动作同帧挂载）
+  const [activeMainAction, setActiveMainAction] =
+    useState<ResearchMainAction>('evidence-search')
 
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null)
   // Source 专注态与“已选中来源”分离：Back 只清 focus，不丢唯一 Source Chat。
@@ -67,10 +67,7 @@ export default function ResearchPage() {
   }, [])
 
   const activateAction = useCallback((action: ResearchMainAction) => {
-    setMainNav((prev) => ({
-      active: action,
-      visited: prev.visited.includes(action) ? prev.visited : [...prev.visited, action],
-    }))
+    setActiveMainAction(action)
   }, [])
 
   // 选中来源（列表/跨区 Citation）→ 进入 Source focus（左栏 Back+详情，右栏
@@ -114,12 +111,7 @@ export default function ResearchPage() {
   const handleOpenResearchTemplates = useCallback(() => {
     setSourceFocusActive(false)
     setGlobalMaximized(false)
-    setMainNav((prev) => ({
-      active: 'run-template',
-      visited: prev.visited.includes('run-template')
-        ? prev.visited
-        : [...prev.visited, 'run-template'],
-    }))
+    setActiveMainAction('run-template')
   }, [])
 
   useEffect(() => {
@@ -179,7 +171,7 @@ export default function ResearchPage() {
                     highlightPageIdx={highlightPageIdx}
                     highlightRequestId={highlightRequestId}
                     researchTemplatesActive={
-                      !sourceMode && mainNav.active === 'run-template'
+                      !sourceMode && activeMainAction === 'run-template'
                     }
                     onOpenSource={openSource}
                     onExitSourceFocus={exitSourceFocus}
@@ -193,7 +185,7 @@ export default function ResearchPage() {
                       sourceFocusActive 决定，Back 不卸载。 */}
                   <div className="h-full" hidden={sourceMode}>
                     <ResearchWorkspace
-                      activeAction={mainNav.active}
+                      activeAction={activeMainAction}
                       onActiveActionChange={activateAction}
                       surfaceActive={!sourceMode}
                       onCitationJump={handleCitationJump}
