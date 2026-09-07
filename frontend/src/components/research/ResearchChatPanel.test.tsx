@@ -525,3 +525,69 @@ describe('ResearchChatPanel RWV2-23 result actions', () => {
     expect(screen.queryAllByTestId('result-actions')).toHaveLength(0)
   })
 })
+
+describe('ResearchChatPanel continue-research prefill（RWV2-23 AC4）', () => {
+  it('无 prefill：composer 保持空', () => {
+    renderPanel([])
+    expect((screen.getByTestId('chat-input') as HTMLInputElement).value).toBe('')
+  })
+
+  it('带 prefill 的渲染会预填 composer 文本', () => {
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
+          <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+            <ResearchChatPanel
+              turns={[]}
+              isStreaming={false}
+              onSend={vi.fn(async () => true)}
+              onSendCoverage={vi.fn(async () => true)}
+              prefill={{ text: 'Continue from this result: excerpt', seq: 1 }}
+            />
+          </ResearchScopeProvider>
+        </ResearchWorkspaceProvider>
+      </QueryClientProvider>,
+    )
+    expect((screen.getByTestId('chat-input') as HTMLInputElement).value).toBe(
+      'Continue from this result: excerpt',
+    )
+    // 不自动派发
+    expect(screen.getByTestId('chat-send')).toBeTruthy()
+  })
+
+  it('prefill seq 递增更新 composer（keep-alive 轮）', () => {
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
+    const { rerender } = render(
+      <QueryClientProvider client={queryClient}>
+        <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
+          <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+            <ResearchChatPanel
+              turns={[]}
+              isStreaming={false}
+              onSend={vi.fn(async () => true)}
+              onSendCoverage={vi.fn(async () => true)}
+              prefill={{ text: 'draft v1', seq: 1 }}
+            />
+          </ResearchScopeProvider>
+        </ResearchWorkspaceProvider>
+      </QueryClientProvider>,
+    )
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
+          <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+            <ResearchChatPanel
+              turns={[]}
+              isStreaming={false}
+              onSend={vi.fn(async () => true)}
+              onSendCoverage={vi.fn(async () => true)}
+              prefill={{ text: 'draft v2', seq: 2 }}
+            />
+          </ResearchScopeProvider>
+        </ResearchWorkspaceProvider>
+      </QueryClientProvider>,
+    )
+    expect((screen.getByTestId('chat-input') as HTMLInputElement).value).toBe('draft v2')
+  })
+})

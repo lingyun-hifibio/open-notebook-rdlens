@@ -54,6 +54,14 @@ export default function ResearchPage() {
   const [highlightRequestId, setHighlightRequestId] = useState(0)
   const [globalMaximized, setGlobalMaximized] = useState(false)
   const [scopeEditRequest, setScopeEditRequest] = useState(0)
+  // RWV2-23（AC4/AC3）：Continue research 的 Chat 预填草稿 与保存后的左栏
+  // pane reveal（seq 递增触发挂载/切换；与 scopeEditRequest 同一根级模式）。
+  const [chatPrefill, setChatPrefill] = useState<{ text: string; seq: number } | null>(null)
+  const [paneReveal, setPaneReveal] = useState<{
+    pane: 'notes' | 'insights'
+    artifactId: string
+    seq: number
+  } | null>(null)
   const isDesktop = useIsDesktop()
   const [globalCompactPanel, setGlobalCompactPanel] = useState<'primary' | 'secondary'>('secondary')
   const [sourceCompactPanel, setSourceCompactPanel] = useState<'primary' | 'secondary'>('primary')
@@ -68,6 +76,26 @@ export default function ResearchPage() {
 
   const activateAction = useCallback((action: ResearchMainAction) => {
     setActiveMainAction(action)
+  }, [])
+
+  // RWV2-23（AC4）：Continue research → 归一布局并切到 Chat，预填可编辑草稿
+  // （不自动派发；Send 仍走既有 runGuarded + 当前 Scope 快照）。
+  const openResearchChatDraft = useCallback((text: string) => {
+    setSourceFocusActive(false)
+    setGlobalMaximized(false)
+    setActiveMainAction('research-chat')
+    setChatPrefill((prev) => ({ text, seq: (prev?.seq ?? 0) + 1 }))
+  }, [])
+
+  // RWV2-23（AC3）：保存成功 → 左栏 Reveal 到 Notes/Insights 并高亮目标行。
+  const revealSavedArtifact = useCallback((kind: 'note' | 'insight', artifactId: string) => {
+    setSourceFocusActive(false)
+    setGlobalMaximized(false)
+    setPaneReveal((prev) => ({
+      pane: kind === 'note' ? 'notes' : 'insights',
+      artifactId,
+      seq: (prev?.seq ?? 0) + 1,
+    }))
   }, [])
 
   // 选中来源（列表/跨区 Citation）→ 进入 Source focus（左栏 Back+详情，右栏
@@ -177,6 +205,9 @@ export default function ResearchPage() {
                     onExitSourceFocus={exitSourceFocus}
                     onOpenResearchTemplates={handleOpenResearchTemplates}
                     scopeEditRequest={scopeEditRequest}
+                    onRevealSavedArtifact={revealSavedArtifact}
+                    onOpenResearchChatDraft={openResearchChatDraft}
+                    paneReveal={paneReveal}
                   />
                 </div>,
                 <div key="workspace" className={`h-full min-h-0 ${compact ? '' : 'border-l'}`}>
@@ -190,6 +221,9 @@ export default function ResearchPage() {
                       surfaceActive={!sourceMode}
                       onCitationJump={handleCitationJump}
                       onEditScopeAllStates={handleEditScopeAllStates}
+                      onOpenResearchChatDraft={openResearchChatDraft}
+                      onRevealSavedArtifact={revealSavedArtifact}
+                      chatPrefill={chatPrefill}
                     />
                   </div>
                   {selectedSourceId !== null && (

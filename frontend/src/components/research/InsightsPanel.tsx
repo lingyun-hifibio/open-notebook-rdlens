@@ -34,7 +34,12 @@ import { AdminReadOnlyBanner } from './AdminReadOnlyBanner'
  *   Manual 创建；
  * - 外部模型的首次 AI 生成由根级 `runGuarded` 统一弹确认（不变量 9）。
  */
-export function InsightsPanel() {
+export function InsightsPanel({
+  revealId = null,
+}: {
+  /** RWV2-23（AC3）：保存为 Insight 后的左栏高亮目标（行 ring） */
+  revealId?: string | null
+}) {
   const { t } = useTranslation()
   const { projectId, isAdminReadonly } = useResearchWorkspace()
   const { canExecute, runGuarded, blockedReason } = useResearchGlobalModel()
@@ -168,7 +173,11 @@ export function InsightsPanel() {
 
       <div className="space-y-2">
         {items.map((item) => (
-          <Card key={item.insight_id}>
+          <Card
+            key={item.insight_id}
+            data-testid={`insight-row-${item.insight_id}`}
+            className={item.insight_id === revealId ? 'ring-1 ring-primary' : undefined}
+          >
             <CardContent className="p-3">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-sm font-medium">{item.title}</p>

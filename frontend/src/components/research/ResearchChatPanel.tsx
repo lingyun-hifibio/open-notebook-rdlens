@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -51,6 +51,7 @@ export function ResearchChatPanel({
   resolveChatOrigin,
   onViewInsight,
   onViewNote,
+  prefill,
 }: {
   turns: ResearchChatTurn[]
   isStreaming: boolean
@@ -80,10 +81,21 @@ export function ResearchChatPanel({
   /** RWV2-23（AC3）：保存成功后跳转 Results/Insights 或 Materials/Notes */
   onViewInsight?: (insightId: string) => void
   onViewNote?: (noteId: string) => void
+  /** RWV2-23（AC4）：Continue research 预填草稿（seq 递增触发；挂载时生效） */
+  prefill?: { text: string; seq: number } | null
 }) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [scope, setScope] = useState<ResearchSynthesisScope>('relevant')
+
+  // RWV2-23（AC4）：Continue research 预填（跨 keep-alive：首访挂载与后续
+  // 递增 seq 都生效）；不自动派发——发送仍需用户点 Send（既有守卫）。
+  useEffect(() => {
+    if (prefill && prefill.text.trim() !== '') {
+      setQuery(prefill.text)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅响应 seq 递增
+  }, [prefill?.seq])
   const generationBlocked = sendDisabled === true
   // RWV2-11（K7）：Scope 真源唯一——面板直接消费共享 Provider
   const { mode, getSnapshot } = useResearchScope()
