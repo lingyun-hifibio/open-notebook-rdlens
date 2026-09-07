@@ -1,0 +1,174 @@
+'use client'
+
+import { useCallback, useEffect, useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { useTranslation } from '@/lib/hooks/use-translation'
+import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
+import { useResearchTransformationResults } from '@/lib/hooks/use-research'
+import { useResearchSources } from '@/lib/hooks/use-research'
+import type { ResearchCitation, TransformationResultRecord } from '@/lib/types/research'
+import { AdminReadOnlyBanner } from './AdminReadOnlyBanner'
+import { TransformationRunDetail } from './TransformationRunDetail'
+
+/**
+ * Transformation Result 历史面板（RWV2-21 / Issue #42）。
+ *
+ * - 只读历史列表，来自 RDLens 服务端（RWV2-20 `transformation-results`），
+ *   分页由服务端游标驱动（useInfiniteQuery，页大小 20）；**不**穷尽抓取
+ *   全量结果行（列表项含完整 output/citations，High-1）。
+ * - 模板与 result 实例分离：本面板只渲染 result 历史，模板 CRUD/Run 在
+ *   transformations tab。
+ * - 点行打开只读详情（TransformationRunDetail）；详情内 Rerun 走既有
+ *   guarded 执行原语（W5）。
+ * - 挂 `useResearchSources` 供 citation 归一化/跳转解析（High-5）——漏挂
+ *   会让所有历史 citation 静默降级 unavailable。
+ * - Admin 只读：列表/详情可浏览，无 Rerun/写入口（W7，后端权威）。
+ */
+export function TransformationRunsPanel({
+  onCitationJump,
+}: {
+  /** Citation 跳转回调（工作台提供：解析来源并定位目标页；右栏契约不同源） */
+  onCitationJump?: (citation: ResearchCitation) => void
+}) {
+  const { t } = useTranslation()
+  const { projectId, isAdminReadonly } = useResearchWorkspace()
+  const {
+    data,
+    isLoading,
+    isError,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+    refetch,
+  } = useResearchTransformationResults(projectId)
+  // High-5：citations 归一化/跳转依赖项目来源（TransformationsPanel 同款；只读消费）
+  const { data: sourcesData } = useResearchSources(projectId)
+
+  const [selected, setSelected] = useState<TransformationResultRecord | null>(null)
+  const [highlightedResultId, setHighlightedResultId] = useState<string | null>(null)
+
+  const items = (data?.pages ?? []).flatMap((page) => page.items)
+
+  const handleRetry = useCallback(() => {
+    void refetch()
+  }, [refetch])
+
+  const openDetail = (record: TransformationResultRecord) => {
+    setSelected(record)
+  }
+
+  const closeDetail = useCallback(() => {
+    setSelected(null)
+  }, [])
+
+  const handleRerunSuccess = useCallback((resultId: string) => {
+    // The mutation invalidates this query. Keep the new id until its first
+    // page arrives, then close the historical detail and make the new result
+    // discoverable without requiring the user to find it manually.
+    setSelected(null)
+    setHighlightedResultId(resultId)
+  }, [])
+
+  useEffect(() => {
+    if (highlightedResultId === null || !items.some((item) => item.result_id === highlightedResultId)) {
+      return
+    }
+    document.querySelector<HTMLElement>(`[data-testid="runs-row-${highlightedResultId}"]`)
+      ?.scrollIntoView?.({ block: 'nearest' })
+  }, [highlightedResultId, items])
+
+  return (
+    <div className="space-y-2">
+      {isAdminReadonly && <AdminReadOnlyBanner />}
+
+      {isLoading && <p className="text-sm text-muted-foreground">{t('common.loading')}</p>}
+
+      {isError && (
+        <div className="space-y-2">
+          <p className="text-sm text-destructive">{t('research.workbench.loadFailed')}</p>
+          <Button size="sm" variant="outline" onClick={handleRetry}>
+            {t('research.pagination.retry')}
+          </Button>
+        </div>
+      )}
+
+      {!isLoading && !isError && items.length === 0 && (
+        <p className="text-sm text-muted-foreground" data-testid="runs-empty">
+          {t('research.transformations.historyEmpty')}
+        </p>
+      )}
+
+      <div className="space-y-2">
+        {items.map((record) => (
+          <Card
+            key={record.result_id}
+            className={record.result_id === highlightedResultId ? 'ring-1 ring-primary' : undefined}
+            data-highlighted={record.result_id === highlightedResultId || undefined}
+          >
+            <CardContent className="flex cursor-pointer items-center justify-between gap-3 p-3">
+              <button
+                type="button"
+                className="min-w-0 flex-1 text-left"
+                data-testid={`runs-row-${record.result_id}`}
+                onClick={() => openDetail(record)}
+              >
+                <p className="truncate text-sm font-medium">{record.title ?? '—'}</p>
+                <p
+                  className="mt-1 truncate text-xs text-muted-foreground"
+                  data-testid={`run-row-meta-${record.result_id}`}
+                >
+                  {/* 评审 Medium-1：response_language 可 null（RWV2-31 前恒
+                      null / legacy 行），未知语言不能误标为 'en'——与详情
+                      的 '—' 占位保持一致。 */}
+                  {record.response_language ?? '—'} ·{' '}
+                  {record.created_at ?? '—'} ·{' '}
+                  {t('research.transformations.inputsCount', {
+                    count: record.source_ids.length + record.note_ids.length,
+                  })}
+                </p>
+              </button>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {!isLoading && !isError && hasNextPage && (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={isFetchingNextPage}
+          onClick={() => void fetchNextPage()}
+          data-testid="runs-load-more"
+        >
+          {isFetchingNextPage
+            ? t('research.pagination.loadingMore')
+            : t('research.pagination.loadMore')}
+        </Button>
+      )}
+
+      <Dialog open={selected !== null} onOpenChange={(open) => { if (!open) closeDetail() }}>
+        <DialogContent className="max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{t('research.transformations.runDetailTitle')}</DialogTitle>
+          </DialogHeader>
+          {selected !== null && (
+            <TransformationRunDetail
+              record={selected}
+              sources={sourcesData?.items}
+              showRerun={!isAdminReadonly}
+              onCitationJump={onCitationJump}
+              onRerunSuccess={handleRerunSuccess}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}

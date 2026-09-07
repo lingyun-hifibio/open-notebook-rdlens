@@ -13,10 +13,11 @@ import { SourceDetailPanel } from './SourceDetailPanel'
 import { NotesPanel } from './NotesPanel'
 import { InsightsPanel } from './InsightsPanel'
 import { TransformationsPanel } from './TransformationsPanel'
+import { TransformationRunsPanel } from './TransformationRunsPanel'
 import { resolveCitationSource } from './citation-utils'
 import type { ResearchCitation } from '@/lib/types/research'
 
-export type ResearchTab = 'sources' | 'notes' | 'insights' | 'transformations'
+export type ResearchTab = 'sources' | 'notes' | 'insights' | 'transformations' | 'runs'
 
 /**
  * Research 工作台容器（UI-02，REQ-SCOPE-04；设计 §2.1/§4.4）。
@@ -114,6 +115,9 @@ export function ResearchWorkbench({
           <TabsTrigger value="transformations">
             {t('research.workbench.tabTransformations')}
           </TabsTrigger>
+          <TabsTrigger value="runs">
+            {t('research.workbench.tabRuns')}
+          </TabsTrigger>
         </TabsList>
 
         {/* TabsContent 统一 min-h-0 flex-1 overflow-y-auto：面板内容超高时
@@ -147,6 +151,9 @@ export function ResearchWorkbench({
         </TabsContent>
         <TabsContent value="transformations" className="mt-3 min-h-0 flex-1 overflow-y-auto">
           <TransformationsPanel onCitationJump={handleCitationJump} />
+        </TabsContent>
+        <TabsContent value="runs" className="mt-3 min-h-0 flex-1 overflow-y-auto">
+          <TransformationRunsPanel onCitationJump={handleCitationJump} />
         </TabsContent>
       </Tabs>
     </div>

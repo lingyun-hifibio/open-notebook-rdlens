@@ -42,6 +42,9 @@ export const QUERY_KEYS = {
   researchNotes: (projectId: string) => ['research', projectId, 'notes'] as const,
   researchInsights: (projectId: string) => ['research', projectId, 'insights'] as const,
   researchTransformations: (projectId: string) => ['research', projectId, 'transformations'] as const,
+  // RWV2-20/21：Transformation Result 历史（独立于模板 key；run onSuccess 只失效此 key）
+  researchTransformationResults: (projectId: string) => ['research', projectId, 'transformation-results'] as const,
+  researchTransformationResult: (projectId: string, resultId: string) => ['research', projectId, 'transformation-results', resultId] as const,
   // #243 GMOD：全局模型/偏好/外发确认（Research 根级 shared settings）
   researchModelCatalog: (projectId: string) => ['research', projectId, 'model-catalog'] as const,
   researchExecutionPreferences: (projectId: string) => ['research', projectId, 'execution-preferences'] as const,
