@@ -464,4 +464,26 @@ describe('use-research hooks', () => {
       }),
     )
   })
+
+  it('RWV2-42（M2）：403 带稳定码（consent/policy 拒绝）→ 映射文案，不误标 Admin 只读', async () => {
+    vi.mocked(researchApi.createNote).mockRejectedValue({
+      response: {
+        status: 403,
+        data: { detail: { code: 'policy_denied', message: 'egress policy' } },
+      },
+    })
+    const { wrapper } = makeWrapper()
+    const { result } = renderHook(() => useCreateResearchNote(P), { wrapper })
+    result.current.mutate({ title: 't', content: 'c' })
+    await waitFor(() => expect(result.current.isError).toBe(true))
+    expect(toastMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: 'research.errors.policyDenied',
+        variant: 'destructive',
+      }),
+    )
+    expect(toastMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ description: 'research.workbench.adminWriteDenied' }),
+    )
+  })
 })

@@ -10,6 +10,7 @@ import { ResearchCitationList } from './ResearchCitationList'
 import { useResearchSourceChat, type ResearchSourceChatTurn } from '@/lib/hooks/use-research-source-chat'
 import { useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
 import { formatScopeLabel } from '@/lib/research/scope'
+import { userErrorMessageKey } from '@/lib/research/errors'
 
 /**
  * Source-scoped Chat 面板（Issue #182，/research 下半屏选中 Source 时）。
@@ -186,11 +187,15 @@ export function ResearchSourceChatPanel({
                   className="space-y-1 rounded-lg border border-destructive/50 px-3 py-2 text-xs"
                   data-testid="srcchat-error"
                 >
+                  {/* RWV2-42（AC8/M1）：已知码 → sourceChat 专用文案或集中映射；
+                      未知码 → generic 主文案；raw code/message 仅次级诊断 */}
                   <p className="font-medium text-destructive">
-                    {localizedError(turn) ?? turn.errorCode}
+                    {localizedError(turn) ?? t(userErrorMessageKey(turn.errorCode))}
                   </p>
-                  {!localizedError(turn) && turn.errorMessage && (
-                    <p className="text-muted-foreground">{turn.errorMessage}</p>
+                  {!localizedError(turn) && (turn.errorMessage || turn.errorCode) && (
+                    <p className="text-muted-foreground">
+                      {turn.errorMessage || turn.errorCode}
+                    </p>
                   )}
                   {chat.retryableQuery !== null && (
                     <Button

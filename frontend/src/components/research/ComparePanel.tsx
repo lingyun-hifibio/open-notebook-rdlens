@@ -13,13 +13,6 @@ import { useResearchScope } from '@/lib/research/scope'
 import { userErrorMessageKey } from '@/lib/research/errors'
 import type { ResearchSource } from '@/lib/types/research'
 
-/** RWV2-42：jobs hook 本地防御性前置码 → 与面板专用 Alert 同文案 key */
-const PRE_CHECK_USER_COPY: Record<string, string> = {
-  'compare-empty': 'research.compareEmpty',
-  'compare-over-hard': 'research.compareOverHard',
-  'no-model': 'research.globalModel.selectModelHint',
-}
-
 /**
  * Compare 面板（UI-03，REQ-QUOTA-01，设计 §7.4/§13）。
  *
@@ -134,9 +127,7 @@ export function ComparePanel({
       {error && error.trim() !== '' && check.ok && !modelBlocked && (
         <Alert variant="destructive" data-testid="compare-error">
           <AlertDescription className="space-y-1">
-            <span className="font-medium">
-              {t(errorCode ? PRE_CHECK_USER_COPY[errorCode] ?? userErrorMessageKey(errorCode) : 'research.errors.generic')}
-            </span>
+            <span className="font-medium">{t(userErrorMessageKey(errorCode))}</span>
             <span className="block text-xs opacity-80">{error}</span>
           </AlertDescription>
         </Alert>

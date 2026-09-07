@@ -242,6 +242,60 @@ describe('ResearchSourceChatPanel', () => {
     expect(screen.getByText('research.sourceChat.errorGatewayUnavailable')).toBeInTheDocument()
   })
 
+  it('RWV2-42（M1）：未知错误码 → generic 主文案；raw code 不作主消息（仅诊断）', () => {
+    const chat = makeChatResult({
+      turns: [{
+        id: 'a2',
+        role: 'assistant',
+        content: '',
+        thinking: '',
+        citations: [],
+        usage: null,
+        resolvedMode: null,
+        degradationReasons: [],
+        sourceRef: null,
+        status: 'error',
+        reconnectCount: 0,
+        errorCode: 'project_deleted',
+        errorMessage: '已删除',
+      }],
+    })
+    vi.mocked(useResearchSourceChat).mockReturnValue(chat)
+    renderPanel()
+
+    // 主消息为 generic 文案 key（t 返回键名）；raw code 不出现为主消息
+    expect(screen.getByText('research.errors.generic')).toBeInTheDocument()
+    expect(screen.queryByText('project_deleted')).toBeNull()
+    // 原文仅作次级诊断行
+    expect(screen.getByText('已删除')).toBeInTheDocument()
+  })
+
+  it('RWV2-42（L1）：未知码且无 errorMessage → generic 主文案 + raw code 仅次级', () => {
+    const chat = makeChatResult({
+      turns: [{
+        id: 'a3',
+        role: 'assistant',
+        content: '',
+        thinking: '',
+        citations: [],
+        usage: null,
+        resolvedMode: null,
+        degradationReasons: [],
+        sourceRef: null,
+        status: 'error',
+        reconnectCount: 0,
+        errorCode: 'epoch_mismatch',
+        errorMessage: null,
+      }],
+    })
+    vi.mocked(useResearchSourceChat).mockReturnValue(chat)
+    renderPanel()
+
+    expect(screen.getByText('research.errors.generic')).toBeInTheDocument()
+    // raw code 保留为次级诊断（不丢信息，同时不违反 AC8 主消息规则）
+    expect(screen.getByText('epoch_mismatch')).toBeInTheDocument()
+  })
+
   it('输入非空回车发送并清空输入框', () => {
     const chat = makeChatResult()
     vi.mocked(useResearchSourceChat).mockReturnValue(chat)

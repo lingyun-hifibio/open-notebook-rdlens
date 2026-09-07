@@ -88,6 +88,8 @@ export function ResearchSearchPanel({
   interface SearchError {
     code: string | null
     message: string
+    /** 来源：执行搜索（默认）vs 保存 context 档位（引导文案不适用） */
+    phase?: 'search' | 'context'
   }
   const [error, setError] = useState<SearchError | null>(null)
   const [savingContext, setSavingContext] = useState(false)
@@ -181,7 +183,11 @@ export function ResearchSearchPanel({
         interactedRef.current = false
         setError(null)
       } catch (err) {
-        setError({ code: null, message: err instanceof Error ? err.message : String(err) })
+        setError({
+          code: null,
+          message: err instanceof Error ? err.message : String(err),
+          phase: 'context',
+        })
       } finally {
         setSavingContext(false)
       }
@@ -384,10 +390,13 @@ export function ResearchSearchPanel({
               {error.message && (
                 <span className="block text-xs opacity-80">{error.message}</span>
               )}
-              {/* R5-2：下一步引导文案；Search 按钮/Enter 即重试入口，不新增按钮 */}
-              <span className="block text-xs opacity-80">
-                {t('research.searchRunErrorHint')}
-              </span>
+              {/* R5-2：下一步引导仅适用于搜索执行失败（保存档位失败不适用）；
+                  Search 按钮/Enter 即重试入口，不新增按钮 */}
+              {error.phase !== 'context' && (
+                <span className="block text-xs opacity-80">
+                  {t('research.searchRunErrorHint')}
+                </span>
+              )}
             </AlertDescription>
           </Alert>
         )}
