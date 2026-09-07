@@ -213,7 +213,7 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
         source_ids: ['src_1'],
         note_ids: [],
         model_id: 'm-local',
-      }),
+      }, { idempotencyKey: undefined }),
     )
     // 结果与 Citation 展示（回归：引用原文保留）
     await waitFor(() => expect(screen.getByText('总结输出')).toBeInTheDocument())
@@ -252,7 +252,7 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
         source_ids: ['src_1', 'src_2'],
         note_ids: ['note_1'],
         model_id: 'm-local',
-      }),
+      }, { idempotencyKey: undefined }),
     )
   })
 
@@ -331,7 +331,7 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
       source_ids: ['src_1'],
       note_ids: [],
       model_id: 'm-local',
-    })
+    }, { idempotencyKey: undefined })
     // 摘要显示派发时快照（1 source），而非 live（2 sources）
     expect(screen.getByTestId('run-scope-summary').textContent).toContain('"sources":1')
   })
@@ -491,7 +491,7 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
         source_ids: ['src_1'],
         note_ids: [],
         model_id: 'm-local',
-      }),
+      }, { idempotencyKey: undefined }),
     )
   })
 })

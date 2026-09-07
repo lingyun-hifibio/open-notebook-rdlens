@@ -115,6 +115,49 @@ export interface ResearchExport {
   download_url: string
 }
 
+/**
+ * 持久化 Citation 快照字段子集（RWV2-20；RDLens `build_citation_snapshots`）。
+ *
+ * Surreal 结果 Artifact 的 `citations[]` 只含身份字段 + claim/original_text，
+ * **不含** `citation_id`/`doc_display_name`/`short_name` 等富字段（REQ-DATA-03
+ * 不伪造）；与富 `ResearchCitation`（run 响应/SSE 形态）区分，展示前必须经
+ * display 归一化（合成稳定 key + 名回退链）。
+ */
+export interface PersistedCitationSnapshot {
+  project_id?: string | null
+  doc_id: string
+  doc_version?: string | null
+  chunk_id?: string | null
+  /** 0-based；持久化唯一页码字段，展示用 +1 */
+  page_idx?: number | null
+  claim?: string | null
+  original_text?: string | null
+  citation_type?: string | null
+  confidence?: string | null
+}
+
+/** Transformation Result（RWV2-20 冻结 result-object；list/detail 同构）。 */
+export interface TransformationResultRecord {
+  result_id: string
+  project_id: string
+  title: string | null
+  /** legacy 行（无 run_metadata envelope）为 null，不可 rerun */
+  transformation_id: string | null
+  template_config_ref: string | null
+  generation_id: string | null
+  model_id: string | null
+  status: string | null
+  /** 键位冻结：RWV2-31 前恒 null；区分 legacy/真实 null 以 envelope_version 为准 */
+  response_language: string | null
+  source_ids: string[]
+  note_ids: string[]
+  source_refs: string[]
+  output: string | null
+  citations: PersistedCitationSnapshot[]
+  created_at: string | null
+  updated_at: string | null
+}
+
 /** 分页载荷（契约 §3.4：cursor/limit；next_cursor 为 null 表示末页） */
 export interface ResearchPage<T> {
   items: T[]

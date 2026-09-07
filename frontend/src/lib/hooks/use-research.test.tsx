@@ -7,6 +7,8 @@ import {
   useCreateResearchNote,
   useDeleteResearchNote,
   useRunResearchTransformation,
+  useResearchTransformationResults,
+  useTransformationResult,
   RESEARCH_SOURCE_REFRESH_MS,
 } from './use-research'
 import * as researchApi from '@/lib/research/api'
@@ -28,6 +30,8 @@ vi.mock('@/lib/research/api', () => ({
   listTransformations: vi.fn(),
   createTransformation: vi.fn(),
   runTransformation: vi.fn(),
+  listTransformationResults: vi.fn(),
+  getTransformationResult: vi.fn(),
   createExport: vi.fn(),
   downloadExport: vi.fn(),
 }))
@@ -291,7 +295,10 @@ describe('use-research hooks', () => {
       citations: [],
       output: 'out',
     })
-    const { wrapper } = makeWrapper()
+    const { wrapper, queryClient } = makeWrapper()
+    const resultsKey = ['research', P, 'transformation-results']
+    queryClient.setQueryData(resultsKey, { pages: [{ items: [], next_cursor: null }], pageParams: [undefined] })
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries')
     const { result } = renderHook(() => useRunResearchTransformation(P), { wrapper })
     result.current.mutate({
       transformationId: 'trans_1',
@@ -304,9 +311,112 @@ describe('use-research hooks', () => {
         source_ids: ['src_1'],
         note_ids: [],
         model_id: 'm-global',
-      }),
+      }, { idempotencyKey: undefined }),
     )
     expect(researchApi.createTransformation).not.toHaveBeenCalled()
+    // Medium-7：成功后只失效 results key，使新行在历史列表可见
+    await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ queryKey: resultsKey, exact: true }),
+      )
+    })
+  })
+
+  it('Rerun 允许传入显式幂等键（新建派发；复用旧 key 会被后端幂等重放）', async () => {
+    vi.mocked(researchApi.runTransformation).mockResolvedValue({
+      request_id: 'req_2',
+      transformation_id: 'trans_1',
+      requires_job: false,
+      degradation_reason: null,
+      result_id: 'r_2',
+      model_id: 'm-global',
+      source_refs: ['src_1'],
+      usage: { input_tokens: 1, output_tokens: 1 },
+      citations: [],
+      output: 'out2',
+    })
+    const { wrapper } = makeWrapper()
+    const { result } = renderHook(() => useRunResearchTransformation(P), { wrapper })
+    result.current.mutate({
+      transformationId: 'trans_1', sourceIds: ['src_1'], noteIds: [], modelId: 'm-global',
+      idempotencyKey: 'ui-key-rerun-1',
+    })
+    await waitFor(() =>
+      expect(researchApi.runTransformation).toHaveBeenCalledWith(P, 'trans_1', {
+        source_ids: ['src_1'], note_ids: [], model_id: 'm-global',
+      }, { idempotencyKey: 'ui-key-rerun-1' }),
+    )
+  })
+
+  it('useResearchTransformationResults：首屏 20 + Load more 第 2 页（服务端游标，2 次调用、无重复）', async () => {
+    const results = Array.from({ length: 21 }, (_, i) => ({
+      result_id: `tres_${String(i + 1).padStart(2, '0')}`,
+      project_id: P,
+      title: `Run ${i + 1}`,
+      transformation_id: 'trans_1',
+      template_config_ref: 'cfg',
+      generation_id: 'gen_1',
+      model_id: 'm-global',
+      status: 'completed',
+      response_language: null,
+      source_ids: ['src_1'],
+      note_ids: [],
+      source_refs: ['src_1'],
+      output: `out ${i + 1}`,
+      citations: [],
+      created_at: `2026-09-07T00:00:${String(i).padStart(2, '0')}Z`,
+      updated_at: null,
+    }))
+    vi.mocked(researchApi.listTransformationResults).mockResolvedValueOnce({
+      items: results.slice(0, 20),
+      next_cursor: 'cursor-21',
+    }).mockResolvedValueOnce({
+      items: results.slice(20),
+      next_cursor: null,
+    })
+    const { wrapper } = makeWrapper()
+    const { result } = renderHook(() => useResearchTransformationResults(P), { wrapper })
+    await waitFor(() => {
+      const first = result.current.data?.pages.flatMap((p) => p.items) ?? []
+      expect(first).toHaveLength(20)
+    })
+    expect(researchApi.listTransformationResults).toHaveBeenCalledTimes(1)
+    const first = result.current.data?.pages.flatMap((p) => p.items) ?? []
+    expect(first).toHaveLength(20)
+    expect(result.current.hasNextPage).toBe(true)
+    await act(async () => {
+      await result.current.fetchNextPage()
+    })
+    await waitFor(() => expect(researchApi.listTransformationResults).toHaveBeenCalledTimes(2))
+    const secondCall = vi.mocked(researchApi.listTransformationResults).mock.calls[1]
+    expect(secondCall[1]).toEqual({ limit: 20, cursor: 'cursor-21' })
+    const all = result.current.data?.pages.flatMap((p) => p.items) ?? []
+    expect(all).toHaveLength(21)
+    expect(new Set(all.map((r) => r.result_id)).size).toBe(21)
+    expect(result.current.hasNextPage).toBe(false)
+  })
+
+  it('useTransformationResult：by-id 详情，projectId/null 时禁用', async () => {
+    vi.mocked(researchApi.getTransformationResult).mockResolvedValue({
+      result_id: 'tres_42', project_id: P, title: 't',
+      transformation_id: 'trans_1', template_config_ref: 'c', generation_id: 'g',
+      model_id: 'm', status: 'completed', response_language: null,
+      source_ids: [], note_ids: [], source_refs: [],
+      output: 'o', citations: [], created_at: null, updated_at: null,
+    })
+    const { wrapper } = makeWrapper()
+    const { result } = renderHook(
+      () => useTransformationResult('', 'tres_42'),
+      { wrapper },
+    )
+    await waitFor(() => expect(result.current.isFetching).toBe(false))
+    expect(researchApi.getTransformationResult).not.toHaveBeenCalled()
+    const { result: enabled } = renderHook(
+      () => useTransformationResult(P, 'tres_42'),
+      { wrapper },
+    )
+    await waitFor(() => expect(researchApi.getTransformationResult).toHaveBeenCalledWith(P, 'tres_42'))
+    expect(enabled.current.data?.result_id).toBe('tres_42')
   })
 
   it('403 写入失败 → toast 呈现 adminWriteDenied（禁用按钮不替代后端授权）', async () => {

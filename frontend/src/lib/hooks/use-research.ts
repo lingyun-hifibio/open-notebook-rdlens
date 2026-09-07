@@ -1,6 +1,6 @@
 'use client'
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { QUERY_KEYS } from '@/lib/api/query-client'
 import { useToast } from '@/lib/hooks/use-toast'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -12,10 +12,12 @@ import {
   createTransformation,
   deleteNote,
   getSource,
+  getTransformationResult,
   listInsights,
   listNotes,
   listSources,
   listTransformations,
+  listTransformationResults,
   runTransformation,
   updateNote,
   type CreateInsightInput,
@@ -207,6 +209,7 @@ export function useCreateResearchTransformation(projectId: string) {
 }
 
 export function useRunResearchTransformation(projectId: string) {
+  const queryClient = useQueryClient()
   const onError = useMutationErrorToast()
   return useMutation({
     mutationFn: ({
@@ -214,19 +217,57 @@ export function useRunResearchTransformation(projectId: string) {
       sourceIds,
       noteIds,
       modelId,
+      idempotencyKey,
     }: {
       transformationId: string
       sourceIds: string[]
       noteIds: string[]
       /** Issue #243 §6.6/§6.7：运行开始时的 confirmed 全局模型（required） */
       modelId: string
+      /** RWV2-21：Rerun=新建派发，必须每次传新幂等键（复用旧 key → 幂等重放/409） */
+      idempotencyKey?: string
     }) =>
       runTransformation(projectId, transformationId, {
         source_ids: sourceIds,
         note_ids: noteIds,
         model_id: modelId,
-      }),
+      }, { idempotencyKey }),
+    // RWV2-21/Medium-7：run（含 Rerun）成功后新结果必须出现在历史列表——
+    // 只失效 results key（精确 key，不连带模板/templates 或其他 research 键）。
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: QUERY_KEYS.researchTransformationResults(projectId),
+        exact: true,
+      })
+    },
     onError,
+  })
+}
+
+// ── Transformation Result 历史（RWV2-20/Issue #42；只读，服务端游标分页） ──
+
+export const TRANSFORMATION_RESULTS_PAGE_SIZE = 20
+
+export function useResearchTransformationResults(projectId: string) {
+  return useInfiniteQuery({
+    queryKey: QUERY_KEYS.researchTransformationResults(projectId),
+    queryFn: ({ pageParam }) =>
+      listTransformationResults(projectId, {
+        limit: TRANSFORMATION_RESULTS_PAGE_SIZE,
+        ...(pageParam ? { cursor: pageParam } : {}),
+      }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+    enabled: !!projectId,
+  })
+}
+
+/** by-id 详情（防御/深链用；默认详情路径读列表行对象，不接本 hook，Medium-4）。 */
+export function useTransformationResult(projectId: string, resultId: string | null) {
+  return useQuery({
+    queryKey: QUERY_KEYS.researchTransformationResult(projectId, resultId ?? ''),
+    queryFn: () => getTransformationResult(projectId, resultId as string),
+    enabled: !!projectId && !!resultId,
   })
 }
 
