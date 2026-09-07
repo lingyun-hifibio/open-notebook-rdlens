@@ -1150,8 +1150,8 @@ export const esES = {
     loading: "Cargando el espacio de investigación…",
     errorTitle: "Espacio de investigación no disponible",
     errorMessage: "No se pudo establecer la sesión de investigación. Vuelva a RDLens e inténtelo de nuevo.",
+
     workbench: {
-      title: "Espacio de trabajo de investigación",
       tabSources: "Fuentes",
       tabNotes: "Notas",
       tabInsights: "Información",

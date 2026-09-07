@@ -1149,8 +1149,8 @@ export const trTR = {
     loading: "Araştırma çalışma alanı yükleniyor…",
     errorTitle: "Araştırma çalışma alanı kullanılamıyor",
     errorMessage: "Araştırma oturumu kurulamadı. Lütfen RDLens'e dönüp tekrar deneyin.",
+
     workbench: {
-      title: "Araştırma çalışma alanı",
       tabSources: "Kaynaklar",
       tabNotes: "Notlar",
       tabInsights: "İçgörüler",

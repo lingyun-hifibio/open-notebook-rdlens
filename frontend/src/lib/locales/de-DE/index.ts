@@ -1151,8 +1151,8 @@ export const deDE = {
     loading: "Forschungsworkspace wird geladen…",
     errorTitle: "Forschungsworkspace nicht verfügbar",
     errorMessage: "Die Forschungssitzung konnte nicht eingerichtet werden. Bitte kehren Sie zu RDLens zurück und versuchen Sie es erneut.",
+
     workbench: {
-      title: "Forschungsworkspace",
       tabSources: "Quellen",
       tabNotes: "Notizen",
       tabInsights: "Erkenntnisse",

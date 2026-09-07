@@ -1149,8 +1149,8 @@ export const caES = {
     loading: "Carregant l'espai de recerca…",
     errorTitle: "Espai de recerca no disponible",
     errorMessage: "No s'ha pogut establir la sessió de recerca. Torna a RDLens i torna-ho a provar.",
+
     workbench: {
-      title: "Espai de treball de recerca",
       tabSources: "Fonts",
       tabNotes: "Notes",
       tabInsights: "Informacions",

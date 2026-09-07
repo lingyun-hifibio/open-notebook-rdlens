@@ -1149,8 +1149,8 @@ export const ptBR = {
     loading: "Carregando o espaço de pesquisa…",
     errorTitle: "Espaço de pesquisa indisponível",
     errorMessage: "Não foi possível estabelecer a sessão de pesquisa. Volte ao RDLens e tente novamente.",
+
     workbench: {
-      title: "Espaço de trabalho de pesquisa",
       tabSources: "Fontes",
       tabNotes: "Notas",
       tabInsights: "Insights",

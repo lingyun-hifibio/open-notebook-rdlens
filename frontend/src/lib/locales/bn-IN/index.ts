@@ -1150,8 +1150,8 @@ export const bnIN = {
     loading: "গবেষণা কর্মক্ষেত্র লোড হচ্ছে…",
     errorTitle: "গবেষণা কর্মক্ষেত্র উপলব্ধ নয়",
     errorMessage: "গবেষণা সেশন প্রতিষ্ঠা করা যায়নি। অনুগ্রহ করে RDLens-এ ফিরে আবার চেষ্টা করুন।",
+
     workbench: {
-      title: "গবেষণা কর্মক্ষেত্র",
       tabSources: "উৎস",
       tabNotes: "নোট",
       tabInsights: "অন্তর্দৃষ্টি",

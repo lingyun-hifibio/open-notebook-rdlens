@@ -1149,8 +1149,8 @@ export const itIT = {
     loading: "Caricamento dell'area di ricerca…",
     errorTitle: "Area di ricerca non disponibile",
     errorMessage: "Impossibile stabilire la sessione di ricerca. Torna a RDLens e riprova.",
+
     workbench: {
-      title: "Area di lavoro di ricerca",
       tabSources: "Fonti",
       tabNotes: "Note",
       tabInsights: "Approfondimenti",

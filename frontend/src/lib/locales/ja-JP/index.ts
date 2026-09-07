@@ -1149,8 +1149,8 @@ export const jaJP = {
     loading: "研究ワークスペースを読み込み中…",
     errorTitle: "研究ワークスペースを利用できません",
     errorMessage: "研究セッションを確立できませんでした。RDLens に戻ってもう一度お試しください。",
+
     workbench: {
-      title: "研究ワークスペース",
       tabSources: "ソース",
       tabNotes: "ノート",
       tabInsights: "インサイト",

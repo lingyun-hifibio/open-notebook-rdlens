@@ -1149,8 +1149,8 @@ export const zhCN = {
     loading: "正在加载研究工作区…",
     errorTitle: "研究工作区不可用",
     errorMessage: "无法建立研究会话，请返回 RDLens 后重试。",
+
     workbench: {
-      title: "研究工作台",
       tabSources: "来源",
       tabNotes: "笔记",
       tabInsights: "洞察",

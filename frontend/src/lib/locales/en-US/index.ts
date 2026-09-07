@@ -1162,7 +1162,6 @@ export const enUS = {
     errorTitle: "Research workspace unavailable",
     errorMessage: "The research session could not be established. Please return to RDLens and try again.",
     workbench: {
-      title: "Research workspace",
       tabSources: "Sources",
       tabNotes: "Notes",
       tabInsights: "Insights",

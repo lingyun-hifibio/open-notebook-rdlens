@@ -1149,8 +1149,8 @@ export const zhTW = {
     loading: "正在載入研究工作區…",
     errorTitle: "研究工作區無法使用",
     errorMessage: "無法建立研究工作階段，請返回 RDLens 後重試。",
+
     workbench: {
-      title: "研究工作台",
       tabSources: "來源",
       tabNotes: "筆記",
       tabInsights: "洞察",

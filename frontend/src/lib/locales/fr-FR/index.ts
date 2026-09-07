@@ -1149,8 +1149,8 @@ export const frFR = {
     loading: "Chargement de l'espace de recherche…",
     errorTitle: "Espace de recherche indisponible",
     errorMessage: "La session de recherche n'a pas pu être établie. Veuillez revenir à RDLens et réessayer.",
+
     workbench: {
-      title: "Espace de travail de recherche",
       tabSources: "Sources",
       tabNotes: "Notes",
       tabInsights: "Informations",

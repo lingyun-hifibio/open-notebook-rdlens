@@ -1149,8 +1149,8 @@ export const plPL = {
     loading: "Ładowanie przestrzeni badawczej…",
     errorTitle: "Przestrzeń badawcza niedostępna",
     errorMessage: "Nie udało się nawiązać sesji badawczej. Wróć do RDLens i spróbuj ponownie.",
+
     workbench: {
-      title: "Przestrzeń robocza badań",
       tabSources: "Źródła",
       tabNotes: "Notatki",
       tabInsights: "Wnioski",
