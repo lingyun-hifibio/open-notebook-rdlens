@@ -82,7 +82,12 @@ export function toDisplayItem(citation: ResearchCoverageCitation): ResearchCitat
 export interface CoverageJobDetailsProps {
   /** 服务端 GET 快照；undefined = 已受理但尚未回源（展示同步中占位） */
   job: ResearchJob | undefined
-  onRetry: (jobId: string) => Promise<boolean>
+  /**
+   * outcome_unknown 显式人工重试（§12.2，确认计费风险）。RWV2-40：改为
+   * 可选——Admin 只读会话省略该回调，此时**不渲染 retry 入口**（删除历史
+   * 上 `?? (async () => false)` 的假回调）；后端授权仍是最终权威。
+   */
+  onRetry?: (jobId: string) => Promise<boolean>
   onCitationJump?: (citation: ResearchCitationDisplayItem) => void
 }
 
@@ -112,6 +117,7 @@ export function CoverageJobDetails({ job, onRetry, onCitationJump }: CoverageJob
   const outcomeUnknown = isCoverageOutcomeUnknown(job)
 
   const confirmRetry = async (): Promise<void> => {
+    if (onRetry === undefined) return
     setRetryError(null)
     setRetrying(true)
     const ok = await onRetry(job.job_id)
@@ -213,12 +219,15 @@ export function CoverageJobDetails({ job, onRetry, onCitationJump }: CoverageJob
         </div>
       )}
 
-      {/* outcome_unknown：人工提示 + 显式重试（§12.2） */}
+      {/* outcome_unknown：人工提示 + 显式重试（§12.2）。RWV2-40：仅当
+          上层提供了 onRetry（Owner/Admin 分支在消费层）才渲染重试入口；
+          Admin 省略回调 → 只保留提示，不显示可点的"假成功"按钮 */}
       {outcomeUnknown && (
         <div className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-xs" data-testid="coverage-outcome-unknown">
           <p className="font-medium text-amber-700">{t('research.coverage.outcomeUnknown')}</p>
           <p className="text-muted-foreground">{t('research.coverage.outcomeUnknownDetail')}</p>
-          <AlertDialog>
+          {onRetry !== undefined && (
+            <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button size="sm" variant="outline" data-testid="coverage-retry-trigger">
                 {t('research.coverage.retry')}
@@ -240,6 +249,7 @@ export function CoverageJobDetails({ job, onRetry, onCitationJump }: CoverageJob
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+          )}
         </div>
       )}
 
