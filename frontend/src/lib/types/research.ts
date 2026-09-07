@@ -172,3 +172,65 @@ export interface ResearchPage<T> {
   items: T[]
   next_cursor: string | null
 }
+
+/**
+ * RWV2-22/RWV2-23（Issue #331/#43）：Save-as-Insight/Note 源与目标类型。
+ *
+ * `origin_id` 恒为服务端持久化的 generation_id（RDLens 侧 ≤100 字符、
+ * `[A-Za-z0-9_-]+`）；正文/Citation/scope/model/response_language 全部由
+ * 服务端从项目内持久源解析，客户端不重建可信 provenance。
+ */
+export type ResearchSaveOriginKind = 'search' | 'chat' | 'transformation'
+export type ResearchSaveDestinationKind = 'insight' | 'note'
+
+export interface ResearchSaveFromResultRequest {
+  origin_kind: ResearchSaveOriginKind
+  origin_id: string
+  destination_kind: ResearchSaveDestinationKind
+  /** 可选；空白视为未提供（服务端用 origin 派生标题或固定缺省） */
+  title?: string
+}
+
+/** Save 的 provenance envelope（服务端 run_metadata 解析后的展示键，§4.3） */
+export interface ResearchSaveProvenance {
+  envelope_version: number
+  kind: 'save_from_result'
+  origin_kind: ResearchSaveOriginKind
+  origin_id: string
+  destination_kind: ResearchSaveDestinationKind
+  scope: { source_ids: string[]; note_ids: string[] }
+  model_id: string | null
+  response_language: string | null
+  saved_at: string
+  saved_by_user_id: number
+  source_timestamps: Record<string, unknown>
+}
+
+/** Save-as-Note 的 201/200 响应（note detail 视图 + citations + provenance） */
+export interface SavedNoteRecord {
+  note_id: string
+  project_id: string
+  title: string
+  content: string
+  note_type: 'human'
+  created_at: string | null
+  updated_at: string | null
+  citations: PersistedCitationSnapshot[]
+  provenance: ResearchSaveProvenance
+}
+
+/** Save-as-Insight（ai）的 201/200 响应（insight detail 视图 + citations + provenance） */
+export interface SavedInsightRecord {
+  insight_id: string
+  project_id: string
+  title: string
+  content: string
+  insight_type: 'ai'
+  model_id: string | null
+  created_at: string | null
+  updated_at: string | null
+  citations: PersistedCitationSnapshot[]
+  provenance: ResearchSaveProvenance
+}
+
+export type ResearchSaveResultResponse = SavedNoteRecord | SavedInsightRecord

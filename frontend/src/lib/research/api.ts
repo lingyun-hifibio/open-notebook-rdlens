@@ -49,12 +49,15 @@ import type {
   ResearchInsight,
   ResearchNote,
   ResearchPage,
+  ResearchSaveFromResultRequest,
+  ResearchSaveResultResponse,
   ResearchSource,
   ResearchSourceDetail,
   ResearchTransformation,
   TransformationResultRecord,
   TransformationRunResult,
 } from '@/lib/types/research'
+import { saveIdempotencyKey } from './save-idempotency'
 
 const researchPath = (projectId: string, ...segments: string[]): string =>
   `/v1/research/projects/${projectId}${segments.length > 0 ? `/${segments.join('/')}` : ''}`
@@ -248,6 +251,53 @@ export async function getTransformationResult(
 ): Promise<TransformationResultRecord> {
   const response = await apiClient.get<TransformationResultRecord>(
     researchPath(projectId, 'transformation-results', resultId),
+  )
+  return response.data
+}
+
+// ── Save-as-Insight/Note（RWV2-22 / Issue #331；RWV2-23 / Issue #43 消费） ──
+
+/**
+ * 把已持久化的 Search/Chat/Transformation 结果显式保存为 Insight 或 Note。
+ *
+ * - 只发送 origin_kind/origin_id/destination_kind/可选 title（extra=forbid
+ *   域：正文/Citation/provenance 由服务端从项目内持久源解析，不信任客户端）；
+ * - 幂等键默认取确定性键（saveIdempotencyKey，D3）：同一逻辑保存恒同 key，
+ *   服务端重放返回原 artifact（200）；调用方仅在测试/特殊重放场景显式覆盖；
+ * - 返回 note/insight detail 视图（含 citations + provenance），按
+ *   `note_id`/`insight_id` 判别目标类型。
+ */
+export async function saveResultFromResult(
+  projectId: string,
+  request: ResearchSaveFromResultRequest,
+  options: { idempotencyKey?: string } = {},
+): Promise<ResearchSaveResultResponse> {
+  const title = request.title?.trim()
+  // 空白 title 视为未提供（与后端 L5 语义一致）；>128 截断防御（后端上限）。
+  const body = title
+    ? { ...request, title: title.slice(0, 128) }
+    : {
+        origin_kind: request.origin_kind,
+        origin_id: request.origin_id,
+        destination_kind: request.destination_kind,
+      }
+  const idempotencyKey =
+    options.idempotencyKey ??
+    saveIdempotencyKey(
+      projectId,
+      request.origin_kind,
+      request.origin_id,
+      request.destination_kind,
+    )
+  const response = await apiClient.post<ResearchSaveResultResponse>(
+    researchPath(projectId, 'save-result'),
+    body,
+    {
+      headers: {
+        'X-Research-Contract': 'v1',
+        'Idempotency-Key': idempotencyKey,
+      },
+    },
   )
   return response.data
 }
