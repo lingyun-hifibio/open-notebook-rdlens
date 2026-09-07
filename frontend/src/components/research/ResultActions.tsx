@@ -10,7 +10,6 @@ import { buildResultCopyText, type ResultCopyCitation } from './result-copy'
 import type {
   ResearchSaveDestinationKind,
   ResearchSaveOriginKind,
-  ResearchSaveResultResponse,
 } from '@/lib/types/research'
 
 /**
@@ -102,10 +101,6 @@ export function ResultActions({
   const effectiveOriginId = originId ?? resolvedOriginId
   const noteEntry = useSavedResultEntry(projectId, originKind, effectiveOriginId ?? '', 'note')
   const insightEntry = useSavedResultEntry(projectId, originKind, effectiveOriginId ?? '', 'insight')
-  const savedFor = (d: ResearchSaveDestinationKind): boolean =>
-    d === 'note'
-      ? noteEntry !== null && 'note_id' in noteEntry
-      : insightEntry !== null && 'insight_id' in insightEntry
 
   const [phase, setPhase] = useState<SavePhase | null>(null)
   const busy = saveMutation.isPending || phase?.state === 'pending'
@@ -125,7 +120,11 @@ export function ResultActions({
 
   const handleSave = useCallback(
     async (destinationKind: ResearchSaveDestinationKind) => {
-      if (saveBusyRef.current || savedFor(destinationKind)) return
+      const destSaved =
+        destinationKind === 'note'
+          ? noteEntry !== null && 'note_id' in noteEntry
+          : insightEntry !== null && 'insight_id' in insightEntry
+      if (saveBusyRef.current || destSaved) return
       saveBusyRef.current = true
       try {
         if (!aliveRef.current) return
@@ -168,7 +167,7 @@ export function ResultActions({
         saveBusyRef.current = false
       }
     },
-    [originId, originKind, saveMutation, savedFor, title, canResolve, resolveOriginId],
+    [originId, originKind, saveMutation, noteEntry, insightEntry, title, canResolve, resolveOriginId],
   )
 
   const [copying, setCopying] = useState(false)
