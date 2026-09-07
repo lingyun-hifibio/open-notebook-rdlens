@@ -1015,10 +1015,17 @@ export const enUS = {
     loadFailed: "Failed to load workspace data",
     retry: "Retry",
     pagination: { loadMore: "Load more" },
-    tabSearch: "Search",
-    tabChat: "Chat",
+    header: {
+      project: "Project",
+    },
+    tabSearch: "Evidence Search",
+    tabChat: "Research Chat",
     tabCompare: "Compare",
     tabJobs: "Jobs",
+    activity: {
+      title: "Activity",
+      description: "Research jobs and activity.",
+    },
     scopeSummary: {
       entireProject: "Entire project",
       sourceOne: "1 source",

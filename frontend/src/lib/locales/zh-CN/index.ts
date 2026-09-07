@@ -1041,6 +1041,13 @@ export const zhCN = {
     loadFailed: "工作区数据加载失败",
     retry: "重试",
     pagination: { loadMore: "Load more" },
+    activity: {
+      title: "Activity",
+      description: "Research jobs and activity.",
+    },
+    header: {
+      project: "Project",
+    },
     tabSearch: "搜索",
     tabChat: "对话",
     tabCompare: "对比",

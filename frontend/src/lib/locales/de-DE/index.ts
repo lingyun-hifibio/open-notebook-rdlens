@@ -1043,6 +1043,13 @@ export const deDE = {
     loadFailed: "Failed to load workspace data",
     retry: "Retry",
     pagination: { loadMore: "Load more" },
+    activity: {
+      title: "Activity",
+      description: "Research jobs and activity.",
+    },
+    header: {
+      project: "Project",
+    },
     tabSearch: "Search",
     tabChat: "Chat",
     tabCompare: "Compare",

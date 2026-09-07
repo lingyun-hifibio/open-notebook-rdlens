@@ -8,19 +8,17 @@ import { ResearchJobList } from './ResearchJobList'
 import type { ResearchCitationDisplayItem } from '@/lib/research/types'
 
 /**
- * RWV2-40（Fork #44）：Header 的 Activity 兼容壳（RWV2-41 前的最小容器）。
+ * RWV2-40（Fork #44）：Header 的 Activity 兼容壳。
  *
- * 目标 IA 把 Jobs 从主工作区动作迁到 Header 的 Activity；本 Dialog 只
- * 包裹现有 ResearchJobList，不新增徽标/分页/恢复状态。Jobs 数据来自
- * ResearchJobsProvider（唯一实例化 useResearchJobs，与 Chat coverage
- * 任务卡共享同一 controller 与 3s 轮询）。
+ * 目标 IA 把 Jobs 从主工作区动作迁到 Header 的 Activity；在 RWV2-41
+ * （Activity Center）落地前，本壳只包裹现有 ResearchJobList，不新增
+ * 徽标/分页/恢复状态。Jobs 数据来自 ResearchJobsProvider（唯一实例），
+ * 与 Chat coverage 任务卡共享同一 controller 与 3s 轮询。
  *
- * - 容量/a11y：DialogContent 限定视口高度，列表区内部滚动；标题/描述
- *   完整；关闭后焦点回 trigger（Dialog 自身焦点管理）。
- * - 权限：cancel/retry 在**消费层**按 isAdminReadonly 省略——JobList 只
- *   在收到 callback 时渲染按钮（onCancel/onCoverageRetry 可选）；后端
- *   授权仍是最终权威。
- * - 报告 Citation：关闭 Dialog 后经组合根路由到 source focus + 高亮。
+ * 容量/焦点契约：Dialog 限高 + 内部滚动，标题/描述完整，关闭后焦点回
+ * Activity trigger（Dialog 自身焦点管理）。Admin 会话在**消费层**省略
+ * cancel/retry callback（此处按 isAdminReadonly 不给 JobList 传），按钮
+ * 缺省不渲染；后端授权仍是最终权威。
  */
 export function ResearchActivityDialog({
   open,
@@ -29,6 +27,7 @@ export function ResearchActivityDialog({
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** 报告 Citation → 组合根：关闭 Dialog → 选中来源 → source focus + 高亮 */
   onCitationJump?: (sourceId: string, pageIdx: number | null) => void
 }) {
   const { t } = useTranslation()
