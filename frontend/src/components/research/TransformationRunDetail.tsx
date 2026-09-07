@@ -15,6 +15,7 @@ import type { ResearchCitation, ResearchSource, TransformationResultRecord } fro
 import { normalizePersistedCitations } from './citation-utils'
 import { CitationCard } from './CitationCard'
 import { resolveCitationSource } from './citation-utils'
+import { ResultActions } from './ResultActions'
 
 /**
  * Transformation Result 只读详情（RWV2-21 / Issue #42）。
@@ -43,6 +44,9 @@ export function TransformationRunDetail({
   showRerun,
   onCitationJump,
   onRerunSuccess,
+  onViewInsight,
+  onViewNote,
+  onContinueResearch,
 }: {
   record: TransformationResultRecord
   sources?: readonly ResearchSource[] | undefined
@@ -52,6 +56,11 @@ export function TransformationRunDetail({
   onCitationJump?: (citation: ResearchCitation) => void
   /** Rerun 成功回调（父层据此关闭详情并高亮新行，Medium-12） */
   onRerunSuccess?: (newResultId: string) => void
+  /** RWV2-23（AC3）：保存成功后跳转 Results/Insights 或 Materials/Notes */
+  onViewInsight?: (insightId: string) => void
+  onViewNote?: (noteId: string) => void
+  /** RWV2-23（AC4）：Continue research —— 关闭详情并预填 Chat */
+  onContinueResearch?: () => void
 }) {
   const { t } = useTranslation()
   const { toast } = useToast()
@@ -221,6 +230,19 @@ export function TransformationRunDetail({
           })}
         </div>
       )}
+
+      {/* RWV2-23：Transformation Result 动作条——origin 恒为 server detail 的
+          generation_id（AC6，不消费 dialog 局部输出）。legacy 行
+          （generation_id=null）不提供写动作，只保留 Copy。 */}
+      <ResultActions
+        originKind="transformation"
+        originId={record.generation_id}
+        content={record.output ?? ''}
+        citations={citations}
+        onContinueResearch={onContinueResearch}
+        onViewInsight={onViewInsight}
+        onViewNote={onViewNote}
+      />
 
       {showRerun === true && (
         <div className="space-y-2">

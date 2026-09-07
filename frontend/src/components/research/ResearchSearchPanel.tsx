@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
 import { ResearchCitationList } from './ResearchCitationList'
+import { ResultActions } from './ResultActions'
 import {
   SearchContextSelector,
   CONTEXT_LEVELS,
@@ -54,6 +55,9 @@ const CONSENT_ERROR_CODES = [
 export function ResearchSearchPanel({
   projectId,
   active = true,
+  onContinueResearch,
+  onViewInsight,
+  onViewNote,
 }: {
   projectId: string
   /**
@@ -63,6 +67,11 @@ export function ResearchSearchPanel({
    * 与 Jobs 轮询不受影响（不变量：隐藏 ≠ 取消）。
    */
   active?: boolean
+  /** RWV2-23（AC4）：Continue research —— 打开 Chat 并预填**派发时** query */
+  onContinueResearch?: (text: string) => void
+  /** RWV2-23（AC3）：保存成功后跳转 Results/Insights 或 Materials/Notes */
+  onViewInsight?: (insightId: string) => void
+  onViewNote?: (noteId: string) => void
 }) {
   const { t } = useTranslation()
   const {
@@ -99,6 +108,9 @@ export function ResearchSearchPanel({
     useState<ResearchContextLevel>('focused')
   const [adjustedFrom, setAdjustedFrom] = useState<ResearchContextLevel | null>(null)
   const interactedRef = useRef(false)
+  // RWV2-23（R3-4）：Continue research 预填**派发时** query 快照——用户在
+  // 结果返回后可能已改写输入框，不得用当前 composer 文本预填。
+  const lastExecutedQueryRef = useRef('')
 
   // Context Preview（§9.1 只读预判；发送前提示）
   const [preview, setPreview] = useState<ResearchContextPreview | null>(null)
@@ -230,6 +242,7 @@ export function ResearchSearchPanel({
         idempotencyKeyRef.current = null
         keyInputsRef.current = ''
         if (outcome.kind === 'direct') {
+          lastExecutedQueryRef.current = trimmed
           setResult(outcome.result)
         } else {
           setBackground({
@@ -491,6 +504,36 @@ export function ResearchSearchPanel({
             )}
 
             <ResearchCitationList citations={result.citations} />
+
+            {/* RWV2-23：Search 结果动作条——仅 v1 direct 结果（携带
+                generation_id，服务端已强制持久化 search_result 才返回 200）
+                提供保存；后台(202)/旧后端无 id → 不渲染写动作（不可存如实
+                无入口，不猜测）。Continue research 预填派发时 query。 */}
+            {result.generation_id !== undefined &&
+              result.generation_id !== null && (
+                <ResultActions
+                  originKind="search"
+                  originId={result.generation_id}
+                  content={result.conclusion ?? ''}
+                  citations={(result.citations ?? []).map((citation) => ({
+                    claim: citation.claim,
+                    original_text: citation.original_text,
+                    doc_id: citation.doc_id,
+                    page_idx:
+                      typeof citation.page_idx === 'number'
+                        ? citation.page_idx
+                        : null,
+                  }))}
+                  onContinueResearch={
+                    onContinueResearch !== undefined
+                      ? () =>
+                          onContinueResearch(lastExecutedQueryRef.current || query)
+                      : undefined
+                  }
+                  onViewInsight={onViewInsight}
+                  onViewNote={onViewNote}
+                />
+              )}
           </div>
         )}
       </div>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -118,6 +118,11 @@ export function ResultActions({
 
   const [phase, setPhase] = useState<SavePhase | null>(null)
 
+  // D10（R3-1）：Dialog/瞬态宿主卸载后 resolve 只静默失效本地副作用；
+  // artifact 创建/缓存写入由 mutation/queryClient 继续（确定性键防重复）。
+  const aliveRef = useRef(true)
+  useEffect(() => () => { aliveRef.current = false }, [])
+
   const handleSave = useCallback(
     async (destinationKind: ResearchSaveDestinationKind) => {
       if (pending || phase?.state === 'pending' || saved[destinationKind]) return
@@ -126,11 +131,13 @@ export function ResultActions({
         effectiveOriginId = await resolveOriginId()
       }
       if (effectiveOriginId === null) {
-        setPhase({
-          dest: destinationKind,
-          state: 'error',
-          messageKey: 'research.resultActions.saveUnavailable',
-        })
+        if (aliveRef.current) {
+          setPhase({
+            dest: destinationKind,
+            state: 'error',
+            messageKey: 'research.resultActions.saveUnavailable',
+          })
+        }
         return
       }
       setPhase({ dest: destinationKind, state: 'pending' })
@@ -141,14 +148,18 @@ export function ResultActions({
           destinationKind,
           ...(title ? { title } : {}),
         })
-        setSaved((prev) => ({ ...prev, [destinationKind]: result }))
-        setPhase(null)
+        if (aliveRef.current) {
+          setSaved((prev) => ({ ...prev, [destinationKind]: result }))
+          setPhase(null)
+        }
       } catch (error) {
-        setPhase({
-          dest: destinationKind,
-          state: 'error',
-          messageKey: classifySaveErrorKey(error),
-        })
+        if (aliveRef.current) {
+          setPhase({
+            dest: destinationKind,
+            state: 'error',
+            messageKey: classifySaveErrorKey(error),
+          })
+        }
       }
     },
     [originId, originKind, pending, phase?.state, saveMutation, saved, title, canResolve, resolveOriginId],
@@ -159,21 +170,29 @@ export function ResultActions({
     if (copying) return
     const text = buildResultCopyText({ content, citations })
     if (text === '') {
-      toast({ title: t('research.resultActions.copyFailed'), variant: 'destructive' })
+      if (aliveRef.current) {
+        toast({ title: t('research.resultActions.copyFailed'), variant: 'destructive' })
+      }
       return
     }
     if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
-      toast({ title: t('research.resultActions.copyFailed'), variant: 'destructive' })
+      if (aliveRef.current) {
+        toast({ title: t('research.resultActions.copyFailed'), variant: 'destructive' })
+      }
       return
     }
-    setCopying(true)
+    if (aliveRef.current) setCopying(true)
     try {
       await navigator.clipboard.writeText(text)
-      toast({ title: t('research.resultActions.copySuccess') })
+      if (aliveRef.current) {
+        toast({ title: t('research.resultActions.copySuccess') })
+      }
     } catch {
-      toast({ title: t('research.resultActions.copyFailed'), variant: 'destructive' })
+      if (aliveRef.current) {
+        toast({ title: t('research.resultActions.copyFailed'), variant: 'destructive' })
+      }
     } finally {
-      setCopying(false)
+      if (aliveRef.current) setCopying(false)
     }
   }, [content, citations, copying, toast, t])
 
