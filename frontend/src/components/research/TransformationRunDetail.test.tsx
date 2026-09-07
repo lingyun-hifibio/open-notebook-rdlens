@@ -260,7 +260,7 @@ describe('TransformationRunDetail（RWV2-21 detail + rerun）', () => {
   it('详情在 scope 解析在途时关闭/卸载 → 不派发（评审 Medium-3 生命周期守卫）', async () => {
     seedScope('entire_project')
     const { wrapper } = makeWrapper()
-    let resolveSources!: (v: { items: never[]; next_cursor: string | null }) => void
+    let resolveSources!: (v: { items: { source_id: string }[]; next_cursor: string | null }) => void
     // 先挂起 sources 枚举（resolveScopeSelection 第一段）
     vi.mocked(researchApi.listSources).mockReturnValue(
       new Promise((res) => { resolveSources = res }),
@@ -277,8 +277,9 @@ describe('TransformationRunDetail（RWV2-21 detail + rerun）', () => {
     )
     // 详情关闭 → 组件卸载 → cleanup 使令牌失效
     unmount()
-    // 枚举返回后：令牌失效 → 不派发（修复前此路径会继续 mutateAsync）
-    resolveSources({ items: [], next_cursor: null })
+    // 枚举返回非空（若无守卫，旧实现会越过 empty-project 分支直接派发；
+    // 守卫必须拦截在 empty-project 检查之前——红测试判别点）
+    resolveSources({ items: [{ source_id: 'src_1' }], next_cursor: null })
     await new Promise((r) => setTimeout(r, 50))
     expect(researchApi.runTransformation).not.toHaveBeenCalled()
   })
