@@ -242,6 +242,60 @@ describe('ResearchSourceChatPanel', () => {
     expect(screen.getByText('research.sourceChat.errorGatewayUnavailable')).toBeInTheDocument()
   })
 
+  it('RWV2-42（M1）：未知错误码 → generic 主文案；raw code 不作主消息（仅诊断）', () => {
+    const chat = makeChatResult({
+      turns: [{
+        id: 'a2',
+        role: 'assistant',
+        content: '',
+        thinking: '',
+        citations: [],
+        usage: null,
+        resolvedMode: null,
+        degradationReasons: [],
+        sourceRef: null,
+        status: 'error',
+        reconnectCount: 0,
+        errorCode: 'project_deleted',
+        errorMessage: '已删除',
+      }],
+    })
+    vi.mocked(useResearchSourceChat).mockReturnValue(chat)
+    renderPanel()
+
+    // 主消息为 generic 文案 key（t 返回键名）；raw code 不出现为主消息
+    expect(screen.getByText('research.errors.generic')).toBeInTheDocument()
+    expect(screen.queryByText('project_deleted')).toBeNull()
+    // 原文仅作次级诊断行
+    expect(screen.getByText('已删除')).toBeInTheDocument()
+  })
+
+  it('RWV2-42（L1）：未知码且无 errorMessage → generic 主文案 + raw code 仅次级', () => {
+    const chat = makeChatResult({
+      turns: [{
+        id: 'a3',
+        role: 'assistant',
+        content: '',
+        thinking: '',
+        citations: [],
+        usage: null,
+        resolvedMode: null,
+        degradationReasons: [],
+        sourceRef: null,
+        status: 'error',
+        reconnectCount: 0,
+        errorCode: 'epoch_mismatch',
+        errorMessage: null,
+      }],
+    })
+    vi.mocked(useResearchSourceChat).mockReturnValue(chat)
+    renderPanel()
+
+    expect(screen.getByText('research.errors.generic')).toBeInTheDocument()
+    // raw code 保留为次级诊断（不丢信息，同时不违反 AC8 主消息规则）
+    expect(screen.getByText('epoch_mismatch')).toBeInTheDocument()
+  })
+
   it('输入非空回车发送并清空输入框', () => {
     const chat = makeChatResult()
     vi.mocked(useResearchSourceChat).mockReturnValue(chat)
@@ -265,7 +319,8 @@ describe('ResearchSourceChatPanel', () => {
     const chat = makeChatResult()
     vi.mocked(useResearchSourceChat).mockReturnValue(chat)
     // 外部模型待确认：守卫只登记不执行（不变量 9）
-    setGlobalModelStub({ deferGuarded: true })
+    const onGuardedOptions = vi.fn()
+    setGlobalModelStub({ deferGuarded: true, onGuardedOptions })
     renderPanel()
 
     const input = screen.getByTestId('srcchat-input')
@@ -273,6 +328,11 @@ describe('ResearchSourceChatPanel', () => {
     fireEvent.keyDown(input, { key: 'Enter' })
     expect(chat.send).not.toHaveBeenCalled()
     expect(input).toHaveValue('外发问题')
+    // RWV2-42（D5a）：派发携带固定来源摘要（consent Scope 行 = 该来源）
+    expect(onGuardedOptions).toHaveBeenCalledTimes(1)
+    expect(onGuardedOptions.mock.calls[0][0]?.scopeLabel).toContain(
+      'research.scopeSummary.sourceOne',
+    )
   })
 
   it('#243 §6.4：无 confirmed 模型时输入与发送按钮禁用（不变量 2/7）', () => {

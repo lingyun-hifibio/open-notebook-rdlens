@@ -5,6 +5,7 @@ import { QUERY_KEYS } from '@/lib/api/query-client'
 import { useToast } from '@/lib/hooks/use-toast'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { collectResearchPages, RESEARCH_PAGE_LIMIT } from '@/lib/research/pagination'
+import { extractResearchErrorCode, userErrorMessageKey } from '@/lib/research/errors'
 import {
   createExport,
   createInsight,
@@ -38,12 +39,16 @@ function useMutationErrorToast() {
   const { toast } = useToast()
   const { t } = useTranslation()
   return (error: unknown) => {
-    // 403：Admin 只读被服务端拒绝（REQ-AUTH-04/§4.4 矩阵，双保险）
+    // RWV2-42（M2）：有稳定码时优先按码映射/回落通用（403 系 consent/policy
+    // 拒绝不得误标为 Admin 只读）；仅无码的 403 走 adminWriteDenied 兜底
     const status = (error as { response?: { status?: number } })?.response?.status
+    const code = extractResearchErrorCode(error)
     const message =
-      status === 403
-        ? t('research.workbench.adminWriteDenied')
-        : t('research.workbench.actionFailed')
+      code !== null
+        ? t(userErrorMessageKey(code))
+        : status === 403
+          ? t('research.workbench.adminWriteDenied')
+          : t('research.workbench.actionFailed')
     toast({ title: t('common.error'), description: message, variant: 'destructive' })
   }
 }

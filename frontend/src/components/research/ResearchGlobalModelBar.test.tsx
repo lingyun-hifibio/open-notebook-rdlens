@@ -122,6 +122,27 @@ describe('ResearchGlobalModelBar', () => {
     )
   })
 
+  it('本地与外部模型身份显式标记（RWV2-42：Local/External，不暗示 embedding 离境）', () => {
+    const mixed: ResearchModelOption[] = [
+      { model_id: 'm-loc', display_name: 'Local M', data_egress: false },
+      { model_id: 'm-ext', display_name: 'Ext M', data_egress: true },
+    ]
+    setGlobalModelStub({
+      models: mixed,
+      confirmedModelId: 'm-ext',
+      draftModelId: 'm-ext',
+    })
+    render(<ResearchGlobalModelBar />)
+
+    const select = screen.getByTestId('global-model-select') as HTMLSelectElement
+    const text = Array.from(select.options).map((option) => option.textContent ?? '')
+    // t() 在测试中映射为 key：断言组件选择正确文案 key，而非猜测语言
+    const extOption = text.find((t) => t.startsWith('Ext M'))
+    expect(extOption).toContain('research.globalModel.external')
+    const locOption = text.find((t) => t.startsWith('Local M'))
+    expect(locOption).toContain('research.globalModel.local')
+  })
+
   it('待确认时提供显式外发确认入口', () => {
     const onRunGuarded = vi.fn()
     setGlobalModelStub({

@@ -114,6 +114,7 @@ export function ResearchWorkspace({
     jobs,
     isCreating,
     error: jobsError,
+    errorCode: jobsErrorCode,
     createCompare: createCompareJob,
     registerCoverageJob,
     retryCoverage,
@@ -315,6 +316,7 @@ export function ResearchWorkspace({
             sources={sources}
             isCreating={isCreating}
             error={jobsError}
+            errorCode={jobsErrorCode}
             onCreate={createCompare}
             modelBlocked={!canExecute}
             blockedHint={blockedHint}

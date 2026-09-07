@@ -83,4 +83,65 @@ describe('ResearchEgressConsentDialog', () => {
     fireEvent.click(screen.getByTestId('egress-consent-confirm'))
     expect(onConfirm).toHaveBeenCalledTimes(1)
   })
+
+  it('RWV2-42：Model 行展示登记快照模型（名称+provider+External）与本地性注记', () => {
+    setGlobalModelStub({
+      isConsentPromptOpen: true,
+      consentResponse,
+      pendingModelId: 'm-ext',
+      models: [
+        {
+          model_id: 'm-ext',
+          display_name: 'Ext M',
+          provider_id: 'ext-1',
+          data_egress: true,
+        },
+        { model_id: 'm-local', display_name: 'Local M', data_egress: false },
+      ],
+    })
+    render(<ResearchEgressConsentDialog />)
+
+    const modelRow = screen.getByTestId('egress-consent-model')
+    // t() 在测试中映射为 key：断言使用 external 身份 key（非猜测语言）
+    expect(modelRow.textContent).toContain('Ext M')
+    expect(modelRow.textContent).toContain('ext-1')
+    expect(modelRow.textContent).toContain('research.globalModel.external')
+    // 本地性注记：embedding/检索不出域（RWV2-42）
+    expect(screen.getByTestId('egress-consent-embedding-note').textContent).toContain(
+      'research.consentEmbeddingLocal',
+    )
+  })
+
+  it('RWV2-42：登记模型不在目录（unavailable）→ Model 行显示 id + unavailable 标记，不猜测身份', () => {
+    setGlobalModelStub({
+      isConsentPromptOpen: true,
+      consentResponse,
+      pendingModelId: 'm-gone',
+      models: [{ model_id: 'm-local', display_name: 'Local M', data_egress: false }],
+    })
+    render(<ResearchEgressConsentDialog />)
+
+    const modelRow = screen.getByTestId('egress-consent-model')
+    expect(modelRow.textContent).toContain('m-gone')
+    expect(modelRow.textContent).toContain('research.globalModel.unavailable')
+  })
+
+  it('RWV2-42：Scope 行仅在派发登记了摘要时显示；Model 行与本地性注记常驻（弹窗开）', () => {
+    setGlobalModelStub({
+      isConsentPromptOpen: true,
+      consentResponse,
+      pendingModelId: 'm-ext',
+      models: [{ model_id: 'm-ext', display_name: 'Ext M', data_egress: true }],
+    })
+    const { rerender } = render(<ResearchEgressConsentDialog />)
+    // 未登记摘要：无 Scope 行（防展示与派发无关范围），但有 Model 行
+    expect(screen.queryByTestId('egress-consent-scope')).toBeNull()
+    expect(screen.getByTestId('egress-consent-model')).toBeTruthy()
+
+    setGlobalModelStub({ pendingScopeLabel: '2 sources · 1 note' })
+    rerender(<ResearchEgressConsentDialog />)
+    expect(screen.getByTestId('egress-consent-scope').textContent).toContain(
+      '2 sources · 1 note',
+    )
+  })
 })

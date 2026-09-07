@@ -32,6 +32,7 @@ import {
 } from '@/lib/research/api'
 import { canCancelJob, isJobTerminal } from '@/lib/research/jobs'
 import { checkCompareSelection, COMPARE_HARD_MAX } from '@/lib/research/compare'
+import { extractResearchErrorCode } from '@/lib/research/errors'
 import type { ResearchJob } from '@/lib/research/types'
 
 export const POLL_INTERVAL_MS = 3000
@@ -71,6 +72,14 @@ export interface UseResearchJobsResult {
   isCreating: boolean
   error: string | null
   /**
+   * RWV2-42：最近一次创建/取消错误的稳定码（HTTP detail.code）；本地
+   * 防御性前置校验（compare-empty/compare-over-hard/no-model）也写入本字段，
+   * 但按面板门控结构（check.ok && !modelBlocked）通常到不了 error 行——
+   * 它们只作 fail-closed 语义与诊断用。raw message 语义不变（error）。
+   * additive，不破坏既有 string 消费端。
+   */
+  errorCode: string | null
+  /**
    * Issue #243 §6.4：modelId 是 required——调用方必须传入调用时刻捕获的
    * confirmed 全局模型快照。本 hook 不在执行时读取执行偏好，因此后续切换
    * 模型不会影响已创建的 Job（不变量 4）。Compare 固定 workspace 上下文。
@@ -99,6 +108,7 @@ export function useResearchJobs({ projectId }: { projectId: string }): UseResear
   const [jobs, setJobs] = useState<ResearchJob[]>([])
   const [isCreating, setIsCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [errorCode, setErrorCode] = useState<string | null>(null)
   const terminalLockedRef = useRef<Set<string>>(new Set())
   const knownIdsRef = useRef<Set<string>>(new Set())
   // Issue #311：项目切换守卫——在途 listJobs/getJob 响应返回时若项目已
@@ -216,18 +226,24 @@ export function useResearchJobs({ projectId }: { projectId: string }): UseResear
     groupSize?: number,
   ): ResearchJob | null => {
     setError(null)
+    setErrorCode(null)
     const check = checkCompareSelection(documentIds)
     if (!check.ok) {
+      // 防御性前置校验：raw 消息保留（既有消费端语义），code 供映射层
+      // 与 ComparePanel 专用 Alert 同文案
       if (check.reason === 'over_hard') {
         setError(`Cannot compare more than ${COMPARE_HARD_MAX} documents (selected ${check.count})`)
+        setErrorCode('compare-over-hard')
       } else {
         setError('Select at least one source document to compare')
+        setErrorCode('compare-empty')
       }
       return null
     }
     if (!modelId) {
       // fail-closed：无 confirmed 模型不创建（后端不隐式补值，不变量 2）
       setError('Select a research model before starting a comparison')
+      setErrorCode('no-model')
       return null
     }
     setIsCreating(true)
@@ -245,7 +261,10 @@ export function useResearchJobs({ projectId }: { projectId: string }): UseResear
         void refreshList()
       })
       .catch((err: Error) => {
-        setError(err.message || 'compare.createFailed')
+        // RWV2-42：raw message 保留为诊断，稳定码透出供映射；删除伪 key
+        // 'compare.createFailed' 字面量（AC8）
+        setError(err.message || '')
+        setErrorCode(extractResearchErrorCode(err))
       })
       .finally(() => {
         setIsCreating(false)
@@ -255,6 +274,7 @@ export function useResearchJobs({ projectId }: { projectId: string }): UseResear
 
   const cancel = useCallback((jobId: string) => {
     setError(null)
+    setErrorCode(null)
     const existing = jobs.find((j) => j.job_id === jobId)
     if (!existing || !canCancelJob(existing.status)) {
       // completed → cancel 为 409 语义；本地不静默
@@ -284,12 +304,14 @@ export function useResearchJobs({ projectId }: { projectId: string }): UseResear
   // 风险；不得复用旧唯一键静默发送（复用 → 服务端 409）。
   const retryCoverage = useCallback(async (jobId: string): Promise<boolean> => {
     setError(null)
+    setErrorCode(null)
     try {
       await retryCoverageJob(projectId, jobId, newIdempotencyKey())
       registerCoverageJob(jobId)
       return true
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
+      setErrorCode(extractResearchErrorCode(err))
       return false
     }
   }, [projectId, registerCoverageJob])
@@ -298,6 +320,7 @@ export function useResearchJobs({ projectId }: { projectId: string }): UseResear
     jobs,
     isCreating,
     error,
+    errorCode,
     createCompare: createCompareJob,
     cancel,
     registerCoverageJob,

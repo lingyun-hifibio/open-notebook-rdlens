@@ -546,4 +546,80 @@ describe('useResearchGlobalModel（GMOD §6.1 draft/confirmed）', () => {
     expect(outcome).toBeUndefined()
     expect(patchExecutionPreferences).not.toHaveBeenCalled()
   })
+
+  it('RWV2-42：登记后 pendingModelId = 登记快照；取消后清空；确认后清空', async () => {
+    vi.mocked(getExecutionPreferences).mockResolvedValue({
+      ...PREFS_M_LOCAL,
+      preferred_model_id: 'm-ext',
+    })
+    vi.mocked(getExternalEgressConsent).mockResolvedValue(CONSENT_MISSING)
+    const { result } = renderGlobalModel()
+    await waitFor(() => expect(result.current.isLoadingModel).toBe(false))
+
+    const operation = vi.fn(async () => 'ok')
+    await act(async () => {
+      await result.current.runGuarded(operation, { scopeLabel: 'Entire project' })
+    })
+    // 弹窗打开期间：pendingModelId=登记模型快照（与 pendingScopeLabel 同源）
+    expect(result.current.isConsentPromptOpen).toBe(true)
+    expect(result.current.pendingScopeLabel).toBe('Entire project')
+    expect(result.current.pendingModelId).toBe('m-ext')
+
+    // 取消 → 单记录整体丢弃
+    await act(async () => {
+      await result.current.runGuarded(operation, { scopeLabel: 'Entire project' })
+      result.current.cancelConsent()
+    })
+    expect(result.current.pendingModelId).toBeNull()
+    expect(result.current.pendingScopeLabel).toBeNull()
+
+    // 再次登记并确认 → 确认成功后一并清空
+    await act(async () => {
+      await result.current.runGuarded(operation, { scopeLabel: 'Entire project' })
+    })
+    expect(result.current.pendingModelId).toBe('m-ext')
+    await act(async () => {
+      await result.current.confirmConsent()
+    })
+    expect(operation).toHaveBeenCalledWith('m-ext')
+    expect(result.current.pendingModelId).toBeNull()
+    expect(result.current.pendingScopeLabel).toBeNull()
+    expect(result.current.isConsentPromptOpen).toBe(false)
+  })
+
+  it('RWV2-42（R7-1）：弹窗期间当前模型被改 → 自动取消登记（无 ack、无执行、无残留）', async () => {
+    vi.mocked(getExecutionPreferences).mockResolvedValue({
+      ...PREFS_M_LOCAL,
+      preferred_model_id: 'm-ext',
+    })
+    vi.mocked(getExternalEgressConsent).mockResolvedValue(CONSENT_MISSING)
+    const { result } = renderGlobalModel()
+    await waitFor(() => expect(result.current.isLoadingModel).toBe(false))
+    expect(result.current.confirmedModelId).toBe('m-ext')
+
+    const operation = vi.fn(async () => 'ok')
+    await act(async () => {
+      await result.current.runGuarded(operation, { scopeLabel: 'Entire project' })
+    })
+    expect(result.current.isConsentPromptOpen).toBe(true)
+    expect(result.current.pendingModelId).toBe('m-ext')
+
+    // 模拟「登记后当前权威模型被改」（同标签保存另一模型 → confirmed 更新；
+    // 跨标签/focus refetch 走同一缓存更新路径）
+    await act(async () => {
+      result.current.setDraftModelId('m-local')
+    })
+    await act(async () => {
+      await result.current.saveModel()
+    })
+
+    // 自动取消：登记被丢弃，无 acknowledge、无派发、无残留状态
+    expect(result.current.isConsentPromptOpen).toBe(false)
+    expect(result.current.pendingModelId).toBeNull()
+    expect(result.current.pendingScopeLabel).toBeNull()
+    expect(operation).not.toHaveBeenCalled()
+    expect(acknowledgeExternalEgressConsent).not.toHaveBeenCalled()
+    // 用户已切换的模型选择保留（可重试重新走确认）
+    expect(result.current.draftModelId).toBe('m-local')
+  })
 })

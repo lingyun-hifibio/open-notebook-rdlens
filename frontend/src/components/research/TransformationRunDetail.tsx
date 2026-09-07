@@ -6,6 +6,7 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 import { useToast } from '@/lib/hooks/use-toast'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
 import { useResearchScope } from '@/lib/research/scope'
+import { formatScopeLabel } from '@/lib/research/scope'
 import { resolveScopeSelection } from '@/lib/research/scope-utils'
 import { newIdempotencyKey } from '@/lib/research/api'
 import { useResearchGlobalModel, researchModelBlockedHint } from '@/lib/hooks/use-research-global-model'
@@ -109,35 +110,40 @@ export function TransformationRunDetail({
       return
     }
     try {
-      await runGuarded(async (modelId) => {
-        // 评审 Medium-3：外部模型 consent 确认期间详情已关闭/卸载 →
-        // op 内（mutateAsync 前）再校验，零派发（与既有 run dialog B2 同构）
-        if (!rerunAliveRef.current) return
-        const result = await runMutation.mutateAsync({
-          transformationId: record.transformation_id as string,
-          sourceIds,
-          noteIds,
-          modelId,
-          // 新建派发：必须新幂等键（复用旧 key → 后端幂等重放/409）
-          idempotencyKey: newIdempotencyKey(),
-        })
-        // High-4：非 job 化 200 必有 result_id；job 化（requires_job）成功
-        // 响应 result_id 为 null——评审 Medium-2 指出旧代码在此静默：既不给
-        // 确认也不提示 job。与既有 run flow 的 degraded 处理对齐：可见的
-        // job/降级消息（新结果将由持久任务异步产出，历史列表随后出现）。
-        if (result.requires_job) {
-          setRerunDegraded(result.degradation_reason ?? 'requires_job')
-          return true
-        }
-        if (result.result_id) {
-          onRerunSuccess?.(result.result_id)
-          toast({
-            title: t('common.success'),
-            description: t('research.transformations.rerunSuccess'),
+      await runGuarded(
+        async (modelId) => {
+          // 评审 Medium-3：外部模型 consent 确认期间详情已关闭/卸载 →
+          // op 内（mutateAsync 前）再校验，零派发（与既有 run dialog B2 同构）
+          if (!rerunAliveRef.current) return
+          const result = await runMutation.mutateAsync({
+            transformationId: record.transformation_id as string,
+            sourceIds,
+            noteIds,
+            modelId,
+            // 新建派发：必须新幂等键（复用旧 key → 后端幂等重放/409）
+            idempotencyKey: newIdempotencyKey(),
           })
-        }
-        return true
-      })
+          // High-4：非 job 化 200 必有 result_id；job 化（requires_job）成功
+          // 响应 result_id 为 null——评审 Medium-2 指出旧代码在此静默：既不给
+          // 确认也不提示 job。与既有 run flow 的 degraded 处理对齐：可见的
+          // job/降级消息（新结果将由持久任务异步产出，历史列表随后出现）。
+          if (result.requires_job) {
+            setRerunDegraded(result.degradation_reason ?? 'requires_job')
+            return true
+          }
+          if (result.result_id) {
+            onRerunSuccess?.(result.result_id)
+            toast({
+              title: t('common.success'),
+              description: t('research.transformations.rerunSuccess'),
+            })
+          }
+          return true
+        },
+        // RWV2-42：rerun 按当前 Scope 重新派发（resolve 前 getSnapshot() 冻结）；
+        // consent Scope 行必须与该快照一致，而非历史 run 输入（评审 H6）
+        { scopeLabel: formatScopeLabel(snapshot, t) },
+      )
     } catch {
       // 非 200（422/403/404/409）已由 mutation onError toast；此处静默吸收
     }

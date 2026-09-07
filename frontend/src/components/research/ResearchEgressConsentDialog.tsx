@@ -36,9 +36,31 @@ export function ResearchEgressConsentDialog() {
     consentResponse,
     consentError,
     pendingScopeLabel,
+    pendingModelId,
+    models,
     confirmConsent,
     cancelConsent,
   } = useResearchGlobalModel()
+
+  // RWV2-42：Model 行数据源 = 登记快照（pendingModelId），绝不读 live
+  // confirmed——登记后当前模型被改时，弹窗仍展示将实际执行的模型。
+  const pendingModel =
+    pendingModelId === null ? null : (models.find((m) => m.model_id === pendingModelId) ?? null)
+
+  // RWV2-42：Model 行文案。目录命中 → 名称(+provider) + Local/External
+  // 身份；目录缺失/查询失败 → 仅 id + unavailable 标记（不猜测身份）。
+  const modelLabel =
+    pendingModelId === null
+      ? null
+      : pendingModel !== null
+        ? `${pendingModel.display_name || pendingModel.model_id}${
+            pendingModel.provider_id ? ` · ${pendingModel.provider_id}` : ''
+          } (${t(
+            pendingModel.data_egress === true
+              ? 'research.globalModel.external'
+              : 'research.globalModel.local',
+          )})`
+        : `${pendingModelId} (${t('research.globalModel.unavailable')})`
 
   return (
     <Dialog
@@ -89,6 +111,23 @@ export function ResearchEgressConsentDialog() {
               </p>
             </div>
           )}
+          {modelLabel !== null && (
+            <div>
+              <p className="font-medium">{t('research.consentModelTitle')}</p>
+              <p
+                className="mt-1 text-xs text-muted-foreground"
+                data-testid="egress-consent-model"
+              >
+                {modelLabel}
+              </p>
+            </div>
+          )}
+          <p
+            className="text-xs text-muted-foreground"
+            data-testid="egress-consent-embedding-note"
+          >
+            {t('research.consentEmbeddingLocal')}
+          </p>
           <p className="text-xs text-muted-foreground">
             {t('research.consentPreviewNote')}
           </p>

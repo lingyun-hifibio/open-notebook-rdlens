@@ -597,4 +597,50 @@ describe('ResearchSearchPanel（GMOD §6.3 全局模型接线）', () => {
     // P1-1 回归：scope 收敛不得借模型能力横幅（adjustedFrom），避免错误归因
     expect(screen.queryByTestId('context-auto-adjusted')).toBeNull()
   })
+
+  it('RWV2-42：服务端稳定码 → 主文案映射 key，raw code/消息仅次级诊断（AC8）', async () => {
+    vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
+    const serverErr = Object.assign(new Error('model gone'), {
+      response: {
+        status: 403,
+        data: { detail: { code: 'model_unavailable', message: 'model gone' } },
+      },
+    })
+    vi.mocked(searchV1).mockRejectedValueOnce(serverErr)
+    renderPanel()
+    await typeAndWaitReady('q')
+    fireEvent.click(runButton())
+    await waitFor(() =>
+      expect(screen.getByText('research.errors.modelUnavailable')).toBeInTheDocument(),
+    )
+    // raw code 不作主消息；原文仅作次级诊断行；给出下一步引导
+    expect(screen.queryByText('model_unavailable')).toBeNull()
+    expect(screen.getByText('model gone')).toBeInTheDocument()
+    expect(screen.getByText('research.searchRunErrorHint')).toBeInTheDocument()
+  })
+
+  it('RWV2-42：白名单外稳定码与网络错误 → generic 主文案 + 原文次级（R4-H1/R5-5）', async () => {
+    vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
+    // rpm_exceeded 不在集中表 → generic 主文案（不逐码铺开）
+    const unknownErr = Object.assign(new Error('provider 502'), {
+      response: {
+        status: 502,
+        data: { detail: { code: 'rpm_exceeded', message: 'provider 502' } },
+      },
+    })
+    vi.mocked(searchV1).mockRejectedValueOnce(unknownErr)
+    renderPanel()
+    await typeAndWaitReady('q')
+    fireEvent.click(runButton())
+    await waitFor(() =>
+      expect(screen.getByText('research.errors.generic')).toBeInTheDocument(),
+    )
+    expect(screen.queryByText('rpm_exceeded')).toBeNull()
+    expect(screen.getByText('provider 502')).toBeInTheDocument()
+
+    // 无 response 网络错误：同样 generic 主文案 + axios 原文次级
+    vi.mocked(searchV1).mockRejectedValueOnce(new Error('offline'))
+    fireEvent.click(runButton())
+    await waitFor(() => expect(screen.getByText('offline')).toBeInTheDocument())
+  })
 })
