@@ -63,6 +63,33 @@ const template = (overrides: Partial<ResearchTransformation> = {}): ResearchTran
   ...overrides,
 })
 
+/** RWV2-35：admin 双语成对模板（后端迁移 v9 视图形态：prompt_template=en 投影） */
+const bilingualTemplate = (overrides: Partial<ResearchTransformation> = {}): ResearchTransformation => ({
+  transformation_id: 'trans_admin',
+  project_id: 'proj_1',
+  name: 'Admin 双语模板',
+  prompt_template: 'Summarize in English:',
+  prompt_template_en: 'Summarize in English:',
+  prompt_template_zh: '请用中文总结：',
+  bilingual: true,
+  model_id: 'qwen3.6-35b-a3b-fp8',
+  scope: 'admin_template',
+  created_at: '2026-09-01T02:00:00Z',
+  ...overrides,
+})
+
+/** legacy admin 单 prompt 行（prompt_pair 缺失，bilingual 未设=单 prompt） */
+const legacyAdminTemplate = (overrides: Partial<ResearchTransformation> = {}): ResearchTransformation => ({
+  transformation_id: 'trans_legacy',
+  project_id: 'proj_1',
+  name: 'Legacy 单模板',
+  prompt_template: '请总结：',
+  model_id: 'qwen3.6-35b-a3b-fp8',
+  scope: 'admin_template',
+  created_at: '2026-08-01T02:00:00Z',
+  ...overrides,
+})
+
 const source = (overrides: Partial<ResearchSource> = {}): ResearchSource => ({
   source_id: 'src_1',
   document_id: 'doc_1',
@@ -150,6 +177,8 @@ function makeWrapper(role: 'owner' | 'admin_readonly' = 'owner') {
 describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
   beforeEach(() => {
     localStorage.clear()
+    // radix Select 在 jsdom 中调用 scrollIntoView（无实现）
+    Element.prototype.scrollIntoView = vi.fn()
     // resetAllMocks 同时清除 mockReturnValueOnce 队列（B1 用例依赖『挂载
     // 查询消费持久默认』的接线前提，Once 残留会污染下一用例；clearAllMocks
     // 只清调用记录不清实现）——见 vitest-factory-mock-reset 模式
@@ -393,8 +422,106 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
     expect(researchApi.runTransformation).not.toHaveBeenCalled()
   })
 
-  it('Admin：模板可见但不可创建、不可运行', async () => {
-    const { wrapper } = makeWrapper('admin_readonly')
+  it('RWV2-35 卡片：admin 双语模板显示 Bilingual badge + zh/en 变体 + Created-with provenance；project 单 prompt 不受影响', async () => {
+    vi.mocked(researchApi.listTransformations).mockResolvedValue({
+      items: [bilingualTemplate(), template()],
+      next_cursor: null,
+    })
+    const { wrapper } = makeWrapper()
+    render(<TransformationsPanel />, { wrapper })
+    await waitFor(() => expect(screen.getByText('Admin 双语模板')).toBeInTheDocument())
+    // 双语卡片：badge + zh 变体可见；en 变体=标量投影也可见（AC8 兼容）
+    expect(screen.getByText('research.transformations.bilingual')).toBeInTheDocument()
+    expect(screen.getByText('请用中文总结：')).toBeInTheDocument()
+    expect(screen.getByText('Summarize in English:')).toBeInTheDocument()
+    expect(screen.getByText(/research\.transformations\.createdWith/)).toBeInTheDocument()
+    // project 单 prompt 卡片：无双语标记、无变体（仍走标量 prompt_template）
+    expect(screen.getByText('总结模板')).toBeInTheDocument()
+    expect(screen.getByText('请总结：')).toBeInTheDocument()
+    expect(screen.getAllByText('research.transformations.bilingual')).toHaveLength(1)
+  })
+
+  it('RWV2-35 run：admin 双语模板对话框显示语言/变体选择器（默认 en），Confirm 发 response_language=en', async () => {
+    seedScope('selected', ['src_1'], [])
+    vi.mocked(researchApi.listTransformations).mockResolvedValue({
+      items: [bilingualTemplate()],
+      next_cursor: null,
+    })
+    vi.mocked(researchApi.runTransformation).mockResolvedValue(runResult())
+    const { wrapper } = makeWrapper()
+    render(<TransformationsPanel />, { wrapper })
+    await waitFor(() => expect(screen.getByText('Admin 双语模板')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
+    await waitFor(() => expect(screen.getByTestId('run-language-select')).toBeInTheDocument())
+    // 默认 en（服务端 admin 双语无指令 default en）
+    expect(screen.getByTestId('run-language-select')).toHaveTextContent(
+      'research.transformations.variantEn',
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
+    await waitFor(() =>
+      expect(researchApi.runTransformation).toHaveBeenCalledWith('proj_1', 'trans_admin', {
+        source_ids: ['src_1'],
+        note_ids: [],
+        model_id: 'm-local',
+        response_language: 'en',
+      }),
+    )
+  })
+
+  it('RWV2-35 run：双语选择器切 zh → Confirm 发 response_language=zh', async () => {
+    seedScope('selected', ['src_1'], [])
+    vi.mocked(researchApi.listTransformations).mockResolvedValue({
+      items: [bilingualTemplate()],
+      next_cursor: null,
+    })
+    vi.mocked(researchApi.runTransformation).mockResolvedValue(runResult())
+    const { wrapper } = makeWrapper()
+    render(<TransformationsPanel />, { wrapper })
+    await waitFor(() => expect(screen.getByText('Admin 双语模板')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
+    await waitFor(() => expect(screen.getByTestId('run-language-select')).toBeInTheDocument())
+    fireEvent.click(screen.getByLabelText('run-language-variant'))
+    fireEvent.click(await screen.findByRole('option', { name: 'research.transformations.variantZh' }))
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
+    await waitFor(() =>
+      expect(researchApi.runTransformation).toHaveBeenCalledWith('proj_1', 'trans_admin', {
+        source_ids: ['src_1'],
+        note_ids: [],
+        model_id: 'm-local',
+        response_language: 'zh',
+      }),
+    )
+  })
+
+  it('RWV2-35（R3-D）：legacy admin 单 prompt（bilingual 未设）不显示语言选择器，run 不发 response_language（服务端按 content 检测）', async () => {
+    seedScope('selected', ['src_1'], [])
+    vi.mocked(researchApi.listTransformations).mockResolvedValue({
+      items: [legacyAdminTemplate()],
+      next_cursor: null,
+    })
+    vi.mocked(researchApi.runTransformation).mockResolvedValue(runResult())
+    const { wrapper } = makeWrapper()
+    render(<TransformationsPanel />, { wrapper })
+    await waitFor(() => expect(screen.getByText('Legacy 单模板')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
+    await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
+    // 无选择器（键 = bilingual，不是仅 scope）；保留 detect 行（中文 prompt → zh）
+    expect(screen.queryByTestId('run-language-select')).toBeNull()
+    expect(screen.getByTestId('run-language').textContent).toContain('zh')
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
+    await waitFor(() =>
+      expect(researchApi.runTransformation).toHaveBeenCalledWith('proj_1', 'trans_legacy', {
+        source_ids: ['src_1'],
+        note_ids: [],
+        model_id: 'm-local',
+      }),
+    )
+  })
+
+  it('Admin：模板可见但不可创建、不可运行', async () => {    const { wrapper } = makeWrapper('admin_readonly')
     render(<TransformationsPanel />, { wrapper })
     await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
     expect(screen.queryByRole('button', { name: 'research.transformations.newTemplate' })).toBeNull()

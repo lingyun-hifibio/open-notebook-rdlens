@@ -1221,6 +1221,12 @@ export const trTR = {
       degraded: "Tek çağrı bütçesini aşıyor; kalıcı görev olarak çalıştırılacak (degrade: {{reason}})",
       citations: "Alıntılar",
       confirmRun: "Çalıştır",
+      bilingual: "Bilingual",
+      createdWith: "Created with {{model}}",
+      runLanguage: "Response language",
+      variantEn: "English",
+      variantZh: "Chinese",
     },
   },
 } satisfies TranslationShape;
+

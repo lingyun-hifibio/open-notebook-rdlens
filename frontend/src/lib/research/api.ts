@@ -198,7 +198,15 @@ export async function createTransformation(
 export async function runTransformation(
   projectId: string,
   transformationId: string,
-  input: { source_ids: string[]; note_ids: string[]; model_id: string },
+  input: {
+    source_ids: string[]
+    note_ids: string[]
+    model_id: string
+    /** RWV2-35（RDLens 迁移 v9）：admin 双语模板显式选中的变体语言；
+     *  仅当 UI 语言选择器选中时发送；单 prompt（project/legacy）不发——
+     *  服务端按 content 检测。缺省 = 服务端默认（admin 双语无指令 → en）。 */
+    response_language?: 'zh' | 'en'
+  },
 ): Promise<TransformationRunResult> {
   const response = await apiClient.post<TransformationRunResult>(
     researchPath(projectId, 'transformations', transformationId, 'run'),

@@ -1222,6 +1222,12 @@ export const bnIN = {
       degraded: "একক কল বাজেট অতিক্রম করেছে; স্থায়ী কাজ হিসেবে চালানো হবে (অবনতি: {{reason}})",
       citations: "উদ্ধৃতি",
       confirmRun: "চালান",
+      bilingual: "Bilingual",
+      createdWith: "Created with {{model}}",
+      runLanguage: "Response language",
+      variantEn: "English",
+      variantZh: "Chinese",
     },
   },
 } satisfies TranslationShape;
+

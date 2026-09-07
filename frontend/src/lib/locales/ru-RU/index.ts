@@ -1221,6 +1221,12 @@ export const ruRU = {
       degraded: "Превышает бюджет одного вызова; будет выполнено как постоянная задача (деградация: {{reason}})",
       citations: "Цитаты",
       confirmRun: "Запустить",
+      bilingual: "Bilingual",
+      createdWith: "Created with {{model}}",
+      runLanguage: "Response language",
+      variantEn: "English",
+      variantZh: "Chinese",
     },
   },
 } satisfies TranslationShape;
+

@@ -1222,6 +1222,12 @@ export const esES = {
       degraded: "Supera el presupuesto de una sola llamada; se ejecutará como tarea persistente (degradado: {{reason}})",
       citations: "Citas",
       confirmRun: "Ejecutar",
+      bilingual: "Bilingual",
+      createdWith: "Created with {{model}}",
+      runLanguage: "Response language",
+      variantEn: "English",
+      variantZh: "Chinese",
     },
   },
 } satisfies TranslationShape;
+

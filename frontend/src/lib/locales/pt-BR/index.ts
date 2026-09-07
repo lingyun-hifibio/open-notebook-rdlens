@@ -1221,6 +1221,12 @@ export const ptBR = {
       degraded: "Excede o orçamento de uma única chamada; será executado como tarefa persistente (degradado: {{reason}})",
       citations: "Citações",
       confirmRun: "Executar",
+      bilingual: "Bilingual",
+      createdWith: "Created with {{model}}",
+      runLanguage: "Response language",
+      variantEn: "English",
+      variantZh: "Chinese",
     },
   },
 } satisfies TranslationShape;
+

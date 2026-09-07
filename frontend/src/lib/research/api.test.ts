@@ -145,6 +145,23 @@ describe('researchApi（Gateway 白名单契约）', () => {
     })
   })
 
+  it('runTransformation：RWV2-35 双语变体显式 response_language=zh → 请求体携带（单 prompt 缺省不发送）', async () => {
+    const captured = await capture(() => researchApi.runTransformation(P, 'trans_1', {
+      source_ids: ['src_1'],
+      note_ids: [],
+      model_id: 'm-global',
+      response_language: 'zh',
+    }))
+    expect(captured.method).toBe('POST')
+    expect(captured.url).toBe(`/v1/research/projects/${P}/transformations/trans_1/run`)
+    expect(captured.data).toEqual({
+      source_ids: ['src_1'],
+      note_ids: [],
+      model_id: 'm-global',
+      response_language: 'zh',
+    })
+  })
+
   it('createExport → GET .../export?artifacts=note,insight,transformation_result', async () => {
     const captured = await capture(() => researchApi.createExport(P))
     expect(captured.method).toBe('GET')

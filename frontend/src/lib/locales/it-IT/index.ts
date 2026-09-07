@@ -1221,6 +1221,12 @@ export const itIT = {
       degraded: "Supera il budget di una singola chiamata; verrà eseguito come attività persistente (degradato: {{reason}})",
       citations: "Citazioni",
       confirmRun: "Esegui",
+      bilingual: "Bilingual",
+      createdWith: "Created with {{model}}",
+      runLanguage: "Response language",
+      variantEn: "English",
+      variantZh: "Chinese",
     },
   },
 } satisfies TranslationShape;
+

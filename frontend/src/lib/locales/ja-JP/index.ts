@@ -1221,6 +1221,12 @@ export const jaJP = {
       degraded: "1 回の呼び出し予算を超えたため、永続ジョブとして実行されます（低下：{{reason}}）",
       citations: "引用",
       confirmRun: "実行",
+      bilingual: "Bilingual",
+      createdWith: "Created with {{model}}",
+      runLanguage: "Response language",
+      variantEn: "English",
+      variantZh: "Chinese",
     },
   },
 } satisfies TranslationShape;
+
