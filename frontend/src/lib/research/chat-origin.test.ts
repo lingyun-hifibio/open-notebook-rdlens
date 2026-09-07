@@ -114,3 +114,23 @@ describe('selectBoundAssistantRow', () => {
     expect(selectBoundAssistantRow(rows, 'q', 'answer')).toBeNull()
   })
 })
+
+describe('selectBoundAssistantRow 唯一性（review #3 回归）', () => {
+  it('同文双轮且答案内容完全相同 → 无法证明目标轮 → null（不猜测）', () => {
+    const rows: ChatOriginRow[] = [
+      user('same q'),
+      assistant(`msg_${GEN_A}_assistant`, 'identical answer'),
+      user('same q'),
+      assistant(`msg_${GEN_B}_assistant`, 'identical answer'),
+    ]
+    expect(selectBoundAssistantRow(rows, 'same q', 'identical answer')).toBeNull()
+  })
+
+  it('无相邻 user 行的两个同文迟到行 → null（content-only 层级不唯一）', () => {
+    const rows: ChatOriginRow[] = [
+      assistant(`msg_${GEN_A}_assistant`, 'same late text'),
+      assistant(`msg_${GEN_B}_assistant`, 'same late text'),
+    ]
+    expect(selectBoundAssistantRow(rows, 'whatever', 'same late text')).toBeNull()
+  })
+})

@@ -30,7 +30,6 @@ import {
 import type {
   ResearchSaveDestinationKind,
   ResearchSaveOriginKind,
-  ResearchSaveResultResponse,
 } from '@/lib/types/research'
 
 /**
@@ -155,9 +154,25 @@ export function useDeleteResearchNote(projectId: string) {
     onMutate: () => queryClient.cancelQueries({
       queryKey: QUERY_KEYS.researchNotes(projectId),
     }),
-    onSuccess: async () => {
+    onSuccess: async (_result, noteId) => {
       await queryClient.cancelQueries({ queryKey: QUERY_KEYS.researchNotes(projectId) })
       await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.researchNotes(projectId) })
+      // RWV2-23（review #4）：删除 Note 后清除对应 saved-result 展示缓存——
+      // 否则原结果面仍显示“已保存/View”指向已删行，且无法再次保存。
+      const entries = queryClient.getQueriesData<unknown>({
+        queryKey: savedResultPrefix(projectId),
+      })
+      for (const [key, value] of entries) {
+        if (
+          value !== undefined &&
+          value !== null &&
+          typeof value === 'object' &&
+          'note_id' in value &&
+          (value as { note_id: unknown }).note_id === noteId
+        ) {
+          queryClient.removeQueries({ queryKey: key })
+        }
+      }
       toast({ title: t('common.success'), description: t('research.workbench.noteDeleted') })
     },
     onError,
@@ -314,13 +329,17 @@ export interface SaveFromResultInput {
 }
 
 /** 保存展示态缓存的查询键（仅作跨实例/重开展示，去重由确定性幂等键承担）。 */
+export function savedResultPrefix(projectId: string): readonly unknown[] {
+  return ['research', projectId, 'saved-result']
+}
+
 export function savedResultEntryKey(
   projectId: string,
   originKind: ResearchSaveOriginKind,
   originId: string,
   destinationKind: ResearchSaveDestinationKind,
 ): readonly unknown[] {
-  return ['research', projectId, 'saved-result', originKind, originId, destinationKind]
+  return [...savedResultPrefix(projectId), originKind, originId, destinationKind]
 }
 
 /**
@@ -361,15 +380,4 @@ export function useSaveResearchResult(projectId: string) {
   })
 }
 
-/** 读取保存展示态缓存条目（重开结果/跨实例展示用；null = 本会话未保存过）。 */
-export function useSavedResultEntry(
-  projectId: string,
-  originKind: ResearchSaveOriginKind,
-  originId: string | null,
-  destinationKind: ResearchSaveDestinationKind,
-): ResearchSaveResultResponse | null | undefined {
-  const queryClient = useQueryClient()
-  return queryClient.getQueryData<ResearchSaveResultResponse>(
-    savedResultEntryKey(projectId, originKind, originId ?? '', destinationKind),
-  )
-}
+

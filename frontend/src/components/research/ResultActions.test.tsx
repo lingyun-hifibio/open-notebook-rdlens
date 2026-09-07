@@ -245,3 +245,38 @@ describe('ResultActions（RWV2-23 U3）', () => {
     expect(screen.getByTestId('copy-result')).toBeTruthy()
   })
 })
+
+describe('ResultActions review fixes', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('lazy resolve 期间快速双击：resolve 与保存各只一次（busy 令牌，review #2）', async () => {
+    const api = vi.mocked(saveResultFromResult)
+    let releaseResolve!: (v: string | null) => void
+    const resolveSpy = vi.fn(() => new Promise<string | null>((r) => { releaseResolve = r }))
+    api.mockResolvedValue(NOTE_RESULT as never)
+    renderActions({ originId: null, resolveOriginId: resolveSpy, showSave: true })
+    const btn = screen.getByTestId('save-as-note') as HTMLButtonElement
+    fireEvent.click(btn)
+    fireEvent.click(btn)
+    expect(resolveSpy).toHaveBeenCalledTimes(1)
+    await act(async () => { releaseResolve(GEN) })
+    await waitFor(() => expect(screen.getByTestId('saved-note')).toBeTruthy())
+    expect(api).toHaveBeenCalledTimes(1)
+  })
+
+  it('resolve 返回 null（会话不可解析）：显示 unavailable 错误且可重试', async () => {
+    const api = vi.mocked(saveResultFromResult)
+    api.mockResolvedValue(NOTE_RESULT as never)
+    const resolveSpy = vi.fn(async () => null)
+    renderActions({ originId: null, resolveOriginId: resolveSpy, showSave: true })
+    fireEvent.click(screen.getByTestId('save-as-note'))
+    await waitFor(() => {
+      expect(screen.getByTestId('save-error')).toHaveTextContent(
+        'research.resultActions.saveUnavailable',
+      )
+    })
+    expect(api).not.toHaveBeenCalled()
+  })
+})

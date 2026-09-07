@@ -119,6 +119,12 @@ function noticeFromCards(cards: ResearchGlobalChatCard[]): ResearchBackgroundNot
 /** 断线/409 的最大重连尝试次数（含首次） */
 export const MAX_STREAM_ATTEMPTS = 3
 
+/**
+ * 会话读取页数上限（restore 与 origin 解析共用，review #8）——防御异常会话，
+ * 不依赖单会话规模假设。每页 ≤50 行。
+ */
+const SESSION_READ_PAGE_CAP = 1000
+
 /** 重连退避基数（ms）；第 n 次重试等待 base * 2^(n-1) */
 export const RECONNECT_BACKOFF_MS = 300
 
@@ -430,9 +436,9 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
         }
         // 从上次键集游标续读（首次=page1）。RDLens 会话读取在末页返回
         // next_cursor=null（无“末行之后”的续读 token），故以 message_id
-        // 去重 + 单调行列表保证不重复绑定；行数保护上限 50 页。
+        // 去重 + 单调行列表保证不重复绑定；页数保护与 restore 同常量。
         let cursor: string | null = cache.lastCursor
-        for (let page = 0; page < 50; page += 1) {
+        for (let page = 0; page < SESSION_READ_PAGE_CAP; page += 1) {
           let detail
           try {
             detail = await getResearchChatSession(
@@ -522,7 +528,7 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
       const seenMessageIds = new Set<string>()
       let cards: ResearchGlobalChatCard[] = []
       let cursor: string | null = null
-      for (let page = 0; page < 1000; page += 1) {
+      for (let page = 0; page < SESSION_READ_PAGE_CAP; page += 1) {
         let detail
         try {
           detail = await getResearchChatSession(

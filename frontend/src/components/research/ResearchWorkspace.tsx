@@ -314,6 +314,16 @@ export function ResearchWorkspace({
             backgroundNotice={backgroundNotice}
             resolveChatOrigin={resolveChatOrigin}
             prefill={chatPrefill}
+            onViewInsight={
+              onRevealSavedArtifact !== undefined
+                ? (insightId) => onRevealSavedArtifact('insight', insightId)
+                : undefined
+            }
+            onViewNote={
+              onRevealSavedArtifact !== undefined
+                ? (noteId) => onRevealSavedArtifact('note', noteId)
+                : undefined
+            }
           />
         )
       case 'compare':

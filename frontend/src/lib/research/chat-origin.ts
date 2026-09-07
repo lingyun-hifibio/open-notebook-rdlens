@@ -59,11 +59,12 @@ export function parseGenerationIdFromMessageId(
  * @param expectedContent 该轮 UI assistant 消息内容（trim 比较；空则不可绑）
  * @returns 命中的 message_id 与解析出的 generation_id；无唯一命中返回 null。
  *
- * 优先级（last-wins）：
- *   1) content 一致 且 会话/前一 user 行 query 一致（最强约束，防同文双轮）；
+ * 优先级与唯一性：
+ *   1) content 一致 且 会话/前一 user 行 query 一致（最强约束）；
  *   2) 仅 content 一致（delta 内无相邻 user 行——迟到/孤儿行被跳过）；
  *   3) 仅前一 user 行 query 一致。
- * 无任何命中 → null（调用方降级为“不可存”，不猜测）。
+ * 同一层级出现 >1 个候选（同文双轮/迟到同文行等）视为无法证明目标轮 →
+ * 返回 null（调用方如实降级为“不可存”），绝不猜测。
  */
 export function selectBoundAssistantRow(
   rows: readonly ChatOriginRow[],
@@ -73,9 +74,9 @@ export function selectBoundAssistantRow(
   const q = text(query)
   const content = text(expectedContent)
   if (!content) return null
-  let both: ChatOriginCandidate | null = null
-  let contentOnly: ChatOriginCandidate | null = null
-  let userOnly: ChatOriginCandidate | null = null
+  const strong: ChatOriginCandidate[] = []
+  const contentOnly: ChatOriginCandidate[] = []
+  const userOnly: ChatOriginCandidate[] = []
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i]
     if (!isAssistant(row)) continue
@@ -86,9 +87,13 @@ export function selectBoundAssistantRow(
     const contentHit = text(row.content) === content
     const prev = i > 0 ? rows[i - 1] : null
     const userHit = prev !== null && prev.role === 'user' && text(prev.content) === q
-    if (contentHit && userHit) both = candidate
-    else if (contentHit) contentOnly = candidate
-    else if (userHit) userOnly = candidate
+    if (contentHit && userHit) strong.push(candidate)
+    else if (contentHit) contentOnly.push(candidate)
+    else if (userHit) userOnly.push(candidate)
   }
-  return both ?? contentOnly ?? userOnly
+  // 唯一性约束：同一约束层级出现多个候选 = 无法证明目标轮（同文双轮、
+  // 迟到行同文等）→ 返回 null 由调用方如实降级，绝不猜测（review #3）。
+  const unique = (arr: ChatOriginCandidate[]): ChatOriginCandidate | null =>
+    arr.length === 1 ? arr[0] : null
+  return unique(strong) ?? unique(contentOnly) ?? unique(userOnly)
 }

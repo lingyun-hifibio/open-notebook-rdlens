@@ -94,9 +94,10 @@ export function ResultActions({
   const saveAvailable = originId !== null || canResolve
   // originId 与 resolver 均缺 → 写动作禁用 + 原因文案（如 chat 恢复行不可解析）
   const saveBlocked = !saveAvailable
-  const renderSave = showSave === true ? true : saveAvailable && owner
+  // AC7：Admin 只读——即使调用方强制 showSave（如 chat 不可解析禁用态说明）
+  // 也不渲染写按钮（review #7）。
+  const renderSave = owner && (showSave === true || saveAvailable)
   const renderContinue = owner && onContinueResearch !== undefined
-  const pending = saveMutation.isPending
 
   // 初值：读取展示态缓存（跨实例/重开结果显示已保存 + View）
   const [saved, setSaved] = useState<
@@ -117,31 +118,41 @@ export function ResultActions({
   })
 
   const [phase, setPhase] = useState<SavePhase | null>(null)
+  const busy = saveMutation.isPending || phase?.state === 'pending'
 
   // D10（R3-1）：Dialog/瞬态宿主卸载后 resolve 只静默失效本地副作用；
   // artifact 创建/缓存写入由 mutation/queryClient 继续（确定性键防重复）。
+  // StrictMode 双挂载友好：setup 时重臂（否则 dev 模拟卸载会永久杀死回调）。
   const aliveRef = useRef(true)
-  useEffect(() => () => { aliveRef.current = false }, [])
+  useEffect(() => {
+    aliveRef.current = true
+    return () => { aliveRef.current = false }
+  }, [])
+
+  // 同步 busy 令牌：resolve/mutation 全程互斥（pending 状态本身异步更新，
+  // 快速双击在重渲染前可能都通过 phase 检查——review #2）。
+  const saveBusyRef = useRef(false)
 
   const handleSave = useCallback(
     async (destinationKind: ResearchSaveDestinationKind) => {
-      if (pending || phase?.state === 'pending' || saved[destinationKind]) return
-      let effectiveOriginId = originId
-      if (effectiveOriginId === null && canResolve) {
-        effectiveOriginId = await resolveOriginId()
-      }
-      if (effectiveOriginId === null) {
-        if (aliveRef.current) {
+      if (saveBusyRef.current || saved[destinationKind]) return
+      saveBusyRef.current = true
+      try {
+        if (!aliveRef.current) return
+        setPhase({ dest: destinationKind, state: 'pending' })
+        let effectiveOriginId = originId
+        if (effectiveOriginId === null && canResolve) {
+          effectiveOriginId = await resolveOriginId()
+        }
+        if (!aliveRef.current) return
+        if (effectiveOriginId === null) {
           setPhase({
             dest: destinationKind,
             state: 'error',
             messageKey: 'research.resultActions.saveUnavailable',
           })
+          return
         }
-        return
-      }
-      setPhase({ dest: destinationKind, state: 'pending' })
-      try {
         const result = await saveMutation.mutateAsync({
           originKind,
           originId: effectiveOriginId,
@@ -160,9 +171,11 @@ export function ResultActions({
             messageKey: classifySaveErrorKey(error),
           })
         }
+      } finally {
+        saveBusyRef.current = false
       }
     },
-    [originId, originKind, pending, phase?.state, saveMutation, saved, title, canResolve, resolveOriginId],
+    [originId, originKind, saveMutation, saved, title, canResolve, resolveOriginId],
   )
 
   const [copying, setCopying] = useState(false)
@@ -218,7 +231,7 @@ export function ResultActions({
               size="sm"
               variant="outline"
               data-testid="save-as-insight"
-              disabled={hasSavedInsight || pending || saveBlocked}
+              disabled={hasSavedInsight || busy || saveBlocked}
               title={
                 saveDisabledReasonKey && saveBlocked
                   ? t(saveDisabledReasonKey)
@@ -226,7 +239,7 @@ export function ResultActions({
               }
               onClick={() => void handleSave('insight')}
             >
-              {pending && phase?.dest === 'insight'
+              {busy && phase?.dest === 'insight'
                 ? t('research.resultActions.saving')
                 : t('research.resultActions.saveAsInsight')}
             </Button>
@@ -235,7 +248,7 @@ export function ResultActions({
               size="sm"
               variant="outline"
               data-testid="save-as-note"
-              disabled={hasSavedNote || pending || saveBlocked}
+              disabled={hasSavedNote || busy || saveBlocked}
               title={
                 saveDisabledReasonKey && saveBlocked
                   ? t(saveDisabledReasonKey)
@@ -243,7 +256,7 @@ export function ResultActions({
               }
               onClick={() => void handleSave('note')}
             >
-              {pending && phase?.dest === 'note'
+              {busy && phase?.dest === 'note'
                 ? t('research.resultActions.saving')
                 : t('research.resultActions.saveAsNote')}
             </Button>
