@@ -6,6 +6,8 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 import { useIsDesktop } from '@/lib/hooks/use-media-query'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
 import { useResearchSources, useResearchNotes } from '@/lib/hooks/use-research'
+import { countActiveJobs } from '@/lib/research/jobs'
+import { useResearchJobsController } from './ResearchJobsProvider'
 import { ResearchScopeSummary } from './ResearchScopeSummary'
 import { ResearchGlobalModelBar } from './ResearchGlobalModelBar'
 import { ExportSection } from './ExportSection'
@@ -22,7 +24,9 @@ import { ResearchActivityDialog } from './ResearchActivityDialog'
  *   请求；Edit scope 经组合根 `onEditScopeAllStates`：退出 Source focus/
  *   最大化 → 回左栏编辑面 → 递增聚焦请求，本组件不持有第二选择权威）；
  * - Global model：ResearchGlobalModelBar（窄屏收进 popover）；
- * - Activity：打开 Dialog 展示现有 JobList（RWV2-41 前的兼容壳，无徽标）；
+ * - Activity：打开 Dialog（RWV2-41 起为 Activity Center）；trigger 徽标
+ *   只计非终态任务数（D9；cancelling 计入，cancelled/completed/failed
+ *   不计——由 countActiveJobs 保证）；
  * - Export：ExportSection。
  *
  * 本组件常驻页面顶部（含 Source focus 态），不依赖 /research 布局状态。
@@ -39,7 +43,9 @@ export function ResearchHeader({
   const { t } = useTranslation()
   const isDesktop = useIsDesktop()
   const { projectId } = useResearchWorkspace()
+  const { jobs } = useResearchJobsController()
   const [activityOpen, setActivityOpen] = useState(false)
+  const activeCount = countActiveJobs(jobs)
 
   // Current scope 段的 loading/error/retry：与 Workspace 同 key 共享缓存
   // （TanStack 去重），Header 只观察状态，不新建查询权威。
@@ -84,15 +90,29 @@ export function ResearchHeader({
       {/* 段三：Global model */}
       {isDesktop ? <ResearchGlobalModelBar /> : <ResearchGlobalModelBar layout="popover" />}
 
-      {/* 段四：Activity（JobList 兼容壳） */}
+      {/* 段四：Activity（徽标只计非终态任务；RWV2-41） */}
       <Button
         type="button"
         size="sm"
         variant="outline"
         data-testid="activity-trigger"
+        aria-label={
+          activeCount > 0
+            ? t('research.activity.badgeActive', { count: activeCount })
+            : t('research.activity.title')
+        }
         onClick={() => setActivityOpen(true)}
       >
         {t('research.activity.title')}
+        {activeCount > 0 && (
+          <span
+            className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground"
+            data-testid="activity-badge"
+            aria-hidden="true"
+          >
+            {activeCount}
+          </span>
+        )}
       </Button>
 
       {/* 段五：Export */}

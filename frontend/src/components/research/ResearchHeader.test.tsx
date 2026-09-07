@@ -178,3 +178,67 @@ describe('ResearchActivityDialog（Jobs 兼容壳）', () => {
   })
 
 })
+
+describe('ResearchHeader（RWV2-41 Activity 徽标计数）', () => {
+  beforeEach(() => {
+    toastMock.mockClear()
+    mediaQueryMocks.isDesktop.mockReturnValue(true)
+    vi.mocked(api.listJobs).mockClear()
+    setActiveJobs([])
+    localStorage.clear()
+  })
+  afterEach(cleanup)
+
+  it('无非终态任务时不显示徽标（0 active）', async () => {
+    render(<ResearchHeader onEditScopeAllStates={() => {}} onCitationJump={() => {}} />, {
+      wrapper: wrapper(),
+    })
+    await waitFor(() => expect(screen.getByTestId('activity-trigger')).toBeInTheDocument())
+    expect(screen.queryByTestId('activity-badge')).toBeNull()
+    expect(screen.getByTestId('activity-trigger')).toHaveAttribute(
+      'aria-label',
+      'research.activity.title',
+    )
+  })
+
+  it('徽标只计非终态：终态（completed/failed/cancelled）不计入', async () => {
+    setActiveJobs([
+      job({ job_id: 'run', status: 'running' }),
+      job({ job_id: 'done', status: 'completed' }),
+      job({ job_id: 'bad', status: 'failed' }),
+      job({ job_id: 'cancelled_1', status: 'cancelled' }),
+    ])
+    render(<ResearchHeader onEditScopeAllStates={() => {}} onCitationJump={() => {}} />, {
+      wrapper: wrapper(),
+    })
+    await waitFor(() => expect(screen.getByTestId('activity-badge')).toHaveTextContent('1'))
+    expect(screen.getByTestId('activity-trigger')).toHaveAttribute(
+      'aria-label',
+      'research.activity.badgeActive:1',
+    )
+  })
+
+  it('徽标计 queued/running/cancelling（cancelling 属进行中；可点性仍受 canCancelJob 约束）', async () => {
+    setActiveJobs([
+      job({ job_id: 'q', status: 'queued' }),
+      job({ job_id: 'run', status: 'running' }),
+      job({ job_id: 'cx', status: 'cancelling' }),
+    ])
+    render(<ResearchHeader onEditScopeAllStates={() => {}} onCitationJump={() => {}} />, {
+      wrapper: wrapper(),
+    })
+    await waitFor(() => expect(screen.getByTestId('activity-badge')).toHaveTextContent('3'))
+  })
+
+  it('任务进入终态后徽标即时减少（经 focus 列表刷新推送服务端终态）', async () => {
+    setActiveJobs([job({ job_id: 'run', status: 'running' })])
+    render(<ResearchHeader onEditScopeAllStates={() => {}} onCitationJump={() => {}} />, {
+      wrapper: wrapper(),
+    })
+    await waitFor(() => expect(screen.getByTestId('activity-badge')).toHaveTextContent('1'))
+    // 服务端已终态：更新 mock 并经 focus 触发的第一页刷新合并
+    setActiveJobs([job({ job_id: 'run', status: 'completed' })])
+    window.dispatchEvent(new Event('focus'))
+    await waitFor(() => expect(screen.queryByTestId('activity-badge')).toBeNull())
+  })
+})
