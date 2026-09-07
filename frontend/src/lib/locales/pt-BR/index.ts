@@ -1048,10 +1048,12 @@ export const ptBR = {
     header: {
       project: "Project",
     },
+    mainActions: {
+      runTemplate: "Run Template",
+    },
     tabSearch: "Search",
     tabChat: "Chat",
     tabCompare: "Compare",
-    tabJobs: "Jobs",
     scopeSummary: {
       entireProject: "Entire project",
       sourceOne: "1 source",
@@ -1153,6 +1155,11 @@ export const ptBR = {
       tabNotes: "Notas",
       tabInsights: "Insights",
       tabTransformations: "Transformações",
+      groupMaterials: "Materials",
+      groupResults: "Results",
+      groupTools: "Tools",
+      tabTemplates: "Research templates",
+      transformationRunsUnavailable: "Transformation run history is unavailable until the durable results contract ships.",
       adminBanner: "Você está vendo como administrador (somente leitura)",
       adminBannerDesc: "Criar, editar e executar não estão disponíveis; visualizar e exportar permanecem disponíveis.",
       adminWriteDenied: "Sessão somente leitura: escrita negada",

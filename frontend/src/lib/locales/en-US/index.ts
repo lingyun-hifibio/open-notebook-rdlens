@@ -1018,10 +1018,12 @@ export const enUS = {
     header: {
       project: "Project",
     },
+    mainActions: {
+      runTemplate: "Run Template",
+    },
     tabSearch: "Evidence Search",
     tabChat: "Research Chat",
     tabCompare: "Compare",
-    tabJobs: "Jobs",
     activity: {
       title: "Activity",
       description: "Research jobs and activity.",
@@ -1165,6 +1167,11 @@ export const enUS = {
       tabNotes: "Notes",
       tabInsights: "Insights",
       tabTransformations: "Transformations",
+      groupMaterials: "Materials",
+      groupResults: "Results",
+      groupTools: "Tools",
+      tabTemplates: "Research templates",
+      transformationRunsUnavailable: "Transformation run history is unavailable until the durable results contract ships.",
       adminBanner: "You are viewing as admin (read-only)",
       adminBannerDesc: "Create, edit and run are unavailable; view and export remain available.",
       adminWriteDenied: "Read-only session: writing is denied",

@@ -1048,10 +1048,12 @@ export const plPL = {
     header: {
       project: "Project",
     },
+    mainActions: {
+      runTemplate: "Run Template",
+    },
     tabSearch: "Search",
     tabChat: "Chat",
     tabCompare: "Compare",
-    tabJobs: "Jobs",
     scopeSummary: {
       entireProject: "Entire project",
       sourceOne: "1 source",
@@ -1153,6 +1155,11 @@ export const plPL = {
       tabNotes: "Notatki",
       tabInsights: "Wnioski",
       tabTransformations: "Transformacje",
+      groupMaterials: "Materials",
+      groupResults: "Results",
+      groupTools: "Tools",
+      tabTemplates: "Research templates",
+      transformationRunsUnavailable: "Transformation run history is unavailable until the durable results contract ships.",
       adminBanner: "Przeglądasz jako administrator (tylko do odczytu)",
       adminBannerDesc: "Tworzenie, edycja i uruchamianie są niedostępne; przeglądanie i eksport pozostają dostępne.",
       adminWriteDenied: "Sesja tylko do odczytu: zapis odrzucony",

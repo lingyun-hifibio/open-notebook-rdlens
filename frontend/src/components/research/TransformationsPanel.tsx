@@ -61,9 +61,16 @@ import { resolveCitationSource } from './citation-utils'
  */
 export function TransformationsPanel({
   onCitationJump,
+  onEditScope,
 }: {
   /** Citation 跳转回调（工作台提供：解析来源并定位目标页） */
   onCitationJump?: (citation: ResearchCitation) => void
+  /**
+   * RWV2-40：运行对话框的 `Edit scope`——先关闭 Dialog，再由组合根退出
+   * Source focus/最大化、显示左栏编辑面并递增聚焦请求（R8-3 冻结链）。
+   * 缺省（旧接线）只关闭对话框。
+   */
+  onEditScope?: () => void
 }) {
   const { t } = useTranslation()
   const { toast } = useToast()
@@ -315,7 +322,10 @@ export function TransformationsPanel({
             <Button
               size="sm"
               variant="ghost"
-              onClick={closeRunDialog}
+              onClick={() => {
+                closeRunDialog()
+                onEditScope?.()
+              }}
               data-testid="run-edit-scope"
             >
               {t('research.transformations.editScope')}

@@ -1049,10 +1049,12 @@ export const esES = {
     header: {
       project: "Project",
     },
+    mainActions: {
+      runTemplate: "Run Template",
+    },
     tabSearch: "Search",
     tabChat: "Chat",
     tabCompare: "Compare",
-    tabJobs: "Jobs",
     scopeSummary: {
       entireProject: "Entire project",
       sourceOne: "1 source",
@@ -1154,6 +1156,11 @@ export const esES = {
       tabNotes: "Notas",
       tabInsights: "Información",
       tabTransformations: "Transformaciones",
+      groupMaterials: "Materials",
+      groupResults: "Results",
+      groupTools: "Tools",
+      tabTemplates: "Research templates",
+      transformationRunsUnavailable: "Transformation run history is unavailable until the durable results contract ships.",
       adminBanner: "Está viendo como administrador (solo lectura)",
       adminBannerDesc: "Crear, editar y ejecutar no están disponibles; ver y exportar siguen disponibles.",
       adminWriteDenied: "Sesión de solo lectura: escritura denegada",

@@ -1048,10 +1048,12 @@ export const ruRU = {
     header: {
       project: "Project",
     },
+    mainActions: {
+      runTemplate: "Run Template",
+    },
     tabSearch: "Search",
     tabChat: "Chat",
     tabCompare: "Compare",
-    tabJobs: "Jobs",
     scopeSummary: {
       entireProject: "Entire project",
       sourceOne: "1 source",
@@ -1153,6 +1155,11 @@ export const ruRU = {
       tabNotes: "Заметки",
       tabInsights: "Инсайты",
       tabTransformations: "Преобразования",
+      groupMaterials: "Materials",
+      groupResults: "Results",
+      groupTools: "Tools",
+      tabTemplates: "Research templates",
+      transformationRunsUnavailable: "Transformation run history is unavailable until the durable results contract ships.",
       adminBanner: "Просмотр от имени администратора (только чтение)",
       adminBannerDesc: "Создание, изменение и запуск недоступны; просмотр и экспорт доступны.",
       adminWriteDenied: "Сеанс только для чтения: запись запрещена",

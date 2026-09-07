@@ -1048,10 +1048,12 @@ export const zhTW = {
     header: {
       project: "Project",
     },
+    mainActions: {
+      runTemplate: "Run Template",
+    },
     tabSearch: "Search",
     tabChat: "Chat",
     tabCompare: "Compare",
-    tabJobs: "Jobs",
     scopeSummary: {
       entireProject: "Entire project",
       sourceOne: "1 source",
@@ -1153,6 +1155,11 @@ export const zhTW = {
       tabNotes: "筆記",
       tabInsights: "洞察",
       tabTransformations: "轉換",
+      groupMaterials: "Materials",
+      groupResults: "Results",
+      groupTools: "Tools",
+      tabTemplates: "Research templates",
+      transformationRunsUnavailable: "Transformation run history is unavailable until the durable results contract ships.",
       adminBanner: "您正以管理員身分檢視（唯讀）",
       adminBannerDesc: "建立、編輯與執行不可用；檢視與匯出仍可用。",
       adminWriteDenied: "唯讀工作階段：拒絕寫入",

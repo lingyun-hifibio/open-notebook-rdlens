@@ -1050,10 +1050,12 @@ export const deDE = {
     header: {
       project: "Project",
     },
+    mainActions: {
+      runTemplate: "Run Template",
+    },
     tabSearch: "Search",
     tabChat: "Chat",
     tabCompare: "Compare",
-    tabJobs: "Jobs",
     scopeSummary: {
       entireProject: "Entire project",
       sourceOne: "1 source",
@@ -1155,6 +1157,11 @@ export const deDE = {
       tabNotes: "Notizen",
       tabInsights: "Erkenntnisse",
       tabTransformations: "Transformationen",
+      groupMaterials: "Materials",
+      groupResults: "Results",
+      groupTools: "Tools",
+      tabTemplates: "Research templates",
+      transformationRunsUnavailable: "Transformation run history is unavailable until the durable results contract ships.",
       adminBanner: "Sie sehen als Administrator (nur lesen)",
       adminBannerDesc: "Erstellen, Bearbeiten und Ausführen sind nicht verfügbar; Anzeigen und Export bleiben verfügbar.",
       adminWriteDenied: "Nur-Lese-Sitzung: Schreiben verweigert",

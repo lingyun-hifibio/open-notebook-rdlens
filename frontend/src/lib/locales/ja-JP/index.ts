@@ -1048,10 +1048,12 @@ export const jaJP = {
     header: {
       project: "Project",
     },
+    mainActions: {
+      runTemplate: "Run Template",
+    },
     tabSearch: "Search",
     tabChat: "Chat",
     tabCompare: "Compare",
-    tabJobs: "Jobs",
     scopeSummary: {
       entireProject: "Entire project",
       sourceOne: "1 source",
@@ -1153,6 +1155,11 @@ export const jaJP = {
       tabNotes: "ノート",
       tabInsights: "インサイト",
       tabTransformations: "変換",
+      groupMaterials: "Materials",
+      groupResults: "Results",
+      groupTools: "Tools",
+      tabTemplates: "Research templates",
+      transformationRunsUnavailable: "Transformation run history is unavailable until the durable results contract ships.",
       adminBanner: "管理者（読み取り専用）として表示しています",
       adminBannerDesc: "作成・編集・実行は利用できません。表示とエクスポートは利用できます。",
       adminWriteDenied: "読み取り専用セッション：書き込みは拒否されました",

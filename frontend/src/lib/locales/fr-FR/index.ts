@@ -1048,10 +1048,12 @@ export const frFR = {
     header: {
       project: "Project",
     },
+    mainActions: {
+      runTemplate: "Run Template",
+    },
     tabSearch: "Search",
     tabChat: "Chat",
     tabCompare: "Compare",
-    tabJobs: "Jobs",
     scopeSummary: {
       entireProject: "Entire project",
       sourceOne: "1 source",
@@ -1153,6 +1155,11 @@ export const frFR = {
       tabNotes: "Notes",
       tabInsights: "Informations",
       tabTransformations: "Transformations",
+      groupMaterials: "Materials",
+      groupResults: "Results",
+      groupTools: "Tools",
+      tabTemplates: "Research templates",
+      transformationRunsUnavailable: "Transformation run history is unavailable until the durable results contract ships.",
       adminBanner: "Vous consultez en tant qu’administrateur (lecture seule)",
       adminBannerDesc: "Créer, modifier et exécuter sont indisponibles ; consulter et exporter restent disponibles.",
       adminWriteDenied: "Session en lecture seule : écriture refusée",

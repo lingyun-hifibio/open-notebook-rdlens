@@ -1048,10 +1048,12 @@ export const trTR = {
     header: {
       project: "Project",
     },
+    mainActions: {
+      runTemplate: "Run Template",
+    },
     tabSearch: "Search",
     tabChat: "Chat",
     tabCompare: "Compare",
-    tabJobs: "Jobs",
     scopeSummary: {
       entireProject: "Entire project",
       sourceOne: "1 source",
@@ -1153,6 +1155,11 @@ export const trTR = {
       tabNotes: "Notlar",
       tabInsights: "İçgörüler",
       tabTransformations: "Dönüşümler",
+      groupMaterials: "Materials",
+      groupResults: "Results",
+      groupTools: "Tools",
+      tabTemplates: "Research templates",
+      transformationRunsUnavailable: "Transformation run history is unavailable until the durable results contract ships.",
       adminBanner: "Yönetici olarak görüntülüyorsunuz (salt okunur)",
       adminBannerDesc: "Oluşturma, düzenleme ve çalıştırma kullanılamaz; görüntüleme ve dışa aktarma kullanılabilir.",
       adminWriteDenied: "Salt okunur oturum: yazma reddedildi",

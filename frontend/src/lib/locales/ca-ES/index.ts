@@ -1048,10 +1048,12 @@ export const caES = {
     header: {
       project: "Project",
     },
+    mainActions: {
+      runTemplate: "Run Template",
+    },
     tabSearch: "Search",
     tabChat: "Chat",
     tabCompare: "Compare",
-    tabJobs: "Jobs",
     scopeSummary: {
       entireProject: "Entire project",
       sourceOne: "1 source",
@@ -1153,6 +1155,11 @@ export const caES = {
       tabNotes: "Notes",
       tabInsights: "Informacions",
       tabTransformations: "Transformacions",
+      groupMaterials: "Materials",
+      groupResults: "Results",
+      groupTools: "Tools",
+      tabTemplates: "Research templates",
+      transformationRunsUnavailable: "Transformation run history is unavailable until the durable results contract ships.",
       adminBanner: "Esteu veient com a administrador (només lectura)",
       adminBannerDesc: "Crear, editar i executar no estan disponibles; veure i exportar continuen disponibles.",
       adminWriteDenied: "Sessió de només lectura: escriptura denegada",

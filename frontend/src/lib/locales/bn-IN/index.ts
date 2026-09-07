@@ -1049,10 +1049,12 @@ export const bnIN = {
     header: {
       project: "Project",
     },
+    mainActions: {
+      runTemplate: "Run Template",
+    },
     tabSearch: "Search",
     tabChat: "Chat",
     tabCompare: "Compare",
-    tabJobs: "Jobs",
     scopeSummary: {
       entireProject: "Entire project",
       sourceOne: "1 source",
@@ -1154,6 +1156,11 @@ export const bnIN = {
       tabNotes: "নোট",
       tabInsights: "অন্তর্দৃষ্টি",
       tabTransformations: "রূপান্তর",
+      groupMaterials: "Materials",
+      groupResults: "Results",
+      groupTools: "Tools",
+      tabTemplates: "Research templates",
+      transformationRunsUnavailable: "Transformation run history is unavailable until the durable results contract ships.",
       adminBanner: "আপনি প্রশাসক হিসেবে দেখছেন (শুধু-পঠন)",
       adminBannerDesc: "তৈরি, সম্পাদনা ও চালানো অনুপলব্ধ; দেখা ও রপ্তানি উপলব্ধ।",
       adminWriteDenied: "শুধু-পঠন সেশন: লেখা প্রত্যাখ্যাত",

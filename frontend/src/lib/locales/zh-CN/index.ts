@@ -1048,10 +1048,12 @@ export const zhCN = {
     header: {
       project: "Project",
     },
+    mainActions: {
+      runTemplate: "Run Template",
+    },
     tabSearch: "搜索",
     tabChat: "对话",
     tabCompare: "对比",
-    tabJobs: "任务",
     scopeSummary: {
       entireProject: "Entire project",
       sourceOne: "1 source",
@@ -1153,6 +1155,11 @@ export const zhCN = {
       tabNotes: "笔记",
       tabInsights: "洞察",
       tabTransformations: "转换",
+      groupMaterials: "Materials",
+      groupResults: "Results",
+      groupTools: "Tools",
+      tabTemplates: "Research templates",
+      transformationRunsUnavailable: "Transformation run history is unavailable until the durable results contract ships.",
       adminBanner: "您正以管理员身份查看（只读）",
       adminBannerDesc: "创建、编辑与运行不可用；查看与导出仍可用。",
       adminWriteDenied: "只读会话：写入被拒绝",

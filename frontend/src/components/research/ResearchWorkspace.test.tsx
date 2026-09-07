@@ -1,23 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { useState, type ReactNode } from 'react'
 import { ResearchWorkspace } from './ResearchWorkspace'
 import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
+import { ResearchJobsProvider } from './ResearchJobsProvider'
 import { ResearchScopeProvider, scopeStorageKey, useResearchScope } from '@/lib/research/scope'
 import { useResearchNotes, useResearchSources } from '@/lib/hooks/use-research'
 import * as api from '@/lib/research/api'
 import * as tokenStore from '@/lib/embedded/token-store'
 import { QUERY_KEYS } from '@/lib/api/query-client'
 import type { ResearchNote, ResearchSource } from '@/lib/types/research'
+import type { ResearchMainAction } from './research-main-action'
 import {
   resetGlobalModelStub,
   setGlobalModelStub,
 } from '@/test/global-model-stub'
 
 // UI-03 Red：工作区组合（REQ-SCOPE-04）——无项目上下文 fail-closed 错误态；
-// 有上下文时加载 Source/Note 并渲染四个面板 Tab。
-// RWV2-13（Issue #34）：右栏顶部的完整 Sources/Notes 选择器替换为紧凑
-// Scope Summary + Edit scope；模式与选择编辑迁移到左栏（唯一编辑面）。
+// 有上下文时加载 Source/Note 并渲染四动作主区。
+// RWV2-40（Fork #44）：主区 = evidence-search / research-chat / compare /
+// run-template 四个动作（Jobs 迁 Header Activity，不再占用主区）。资源
+// 查询与 reconcile 逻辑留在本组件（R8-1a，与 Header 同 key 共享缓存）；
+// Scope Summary 已迁 Header，本组件不再渲染。
 
 vi.mock('@/lib/research/api', async (importOriginal) => {
   const actual = await importOriginal<typeof api>()
@@ -34,6 +39,37 @@ vi.mock('@/lib/research/api', async (importOriginal) => {
 
 // 被测对象不是全局模型本身：用测试替身提供 confirmed 模型（本地、可执行）
 vi.mock('@/lib/hooks/use-research-global-model')
+
+// 受控替身：SearchPanel 在本文件不承担真实 preview 逻辑（v1 测试覆盖）；
+// 暴露 active prop + 保留一个本地输入，供 keep-alive/active 语义断言
+vi.mock('./ResearchSearchPanel', () => ({
+  ResearchSearchPanel: ({ active = true }: { projectId: string; active?: boolean }) => (
+    <div data-testid="search-panel-stub" data-active={String(active)}>
+      <input data-testid="search-panel-input" defaultValue="" />
+    </div>
+  ),
+}))
+
+// TransformationsPanel 受控替身：验证主区 run-template pane 只挂载一次、
+// 保活 DOM 不卸载，并透出收到 onCitationJump/onEditScope（frozen 接线）；
+// 面板自身 listTransformations 行为由其专属测试覆盖
+vi.mock('./TransformationsPanel', () => ({
+  TransformationsPanel: ({
+    onCitationJump,
+    onEditScope,
+  }: {
+    onCitationJump?: (citation: unknown) => void
+    onEditScope?: () => void
+  }) => (
+    <div
+      data-testid="transformations-panel-stub"
+      data-has-jump={String(typeof onCitationJump === 'function')}
+      data-has-edit={String(typeof onEditScope === 'function')}
+    >
+      <input data-testid="transformations-panel-input" defaultValue="" />
+    </div>
+  ),
+}))
 
 const toastMock = vi.fn()
 vi.mock('@/lib/hooks/use-toast', () => ({
@@ -71,16 +107,51 @@ const note: ResearchNote = {
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
 
-function workspaceWrapper({ children }: { children: React.ReactNode }) {
+function workspaceWrapper({ children }: { children: ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <ResearchWorkspaceProvider userId="u1" projectId="proj_1" role="owner">
-        <ResearchScopeProvider userId="u1" projectId="proj_1">
-          {children}
-        </ResearchScopeProvider>
+        <ResearchJobsProvider>
+          <ResearchScopeProvider userId="u1" projectId="proj_1">
+            {children}
+          </ResearchScopeProvider>
+        </ResearchJobsProvider>
       </ResearchWorkspaceProvider>
     </QueryClientProvider>
   )
+}
+
+// 组合根替身：复刻 ResearchPageContent 对 Workspace 的受控 props 面
+function WorkspaceHarness({
+  initialAction = 'evidence-search',
+  surfaceActive = true,
+  onActionChange = () => {},
+  onCitationJump = () => {},
+  onEditScopeAllStates = () => {},
+}: {
+  initialAction?: ResearchMainAction
+  surfaceActive?: boolean
+  onActionChange?: (action: ResearchMainAction) => void
+  onCitationJump?: (sourceId: string, pageIdx: number | null) => void
+  onEditScopeAllStates?: () => void
+}) {
+  const [action, setAction] = useState<ResearchMainAction>(initialAction)
+  return (
+    <ResearchWorkspace
+      activeAction={action}
+      onActiveActionChange={(next) => {
+        onActionChange(next)
+        setAction(next)
+      }}
+      surfaceActive={surfaceActive}
+      onCitationJump={onCitationJump}
+      onEditScopeAllStates={onEditScopeAllStates}
+    />
+  )
+}
+
+function renderHarness(props: Parameters<typeof WorkspaceHarness>[0] = {}) {
+  return render(<WorkspaceHarness {...props} />, { wrapper: workspaceWrapper })
 }
 
 function SharedQueryConsumer() {
@@ -105,7 +176,20 @@ function seedScope(mode: 'entire_project' | 'selected', sourceIds: string[] = []
   )
 }
 
-describe('ResearchWorkspace', () => {
+function switchTo(action: 'evidence-search' | 'research-chat' | 'compare' | 'run-template') {
+  const labels: Record<ResearchMainAction, string> = {
+    'evidence-search': 'research.tabSearch',
+    'research-chat': 'research.tabChat',
+    compare: 'research.tabCompare',
+    'run-template': 'research.mainActions.runTemplate',
+  }
+  const tab = screen.getByRole('tab', { name: labels[action] })
+  // Radix Tabs 在 jsdom 下按 mousedown+click 切换
+  fireEvent.mouseDown(tab, { button: 0, ctrlKey: false })
+  fireEvent.click(tab)
+}
+
+describe('ResearchWorkspace（RWV2-40 四动作主区）', () => {
   beforeEach(() => {
     localStorage.clear()
     queryClient.clear()
@@ -121,28 +205,30 @@ describe('ResearchWorkspace', () => {
     tokenStore.clearResearchToken()
   })
 
-  it('认证 Shell 注入项目上下文后不再依赖 Token 二次解码', async () => {
+  it('认证 Shell 注入项目上下文后渲染四动作 Tab（无需 Token 二次解码）', async () => {
     tokenStore.clearResearchToken()
-    render(<ResearchWorkspace />, { wrapper: workspaceWrapper })
+    renderHarness()
     expect(await screen.findByRole('tab', { name: 'research.tabChat' })).toBeInTheDocument()
   })
 
-  it('右栏渲染紧凑 Scope Summary（无完整选择器）与四个 Tab；entire_project 显式可见', async () => {
-    render(<ResearchWorkspace />, { wrapper: workspaceWrapper })
-    // 摘要常驻（不再折叠）：首次显式显示 Entire project（D2 不隐式推导）
-    expect(await screen.findByTestId('research-context-scope')).toHaveTextContent('research.layout.scope.entireProject')
-    // 右栏无完整选择器：无模式单选、无来源/笔记复选框列表
-    expect(screen.queryByTestId('source-note-selector')).toBeNull()
-    expect(screen.queryByTestId('source-selection-list')).toBeNull()
-    expect(screen.queryByTestId('note-selection-list')).toBeNull()
-    expect(screen.queryByTestId('scope-entire-project')).toBeNull()
-    const tabs = screen.getAllByRole('tab').map((tab) => tab.textContent)
-    expect(tabs).toEqual([
+  it('渲染四个动作 Tab（Evidence Search / Chat / Compare / Run Template），无 Scope Summary 与复选框', async () => {
+    renderHarness()
+    const tabs = await screen.findAllByRole('tab')
+    expect(tabs.map((tab) => tab.textContent)).toEqual([
       'research.tabSearch',
       'research.tabChat',
       'research.tabCompare',
-      'research.tabJobs',
+      'research.mainActions.runTemplate',
     ])
+    // Scope Summary 已迁 Header：本组件不再渲染
+    expect(screen.queryByTestId('research-scope-summary')).toBeNull()
+    expect(screen.queryByTestId('research-context-scope')).toBeNull()
+    expect(screen.queryByTestId('scope-edit-button')).toBeNull()
+    // 右栏动作区无任何完整选择器/复选框（唯一编辑面在左栏）
+    expect(screen.queryByTestId('source-note-selector')).toBeNull()
+    expect(screen.queryByRole('checkbox')).toBeNull()
+    // 资源查询留在本组件（R8-1a）：mount 即拉取，limit 100 服务端单页上限
+    await waitFor(() => expect(api.listSources).toHaveBeenCalledTimes(1))
     expect(api.listSources).toHaveBeenCalledWith(
       'proj_1',
       { limit: 100 },
@@ -155,39 +241,22 @@ describe('ResearchWorkspace', () => {
     )
   })
 
-  it('selected 模式摘要显示来源与笔记计数（来自共享 provider）', async () => {
-    seedScope('selected', ['src_1'], ['note_1'])
-    render(<ResearchWorkspace />, { wrapper: workspaceWrapper })
-    expect(await screen.findByTestId('research-context-scope')).toHaveTextContent(
-      'research.layout.scope.selectedSummary',
-    )
+  it('动作切换受控：点击 tab 触发 onActiveActionChange', async () => {
+    const onActionChange = vi.fn()
+    renderHarness({ onActionChange })
+    switchTo('research-chat')
+    await waitFor(() => expect(onActionChange).toHaveBeenCalledWith('research-chat'))
   })
 
-  it('Edit scope 触发组合层回调（退出最大化回到左栏编辑面，不持有第二套状态）', async () => {
-    const onEditScope = vi.fn()
-    render(<ResearchWorkspace onEditScope={onEditScope} />, { wrapper: workspaceWrapper })
-    fireEvent.click(await screen.findByTestId('scope-edit-button'))
-    expect(onEditScope).toHaveBeenCalledTimes(1)
-  })
-
-  it('右栏不渲染任何复选框（唯一编辑面在左栏 Sources/Notes）', async () => {
-    seedScope('selected', ['src_1'], ['note_1'])
-    render(<ResearchWorkspace />, { wrapper: workspaceWrapper })
-    await screen.findByTestId('research-context-scope')
-    // Chat/Search 面板在未派发时不渲染局部复选框；工作区顶层无 checkbox
-    expect(screen.queryByRole('checkbox')).toBeNull()
-  })
-
-  it('右栏与第二个消费者共享一次查询（单一查询缓存）', async () => {
+  it('右栏与第二个消费者共享一次查询（单一查询缓存，Header 同 key 语义）', async () => {
     render(
       <>
-        <ResearchWorkspace />
+        <WorkspaceHarness />
         <SharedQueryConsumer />
       </>,
       { wrapper: workspaceWrapper },
     )
-    await screen.findByTestId('research-context-scope')
-    expect(api.listSources).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(api.listSources).toHaveBeenCalledTimes(1))
     expect(api.listNotes).toHaveBeenCalledTimes(1)
   })
 
@@ -208,7 +277,7 @@ describe('ResearchWorkspace', () => {
     })
     render(
       <>
-        <ResearchWorkspace />
+        <WorkspaceHarness />
         <ScopeProbe />
       </>,
       { wrapper: workspaceWrapper },
@@ -228,7 +297,7 @@ describe('ResearchWorkspace', () => {
     seedScope('selected', ['src_missing'], ['note_missing'])
     render(
       <>
-        <ResearchWorkspace />
+        <WorkspaceHarness />
         <ScopeProbe />
       </>,
       { wrapper: workspaceWrapper },
@@ -237,16 +306,13 @@ describe('ResearchWorkspace', () => {
     await waitFor(() => {
       expect(screen.getByTestId('scope-reconcile-probe')).toHaveTextContent('selected:::false')
     })
-    expect(screen.getByTestId('research-context-scope')).toHaveTextContent(
-      'research.layout.scope.selectedSummary',
-    )
   })
 
   it('已选 Source 从 ready 转为 failed 时清理 ID、保留 selected 并反馈', async () => {
     seedScope('selected', ['src_1'])
     render(
       <>
-        <ResearchWorkspace />
+        <WorkspaceHarness />
         <ScopeProbe />
       </>,
       { wrapper: workspaceWrapper },
@@ -278,7 +344,7 @@ describe('ResearchWorkspace', () => {
     vi.mocked(api.listNotes).mockRejectedValue(new Error('notes unavailable'))
     render(
       <>
-        <ResearchWorkspace />
+        <WorkspaceHarness />
         <ScopeProbe />
       </>,
       { wrapper: workspaceWrapper },
@@ -309,15 +375,10 @@ describe('ResearchWorkspace', () => {
 
   it('#243 §6.4：Chat 发送经顶层守卫——待确认/无模型时不打开流、不留 turn', async () => {
     tokenStore.setResearchToken(researchToken(), 9999999999)
-    // 外部模型待确认：守卫登记但不执行（不变量 9）
     setGlobalModelStub({ deferGuarded: true })
-    render(<ResearchWorkspace />, { wrapper: workspaceWrapper })
-    // Radix Tabs 在 jsdom 下按 mousedown 切换（fireEvent.click 不触发）
-    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'research.tabChat' }), {
-      button: 0,
-      ctrlKey: false,
-    })
-    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: '问题' } })
+    renderHarness()
+    switchTo('research-chat')
+    fireEvent.change(await screen.findByTestId('chat-input'), { target: { value: '问题' } })
     fireEvent.click(screen.getByRole('button', { name: 'research.chatSend' }))
 
     expect(api.openResearchChatStream).not.toHaveBeenCalled()
@@ -331,7 +392,7 @@ describe('ResearchWorkspace', () => {
     expect(screen.getByTestId('chat-input')).toHaveValue('')
   })
 
-  it('#243 §6.4：Compare 创建经顶层守卫——待确认时不发创建请求', async () => {
+  it('#243 §6.4：Compare 创建经顶层守卫——待确认时不发创建请求；放行后才创建', async () => {
     tokenStore.setResearchToken(researchToken(), 9999999999)
     setGlobalModelStub({ deferGuarded: true })
     seedScope('selected', ['src_1'])
@@ -351,31 +412,35 @@ describe('ResearchWorkspace', () => {
       created_at: '2026-08-06T02:00:00Z',
       updated_at: '2026-08-06T02:00:00Z',
     })
-    render(<ResearchWorkspace />, { wrapper: workspaceWrapper })
-    // Compare 从共享 Scope 快照取 selected source（左栏编辑面已选中 src_1）
-    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'research.tabCompare' }), {
-      button: 0,
-      ctrlKey: false,
-    })
-    fireEvent.click(await screen.findByRole('button', { name: 'research.compareCreate' }))
+    renderHarness()
+    switchTo('compare')
+    // ComparePane 就绪（sources 已载入且映射非空）后才允许点击
+    const createButton = await screen.findByTestId('compare-create')
+    await waitFor(() => expect(createButton).not.toBeDisabled())
+    fireEvent.click(createButton)
 
     // 守卫未放行：不创建 Job、不落 localStorage（不变量 9）
     expect(api.createCompare).not.toHaveBeenCalled()
     expect(localStorage.getItem('rdlens.research.jobs.proj_1')).toBeNull()
-    // 评审 MEDIUM-1：未派发时不显示「已创建」提示（取消不误报成功）
     expect(screen.queryByTestId('compare-submitted')).toBeNull()
+
+    // 放行后再次点击 → 创建请求发出并登记到 Jobs 控制器（localStorage 前缀）
+    resetGlobalModelStub()
+    fireEvent.click(screen.getByTestId('compare-create'))
+    await waitFor(() => expect(api.createCompare).toHaveBeenCalledTimes(1))
+    expect(await screen.findByTestId('compare-submitted')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(localStorage.getItem('rdlens.research.jobs.proj_1')).toContain('job_1')
+    })
   })
 
   it('#243：无可用全局模型时 Chat 输入/发送禁用并展示引导（评审 Important-2）', async () => {
     tokenStore.setResearchToken(researchToken(), 9999999999)
     setGlobalModelStub({ confirmedModelId: null })
-    render(<ResearchWorkspace />, { wrapper: workspaceWrapper })
-    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'research.tabChat' }), {
-      button: 0,
-      ctrlKey: false,
-    })
+    renderHarness()
+    switchTo('research-chat')
 
-    expect(screen.getByTestId('chat-input')).toBeDisabled()
+    expect(await screen.findByTestId('chat-input')).toBeDisabled()
     expect(screen.getByRole('button', { name: 'research.chatSend' })).toBeDisabled()
     expect(screen.getByTestId('chat-model-blocked-hint')).toHaveTextContent(
       'research.globalModel.selectModelHint',
@@ -387,23 +452,86 @@ describe('ResearchWorkspace', () => {
     tokenStore.setResearchToken(researchToken(), 9999999999)
     setGlobalModelStub({ confirmedModelId: null })
     seedScope('selected', ['src_1'])
-    render(<ResearchWorkspace />, { wrapper: workspaceWrapper })
-    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'research.tabCompare' }), {
-      button: 0,
-      ctrlKey: false,
-    })
+    renderHarness()
+    switchTo('compare')
 
-    expect(screen.getByTestId('compare-create')).toBeDisabled()
+    expect(await screen.findByTestId('compare-create')).toBeDisabled()
     expect(screen.getByTestId('compare-model-blocked-hint')).toHaveTextContent(
       'research.globalModel.selectModelHint',
     )
     expect(api.createCompare).not.toHaveBeenCalled()
   })
 
-  it('加载失败显示错误与重试按钮', async () => {
+  it('run-template 首访才挂载（无空请求），访问后保活 DOM 不卸载', async () => {
+    renderHarness()
+    // 默认动作 evidence-search：run-template 未访问 → 不挂载内容
+    expect(screen.queryByTestId('transformations-panel-stub')).toBeNull()
+
+    switchTo('run-template')
+    const input = await screen.findByTestId('transformations-panel-input')
+    // frozen 接线：TransformationsPanel 收到 onCitationJump（解析后跳根级）与
+    // onEditScope（组合根 Edit scope 链路）
+    expect(screen.getByTestId('transformations-panel-stub')).toHaveAttribute('data-has-jump', 'true')
+    expect(screen.getByTestId('transformations-panel-stub')).toHaveAttribute('data-has-edit', 'true')
+    fireEvent.change(input, { target: { value: 'first-visit' } })
+    expect(screen.getByTestId('transformations-panel-input')).toHaveValue('first-visit')
+
+    // 切到 research-chat（真实 ChatPane 挂载）——run-template pane 保活保留
+    switchTo('research-chat')
+    expect(screen.queryByTestId('transformations-panel-input')).not.toBeNull()
+
+    // 切回：同一 DOM 节点仍在、本地输入保留（未重挂载）
+    switchTo('run-template')
+    expect(screen.getByTestId('transformations-panel-input')).toBe(input)
+    expect(screen.getByTestId('transformations-panel-input')).toHaveValue('first-visit')
+  })
+
+  it('evidence-search 首访后切走再切回：SearchPanel 本地输入保留（保活）', async () => {
+    renderHarness()
+    const input = await screen.findByTestId('search-panel-input')
+    fireEvent.change(input, { target: { value: 'keep me' } })
+    expect(input).toHaveValue('keep me')
+
+    switchTo('research-chat')
+    // evidence pane 已访问：切走保活（不卸载 DOM）
+    expect(screen.queryByTestId('search-panel-input')).not.toBeNull()
+
+    switchTo('evidence-search')
+    expect(screen.getByTestId('search-panel-input')).toBe(input)
+    expect(screen.getByTestId('search-panel-input')).toHaveValue('keep me')
+  })
+
+  it('SearchPanel active 语义：surfaceActive=false 时传入 active=false', async () => {
+    renderHarness({ surfaceActive: false })
+    expect(await screen.findByTestId('search-panel-stub')).toHaveAttribute('data-active', 'false')
+  })
+
+  it('SearchPanel active 语义：动作切走（surfaceActive 仍 true）→ active=false；切回恢复', async () => {
+    renderHarness()
+    expect(await screen.findByTestId('search-panel-stub')).toHaveAttribute('data-active', 'true')
+    switchTo('research-chat')
+    expect(screen.getByTestId('search-panel-stub')).toHaveAttribute('data-active', 'false')
+    switchTo('evidence-search')
+    expect(screen.getByTestId('search-panel-stub')).toHaveAttribute('data-active', 'true')
+  })
+
+  it('资源加载失败：错误 + 重试可见，Compare 不可创建且不回退为空 Scope', async () => {
     tokenStore.setResearchToken(researchToken(), 9999999999)
+    seedScope('selected', ['src_1'])
     vi.mocked(api.listSources).mockRejectedValue(new Error('network down'))
-    render(<ResearchWorkspace />, { wrapper: workspaceWrapper })
-    expect(await screen.findByRole('button', { name: /retry/i })).toBeInTheDocument()
+    renderHarness()
+    switchTo('compare')
+
+    expect(await screen.findByTestId('workspace-resources-error')).toBeInTheDocument()
+    expect(screen.getByTestId('workspace-resources-retry')).toBeInTheDocument()
+    // ComparePane 资源失败守卫：不渲染创建入口（不得把失败当空 Scope）
+    expect(screen.getByTestId('compare-resources-error')).toBeInTheDocument()
+    expect(screen.queryByTestId('compare-create')).toBeNull()
+    expect(screen.queryByTestId('compare-empty')).toBeNull()
+    expect(api.createCompare).not.toHaveBeenCalled()
+
+    // 重试刷新同一资源缓存
+    fireEvent.click(screen.getByTestId('workspace-resources-retry'))
+    await waitFor(() => expect(vi.mocked(api.listSources).mock.calls.length).toBeGreaterThanOrEqual(2))
   })
 })

@@ -1048,10 +1048,12 @@ export const itIT = {
     header: {
       project: "Project",
     },
+    mainActions: {
+      runTemplate: "Run Template",
+    },
     tabSearch: "Search",
     tabChat: "Chat",
     tabCompare: "Compare",
-    tabJobs: "Jobs",
     scopeSummary: {
       entireProject: "Entire project",
       sourceOne: "1 source",
@@ -1153,6 +1155,11 @@ export const itIT = {
       tabNotes: "Note",
       tabInsights: "Approfondimenti",
       tabTransformations: "Trasformazioni",
+      groupMaterials: "Materials",
+      groupResults: "Results",
+      groupTools: "Tools",
+      tabTemplates: "Research templates",
+      transformationRunsUnavailable: "Transformation run history is unavailable until the durable results contract ships.",
       adminBanner: "Visualizzazione come amministratore (sola lettura)",
       adminBannerDesc: "Creazione, modifica ed esecuzione non disponibili; visualizzazione ed esportazione disponibili.",
       adminWriteDenied: "Sessione di sola lettura: scrittura negata",
