@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
@@ -11,6 +11,10 @@ import { SourceListPanel } from './SourceListPanel'
 import { SourceDetailPanel } from './SourceDetailPanel'
 import { NotesPanel } from './NotesPanel'
 import { InsightsPanel } from './InsightsPanel'
+import { TransformationRunsPanel } from './TransformationRunsPanel'
+import { resolveCitationSource } from './citation-utils'
+import { useResearchSources } from '@/lib/hooks/use-research'
+import type { ResearchCitation } from '@/lib/types/research'
 
 /** 左栏数据/插槽子视图：Materials(Sources|Notes) + Results(Insights|Runs)。 */
 export type ResearchWorkbenchPane =
@@ -51,7 +55,8 @@ export interface ResearchWorkbenchProps {
   onOpenSource(sourceId: string, pageIdx?: number | null): void
   onExitSourceFocus(): void
   onOpenResearchTemplates(): void
-  /** Results/Transformation runs 插槽内容；undefined = 组合根未提供（渲染 unavailable 文案） */
+  /** Results/Transformation runs 插槽内容（RWV2-42 组件或自定义）；undefined 时
+   *  默认挂载合并后的 TransformationRunsPanel（#48 已合入，不再显示 unavailable） */
   transformationRuns?: React.ReactNode
   /** 递增序号：Edit scope 请求聚焦左栏编辑面 */
   scopeEditRequest?: number
@@ -64,8 +69,8 @@ const MATERIALS_ITEMS: readonly { pane: 'sources' | 'notes'; labelKey: string }[
 
 const RESULTS_ITEMS: readonly { pane: 'insights' | 'transformation-runs'; labelKey: string }[] = [
   { pane: 'insights', labelKey: 'research.workbench.tabInsights' },
-  // #44：复用既有 tab* 文案 key（spec：子项名可复用 tab* 既有 key）。
-  { pane: 'transformation-runs', labelKey: 'research.workbench.tabTransformations' },
+  // #44：Results/Transformation runs 子项复用 #48 合入的 tabRuns 文案 key。
+  { pane: 'transformation-runs', labelKey: 'research.workbench.tabRuns' },
 ]
 
 export function ResearchWorkbench({
@@ -80,8 +85,19 @@ export function ResearchWorkbench({
   scopeEditRequest,
 }: ResearchWorkbenchProps) {
   const { t } = useTranslation()
-  const { isAdminReadonly } = useResearchWorkspace()
+  const { projectId, isAdminReadonly } = useResearchWorkspace()
   const [pane, setPane] = useState<ResearchWorkbenchPane>('sources')
+  // #44 + #48：Runs 面板 Citation → 解析到项目内来源后经组合根 source-focus
+  // 跳转。查询与 RunsPanel 内部共享（同 key 缓存，不双拉）。
+  const sourcesQuery = useResearchSources(projectId)
+  const handleRunsCitationJump = useCallback(
+    (citation: ResearchCitation) => {
+      const source = resolveCitationSource(sourcesQuery.data?.items, citation)
+      if (!source) return
+      onOpenSource(source.source_id, citation.page_idx)
+    },
+    [onOpenSource, sourcesQuery.data?.items],
+  )
 
   // Issue #182/#44：Source 专注视图。组合根决定何时进入：选中 Source /
   // Citation 跳转 → focusedSourceId 非 null → 左栏只渲染专注视图，
@@ -115,17 +131,12 @@ export function ResearchWorkbench({
       case 'insights':
         return <InsightsPanel />
       case 'transformation-runs':
-        // #42 未合入：durable results 契约未落地前，Runs 历史=插槽或 unavailable
-        // 文案，不伪装成空历史。
+        // #48 已合入：默认消费 TransformationRunsPanel（durable runs 历史 +
+        // Rerun/详情 + citation 跳转）。组合根可用 transformationRuns 插槽覆盖。
         return transformationRuns !== undefined ? (
           transformationRuns
         ) : (
-          <p
-            className="text-sm text-muted-foreground"
-            data-testid="transformation-runs-unavailable"
-          >
-            {t('research.workbench.transformationRunsUnavailable')}
-          </p>
+          <TransformationRunsPanel onCitationJump={handleRunsCitationJump} />
         )
     }
   }

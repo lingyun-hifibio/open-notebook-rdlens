@@ -3,10 +3,16 @@ import {
   displayPage,
   findChunkForPage,
   canJumpToCitation,
+  normalizePersistedCitations,
   resolveCitationSource,
   type JumpEvaluation,
 } from './citation-utils'
-import type { ResearchCitation, ResearchChunk, ResearchSource } from '@/lib/types/research'
+import type {
+  PersistedCitationSnapshot,
+  ResearchCitation,
+  ResearchChunk,
+  ResearchSource,
+} from '@/lib/types/research'
 
 // UI-02 Red：Citation 展示与失效降级纯函数（REQ-DATA-03/04，设计 §5.3）——
 // page_idx 0-based 仅展示 +1；旧文件失效保留原文并禁用跳转。
@@ -142,5 +148,25 @@ describe('resolveCitationSource（按 document_id 解析来源）', () => {
     const sources = [source({ source_id: 'src_x', document_id: 'doc_x' })]
     expect(resolveCitationSource(sources, citation())).toBeUndefined()
     expect(resolveCitationSource(undefined, citation())).toBeUndefined()
+  })
+})
+
+describe('normalizePersistedCitations（RWV2-21 耐久快照展示）', () => {
+  it('保留同一 doc/chunk/page 的多个 claim，不因展示 key 去重而丢失证据', () => {
+    const snapshots: PersistedCitationSnapshot[] = [
+      {
+        doc_id: 'doc_1', doc_version: 'v1', chunk_id: 'chunk_1', page_idx: 0,
+        claim: 'first claim', original_text: 'same evidence',
+      },
+      {
+        doc_id: 'doc_1', doc_version: 'v1', chunk_id: 'chunk_1', page_idx: 0,
+        claim: 'second claim', original_text: 'same evidence',
+      },
+    ]
+
+    const normalized = normalizePersistedCitations(snapshots)
+    expect(normalized).toHaveLength(2)
+    expect(normalized.map((item) => item.claim)).toEqual(['first claim', 'second claim'])
+    expect(new Set(normalized.map((item) => item.key)).size).toBe(2)
   })
 })

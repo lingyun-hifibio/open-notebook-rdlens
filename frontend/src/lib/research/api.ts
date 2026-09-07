@@ -52,6 +52,7 @@ import type {
   ResearchSource,
   ResearchSourceDetail,
   ResearchTransformation,
+  TransformationResultRecord,
   TransformationRunResult,
 } from '@/lib/types/research'
 
@@ -198,11 +199,55 @@ export async function createTransformation(
 export async function runTransformation(
   projectId: string,
   transformationId: string,
-  input: { source_ids: string[]; note_ids: string[]; model_id: string },
+  input: {
+    source_ids: string[]
+    note_ids: string[]
+    model_id: string
+    /** RWV2-35（RDLens 迁移 v9）：admin 双语模板显式选中的变体语言；
+     *  仅当 UI 语言选择器选中时发送；单 prompt（project/legacy）不发——
+     *  服务端按 content 检测。缺省 = 服务端默认（admin 双语无指令 → en）。 */
+    response_language?: 'zh' | 'en'
+  },
+  options: { idempotencyKey?: string } = {},
 ): Promise<TransformationRunResult> {
+  // v1 契约（Phase 6，`contract_v1_enabled`）：无 X-Research-Contract/
+  // Idempotency-Key → 426/422。Rerun 为新建派发，每次必须生成新幂等键
+  //（复用旧 key 会被后端幂等重放/409，不会新建结果）。
+  const idempotencyKey = options.idempotencyKey ?? newIdempotencyKey()
   const response = await apiClient.post<TransformationRunResult>(
     researchPath(projectId, 'transformations', transformationId, 'run'),
     input,
+    {
+      headers: {
+        'X-Research-Contract': 'v1',
+        'Idempotency-Key': idempotencyKey,
+      },
+    },
+  )
+  return response.data
+}
+
+// ── Transformation Result 历史（RWV2-20 / Issue #330；只读，Owner/Admin） ──
+
+/** 分页列出 Transformation Result 历史（服务端 keyset cursor；list 项含完整输出）。 */
+export async function listTransformationResults(
+  projectId: string,
+  params: { cursor?: string; limit?: number } = {},
+): Promise<ResearchPage<TransformationResultRecord>> {
+  const response = await apiClient.get<ResearchPage<TransformationResultRecord>>(
+    researchPath(projectId, 'transformation-results'),
+    { params },
+  )
+  return response.data
+}
+
+/** 读取单条 Transformation Result 详情（非法/不存在/跨项目 → 后端 404 非泄露）。 */
+export async function getTransformationResult(
+  projectId: string,
+  resultId: string,
+): Promise<TransformationResultRecord> {
+  const response = await apiClient.get<TransformationResultRecord>(
+    researchPath(projectId, 'transformation-results', resultId),
   )
   return response.data
 }

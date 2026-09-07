@@ -25,6 +25,8 @@ vi.mock('@/lib/research/api', () => ({
   listTransformations: vi.fn(),
   createTransformation: vi.fn(),
   runTransformation: vi.fn(),
+  listTransformationResults: vi.fn(),
+  getTransformationResult: vi.fn(),
   createExport: vi.fn(),
   downloadExport: vi.fn(),
 }))
@@ -150,7 +152,7 @@ describe('ResearchWorkbench', () => {
       screen.getByRole('button', { name: 'research.workbench.tabInsights' }),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: 'research.workbench.tabTransformations' }),
+      screen.getByRole('button', { name: 'research.workbench.tabRuns' }),
     ).toBeInTheDocument()
 
     // 未触发 open/退出
@@ -295,23 +297,21 @@ describe('ResearchWorkbench', () => {
     renderWorkbench({
       transformationRuns: <div data-testid="runs-slot">runs history content</div>,
     })
-    fireEvent.click(
-      screen.getByRole('button', { name: 'research.workbench.tabTransformations' }),
-    )
+    fireEvent.click(screen.getByRole('button', { name: 'research.workbench.tabRuns' }))
     expect(await screen.findByTestId('runs-slot')).toBeInTheDocument()
-    expect(screen.queryByTestId('transformation-runs-unavailable')).toBeNull()
+    // 插槽覆盖时不挂载默认 RunsPanel
+    expect(researchApi.listTransformationResults).not.toHaveBeenCalled()
   })
 
-  it('Results：Transformation runs 插槽——未传入时渲染 unavailable 文案（不伪装空历史）', async () => {
+  it('Results：Transformation runs 未传插槽时默认挂载 #48 TransformationRunsPanel', async () => {
     vi.mocked(researchApi.listSources).mockResolvedValue({ items: [], next_cursor: null })
+    vi.mocked(researchApi.listTransformationResults).mockResolvedValue({ items: [], next_cursor: null })
     renderWorkbench()
-    fireEvent.click(
-      screen.getByRole('button', { name: 'research.workbench.tabTransformations' }),
+    fireEvent.click(screen.getByRole('button', { name: 'research.workbench.tabRuns' }))
+    // #48 durable runs 面板挂载（列表查询发出；无结果 → empty 文案，不伪装历史）
+    await waitFor(() =>
+      expect(researchApi.listTransformationResults).toHaveBeenCalled(),
     )
-    expect(await screen.findByTestId('transformation-runs-unavailable')).toBeInTheDocument()
-    expect(
-      screen.getByText('research.workbench.transformationRunsUnavailable'),
-    ).toBeInTheDocument()
   })
 
   it('Source 专注：focusedSourceId 非 null 只渲染专注视图（Back + SourceDetailPanel），不含分组 IA', async () => {

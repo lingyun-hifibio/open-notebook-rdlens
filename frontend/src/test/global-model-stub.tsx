@@ -30,6 +30,12 @@ interface StubOverrides {
   blockedReason?: ResearchModelBlockedReason
   /** true：runGuarded 登记后不执行（模拟等待/放弃确认） */
   deferGuarded?: boolean
+  /**
+   * deferGuarded 时把「已登记但未执行的 op + 模型快照」交给测试捕获
+   * （二轮审查 N1：用于重放「consent 确认后执行登记 op」路径——组件
+   * 卸载后确认完成仍执行 op，op 内生命周期守卫须拦截派发）。
+   */
+  onGuardedRegistered?: (operation: GuardedOperation<unknown>, modelId: string) => void
   models?: ResearchModelOption[]
   /** 以下字段供 ModelBar/ConsentDialog 组件测试覆盖（默认语义见 useResearchGlobalModel） */
   draftModelId?: string | null
@@ -108,7 +114,15 @@ export function useResearchGlobalModel(): UseResearchGlobalModelResult {
   ): Promise<T | undefined> => {
     if (!canExecute || confirmedModelId === null) return undefined
     overrides.onRunGuarded?.()
-    if (overrides.deferGuarded) return undefined
+    if (overrides.deferGuarded) {
+      // 模拟真实 provider 的「登记不执行」：把 op + 模型快照交给测试捕获，
+      // 让用例能在组件卸载后重放（consent 确认后的执行路径，N1）
+      overrides.onGuardedRegistered?.(
+        operation as GuardedOperation<unknown>,
+        confirmedModelId,
+      )
+      return undefined
+    }
     return operation(confirmedModelId)
   }
 

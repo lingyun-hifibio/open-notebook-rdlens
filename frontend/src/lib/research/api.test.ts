@@ -130,7 +130,7 @@ describe('researchApi（Gateway 白名单契约）', () => {
     })
   })
 
-  it('runTransformation → POST .../transformations/{id}/run，输入 source_ids/note_ids + 运行时 model_id（REQ-DIS-02；#243 §6.7 model_id 为 required）', async () => {
+  it('runTransformation → POST .../transformations/{id}/run，输入 source_ids/note_ids + 运行时 model_id + v1 契约头 + 幂等键（REQ-DIS-02；#243 §6.7 model_id 为 required；v1 契约 Phase 6）', async () => {
     const captured = await capture(() => researchApi.runTransformation(P, 'trans_1', {
       source_ids: ['src_1'],
       note_ids: [],
@@ -142,6 +142,50 @@ describe('researchApi（Gateway 白名单契约）', () => {
       source_ids: ['src_1'],
       note_ids: [],
       model_id: 'm-global',
+    })
+    expect(captured.headers?.['X-Research-Contract']).toBe('v1')
+    // Rerun 为新派发：每次新 `ui-` 前缀幂等键（后端重放/409 语义见 #330 备忘）
+    expect(captured.headers?.['Idempotency-Key']).toMatch(/^ui-/)
+  })
+
+  it('runTransformation 幂等键可由调用方显式提供（Rerun 新键前端接线；同键重试=后端幂等）', async () => {
+    const captured = await capture(() => researchApi.runTransformation(P, 'trans_1', {
+      source_ids: ['src_1'],
+      note_ids: [],
+      model_id: 'm-global',
+    }, { idempotencyKey: 'ui-key-rerun-1' }))
+    expect(captured.headers?.['Idempotency-Key']).toBe('ui-key-rerun-1')
+  })
+
+  it('listTransformationResults → GET .../transformation-results?cursor&limit，响应解包 ResearchPage（RWV2-20）', async () => {
+    const captured = await capture(() =>
+      researchApi.listTransformationResults(P, { cursor: 'c1', limit: 20 }),
+    )
+    expect(captured.method).toBe('GET')
+    expect(captured.url).toBe(`/v1/research/projects/${P}/transformation-results`)
+    expect(captured.params).toEqual({ cursor: 'c1', limit: 20 })
+  })
+
+  it('getTransformationResult → GET .../transformation-results/{result_id}（RWV2-20）', async () => {
+    const captured = await capture(() => researchApi.getTransformationResult(P, 'tres_api3'))
+    expect(captured.method).toBe('GET')
+    expect(captured.url).toBe(`/v1/research/projects/${P}/transformation-results/tres_api3`)
+  })
+
+  it('runTransformation：RWV2-35 双语变体显式 response_language=zh → 请求体携带（单 prompt 缺省不发送）', async () => {
+    const captured = await capture(() => researchApi.runTransformation(P, 'trans_1', {
+      source_ids: ['src_1'],
+      note_ids: [],
+      model_id: 'm-global',
+      response_language: 'zh',
+    }))
+    expect(captured.method).toBe('POST')
+    expect(captured.url).toBe(`/v1/research/projects/${P}/transformations/trans_1/run`)
+    expect(captured.data).toEqual({
+      source_ids: ['src_1'],
+      note_ids: [],
+      model_id: 'm-global',
+      response_language: 'zh',
     })
   })
 
