@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useResearchJobs, POLL_INTERVAL_MS } from './use-research-jobs'
+import { useResearchJobs, POLL_INTERVAL_MS, PURGE_CONFIRM_DELAY_MS, readStoredJobIds } from './use-research-jobs'
 import {
   cancelJob,
   createCompare,
@@ -437,7 +437,7 @@ describe('useResearchJobs 服务端列表恢复（Issue #311）', () => {
     expect(listJobs).toHaveBeenCalledTimes(2)
   })
 
-  it('getJob 404（Job 已 purge）→ 移出轮询集合，不再空轮询', async () => {
+  it('getJob 404（Job 已 purge）→ 延时确认仍 404 后剪 localStorage，不再空轮询', async () => {
     localStorage.setItem(
       'rdlens.research.jobs.proj_1',
       JSON.stringify(['job_dead', 'job_live']),
@@ -450,17 +450,46 @@ describe('useResearchJobs 服务端列表恢复（Issue #311）', () => {
     renderHook(() => useResearchJobs({ projectId: 'proj_1' }))
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0)
+      // 越过 1s purge 确认延时 + 多个轮询周期
       await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 3)
     })
 
+    // RWV2-41：首次 404（回源） + 一次确认回源 = 2 次；确认后落定 purge
     const deadCalls = vi
       .mocked(getJob)
       .mock.calls.filter(([, jid]) => jid === 'job_dead').length
-    expect(deadCalls).toBe(1)
+    expect(deadCalls).toBe(2)
     const liveCalls = vi
       .mocked(getJob)
       .mock.calls.filter(([, jid]) => jid === 'job_live').length
     expect(liveCalls).toBeGreaterThanOrEqual(3)
+    // 死 id 从 localStorage 剪除（后续 mount 不再触发 404 GET）
+    expect(readStoredJobIds('proj_1')).toEqual(['job_live'])
+  })
+
+  it('getJob 404 后确认回源成功（瞬时 404）→ 中止 purge、恢复轮询', async () => {
+    localStorage.setItem('rdlens.research.jobs.proj_1', JSON.stringify(['job_flaky']))
+    let deadOnce = false
+    vi.mocked(getJob).mockImplementation(async (_pid, jid) => {
+      if (jid === 'job_flaky' && !deadOnce) {
+        deadOnce = true
+        throw axios404()
+      }
+      return job(jid, 'running')
+    })
+
+    const { result } = renderHook(() => useResearchJobs({ projectId: 'proj_1' }))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+      // 首次 404 → 1s 确认 → 成功：重新登记轮询
+      await vi.advanceTimersByTimeAsync(PURGE_CONFIRM_DELAY_MS + POLL_INTERVAL_MS * 2)
+    })
+
+    // 瞬时 404 不落定 purge：id 保留在 localStorage，job 保留在视图且继续轮询
+    expect(readStoredJobIds('proj_1')).toEqual(['job_flaky'])
+    expect(result.current.jobs.some((j) => j.job_id === 'job_flaky')).toBe(true)
+    const calls = vi.mocked(getJob).mock.calls.filter(([, jid]) => jid === 'job_flaky')
+    expect(calls.length).toBeGreaterThanOrEqual(3)
   })
 
   it('projectId 切换：jobs 清空 + 旧项目在途列表响应不合并（跨项目污染守卫）', async () => {
@@ -503,5 +532,353 @@ describe('useResearchJobs 服务端列表恢复（Issue #311）', () => {
     expect(
       result.current.jobs.some((j) => j.job_id === 'job_old_proj_1'),
     ).toBe(false)
+  })
+})
+
+// ── RWV2-41（Fork #46）：触发矩阵 / 全量枚举 / 单飞 / 冷却 / 富化 / 对账 ──
+
+function coverageJob(id: string, overrides: Partial<ResearchJob> = {}): ResearchJob {
+  return job(id, 'completed', {
+    job_type: 'research_coverage',
+    result_ref: 'art_cov_1',
+    progress: 1,
+    coverage: {
+      synthesis_scope: 'all_selected',
+      contract_version: null,
+      execution_plan_version: null,
+      prompt_bundle_version: null,
+      generation_id: null,
+    },
+    ...overrides,
+  })
+}
+
+describe('useResearchJobs RWV2-41 全量枚举与触发矩阵', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    localStorage.clear()
+    vi.clearAllMocks()
+    vi.mocked(listJobs).mockResolvedValue({ items: [], next_cursor: null })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.clearAllMocks()
+  })
+
+  it('全量枚举跟随 next_cursor：>100 处非终态任务被发现并进入轮询', async () => {
+    vi.mocked(listJobs).mockImplementation(async (_pid, params) => {
+      if (params?.cursor === 'c2') {
+        return { items: [job('job_buried', 'running', { progress: 0.2 })], next_cursor: null }
+      }
+      return {
+        items: [job('job_page1_done', 'completed', { progress: 1 })],
+        next_cursor: params?.cursor === 'c1' ? 'c2' : 'c1',
+      }
+    })
+    vi.mocked(getJob).mockResolvedValue(job('job_buried', 'running', { progress: 0.4 }))
+
+    const { result } = renderHook(() => useResearchJobs({ projectId: 'proj_1' }))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+
+    expect(result.current.jobs.map((j) => j.job_id).sort()).toEqual([
+      'job_buried',
+      'job_page1_done',
+    ])
+    // 深埋的非终态任务进入轮询
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS)
+    })
+    expect(getJob).toHaveBeenCalledWith('proj_1', 'job_buried')
+    expect(result.current.jobs.find((j) => j.job_id === 'job_buried')).toMatchObject({
+      progress: 0.4,
+    })
+  })
+
+  it('跨页重复 id 去重；listStatus loading→ready', async () => {
+    vi.mocked(listJobs).mockImplementation(async (_pid, params) => {
+      if (params?.cursor === 'c1') {
+        return { items: [job('job_dup', 'completed', { progress: 1 })], next_cursor: null }
+      }
+      return {
+        items: [job('job_dup', 'running', { progress: 0.1 })],
+        next_cursor: 'c1',
+      }
+    })
+
+    const { result } = renderHook(() => useResearchJobs({ projectId: 'proj_1' }))
+    expect(result.current.listStatus).toBe('loading')
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.listStatus).toBe('ready')
+    expect(result.current.jobs).toHaveLength(1)
+    expect(result.current.listError).toBeNull()
+  })
+
+  it('重复 cursor 守卫：畸形响应按失败处理，不无限翻页', async () => {
+    vi.mocked(listJobs).mockImplementation(async (_pid, params) => ({
+      items: [job('job_x', 'running')],
+      next_cursor: params?.cursor === 'loop' ? 'loop' : 'loop',
+    }))
+
+    const { result } = renderHook(() => useResearchJobs({ projectId: 'proj_1' }))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.listStatus).toBe('error')
+    expect(result.current.listError).toMatch(/repeated cursor/)
+    // 只发了两页请求（首页 + 重复 cursor 页），未死循环
+    expect(vi.mocked(listJobs).mock.calls.length).toBeLessThanOrEqual(3)
+  })
+
+  it('refreshActivity 单飞：在途全量枚举时重复触发被忽略', async () => {
+    let resolvePage: ((p: ResearchPage<ResearchJob>) => void) | null = null
+    vi.mocked(listJobs).mockImplementation(
+      () => new Promise<ResearchPage<ResearchJob>>((resolve) => {
+        resolvePage = resolve
+      }),
+    )
+
+    const { result } = renderHook(() => useResearchJobs({ projectId: 'proj_1' }))
+    await act(async () => {
+      result.current.refreshActivity()
+      result.current.refreshActivity()
+    })
+    expect(vi.mocked(listJobs).mock.calls.length).toBe(1)
+    await act(async () => {
+      resolvePage?.({ items: [], next_cursor: null })
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.listStatus).toBe('ready')
+  })
+
+  it('focus 刷新带 30s 冷却且只拉第一页', async () => {
+    vi.mocked(getJob).mockResolvedValue(job('job_focus_new', 'queued'))
+    const { result } = renderHook(() => useResearchJobs({ projectId: 'proj_1' }))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    const callsAfterMount = vi.mocked(listJobs).mock.calls.length
+
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'))
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(vi.mocked(listJobs).mock.calls.length).toBe(callsAfterMount + 1)
+
+    // 冷却内再次 focus：不发请求
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'))
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(vi.mocked(listJobs).mock.calls.length).toBe(callsAfterMount + 1)
+
+    // 越过冷却：再 focus 生效
+    await act(async () => {
+      vi.mocked(listJobs).mockResolvedValue({
+        items: [job('job_focus_new', 'queued')],
+        next_cursor: null,
+      })
+      await vi.advanceTimersByTimeAsync(31_000)
+      window.dispatchEvent(new Event('focus'))
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(vi.mocked(listJobs).mock.calls.length).toBe(callsAfterMount + 2)
+    expect(result.current.jobs.some((j) => j.job_id === 'job_focus_new')).toBe(true)
+  })
+
+  it('listJobs 失败：listStatus=error + listError；retryList 恢复 ready', async () => {
+    vi.mocked(listJobs).mockRejectedValue(axios404())
+    const { result } = renderHook(() => useResearchJobs({ projectId: 'proj_1' }))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.listStatus).toBe('error')
+    expect(result.current.listError).not.toBeNull()
+    // 兼容：#311 语义 error（动作错误通道）保持 null
+    expect(result.current.error).toBeNull()
+
+    vi.mocked(listJobs).mockResolvedValue({
+      items: [job('job_after_retry', 'completed', { progress: 1 })],
+      next_cursor: null,
+    })
+    await act(async () => {
+      result.current.retryList()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.listStatus).toBe('ready')
+    expect(result.current.listError).toBeNull()
+    expect(result.current.jobs.some((j) => j.job_id === 'job_after_retry')).toBe(true)
+  })
+
+  it('projectId 切换：清空 purge timer/集合，旧项目延时确认不再触发', async () => {
+    localStorage.setItem('rdlens.research.jobs.proj_1', JSON.stringify(['job_dead_switch']))
+    vi.mocked(getJob).mockRejectedValue(axios404())
+    const { rerender } = renderHook(
+      ({ projectId }) => useResearchJobs({ projectId }),
+      { initialProps: { projectId: 'proj_1' } },
+    )
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    const deadCallsAfterSwitchWait = () =>
+      vi.mocked(getJob).mock.calls.filter(([, jid]) => jid === 'job_dead_switch').length
+
+    rerender({ projectId: 'proj_2' })
+    await act(async () => {
+      // 越过确认延时：timer 应已随项目切换清理
+      await vi.advanceTimersByTimeAsync(PURGE_CONFIRM_DELAY_MS * 3)
+    })
+    // 首次回源 404 一次后不再有任何该 id 的 GET
+    expect(deadCallsAfterSwitchWait()).toBeLessThanOrEqual(1)
+  })
+})
+
+describe('useResearchJobs RWV2-41 coverage 富化与权威对账', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    localStorage.clear()
+    vi.clearAllMocks()
+    vi.mocked(listJobs).mockResolvedValue({ items: [], next_cursor: null })
+    vi.mocked(getJob).mockResolvedValue(coverageJob('job_cov'))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.clearAllMocks()
+  })
+
+  it('列表行无 coverage 段：ensureCoverageDetails 回源富化，且去重不再重复 GET', async () => {
+    // 列表快照：research_coverage 终态（服务端列表行不含 coverage 段）
+    vi.mocked(listJobs).mockResolvedValue({
+      items: [job('job_cov', 'completed', { job_type: 'research_coverage', result_ref: 'art_cov_1', progress: 1 })],
+      next_cursor: null,
+    })
+
+    const { result } = renderHook(() => useResearchJobs({ projectId: 'proj_1' }))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    // 终态 coverage 任务不轮询 → 富化前无 coverage、无 GET
+    expect(getJob).not.toHaveBeenCalledWith('proj_1', 'job_cov')
+    expect(result.current.jobs.find((j) => j.job_id === 'job_cov')?.coverage).toBeUndefined()
+
+    await act(async () => {
+      result.current.ensureCoverageDetails(['job_cov'])
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(getJob).toHaveBeenCalledTimes(1)
+    expect(
+      result.current.jobs.find((j) => j.job_id === 'job_cov')?.coverage,
+    ).toMatchObject({ synthesis_scope: 'all_selected' })
+
+    // 去重：再次富化不再回源
+    await act(async () => {
+      result.current.ensureCoverageDetails(['job_cov'])
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(getJob).toHaveBeenCalledTimes(1)
+  })
+
+  it('权威对账：全量成功后剔除不在服务端且不在 localStorage 的终态残留', async () => {
+    vi.mocked(listJobs).mockResolvedValue({
+      items: [job('job_ghost', 'completed', { progress: 1 })],
+      next_cursor: null,
+    })
+    const { result } = renderHook(() => useResearchJobs({ projectId: 'proj_1' }))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.jobs.map((j) => j.job_id)).toEqual(['job_ghost'])
+
+    // 第二次全量：服务端已删行、本地无记录 → 残留被剔除（无幽灵卡）
+    vi.mocked(listJobs).mockResolvedValue({ items: [], next_cursor: null })
+    await act(async () => {
+      result.current.refreshActivity()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.jobs).toHaveLength(0)
+  })
+
+  it('对账保护 localStorage 中的 job（本会话/跨会话新建不被误删）', async () => {
+    localStorage.setItem('rdlens.research.jobs.proj_1', JSON.stringify(['job_local']))
+    vi.mocked(getJob).mockResolvedValue(job('job_local', 'queued'))
+    vi.mocked(listJobs).mockResolvedValue({ items: [], next_cursor: null })
+
+    const { result } = renderHook(() => useResearchJobs({ projectId: 'proj_1' }))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    // localStorage 回源合并后，即使服务端列表为空，对账也不应删除
+    expect(result.current.jobs.map((j) => j.job_id)).toEqual(['job_local'])
+    await act(async () => {
+      result.current.refreshActivity()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.jobs.map((j) => j.job_id)).toEqual(['job_local'])
+  })
+
+  it('purge 墓碑后服务端列表再次出现（证活）→ 清除墓碑并重新并入', async () => {
+    // 先制造一次 purge 落定：本地已知但服务端已删（列表空 + 单查 404）
+    localStorage.setItem('rdlens.research.jobs.proj_1', JSON.stringify(['job_purged']))
+    vi.mocked(getJob).mockRejectedValue(axios404())
+    vi.mocked(listJobs).mockResolvedValue({ items: [], next_cursor: null })
+
+    const { result } = renderHook(() => useResearchJobs({ projectId: 'proj_1' }))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(PURGE_CONFIRM_DELAY_MS + POLL_INTERVAL_MS)
+    })
+    expect(readStoredJobIds('proj_1')).toEqual([])
+    expect(result.current.jobs).toHaveLength(0)
+
+    // 服务端重建（列表再次包含该 id）→ 墓碑清除并并入
+    vi.mocked(getJob).mockResolvedValue(job('job_purged', 'queued'))
+    vi.mocked(listJobs).mockResolvedValue({
+      items: [job('job_purged', 'queued')],
+      next_cursor: null,
+    })
+    await act(async () => {
+      result.current.refreshActivity()
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(result.current.jobs.map((j) => j.job_id)).toEqual(['job_purged'])
+  })
+
+  it('actionError：cancel 终态/retry 失败写入并可清除；error 兼容通道保留', async () => {
+    localStorage.setItem('rdlens.research.jobs.proj_1', JSON.stringify(['job_terminal']))
+    vi.mocked(getJob).mockResolvedValue(job('job_terminal', 'completed', { progress: 1 }))
+
+    const { result } = renderHook(() => useResearchJobs({ projectId: 'proj_1' }))
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    act(() => {
+      result.current.cancel('job_terminal')
+    })
+    expect(result.current.actionError).not.toBeNull()
+    expect(result.current.error).not.toBeNull()
+    act(() => {
+      result.current.clearActionError()
+    })
+    expect(result.current.actionError).toBeNull()
+    expect(cancelJob).not.toHaveBeenCalled()
+
+    // retry 失败同样写 actionError（并保留 error 兼容断言）
+    vi.mocked(retryCoverageJob).mockRejectedValue(new Error('retry failed'))
+    let retried = false
+    act(() => {
+      void result.current.retryCoverage('job_terminal').then((ok) => {
+        retried = ok
+      })
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(retried).toBe(false)
+    expect(result.current.actionError).toBe('retry failed')
   })
 })

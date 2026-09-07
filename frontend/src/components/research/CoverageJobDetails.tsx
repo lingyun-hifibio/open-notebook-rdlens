@@ -24,7 +24,7 @@ import {
   isCoverageReportAvailable,
   targetCoverageCounts,
 } from '@/lib/research/coverage'
-import { jobProgressPercent } from '@/lib/research/jobs'
+import { jobProgressPercent, jobStatusLabelKey } from '@/lib/research/jobs'
 import { useCoverageReport } from '@/lib/hooks/use-coverage-report'
 import type {
   ResearchCitationDisplayItem,
@@ -134,7 +134,7 @@ export function CoverageJobDetails({ job, onRetry, onCitationJump }: CoverageJob
       {/* 状态/阶段/进度 */}
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant={job.status === 'failed' ? 'destructive' : 'secondary'} data-testid="coverage-status">
-          {job.status}
+          {t(jobStatusLabelKey(job.status))}
         </Badge>
         {job.stage && (
           <span className="text-xs text-muted-foreground" data-testid="coverage-stage">
