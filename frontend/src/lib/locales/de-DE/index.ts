@@ -1254,6 +1254,7 @@ export const deDE = {
       statusStale: "Wird aktualisiert",
       statusFailed: "Synchronisierung fehlgeschlagen",
       lastError: "Fehler: {{error}}",
+      synced: "Synchronisiert",
       retryHint: "Ein Synchronisierungsfehler kann von einem Administrator erneut versucht werden",
       staleSelectionWarning: "Updating source: results may use the last synchronized version.",
       empty: "Noch keine Quellen",

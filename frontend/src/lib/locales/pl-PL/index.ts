@@ -1252,6 +1252,7 @@ export const plPL = {
       statusStale: "Aktualizacja",
       statusFailed: "Błąd synchronizacji",
       lastError: "Błąd: {{error}}",
+      synced: "Zsynchronizowano",
       retryHint: "Nieudaną synchronizację może ponowić administrator",
       staleSelectionWarning: "Updating source: results may use the last synchronized version.",
       empty: "Brak źródeł",

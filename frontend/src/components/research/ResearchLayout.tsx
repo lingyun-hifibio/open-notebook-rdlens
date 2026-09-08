@@ -92,6 +92,9 @@ export function ResearchLayout({
   }
 
   const isVertical = axis === 'vertical'
+  // RWV2-43（AC7）：expand/restore 按钮经 aria-controls 指向被扩展示面板，
+  // 供屏幕阅读器理解「展开工作区」作用于哪一面板。
+  const secondarySectionId = `${layoutId}-secondary`
   const coordinate = useCallback((event: Pick<PointerEvent, 'clientX' | 'clientY'>) => (
     isVertical ? event.clientY : event.clientX
   ), [isVertical])
@@ -401,6 +404,7 @@ export function ResearchLayout({
       </div>
       <section
         ref={secondaryRef}
+        id={secondarySectionId}
         hidden={compact && compactPanel !== 'secondary'}
         aria-label={secondaryLabel}
         className="min-h-0 flex-1 overflow-hidden"
@@ -412,6 +416,8 @@ export function ResearchLayout({
         ref={restoreRef}
         hidden={compact}
         type="button"
+        aria-expanded={activeMaximized}
+        aria-controls={secondarySectionId}
         className={`absolute z-10 rounded border bg-background px-2 py-1 text-xs shadow-sm right-3 top-1/2 -translate-y-1/2`}
         onClick={toggleMaximized}
       >

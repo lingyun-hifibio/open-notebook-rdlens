@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { ArrowRight } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -9,6 +10,7 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
 import { useResearchSources } from '@/lib/hooks/use-research'
 import { useResearchScope } from '@/lib/research/scope'
+import { formatResearchTimestamp } from '@/lib/research/format'
 import type { ResearchSourceStatus } from '@/lib/types/research'
 
 /**
@@ -85,6 +87,11 @@ export function SourceListPanel({
         {visibleItems.map((item) => {
           const config = STATUS_CONFIG[item.status]
           const isSelectable = item.status === 'ready' || item.status === 'stale'
+          // R2-1：synced 段仅当 synced_at 非 null 渲染（pending/failed 恒 null →
+          // 整段省略，不凭空显示悬空「Synced: —」）
+          const syncedText = item.synced_at !== null
+            ? formatResearchTimestamp(item.synced_at)
+            : null
           return (
             <li
               key={item.source_id}
@@ -110,7 +117,12 @@ export function SourceListPanel({
                 <p className="truncate text-sm">{item.document_id}</p>
                 <p className="truncate text-xs text-muted-foreground">
                   {item.document_version}
-                  {item.synced_at ? ` · ${item.synced_at}` : ''}
+                  {syncedText !== null && (
+                    <>
+                      {' · '}
+                      {t('research.sources.synced')}: {syncedText}
+                    </>
+                  )}
                 </p>
                 {item.status === 'failed' && item.last_error && (
                   <p className="truncate text-xs text-destructive">
@@ -128,13 +140,17 @@ export function SourceListPanel({
                   </p>
                 )}
               </div>
+              {/* F13/C-M4：图标按钮（aria-label/title），保留 hover/focus 显形——
+                  行内常驻占宽≈32px 而非文字按钮 ~90px，缓解 280px 左栏密度 */}
               <Button
                 size="sm"
                 variant="ghost"
-                className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
+                className="shrink-0 px-2 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
+                aria-label={t('research.sources.open')}
+                title={t('research.sources.open')}
                 onClick={() => onOpenSource?.(item.source_id)}
               >
-                {t('research.sources.open')}
+                <ArrowRight />
               </Button>
             </li>
           )

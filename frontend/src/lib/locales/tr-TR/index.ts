@@ -1252,6 +1252,7 @@ export const trTR = {
       statusStale: "Güncelleniyor",
       statusFailed: "Senkronizasyon başarısız",
       lastError: "Hata: {{error}}",
+      synced: "Senkronize edildi",
       retryHint: "Başarısız senkronizasyon bir yönetici tarafından yeniden denenebilir",
       staleSelectionWarning: "Updating source: results may use the last synchronized version.",
       empty: "Kaynak yok",

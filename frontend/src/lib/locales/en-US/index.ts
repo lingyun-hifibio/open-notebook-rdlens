@@ -1264,6 +1264,7 @@ export const enUS = {
       statusStale: "Updating",
       statusFailed: "Sync failed",
       lastError: "Error: {{error}}",
+      synced: "Synced",
       retryHint: "A sync failure can be retried by an administrator",
       staleSelectionWarning: "Updating source: results may use the last synchronized version.",
       empty: "No sources yet",

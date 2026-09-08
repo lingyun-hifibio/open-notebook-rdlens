@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useIsDesktop } from '@/lib/hooks/use-media-query'
@@ -46,6 +46,23 @@ export function ResearchHeader({
   const { jobs } = useResearchJobsController()
   const [activityOpen, setActivityOpen] = useState(false)
   const activeCount = countActiveJobs(jobs)
+
+  // RWV2-43（fork #47，评审 R2-2/C-H2）：非终态计数的隐藏 live region。
+  // - 3s 轮询下计数频繁变化，裸 aria-live 会刷屏 → 只在文本变化时写；
+  // - Dialog 打开时不写（Dialog 自身是显式查看目的地，避免与焦点冲突）；
+  // - Dialog 关闭转移时无条件重同步当前计数（等价文本不重复播报）→
+  //   修复「Dialog 打开期间计数变化被抑制后关闭永不播报」的陈旧缺陷。
+  const [announcement, setAnnouncement] = useState('')
+  const lastAnnouncedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (activityOpen) return
+    const text = activeCount > 0
+      ? t('research.activity.badgeActive', { count: activeCount })
+      : ''
+    if (text === lastAnnouncedRef.current) return
+    lastAnnouncedRef.current = text
+    setAnnouncement(text)
+  }, [activeCount, activityOpen, t])
 
   // Current scope 段的 loading/error/retry：与 Workspace 同 key 共享缓存
   // （TanStack 去重），Header 只观察状态，不新建查询权威。
@@ -114,6 +131,17 @@ export function ResearchHeader({
           </span>
         )}
       </Button>
+
+      {/* RWV2-43：非终态计数隐藏播报（Dialog 打开时不写；关闭重同步） */}
+      <span
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+        data-testid="activity-live-region"
+      >
+        {announcement}
+      </span>
 
       {/* 段五：Export */}
       <ExportSection />

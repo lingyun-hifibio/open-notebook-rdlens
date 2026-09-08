@@ -302,3 +302,66 @@ describe('SourceListPanel', () => {
     await waitFor(() => expect(screen.getByText('research.sources.empty')).toBeInTheDocument())
   })
 })
+
+// RWV2-43（fork #47）：Source 行 meta 可读化 + Open 动作可发现性（F13/C-M4/R2-1）
+describe('SourceListPanel（RWV2-43 meta 可读化）', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    vi.clearAllMocks()
+  })
+
+  it('synced_at 非 null → meta 显示版本 + Synced 标签 + 格式化时间，无裸 ISO', async () => {
+    vi.mocked(researchApi.listSources).mockResolvedValue({
+      items: [source({ document_version: 'v3', synced_at: '2026-08-06T02:00:00Z' })],
+      next_cursor: null,
+    })
+    const { wrapper } = makeWrapper()
+    render(<SourceListPanel />, { wrapper })
+    const rows = await screen.findByTestId('source-list-rows')
+    const row = within(rows).getAllByRole('listitem')[0]
+    expect(row.textContent).toContain('v3')
+    expect(row.textContent).toContain('research.sources.synced')
+    // 可见文本不再出现原始 ISO（R2-6：只看文本，不看 <time dateTime> 属性）
+    expect(row.textContent).not.toMatch(/T\d{2}:\d{2}/)
+  })
+
+  it('pending/failed（synced_at null）→ meta 不含 Synced 段（R2-1 回归红线）', async () => {
+    vi.mocked(researchApi.listSources).mockResolvedValue({
+      items: [
+        source({ source_id: 'p1', status: 'pending', synced_at: null }),
+        source({ source_id: 'f1', status: 'failed', synced_at: null, last_error: 'e' }),
+      ],
+      next_cursor: null,
+    })
+    const { wrapper } = makeWrapper()
+    render(<SourceListPanel />, { wrapper })
+    const rows = await screen.findByTestId('source-list-rows')
+    const items = within(rows).getAllByRole('listitem')
+    expect(items).toHaveLength(2)
+    for (const item of items) {
+      expect(item.textContent).not.toContain('research.sources.synced')
+    }
+  })
+
+  it('Open 动作：图标按钮 a11y 可达（role button + aria-label），与选择分离', async () => {
+    const onOpenSource = vi.fn()
+    vi.mocked(researchApi.listSources).mockResolvedValue({
+      items: [source()],
+      next_cursor: null,
+    })
+    const { wrapper } = makeWrapper()
+    render(
+      <>
+        <SourceListPanel onOpenSource={onOpenSource} />
+        <ScopeProbe />
+      </>,
+      { wrapper },
+    )
+    const openButton = await screen.findByRole('button', { name: /research.sources.open/ })
+    expect(openButton).toBeInTheDocument()
+    fireEvent.click(openButton)
+    expect(onOpenSource).toHaveBeenCalledWith('src_1')
+    // 打开预览不改变选择状态（动作与 Scope 选择物理分离）
+    expect(screen.getByTestId('probe-selected')).toHaveTextContent('')
+  })
+})

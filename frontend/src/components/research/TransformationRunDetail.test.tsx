@@ -442,3 +442,42 @@ describe('TransformationRunDetail RWV2-23 result actions', () => {
     expect(screen.getByTestId('copy-result')).toBeTruthy()
   })
 })
+
+// RWV2-43（fork #47）：详情冻结元数据可读化——语言英文标签 + 时间格式化。
+describe('TransformationRunDetail（RWV2-43 可读化）', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    vi.resetAllMocks()
+    resetGlobalModelStub()
+  })
+
+  it('response_language 有值（zh）→ 英文标签而非裸码（F4）', async () => {
+    const rec = record({ response_language: 'zh' })
+    const { wrapper } = makeWrapper()
+    render(<TransformationRunDetail record={rec} sources={[]} showRerun={false} />, { wrapper })
+    // stub t 返回 key 串：详情语言段显示 variantZh 标签 key
+    expect(screen.getByTestId('detail-language').textContent).toContain('variantZh')
+    expect(screen.getByTestId('detail-language').textContent).not.toContain('zh')
+  })
+
+  it('response_language 未知非 null → 原码展示（C-M1）', async () => {
+    const rec = record({ response_language: 'ja' })
+    const { wrapper } = makeWrapper()
+    render(<TransformationRunDetail record={rec} sources={[]} showRerun={false} />, { wrapper })
+    expect(screen.getByTestId('detail-language').textContent).toContain('ja')
+  })
+
+  it('created_at：null → 占位；有值 → 可读时间且无裸 ISO（RWV2-43）', async () => {
+    const recNull = record({ created_at: null })
+    const { wrapper } = makeWrapper()
+    const { rerender } = render(
+      <TransformationRunDetail record={recNull} sources={[]} showRerun={false} />,
+      { wrapper },
+    )
+    expect(screen.getByTestId('detail-created').textContent).toContain('—')
+    const recValue = record({ created_at: '2026-09-07T00:00:00Z' })
+    rerender(<TransformationRunDetail record={recValue} sources={[]} showRerun={false} />)
+    expect(screen.getByTestId('detail-created').textContent).not.toMatch(/T\d{2}:\d{2}/)
+    expect(screen.getByTestId('detail-created').textContent).not.toBe('—')
+  })
+})

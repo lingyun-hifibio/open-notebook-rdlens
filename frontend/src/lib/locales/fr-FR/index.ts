@@ -1252,6 +1252,7 @@ export const frFR = {
       statusStale: "Mise à jour",
       statusFailed: "Échec de la synchronisation",
       lastError: "Erreur : {{error}}",
+      synced: "Synchronisé",
       retryHint: "Un échec de synchronisation peut être relancé par un administrateur",
       staleSelectionWarning: "Updating source: results may use the last synchronized version.",
       empty: "Aucune source",
