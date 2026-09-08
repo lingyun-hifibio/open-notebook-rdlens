@@ -19,11 +19,12 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 /**
  * /research：嵌入式 Research Workspace 入口路由（UI-01，设计 §4.1；RWV2-40 IA）。
  *
- * RWV2-40（Fork #44）目标 IA：
- * - Header：Project | Current scope | Global model | Activity | Export
- *   （ResearchHeader；Scope Summary 经同 key 查询迁移至此）。
+ * RWV2-40（Fork #44）目标 IA；RWV2-UIOPT-A（fork #57）收敛：
+ * - Header：Current scope（左） | Global model | Activity | Export（右，
+ *   ml-auto 聚合）；技术 Project 段删除（可读项目名称由 RDLens 父页面展示）。
  * - 左栏（ResearchWorkbench）：Materials(Sources, Notes) / Results(Insights,
- *   Transformation runs 插槽) / Tools(Research templates 跨区命令)。
+ *   Transformation runs 插槽)；Tools/Research templates 跨区快捷入口删除，
+ *   模板唯一正式入口是主区 Run Template 动作。
  * - 主区（ResearchWorkspace）：Evidence Search / Research Chat / Compare /
  *   Run Template 四动作；Jobs 迁往 Header Activity 兼容壳。
  * - 组合根同时保活「全局工作区」与「单个创建过的 Source Chat」：显隐只由
@@ -36,7 +37,7 @@ import { useTranslation } from '@/lib/hooks/use-translation'
  * - 组合根持有 `activeMainAction`；保活 visited 集合由 ResearchWorkspace
  *   内部维护并以渲染期并集（visited∪{active}）保证首访动作同帧挂载；
  * - highlightPageIdx/highlightRequestId 线程保留（同页重复 Citation 再次聚焦）；
- * - 根级 handleEditScopeAllStates/onCitationJump/onOpenResearchTemplates 统一链。
+ * - 根级 handleEditScopeAllStates/onCitationJump 统一链。
  */
 export default function ResearchPage() {
   const router = useRouter()
@@ -135,13 +136,6 @@ export default function ResearchPage() {
     [openSource],
   )
 
-  // Tools/Research templates 跨区命令：先归一布局（退 focus/最大化）再切动作。
-  const handleOpenResearchTemplates = useCallback(() => {
-    setSourceFocusActive(false)
-    setGlobalMaximized(false)
-    setActiveMainAction('run-template')
-  }, [])
-
   useEffect(() => {
     if (!isEmbeddedMode()) {
       router.replace('/notebooks')
@@ -198,12 +192,8 @@ export default function ResearchPage() {
                     focusedSourceId={focusedSourceId}
                     highlightPageIdx={highlightPageIdx}
                     highlightRequestId={highlightRequestId}
-                    researchTemplatesActive={
-                      !sourceMode && activeMainAction === 'run-template'
-                    }
                     onOpenSource={openSource}
                     onExitSourceFocus={exitSourceFocus}
-                    onOpenResearchTemplates={handleOpenResearchTemplates}
                     scopeEditRequest={scopeEditRequest}
                     onRevealSavedArtifact={revealSavedArtifact}
                     onOpenResearchChatDraft={openResearchChatDraft}

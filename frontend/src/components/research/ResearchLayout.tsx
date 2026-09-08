@@ -418,7 +418,7 @@ export function ResearchLayout({
         type="button"
         aria-expanded={activeMaximized}
         aria-controls={secondarySectionId}
-        className={`absolute z-10 rounded border bg-background px-2 py-1 text-xs shadow-sm right-3 top-1/2 -translate-y-1/2`}
+        className={`absolute z-10 rounded border bg-background px-2 py-1 text-xs shadow-sm right-3 ${isVertical ? 'bottom-3' : 'top-3'}`}
         onClick={toggleMaximized}
       >
         {activeMaximized ? restoreLabel : expandSecondaryLabel}

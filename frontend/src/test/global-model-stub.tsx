@@ -42,6 +42,8 @@ interface StubOverrides {
   /** 以下字段供 ModelBar/ConsentDialog 组件测试覆盖（默认语义见 useResearchGlobalModel） */
   draftModelId?: string | null
   isSavingModel?: boolean
+  /** UIOPT-A（#57 评审 L4）：模型目录查询加载中（Trigger 不把暂未命中标 Unavailable） */
+  isLoadingModel?: boolean
   saveModelError?: string | null
   needsConsent?: boolean
   isConsentPromptOpen?: boolean
@@ -147,7 +149,7 @@ export function useResearchGlobalModel(): UseResearchGlobalModelResult {
     saveModel: async () => undefined,
     clearModel: async () => undefined,
     isSavingModel: overrides.isSavingModel ?? false,
-    isLoadingModel: false,
+    isLoadingModel: overrides.isLoadingModel ?? false,
     saveModelError: overrides.saveModelError ?? null,
     dismissSaveModelError: () => undefined,
     models,

@@ -1,17 +1,23 @@
 /**
  * ResearchGlobalModelBar 组件测试（Issue #243 GMOD-FE-01，评审 Minor-7）。
  *
- * 用 global-model-stub 替身隔离 provider 逻辑（该逻辑由
- * use-research-global-model.test.tsx 覆盖），聚焦 UI 呈现：
- * - 不变量 7：目录中消失的已保存模型保留为 unavailable 条目并置顶，
- *   且无偏好时保持空选、绝不自动选中；
- * - draft 未保存状态与保存按钮可用性（不变量 2）；
- * - Admin readonly 禁用全部控件；
- * - 保存中冻结生成入口（不变量 3）；
- * - popover 布局提供窄屏等价入口（§6.10）。
+ * RWV2-UIOPT-A（fork #57）：组件收敛为紧凑 Trigger + Popover 单一形态，
+ * `layout` 参数删除。Trigger 是页面常驻摘要，只描述 **confirmed** 模型：
+ * - Trigger 组成：confirmed display name（缺 display name 用 model ID）+
+ *   显式 Local/External + 当前最高优先级状态；
+ * - Trigger 永不读取 draft：draft 未保存时 Trigger 名称不变、仅状态行
+ *   提示 Unsaved（计划 §6.3，防「未保存 draft 被当成正在使用」）；
+ * - confirmed 模型从目录消失 → Trigger 显示原 ID + Unavailable，绝不因
+ *   元数据缺失推断为 Local（不变量 7）；
+ * - 未配置模型 → Trigger 显示 Select model，不出现虚假的 Local/External；
+ * - 外发标识必须直接出现在 Trigger，不得只藏在 Tooltip/Popover 内
+ *   （RWV2-42 D9/计划 §6.3）。
+ *
+ * 控件级行为（不变量 2/3/7、Admin readonly、Consent 入口）由 use
+ * global-model-stub 替身隔离，用例先打开 Popover 再断言。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { ResearchGlobalModelBar } from './ResearchGlobalModelBar'
 import {
   GLOBAL_MODEL_STUB_ID,
@@ -42,20 +48,140 @@ const MODELS: ResearchModelOption[] = [
   },
 ]
 
-describe('ResearchGlobalModelBar', () => {
+/** 打开紧凑 Trigger 的 Popover（控件只存在于浮层内）。 */
+function openPopover() {
+  fireEvent.click(screen.getByTestId('global-model-summary-trigger'))
+}
+
+describe('ResearchGlobalModelBar（RWV2-UIOPT-A 紧凑 Trigger）', () => {
   beforeEach(() => {
     resetGlobalModelStub()
   })
 
-  it('已保存模型从目录消失时保留为 unavailable 条目并置顶（不变量 7）', () => {
+  it('Trigger 常驻：confirmed 模型名 + Local 标记；select 只在 Popover 内', () => {
+    setGlobalModelStub({
+      models: MODELS,
+      confirmedModelId: GLOBAL_MODEL_STUB_ID,
+      draftModelId: GLOBAL_MODEL_STUB_ID,
+    })
+    render(<ResearchGlobalModelBar />)
+
+    const trigger = screen.getByTestId('global-model-summary-trigger')
+    expect(trigger.textContent).toContain('Local M')
+    expect(trigger.textContent).toContain('research.globalModel.local')
+    // 控件收进 Popover，不在页面流中
+    expect(screen.queryByTestId('global-model-select')).toBeNull()
+    openPopover()
+    expect(screen.getByTestId('global-model-select')).toBeTruthy()
+  })
+
+  it('Trigger 永远显示 confirmed；draft 改动后名称不变且出现 Unsaved 状态（不变量 2）', () => {
+    setGlobalModelStub({
+      models: MODELS,
+      confirmedModelId: GLOBAL_MODEL_STUB_ID,
+      draftModelId: 'm-other',
+    })
+    render(<ResearchGlobalModelBar />)
+
+    const trigger = screen.getByTestId('global-model-summary-trigger')
+    expect(trigger.textContent).toContain('Local M')
+    // draft（Other M）绝不出现在摘要里
+    expect(trigger.textContent).not.toContain('Other M')
+    expect(trigger.textContent).toContain('research.globalModel.draftUnsaved')
+  })
+
+  it('confirmed 从目录消失 → Trigger 显示原 ID + Unavailable，不误标 Local（不变量 7）', () => {
     setGlobalModelStub({ confirmedModelId: 'm-gone' })
     render(<ResearchGlobalModelBar />)
+
+    const trigger = screen.getByTestId('global-model-summary-trigger')
+    expect(trigger.textContent).toContain('m-gone')
+    expect(trigger.textContent).toContain('research.globalModel.unavailable')
+    // 元数据缺失不得推断部署身份
+    expect(trigger.textContent).not.toContain('research.globalModel.local')
+    expect(trigger.textContent).not.toContain('research.globalModel.external')
+  })
+
+  it('External 模型在 Trigger 直接显示 External（外发标识不藏进 Popover）', () => {
+    const external: ResearchModelOption[] = [
+      {
+        model_id: 'm-ext',
+        display_name: 'Ext M',
+        data_egress: true,
+        interactive_context_levels: ['focused', 'document', 'workspace'],
+      },
+    ]
+    setGlobalModelStub({
+      models: external,
+      confirmedModelId: 'm-ext',
+      draftModelId: 'm-ext',
+    })
+    render(<ResearchGlobalModelBar />)
+
+    const trigger = screen.getByTestId('global-model-summary-trigger')
+    expect(trigger.textContent).toContain('Ext M')
+    expect(trigger.textContent).toContain('research.globalModel.external')
+    expect(trigger.textContent).not.toContain('research.globalModel.local')
+  })
+
+  it('未配置模型 → Trigger 显示 Select model，不出现虚假 Local/External', () => {
+    setGlobalModelStub({ confirmedModelId: null, draftModelId: null })
+    render(<ResearchGlobalModelBar />)
+
+    const trigger = screen.getByTestId('global-model-summary-trigger')
+    expect(trigger.textContent).toContain('research.globalModel.placeholder')
+    expect(trigger.textContent).not.toContain('research.globalModel.local')
+    expect(trigger.textContent).not.toContain('research.globalModel.external')
+  })
+
+  it('未配置模型时首次保存失败：Save failed 仍直接上 Trigger（评审 L1：不只藏在 Popover）', () => {
+    setGlobalModelStub({ confirmedModelId: null, draftModelId: null, saveModelError: 'boom' })
+    render(<ResearchGlobalModelBar />)
+
+    const trigger = screen.getByTestId('global-model-summary-trigger')
+    expect(trigger.textContent).toContain('research.globalModel.saveFailed')
+    expect(trigger.textContent).toContain('research.globalModel.placeholder')
+  })
+
+  it('目录加载中不把暂未命中的 confirmed 误标 Unavailable（评审 L4：等目录落地再判定）', () => {
+    setGlobalModelStub({ confirmedModelId: 'm-gone', isLoadingModel: true })
+    render(<ResearchGlobalModelBar />)
+
+    const trigger = screen.getByTestId('global-model-summary-trigger')
+    // 名称槽仍显示原 ID（真实已确认值），但不抢在目录之前断言 Unavailable
+    expect(trigger.textContent).toContain('m-gone')
+    expect(trigger.textContent).not.toContain('research.globalModel.unavailable')
+    // 加载结束后目录无此模型 → Unavailable 正常出现
+    cleanup()
+    resetGlobalModelStub()
+    setGlobalModelStub({ confirmedModelId: 'm-gone' })
+    render(<ResearchGlobalModelBar />)
+    expect(screen.getByTestId('global-model-summary-trigger').textContent).toContain(
+      'research.globalModel.unavailable',
+    )
+  })
+
+  it('Trigger 长文本视觉截断且完整名称经 title 保留（评审 L3）', () => {
+    setGlobalModelStub({
+      models: MODELS,
+      confirmedModelId: GLOBAL_MODEL_STUB_ID,
+      draftModelId: GLOBAL_MODEL_STUB_ID,
+    })
+    render(<ResearchGlobalModelBar />)
+
+    expect(screen.getByTestId('global-model-summary-trigger')).toHaveAttribute('title', 'Local M')
+    expect(screen.getByTestId('global-model-summary-name')).toHaveClass('truncate')
+  })
+
+  it('已保存模型从目录消失时在 Popover 内保留为 unavailable 条目并置顶（不变量 7）', () => {
+    setGlobalModelStub({ confirmedModelId: 'm-gone' })
+    render(<ResearchGlobalModelBar />)
+    openPopover()
 
     const select = screen.getByTestId('global-model-select') as HTMLSelectElement
     const values = Array.from(select.options).map((option) => option.value)
     // placeholder 后的首位是消失模型（不可用），绝不自动改选
     expect(values[1]).toBe('m-gone')
-    expect(values).toContain(GLOBAL_MODEL_STUB_ID)
     expect(select.value).toBe('m-gone')
     // 状态行提示不可用
     expect(screen.getByTestId('global-model-status').textContent).toContain(
@@ -66,6 +192,7 @@ describe('ResearchGlobalModelBar', () => {
   it('无已保存偏好时保持空选，不自动选中第一个模型（不变量 7）', () => {
     setGlobalModelStub({ confirmedModelId: null, draftModelId: null })
     render(<ResearchGlobalModelBar />)
+    openPopover()
 
     const select = screen.getByTestId('global-model-select') as HTMLSelectElement
     expect(select.value).toBe('')
@@ -81,6 +208,7 @@ describe('ResearchGlobalModelBar', () => {
   it('draft 与 confirmed 不一致时提示「尚未保存」且保存可用（不变量 2）', () => {
     setGlobalModelStub({ models: MODELS, draftModelId: 'm-other' })
     render(<ResearchGlobalModelBar />)
+    openPopover()
 
     const select = screen.getByTestId('global-model-select') as HTMLSelectElement
     expect(select.value).toBe('m-other')
@@ -95,6 +223,7 @@ describe('ResearchGlobalModelBar', () => {
   it('Admin readonly 禁用全部控件并提示', () => {
     setGlobalModelStub({ blockedReason: 'admin-readonly' })
     render(<ResearchGlobalModelBar />)
+    openPopover()
 
     const select = screen.getByTestId('global-model-select') as HTMLSelectElement
     const save = screen.getByTestId('global-model-save') as HTMLButtonElement
@@ -110,6 +239,7 @@ describe('ResearchGlobalModelBar', () => {
   it('保存中冻结控件（不变量 3）', () => {
     setGlobalModelStub({ isSavingModel: true })
     render(<ResearchGlobalModelBar />)
+    openPopover()
 
     expect(
       (screen.getByTestId('global-model-select') as HTMLSelectElement).disabled,
@@ -122,7 +252,7 @@ describe('ResearchGlobalModelBar', () => {
     )
   })
 
-  it('本地与外部模型身份显式标记（RWV2-42：Local/External，不暗示 embedding 离境）', () => {
+  it('本地与外部模型身份在 Popover 下拉选项中显式标记（RWV2-42）', () => {
     const mixed: ResearchModelOption[] = [
       { model_id: 'm-loc', display_name: 'Local M', data_egress: false },
       { model_id: 'm-ext', display_name: 'Ext M', data_egress: true },
@@ -133,6 +263,7 @@ describe('ResearchGlobalModelBar', () => {
       draftModelId: 'm-ext',
     })
     render(<ResearchGlobalModelBar />)
+    openPopover()
 
     const select = screen.getByTestId('global-model-select') as HTMLSelectElement
     const text = Array.from(select.options).map((option) => option.textContent ?? '')
@@ -151,19 +282,9 @@ describe('ResearchGlobalModelBar', () => {
       onRunGuarded,
     })
     render(<ResearchGlobalModelBar />)
+    openPopover()
 
     fireEvent.click(screen.getByTestId('global-model-consent'))
     expect(onRunGuarded).toHaveBeenCalledTimes(1)
-  })
-
-  it('popover 布局提供窄屏等价入口（§6.10）', () => {
-    render(<ResearchGlobalModelBar layout="popover" />)
-
-    // 窄屏：模型控件收进设置触发器，不在页面流中
-    expect(screen.getByTestId('global-model-settings-trigger')).toBeTruthy()
-    expect(screen.queryByTestId('global-model-select')).toBeNull()
-    // 展开后出现同一组控件
-    fireEvent.click(screen.getByTestId('global-model-settings-trigger'))
-    expect(screen.getByTestId('global-model-select')).toBeTruthy()
   })
 })

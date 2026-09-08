@@ -1055,9 +1055,6 @@ export const enUS = {
     loadFailed: "Failed to load workspace data",
     retry: "Retry",
     pagination: { loadMore: "Load more", loadingMore: "Loading more…" },
-    header: {
-      project: "Project",
-    },
     mainActions: {
       runTemplate: "Run Template",
     },
@@ -1144,7 +1141,6 @@ export const enUS = {
       draftUnsaved: "Unsaved selection",
       consentRequired: "External model egress consent required.",
       adminReadonly: "Read-only",
-      settings: "Research settings",
       external: "External",
       local: "Local",
       consentFailed: "Consent confirmation failed. Please try again.",
@@ -1242,8 +1238,6 @@ export const enUS = {
       tabRuns: "Runs",
       groupMaterials: "Materials",
       groupResults: "Results",
-      groupTools: "Tools",
-      tabTemplates: "Research templates",
       adminBanner: "You are viewing as admin (read-only)",
       adminBannerDesc: "Create, edit and run are unavailable; view and export remain available.",
       adminWriteDenied: "Read-only session: writing is denied",

@@ -137,4 +137,19 @@ describe('ResearchScopeSummary', () => {
     expect(summary).toHaveClass('flex-wrap', 'min-w-0')
     expect(screen.getByTestId('research-context-scope')).toHaveClass('min-w-0')
   })
+
+  it('UIOPT-A：摘要不再自带底边框与外层 padding（Header 统一负责唯一视觉边界）', () => {
+    seedScope('entire_project')
+    render(<ResearchScopeSummary loading={false} loadError={null} onRetry={vi.fn()} onEditScope={vi.fn()} />, {
+      wrapper: summaryWrapper,
+    })
+    const summary = screen.getByTestId('research-scope-summary')
+    expect(summary).not.toHaveClass('border-b')
+    expect(summary).not.toHaveClass('px-3')
+    expect(summary).not.toHaveClass('py-2')
+    // 评审 L3：长文本视觉截断 + title 保留完整语义
+    const label = screen.getByTestId('research-context-scope')
+    expect(label).toHaveClass('truncate')
+    expect(label).toHaveAttribute('title', 'research.layout.scope.entireProject')
+  })
 })

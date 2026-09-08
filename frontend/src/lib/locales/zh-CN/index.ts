@@ -1082,9 +1082,6 @@ export const zhCN = {
     loadFailed: "工作区数据加载失败",
     retry: "重试",
     pagination: { loadMore: "Load more", loadingMore: "Loading more…" },
-    header: {
-      project: "Project",
-    },
     mainActions: {
       runTemplate: "Run Template",
     },
@@ -1171,7 +1168,6 @@ export const zhCN = {
       draftUnsaved: "尚未保存的选择",
       consentRequired: "使用外部模型前需完成外发确认。",
       adminReadonly: "只读",
-      settings: "研究设置",
       external: "外部",
       local: "本地",
       consentFailed: "外发确认失败，请重试。",
@@ -1230,8 +1226,6 @@ export const zhCN = {
       tabRuns: "Runs",
       groupMaterials: "Materials",
       groupResults: "Results",
-      groupTools: "Tools",
-      tabTemplates: "Research templates",
       adminBanner: "您正以管理员身份查看（只读）",
       adminBannerDesc: "创建、编辑与运行不可用；查看与导出仍可用。",
       adminWriteDenied: "只读会话：写入被拒绝",

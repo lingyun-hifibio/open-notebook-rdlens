@@ -9,9 +9,11 @@ import { ResearchActivityDialog } from './ResearchActivityDialog'
 import * as api from '@/lib/research/api'
 import type { ResearchJob } from '@/lib/research/types'
 
-// RWV2-40 Red：Header 五段（Project | Current scope | Global model | Activity |
-// Export）与 Activity 兼容壳（JobList；Admin 无 cancel/retry；关闭 Dialog 后
+// RWV2-40 Red：Header（Current scope | Global model | Activity | Export）与
+// Activity 兼容壳（JobList；Admin 无 cancel/retry；关闭 Dialog 后
 // Citation → 组合根路由）。
+// RWV2-UIOPT-A（fork #57）：技术 Project 段删除；Scope 靠左，
+// Model/Activity/Export 以 ml-auto 聚合右侧（桌面单行）。
 
 vi.mock('@/lib/hooks/use-translation', () => ({
   useTranslation: () => ({
@@ -111,17 +113,38 @@ describe('ResearchHeader（RWV2-40 五段）', () => {
   })
   afterEach(cleanup)
 
-  it('渲染 Project 段（完整 projectId 文本）与 Current scope 段', async () => {
+  it('UIOPT-A：不再渲染技术 Project 段；Scope/Model/Activity/Export 段仍齐备', async () => {
     render(
       <ResearchHeader onEditScopeAllStates={() => {}} onCitationJump={() => {}} />,
       { wrapper: wrapper() },
     )
     expect(screen.getByTestId('research-header')).toBeInTheDocument()
-    expect(screen.getByTestId('header-project')).toHaveTextContent('proj_1')
+    // iframe 内技术 Project ID 段删除（可读项目名称由 RDLens 父页面展示）
+    expect(screen.queryByTestId('header-project')).toBeNull()
+    expect(screen.queryByText('research.header.project')).toBeNull()
+    // 其余段完整保留：Scope 摘要 + Edit、模型 Trigger、Activity、Export
     await waitFor(() =>
       expect(screen.getByTestId('research-context-scope')).toBeInTheDocument(),
     )
     expect(screen.getByTestId('scope-edit-button')).toBeInTheDocument()
+    expect(screen.getByTestId('global-model-summary-trigger')).toBeInTheDocument()
+    expect(screen.getByTestId('activity-trigger')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'research.workbench.exportAll' }),
+    ).toBeInTheDocument()
+  })
+
+  it('UIOPT-A：桌面单行结构——Scope 靠左，Model/Activity/Export 以 ml-auto 聚合右侧', async () => {
+    render(
+      <ResearchHeader onEditScopeAllStates={() => {}} onCitationJump={() => {}} />,
+      { wrapper: wrapper() },
+    )
+    // Scope 段无 margin-left:auto（左对齐），右侧操作组聚合到行尾
+    expect(screen.getByTestId('header-current-scope')).not.toHaveClass('ml-auto')
+    expect(screen.getByTestId('header-actions')).toHaveClass('ml-auto')
+    await waitFor(() =>
+      expect(screen.getByTestId('research-context-scope')).toBeInTheDocument(),
+    )
   })
 
   it('Header 五段可用（Edit scope 触发组合根统一链路）', async () => {

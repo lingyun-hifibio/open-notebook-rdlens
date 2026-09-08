@@ -1083,9 +1083,6 @@ export const esES = {
     loadFailed: "Failed to load workspace data",
     retry: "Retry",
     pagination: { loadMore: "Load more", loadingMore: "Loading more…" },
-    header: {
-      project: "Project",
-    },
     mainActions: {
       runTemplate: "Run Template",
     },
@@ -1172,7 +1169,6 @@ export const esES = {
       draftUnsaved: "Selección sin guardar",
       consentRequired: "El uso de un modelo externo requiere consentimiento de envío.",
       adminReadonly: "Solo lectura",
-      settings: "Ajustes de investigación",
       external: "Externo",
       local: "Local",
       consentFailed: "No se pudo confirmar el consentimiento. Inténtalo de nuevo.",
@@ -1231,8 +1227,6 @@ export const esES = {
       tabRuns: "Runs",
       groupMaterials: "Materials",
       groupResults: "Results",
-      groupTools: "Tools",
-      tabTemplates: "Research templates",
       adminBanner: "Está viendo como administrador (solo lectura)",
       adminBannerDesc: "Crear, editar y ejecutar no están disponibles; ver y exportar siguen disponibles.",
       adminWriteDenied: "Sesión de solo lectura: escritura denegada",

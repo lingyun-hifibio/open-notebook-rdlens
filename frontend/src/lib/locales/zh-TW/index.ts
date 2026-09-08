@@ -1082,9 +1082,6 @@ export const zhTW = {
     loadFailed: "Failed to load workspace data",
     retry: "Retry",
     pagination: { loadMore: "Load more", loadingMore: "Loading more…" },
-    header: {
-      project: "Project",
-    },
     mainActions: {
       runTemplate: "Run Template",
     },
@@ -1171,7 +1168,6 @@ export const zhTW = {
       draftUnsaved: "尚未儲存的選擇",
       consentRequired: "使用外部模型前需完成外送確認。",
       adminReadonly: "唯讀",
-      settings: "研究設定",
       external: "外部",
       local: "本地",
       consentFailed: "外發確認失敗，請重試。",
@@ -1230,8 +1226,6 @@ export const zhTW = {
       tabRuns: "Runs",
       groupMaterials: "Materials",
       groupResults: "Results",
-      groupTools: "Tools",
-      tabTemplates: "Research templates",
       adminBanner: "您正以管理員身分檢視（唯讀）",
       adminBannerDesc: "建立、編輯與執行不可用；檢視與匯出仍可用。",
       adminWriteDenied: "唯讀工作階段：拒絕寫入",

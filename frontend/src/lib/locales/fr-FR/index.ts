@@ -1082,9 +1082,6 @@ export const frFR = {
     loadFailed: "Failed to load workspace data",
     retry: "Retry",
     pagination: { loadMore: "Load more", loadingMore: "Loading more…" },
-    header: {
-      project: "Project",
-    },
     mainActions: {
       runTemplate: "Run Template",
     },
@@ -1171,7 +1168,6 @@ export const frFR = {
       draftUnsaved: "Sélection non enregistrée",
       consentRequired: "L'utilisation d'un modèle externe requiert le consentement d'envoi.",
       adminReadonly: "Lecture seule",
-      settings: "Paramètres de recherche",
       external: "Externe",
       local: "Local",
       consentFailed: "Échec de la confirmation du consentement. Veuillez réessayer.",
@@ -1230,8 +1226,6 @@ export const frFR = {
       tabRuns: "Runs",
       groupMaterials: "Materials",
       groupResults: "Results",
-      groupTools: "Tools",
-      tabTemplates: "Research templates",
       adminBanner: "Vous consultez en tant qu’administrateur (lecture seule)",
       adminBannerDesc: "Créer, modifier et exécuter sont indisponibles ; consulter et exporter restent disponibles.",
       adminWriteDenied: "Session en lecture seule : écriture refusée",

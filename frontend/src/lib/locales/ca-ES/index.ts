@@ -1082,9 +1082,6 @@ export const caES = {
     loadFailed: "Failed to load workspace data",
     retry: "Retry",
     pagination: { loadMore: "Load more", loadingMore: "Loading more…" },
-    header: {
-      project: "Project",
-    },
     mainActions: {
       runTemplate: "Run Template",
     },
@@ -1171,7 +1168,6 @@ export const caES = {
       draftUnsaved: "Selecció no desada",
       consentRequired: "L'ús d'un model extern requereix consentiment d'enviament.",
       adminReadonly: "Només lectura",
-      settings: "Configuració de recerca",
       external: "Extern",
       local: "Local",
       consentFailed: "No s'ha pogut confirmar el consentiment. Torneu-ho a provar.",
@@ -1230,8 +1226,6 @@ export const caES = {
       tabRuns: "Runs",
       groupMaterials: "Materials",
       groupResults: "Results",
-      groupTools: "Tools",
-      tabTemplates: "Research templates",
       adminBanner: "Esteu veient com a administrador (només lectura)",
       adminBannerDesc: "Crear, editar i executar no estan disponibles; veure i exportar continuen disponibles.",
       adminWriteDenied: "Sessió de només lectura: escriptura denegada",

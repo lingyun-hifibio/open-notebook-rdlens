@@ -1082,9 +1082,6 @@ export const trTR = {
     loadFailed: "Failed to load workspace data",
     retry: "Retry",
     pagination: { loadMore: "Load more", loadingMore: "Loading more…" },
-    header: {
-      project: "Project",
-    },
     mainActions: {
       runTemplate: "Run Template",
     },
@@ -1171,7 +1168,6 @@ export const trTR = {
       draftUnsaved: "Kaydedilmemiş seçim",
       consentRequired: "Harici model kullanımı için aktarım onayı gerekir.",
       adminReadonly: "Salt okunur",
-      settings: "Araştırma ayarları",
       external: "Harici",
       local: "Local",
       consentFailed: "Onay işlemi başarısız oldu. Lütfen tekrar deneyin.",
@@ -1230,8 +1226,6 @@ export const trTR = {
       tabRuns: "Runs",
       groupMaterials: "Materials",
       groupResults: "Results",
-      groupTools: "Tools",
-      tabTemplates: "Research templates",
       adminBanner: "Yönetici olarak görüntülüyorsunuz (salt okunur)",
       adminBannerDesc: "Oluşturma, düzenleme ve çalıştırma kullanılamaz; görüntüleme ve dışa aktarma kullanılabilir.",
       adminWriteDenied: "Salt okunur oturum: yazma reddedildi",

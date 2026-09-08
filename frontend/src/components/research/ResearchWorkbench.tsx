@@ -31,15 +31,13 @@ export type ResearchWorkbenchPane =
  * - 非 null → Source 专注视图：Back（onExitSourceFocus）+ SourceDetailPanel
  *   （highlightPageIdx/focusRequestId 转发，同一页重复 Citation 仍重定位）；
  * - null → 常规分组视图：AdminReadOnlyBanner + ResearchScopeEditor
- *   （唯一 Scope 编辑面）+ 分组导航（Materials/Results 的子视图切换、
- *   Tools 的跨区命令按钮）。
+ *   （唯一 Scope 编辑面）+ 分组导航（Materials/Results 的子视图切换）。
  *
  * 分组导航为语义化按钮组（不再使用 Radix Tabs 平铺四键）。Sources/Notes/
  * Insights/Transformation runs 是 Workbench 的子视图开关（aria-current
- * 指示激活项）；「Research templates」是跨区命令：点击经
- * onOpenResearchTemplates 打开主区 Run Template（active 态由
- * researchTemplatesActive 传入）。TransformationsPanel 已迁往主区
- * Run Template 单挂载，本组件不再渲染它。
+ * 指示激活项）。RWV2-UIOPT-A（fork #57）：Tools 分组与「Research
+ * templates」跨区快捷按钮删除——模板唯一正式入口是主区 Run Template 动作
+ * （TransformationsPanel 已在主区单挂载，本组件不渲染它）。
  *
  * RWV2-13 语义保留：ResearchScopeEditor 常驻顶部；Sources/Notes 行首复
  * 选框（SourceListPanel/NotesPanel 内部实现）是唯一项目选择入口，写入根
@@ -50,11 +48,8 @@ export interface ResearchWorkbenchProps {
   focusedSourceId: string | null
   highlightPageIdx: number | null
   highlightRequestId: number
-  /** 主区 Run Template 动作是否激活（Tools/Research templates 项的 active 态） */
-  researchTemplatesActive: boolean
   onOpenSource(sourceId: string, pageIdx?: number | null): void
   onExitSourceFocus(): void
-  onOpenResearchTemplates(): void
   /** Results/Transformation runs 插槽内容（RWV2-42 组件或自定义）；undefined 时
    *  默认挂载合并后的 TransformationRunsPanel（#48 已合入，不再显示 unavailable） */
   transformationRuns?: React.ReactNode
@@ -83,10 +78,8 @@ export function ResearchWorkbench({
   focusedSourceId,
   highlightPageIdx,
   highlightRequestId,
-  researchTemplatesActive,
   onOpenSource,
   onExitSourceFocus,
-  onOpenResearchTemplates,
   transformationRuns,
   scopeEditRequest,
   onRevealSavedArtifact,
@@ -242,27 +235,6 @@ export function ResearchWorkbench({
                   </button>
                 )
               })}
-            </div>
-          </section>
-
-          <section className="min-w-0 space-y-1.5" aria-labelledby="wb-group-tools">
-            <h3
-              id="wb-group-tools"
-              className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-            >
-              {t('research.workbench.groupTools')}
-            </h3>
-            <div className="flex min-w-0 flex-wrap gap-x-1 gap-y-1">
-              {/* 跨区命令：打开主区 Run Template（不渲染第二模板面板）。 */}
-              <Button
-                size="sm"
-                variant={researchTemplatesActive ? 'secondary' : 'ghost'}
-                aria-current={researchTemplatesActive ? 'true' : undefined}
-                data-testid="workbench-open-templates"
-                onClick={onOpenResearchTemplates}
-              >
-                {t('research.workbench.tabTemplates')}
-              </Button>
             </div>
           </section>
         </div>

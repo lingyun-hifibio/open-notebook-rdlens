@@ -1083,9 +1083,6 @@ export const bnIN = {
     loadFailed: "Failed to load workspace data",
     retry: "Retry",
     pagination: { loadMore: "Load more", loadingMore: "Loading more…" },
-    header: {
-      project: "Project",
-    },
     mainActions: {
       runTemplate: "Run Template",
     },
@@ -1172,7 +1169,6 @@ export const bnIN = {
       draftUnsaved: "সংরক্ষিত নয় এমন নির্বাচন",
       consentRequired: "বাহ্যিক মডেল ব্যবহারের জন্য প্রেরণ সম্মতি প্রয়োজন।",
       adminReadonly: "শুধুমাত্র পঠনযোগ্য",
-      settings: "গবেষণা সেটিংস",
       external: "বাহ্যিক",
       local: "Local",
       consentFailed: "সম্মতি নিশ্চিত করা যায়নি। আবার চেষ্টা করুন।",
@@ -1231,8 +1227,6 @@ export const bnIN = {
       tabRuns: "Runs",
       groupMaterials: "Materials",
       groupResults: "Results",
-      groupTools: "Tools",
-      tabTemplates: "Research templates",
       adminBanner: "আপনি প্রশাসক হিসেবে দেখছেন (শুধু-পঠন)",
       adminBannerDesc: "তৈরি, সম্পাদনা ও চালানো অনুপলব্ধ; দেখা ও রপ্তানি উপলব্ধ।",
       adminWriteDenied: "শুধু-পঠন সেশন: লেখা প্রত্যাখ্যাত",

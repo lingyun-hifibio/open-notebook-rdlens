@@ -1082,9 +1082,6 @@ export const ruRU = {
     loadFailed: "Failed to load workspace data",
     retry: "Retry",
     pagination: { loadMore: "Load more", loadingMore: "Loading more…" },
-    header: {
-      project: "Project",
-    },
     mainActions: {
       runTemplate: "Run Template",
     },
@@ -1171,7 +1168,6 @@ export const ruRU = {
       draftUnsaved: "Несохранённый выбор",
       consentRequired: "Использование внешней модели требует подтверждения отправки.",
       adminReadonly: "Только чтение",
-      settings: "Настройки исследования",
       external: "Внешняя",
       local: "Local",
       consentFailed: "Не удалось подтвердить согласие. Попробуйте ещё раз.",
@@ -1230,8 +1226,6 @@ export const ruRU = {
       tabRuns: "Runs",
       groupMaterials: "Materials",
       groupResults: "Results",
-      groupTools: "Tools",
-      tabTemplates: "Research templates",
       adminBanner: "Просмотр от имени администратора (только чтение)",
       adminBannerDesc: "Создание, изменение и запуск недоступны; просмотр и экспорт доступны.",
       adminWriteDenied: "Сеанс только для чтения: запись запрещена",
