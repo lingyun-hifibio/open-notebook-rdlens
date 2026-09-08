@@ -172,6 +172,34 @@ export interface ResearchModelOption {
   interactive_context_levels?: ResearchContextLevel[]
 }
 
+/**
+ * Research 工作区能力协商（#358，§17.2）。顶层字段来自
+ * GET /v1/research/projects/{project_id}/models 响应，直接反映后端
+ * 运行时 feature flag 真值。旧后端/字段缺失/类型非法一律按 false
+ * 处理（fail-closed，见 `coverageAllSelectedFrom`）。
+ */
+export interface ResearchCapabilities {
+  /** 后端 research_coverage_enabled 真值；仅 true 允许提交 all_selected */
+  coverage_all_selected?: unknown
+}
+
+/** GET models 响应（#358：能力与模型同一次返回，避免两次请求间竞态） */
+export interface ResearchModelsResponse {
+  models: ResearchModelOption[]
+  capabilities?: ResearchCapabilities
+}
+
+/**
+ * #358：从 models 响应解析 Coverage 能力——缺失、类型非法、值为 false
+ * 一律归一为 false（fail-closed）。只有严格 `=== true` 才允许提交
+ * all_selected。
+ */
+export function coverageAllSelectedFrom(
+  capabilities: ResearchCapabilities | undefined,
+): boolean {
+  return capabilities?.coverage_all_selected === true
+}
+
 /** Search 交互式上下文档位（服务端能力声明子集） */
 export type ResearchContextLevel = 'focused' | 'document' | 'workspace'
 

@@ -623,4 +623,48 @@ describe('useResearchGlobalModel（GMOD §6.1 draft/confirmed）', () => {
     // 用户已切换的模型选择保留（可重试重新走确认）
     expect(result.current.draftModelId).toBe('m-local')
   })
+
+  // ── #358：Coverage 能力协商（§17.2） ──
+
+  it('#358：capabilities.coverage_all_selected=true → coverageAllSelected=true', async () => {
+    vi.mocked(listModels).mockResolvedValue({
+      models: MODELS,
+      capabilities: { coverage_all_selected: true },
+    })
+    const { result } = renderGlobalModel()
+    await waitFor(() => expect(result.current.isLoadingModel).toBe(false))
+    expect(result.current.coverageAllSelected).toBe(true)
+  })
+
+  it('#358：能力 false / 缺失 → coverageAllSelected=false（fail-closed）', async () => {
+    vi.mocked(listModels).mockResolvedValue({
+      models: MODELS,
+      capabilities: { coverage_all_selected: false },
+    })
+    const { result } = renderGlobalModel()
+    await waitFor(() => expect(result.current.isLoadingModel).toBe(false))
+    expect(result.current.coverageAllSelected).toBe(false)
+    // 缺失 capabilities（旧后端/接口异常）→ false
+    vi.mocked(listModels).mockResolvedValue({ models: MODELS })
+    const { result: missing } = renderGlobalModel()
+    await waitFor(() => expect(missing.current.isLoadingModel).toBe(false))
+    expect(missing.current.coverageAllSelected).toBe(false)
+  })
+
+  it('#358：能力值类型非法 → coverageAllSelected=false（不误读）', async () => {
+    vi.mocked(listModels).mockResolvedValue({
+      models: MODELS,
+      capabilities: { coverage_all_selected: 'true' },
+    })
+    const { result } = renderGlobalModel()
+    await waitFor(() => expect(result.current.isLoadingModel).toBe(false))
+    expect(result.current.coverageAllSelected).toBe(false)
+  })
+
+  it('#358：接口请求失败（models 查询 error）→ coverageAllSelected=false（fail-closed）', async () => {
+    vi.mocked(listModels).mockRejectedValue(new Error('models down'))
+    const { result } = renderGlobalModel()
+    await waitFor(() => expect(result.current.isLoadingModel).toBe(false))
+    expect(result.current.coverageAllSelected).toBe(false)
+  })
 })

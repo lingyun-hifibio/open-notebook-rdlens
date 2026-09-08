@@ -3,8 +3,11 @@
  *
  * 规则（评审 R4-H1/M14）：
  * - 只收录「可达子集」——能经五动作派发端点 HTTP detail.code、Chat
- *   SSE/流错误或 consent/ack 到达用户面的码；内部/job 终态码（coverage_*、
- *   artifact_*、lease_* 等）一律不建文案，回落 generic 兜底。
+ *   SSE/流错误或 consent/ack 到达用户面的码；内部/job 终态码（artifact_*、
+ *   lease_* 等）一律不建文案，回落 generic 兜底。
+ * - 例外：#358 `coverage_not_enabled`——它是 all_selected 提交端点的
+ *   HTTP detail.code（能力被后端拒绝时到达用户面），不是 Job 终态码，
+ *   属于可达子集，按本表建明确文案（见「Coverage 提交拒绝」段）。
  * - 优先复用现有 key（daily_limit_exceeded/superseded/model_required/
  *   conflict_busy），禁止同义双份文案。
  * - 表中每个 value 均为完整 dotted key，字面量出现在本产品文件内即可
@@ -53,6 +56,11 @@ export const RESEARCH_ERROR_USER_COPY: Record<string, string> = {
   admission_unavailable: 'research.errors.admissionUnavailable',
   admission_capacity: 'research.errors.admissionCapacity',
   internal: 'research.errors.internal',
+
+  // ── Coverage 提交拒绝（#358） ──
+  // all_selected 创建端点（POST /chat）被后端 Coverage 能力门禁拒绝时的
+  // detail.code——可达用户面（提交路径），非 Job 终态码，见文件头注释。
+  coverage_not_enabled: 'research.chatErrorCoverageNotEnabled',
 }
 
 /** 未知/内部码统一兜底（raw 只作次级诊断，不作主消息——AC8）。 */

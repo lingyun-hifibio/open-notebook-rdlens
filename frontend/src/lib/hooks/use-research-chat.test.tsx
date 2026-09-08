@@ -11,11 +11,17 @@ import type { ResearchSseEvent } from '@/lib/research/types'
 // #243 §6.4：modelId 由调用方（confirmed 全局模型快照）required 传入，
 // 本 hook 不在执行时读取执行偏好；无模型 fail-closed 不发请求。
 
-vi.mock('@/lib/research/api', () => ({
-  saveResultFromResult: vi.fn(),
-  newIdempotencyKey: vi.fn(() => 'ik-turn'),
-  openResearchChatStream: vi.fn(),
-}))
+// #358：researchApiErrorDetail 保持真实实现（结构化错误解析是本次被测行为），
+// 其余 API 面照旧 mock。
+vi.mock('@/lib/research/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/research/api')>()
+  return {
+    ...actual,
+    saveResultFromResult: vi.fn(),
+    newIdempotencyKey: vi.fn(() => 'ik-turn'),
+    openResearchChatStream: vi.fn(),
+  }
+})
 
 const MODEL = 'm-local'
 
@@ -361,6 +367,42 @@ describe('useResearchChat.sendCoverage（COV-09）', () => {
     expect(assistant.status).toBe('error')
     expect(assistant.errorCode).toBe('coverage_submit_failed')
     expect(assistant.errorMessage).toContain('coverage not enabled')
+    expect(assistant.coverageJobId).toBeNull()
+  })
+
+  it('#358：结构化 detail.code/detail.message 解析——不再显示通用 Axios 503', async () => {
+    const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
+    const { submit, captured } = captureSubmit()
+    sendCoverageNow(result, '覆盖全部所选来源', submit)
+    // axios 错误形态：error.message 是通用 503，结构化信息在
+    // response.data.detail（#358 后端 FastAPI HTTPException detail 对象）
+    const axiosLikeError = Object.assign(
+      new Error('Request failed with status code 503'),
+      {
+        response: {
+          status: 503,
+          data: {
+            detail: {
+              code: 'coverage_not_enabled',
+              message:
+                'research coverage is not enabled; relevant synthesis remains available',
+            },
+          },
+        },
+      },
+    )
+    await act(async () => {
+      captured[0].reject(axiosLikeError)
+    })
+    const assistant = lastAssistant(result.current.turns)
+    expect(assistant.status).toBe('error')
+    // 稳定错误码进入 errorCode（面板映射本地化文案）
+    expect(assistant.errorCode).toBe('coverage_not_enabled')
+    // 后端结构化 message 作为主诊断；通用 Axios 503 不再出现
+    expect(assistant.errorMessage).toBe(
+      'research coverage is not enabled; relevant synthesis remains available',
+    )
+    expect(assistant.errorMessage).not.toContain('Request failed with status code 503')
     expect(assistant.coverageJobId).toBeNull()
   })
 

@@ -73,6 +73,8 @@ function renderPanel(
   overrides: Partial<{
     onSendCoverage: (q: string, snapshot: ResearchScopeSnapshot) => Promise<boolean>
     scope: { mode: 'entire_project' | 'selected'; sourceIds: string[]; noteIds: string[] }
+    // #358：后端 Coverage 能力（默认 true 保 happy-path；能力关闭用例显式传 false）
+    coverageEnabled: boolean
     coverageJobs: ResearchJob[]
     onCoverageRetry: (jobId: string) => Promise<boolean>
     resolveChatOrigin: (turnId: string) => Promise<{ messageId: string; generationId: string } | null>
@@ -89,6 +91,7 @@ function renderPanel(
         isStreaming={false}
         onSend={send}
         onSendCoverage={overrides.onSendCoverage ?? vi.fn(async () => true)}
+        coverageEnabled={overrides.coverageEnabled ?? true}
         coverageJobs={overrides.coverageJobs}
         onCoverageRetry={overrides.onCoverageRetry ?? vi.fn(async () => true)}
         resolveChatOrigin={overrides.resolveChatOrigin}
@@ -408,6 +411,78 @@ describe('ResearchChatPanel coverage scope（COV-09 + RWV2-11 K3）', () => {
     expect(screen.getByTestId('coverage-target-coverage')).toHaveTextContent('requested: 2')
     expect(screen.getByTestId('coverage-target-doc-2')).toHaveTextContent('document_unit_terminal')
   })
+
+  // ── #358：Coverage 能力门禁（§17.2） ──
+
+  it('#358：能力关闭 → all_selected 禁用 + 能力说明（fail-closed）', () => {
+    renderPanel([], vi.fn(), {
+      coverageEnabled: false,
+      scope: { mode: 'selected', sourceIds: ['src-1'], noteIds: [] },
+    })
+    expect(screen.getByTestId('scope-all-selected-option')).toBeDisabled()
+    expect(screen.getByTestId('coverage-scope-notice')).toHaveTextContent(
+      'research.coverage.capabilityDisabled',
+    )
+  })
+
+  it('#358：能力关闭时已选 all_selected 也不发创建请求（提交闸门）', () => {
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
+    const onSendCoverage = vi.fn(async () => true)
+    // 预置 selected 范围（1 个 Source）——all_selected 仅适用于显式选择范围
+    seedScope({ mode: 'selected', sourceIds: ['src-1'], noteIds: [] })
+    const { rerender } = render(
+      <QueryClientProvider client={queryClient}>
+        <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
+          <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+            <ResearchChatPanel
+              turns={[]}
+              isStreaming={false}
+              onSend={vi.fn(async () => true)}
+              onSendCoverage={onSendCoverage}
+              coverageEnabled
+            />
+          </ResearchScopeProvider>
+        </ResearchWorkspaceProvider>
+      </QueryClientProvider>,
+    )
+    // 能力开启时切到 all_selected 并输入（模拟开关翻转前已选中的用户）
+    fireEvent.click(screen.getByTestId('scope-all-selected-option'))
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: '覆盖全部所选来源' } })
+    expect(screen.getByTestId('chat-send')).not.toBeDisabled()
+    // 后端开关翻转 → 能力关闭：选项禁用 + 说明；提交被闸门拦截
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
+          <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+            <ResearchChatPanel
+              turns={[]}
+              isStreaming={false}
+              onSend={vi.fn(async () => true)}
+              onSendCoverage={onSendCoverage}
+              coverageEnabled={false}
+            />
+          </ResearchScopeProvider>
+        </ResearchWorkspaceProvider>
+      </QueryClientProvider>,
+    )
+    expect(screen.getByTestId('scope-all-selected-option')).toBeDisabled()
+    expect(screen.getByTestId('chat-send')).toBeDisabled()
+    fireEvent.click(screen.getByTestId('chat-send'))
+    expect(onSendCoverage).not.toHaveBeenCalled()
+  })
+
+  it('#358：能力关闭后既有 Coverage Job 仍展示并轮询（准入开关非终止开关）', () => {
+    renderPanel(
+      [
+        { ...turn({ role: 'user', content: '覆盖全部所选来源', id: 'u1' }) },
+        turn({ status: 'done', coverageJobId: 'job_cov' }),
+      ],
+      vi.fn(),
+      { coverageEnabled: false, coverageJobs: [coverageJob()] },
+    )
+    expect(screen.getByTestId('coverage-job-details')).toBeInTheDocument()
+    expect(screen.getByTestId('coverage-target-coverage')).toHaveTextContent('requested: 2')
+  })
 })
 
 // ── #292 P0：错误呈现——error 空正文不再显示「暂无答案」；稳定码展示
@@ -452,6 +527,22 @@ describe('ResearchChatPanel #292 P0 错误呈现', () => {
     ])
     expect(screen.getByText('research.chatErrorSuperseded')).toBeInTheDocument()
     expect(screen.queryByText('superseded')).toBeNull()
+  })
+
+  it('#358：coverage_not_enabled 展示明确本地化文案，后端 message 作诊断行', () => {
+    renderPanel([
+      turn({
+        status: 'error',
+        errorCode: 'coverage_not_enabled',
+        errorMessage: 'research coverage is not enabled; relevant synthesis remains available',
+      }),
+    ])
+    expect(screen.getByText('research.chatErrorCoverageNotEnabled')).toBeInTheDocument()
+    // 裸 code 不作主提示；后端结构化 message 保留为诊断行
+    expect(screen.queryByText('coverage_not_enabled')).toBeNull()
+    expect(
+      screen.getByText('research coverage is not enabled; relevant synthesis remains available'),
+    ).toBeInTheDocument()
   })
 
   it('error 但已有部分正文：正文与错误卡片共存', () => {

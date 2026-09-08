@@ -6,6 +6,7 @@ import { CoverageScopeSelector } from './CoverageScopeSelector'
 // 文字说明（不只依赖颜色）、0/超限 Source 预检文案、onChange 契约。
 // RWV2-11（K3/W4）：entire_project 模式显示专属说明（优先级高于通用
 // noSourcesHint）；提交闸门在 ChatPanel，本组件只出通知。
+// #358：后端能力关闭时禁用 all_selected 并展示能力说明（fail-closed）。
 
 describe('CoverageScopeSelector', () => {
   afterEach(cleanup)
@@ -13,6 +14,7 @@ describe('CoverageScopeSelector', () => {
   function renderSelector(overrides: Partial<{
     value: 'relevant' | 'all_selected'
     scopeMode: 'entire_project' | 'selected'
+    capabilityEnabled: boolean
     selectedSourceCount: number
     selectedNoteCount: number
   }> = {}) {
@@ -22,6 +24,7 @@ describe('CoverageScopeSelector', () => {
         value={overrides.value ?? 'relevant'}
         onChange={onChange}
         scopeMode={overrides.scopeMode ?? 'selected'}
+        capabilityEnabled={overrides.capabilityEnabled}
         selectedSourceCount={overrides.selectedSourceCount ?? 0}
         selectedNoteCount={overrides.selectedNoteCount ?? 0}
       />,
@@ -35,6 +38,18 @@ describe('CoverageScopeSelector', () => {
     expect(screen.getByTestId('scope-all-selected-option')).toBeInTheDocument()
     fireEvent.click(radio)
     expect(onChange).toHaveBeenCalledWith('all_selected')
+  })
+
+  it('#358：能力关闭 → all_selected 禁用 + 能力说明（优先于其他提示）', () => {
+    renderSelector({ capabilityEnabled: false, selectedSourceCount: 3 })
+    expect(screen.getByTestId('scope-all-selected-option')).toBeDisabled()
+    const notice = screen.getByTestId('coverage-scope-notice')
+    expect(notice).toHaveTextContent('research.coverage.capabilityDisabled')
+    expect(notice).toHaveAttribute('id', 'coverage-scope-notice')
+    // 即使有 Notes/超限等其他条件，能力说明优先
+    cleanup()
+    renderSelector({ capabilityEnabled: false, selectedNoteCount: 1, selectedSourceCount: 60 })
+    expect(screen.getByTestId('coverage-scope-notice')).toHaveTextContent('research.coverage.capabilityDisabled')
   })
 
   it('选择 Notes：all_selected 禁用 + 可访问文字说明', () => {

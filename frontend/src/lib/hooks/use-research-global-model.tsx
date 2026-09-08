@@ -50,6 +50,7 @@ import type {
   ResearchEgressConsentResponse,
   ResearchModelOption,
 } from '@/lib/research/types'
+import { coverageAllSelectedFrom } from '@/lib/research/types'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
 
 export type ResearchModelAvailability = 'available' | 'unavailable' | 'none'
@@ -87,6 +88,13 @@ export interface UseResearchGlobalModelResult {
   saveModelError: string | null
   dismissSaveModelError: () => void
   models: ResearchModelOption[]
+  /**
+   * #358：后端 `coverage_all_selected` 能力（来自 GET models 顶层
+   * capabilities）。缺失/非法/请求失败/加载中一律 false（fail-closed）；
+   * 仅 true 才允许提交 all_selected。与模型目录同一次响应返回，避免
+   * 两次请求间的能力竞态。
+   */
+  coverageAllSelected: boolean
   /** confirmed 模型条目；unavailable（目录中消失）时为 null */
   confirmedModel: ResearchModelOption | null
   confirmedModelIsExternal: boolean
@@ -171,6 +179,13 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
     refetchOnWindowFocus: true,
   })
   const models = useMemo(() => modelsQuery.data?.models ?? [], [modelsQuery.data])
+  // #358：能力协商——缺失/非法/未加载一律 false（fail-closed）。
+  // 与模型目录同一次 GET models 返回，随 refetchOnWindowFocus 刷新，
+  // 因此后端开关翻转后下一次窗口聚焦即生效（请求时刻真值）。
+  const coverageAllSelected = useMemo(
+    () => coverageAllSelectedFrom(modelsQuery.data?.capabilities),
+    [modelsQuery.data],
+  )
 
   const preferencesQuery = useQuery({
     queryKey: QUERY_KEYS.researchExecutionPreferences(projectId),
@@ -425,6 +440,7 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
     saveModelError,
     dismissSaveModelError: () => setSaveModelError(null),
     models,
+    coverageAllSelected,
     confirmedModel,
     confirmedModelIsExternal,
     confirmedModelAvailability,
@@ -454,6 +470,7 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
     confirmedModelAvailability,
     confirmedModelId,
     confirmedModelIsExternal,
+    coverageAllSelected,
     draftModelId,
     isConsentInFlight,
     isConsentPromptOpen,
