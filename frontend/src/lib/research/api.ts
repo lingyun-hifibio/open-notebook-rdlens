@@ -33,7 +33,7 @@ import type {
   ResearchEgressConsentResponse,
   ResearchExecutionPreferences,
   ResearchJob,
-  ResearchModelOption,
+  ResearchModelsResponse,
   ResearchSearchOutcome,
   ResearchSearchRequest,
   ResearchSearchResponse,
@@ -365,10 +365,42 @@ export function newIdempotencyKey(): string {
   return `ui-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
+/**
+ * #358：从 axios/网络错误中解析后端结构化 `detail.code` / `detail.message`
+ * （FastAPI HTTPException 的 detail 对象形态）。解析失败返回双 null，调用方
+ * 兜底用原始 error.message——用户不再看到无解释的通用 Axios 503。
+ *
+ * 兼容形态：
+ * - `{ detail: { code, message } }`——#358 后端结构化错误；
+ * - `{ detail: 'string' }`——纯字符串 detail；
+ * - `{ detail: { message } }`——对象但无 code。
+ */
+export interface ResearchApiErrorDetail {
+  code: string | null
+  message: string | null
+}
+
+export function researchApiErrorDetail(error: unknown): ResearchApiErrorDetail {
+  const data = (error as { response?: { data?: unknown } } | null)?.response?.data
+  const detail = (data as { detail?: unknown } | null)?.detail
+  if (typeof detail === 'string' && detail) {
+    return { code: null, message: detail }
+  }
+  if (typeof detail === 'object' && detail !== null) {
+    const code = (detail as { code?: unknown }).code
+    const message = (detail as { message?: unknown }).message
+    return {
+      code: typeof code === 'string' && code ? code : null,
+      message: typeof message === 'string' && message ? message : null,
+    }
+  }
+  return { code: null, message: null }
+}
+
 export async function listModels(
   projectId: string,
-): Promise<{ models: ResearchModelOption[] }> {
-  const response = await apiClient.get<{ models: ResearchModelOption[] }>(
+): Promise<ResearchModelsResponse> {
+  const response = await apiClient.get<ResearchModelsResponse>(
     researchPath(projectId, 'models'),
   )
   return response.data

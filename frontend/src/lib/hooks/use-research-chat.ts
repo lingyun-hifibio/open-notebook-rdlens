@@ -21,6 +21,7 @@ import {
   getResearchChatSession,
   newIdempotencyKey,
   openResearchChatStream,
+  researchApiErrorDetail,
   type ResearchGlobalChatCard,
   type ResearchGlobalChatMessage,
 } from '@/lib/research/api'
@@ -912,10 +913,18 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
         patch({ status: 'done', coverageJobId: job_id })
       })
       .catch((error: Error) => {
+        // #358：解析后端结构化 detail.code/detail.message——用户不再看到
+        // 通用 Axios 503；code 进入稳定错误码通道（面板映射本地化文案），
+        // message 作为诊断行。解析失败（非 axios 错误/无 detail）兜底原始
+        // error.message。
+        const detail = researchApiErrorDetail(error)
         patch({
           status: 'error',
-          errorCode: 'coverage_submit_failed',
-          errorMessage: error.message || 'Coverage submission failed',
+          errorCode: detail.code ?? 'coverage_submit_failed',
+          errorMessage:
+            detail.message ||
+            error.message ||
+            'Coverage submission failed',
         })
       })
   }

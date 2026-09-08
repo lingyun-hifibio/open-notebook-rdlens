@@ -23,11 +23,19 @@ describe('userErrorMessageKey（RWV2-42 U4）', () => {
     expect(userErrorMessageKey(null)).toBe(RESEARCH_GENERIC_ERROR_KEY)
     expect(userErrorMessageKey(undefined)).toBe(RESEARCH_GENERIC_ERROR_KEY)
     expect(userErrorMessageKey('mystery_internal_code')).toBe(RESEARCH_GENERIC_ERROR_KEY)
+    // job 终态码仍回落 generic（#358 只豁免提交端点可达的 coverage_not_enabled）
     expect(userErrorMessageKey('coverage_lease_lost')).toBe(RESEARCH_GENERIC_ERROR_KEY)
   })
 
-  it('表中不含内部/job 终态码条目（R4-H1 可达性分类）', () => {
+  it('#358：coverage_not_enabled（提交端点可达码）映射明确文案，非 generic', () => {
+    expect(userErrorMessageKey('coverage_not_enabled')).toBe(
+      'research.chatErrorCoverageNotEnabled',
+    )
+  })
+
+  it('表中不含内部/job 终态码条目（R4-H1 可达性分类；#358 唯一豁免 coverage_not_enabled）', () => {
     for (const key of Object.keys(RESEARCH_ERROR_USER_COPY)) {
+      if (key === 'coverage_not_enabled') continue // #358：提交端点 detail.code，非 Job 终态
       expect(key).not.toMatch(/^coverage_/)
       expect(key).not.toMatch(/^artifact_/)
       expect(key).not.toMatch(/^lease_|^quota_state$|^quota_reserved_tokens$/)

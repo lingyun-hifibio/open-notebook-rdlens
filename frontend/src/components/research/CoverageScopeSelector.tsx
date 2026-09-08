@@ -26,6 +26,13 @@ export interface CoverageScopeSelectorProps {
   onChange: (scope: ResearchSynthesisScope) => void
   /** RWV2-11（K3）：当前 Scope 模式——entire_project 下显示专属说明 */
   scopeMode: ResearchScopeMode
+  /**
+   * #358：后端 Coverage 能力。false/缺失 → 禁用 all_selected 并展示
+   * 可访问说明（fail-closed；能力门禁最终在 ChatPanel 提交闸门单点，
+   * 本组件只出通知与禁用）。缺省 true 仅为组件直用兼容——生产调用链
+   * （ResearchWorkspace → ChatPanel）恒显式传入，缺失即 false。
+   */
+  capabilityEnabled?: boolean
   selectedSourceCount: number
   selectedNoteCount: number
 }
@@ -34,6 +41,7 @@ export function CoverageScopeSelector({
   value,
   onChange,
   scopeMode,
+  capabilityEnabled = true,
   selectedSourceCount,
   selectedNoteCount,
 }: CoverageScopeSelectorProps) {
@@ -41,9 +49,13 @@ export function CoverageScopeSelector({
   const notesSelected = selectedNoteCount > 0
   const overHardMax = selectedSourceCount > COVERAGE_SOURCE_HARD_MAX
   const noSources = selectedSourceCount === 0
+  // #358：能力关闭优先于其他说明（后端未开启时不谈 Notes/数量预检）
+  const capabilityOff = capabilityEnabled === false
 
   let notice: string | null = null
-  if (notesSelected) {
+  if (capabilityOff) {
+    notice = t('research.coverage.capabilityDisabled')
+  } else if (notesSelected) {
     notice = t('research.coverage.notesNotSupported')
   } else if (overHardMax) {
     notice = t('research.coverage.tooManySources', {
@@ -76,13 +88,13 @@ export function CoverageScopeSelector({
         <Label
           htmlFor="scope-all-selected"
           className={`flex cursor-pointer items-center gap-2 text-sm ${
-            notesSelected ? 'cursor-not-allowed opacity-60' : ''
+            notesSelected || capabilityOff ? 'cursor-not-allowed opacity-60' : ''
           }`}
         >
           <RadioGroupItem
             id="scope-all-selected"
             value="all_selected"
-            disabled={notesSelected}
+            disabled={notesSelected || capabilityOff}
             data-testid="scope-all-selected-option"
           />
           {t('research.coverage.scopeAllSelected')}

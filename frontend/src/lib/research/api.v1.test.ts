@@ -83,6 +83,19 @@ describe('contract v1 客户端（Phase 2b）', () => {
     expect(calls[0].method).toBe('GET')
   })
 
+  it('#358：listModels 透传顶层 capabilities.coverage_all_selected（能力协商）', async () => {
+    installAdapter(() => ({
+      status: 200,
+      data: { models: [], capabilities: { coverage_all_selected: true } },
+    }))
+    const response = await researchApi.listModels(P)
+    expect(response.capabilities?.coverage_all_selected).toBe(true)
+    // 缺失 capabilities（旧后端）→ undefined，由 coverageAllSelectedFrom 归一 false
+    installAdapter(() => ({ status: 200, data: { models: [] } }))
+    const legacy = await researchApi.listModels(P)
+    expect(legacy.capabilities).toBeUndefined()
+  })
+
   it('execution-preferences GET/PATCH 路径正确；PATCH 只发送出现的字段', async () => {
     installAdapter(() => ({
       status: 200,

@@ -140,7 +140,9 @@ export function ResearchWorkspace({
   } = useResearchChat({ projectId: projectId ?? '' })
 
   // #243 §6.4：Chat/Compare 统一走顶层执行守卫（invariant 9）
-  const { runGuarded, canExecute, blockedReason } = useResearchGlobalModel()
+  // #358：models 响应顶层能力——覆盖全部所选来源只在后端
+  // coverage_all_selected 为 true 时允许提交（false/缺失/加载中 fail-closed）。
+  const { runGuarded, canExecute, blockedReason, coverageAllSelected } = useResearchGlobalModel()
   const blockedHint = researchModelBlockedHint(blockedReason, t)
 
   // ── keep-alive visited 集合：渲染期并集保证新动作首帧即挂载 ──
@@ -308,6 +310,7 @@ export function ResearchWorkspace({
             onSendCoverage={sendCoverageChat}
             sendDisabled={!canExecute}
             blockedHint={blockedHint}
+            coverageEnabled={coverageAllSelected}
             coverageJobs={jobs}
             onCoverageRetry={isAdminReadonly ? undefined : retryCoverage}
             onCitationJump={handleCitationJump}

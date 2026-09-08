@@ -37,6 +37,8 @@ interface StubOverrides {
    */
   onGuardedRegistered?: (operation: GuardedOperation<unknown>, modelId: string) => void
   models?: ResearchModelOption[]
+  /** #358：后端 Coverage 能力（默认 false=fail-closed；用例可覆盖） */
+  coverageAllSelected?: boolean
   /** 以下字段供 ModelBar/ConsentDialog 组件测试覆盖（默认语义见 useResearchGlobalModel） */
   draftModelId?: string | null
   isSavingModel?: boolean
@@ -149,6 +151,8 @@ export function useResearchGlobalModel(): UseResearchGlobalModelResult {
     saveModelError: overrides.saveModelError ?? null,
     dismissSaveModelError: () => undefined,
     models,
+    // #358：能力协商字段（stub 默认 false，与 fail-closed 一致；用例可覆盖）
+    coverageAllSelected: overrides.coverageAllSelected ?? false,
     confirmedModel,
     confirmedModelIsExternal: confirmedModel?.data_egress === true,
     confirmedModelAvailability,

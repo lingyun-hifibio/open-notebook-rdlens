@@ -44,6 +44,7 @@ export function ResearchChatPanel({
   onSendCoverage,
   sendDisabled,
   blockedHint,
+  coverageEnabled = false,
   coverageJobs,
   onCoverageRetry,
   onCitationJump,
@@ -65,6 +66,13 @@ export function ResearchChatPanel({
   /** #243：无可用全局模型时禁用发送（不变量 2/7 的 Chat 侧表达） */
   sendDisabled?: boolean
   blockedHint?: string | null
+  /**
+   * #358：后端 Coverage 能力（GET models 顶层 capabilities
+   * coverage_all_selected）。false/缺失/加载中一律 false（fail-closed）——
+   * 禁用 all_selected 且不发送 Coverage 创建请求；普通 relevant 不受影响。
+   * 既有 Coverage Job 的展示与轮询不依赖本值（§17.2 准入开关而非终止开关）。
+   */
+  coverageEnabled?: boolean
   /** COV-09：Coverage Job 快照列表（Chat 任务卡按 job_id 查找） */
   coverageJobs?: ResearchJob[]
   /** COV-09：outcome_unknown 人工重试（§12.2） */
@@ -104,7 +112,11 @@ export function ResearchChatPanel({
   // coverage_sources_empty）——提交闸门单点（K3/W4），CoverageScopeSelector
   // 只出 notice。
   const dispatchSnapshot = getSnapshot()
+  // #358：能力门禁并入提交闸门——后端未开启 Coverage 时（capability
+  // false/缺失/加载中）不允许 all_selected，且不发送创建请求；既有
+  // Coverage Job 的展示与轮询与 coverageEnabled 无关（§17.2）。
   const coverageAllowed =
+    coverageEnabled &&
     mode === 'selected' &&
     dispatchSnapshot.sourceIds.length > 0 &&
     dispatchSnapshot.sourceIds.length <= COVERAGE_SOURCE_HARD_MAX &&
@@ -118,7 +130,10 @@ export function ResearchChatPanel({
     // turn 记录由 hook 推导，consent/幂等/最终请求全部同源（K11）。
     const snapshot = getSnapshot()
     if (scope === 'all_selected') {
+      // #358：能力门禁在提交点再次校验（与 coverageAllowed 同源，且用
+      // 派发时刻冻结快照）——能力 false/缺失时不发 Coverage 创建请求。
       const allowed =
+        coverageEnabled &&
         mode === 'selected' &&
         snapshot.sourceIds.length > 0 &&
         snapshot.sourceIds.length <= COVERAGE_SOURCE_HARD_MAX &&
@@ -336,6 +351,7 @@ export function ResearchChatPanel({
           value={scope}
           onChange={setScope}
           scopeMode={mode}
+          capabilityEnabled={coverageEnabled}
           selectedSourceCount={dispatchSnapshot.sourceIds.length}
           selectedNoteCount={dispatchSnapshot.noteIds.length}
         />

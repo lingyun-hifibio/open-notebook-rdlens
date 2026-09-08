@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { apiClient } from '@/lib/api/client'
 import * as researchApi from './api'
+import { coverageAllSelectedFrom } from './types'
 
 // UI-02 Red：Research Gateway API 模块（契约 v0 §6/§7/§9，REQ-API-01、
 // REQ-DIS-01/02/03、REQ-SRC-04）——全部请求经 UI-01 apiClient（嵌入式
@@ -282,5 +283,85 @@ describe('researchApi coverage（COV-09）', () => {
       expect(call.url.startsWith('/api/')).toBe(false)
       expect(call.url.startsWith('/v1/research/')).toBe(true)
     }
+  })
+})
+
+// ── #358：结构化错误解析（detail.code/detail.message，替代通用 Axios 503） ──
+
+describe('researchApiErrorDetail（#358）', () => {
+  it('FastAPI HTTPException detail 对象 → code + message', () => {
+    const error = Object.assign(new Error('Request failed with status code 503'), {
+      response: {
+        data: {
+          detail: {
+            code: 'coverage_not_enabled',
+            message: 'research coverage is not enabled; relevant synthesis remains available',
+          },
+        },
+      },
+    })
+    expect(researchApi.researchApiErrorDetail(error)).toEqual({
+      code: 'coverage_not_enabled',
+      message: 'research coverage is not enabled; relevant synthesis remains available',
+    })
+  })
+
+  it('纯字符串 detail → message（兼容旧后端）', () => {
+    const error = Object.assign(new Error('Request failed with status code 422'), {
+      response: { data: { detail: 'synthesis_scope must be relevant or all_selected' } },
+    })
+    expect(researchApi.researchApiErrorDetail(error)).toEqual({
+      code: null,
+      message: 'synthesis_scope must be relevant or all_selected',
+    })
+  })
+
+  it('非 axios 错误（无 response）→ 双 null（调用方兜底 error.message）', () => {
+    expect(researchApi.researchApiErrorDetail(new Error('network down'))).toEqual({
+      code: null,
+      message: null,
+    })
+  })
+
+  it('detail 缺失/数组（FastAPI 校验错误）/类型非法 → 双 null（fail-closed 不误读）', () => {
+    expect(researchApi.researchApiErrorDetail({ response: { data: {} } })).toEqual({
+      code: null,
+      message: null,
+    })
+    expect(
+      researchApi.researchApiErrorDetail({
+        response: { data: { detail: [{ msg: 'field required' }] } },
+      }),
+    ).toEqual({ code: null, message: null })
+    expect(researchApi.researchApiErrorDetail(null)).toEqual({ code: null, message: null })
+  })
+
+  it('detail 对象只有 code 或只有 message → 保留可解析项', () => {
+    expect(
+      researchApi.researchApiErrorDetail({
+        response: { data: { detail: { code: 'some_code' } } },
+      }),
+    ).toEqual({ code: 'some_code', message: null })
+    expect(
+      researchApi.researchApiErrorDetail({
+        response: { data: { detail: { message: 'some message' } } },
+      }),
+    ).toEqual({ code: null, message: 'some message' })
+  })
+})
+
+// ── #358：能力归一（fail-closed） ──
+
+describe('coverageAllSelectedFrom（#358）', () => {
+  it('严格 true → 允许', () => {
+    expect(coverageAllSelectedFrom({ coverage_all_selected: true })).toBe(true)
+  })
+  it('false / 缺失 / 非法类型 → false（fail-closed）', () => {
+    expect(coverageAllSelectedFrom({ coverage_all_selected: false })).toBe(false)
+    expect(coverageAllSelectedFrom(undefined)).toBe(false)
+    expect(coverageAllSelectedFrom({})).toBe(false)
+    expect(coverageAllSelectedFrom({ coverage_all_selected: 'yes' })).toBe(false)
+    expect(coverageAllSelectedFrom({ coverage_all_selected: 1 })).toBe(false)
+    expect(coverageAllSelectedFrom({ coverage_all_selected: null })).toBe(false)
   })
 })
