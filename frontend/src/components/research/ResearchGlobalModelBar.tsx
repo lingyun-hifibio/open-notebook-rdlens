@@ -103,8 +103,7 @@ export function ResearchGlobalModelBar() {
   // - 名称：confirmed display name（缺省用 model ID）；未配置 → Select model；
   // - 部署身份：confirmed 模型在目录中时显式 Local/External；消失或未配置
   //   时不标注（不得推断）；
-  // - 状态：最高优先级状态；未配置模型时名称槽已是「Select model」，
-  //   不重复展示 No model 提示。
+  // - 状态：最高优先级状态（抑制规则见 triggerStatus 处注释）。
   const triggerName =
     confirmedModelAvailability === 'available' && confirmedModel
       ? confirmedModel.display_name || confirmedModel.model_id
@@ -117,7 +116,17 @@ export function ResearchGlobalModelBar() {
         ? t('research.globalModel.external')
         : t('research.globalModel.local')
       : null
-  const triggerStatus = confirmedModelId === null ? '' : statusText
+  // Trigger 状态 = 最高优先级状态，两类抑制：
+  // - 「No model」提示与名称槽 Select model 重复——仅抑制该分支，其余状态
+  //   （含未配置模型的首次 Save failed/Saving）仍直接上 Trigger；
+  // - 目录加载中不把「暂未命中」标成 Unavailable：preferences 先于目录
+  //   返回时无法区分「真消失」与「尚未到达」，等目录落地再判定。
+  const triggerStatus =
+    statusText === t('research.globalModel.selectModelHint')
+      ? ''
+      : statusText === t('research.globalModel.unavailable') && isLoadingModel
+        ? ''
+        : statusText
 
   const controls = (
     <>

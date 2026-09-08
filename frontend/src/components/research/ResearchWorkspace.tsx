@@ -404,7 +404,8 @@ export function ResearchWorkspace({
         >
           {/* RWV2-UIOPT-A：Tabs 行右侧为 ResearchLayout 展开/恢复按钮预留
               固定宽度（w-36 ≥ 按钮宽 + right-3 偏移），按钮位于次级面板
-              右上角时不遮挡四动作 Tab——预留真实空间而非 z-index 遮盖。 */}
+              右上角时不遮挡四动作 Tab——预留真实空间而非 z-index 遮盖。
+              预留与按钮可见性同条件（compact <1024px 按钮隐藏，无预留）。 */}
           <div className="flex min-w-0 items-center px-4 pt-2" data-testid="workspace-tabs-row">
             <TabsList className="w-fit">
               <TabsTrigger value="evidence-search">{t('research.tabSearch')}</TabsTrigger>
@@ -414,7 +415,7 @@ export function ResearchWorkspace({
             </TabsList>
             <div
               aria-hidden="true"
-              className="ml-auto w-36 shrink-0"
+              className="ml-auto hidden w-36 shrink-0 lg:block"
               data-testid="workspace-expand-reserve"
             />
           </div>

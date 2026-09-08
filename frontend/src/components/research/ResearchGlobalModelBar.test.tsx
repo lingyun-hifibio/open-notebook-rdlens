@@ -17,7 +17,7 @@
  * global-model-stub 替身隔离，用例先打开 Popover 再断言。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { ResearchGlobalModelBar } from './ResearchGlobalModelBar'
 import {
   GLOBAL_MODEL_STUB_ID,
@@ -132,6 +132,45 @@ describe('ResearchGlobalModelBar（RWV2-UIOPT-A 紧凑 Trigger）', () => {
     expect(trigger.textContent).toContain('research.globalModel.placeholder')
     expect(trigger.textContent).not.toContain('research.globalModel.local')
     expect(trigger.textContent).not.toContain('research.globalModel.external')
+  })
+
+  it('未配置模型时首次保存失败：Save failed 仍直接上 Trigger（评审 L1：不只藏在 Popover）', () => {
+    setGlobalModelStub({ confirmedModelId: null, draftModelId: null, saveModelError: 'boom' })
+    render(<ResearchGlobalModelBar />)
+
+    const trigger = screen.getByTestId('global-model-summary-trigger')
+    expect(trigger.textContent).toContain('research.globalModel.saveFailed')
+    expect(trigger.textContent).toContain('research.globalModel.placeholder')
+  })
+
+  it('目录加载中不把暂未命中的 confirmed 误标 Unavailable（评审 L4：等目录落地再判定）', () => {
+    setGlobalModelStub({ confirmedModelId: 'm-gone', isLoadingModel: true })
+    render(<ResearchGlobalModelBar />)
+
+    const trigger = screen.getByTestId('global-model-summary-trigger')
+    // 名称槽仍显示原 ID（真实已确认值），但不抢在目录之前断言 Unavailable
+    expect(trigger.textContent).toContain('m-gone')
+    expect(trigger.textContent).not.toContain('research.globalModel.unavailable')
+    // 加载结束后目录无此模型 → Unavailable 正常出现
+    cleanup()
+    resetGlobalModelStub()
+    setGlobalModelStub({ confirmedModelId: 'm-gone' })
+    render(<ResearchGlobalModelBar />)
+    expect(screen.getByTestId('global-model-summary-trigger').textContent).toContain(
+      'research.globalModel.unavailable',
+    )
+  })
+
+  it('Trigger 长文本视觉截断且完整名称经 title 保留（评审 L3）', () => {
+    setGlobalModelStub({
+      models: MODELS,
+      confirmedModelId: GLOBAL_MODEL_STUB_ID,
+      draftModelId: GLOBAL_MODEL_STUB_ID,
+    })
+    render(<ResearchGlobalModelBar />)
+
+    expect(screen.getByTestId('global-model-summary-trigger')).toHaveAttribute('title', 'Local M')
+    expect(screen.getByTestId('global-model-summary-name')).toHaveClass('truncate')
   })
 
   it('已保存模型从目录消失时在 Popover 内保留为 unavailable 条目并置顶（不变量 7）', () => {

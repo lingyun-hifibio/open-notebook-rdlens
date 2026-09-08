@@ -147,5 +147,9 @@ describe('ResearchScopeSummary', () => {
     expect(summary).not.toHaveClass('border-b')
     expect(summary).not.toHaveClass('px-3')
     expect(summary).not.toHaveClass('py-2')
+    // 评审 L3：长文本视觉截断 + title 保留完整语义
+    const label = screen.getByTestId('research-context-scope')
+    expect(label).toHaveClass('truncate')
+    expect(label).toHaveAttribute('title', 'research.layout.scope.entireProject')
   })
 })

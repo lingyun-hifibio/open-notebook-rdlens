@@ -394,6 +394,15 @@ describe('ResearchLayout', () => {
     expect(expandButton).not.toHaveClass('-translate-x-1/2')
   })
 
+  it('UIOPT-A：vertical 轴展开按钮落位次级面板底部右角（评审 L2：位置分支有锁；产品当前只用 horizontal）', () => {
+    renderLayout()
+    const expandButton = screen.getByRole('button', { name: 'expand workspace' })
+    expect(expandButton).toHaveClass('right-3', 'bottom-3')
+    expect(expandButton).not.toHaveClass('top-3')
+    expect(expandButton).not.toHaveClass('top-1/2')
+    expect(expandButton).not.toHaveClass('-translate-y-1/2')
+  })
+
   it('moves separator focus to the restore control before maximizing', () => {
     renderLayout()
     const separator = screen.getByRole('separator', { name: 'resize panels' })
