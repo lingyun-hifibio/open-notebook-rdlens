@@ -211,7 +211,7 @@ describe('TransformationRunsPanel（RWV2-21 history）', () => {
     expect(meta.textContent).toContain('ja')
   })
 
-  it('meta 时间可读化：created_at 为 null 显示占位，有值无裸 ISO（RWV2-43）', async () => {
+  it('meta 时间可读化：created_at 为 null → 占位「—」（RWV2-43）', async () => {
     const r = { ...record(1), created_at: null }
     vi.mocked(researchApi.listTransformationResults).mockResolvedValue({
       items: [r], next_cursor: null,
@@ -220,7 +220,18 @@ describe('TransformationRunsPanel（RWV2-21 history）', () => {
     render(<TransformationRunsPanel />, { wrapper })
     const meta = await screen.findByTestId('run-row-meta-tres_01')
     expect(meta.textContent).toContain('—')
+  })
+
+  it('meta 时间可读化：created_at 有值 → 可读时间，无裸 ISO（RWV2-43）', async () => {
+    vi.mocked(researchApi.listTransformationResults).mockResolvedValue({
+      items: [record(1)], next_cursor: null,
+    })
+    const { wrapper } = makeWrapper()
+    render(<TransformationRunsPanel />, { wrapper })
+    const meta = await screen.findByTestId('run-row-meta-tres_01')
     expect(meta.textContent).not.toMatch(/T\d{2}:\d{2}/)
+    expect(meta.textContent).not.toContain('2026-09-07')
+    expect(meta.textContent).toContain('2026')
   })
 
   it('点行打开只读详情（TransformationRunDetail）并渲染冻结元数据', async () => {

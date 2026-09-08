@@ -13,7 +13,7 @@
  * `t()` 由调用方在组件层调用；本模块保持纯函数（不依赖 react-i18next）。
  */
 
-export const RESEARCH_LANGUAGE_LABEL_KEYS: Record<string, string> = {
+const RESEARCH_LANGUAGE_LABEL_KEYS: Record<string, string> = {
   en: 'research.transformations.variantEn',
   zh: 'research.transformations.variantZh',
 }
