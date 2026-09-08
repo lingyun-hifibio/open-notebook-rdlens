@@ -1082,9 +1082,6 @@ export const jaJP = {
     loadFailed: "Failed to load workspace data",
     retry: "Retry",
     pagination: { loadMore: "Load more", loadingMore: "Loading more…" },
-    header: {
-      project: "Project",
-    },
     mainActions: {
       runTemplate: "Run Template",
     },
@@ -1171,7 +1168,6 @@ export const jaJP = {
       draftUnsaved: "未保存の選択",
       consentRequired: "外部モデルの利用には外部送信の同意が必要です。",
       adminReadonly: "読み取り専用",
-      settings: "研究設定",
       external: "外部",
       local: "Local",
       consentFailed: "同意の確認に失敗しました。もう一度お試しください。",
@@ -1230,8 +1226,6 @@ export const jaJP = {
       tabRuns: "Runs",
       groupMaterials: "Materials",
       groupResults: "Results",
-      groupTools: "Tools",
-      tabTemplates: "Research templates",
       adminBanner: "管理者（読み取り専用）として表示しています",
       adminBannerDesc: "作成・編集・実行は利用できません。表示とエクスポートは利用できます。",
       adminWriteDenied: "読み取り専用セッション：書き込みは拒否されました",

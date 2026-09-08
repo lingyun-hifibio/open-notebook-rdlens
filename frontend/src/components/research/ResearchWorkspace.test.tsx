@@ -241,6 +241,15 @@ describe('ResearchWorkspace（RWV2-40 四动作主区）', () => {
     )
   })
 
+  it('UIOPT-A：主区 Tabs 行为展开按钮预留右侧空间（不靠 z-index 遮挡）', async () => {
+    renderHarness()
+    const reserve = await screen.findByTestId('workspace-expand-reserve')
+    expect(reserve).toHaveClass('w-36')
+    expect(reserve).toHaveAttribute('aria-hidden', 'true')
+    // 四动作 Tab 本体不受预留影响
+    expect(await screen.findByRole('tab', { name: 'research.mainActions.runTemplate' })).toBeInTheDocument()
+  })
+
   it('动作切换受控：点击 tab 触发 onActiveActionChange', async () => {
     const onActionChange = vi.fn()
     renderHarness({ onActionChange })

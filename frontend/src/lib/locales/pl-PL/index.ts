@@ -1082,9 +1082,6 @@ export const plPL = {
     loadFailed: "Failed to load workspace data",
     retry: "Retry",
     pagination: { loadMore: "Load more", loadingMore: "Loading more…" },
-    header: {
-      project: "Project",
-    },
     mainActions: {
       runTemplate: "Run Template",
     },
@@ -1171,7 +1168,6 @@ export const plPL = {
       draftUnsaved: "Niezapisany wybór",
       consentRequired: "Użycie modelu zewnętrznego wymaga zgody na wysyłkę.",
       adminReadonly: "Tylko do odczytu",
-      settings: "Ustawienia badania",
       external: "Zewnętrzny",
       local: "Local",
       consentFailed: "Nie udało się potwierdzić zgody. Spróbuj ponownie.",
@@ -1230,8 +1226,6 @@ export const plPL = {
       tabRuns: "Runs",
       groupMaterials: "Materials",
       groupResults: "Results",
-      groupTools: "Tools",
-      tabTemplates: "Research templates",
       adminBanner: "Przeglądasz jako administrator (tylko do odczytu)",
       adminBannerDesc: "Tworzenie, edycja i uruchamianie są niedostępne; przeglądanie i eksport pozostają dostępne.",
       adminWriteDenied: "Sesja tylko do odczytu: zapis odrzucony",

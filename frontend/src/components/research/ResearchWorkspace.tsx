@@ -402,12 +402,22 @@ export function ResearchWorkspace({
           onValueChange={(value) => onActiveActionChange(value as ResearchMainAction)}
           className="flex h-full flex-col"
         >
-          <TabsList className="mx-4 mt-2 w-fit">
-            <TabsTrigger value="evidence-search">{t('research.tabSearch')}</TabsTrigger>
-            <TabsTrigger value="research-chat">{t('research.tabChat')}</TabsTrigger>
-            <TabsTrigger value="compare">{t('research.tabCompare')}</TabsTrigger>
-            <TabsTrigger value="run-template">{t('research.mainActions.runTemplate')}</TabsTrigger>
-          </TabsList>
+          {/* RWV2-UIOPT-A：Tabs 行右侧为 ResearchLayout 展开/恢复按钮预留
+              固定宽度（w-36 ≥ 按钮宽 + right-3 偏移），按钮位于次级面板
+              右上角时不遮挡四动作 Tab——预留真实空间而非 z-index 遮盖。 */}
+          <div className="flex min-w-0 items-center px-4 pt-2" data-testid="workspace-tabs-row">
+            <TabsList className="w-fit">
+              <TabsTrigger value="evidence-search">{t('research.tabSearch')}</TabsTrigger>
+              <TabsTrigger value="research-chat">{t('research.tabChat')}</TabsTrigger>
+              <TabsTrigger value="compare">{t('research.tabCompare')}</TabsTrigger>
+              <TabsTrigger value="run-template">{t('research.mainActions.runTemplate')}</TabsTrigger>
+            </TabsList>
+            <div
+              aria-hidden="true"
+              className="ml-auto w-36 shrink-0"
+              data-testid="workspace-expand-reserve"
+            />
+          </div>
 
           {RESEARCH_MAIN_ACTIONS.filter((action) => mountedActions.includes(action)).map((action) => {
             const isActive = action === activeAction

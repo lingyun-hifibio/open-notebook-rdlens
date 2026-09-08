@@ -7,29 +7,33 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 import { useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
 
 /**
- * Research 顶层全局模型控件（Issue #243 GMOD-FE-01，计划 §6.1/§6.2）。
+ * Research 顶层全局模型控件（Issue #243 GMOD-FE-01；RWV2-UIOPT-A 收敛）。
+ *
+ * RWV2-UIOPT-A（fork #57）：删除 `layout` 参数，组件恒为紧凑
+ * Trigger + Popover 形态。Trigger 是 Header 常驻摘要，由三部分组成：
+ * 已确认模型名（无 display name 用 model ID）、显式 Local/External、
+ * 当前最高优先级状态。
  *
  * 这是页面内**唯一**的 Research 模型入口（退出条件一）。行为约束：
  *
+ * - Trigger 永不读取 draft：只显示 confirmed 模型；未保存的选择只在
+ *   状态里提示（不变量 2）；
  * - 下拉框是 draft：只有保存成功后才成为 confirmed，生成入口不读 draft
  *   （不变量 2）；未保存时展示「尚未保存的选择」而不是静默生效；
  * - 保存只 PATCH `preferred_model_id`；Search 上下文在 Search 面板内单独
  *   保存，两者互不覆盖（不变量 8，§6.3）；
  * - 保存中禁用控件与所有新生成入口（不变量 3）；失败展示 i18n 错误；
  * - 已保存模型消失/禁用时**保留其条目**并标注不可用，绝不自动改选
- *   （不变量 7）；
+ *   （不变量 7）；Trigger 显示原 ID + Unavailable，不因元数据缺失推断
+ *   为 Local；
+ * - 未配置模型时 Trigger 显示 Select model，不出现虚假的 Local/External；
  * - 允许显式清除；清除后生成入口被阻止并引导重新选择；
  * - Admin readonly：控件禁用（isAdminReadonly），不发 PATCH；
  * - 外部模型需确认时入口仍可点击——点击后由根级 guard 弹确认，禁用会让
- *   用户永远无法触发确认（§6.8 第 3 步）。
- *
- * `layout="popover"` 用于窄屏：把设置收进可访问触发器的浮层，避免横向溢出。
+ *   用户永远无法触发确认（§6.8 第 3 步）；External 标识必须直接出现在
+ *   Trigger，不得只藏在 Popover/Tooltip 内。
  */
-export function ResearchGlobalModelBar({
-  layout = 'inline',
-}: {
-  layout?: 'inline' | 'popover'
-}) {
+export function ResearchGlobalModelBar() {
   const { t } = useTranslation()
   const {
     models,
@@ -42,6 +46,8 @@ export function ResearchGlobalModelBar({
     isLoadingModel,
     saveModelError,
     dismissSaveModelError,
+    confirmedModel,
+    confirmedModelIsExternal,
     confirmedModelAvailability,
     needsConsent,
     runGuarded,
@@ -75,6 +81,8 @@ export function ResearchGlobalModelBar({
   const dirty = draftModelId !== confirmedModelId
   const disabled = isAdminReadonly || isSavingModel || isLoadingModel
 
+  // 状态优先级：Save failed → Saving → Unavailable → No model →
+  // Consent required → Unsaved draft → Admin readonly（计划 §6.3）。
   const statusText = saveModelError
     ? t('research.globalModel.saveFailed')
     : isSavingModel
@@ -90,6 +98,26 @@ export function ResearchGlobalModelBar({
               : isAdminReadonly
                 ? t('research.globalModel.adminReadonly')
                 : ''
+
+  // Trigger 摘要（永不读 draft）：
+  // - 名称：confirmed display name（缺省用 model ID）；未配置 → Select model；
+  // - 部署身份：confirmed 模型在目录中时显式 Local/External；消失或未配置
+  //   时不标注（不得推断）；
+  // - 状态：最高优先级状态；未配置模型时名称槽已是「Select model」，
+  //   不重复展示 No model 提示。
+  const triggerName =
+    confirmedModelAvailability === 'available' && confirmedModel
+      ? confirmedModel.display_name || confirmedModel.model_id
+      : confirmedModelAvailability === 'unavailable' && confirmedModelId !== null
+        ? confirmedModelId
+        : t('research.globalModel.placeholder')
+  const triggerVisibility =
+    confirmedModelAvailability === 'available' && confirmedModel
+      ? confirmedModelIsExternal
+        ? t('research.globalModel.external')
+        : t('research.globalModel.local')
+      : null
+  const triggerStatus = confirmedModelId === null ? '' : statusText
 
   const controls = (
     <>
@@ -164,35 +192,44 @@ export function ResearchGlobalModelBar({
     </>
   )
 
-  if (layout === 'popover') {
-    return (
-      <Popover>
-        <PopoverTrigger asChild>
-          <Button
-            size="sm"
-            variant="outline"
-            data-testid="global-model-settings-trigger"
-          >
-            {t('research.globalModel.settings')}
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent
-          align="end"
-          className="w-72 space-y-2"
-          data-testid="global-model-popover"
-        >
-          {controls}
-        </PopoverContent>
-      </Popover>
-    )
-  }
-
   return (
-    <div
-      className="flex min-w-0 flex-wrap items-center justify-end gap-2"
-      data-testid="research-global-model-bar"
-    >
-      {controls}
-    </div>
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          size="sm"
+          variant="outline"
+          className="max-w-full"
+          data-testid="global-model-summary-trigger"
+          title={triggerName}
+        >
+          <span className="max-w-[10rem] truncate" data-testid="global-model-summary-name">
+            {triggerName}
+          </span>
+          {triggerVisibility !== null && (
+            <span
+              className="shrink-0 text-xs text-muted-foreground"
+              data-testid="global-model-summary-visibility"
+            >
+              · {triggerVisibility}
+            </span>
+          )}
+          {triggerStatus && (
+            <span
+              className="shrink-0 text-xs text-muted-foreground"
+              data-testid="global-model-summary-status"
+            >
+              · {triggerStatus}
+            </span>
+          )}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        className="w-72 space-y-2"
+        data-testid="global-model-popover"
+      >
+        {controls}
+      </PopoverContent>
+    </Popover>
   )
 }

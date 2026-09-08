@@ -68,7 +68,10 @@ export function ResearchSourceChatPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="srcchat-panel">
-      <div className="flex items-center justify-between gap-2 border-b px-4 py-2">
+      {/* RWV2-UIOPT-A：顶栏右侧为 ResearchLayout 展开/恢复按钮预留固定宽度
+          （pr-36 ≥ 按钮宽 + right-3 偏移）——New session 不被按钮遮挡，
+          预留真实空间而非 z-index 遮盖。 */}
+      <div className="flex items-center justify-between gap-2 border-b py-2 pl-4 pr-36" data-testid="srcchat-topbar">
         <h2 className="text-sm font-semibold">{t('research.sourceChat.title')}</h2>
         <Button
           size="sm"

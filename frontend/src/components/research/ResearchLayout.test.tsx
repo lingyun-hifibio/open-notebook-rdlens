@@ -370,21 +370,26 @@ describe('ResearchLayout', () => {
   })
 
   it('uses hidden for maximized content and returns focus to the restore control', () => {
-    renderLayout()
+    // UIOPT-A：位置断言针对水平轴（产品唯一使用的轴向）
+    renderLayout({ axis: 'horizontal' })
     const primaryAction = screen.getByRole('button', { name: 'primary action' })
     const expandButton = screen.getByRole('button', { name: 'expand workspace' })
-    expect(expandButton).toHaveClass('top-1/2', '-translate-y-1/2')
-    expect(expandButton).not.toHaveClass('top-3')
+    // UIOPT-A：按钮移至次级面板右上角——水平轴为 top-right，不再垂直居中
+    expect(expandButton).toHaveClass('top-3')
+    expect(expandButton).not.toHaveClass('top-1/2')
+    expect(expandButton).not.toHaveClass('-translate-y-1/2')
     primaryAction.focus()
     fireEvent.click(expandButton)
     expect(primaryAction.closest('section')).toHaveAttribute('hidden')
     expect(document.activeElement).toHaveTextContent('restore layout')
   })
 
-  it('keeps the expand control on the right edge for the horizontal axis', () => {
+  it('UIOPT-A：keeps the expand control in the secondary panel top-right corner for the horizontal axis', () => {
     renderLayout({ axis: 'horizontal' })
     const expandButton = screen.getByRole('button', { name: 'expand workspace' })
-    expect(expandButton).toHaveClass('right-3', 'top-1/2', '-translate-y-1/2')
+    expect(expandButton).toHaveClass('right-3', 'top-3')
+    expect(expandButton).not.toHaveClass('top-1/2')
+    expect(expandButton).not.toHaveClass('-translate-y-1/2')
     expect(expandButton).not.toHaveClass('left-1/2')
     expect(expandButton).not.toHaveClass('-translate-x-1/2')
   })

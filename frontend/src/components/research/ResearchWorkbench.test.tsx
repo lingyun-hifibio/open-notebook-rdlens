@@ -9,9 +9,11 @@ import type { ResearchNote, ResearchSource, ResearchSourceDetail } from '@/lib/t
 
 // RWV2-40 分组 IA（#44）Red：左栏 Workbench 不再使用 Radix Tabs 平铺四
 // 键——AdminReadOnlyBanner + ResearchScopeEditor（唯一编辑面）+ 分组导航
-// （Materials: Sources/Notes；Results: Insights/Transformation runs；
-// Tools: Research templates 跨区命令）+ 单一子视图内容区；Source 专注视图
-// 由 focusedSourceId 驱动（Back/onExitSourceFocus + SourceDetailPanel）。
+// （Materials: Sources/Notes；Results: Insights/Transformation runs）+
+// 单一子视图内容区；Source 专注视图由 focusedSourceId 驱动
+// （Back/onExitSourceFocus + SourceDetailPanel）。
+// RWV2-UIOPT-A（fork #57）：Tools/Research templates 跨区快捷入口删除；
+// 模板唯一正式入口是主区 Run Template 动作。
 
 vi.mock('@/lib/research/api', () => ({
   saveResultFromResult: vi.fn(),
@@ -86,10 +88,8 @@ function renderWorkbench(
     focusedSourceId: null,
     highlightPageIdx: null,
     highlightRequestId: 0,
-    researchTemplatesActive: false,
     onOpenSource: vi.fn(),
     onExitSourceFocus: vi.fn(),
-    onOpenResearchTemplates: vi.fn(),
     ...overrides,
   }
   const utils = render(<ResearchWorkbench {...props} />, { wrapper })
@@ -132,14 +132,14 @@ describe('ResearchWorkbench', () => {
     Element.prototype.scrollIntoView = vi.fn()
   })
 
-  it('分组导航：三个 group heading 可见；默认 Sources 子视图渲染 SourceListPanel（复选框可达）', async () => {
+  it('分组导航：两个 group heading 可见；默认 Sources 子视图渲染 SourceListPanel（复选框可达）', async () => {
     vi.mocked(researchApi.listSources).mockResolvedValue({ items: [source()], next_cursor: null })
     const { props } = renderWorkbench()
 
-    // 三个 group heading（语义化文案 key）
+    // 分组 heading（语义化文案 key）——UIOPT-A：Tools 组删除，只剩两组
     expect(screen.getByText('research.workbench.groupMaterials')).toBeInTheDocument()
     expect(screen.getByText('research.workbench.groupResults')).toBeInTheDocument()
-    expect(screen.getByText('research.workbench.groupTools')).toBeInTheDocument()
+    expect(screen.queryByText('research.workbench.groupTools')).toBeNull()
 
     // 默认子视图 = Sources：SourceListPanel 行复选框可达
     const checkbox = await screen.findByTestId('source-scope-src_1')
@@ -209,10 +209,8 @@ describe('ResearchWorkbench', () => {
       focusedSourceId: null,
       highlightPageIdx: null,
       highlightRequestId: 0,
-      researchTemplatesActive: false,
       onOpenSource: vi.fn(),
       onExitSourceFocus: vi.fn(),
-      onOpenResearchTemplates: vi.fn(),
     }
     const { rerender } = render(<ResearchWorkbench {...baseProps} />, { wrapper })
     expect(screen.getByTestId('scope-entire-project')).not.toHaveFocus()
@@ -258,29 +256,21 @@ describe('ResearchWorkbench', () => {
     expect(screen.getByTestId('source-scope-src_1')).toHaveAttribute('data-state', 'checked')
   })
 
-  it('Tools：Research templates 为跨区命令按钮；点击触发 onOpenResearchTemplates；active 态呈现 aria-current', () => {
+  it('UIOPT-A：Tools/Research templates 跨区快捷入口删除（模板唯一入口为主区 Run Template）', () => {
     vi.mocked(researchApi.listSources).mockResolvedValue({ items: [], next_cursor: null })
-    const { rerender, props } = renderWorkbench()
-    const templateButton = screen.getByRole('button', { name: 'research.workbench.tabTemplates' })
-    expect(templateButton).not.toHaveAttribute('aria-current')
-    fireEvent.click(templateButton)
-    expect(props.onOpenResearchTemplates).toHaveBeenCalledTimes(1)
+    renderWorkbench()
 
-    // researchTemplatesActive=true（主区 Run Template 激活）→ 可见 active 态
-    rerender(
-      <ResearchWorkbench
-        focusedSourceId={null}
-        highlightPageIdx={null}
-        highlightRequestId={0}
-        researchTemplatesActive
-        onOpenSource={props.onOpenSource}
-        onExitSourceFocus={props.onExitSourceFocus}
-        onOpenResearchTemplates={props.onOpenResearchTemplates}
-      />,
-    )
+    expect(screen.queryByTestId('workbench-open-templates')).toBeNull()
     expect(
-      screen.getByRole('button', { name: 'research.workbench.tabTemplates' }),
-    ).toHaveAttribute('aria-current', 'true')
+      screen.queryByRole('button', { name: 'research.workbench.tabTemplates' }),
+    ).toBeNull()
+    // Materials/Results 导航不受删除影响（其余分组子项仍可切换）
+    expect(
+      screen.getByRole('button', { name: 'research.workbench.tabSources' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'research.workbench.tabRuns' }),
+    ).toBeInTheDocument()
   })
 
   it('Results：Insights 子视图渲染 InsightsPanel（切换后查询其列表）', async () => {
@@ -344,10 +334,8 @@ describe('ResearchWorkbench', () => {
     const base = {
       focusedSourceId: 'src_1' as const,
       highlightPageIdx: 2 as number | null,
-      researchTemplatesActive: false,
       onOpenSource: vi.fn(),
       onExitSourceFocus: vi.fn(),
-      onOpenResearchTemplates: vi.fn(),
     }
     const { rerender } = render(<ResearchWorkbench {...base} highlightRequestId={1} />, {
       wrapper,

@@ -1084,9 +1084,6 @@ export const deDE = {
     loadFailed: "Failed to load workspace data",
     retry: "Retry",
     pagination: { loadMore: "Load more", loadingMore: "Loading more…" },
-    header: {
-      project: "Project",
-    },
     mainActions: {
       runTemplate: "Run Template",
     },
@@ -1173,7 +1170,6 @@ export const deDE = {
       draftUnsaved: "Ungespeicherte Auswahl",
       consentRequired: "Für externe Modelle ist eine Einwilligung zur Datenübertragung erforderlich.",
       adminReadonly: "Nur Lesen",
-      settings: "Forschungseinstellungen",
       external: "Extern",
       local: "Local",
       consentFailed: "Zustimmung konnte nicht bestätigt werden. Bitte erneut versuchen.",
@@ -1232,8 +1228,6 @@ export const deDE = {
       tabRuns: "Runs",
       groupMaterials: "Materials",
       groupResults: "Results",
-      groupTools: "Tools",
-      tabTemplates: "Research templates",
       adminBanner: "Sie sehen als Administrator (nur lesen)",
       adminBannerDesc: "Erstellen, Bearbeiten und Ausführen sind nicht verfügbar; Anzeigen und Export bleiben verfügbar.",
       adminWriteDenied: "Nur-Lese-Sitzung: Schreiben verweigert",

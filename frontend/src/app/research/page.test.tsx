@@ -35,14 +35,13 @@ interface WorkbenchPropsMock {
   focusedSourceId: string | null
   highlightPageIdx: number | null
   highlightRequestId: number
-  researchTemplatesActive: boolean
   onOpenSource: (sourceId: string, pageIdx?: number | null) => void
   onExitSourceFocus: () => void
-  onOpenResearchTemplates: () => void
   scopeEditRequest?: number
 }
 
 // Workbench 测试替身：暴露冻结受控 props 与回调触发按钮
+// （UIOPT-A：根页面不再有 researchTemplatesActive/onOpenResearchTemplates）
 vi.mock('@/components/research/ResearchWorkbench', () => ({
   ResearchWorkbench: (props: WorkbenchPropsMock) => (
     <div
@@ -50,7 +49,6 @@ vi.mock('@/components/research/ResearchWorkbench', () => ({
       data-focused-source-id={props.focusedSourceId ?? ''}
       data-highlight-page-idx={props.highlightPageIdx ?? ''}
       data-highlight-request-id={props.highlightRequestId}
-      data-templates-active={props.researchTemplatesActive ? 'true' : ''}
     >
       <button data-testid="wb-open" onClick={() => props.onOpenSource('src_1')} />
       <button
@@ -58,7 +56,6 @@ vi.mock('@/components/research/ResearchWorkbench', () => ({
         onClick={() => props.onOpenSource('src_9', 4)}
       />
       <button data-testid="wb-back" onClick={() => props.onExitSourceFocus()} />
-      <button data-testid="wb-templates" onClick={() => props.onOpenResearchTemplates()} />
     </div>
   ),
 }))
@@ -246,9 +243,13 @@ describe('/research Source 专注 + Source Chat 组合（Issue #182 + RWV2-40）
     expect(screen.getByTestId('workspace')).toHaveAttribute('data-active-action', 'run-template')
   })
 
-  it('Tools/Research templates 跨区命令 → 归一布局并激活 run-template（Workbench active 态回传）', () => {
+  it('UIOPT-A：根页面不再持有跨区模板 handler——Workbench 无模板触发按钮，主区动作切换仍可激活 run-template', () => {
     render(<ResearchPage />)
-    fireEvent.click(screen.getByTestId('wb-templates'))
+    // 旧快捷入口删除：Workbench 替身不再收到/渲染模板命令
+    expect(screen.queryByTestId('wb-templates')).toBeNull()
+    expect(workbenchEl().getAttribute('data-templates-active')).toBeNull()
+    // 主区 Run Template 仍是正式且唯一的模板入口（经主区动作切换可达）
+    fireEvent.click(screen.getByTestId('ws-run-template'))
     expect(screen.getByTestId('workspace')).toHaveAttribute('data-active-action', 'run-template')
   })
 

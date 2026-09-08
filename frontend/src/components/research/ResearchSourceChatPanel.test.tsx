@@ -67,6 +67,14 @@ describe('ResearchSourceChatPanel', () => {
     expect(screen.getByText('research.sourceChat.emptyState')).toBeInTheDocument()
   })
 
+  it('UIOPT-A：顶栏为展开按钮预留右侧空间（pr-36；不靠 z-index 遮挡 New session）', () => {
+    renderPanel()
+    const topbar = screen.getByTestId('srcchat-topbar')
+    expect(topbar).toHaveClass('pr-36')
+    // New session 按钮仍可达（在预留区左侧）
+    expect(screen.getByTestId('srcchat-new-session')).toBeInTheDocument()
+  })
+
   it('新会话按钮触发 selectSession(null)', () => {
     const chat = makeChatResult()
     vi.mocked(useResearchSourceChat).mockReturnValue(chat)

@@ -1082,9 +1082,6 @@ export const ptBR = {
     loadFailed: "Failed to load workspace data",
     retry: "Retry",
     pagination: { loadMore: "Load more", loadingMore: "Loading more…" },
-    header: {
-      project: "Project",
-    },
     mainActions: {
       runTemplate: "Run Template",
     },
@@ -1171,7 +1168,6 @@ export const ptBR = {
       draftUnsaved: "Seleção não salva",
       consentRequired: "O uso de modelo externo exige consentimento de envio.",
       adminReadonly: "Somente leitura",
-      settings: "Configurações da pesquisa",
       external: "Externo",
       local: "Local",
       consentFailed: "Falha ao confirmar o consentimento. Tente novamente.",
@@ -1230,8 +1226,6 @@ export const ptBR = {
       tabRuns: "Runs",
       groupMaterials: "Materials",
       groupResults: "Results",
-      groupTools: "Tools",
-      tabTemplates: "Research templates",
       adminBanner: "Você está vendo como administrador (somente leitura)",
       adminBannerDesc: "Criar, editar e executar não estão disponíveis; visualizar e exportar permanecem disponíveis.",
       adminWriteDenied: "Sessão somente leitura: escrita negada",

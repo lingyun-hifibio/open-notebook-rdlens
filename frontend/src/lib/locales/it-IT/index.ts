@@ -1082,9 +1082,6 @@ export const itIT = {
     loadFailed: "Failed to load workspace data",
     retry: "Retry",
     pagination: { loadMore: "Load more", loadingMore: "Loading more…" },
-    header: {
-      project: "Project",
-    },
     mainActions: {
       runTemplate: "Run Template",
     },
@@ -1171,7 +1168,6 @@ export const itIT = {
       draftUnsaved: "Selezione non salvata",
       consentRequired: "L'uso di un modello esterno richiede il consenso all'invio.",
       adminReadonly: "Sola lettura",
-      settings: "Impostazioni di ricerca",
       external: "Esterno",
       local: "Local",
       consentFailed: "Conferma del consenso non riuscita. Riprova.",
@@ -1230,8 +1226,6 @@ export const itIT = {
       tabRuns: "Runs",
       groupMaterials: "Materials",
       groupResults: "Results",
-      groupTools: "Tools",
-      tabTemplates: "Research templates",
       adminBanner: "Visualizzazione come amministratore (sola lettura)",
       adminBannerDesc: "Creazione, modifica ed esecuzione non disponibili; visualizzazione ed esportazione disponibili.",
       adminWriteDenied: "Sessione di sola lettura: scrittura negata",
