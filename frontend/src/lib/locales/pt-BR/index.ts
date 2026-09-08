@@ -1252,6 +1252,7 @@ export const ptBR = {
       statusStale: "Atualizando",
       statusFailed: "Falha na sincronização",
       lastError: "Erro: {{error}}",
+      synced: "Sincronizado",
       retryHint: "Uma falha de sincronização pode ser repetida por um administrador",
       staleSelectionWarning: "Updating source: results may use the last synchronized version.",
       empty: "Sem fontes",

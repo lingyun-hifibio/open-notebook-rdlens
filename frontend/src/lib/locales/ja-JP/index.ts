@@ -1252,6 +1252,7 @@ export const jaJP = {
       statusStale: "更新中",
       statusFailed: "同期失敗",
       lastError: "エラー：{{error}}",
+      synced: "同期済み",
       retryHint: "同期失敗は管理者が再試行できます",
       staleSelectionWarning: "Updating source: results may use the last synchronized version.",
       empty: "ソースがありません",

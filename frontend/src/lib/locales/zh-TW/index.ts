@@ -1252,6 +1252,7 @@ export const zhTW = {
       statusStale: "內容更新中",
       statusFailed: "同步失敗",
       lastError: "錯誤：{{error}}",
+      synced: "同步於",
       retryHint: "同步失敗可聯絡管理員重試",
       staleSelectionWarning: "Updating source: results may use the last synchronized version.",
       empty: "暫無來源",

@@ -242,3 +242,63 @@ describe('ResearchHeader（RWV2-41 Activity 徽标计数）', () => {
     await waitFor(() => expect(screen.queryByTestId('activity-badge')).toBeNull())
   })
 })
+
+// RWV2-43（fork #47）：Activity 非终态计数的隐藏 live region（R2-2/C-H2）。
+// 规则：effect 依赖 [activeCount, activityOpen]；Dialog 打开时不写文本，
+// 关闭时重同步当前计数；等价文本不重复播报。
+describe('ResearchHeader（RWV2-43 Activity live region）', () => {
+  beforeEach(() => {
+    toastMock.mockClear()
+    mediaQueryMocks.isDesktop.mockReturnValue(true)
+    vi.mocked(api.listJobs).mockClear()
+    setActiveJobs([])
+    localStorage.clear()
+  })
+  afterEach(cleanup)
+
+  it('计数 0 → >0（Dialog 关闭）→ live region 播报当前非终态计数', async () => {
+    render(<ResearchHeader onEditScopeAllStates={() => {}} onCitationJump={() => {}} />, {
+      wrapper: wrapper(),
+    })
+    const region = await screen.findByTestId('activity-live-region')
+    expect(region).toHaveAttribute('aria-live', 'polite')
+    expect(region).toHaveAttribute('aria-atomic', 'true')
+    expect(region.textContent).toBe('')
+    setActiveJobs([job({ job_id: 'run', status: 'running' })])
+    window.dispatchEvent(new Event('focus'))
+    await waitFor(() => expect(region.textContent).toBe('research.activity.badgeActive:1'))
+  })
+
+  it('Dialog 打开期间计数变化被抑制；关闭后重同步当前计数（R2-2）', async () => {
+    setActiveJobs([job({ job_id: 'run', status: 'running' })])
+    render(<ResearchHeader onEditScopeAllStates={() => {}} onCitationJump={() => {}} />, {
+      wrapper: wrapper(),
+    })
+    const region = await screen.findByTestId('activity-live-region')
+    await waitFor(() => expect(region.textContent).toBe('research.activity.badgeActive:1'))
+    // 打开 Dialog → 计数 1 → 2（模拟轮询合并新任务）；live region 必须保持旧值
+    fireEvent.click(screen.getByTestId('activity-trigger'))
+    await waitFor(() => expect(screen.getByTestId('activity-dialog')).toBeInTheDocument())
+    setActiveJobs([
+      job({ job_id: 'run', status: 'running' }),
+      job({ job_id: 'q2', status: 'queued' }),
+    ])
+    window.dispatchEvent(new Event('focus'))
+    await waitFor(() => expect(screen.getByTestId('activity-badge')).toHaveTextContent('2'))
+    expect(region.textContent).toBe('research.activity.badgeActive:1')
+    // 关闭 Dialog → 关闭转移无条件重同步当前计数
+    fireEvent.click(screen.getByRole('button', { name: 'common.close' }))
+    await waitFor(() => expect(region.textContent).toBe('research.activity.badgeActive:2'))
+  })
+
+  it('计数无变化 → 不重复播报（等价文本不写）', async () => {
+    render(<ResearchHeader onEditScopeAllStates={() => {}} onCitationJump={() => {}} />, {
+      wrapper: wrapper(),
+    })
+    const region = await screen.findByTestId('activity-live-region')
+    expect(region.textContent).toBe('')
+    window.dispatchEvent(new Event('focus'))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(region.textContent).toBe('')
+  })
+})

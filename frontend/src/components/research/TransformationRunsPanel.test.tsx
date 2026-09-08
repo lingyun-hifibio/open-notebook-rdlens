@@ -187,7 +187,7 @@ describe('TransformationRunsPanel（RWV2-21 history）', () => {
     expect(meta.textContent).not.toContain('en')
   })
 
-  it('response_language 有值 → meta 显示真实语言（评审 Medium-1 对照组）', async () => {
+  it('response_language 有值（en/zh）→ meta 显示英文标签而非裸码（评审 Medium-1 对照组；F4）', async () => {
     const r = { ...record(1), response_language: 'zh' }
     vi.mocked(researchApi.listTransformationResults).mockResolvedValue({
       items: [r], next_cursor: null,
@@ -195,7 +195,32 @@ describe('TransformationRunsPanel（RWV2-21 history）', () => {
     const { wrapper } = makeWrapper()
     render(<TransformationRunsPanel />, { wrapper })
     const meta = await screen.findByTestId('run-row-meta-tres_01')
-    expect(meta.textContent).toContain('zh')
+    // 有意变更（F4）：裸语言码 → variantZh 英文标签（stub t 返回 key 串）
+    expect(meta.textContent).toContain('variantZh')
+    expect(meta.textContent).not.toContain('zh')
+  })
+
+  it('response_language 未知非 null → meta 回退原码展示（C-M1：不丢失信息）', async () => {
+    const r = { ...record(1), response_language: 'ja' }
+    vi.mocked(researchApi.listTransformationResults).mockResolvedValue({
+      items: [r], next_cursor: null,
+    })
+    const { wrapper } = makeWrapper()
+    render(<TransformationRunsPanel />, { wrapper })
+    const meta = await screen.findByTestId('run-row-meta-tres_01')
+    expect(meta.textContent).toContain('ja')
+  })
+
+  it('meta 时间可读化：created_at 为 null 显示占位，有值无裸 ISO（RWV2-43）', async () => {
+    const r = { ...record(1), created_at: null }
+    vi.mocked(researchApi.listTransformationResults).mockResolvedValue({
+      items: [r], next_cursor: null,
+    })
+    const { wrapper } = makeWrapper()
+    render(<TransformationRunsPanel />, { wrapper })
+    const meta = await screen.findByTestId('run-row-meta-tres_01')
+    expect(meta.textContent).toContain('—')
+    expect(meta.textContent).not.toMatch(/T\d{2}:\d{2}/)
   })
 
   it('点行打开只读详情（TransformationRunDetail）并渲染冻结元数据', async () => {

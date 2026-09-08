@@ -1252,6 +1252,7 @@ export const itIT = {
       statusStale: "Aggiornamento",
       statusFailed: "Sincronizzazione non riuscita",
       lastError: "Errore: {{error}}",
+      synced: "Sincronizzato",
       retryHint: "Un errore di sincronizzazione può essere ritentato da un amministratore",
       staleSelectionWarning: "Updating source: results may use the last synchronized version.",
       empty: "Nessuna fonte",

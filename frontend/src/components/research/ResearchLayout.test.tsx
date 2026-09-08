@@ -403,6 +403,21 @@ describe('ResearchLayout', () => {
     expect(expandButton).toHaveFocus()
   })
 
+  it('RWV2-43：expand/restore 按钮携带 aria-expanded/aria-controls（AC7 expanded 语义）', () => {
+    renderLayout()
+    const expandButton = screen.getByRole('button', { name: 'expand workspace' })
+    expect(expandButton).toHaveAttribute('aria-expanded', 'false')
+    expect(expandButton).toHaveAttribute('aria-controls', 'global-secondary')
+    const secondary = screen.getByLabelText('secondary')
+    expect(secondary).toHaveAttribute('id', 'global-secondary')
+
+    fireEvent.click(expandButton)
+    expect(screen.getByRole('button', { name: 'restore layout' })).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    )
+  })
+
   it('cleans pending pointer work on cancel, lost capture, blur, and unmount', () => {
     const { unmount } = renderLayout()
     const separator = screen.getByRole('separator', { name: 'resize panels' })

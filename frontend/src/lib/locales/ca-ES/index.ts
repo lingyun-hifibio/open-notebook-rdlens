@@ -1252,6 +1252,7 @@ export const caES = {
       statusStale: "Actualitzant",
       statusFailed: "Sincronització fallida",
       lastError: "Error: {{error}}",
+      synced: "Sincronitzat",
       retryHint: "Un administrador pot tornar a provar una sincronització fallida",
       staleSelectionWarning: "Updating source: results may use the last synchronized version.",
       empty: "Sense fonts",

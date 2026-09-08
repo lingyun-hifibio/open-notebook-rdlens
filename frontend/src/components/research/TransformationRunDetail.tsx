@@ -11,6 +11,7 @@ import { resolveScopeSelection } from '@/lib/research/scope-utils'
 import { newIdempotencyKey } from '@/lib/research/api'
 import { useResearchGlobalModel, researchModelBlockedHint } from '@/lib/hooks/use-research-global-model'
 import { useRunResearchTransformation } from '@/lib/hooks/use-research'
+import { formatResearchTimestamp, researchLanguageLabelKey } from '@/lib/research/format'
 import type { ResearchCitation, ResearchSource, TransformationResultRecord } from '@/lib/types/research'
 import { normalizePersistedCitations } from './citation-utils'
 import { CitationCard } from './CitationCard'
@@ -86,6 +87,14 @@ export function TransformationRunDetail({
   const citations = normalizePersistedCitations(record.citations)
   const rerunnable = showRerun === true && record.transformation_id !== null
   const blockedHint = researchModelBlockedHint(blockedReason, t)
+  // RWV2-43：语言 en/zh → 英文标签；未知非 null → 原码；null → '—'（F4/C-M1）
+  const languageKey = researchLanguageLabelKey(record.response_language)
+  const languageText = languageKey === null
+    ? '—'
+    : languageKey.startsWith('research.transformations.')
+      ? t(languageKey)
+      : languageKey
+  const createdText = formatResearchTimestamp(record.created_at) ?? '—'
 
   const rerun = async () => {
     if (!record.transformation_id) return
@@ -176,7 +185,7 @@ export function TransformationRunDetail({
           <dt>{t('research.transformations.status')}</dt>
           <dd data-testid="detail-status">{record.status ?? '—'}</dd>
           <dt>{t('research.transformations.language')}</dt>
-          <dd data-testid="detail-language">{record.response_language ?? '—'}</dd>
+          <dd data-testid="detail-language">{languageText}</dd>
           <dt>{t('research.transformations.inputs')}</dt>
           <dd data-testid="detail-inputs-summary">
             {t('research.transformations.sourceNoteCount', {
@@ -185,7 +194,7 @@ export function TransformationRunDetail({
             })}
           </dd>
           <dt>{t('research.transformations.createdAt')}</dt>
-          <dd>{record.created_at ?? '—'}</dd>
+          <dd data-testid="detail-created">{createdText}</dd>
         </dl>
       </div>
 

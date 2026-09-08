@@ -1253,6 +1253,7 @@ export const esES = {
       statusStale: "Actualizando",
       statusFailed: "Error de sincronización",
       lastError: "Error: {{error}}",
+      synced: "Sincronizado",
       retryHint: "Un administrador puede reintentar una sincronización fallida",
       staleSelectionWarning: "Updating source: results may use the last synchronized version.",
       empty: "Sin fuentes",

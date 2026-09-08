@@ -1252,6 +1252,7 @@ export const zhCN = {
       statusStale: "内容更新中",
       statusFailed: "同步失败",
       lastError: "错误：{{error}}",
+      synced: "同步于",
       retryHint: "同步失败可联系管理员重试",
       staleSelectionWarning: "Updating source: results may use the last synchronized version.",
       empty: "暂无来源",

@@ -13,6 +13,7 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
 import { useResearchTransformationResults } from '@/lib/hooks/use-research'
 import { useResearchSources } from '@/lib/hooks/use-research'
+import { formatResearchTimestamp, researchLanguageLabelKey } from '@/lib/research/format'
 import type { ResearchCitation, TransformationResultRecord } from '@/lib/types/research'
 import { AdminReadOnlyBanner } from './AdminReadOnlyBanner'
 import { TransformationRunDetail } from './TransformationRunDetail'
@@ -112,37 +113,45 @@ export function TransformationRunsPanel({
       )}
 
       <div className="space-y-2">
-        {items.map((record) => (
-          <Card
-            key={record.result_id}
-            className={record.result_id === highlightedResultId ? 'ring-1 ring-primary' : undefined}
-            data-highlighted={record.result_id === highlightedResultId || undefined}
-          >
-            <CardContent className="flex cursor-pointer items-center justify-between gap-3 p-3">
-              <button
-                type="button"
-                className="min-w-0 flex-1 text-left"
-                data-testid={`runs-row-${record.result_id}`}
-                onClick={() => openDetail(record)}
-              >
-                <p className="truncate text-sm font-medium">{record.title ?? '—'}</p>
-                <p
-                  className="mt-1 truncate text-xs text-muted-foreground"
-                  data-testid={`run-row-meta-${record.result_id}`}
+        {items.map((record) => {
+          // RWV2-43：语言码 en/zh → 英文标签（F4）；未知非 null → 原码（C-M1）；
+          // 时间 → 可读绝对时间（null → '—'）。与 jobTypeLabelKey 的
+          // 「key 前缀判断 + 原码回退」调用模式一致。
+          const languageKey = researchLanguageLabelKey(record.response_language)
+          const languageText = languageKey === null
+            ? '—'
+            : languageKey.startsWith('research.transformations.')
+              ? t(languageKey)
+              : languageKey
+          const createdText = formatResearchTimestamp(record.created_at) ?? '—'
+          return (
+            <Card
+              key={record.result_id}
+              className={record.result_id === highlightedResultId ? 'ring-1 ring-primary' : undefined}
+              data-highlighted={record.result_id === highlightedResultId || undefined}
+            >
+              <CardContent className="flex cursor-pointer items-center justify-between gap-3 p-3">
+                <button
+                  type="button"
+                  className="min-w-0 flex-1 text-left"
+                  data-testid={`runs-row-${record.result_id}`}
+                  onClick={() => openDetail(record)}
                 >
-                  {/* 评审 Medium-1：response_language 可 null（RWV2-31 前恒
-                      null / legacy 行），未知语言不能误标为 'en'——与详情
-                      的 '—' 占位保持一致。 */}
-                  {record.response_language ?? '—'} ·{' '}
-                  {record.created_at ?? '—'} ·{' '}
-                  {t('research.transformations.inputsCount', {
-                    count: record.source_ids.length + record.note_ids.length,
-                  })}
-                </p>
-              </button>
-            </CardContent>
-          </Card>
-        ))}
+                  <p className="truncate text-sm font-medium">{record.title ?? '—'}</p>
+                  <p
+                    className="mt-1 truncate text-xs text-muted-foreground"
+                    data-testid={`run-row-meta-${record.result_id}`}
+                  >
+                    {languageText} · {createdText} ·{' '}
+                    {t('research.transformations.inputsCount', {
+                      count: record.source_ids.length + record.note_ids.length,
+                    })}
+                  </p>
+                </button>
+              </CardContent>
+            </Card>
+          )
+        })}
       </div>
 
       {!isLoading && !isError && hasNextPage && (

@@ -1252,6 +1252,7 @@ export const ruRU = {
       statusStale: "Обновление",
       statusFailed: "Ошибка синхронизации",
       lastError: "Ошибка: {{error}}",
+      synced: "Синхронизировано",
       retryHint: "Повторную попытку синхронизации может выполнить администратор",
       staleSelectionWarning: "Updating source: results may use the last synchronized version.",
       empty: "Источников нет",

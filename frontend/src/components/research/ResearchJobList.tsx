@@ -10,23 +10,10 @@ import {
   jobStatusLabelKey,
   jobTypeLabelKey,
 } from '@/lib/research/jobs'
+import { formatResearchTimestamp } from '@/lib/research/format'
 import { CoverageJobDetails } from './CoverageJobDetails'
 import { CompareReportView } from './CompareReportView'
 import type { ResearchCitationDisplayItem, ResearchJob } from '@/lib/research/types'
-
-/** 展示用时间：当前 i18n 语言下的绝对时间；非法值回退原文。 */
-function formatJobTime(iso: string, lang: string | undefined): string {
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) return iso
-  try {
-    return new Intl.DateTimeFormat(lang ?? 'en-US', {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-    }).format(date)
-  } catch {
-    return iso
-  }
-}
 
 /**
  * 单张 Job 卡（UI-03 契约 §10；RWV2-41 Activity Center 复用）。
@@ -107,7 +94,8 @@ export function ResearchJobCard({
       {/* RWV2-41：meta 行（time/model/scope-when-supplied，AC3） */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
         <time dateTime={job.created_at} data-testid="job-created">
-          {t('research.activity.createdLabel')}: {formatJobTime(job.created_at, i18n?.language)}
+          {t('research.activity.createdLabel')}:{' '}
+          {formatResearchTimestamp(job.created_at, { lang: i18n?.language })}
         </time>
         {job.model_id !== null && (
           <span data-testid="job-model">

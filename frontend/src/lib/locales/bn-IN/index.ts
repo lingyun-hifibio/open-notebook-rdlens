@@ -1253,6 +1253,7 @@ export const bnIN = {
       statusStale: "হালনাগাদ হচ্ছে",
       statusFailed: "সিংক্রোনাইজেশন ব্যর্থ",
       lastError: "ত্রুটি: {{error}}",
+      synced: "সিঙ্ক হয়েছে",
       retryHint: "ব্যর্থ সিংক্রোনাইজেশন প্রশাসক আবার চেষ্টা করতে পারেন",
       staleSelectionWarning: "Updating source: results may use the last synchronized version.",
       empty: "কোনো উৎস নেই",
