@@ -150,7 +150,9 @@ export function createEmbeddedSession(options: EmbeddedSessionOptions): Embedded
       case 'theme':
         // RWV2-50：父页主题仅在 authenticated 后应用（fail-closed）；
         // 未认证时忽略——父页在每次成功 token 交付后重放当前主题。
-        if (state.status === 'authenticated') {
+        // 同值消息跳过：父页重放（bind/refresh）与手动切换可能重复同值，
+        // 会话层去重避免向 shell 推冗余通知（store 侧另有 early-return）。
+        if (state.status === 'authenticated' && state.embeddedTheme !== message.theme) {
           setState({ ...state, embeddedTheme: message.theme })
         }
         break

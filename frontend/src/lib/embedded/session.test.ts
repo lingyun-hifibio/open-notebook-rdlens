@@ -354,4 +354,27 @@ describe('createEmbeddedSession（REQ-EMB-01/02，契约 v0 §12）', () => {
     expect(h.states.length).toBe(transitionsBefore)
     expect(h.session.getState().embeddedTheme).toBeUndefined()
   })
+
+  it('error 态收到 theme 被忽略（仅 authenticated 应用）', () => {
+    const h = makeHarness()
+    const ready = h.posted[0].data
+    h.dispatch({ data: inboundMessage(ready) })
+    h.dispatch({ data: inboundMessage(ready, { type: 'error', code: 'refresh_failed', message: 'gateway outage' }) })
+    expect(h.session.getState().status).toBe('error')
+    const transitionsBefore = h.states.length
+    h.dispatch({ data: inboundMessage(ready, { type: 'theme', theme: 'dark' }) })
+    expect(h.states.length).toBe(transitionsBefore)
+    expect(h.session.getState().embeddedTheme).toBeUndefined()
+  })
+
+  it('同值 theme 重复消息不产生新的状态转换（父页重放去重）', () => {
+    const h = makeHarness()
+    const ready = h.posted[0].data
+    h.dispatch({ data: inboundMessage(ready) })
+    h.dispatch({ data: inboundMessage(ready, { type: 'theme', theme: 'dark' }) })
+    const transitionsBefore = h.states.length
+    h.dispatch({ data: inboundMessage(ready, { type: 'theme', theme: 'dark' }) })
+    expect(h.states.length).toBe(transitionsBefore)
+    expect(h.session.getState().embeddedTheme).toBe('dark')
+  })
 })

@@ -192,6 +192,10 @@ describe('ResearchWorkspaceShell', () => {
   }
 
   it('authenticated 后收到 theme 消息即应用到 document（data-theme/class）', () => {
+    // 共享 document 与模块级 store：显式重置起始态，保证用例自洽
+    document.documentElement.className = ''
+    document.documentElement.removeAttribute('data-theme')
+    useThemeStore.setState({ theme: 'light', embeddedTheme: null })
     const captures = stubParentWindow()
     render(<ResearchWorkspaceShell>workspace-panels</ResearchWorkspaceShell>)
     const ready = captures.posted[0].data

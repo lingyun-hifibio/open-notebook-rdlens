@@ -12,7 +12,6 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   // RWV2-50（RDLens #363）：订阅嵌入式 override，变化时重应用 DOM；
   // 独立（standalone）路径 embeddedTheme 恒为 null，行为不变。
   const embeddedTheme = useThemeStore((state) => state.embeddedTheme)
-  const getSystemTheme = useThemeStore((state) => state.getSystemTheme)
   const getEffectiveTheme = useThemeStore((state) => state.getEffectiveTheme)
 
   useEffect(() => {
@@ -45,7 +44,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
       mediaQuery.addEventListener('change', handleChange)
       return () => mediaQuery.removeEventListener('change', handleChange)
     }
-  }, [theme, embeddedTheme, getSystemTheme, getEffectiveTheme])
+  }, [theme, embeddedTheme, getEffectiveTheme])
 
   return <>{children}</>
 }
