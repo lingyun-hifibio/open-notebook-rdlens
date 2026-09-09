@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Maximize2 } from 'lucide-react'
 import {
   clampPrimaryPixels,
   getPrimaryPercentBounds,
@@ -10,6 +11,12 @@ import {
 
 const HANDLE_SIZE = 8
 const KEYBOARD_STEP = 5
+// RWV2-UIOPT-A 回归（fork#59 / RDLens#372）：次级面板低于该宽度时，展开/
+// 恢复按钮收 icon-only——文本按钮(~122px) + 四动作 Tabs min-content(332px)
+// + 行内边距 px-4(32px) + border(1px) = 487px；+25px 字体栅格余量带。
+// 同时闭合 w-36 预留态的版面需求（332+144+33=509 ≤ 512），故 512 两侧约束
+// 都成立。勿删：拖动窄带 [minSecondary,512) 无任何 smoke 覆盖，见 issue59。
+const NARROW_SECONDARY_PX = 512
 
 export interface ResearchLayoutProps {
   layoutId: string
@@ -81,6 +88,7 @@ export function ResearchLayout({
   const bodyStyleRef = useRef<{ cursor: string; userSelect: string } | null>(null)
   const [ratio, setRatio] = useState(defaultRatio)
   const [bounds, setBounds] = useState({ min: 0, max: 100 })
+  const [secondaryNarrow, setSecondaryNarrow] = useState(false)
   const [internalMaximized, setInternalMaximized] = useState(false)
   const [uncontrolledCompactPanel, setUncontrolledCompactPanel] = useState<'primary' | 'secondary'>('secondary')
   const compactPanel = controlledCompactPanel ?? uncontrolledCompactPanel
@@ -128,6 +136,13 @@ export function ResearchLayout({
   }, [getContainerSize, minPrimary, minSecondary])
 
   const syncMeasurement = useCallback((measurement: ReturnType<typeof applyRatio>) => {
+    // issue59：#59 回归——窄态测量并入所有几何提交汇点（mount / 窗口 resize
+    // / 拖拽结束 / 键盘 End+Home / 双击恢复 / maximize·restore 重测），不新增
+    // ResizeObserver（既有 StrictMode 测试约束 Observer 实例数）。maximize 期间
+    // 本测量会读到全宽（narrow=false 污染），由上方 layout effect 在 restore
+    // 后随 activeMaximized 重测纠正。
+    const secondaryWidth = secondaryRef.current?.getBoundingClientRect().width ?? 0
+    setSecondaryNarrow(secondaryWidth > 0 && secondaryWidth < NARROW_SECONDARY_PX)
     ratiosRef.current[layoutIdRef.current] = measurement.ratio
     setRatio((current) => Math.abs(current - measurement.ratio) > 0.01 ? measurement.ratio : current)
     setBounds((current) => (
@@ -266,8 +281,11 @@ export function ResearchLayout({
     }
     compactRef.current = compact
     if (compact) return
+    // activeMaximized 必须在此重测：maximize 期间 host resize 会把 syncMeasurement
+    // 的窄态测量污染为 false（次面板全宽），restore 回 rightMin/拖动窄带若不重测，
+    // 文本按钮 + w-36 预留会回归 #59 遮挡。渲染短路只承担 maximized 期间的视觉。
     syncMeasurement(applyRatio(ratioRef.current))
-  }, [applyRatio, compact, defaultRatio, layoutId, syncMeasurement])
+  }, [activeMaximized, applyRatio, compact, defaultRatio, layoutId, syncMeasurement])
 
   useLayoutEffect(() => {
     if (!compact) return
@@ -349,12 +367,13 @@ export function ResearchLayout({
   return (
     <div
       ref={hostRef}
-      className={compact
+      className={`group/narrow ${compact
         ? 'relative flex h-full min-h-0 flex-col'
-        : `relative grid h-full min-h-0 ${isVertical ? 'grid-rows-[minmax(0,var(--research-primary-size))_8px_minmax(0,1fr)]' : 'grid-cols-[minmax(0,var(--research-primary-size))_8px_minmax(0,1fr)]'}`}
+        : `relative grid h-full min-h-0 ${isVertical ? 'grid-rows-[minmax(0,var(--research-primary-size))_8px_minmax(0,1fr)]' : 'grid-cols-[minmax(0,var(--research-primary-size))_8px_minmax(0,1fr)]'}`}`}
       style={compact ? undefined : gridStyle}
       data-testid="research-layout"
       data-axis={axis}
+      data-narrow-secondary={secondaryNarrow ? 'true' : undefined}
     >
       <section
         ref={primaryRef}
@@ -418,10 +437,17 @@ export function ResearchLayout({
         type="button"
         aria-expanded={activeMaximized}
         aria-controls={secondarySectionId}
+        // issue59：窄态（rightMin/拖动窄带）收 icon-only；aria-label 恒定承载
+        // 可访问名。!activeMaximized 短路：maximized 全宽下恒回文本（恢复语义、
+        // 无遮挡）；restore 后窄态由上方 layout effect 随 activeMaximized 重测
+        // 恢复（见 M-1：maximize 期间 resize 会污染窄态状态）。
+        aria-label={activeMaximized ? restoreLabel : expandSecondaryLabel}
         className={`absolute z-10 rounded border bg-background px-2 py-1 text-xs shadow-sm right-3 ${isVertical ? 'bottom-3' : 'top-3'}`}
         onClick={toggleMaximized}
       >
-        {activeMaximized ? restoreLabel : expandSecondaryLabel}
+        {secondaryNarrow && !activeMaximized
+          ? <Maximize2 className="size-4" aria-hidden="true" />
+          : (activeMaximized ? restoreLabel : expandSecondaryLabel)}
       </button>
     </div>
   )
