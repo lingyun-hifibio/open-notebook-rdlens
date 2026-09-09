@@ -454,6 +454,35 @@ describe('ResearchLayout', () => {
     expect(screen.getByTestId('research-layout')).not.toHaveAttribute('data-narrow-secondary')
   })
 
+  it('issue59（评审 M-1）：maximize 期间窗口 resize 污染窄态后，restore 必须重测回窄态', () => {
+    // 序列：rightMin 窄态 → maximize → maximize 期间窗口变宽（host resize 触发
+    // syncMeasurement，把窄态污染为 false）→ restore 回窄几何。无 activeMaximized
+    // 重测时污染存续 → 文本按钮 + w-36 预留 → #59 遮挡回归；重测后回 icon。
+    width = 420
+    renderLayout({ minPrimary: 120, minSecondary: 100 })
+    const expandButton = screen.getByRole('button', { name: 'expand workspace' })
+    expect(expandButton.querySelector('svg')).toBeInTheDocument()
+    expect(screen.getByTestId('research-layout')).toHaveAttribute('data-narrow-secondary', 'true')
+
+    // maximize：视觉按短路回文本（此时次面板全宽）
+    fireEvent.click(expandButton)
+    const restoreButton = screen.getByRole('button', { name: 'restore layout' })
+    expect(restoreButton).toHaveTextContent('restore layout')
+
+    // maximize 期间窗口变宽 → host RO → syncMeasurement → 窄态被污染为 false
+    width = 900
+    triggerResize()
+    expect(screen.getByTestId('research-layout')).not.toHaveAttribute('data-narrow-secondary')
+
+    // restore（模拟回到窄的 rightMin 几何）→ 应重测：icon 恢复、窄态标记回来
+    width = 420
+    fireEvent.click(restoreButton)
+    const restored = screen.getByRole('button', { name: 'expand workspace' })
+    expect(restored.querySelector('svg')).toBeInTheDocument()
+    expect(restored).not.toHaveTextContent('expand workspace')
+    expect(screen.getByTestId('research-layout')).toHaveAttribute('data-narrow-secondary', 'true')
+  })
+
   it('cleans pending pointer work on cancel, lost capture, blur, and unmount', () => {
     const { unmount } = renderLayout()
     const separator = screen.getByRole('separator', { name: 'resize panels' })

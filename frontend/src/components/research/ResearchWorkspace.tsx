@@ -418,7 +418,7 @@ export function ResearchWorkspace({
             </TabsList>
             <div
               aria-hidden="true"
-              className="ml-auto hidden w-36 shrink-0 lg:block group-data-[narrow-secondary=true]:w-11"
+              className="ml-auto hidden w-36 shrink-0 lg:block group-data-[narrow-secondary=true]/narrow:w-11"
               data-testid="workspace-expand-reserve"
             />
           </div>

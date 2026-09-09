@@ -137,9 +137,10 @@ export function ResearchLayout({
 
   const syncMeasurement = useCallback((measurement: ReturnType<typeof applyRatio>) => {
     // issue59：#59 回归——窄态测量并入所有几何提交汇点（mount / 窗口 resize
-    // / 拖拽结束 / 键盘 End+Home / 双击恢复），不新增 ResizeObserver（既有
-    // StrictMode 测试约束 Observer 实例数）。maximized 分支由渲染短路承担（
-    // 见按钮），此处无需随 activeMaximized 重测。
+    // / 拖拽结束 / 键盘 End+Home / 双击恢复 / maximize·restore 重测），不新增
+    // ResizeObserver（既有 StrictMode 测试约束 Observer 实例数）。maximize 期间
+    // 本测量会读到全宽（narrow=false 污染），由上方 layout effect 在 restore
+    // 后随 activeMaximized 重测纠正。
     const secondaryWidth = secondaryRef.current?.getBoundingClientRect().width ?? 0
     setSecondaryNarrow(secondaryWidth > 0 && secondaryWidth < NARROW_SECONDARY_PX)
     ratiosRef.current[layoutIdRef.current] = measurement.ratio
@@ -280,8 +281,11 @@ export function ResearchLayout({
     }
     compactRef.current = compact
     if (compact) return
+    // activeMaximized 必须在此重测：maximize 期间 host resize 会把 syncMeasurement
+    // 的窄态测量污染为 false（次面板全宽），restore 回 rightMin/拖动窄带若不重测，
+    // 文本按钮 + w-36 预留会回归 #59 遮挡。渲染短路只承担 maximized 期间的视觉。
     syncMeasurement(applyRatio(ratioRef.current))
-  }, [applyRatio, compact, defaultRatio, layoutId, syncMeasurement])
+  }, [activeMaximized, applyRatio, compact, defaultRatio, layoutId, syncMeasurement])
 
   useLayoutEffect(() => {
     if (!compact) return
@@ -363,7 +367,7 @@ export function ResearchLayout({
   return (
     <div
       ref={hostRef}
-      className={`group ${compact
+      className={`group/narrow ${compact
         ? 'relative flex h-full min-h-0 flex-col'
         : `relative grid h-full min-h-0 ${isVertical ? 'grid-rows-[minmax(0,var(--research-primary-size))_8px_minmax(0,1fr)]' : 'grid-cols-[minmax(0,var(--research-primary-size))_8px_minmax(0,1fr)]'}`}`}
       style={compact ? undefined : gridStyle}
@@ -435,7 +439,8 @@ export function ResearchLayout({
         aria-controls={secondarySectionId}
         // issue59：窄态（rightMin/拖动窄带）收 icon-only；aria-label 恒定承载
         // 可访问名。!activeMaximized 短路：maximized 全宽下恒回文本（恢复语义、
-        // 无遮挡），退出后 narrow 未丢、立即回 icon——无需随 maximize 重测。
+        // 无遮挡）；restore 后窄态由上方 layout effect 随 activeMaximized 重测
+        // 恢复（见 M-1：maximize 期间 resize 会污染窄态状态）。
         aria-label={activeMaximized ? restoreLabel : expandSecondaryLabel}
         className={`absolute z-10 rounded border bg-background px-2 py-1 text-xs shadow-sm right-3 ${isVertical ? 'bottom-3' : 'top-3'}`}
         onClick={toggleMaximized}
