@@ -8,6 +8,7 @@ import { getEmbeddedParentOrigins } from './config'
 import { ResearchWorkspaceProvider } from './workspace-context'
 import { ResearchGlobalModelProvider } from '@/lib/hooks/use-research-global-model'
 import { ResearchScopeProvider } from '@/lib/research/scope'
+import { useThemeStore } from '@/lib/stores/theme-store'
 
 /**
  * ResearchWorkspaceShell（UI-01，设计 §4.1/§4.2；REQ-EMB-01/02）。
@@ -22,6 +23,16 @@ import { ResearchScopeProvider } from '@/lib/research/scope'
 export function ResearchWorkspaceShell({ children }: { children?: React.ReactNode }) {
   const { t } = useTranslation()
   const [state, setState] = useState<SessionState | null>(null)
+  const setEmbeddedTheme = useThemeStore((s) => s.setEmbeddedTheme)
+
+  // RWV2-50（RDLens #363）：父页主题仅在 authenticated 会话存续期间应用；
+  // 离开 authenticated（logout/error/destroyed/卸载）一律还原独立 fallback。
+  // 派生值不变时 store 侧 early-return，无冗余通知。
+  const embeddedTheme = state?.status === 'authenticated' ? (state.embeddedTheme ?? null) : null
+  useEffect(() => {
+    setEmbeddedTheme(embeddedTheme)
+  }, [embeddedTheme, setEmbeddedTheme])
+  useEffect(() => () => setEmbeddedTheme(null), [setEmbeddedTheme])
 
   useEffect(() => {
     const allowedOrigins = getEmbeddedParentOrigins()

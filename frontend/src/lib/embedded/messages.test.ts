@@ -124,4 +124,28 @@ describe('validateIncomingMessage（REQ-EMB-01 伪造消息全拒绝）', () => 
     expectRejected(message(), ctx({ origin: 'https://evil.example.com', sourceMatches: false }))
     expectRejected(message(), ctx({ nonce: 'n_forged', channel: 'ch_forged' }))
   })
+
+  // ── RWV2-50：additive theme 消息（宿主→iframe，payload 有界 light/dark）──
+
+  it('接受 theme 消息并限定 light/dark（RWV2-50）', () => {
+    expect(validateIncomingMessage(message({ type: 'theme', theme: 'dark' }), ctx()))
+      .toEqual({ type: 'theme', theme: 'dark' })
+    expect(validateIncomingMessage(message({ type: 'theme', theme: 'light' }), ctx()))
+      .toEqual({ type: 'theme', theme: 'light' })
+  })
+
+  it('theme 载荷越界（非 light/dark）一律静默拒绝', () => {
+    expectRejected(message({ type: 'theme', theme: 'system' }), ctx())
+    expectRejected(message({ type: 'theme', theme: 'DARK' }), ctx())
+    expectRejected(message({ type: 'theme', theme: 1 }), ctx())
+    expectRejected(omit(message({ type: 'theme', theme: 'dark' }), 'theme'), ctx())
+  })
+
+  it('theme 消息同样必须满足五要素绑定', () => {
+    expectRejected(message({ type: 'theme', theme: 'dark' }), ctx({ nonce: 'n_forged', channel: 'ch_forged' }))
+    expectRejected(
+      message({ type: 'theme', theme: 'dark' }),
+      ctx({ origin: 'https://evil.example.com', sourceMatches: false }),
+    )
+  })
 })

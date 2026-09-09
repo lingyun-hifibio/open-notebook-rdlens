@@ -4,6 +4,7 @@ import { render, screen, cleanup } from '@testing-library/react'
 import { ResearchWorkspaceShell } from './shell'
 import { clearResearchToken, getResearchToken } from './token-store'
 import { useResearchScope } from '@/lib/research/scope'
+import { useThemeStore } from '@/lib/stores/theme-store'
 
 // UI-01 Red：ResearchWorkspaceShell 加载/错误/就绪三态 + ready 握手 +
 // 卸载销毁（任务卡 Checklist：bootstrap、session state、销毁无残留）。
@@ -172,5 +173,62 @@ describe('ResearchWorkspaceShell', () => {
     dispatchMessage(validTokenMessage(String(ready.nonce), String(ready.channel)))
     expect(document.body.textContent ?? '').not.toContain('workspace-panels')
     expect(getResearchToken()).toBeNull()
+  })
+
+  // ── RWV2-50：父页主题应用（authenticated 后生效；离开即还原独立 fallback）──
+
+  function dataTheme(): string | null {
+    return document.documentElement.getAttribute('data-theme')
+  }
+
+  function dispatchTheme(ready: Record<string, unknown>, theme: string) {
+    dispatchMessage({
+      schema: 'research-v0',
+      channel: ready.channel,
+      type: 'theme',
+      nonce: ready.nonce,
+      theme,
+    })
+  }
+
+  it('authenticated 后收到 theme 消息即应用到 document（data-theme/class）', () => {
+    const captures = stubParentWindow()
+    render(<ResearchWorkspaceShell>workspace-panels</ResearchWorkspaceShell>)
+    const ready = captures.posted[0].data
+    dispatchMessage(validTokenMessage(String(ready.nonce), String(ready.channel)))
+    dispatchTheme(ready, 'dark')
+    expect(dataTheme()).toBe('dark')
+    expect(document.documentElement.classList.contains('dark')).toBe(true)
+    dispatchTheme(ready, 'light')
+    expect(dataTheme()).toBe('light')
+  })
+
+  it('未 authenticated 时 theme 消息不应用（fail-closed）', () => {
+    // 共享 document：显式清空起始 DOM，断言未认证 theme 不写入任何主题
+    document.documentElement.className = ''
+    document.documentElement.removeAttribute('data-theme')
+    useThemeStore.setState({ theme: 'light', embeddedTheme: null })
+    const captures = stubParentWindow()
+    render(<ResearchWorkspaceShell>workspace-panels</ResearchWorkspaceShell>)
+    const ready = captures.posted[0].data
+    dispatchTheme(ready, 'dark')
+    expect(dataTheme()).toBeNull()
+  })
+
+  it('logout/destroy 后还原独立主题（override 清空）', () => {
+    useThemeStore.setState({ theme: 'dark', embeddedTheme: null })
+    const captures = stubParentWindow()
+    render(<ResearchWorkspaceShell>workspace-panels</ResearchWorkspaceShell>)
+    const ready = captures.posted[0].data
+    dispatchMessage(validTokenMessage(String(ready.nonce), String(ready.channel)))
+    dispatchTheme(ready, 'light')
+    expect(dataTheme()).toBe('light')
+    dispatchMessage({ schema: 'research-v0', channel: ready.channel, type: 'logout', nonce: ready.nonce })
+    expect(dataTheme()).toBe('dark')
+    dispatchMessage(validTokenMessage(String(ready.nonce), String(ready.channel)))
+    dispatchTheme(ready, 'light')
+    dispatchMessage({ schema: 'research-v0', channel: ready.channel, type: 'destroy', nonce: ready.nonce })
+    expect(dataTheme()).toBe('dark')
+    useThemeStore.setState({ theme: 'system', embeddedTheme: null })
   })
 })
