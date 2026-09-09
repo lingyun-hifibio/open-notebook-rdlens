@@ -42,6 +42,8 @@ export interface SessionState {
   projectId?: string
   /** UI-02：Owner 写 / Admin 只读矩阵数据源（设计 §4.4） */
   role?: ResearchRole
+  /** RWV2-50：父页下发的解析主题；仅 authenticated 态存续，离开即清 */
+  embeddedTheme?: 'light' | 'dark'
 }
 
 export interface EmbeddedSessionOptions {
@@ -124,6 +126,8 @@ export function createEmbeddedSession(options: EmbeddedSessionOptions): Embedded
           userId: claims.userId,
           projectId: claims.projectId,
           role: claims.role,
+          // RWV2-50：Token 刷新不抹掉已应用主题（仅 authenticated 前态携带）
+          embeddedTheme: state.status === 'authenticated' ? state.embeddedTheme : undefined,
         })
         break
       }
@@ -142,6 +146,15 @@ export function createEmbeddedSession(options: EmbeddedSessionOptions): Embedded
         break
       case 'destroy':
         destroy()
+        break
+      case 'theme':
+        // RWV2-50：父页主题仅在 authenticated 后应用（fail-closed）；
+        // 未认证时忽略——父页在每次成功 token 交付后重放当前主题。
+        // 同值消息跳过：父页重放（bind/refresh）与手动切换可能重复同值，
+        // 会话层去重避免向 shell 推冗余通知（store 侧另有 early-return）。
+        if (state.status === 'authenticated' && state.embeddedTheme !== message.theme) {
+          setState({ ...state, embeddedTheme: message.theme })
+        }
         break
     }
   }

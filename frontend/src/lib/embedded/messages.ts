@@ -39,6 +39,8 @@ export type ValidatedInboundMessage =
   | { type: 'error'; code: PmErrorCode; message: string }
   | { type: 'logout' }
   | { type: 'destroy' }
+  /** RWV2-50：宿主解析主题（additive，契约 v0 §12 theme_rules） */
+  | { type: 'theme'; theme: 'light' | 'dark' }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -96,6 +98,12 @@ export function validateIncomingMessage(
       return { type: 'logout' }
     case 'destroy':
       return { type: 'destroy' }
+    case 'theme':
+      // RWV2-50：payload 有界枚举，越界值与缺失字段一律静默拒绝
+      if (data.theme !== 'light' && data.theme !== 'dark') {
+        return null
+      }
+      return { type: 'theme', theme: data.theme }
     default:
       return null
   }

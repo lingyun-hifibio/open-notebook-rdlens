@@ -301,4 +301,80 @@ describe('createEmbeddedSession（REQ-EMB-01/02，契约 v0 §12）', () => {
     h.dispatch({ data: inboundMessage(h.posted[0].data), origin: 'https://evil.example.com' })
     expect(consoleSpy).not.toHaveBeenCalled()
   })
+
+  // ── RWV2-50：embedded theme（authenticated 后应用；refresh 保留；离开即清）──
+
+  it('authenticated 态收到 theme 消息后状态携带 embeddedTheme 且 claims 字段保留', () => {
+    const h = makeHarness()
+    const ready = h.posted[0].data
+    h.dispatch({ data: inboundMessage(ready) })
+    h.dispatch({ data: inboundMessage(ready, { type: 'theme', theme: 'dark' }) })
+    const state = h.session.getState()
+    expect(state.status).toBe('authenticated')
+    expect(state.embeddedTheme).toBe('dark')
+    expect(state.userId).toBe('user_1')
+    expect(state.projectId).toBe('proj_abc')
+    expect(state.role).toBe('owner')
+  })
+
+  it('未 authenticated（ready）时 theme 静默忽略（fail-closed）', () => {
+    const h = makeHarness()
+    h.dispatch({ data: inboundMessage(h.posted[0].data, { type: 'theme', theme: 'dark' }) })
+    expect(h.session.getState().status).toBe('ready')
+    expect(h.session.getState().embeddedTheme).toBeUndefined()
+    expect(h.states.length).toBe(1)
+  })
+
+  it('refresh 后 embeddedTheme 保留（不因 Token 刷新打回独立主题）', () => {
+    const h = makeHarness()
+    const ready = h.posted[0].data
+    h.dispatch({ data: inboundMessage(ready) })
+    h.dispatch({ data: inboundMessage(ready, { type: 'theme', theme: 'dark' }) })
+    h.dispatch({ data: inboundMessage(ready, { type: 'refresh', expires_at: 1754460900 }) })
+    expect(h.session.getState().status).toBe('authenticated')
+    expect(h.session.getState().embeddedTheme).toBe('dark')
+  })
+
+  it('logout 后 embeddedTheme 清空（回到独立 fallback 语义）', () => {
+    const h = makeHarness()
+    const ready = h.posted[0].data
+    h.dispatch({ data: inboundMessage(ready) })
+    h.dispatch({ data: inboundMessage(ready, { type: 'theme', theme: 'dark' }) })
+    h.dispatch({ data: inboundMessage(ready, { type: 'logout' }) })
+    expect(h.session.getState().status).toBe('ready')
+    expect(h.session.getState().embeddedTheme).toBeUndefined()
+  })
+
+  it('theme 载荷越界的消息被静默拒绝，状态不变', () => {
+    const h = makeHarness()
+    const ready = h.posted[0].data
+    h.dispatch({ data: inboundMessage(ready) })
+    const transitionsBefore = h.states.length
+    h.dispatch({ data: inboundMessage(ready, { type: 'theme', theme: 'system' }) })
+    expect(h.states.length).toBe(transitionsBefore)
+    expect(h.session.getState().embeddedTheme).toBeUndefined()
+  })
+
+  it('error 态收到 theme 被忽略（仅 authenticated 应用）', () => {
+    const h = makeHarness()
+    const ready = h.posted[0].data
+    h.dispatch({ data: inboundMessage(ready) })
+    h.dispatch({ data: inboundMessage(ready, { type: 'error', code: 'refresh_failed', message: 'gateway outage' }) })
+    expect(h.session.getState().status).toBe('error')
+    const transitionsBefore = h.states.length
+    h.dispatch({ data: inboundMessage(ready, { type: 'theme', theme: 'dark' }) })
+    expect(h.states.length).toBe(transitionsBefore)
+    expect(h.session.getState().embeddedTheme).toBeUndefined()
+  })
+
+  it('同值 theme 重复消息不产生新的状态转换（父页重放去重）', () => {
+    const h = makeHarness()
+    const ready = h.posted[0].data
+    h.dispatch({ data: inboundMessage(ready) })
+    h.dispatch({ data: inboundMessage(ready, { type: 'theme', theme: 'dark' }) })
+    const transitionsBefore = h.states.length
+    h.dispatch({ data: inboundMessage(ready, { type: 'theme', theme: 'dark' }) })
+    expect(h.states.length).toBe(transitionsBefore)
+    expect(h.session.getState().embeddedTheme).toBe('dark')
+  })
 })

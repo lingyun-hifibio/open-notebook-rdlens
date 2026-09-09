@@ -4,9 +4,9 @@ import { useThemeStore } from "@/lib/stores/theme-store"
 import { Toaster as Sonner, ToasterProps } from "sonner"
 
 const Toaster = ({ ...props }: ToasterProps) => {
-  const theme = useThemeStore((state) => state.theme)
-  const systemTheme = useThemeStore((state) => state.getSystemTheme())
-  const effectiveTheme = theme === 'system' ? systemTheme : theme
+  // RWV2-50：经 getEffectiveTheme 取主题真源（含嵌入式父页 override），
+  // selector 返回原始 string，override 变化即触发重渲染。
+  const effectiveTheme = useThemeStore((state) => state.getEffectiveTheme())
 
   return (
     <Sonner
