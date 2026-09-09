@@ -251,6 +251,15 @@ describe('ResearchWorkspace（RWV2-40 四动作主区）', () => {
     expect(await screen.findByRole('tab', { name: 'research.mainActions.runTemplate' })).toBeInTheDocument()
   })
 
+  it('issue59：#59 回归——预留为窄态收窄预留契约类（group-data 变体与 w-36 并存）', async () => {
+    renderHarness()
+    const reserve = await screen.findByTestId('workspace-expand-reserve')
+    // 窄态下 ResearchLayout 根挂 data-narrow-secondary=true，reserve 经 group
+    // 变体从 w-36(144px) 收窄为 w-11(44px)（≥ icon-only 按钮实宽 ~34px）。
+    // 几何真断言由 RDLens smoke button.no_overlap 端到端兜底。
+    expect(reserve).toHaveClass('group-data-[narrow-secondary=true]:w-11')
+  })
+
   it('动作切换受控：点击 tab 触发 onActiveActionChange', async () => {
     const onActionChange = vi.fn()
     renderHarness({ onActionChange })
