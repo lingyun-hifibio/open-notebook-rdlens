@@ -7,7 +7,7 @@ import { useToast } from '@/lib/hooks/use-toast'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
 import { useResearchScope } from '@/lib/research/scope'
 import { formatScopeLabel } from '@/lib/research/scope'
-import { resolveScopeSelection } from '@/lib/research/scope-utils'
+import { EmptyEffectiveScopeError, resolveScopeSelection } from '@/lib/research/scope-utils'
 import { newIdempotencyKey } from '@/lib/research/api'
 import { useResearchGlobalModel, researchModelBlockedHint } from '@/lib/hooks/use-research-global-model'
 import { useRunResearchTransformation } from '@/lib/hooks/use-research'
@@ -36,6 +36,9 @@ import { ResultActions } from './ResultActions'
  *     解析或外部模型 consent 不再派发（令牌在 unmount 时失效）；
  *   - 降级响应（评审 Medium-2）：`requires_job: true` 成功时 `result_id`
  *     为 null（job 化），给可见的 degraded/job 消息而不是静默；
+ *   - S2（Issue #54）：Rerun 复用唯一 Scope 解析器——stale Source 可重跑
+ *     但先给警告 toast；解析为空有效范围（含全被过滤）时 typed 阻断文案，
+ *     不派发；
  *   - 成功 UX（Medium-12）：关闭前由父层在列表高亮新行（本组件回调
  *     `onRerunSuccess(result_id)`）；"无新行"= 非 200 reject（High-4）。
  */
@@ -102,17 +105,25 @@ export function TransformationRunDetail({
     if (snapshot.mode === 'selected' && !validate(snapshot).valid) return
     setIsResolvingRerun(true)
     setRerunDegraded(null)
-    let resolved: { sourceIds: string[]; noteIds: string[] }
+    let resolved: { sourceIds: string[]; noteIds: string[]; staleSourceCount: number }
     try {
       resolved = await resolveScopeSelection(projectId, snapshot)
-    } catch {
-      // Scope resolution is before the mutation, so use the same visible
-      // failure treatment as the established Transformation run dialog.
-      toast({
-        title: t('common.error'),
-        description: t('research.workbench.actionFailed'),
-        variant: 'destructive',
-      })
+    } catch (error) {
+      // S2：空有效范围是 typed 阻断（同 run 对话框的引导文案）；其余解析
+      // 失败（分页网关错误）沿用通用失败提示。
+      if (error instanceof EmptyEffectiveScopeError) {
+        toast({
+          title: t('common.error'),
+          description: t('research.transformations.emptyProjectBlocked'),
+          variant: 'destructive',
+        })
+      } else {
+        toast({
+          title: t('common.error'),
+          description: t('research.workbench.actionFailed'),
+          variant: 'destructive',
+        })
+      }
       return
     } finally {
       // 只有组件仍存活才复位解析标志（卸载后不触碰状态）
@@ -123,9 +134,16 @@ export function TransformationRunDetail({
     // 评审 Medium-3：scope 解析返回时详情已关闭/卸载 → 不再派发
     if (!rerunAliveRef.current) return
     const { sourceIds, noteIds } = resolved
-    if (snapshot.mode === 'entire_project' && sourceIds.length + noteIds.length === 0) {
-      toast({ title: t('common.error'), description: t('research.transformations.emptyProjectBlocked'), variant: 'destructive' })
-      return
+    // S2：stale Source 可重跑，但派发前必须可见警告（后端用最后同步版本）。
+    // 解析已保证非空（空有效范围在上面 typed 分支阻断），旧 empty_project
+    // 兜底分支随之不再可达。
+    if (resolved.staleSourceCount > 0) {
+      toast({
+        title: t('research.layout.scope.modeLabel'),
+        description: t('research.transformations.staleSourcesWarning', {
+          n: resolved.staleSourceCount,
+        }),
+      })
     }
     try {
       await runGuarded(

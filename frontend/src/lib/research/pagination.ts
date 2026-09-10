@@ -6,7 +6,8 @@ export const RESEARCH_PAGE_LIMIT = 100
 /**
  * Follow a cursor collection to completion while preserving server order.
  * Repeated cursors are rejected so a malformed response cannot create an
- * unbounded client request loop.
+ * unbounded client request loop. An empty-string cursor is treated as
+ * "no cursor" (terminal) so the request never carries `cursor=`.
  */
 export async function collectResearchPages<T>(
   fetchPage: (cursor?: string) => Promise<ResearchPage<T>>,
@@ -27,7 +28,7 @@ export async function collectResearchPages<T>(
       }
     }
 
-    const nextCursor = page.next_cursor ?? undefined
+    const nextCursor = page.next_cursor || undefined
     if (nextCursor !== undefined) {
       if (seenCursors.has(nextCursor)) {
         throw new Error('Research pagination returned a repeated cursor')

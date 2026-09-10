@@ -1310,6 +1310,7 @@ export const enUS = {
       editScope: "Edit scope",
       emptyScopeBlocked: "Select at least one source or note to run this template, or switch to Entire project.",
       emptyProjectBlocked: "This project has no sources or notes to run against yet.",
+      staleSourcesWarning: "{{n}} source(s) are still updating; this run uses their last synchronized version.",
       language: "Language",
       runResult: "Result",
       degraded: "Exceeds the single-call budget; it will run as a persistent job (degraded: {{reason}})",
