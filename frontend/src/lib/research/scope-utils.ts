@@ -13,8 +13,9 @@
  */
 
 import type { ResearchScopeSnapshot } from '@/lib/research/scope'
-import type { ResearchNote, ResearchPage, ResearchSource } from '@/lib/types/research'
+import type { ResearchNote, ResearchSource } from '@/lib/types/research'
 import { listNotes, listSources } from '@/lib/research/api'
+import { collectResearchPages } from '@/lib/research/pagination'
 
 export interface ScopeSelectionFetchers {
   listSources: typeof listSources
@@ -38,36 +39,31 @@ export function detectResponseLanguage(text: string): 'zh' | 'en' {
   return cjk > asciiAlpha ? 'zh' : 'en'
 }
 
-/**
- * 游标分页收集全部 id（契约 §3.4 keyset 分页）。
- *
- * 终止条件：`next_cursor === null`；并显式断言游标严格前进——keyset
- * 单调性是后端实现保证，前端不依赖「同 cursor 重复出现」的未定义语义，
- * 一旦游标不前进按协议错误抛错，避免无界翻页。
- */
-async function collectIds<T>(
-  fetchPage: (cursor: string | null) => Promise<ResearchPage<T>>,
-  pickId: (item: T) => string,
-): Promise<string[]> {
-  const ids: string[] = []
-  const seen = new Set<string>()
-  let cursor: string | null = null
-  for (;;) {
-    const page = await fetchPage(cursor)
-    for (const item of page.items) {
-      const id = pickId(item)
-      if (!seen.has(id)) {
-        seen.add(id)
-        ids.push(id)
-      }
-    }
-    if (page.next_cursor == null) break
-    if (page.next_cursor === cursor) {
-      throw new Error('pagination cursor did not advance')
-    }
-    cursor = page.next_cursor
+export interface ResolvedResearchScope {
+  sourceIds: string[]
+  noteIds: string[]
+  staleSourceCount: number
+}
+
+/** Empty scope is a typed, pre-dispatch rejection, never a broadening hint. */
+export class EmptyEffectiveScopeError extends Error {
+  readonly code = 'empty_effective_scope'
+
+  constructor() {
+    super('research scope has no effective Source or Note')
+    this.name = 'EmptyEffectiveScopeError'
   }
-  return ids
+}
+
+function stableUnique(ids: readonly string[]): string[] {
+  return [...new Set(ids)]
+}
+
+function requireEffectiveScope(scope: ResolvedResearchScope): ResolvedResearchScope {
+  if (scope.sourceIds.length + scope.noteIds.length === 0) {
+    throw new EmptyEffectiveScopeError()
+  }
+  return scope
 }
 
 /**
@@ -81,28 +77,36 @@ export async function resolveScopeSelection(
   projectId: string,
   snapshot: ResearchScopeSnapshot,
   fetchers: ScopeSelectionFetchers = { listSources, listNotes },
-): Promise<{ sourceIds: string[]; noteIds: string[] }> {
+): Promise<ResolvedResearchScope> {
   if (snapshot.mode === 'selected') {
-    return {
-      sourceIds: [...snapshot.sourceIds],
-      noteIds: [...snapshot.noteIds],
-    }
+    return requireEffectiveScope({
+      sourceIds: stableUnique(snapshot.sourceIds),
+      noteIds: stableUnique(snapshot.noteIds),
+      staleSourceCount: 0,
+    })
   }
-  const sourceIds = await collectIds<ResearchSource>(
-    (cursor) =>
-      fetchers.listSources(projectId, {
-        limit: ENUMERATION_PAGE_SIZE,
-        ...(cursor !== null ? { cursor } : {}),
-      }),
+  const sources = await collectResearchPages<ResearchSource>(
+    (cursor) => fetchers.listSources(projectId, {
+      limit: ENUMERATION_PAGE_SIZE,
+      ...(cursor !== undefined ? { cursor } : {}),
+    }),
     (item) => item.source_id,
   )
-  const noteIds = await collectIds<ResearchNote>(
-    (cursor) =>
-      fetchers.listNotes(projectId, {
-        limit: ENUMERATION_PAGE_SIZE,
-        ...(cursor !== null ? { cursor } : {}),
-      }),
+  const notes = await collectResearchPages<ResearchNote>(
+    (cursor) => fetchers.listNotes(projectId, {
+      limit: ENUMERATION_PAGE_SIZE,
+      ...(cursor !== undefined ? { cursor } : {}),
+    }),
     (item) => item.note_id,
   )
-  return { sourceIds, noteIds }
+  const selectableSources = sources.items.filter(
+    (source) => source.status === 'ready' || source.status === 'stale',
+  )
+  return requireEffectiveScope({
+    sourceIds: selectableSources.map((source) => source.source_id),
+    noteIds: notes.items.map((note) => note.note_id),
+    staleSourceCount: selectableSources.filter(
+      (source) => source.status === 'stale',
+    ).length,
+  })
 }

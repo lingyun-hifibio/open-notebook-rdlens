@@ -334,6 +334,71 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
     expect(screen.getByRole('button', { name: 'research.transformations.confirmRun' })).not.toBeDisabled()
   })
 
+  it('S2：entire_project 只保留 ready/stale 源，stale 计数在提交前给出警告', async () => {
+    seedScope('entire_project')
+    const { wrapper } = makeWrapper()
+    vi.mocked(researchApi.runTransformation).mockResolvedValue(runResult())
+    render(<TransformationsPanel />, { wrapper })
+    await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
+    await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
+
+    // 枚举：ready + stale 保留，pending/failed 被过滤（显式 cursor 分支；
+    // 挂载查询已消费 beforeEach 的持久默认 mock）
+    vi.mocked(researchApi.listSources).mockResolvedValueOnce({
+      items: [
+        source(),
+        source({ source_id: 'src_stale', document_id: 'doc_s', status: 'stale' }),
+        source({ source_id: 'src_pending', document_id: 'doc_p', status: 'pending' }),
+        source({ source_id: 'src_failed', document_id: 'doc_f', status: 'failed' }),
+      ],
+      next_cursor: null,
+    })
+    vi.mocked(researchApi.listNotes).mockResolvedValueOnce({ items: [], next_cursor: null })
+
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
+    // 载荷只含 ready/stale；pending/failed 不进入请求（旧实现会全量提交）
+    await waitFor(() =>
+      expect(researchApi.runTransformation).toHaveBeenCalledWith('proj_1', 'trans_1', {
+        source_ids: ['src_1', 'src_stale'],
+        note_ids: [],
+        model_id: 'm-local',
+      }),
+    )
+    // stale 可执行但必须警告（提交前可见；后端用最后同步版本）
+    await waitFor(() => {
+      const warning = screen.getByTestId('run-stale-sources-warning')
+      expect(warning.textContent).toContain('research.transformations.staleSourcesWarning')
+      expect(warning.textContent).toContain('"n":1')
+    })
+  })
+
+  it('S2：entire_project 枚举后无有效范围（全是 pending）→ typed 阻断，不派发', async () => {
+    seedScope('entire_project')
+    const { wrapper } = makeWrapper()
+    render(<TransformationsPanel />, { wrapper })
+    await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
+    await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
+
+    // 枚举返回不可派发源（无 Note）→ 解析器抛 EmptyEffectiveScopeError，
+    // 复用同一阻断面呈现（绝不降级为「忽略过滤继续执行」）
+    vi.mocked(researchApi.listSources).mockResolvedValueOnce({
+      items: [source({ source_id: 'src_pending', status: 'pending' })],
+      next_cursor: null,
+    })
+    vi.mocked(researchApi.listNotes).mockResolvedValueOnce({ items: [], next_cursor: null })
+
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
+    await waitFor(() =>
+      expect(screen.getByTestId('run-empty-project-blocked')).toBeInTheDocument(),
+    )
+    expect(researchApi.runTransformation).not.toHaveBeenCalled()
+    // 阻断后 Confirm 禁用（防重复枚举）；无 stale 警告（未被 filter 丢弃）
+    expect(screen.getByRole('button', { name: 'research.transformations.confirmRun' })).toBeDisabled()
+    expect(screen.queryByTestId('run-stale-sources-warning')).toBeNull()
+  })
+
   it('AC-4：派发后修改 Scope 不影响在途运行，且摘要显示派发时快照', async () => {
     seedScope('selected', ['src_1'], [])
     const onGuardedOptions = vi.fn()

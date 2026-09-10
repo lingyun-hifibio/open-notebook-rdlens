@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   detectResponseLanguage,
+  EmptyEffectiveScopeError,
   resolveScopeSelection,
   type ScopeSelectionFetchers,
 } from './scope-utils'
@@ -77,14 +78,17 @@ describe('detectResponseLanguage（RFC §4.2 检测规则）', () => {
 })
 
 describe('resolveScopeSelection', () => {
-  const snapshot = (mode: 'entire_project' | 'selected', sourceIds = [], noteIds = []): ResearchScopeSnapshot =>
-    ({ mode, sourceIds, noteIds })
+  const snapshot = (
+    mode: 'entire_project' | 'selected',
+    sourceIds: string[] = [],
+    noteIds: string[] = [],
+  ): ResearchScopeSnapshot => ({ mode, sourceIds, noteIds })
 
   it('selected：原样透传并返回副本（不共享引用，防冻结数组泄漏）', async () => {
     const fetchers = stubFetchers()
     const input: ResearchScopeSnapshot = { mode: 'selected', sourceIds: ['src_1'], noteIds: ['note_1'] }
     const result = await resolveScopeSelection('proj_1', input, fetchers)
-    expect(result).toEqual({ sourceIds: ['src_1'], noteIds: ['note_1'] })
+    expect(result).toEqual({ sourceIds: ['src_1'], noteIds: ['note_1'], staleSourceCount: 0 })
     expect(result.sourceIds).not.toBe(input.sourceIds)
     expect(result.noteIds).not.toBe(input.noteIds)
     expect(fetchers.listSources).not.toHaveBeenCalled()
@@ -121,7 +125,7 @@ describe('resolveScopeSelection', () => {
       listSources: vi.fn().mockResolvedValue(page([source('s1')], null)),
       listNotes: vi.fn().mockResolvedValue(page([note('n1')], null)),
     })
-    expect(result).toEqual({ sourceIds: ['s1'], noteIds: ['n1'] })
+    expect(result).toEqual({ sourceIds: ['s1'], noteIds: ['n1'], staleSourceCount: 0 })
   })
 
   it('entire_project：notes 侧跨页重复 id 只保留一份', async () => {
@@ -159,7 +163,7 @@ describe('resolveScopeSelection', () => {
         listSources: sourcesFetcher,
         listNotes: vi.fn().mockResolvedValue(page([], null)),
       }),
-    ).rejects.toThrow('pagination cursor did not advance')
+    ).rejects.toThrow('Research pagination returned a repeated cursor')
   })
 
   it('entire_project：跨页重复 id 只保留一份（去重防抖）', async () => {
@@ -174,13 +178,67 @@ describe('resolveScopeSelection', () => {
     expect(result.sourceIds).toEqual(['s1', 's2'])
   })
 
-  it('entire_project：空项目 → 空列表（由调用方阻断并引导）', async () => {
+  it('entire_project：只保留 ready/stale Source，保留 stale 计数与全部 Note', async () => {
+    const result = await resolveScopeSelection('proj_1', snapshot('entire_project'), {
+      listSources: vi.fn().mockResolvedValue(page([
+        source('ready'),
+        { ...source('stale'), status: 'stale' },
+        { ...source('pending'), status: 'pending' },
+        { ...source('failed'), status: 'failed' },
+      ], null)),
+      listNotes: vi.fn().mockResolvedValue(page([note('n1')], null)),
+    })
+    expect(result).toEqual({
+      sourceIds: ['ready', 'stale'],
+      noteIds: ['n1'],
+      staleSourceCount: 1,
+    })
+  })
+
+  it('entire_project：A→B→A cursor 循环整体失败，不使用部分范围', async () => {
+    const sourcesFetcher = vi
+      .fn()
+      .mockResolvedValueOnce(page([source('s1')], 'a'))
+      .mockResolvedValueOnce(page([source('s2')], 'b'))
+      .mockResolvedValueOnce(page([source('s3')], 'a'))
+    await expect(
+      resolveScopeSelection('proj_1', snapshot('entire_project'), {
+        listSources: sourcesFetcher,
+        listNotes: vi.fn().mockResolvedValue(page([], null)),
+      }),
+    ).rejects.toThrow('Research pagination returned a repeated cursor')
+  })
+
+  it('entire_project：空有效范围抛 typed error（不得进入派发）', async () => {
     const fetchers = stubFetchers({
       listSources: vi.fn().mockResolvedValue(page([], null)),
       listNotes: vi.fn().mockResolvedValue(page([], null)),
     })
-    const result = await resolveScopeSelection('proj_1', snapshot('entire_project'), fetchers)
-    expect(result).toEqual({ sourceIds: [], noteIds: [] })
+    await expect(
+      resolveScopeSelection('proj_1', snapshot('entire_project'), fetchers),
+    ).rejects.toBeInstanceOf(EmptyEffectiveScopeError)
+  })
+
+  it('selected：去重且顺序稳定（provider 已去重，此处为冻结快照的防御层）', async () => {
+    const result = await resolveScopeSelection(
+      'proj_1',
+      snapshot('selected', ['src_2', 'src_1', 'src_2'], ['note_1', 'note_1']),
+      stubFetchers(),
+    )
+    expect(result).toEqual({
+      sourceIds: ['src_2', 'src_1'],
+      noteIds: ['note_1'],
+      staleSourceCount: 0,
+    })
+  })
+
+  it('selected：reconciliation 后为空同样抛 typed error（不扩面，不派发）', async () => {
+    const fetchers = stubFetchers()
+    await expect(
+      resolveScopeSelection('proj_1', snapshot('selected', [], []), fetchers),
+    ).rejects.toBeInstanceOf(EmptyEffectiveScopeError)
+    expect(fetchers.listSources).not.toHaveBeenCalled()
+    expect(fetchers.listNotes).not.toHaveBeenCalled()
   })
 
   it('entire_project：枚举中途失败向上冒泡（不吞错，调用方 toast）', async () => {

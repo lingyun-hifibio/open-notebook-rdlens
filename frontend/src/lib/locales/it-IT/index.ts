@@ -1298,6 +1298,7 @@ export const itIT = {
       editScope: "Edit scope",
       emptyScopeBlocked: "Select at least one source or note to run this template, or switch to Entire project.",
       emptyProjectBlocked: "This project has no sources or notes to run against yet.",
+      staleSourcesWarning: "{{n}} source(s) are still updating; this run uses their last synchronized version.",
       language: "Language",
       runResult: "Risultato",
       degraded: "Supera il budget di una singola chiamata; verrà eseguito come attività persistente (degradato: {{reason}})",

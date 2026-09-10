@@ -28,7 +28,11 @@ import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
 import { useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
 import { useResearchScope, type ResearchScopeSnapshot } from '@/lib/research/scope'
 import { formatScopeLabel } from '@/lib/research/scope'
-import { detectResponseLanguage, resolveScopeSelection } from '@/lib/research/scope-utils'
+import {
+  detectResponseLanguage,
+  EmptyEffectiveScopeError,
+  resolveScopeSelection,
+} from '@/lib/research/scope-utils'
 import {
   useCreateResearchTransformation,
   useResearchSources,
@@ -67,6 +71,10 @@ import { resolveCitationSource } from './citation-utils'
  *   requires_job 降级提示（输出超预算 → 持久化任务，UI-03 查看）。
  * - 空范围引导：selected 空态（provider 不变量下防御性）与
  *   entire_project 空项目（解析后可达）均英文阻断，不派发。
+ * - S2（Issue #54）：唯一解析器在派发前完成过滤——pending/failed Source
+ *   不进入载荷，stale Source 进入载荷但先显示警告；解析结果为空有效范围
+ *   时抛 typed `EmptyEffectiveScopeError`，同一阻断面呈现（不降级到
+ *   entire project）。
  */
 export function TransformationsPanel({
   onCitationJump,
@@ -114,8 +122,11 @@ export function TransformationsPanel({
   const [runLanguage, setRunLanguage] = useState<'zh' | 'en' | null>(null)
   /** 解析中（entire_project 分页枚举），防止重复派发 */
   const [isResolvingRun, setIsResolvingRun] = useState(false)
-  /** 可达阻断：entire_project 空项目（selected 空态用渲染期条件） */
+  /** 可达阻断：空有效范围（entire_project 空项目或枚举后全被过滤；
+   *  selected 空态用渲染期条件） */
   const [blockedReason, setBlockedReason] = useState<'empty_project' | null>(null)
+  /** S2：本次解析结果中的 stale Source 数（>0 时提交前展示警告） */
+  const [staleSourceCount, setStaleSourceCount] = useState(0)
 
   const { data: sourcesData } = useResearchSources(projectId)
 
@@ -149,6 +160,7 @@ export function TransformationsPanel({
     setRunLanguage(null)
     setRunVariant('en')
     setBlockedReason(null)
+    setStaleSourceCount(0)
   }
 
   /**
@@ -169,15 +181,21 @@ export function TransformationsPanel({
     if (snapshot.mode === 'selected' && !validate(snapshot).valid) return
     setIsResolvingRun(true)
     setBlockedReason(null)
-    let resolved: { sourceIds: string[]; noteIds: string[] } | null = null
+    let resolved: { sourceIds: string[]; noteIds: string[]; staleSourceCount: number } | null = null
     try {
       resolved = await resolveScopeSelection(projectId, snapshot)
-    } catch {
-      toast({
-        title: t('common.error'),
-        description: t('research.workbench.actionFailed'),
-        variant: 'destructive',
-      })
+    } catch (error) {
+      // S2：空有效范围是 typed、可预期的阻断（不派发、不引导降级到
+      // entire project）。分页失败仍是网关错误 → 通用失败 toast。
+      if (error instanceof EmptyEffectiveScopeError) {
+        setBlockedReason('empty_project')
+      } else {
+        toast({
+          title: t('common.error'),
+          description: t('research.workbench.actionFailed'),
+          variant: 'destructive',
+        })
+      }
       return
     } finally {
       // 只有当前代执行流才允许复位解析标志（陈旧流不得清掉新流的标志）
@@ -193,6 +211,9 @@ export function TransformationsPanel({
       setBlockedReason('empty_project')
       return
     }
+    // S2：stale Source 可派发，但提交前必须可见（后端会用最后同步版本）。
+    // 仅在真正会用该解析结果的这一代执行流里设置；下一次解析会覆盖。
+    setStaleSourceCount(resolved.staleSourceCount)
     const { sourceIds, noteIds } = resolved
     // RWV2-35：双语 admin 模板按选择器变体语言（Confirm 时刻冻结）；
     // 单 prompt（project/legacy）按 content 检测（R3-D 语义）。
@@ -448,6 +469,15 @@ export function TransformationsPanel({
             </p>
           )}
 
+          {staleSourceCount > 0 && (
+            <p
+              className="text-xs text-muted-foreground"
+              role="status"
+              data-testid="run-stale-sources-warning"
+            >
+              {t('research.transformations.staleSourcesWarning', { n: staleSourceCount })}
+            </p>
+          )}
           {blockedReason === 'empty_project' && (
             <p
               className="text-xs font-medium text-destructive"

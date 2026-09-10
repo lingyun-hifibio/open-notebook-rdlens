@@ -374,6 +374,76 @@ describe('TransformationRunDetail（RWV2-21 detail + rerun）', () => {
     expect(researchApi.runTransformation).not.toHaveBeenCalled()
   })
 
+  it('S2：Rerun entire_project 含 stale 源 → 载荷保留 stale 且派发前给警告 toast', async () => {
+    seedScope('entire_project')
+    const { wrapper } = makeWrapper()
+    vi.mocked(researchApi.runTransformation).mockResolvedValue({
+      request_id: 'req_2',
+      transformation_id: 'trans_1',
+      requires_job: false,
+      degradation_reason: null,
+      result_id: 'tres_2',
+      model_id: 'm-local',
+      source_refs: ['src_1'],
+      usage: { input_tokens: 1, output_tokens: 1 },
+      citations: [],
+      output: 'new out',
+    })
+    // 挂载无 sources 查询（本组件不挂 listSources）；rerun 的枚举第一个消费者
+    vi.mocked(researchApi.listSources).mockResolvedValue({
+      items: [source(), source({ source_id: 'src_stale', status: 'stale' })],
+      next_cursor: null,
+    })
+    vi.mocked(researchApi.listNotes).mockResolvedValue({ items: [], next_cursor: null })
+    render(<TransformationRunDetail record={record()} sources={[]} showRerun />, { wrapper })
+    fireEvent.click(screen.getByTestId('rerun-btn'))
+    await waitFor(() => {
+      expect(researchApi.runTransformation).toHaveBeenCalledWith(
+        'proj_1',
+        'trans_1',
+        {
+          source_ids: ['src_1', 'src_stale'],
+          note_ids: [],
+          model_id: 'm-local',
+        },
+        // 幂等键是独立第 4 参（非 body 字段），与既有 rerun 用例同构
+        { idempotencyKey: 'ui-42-xxx' },
+      )
+    })
+    // 警告在派发前/派发时可见（非 destructive：stale 可执行）
+    expect(toastMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: expect.stringContaining(
+          'research.transformations.staleSourcesWarning',
+        ),
+      }),
+    )
+    expect(toastMock).not.toHaveBeenCalledWith(
+      expect.objectContaining({ variant: 'destructive' }),
+    )
+  })
+
+  it('S2：Rerun entire_project 无有效范围（全 pending，无 Note）→ typed 阻断文案，不派发', async () => {
+    seedScope('entire_project')
+    const { wrapper } = makeWrapper()
+    vi.mocked(researchApi.listSources).mockResolvedValue({
+      items: [source({ status: 'pending' })],
+      next_cursor: null,
+    })
+    vi.mocked(researchApi.listNotes).mockResolvedValue({ items: [], next_cursor: null })
+    render(<TransformationRunDetail record={record()} sources={[]} showRerun />, { wrapper })
+    fireEvent.click(screen.getByTestId('rerun-btn'))
+    await waitFor(() => {
+      expect(toastMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          variant: 'destructive',
+          description: 'research.transformations.emptyProjectBlocked',
+        }),
+      )
+    })
+    expect(researchApi.runTransformation).not.toHaveBeenCalled()
+  })
+
   it('Admin showRerun=false → 无 Rerun 按钮（W7）', async () => {
     const { wrapper } = makeWrapper('admin_readonly', false)
     render(<TransformationRunDetail record={record()} sources={[]} showRerun={false} />, { wrapper })

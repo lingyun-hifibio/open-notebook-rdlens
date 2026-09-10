@@ -58,4 +58,13 @@ describe('i18next interpolation', () => {
       i18n.t('research.transformations.degraded', { reason: 'requires_job' }),
     ).toContain('requires_job')
   })
+
+  it('issue54 S2 stale 警告计数插值（非 count 键名，不走复数规则）', () => {
+    expect(
+      i18n.t('research.transformations.staleSourcesWarning', { n: 2 }),
+    ).toBe('2 source(s) are still updating; this run uses their last synchronized version.')
+    expect(
+      i18n.t('research.transformations.staleSourcesWarning', { n: 1, lng: 'zh-CN' }),
+    ).toContain('1')
+  })
 })
