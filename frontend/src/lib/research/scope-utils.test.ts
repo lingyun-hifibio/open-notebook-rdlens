@@ -210,6 +210,18 @@ describe('resolveScopeSelection', () => {
     })
   })
 
+  it('entire_project：next_cursor 空串按无 cursor 终止（不再发出 cursor= 请求）', async () => {
+    const fetcher = vi.fn().mockResolvedValueOnce(page([source('s1')], ''))
+    const result = await resolveScopeSelection('proj_1', snapshot('entire_project'), {
+      listSources: fetcher,
+      listNotes: vi.fn().mockResolvedValue(page([note('n1')], null)),
+    })
+    expect(result.sourceIds).toEqual(['s1'])
+    // 空串不构成第二页：只请求一次，且首页不带 cursor 键
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(fetcher.mock.calls[0]?.[1]).toStrictEqual({ limit: 100 })
+  })
+
   it('entire_project：A→B→A cursor 循环整体失败，不使用部分范围', async () => {
     const sourcesFetcher = vi
       .fn()

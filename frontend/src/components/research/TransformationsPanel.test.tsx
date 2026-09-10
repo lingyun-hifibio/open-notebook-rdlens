@@ -377,6 +377,40 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
     })
   })
 
+  it('S2：stale 警告只在真正派发时出现——consent 待确认阶段不得先行显示', async () => {
+    // 评审 F2/R4 判别：警告置位在 runGuarded op 体内（与 runSnapshot 同处）。
+    // 若被移回 op 外，本用例红（解析成功即显示 = consent 取消也留警告）。
+    seedScope('entire_project')
+    setGlobalModelStub({
+      confirmedModelId: 'm-ext',
+      needsConsent: true,
+      deferGuarded: true,
+      models: [{
+        model_id: 'm-ext',
+        display_name: 'Ext M',
+        data_egress: true,
+        interactive_context_levels: ['focused'],
+      }],
+    })
+    const { wrapper } = makeWrapper()
+    render(<TransformationsPanel />, { wrapper })
+    await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
+    await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
+    // 枚举返回 1 ready + 1 stale（挂载查询已消费 beforeEach 默认）
+    vi.mocked(researchApi.listSources).mockResolvedValueOnce({
+      items: [source(), source({ source_id: 'src_stale', status: 'stale' })],
+      next_cursor: null,
+    })
+    vi.mocked(researchApi.listNotes).mockResolvedValueOnce({ items: [], next_cursor: null })
+
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
+    // 解析已完成（op 未执行：deferGuarded 停在 consent 待确认）→ 无警告
+    await new Promise((r) => setTimeout(r, 0))
+    expect(screen.queryByTestId('run-stale-sources-warning')).toBeNull()
+    expect(researchApi.runTransformation).not.toHaveBeenCalled()
+  })
+
   it('S2：entire_project 枚举后无有效范围（全是 pending）→ typed 阻断，不派发', async () => {
     seedScope('entire_project')
     const { wrapper } = makeWrapper()
