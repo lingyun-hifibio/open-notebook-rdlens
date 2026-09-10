@@ -1283,6 +1283,13 @@ export const jaJP = {
       typeManual: "手動",
       typeAi: "AI",
       empty: "インサイトがありません",
+      aiEmptyScopeBlocked: "This project has no sources or notes to generate from yet.",
+      aiStaleSourcesWarning: "{{n}} source(s) are still updating; the run will use their last synchronized version.",
+      aiQueued: "Generation queued. Track it in Activity, then refresh insights when it finishes.",
+      aiOutcomeUnknown: "The provider did not confirm the result. Retry with the same request, or discard the risk.",
+      aiProtocolConflict: "The server reported an idempotency conflict. Confirm you want a new paid generation, or discard it.",
+      aiConfirmDuplicateRisk: "Generate anyway",
+      aiDiscardDuplicateRisk: "Discard",
     },
     transformations: {
       newTemplate: "新しいテンプレート",

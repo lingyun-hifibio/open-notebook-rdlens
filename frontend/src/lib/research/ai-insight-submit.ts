@@ -240,6 +240,8 @@ export function useAiInsightSubmit(options: Options): {
       )
       if (unacknowledged.length > 0) {
         setPendingMarker(unacknowledged[0] as AiInsightRiskMarker)
+        // 与 409 升级路径同款回调：调用方需要可见反馈才能驱动用户确认
+        onProtocolConflict?.()
         return publish('protocol_conflict')
       }
     }
