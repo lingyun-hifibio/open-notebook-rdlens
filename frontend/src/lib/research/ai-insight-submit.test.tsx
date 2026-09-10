@@ -185,7 +185,8 @@ describe('marker 先写后发与失败分类', () => {
       await act(async () => { status = await result.current.submit(input()) })
       expect(status).toBe('failed')
       expect(createAiInsight).not.toHaveBeenCalled()
-      expect(onFailed).toHaveBeenCalled()
+      // 恰好一次：操作内通知 + submit 尾部重复通知曾造成两条相同 toast
+      expect(onFailed).toHaveBeenCalledTimes(1)
     } finally {
       spy.mockRestore()
     }

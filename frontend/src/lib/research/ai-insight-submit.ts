@@ -17,7 +17,7 @@
  *    项目）；表单重置/toast 等 UI 副作用由令牌 + mounted 约束（FR-09/FR-10）。
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   aiInsightOutcomeFromResponse,
@@ -172,7 +172,10 @@ export function useAiInsightSubmit(options: Options): {
   // N-3：ref 写入放在 effect（渲染期写 ref 违反 React 约定，且被丢弃的并发渲染
   // 也会清掉 ref）；effect 在提交后、任何用户事件前执行，故 submit() 看到的总是
   // 已重置状态。
-  useEffect(() => {
+  // useLayoutEffect：在 commit 后、绘制与任何用户输入事件之前同步重置，闭合
+  // 「commit → passive effect flush」窗口（该窗口内 Save 可能被点击，submit 会
+  // 依据旧身份判定为 abandoned——安全但无反馈；本文件 'use client'，无 SSR 顾虑）
+  useLayoutEffect(() => {
     if (identityRef.current === identity) return
     identityRef.current = identity
     activeAttemptRef.current = null
@@ -468,7 +471,8 @@ export function useAiInsightSubmit(options: Options): {
       return publish('idle')
     }
     if (result.kind === 'marker_write_failed') {
-      onFailed?.(null)
+      // 通知已在 operation 内发出（deferred 路径的唯一可达点）——此处只收敛状态，
+      // 否则本地即时路径会重复弹同一条错误 toast（toast 无 id 不去重）
       return publish('failed')
     }
     return publish(result.status, result.errorCode ?? null)

@@ -327,10 +327,10 @@ export function InsightsPanel({
                 onClick={submitCreate}
                 disabled={
                   createMutation.isPending ||
-                  isResolvingScope ||
-                  aiSubmit.isSubmitting ||
-                  // 无可用模型时只阻止 AI 模式；Manual 不受影响
-                  (insightType === 'ai' && !canExecute)
+                  // AI 流程的在途状态只作用于 AI 分支——避免「AI 卡住 → Manual 陪绑」
+                  // 这类隐性耦合（评审建议的纵深防御）
+                  (insightType === 'ai' &&
+                    (isResolvingScope || aiSubmit.isSubmitting || !canExecute))
                 }
                 data-testid="insight-submit"
               >
