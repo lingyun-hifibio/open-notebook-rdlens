@@ -54,11 +54,23 @@ function resolveStorage(options: StorageOptions): Storage | null {
   }
 }
 
+/**
+ * 单调时钟：只用于 key 年龄（`attemptKeyAgeMs`）——同文档内不受墙钟漂移影响。
+ */
 function resolveNow(options: { now?: () => number }): number {
   if (options.now !== undefined) return options.now()
   return typeof performance !== 'undefined' && typeof performance.now === 'function'
     ? performance.now()
     : Date.now()
+}
+
+/**
+ * 墙钟：marker 的 `recordedAt` 必须用它。单调时钟每次文档加载从 ~0 重新开始，
+ * 持久化后跨页面比较毫无意义，还会让 `listAiInsightRiskMarkers` 的排序错乱
+ * （hook 取 `markers[0]` 作为待确认 marker）。
+ */
+function resolveWallClock(options: { now?: () => number }): number {
+  return options.now !== undefined ? options.now() : Date.now()
 }
 
 /** marker 的 localStorage 键（user/project/attemptId 全部 URI 编码，防路径碰撞）。 */
@@ -109,7 +121,7 @@ export function markAiInsightAttempt(
     version: MARKER_VERSION,
     markerId: attemptId,
     kind,
-    recordedAt: resolveNow(options),
+    recordedAt: resolveWallClock(options),
   }
   try {
     storage.setItem(aiInsightRiskMarkerKey(userId, projectId, attemptId), JSON.stringify(value))
@@ -134,6 +146,25 @@ export function clearAiInsightRiskMarker(
   } catch {
     return false
   }
+}
+
+/**
+ * 批量清除指定 markerId（只作用于本 user/project 命名空间）。
+ * 用途：用户已确认承担重复风险的旧 marker，在本轮新执行写入成功后清除
+ * （计划 S3 失败路径「新执行写入自己的 marker 成功后，才清除用户已确认
+ * 承担风险的旧 marker」）。返回未能清除的 id 数。
+ */
+export function clearAcknowledgedRiskMarkers(
+  userId: string,
+  projectId: string,
+  markerIds: readonly string[],
+  options: StorageOptions = {},
+): number {
+  let failed = 0
+  for (const id of markerIds) {
+    if (!clearAiInsightRiskMarker(userId, projectId, id, options)) failed += 1
+  }
+  return failed
 }
 
 /**

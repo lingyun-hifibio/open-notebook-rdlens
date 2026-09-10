@@ -23,6 +23,7 @@ vi.mock('./api', async (importOriginal) => ({
 }))
 
 import { createAiInsight, aiInsightOutcomeFromResponse } from './ai-insight'
+import { newIdempotencyKey } from './api'
 
 const PROJECT = 'proj_1'
 const USER = 'u1'
@@ -305,12 +306,16 @@ describe('consent 与生命周期', () => {
     expect(dispatch).toHaveBeenCalledTimes(1)
   })
 
-  it('已确认重复风险后，下一次提交可放行（marker 保留到新执行成功才清）', async () => {
+  it('已确认重复风险的旧 marker：新执行写入成功后清除（否则刷新后再次误拦）', async () => {
     const { result } = setup()
-    // 预置他人 marker（模拟另一标签页/上次崩溃）
+    // 预置他人 marker（模拟另一标签页/上次崩溃）+ 本项目另一枚未确认 marker
     localStorage.setItem(
       aiInsightRiskMarkerKey(USER, PROJECT, 'old-tab'),
       JSON.stringify({ version: 1, markerId: 'old-tab', kind: 'fresh', recordedAt: 1 }),
+    )
+    localStorage.setItem(
+      aiInsightRiskMarkerKey(USER, PROJECT, 'other-tab'),
+      JSON.stringify({ version: 1, markerId: 'other-tab', kind: 'fresh', recordedAt: 2 }),
     )
     let blocked = ''
     await act(async () => { blocked = await result.current.submit(input()) })
@@ -318,13 +323,17 @@ describe('consent 与生命周期', () => {
     expect(createAiInsight).not.toHaveBeenCalled()
 
     act(() => { result.current.result.confirmDuplicateRisk() })
+    // 多枚未确认 marker：确认第一枚后继续展示下一枚（不静默再拦）
+    expect(result.current.result.pendingMarker?.markerId).toBe('other-tab')
+    act(() => { result.current.result.confirmDuplicateRisk() })
     vi.mocked(createAiInsight).mockResolvedValue(http(200, {}) as never)
     let status = ''
     await act(async () => { status = await result.current.submit(input()) })
     expect(status).toBe('created')
-    // 新执行成功只清自己的 marker，旧 marker 仍在（多标签页互不误删）
-    const remaining = listAiInsightRiskMarkers(USER, PROJECT).map((m) => m.markerId)
-    expect(remaining).toEqual(['old-tab'])
+    // H-2：已确认承担风险的 marker 在本轮新执行写入成功后清除（旧行为会让它
+    // 永久残留；刷新后 riskAcknowledgedRef 归零 → 每次会话首派发都被误拦）
+    // （未被确认过的 marker 本用例已一并纳入确认，故此处清空）
+    expect(listAiInsightRiskMarkers(USER, PROJECT)).toEqual([])
   })
 
   it('放弃重复风险 → 清除旧 marker 回到空闲', async () => {
@@ -363,5 +372,56 @@ describe('consent 与生命周期', () => {
       QUERY_KEYS.researchInsights(PROJECT),
     )
     expect(cached?.items.map((item) => item.insight_id)).toEqual(['ins_1'])
+  })
+})
+
+describe('身份切换与跨标签页（评审 M-1 / L-5）', () => {
+  it('M-1：切换项目后不得复用上一项目的冻结 attempt（载荷与目标都必须换新）', async () => {
+    const { wrapper, queryClient } = makeWrapper()
+    const dispatch = async <T,>(operation: (modelId: string) => Promise<T>) => operation('m-ext')
+    const onCreated = vi.fn()
+    const { result, rerender } = renderHook(
+      ({ projectId }: { projectId: string }) =>
+        useAiInsightSubmit({
+          projectId, userId: USER, dispatch: dispatch as never, onCreated,
+        }),
+      { wrapper, initialProps: { projectId: 'proj_A' } },
+    )
+    vi.mocked(createAiInsight).mockResolvedValue(http(200, {}) as never)
+    // 键工厂递增：否则两次尝试拿到同一个 mock 常量，无法判别是否重用了旧 key
+    let keySeq = 0
+    vi.mocked(newIdempotencyKey).mockImplementation(() => `ui-key-${++keySeq}`)
+
+    await act(async () => {
+      await result.current.submit(input({ sourceIds: ['src_A'] }))
+    })
+    expect(vi.mocked(createAiInsight).mock.calls[0]?.[0]).toBe('proj_A')
+    expect(vi.mocked(createAiInsight).mock.calls[0]?.[1]?.source_ids).toEqual(['src_A'])
+
+    // 切项目（同实例 rerender，不卸载）→ 旧 attempt 必须丢弃
+    rerender({ projectId: 'proj_B' })
+    await act(async () => {
+      await result.current.submit(input({ sourceIds: ['src_B'] }))
+    })
+    const second = vi.mocked(createAiInsight).mock.calls[1]
+    expect(second?.[0]).toBe('proj_B')
+    expect(second?.[1]?.source_ids).toEqual(['src_B'])
+    expect(second?.[2]?.idempotencyKey).not.toBe(
+      vi.mocked(createAiInsight).mock.calls[0]?.[2]?.idempotencyKey,
+    )
+    void queryClient
+  })
+
+  it('L-5：他标签页写入 marker → storage 事件后 pendingMarker 实时可见', async () => {
+    const { result } = setup()
+    expect(result.current.result.pendingMarker).toBeNull()
+
+    localStorage.setItem(
+      aiInsightRiskMarkerKey(USER, PROJECT, 'other-tab'),
+      JSON.stringify({ version: 1, markerId: 'other-tab', kind: 'fresh', recordedAt: 5 }),
+    )
+    act(() => { window.dispatchEvent(new StorageEvent('storage')) })
+
+    expect(result.current.result.pendingMarker?.markerId).toBe('other-tab')
   })
 })

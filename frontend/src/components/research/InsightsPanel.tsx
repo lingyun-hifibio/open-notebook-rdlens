@@ -53,7 +53,8 @@ export function InsightsPanel({
   const { t } = useTranslation()
   const { toast } = useToast()
   const { projectId, userId, isAdminReadonly } = useResearchWorkspace()
-  const { canExecute, runGuarded, blockedReason, confirmedModelId } = useResearchGlobalModel()
+  const { canExecute, runGuarded, blockedReason, confirmedModelId, invalidateConsent } =
+    useResearchGlobalModel()
   const { data, isLoading, isError } = useResearchInsights(projectId)
   const createMutation = useCreateResearchInsight(projectId)
   const { registerJob } = useResearchJobsController()
@@ -74,6 +75,9 @@ export function InsightsPanel({
     userId: userId ?? '',
     dispatch: runGuarded,
     onCreated: () => {
+      // 真实 runGuarded 可能在 consent 确认后才执行 operation——成功后的表单
+      // 重置必须由回调驱动（submitAi 的 await 早已返回，看不到最终状态）
+      resetForm()
       toast({ title: t('common.success'), description: t('research.workbench.insightCreated') })
     },
     onQueued: (jobId) => {
@@ -108,6 +112,19 @@ export function InsightsPanel({
     onFailed: (code) => {
       setAiErrorCode(code)
       setAiNotice('failed')
+      // 确定性终态失败必须可见（此前只有内联提示且文案分支缺失 → 用户"点了没反应"）
+      toast({
+        title: t('common.error'),
+        description: t('research.insights.aiFailed'),
+        variant: 'destructive',
+      })
+    },
+    onRefreshConsent: () => {
+      // consent 失效：刷新服务端 consent，下一次派发重新走确认（新 key）
+      invalidateConsent()
+    },
+    onStaleSourceCount: (count) => {
+      setAiStaleCount(count)
     },
   })
 
@@ -133,19 +150,20 @@ export function InsightsPanel({
     } finally {
       setIsResolvingScope(false)
     }
-    setAiStaleCount(resolved.staleSourceCount)
+    // stale 计数由 hook 在真正派发时回传（consent 取消不留痕，L-2）
+    void resolved.staleSourceCount
     // 模型在派发时刻冻结（consent 确认前后不再漂移，C-04）
     if (confirmedModelId === null) return
-    const status = await aiSubmit.submit({
+    await aiSubmit.submit({
       title: titleSnapshot,
       content: contentSnapshot,
       sourceIds: resolved.sourceIds,
       noteIds: resolved.noteIds,
       responseLanguage: detectResponseLanguage(contentSnapshot),
       modelId: confirmedModelId,
+      staleSourceCount: resolved.staleSourceCount,
       scopeLabel: formatScopeLabel(snapshot, t),
     })
-    if (status === 'created') resetForm()
   }
 
   const resetForm = () => {
@@ -188,7 +206,9 @@ export function InsightsPanel({
           ? t('research.insights.aiOutcomeUnknown')
           : aiNotice === 'protocol_conflict'
             ? t('research.insights.aiProtocolConflict')
-            : null
+            : aiNotice === 'failed'
+              ? t('research.insights.aiFailed')
+              : null
 
   const items = data?.items ?? []
 
@@ -308,6 +328,7 @@ export function InsightsPanel({
                 disabled={
                   createMutation.isPending ||
                   isResolvingScope ||
+                  aiSubmit.isSubmitting ||
                   // 无可用模型时只阻止 AI 模式；Manual 不受影响
                   (insightType === 'ai' && !canExecute)
                 }

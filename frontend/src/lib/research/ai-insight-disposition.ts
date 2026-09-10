@@ -75,14 +75,6 @@ export function normalizeAiInsightError(error: unknown): NormalizedResearchError
   }
 }
 
-/** 幂等冲突：结构化 code 或纯字符串 detail 中的 "idempotency conflict"。 */
-function isIdempotencyConflict(normalized: NormalizedResearchError): boolean {
-  if (normalized.code !== null && normalized.code.toLowerCase().includes('idempotency')) {
-    return true
-  }
-  return normalized.message !== null && /idempotency[ _-]*conflict/i.test(normalized.message)
-}
-
 /** 优先级 1→7。输入接受原始错误对象（内部归一化）或已归一化结果。 */
 export function classifyAiInsightFailure(
   error: unknown,
@@ -106,13 +98,10 @@ export function classifyAiInsightFailure(
   if (normalized.state === 'failed') return 'terminal'
   // 4. consent 失效：清当前 marker、刷新 consent，之后重新确认并用新 key
   if (normalized.code !== null && CONSENT_CODES.has(normalized.code)) return 'consent_invalid'
-  // 5. 协议冲突：保留 marker，禁止自动重发。当前所有 409 都归此级，但幂等
-  //    冲突要单独识别——它明确表示「同 key 不同载荷」，与无解释的 409 一样
-  //    都不能自动换 key 重发（未来若放宽未知 409 的处置，此处即判别点）。
-  if (normalized.status === 409) {
-    void isIdempotencyConflict(normalized)
-    return 'protocol_conflict'
-  }
+  // 5. 协议冲突：保留 marker，禁止自动重发。当前所有 409 都归此级——幂等冲突
+  //    （«同 key 不同载荷»）与无解释的 409 在客户端都不可自愈，处置相同；若将来
+  //    要放宽「未知 409」，先用 isIdempotencyConflict() 把冲突单独分出来。
+  if (normalized.status === 409) return 'protocol_conflict'
   // 6. 无响应或无权威终态的 5xx：结果未知但同 key 重试安全
   if (!normalized.hasResponse) return 'retry_same_key'
   if (normalized.status !== null && normalized.status >= 500) return 'retry_same_key'

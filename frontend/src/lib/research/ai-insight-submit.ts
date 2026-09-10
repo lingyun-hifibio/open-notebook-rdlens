@@ -22,12 +22,12 @@ import { useQueryClient } from '@tanstack/react-query'
 import {
   aiInsightOutcomeFromResponse,
   createAiInsight,
-  type AiInsightHttpResponse,
   type CreateAiInsightRequest,
 } from './ai-insight'
 import { classifyAiInsightFailure } from './ai-insight-disposition'
 import {
   buildAiInsightAttempt,
+  clearAcknowledgedRiskMarkers,
   clearAiInsightRiskMarker,
   isAiInsightKeyRetryable,
   listAiInsightRiskMarkers,
@@ -40,6 +40,13 @@ import { newIdempotencyKey } from './api'
 import { extractResearchErrorCode } from './errors'
 import { QUERY_KEYS } from '@/lib/api/query-client'
 import type { ResearchInsight, ResearchPage } from '@/lib/types/research'
+
+/** operation 的收敛结果（真实 runGuarded 可能在 consent 确认后才执行本闭包） */
+type OperationResult =
+  | { kind: 'not_executed' }
+  | { kind: 'abandoned' }
+  | { kind: 'marker_write_failed' }
+  | { kind: 'settled'; status: AiInsightSubmitStatus; errorCode?: string | null }
 
 export type AiInsightSubmitStatus =
   | 'idle'
@@ -58,6 +65,8 @@ export interface AiInsightSubmitInput {
   /** S2 唯一 resolver 解析出的冻结 id 集 */
   sourceIds: string[]
   noteIds: string[]
+  /** S2 解析出的 stale 计数（派发成功后才展示） */
+  staleSourceCount?: number
   responseLanguage: 'zh' | 'en'
   modelId: string
   /** consent 弹窗 Scope 行（与请求同源快照） */
@@ -91,9 +100,13 @@ interface Options {
   newAttemptId?: () => string
   /** 注入时钟（默认 performance.now；测试用） */
   now?: () => number
+  /** consent 失效时刷新服务端 consent（下一派发重新确认 + 新 key） */
+  onRefreshConsent?: () => void
   onCreated?: (insight: ResearchInsight, generationId: string) => void
   onQueued?: (jobId: string, generationId: string) => void
   onBlockedEmptyScope?: () => void
+  /** stale Source 计数（派发时置位；consent 取消不留痕） */
+  onStaleSourceCount?: (count: number) => void
   onOutcomeUnknown?: () => void
   onProtocolConflict?: () => void
   onFailed?: (code: string | null) => void
@@ -128,6 +141,8 @@ export function useAiInsightSubmit(options: Options): {
     onOutcomeUnknown,
     onProtocolConflict,
     onFailed,
+    onRefreshConsent,
+    onStaleSourceCount,
   } = options
   const queryClient = useQueryClient()
 
@@ -144,16 +159,50 @@ export function useAiInsightSubmit(options: Options): {
   const riskAcknowledgedRef = useRef<Set<string>>(new Set())
   const generationRef = useRef(0)
   const mountedRef = useRef(true)
+  const pendingResetRef = useRef(false)
   useEffect(() => {
     mountedRef.current = true
     return () => {
       mountedRef.current = false
     }
   }, [])
-
   const identity = `${userId}/${projectId}`
   const identityRef = useRef(identity)
-  identityRef.current = identity
+  if (identityRef.current !== identity) {
+    // M-1：身份切换必须丢弃上一身份的冻结 attempt / 终态闸门 / 待确认 marker，
+    // 否则会以旧项目的 Scope 向新项目派发（或把新项目提交拦成旧项目的冲突）
+    identityRef.current = identity
+    activeAttemptRef.current = null
+    noticeRef.current = null
+    riskAcknowledgedRef.current = new Set()
+    pendingResetRef.current = true
+  }
+
+  // FR-03：他标签页写入/清除 marker 时同步展示（无需用户先点一次提交才发现）
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const onStorage = () => {
+      if (!mountedRef.current) return
+      const markers = listAiInsightRiskMarkers(userId, projectId)
+      const unacknowledged = markers.filter(
+        (marker) => !riskAcknowledgedRef.current.has(marker.markerId),
+      )
+      setPendingMarker(unacknowledged.length > 0 ? (unacknowledged[0] as AiInsightRiskMarker) : null)
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [projectId, userId])
+
+  // 身份切换时清空渲染态（refs 已在渲染期重置，见上）
+  useEffect(() => {
+    if (!pendingResetRef.current) return
+    pendingResetRef.current = false
+    setPendingMarker(null)
+    setRetryableAttempt(null)
+    setStatus('idle')
+    setErrorCode(null)
+  }, [identity])
+
 
   const clearOwnMarker = useCallback((attemptId: string) => {
     activeAttemptRef.current = null
@@ -166,9 +215,15 @@ export function useAiInsightSubmit(options: Options): {
     setPendingMarker((current) => {
       if (current === null) return null
       riskAcknowledgedRef.current.add(current.markerId)
-      return null
+      // 仍存在未确认的旧 marker（多标签页并发）→ 继续展示下一枚，而不是让
+      // 用户在下一次提交时被"静默再拦一次"
+      const next = listAiInsightRiskMarkers(userId, projectId).find(
+        (marker) => marker.markerId !== current.markerId &&
+          !riskAcknowledgedRef.current.has(marker.markerId),
+      )
+      return next ?? null
     })
-  }, [])
+  }, [projectId, userId])
 
   const discardDuplicateRisk = useCallback(() => {
     noticeRef.current = null
@@ -256,109 +311,151 @@ export function useAiInsightSubmit(options: Options): {
       note_ids: input.noteIds,
       response_language: input.responseLanguage,
     }
-    /** 哨兵：区分「consent 取消」与「marker 写入失败」 */
-    const MARKER_WRITE_FAILED = Symbol('marker_write_failed')
     const attemptId = existingAttempt?.attemptId ?? newAttemptId()
-    const frozen: AiInsightAttempt<CreateAiInsightRequest> = existingAttempt ??
-      buildAiInsightAttempt(request, { id: attemptId, key: newKey(), now })
     const scopeLabelOptions = input.scopeLabel !== undefined ? { scopeLabel: input.scopeLabel } : undefined
+    /** 冻结派发目标：迟到的 200/202 必须收敛回**派发时**的项目 */
+    const dispatchProjectId = projectId
+    const dispatchUserId = userId
 
-    // FR-03/C-06：market 与 POST 都在**真正的 operation 内**。
-    // - 外部模型且 consent 未生效：dispatch 只登记 op（返回 undefined）→
-    //   operation 不执行 → 零 key、零 marker、零 POST；
-    // - consent 确认后（含跨组件卸载）operation 才执行：先写自己 marker，
-    //   写失败则不发送。
-    // 重试路径不入闸门：key/marker 已存在，consent 已在首派发时确认。
-    const firstAttemptOperation = async () => {
-      if (generation !== generationRef.current) return undefined
-      if (!markAiInsightAttempt(userId, projectId, frozen.attemptId, 'fresh')) {
-        return MARKER_WRITE_FAILED
+    /** 回调仅在组件存活且身份未切换时执行（FR-09）；缓存/ marker 收敛无条件 */
+    const alive = (): boolean =>
+      mountedRef.current && identityRef.current === `${dispatchUserId}/${dispatchProjectId}`
+    /** 状态发布（同 publish，但使用冻结身份——operation 晚于 submit 执行） */
+    const progress = (next: AiInsightSubmitStatus, code: string | null = null): void => {
+      if (generation === generationRef.current && alive()) {
+        setStatus(next)
+        setErrorCode(code)
       }
-      activeAttemptRef.current = frozen
-      if (mountedRef.current) setRetryableAttempt(frozen)
-      return createAiInsight(projectId, frozen.request, { idempotencyKey: frozen.idempotencyKey })
     }
-    const retryOperation = async () => {
-      activeAttemptRef.current = frozen
-      if (mountedRef.current) setRetryableAttempt(frozen)
-      return createAiInsight(projectId, frozen.request, { idempotencyKey: frozen.idempotencyKey })
+
+    /**
+     * 完整 operation：marker → （惰性 key）→ POST → 解析 → disposition →
+     * marker 生命周期 → 缓存合并 → Job 登记 → 回调。
+     *
+     * 关键：真实 `runGuarded` 在需要 consent 时**只登记不执行**，稍后由
+     * `confirmConsent` 用捕获的快照 await 本 operation。因此所有「派发后」
+     * 处理都必须在本闭包内完成——写在 dispatch 之后会被那条已返回的执行流
+     * 丢弃（外部模型路径：付费外发已发生，但结果不合并、Job 不登记、marker
+     * 不清、无错误提示）。
+     */
+    const runOperation = async (): Promise<OperationResult> => {
+      // 登记后到确认之间发生新一代提交 / 身份切换 → 放弃本次（零外发）
+      if (generation !== generationRef.current) return { kind: 'abandoned' }
+      if (identityRef.current !== `${dispatchUserId}/${dispatchProjectId}`) {
+        return { kind: 'abandoned' }
+      }
+      if (existingAttempt === null) {
+        // FR-03：先写自己的 marker（写失败不发送）；此处才生成幂等键——
+        // consent 未确认时本闭包不执行 ⇒ 零 key、零 marker、零 POST（C-06）
+        if (!markAiInsightAttempt(dispatchUserId, dispatchProjectId, attemptId, 'fresh')) {
+          return { kind: 'marker_write_failed' }
+        }
+        // H-2：用户已确认承担重复风险的旧 marker，在本轮新执行写入成功后才
+        // 清除（否则刷新后旧 marker 重新变成未确认，每次会话首派发都被拦）
+        const acknowledged = [...riskAcknowledgedRef.current]
+        if (acknowledged.length > 0) {
+          riskAcknowledgedRef.current.clear()
+          clearAcknowledgedRiskMarkers(dispatchUserId, dispatchProjectId, acknowledged)
+        }
+        // L-2：已知晓的 stale 计数随真正派发置位（consent 取消不留痕）
+        onStaleSourceCount?.(input.staleSourceCount ?? 0)
+        if (alive()) progress('dispatching')
+        const attempt = buildAiInsightAttempt(request, { id: attemptId, key: newKey(), now })
+        activeAttemptRef.current = attempt
+        if (mountedRef.current) setRetryableAttempt(attempt)
+      } else {
+        if (alive()) progress('dispatching')
+      }
+      try {
+        const response = await createAiInsight(dispatchProjectId, request, {
+          idempotencyKey: existingAttempt?.idempotencyKey ?? activeAttemptRef.current?.idempotencyKey ?? '',
+        })
+        const outcome = aiInsightOutcomeFromResponse(response)
+        if (outcome.kind === 'created') {
+          // FR-10：按 insight_id 合并进派发时项目的缓存，不立即 invalidate
+          queryClient.setQueryData<ResearchPage<ResearchInsight>>(
+            QUERY_KEYS.researchInsights(dispatchProjectId),
+            (previous) => {
+              const items = previous?.items ?? []
+              if (items.some((item) => item.insight_id === outcome.insight.insight_id)) return previous
+              return { items: [outcome.insight, ...items], next_cursor: previous?.next_cursor ?? null }
+            },
+          )
+          noticeRef.current = null
+          clearOwnMarker(attemptId)
+          if (alive()) onCreated?.(outcome.insight, outcome.generationId)
+          return { kind: 'settled', status: 'created' }
+        }
+        if (outcome.kind === 'queued') {
+          noticeRef.current = null
+          clearOwnMarker(attemptId)
+          if (alive()) onQueued?.(outcome.jobId, outcome.generationId)
+          return { kind: 'settled', status: 'queued' }
+        }
+        // 缺契约头/畸形载荷/未知 2xx：绝不当成功，保留 marker 供同 key 重试
+        noticeRef.current = 'outcome_unknown'
+        if (alive()) onOutcomeUnknown?.()
+        return { kind: 'settled', status: 'outcome_unknown' }
+      } catch (error) {
+        const disposition = classifyAiInsightFailure(error)
+        const action = markerActionForDisposition(disposition)
+        if (action === 'escalate') {
+          // 协议冲突：保留并升级 marker（fresh → recovery），禁止自动重发
+          markAiInsightAttempt(dispatchUserId, dispatchProjectId, attemptId, 'recovery')
+          noticeRef.current = 'protocol_conflict'
+          if (alive()) onProtocolConflict?.()
+          return { kind: 'settled', status: 'protocol_conflict' }
+        }
+        if (action === 'clear' || action === 'clear_and_refresh_consent') {
+          const code = extractResearchErrorCode(error)
+          noticeRef.current = null
+          clearOwnMarker(attemptId)
+          if (action === 'clear_and_refresh_consent') {
+            // consent 失效：刷新服务端 consent，下一次派发重新走确认（新 key）
+            onRefreshConsent?.()
+          }
+          if (alive()) onFailed?.(code)
+          return { kind: 'settled', status: 'failed', errorCode: code }
+        }
+        // keep：结果未知/可同 key 重试（仍需用户显式确认后才能重发）
+        noticeRef.current = 'outcome_unknown'
+        if (alive()) onOutcomeUnknown?.()
+        return { kind: 'settled', status: 'outcome_unknown' }
+      }
     }
 
     publish('dispatching')
 
-    const runOperation = existingAttempt === null ? firstAttemptOperation : retryOperation
-    let httpResponse: AiInsightHttpResponse | undefined | typeof MARKER_WRITE_FAILED
+    let result: OperationResult
     try {
       // modelId 入参不消费：请求载荷的 model_id 在冻结 request 时已固定
       // （模型切换不得改变在途/重试载荷，C-04）
-      httpResponse = await dispatch(
-        () => runOperation(),
-        scopeLabelOptions,
-      )
-    } catch (error) {
-      const disposition = classifyAiInsightFailure(error)
-      const action = markerActionForDisposition(disposition)
-      if (action === 'escalate') {
-        // 协议冲突：保留并升级 marker（fresh → recovery），禁止自动重发
-        markAiInsightAttempt(userId, projectId, frozen.attemptId, 'recovery')
-        noticeRef.current = 'protocol_conflict'
-        onProtocolConflict?.()
-        return publish('protocol_conflict')
-      }
-      if (action === 'clear' || action === 'clear_and_refresh_consent') {
-        const code = extractResearchErrorCode(error)
-        noticeRef.current = null
-        clearOwnMarker(frozen.attemptId)
-        onFailed?.(code)
-        return publish('failed', code)
-      }
-      // keep：结果未知/可同 key 重试（仍需用户显式确认后才能重发）
+      result = (await dispatch(() => runOperation(), scopeLabelOptions)) ?? { kind: 'not_executed' }
+    } catch {
+      // operation 自身抛错（理论上已在内部收敛；此处兜底为结果未知，保留 marker）
       noticeRef.current = 'outcome_unknown'
       onOutcomeUnknown?.()
       return publish('outcome_unknown')
     }
 
-    // marker 写入失败 → 不发送请求（未受保护）
-    if (httpResponse === MARKER_WRITE_FAILED) {
-      onFailed?.(null)
-      return publish('failed')
-    }
-    // 二次 consent 判定的未执行路径（探针通过后取消/代际作废）→ 保持零副作用
-    if (httpResponse === undefined) {
+    if (result.kind === 'not_executed') {
+      // consent 未执行（取消/未确认）：零 key、零 marker、零 POST
       activeAttemptRef.current = null
       if (mountedRef.current) setRetryableAttempt(null)
       return publish('idle')
     }
-
-    const outcome = aiInsightOutcomeFromResponse(httpResponse)
-    if (outcome.kind === 'created') {
-      // FR-10：按 insight_id 合并进派发时项目的缓存，不立即 invalidate
-      queryClient.setQueryData<ResearchPage<ResearchInsight>>(
-        QUERY_KEYS.researchInsights(projectId),
-        (previous) => {
-          const items = previous?.items ?? []
-          if (items.some((item) => item.insight_id === outcome.insight.insight_id)) return previous
-          return { items: [outcome.insight, ...items], next_cursor: previous?.next_cursor ?? null }
-        },
-      )
-      noticeRef.current = null
-      clearOwnMarker(frozen.attemptId)
-      onCreated?.(outcome.insight, outcome.generationId)
-      return publish('created')
+    if (result.kind === 'abandoned') {
+      return publish('idle')
     }
-    if (outcome.kind === 'queued') {
-      noticeRef.current = null
-      clearOwnMarker(frozen.attemptId)
-      onQueued?.(outcome.jobId, outcome.generationId)
-      return publish('queued')
+    if (result.kind === 'marker_write_failed') {
+      onFailed?.(null)
+      return publish('failed')
     }
-    // 缺契约头/畸形载荷/未知 2xx：绝不当成功，保留 marker 供同 key 重试
-    noticeRef.current = 'outcome_unknown'
-    onOutcomeUnknown?.()
-    return publish('outcome_unknown')
+    return publish(result.status, result.errorCode ?? null)
   }, [
     clearOwnMarker, dispatch, newAttemptId, newKey, now, onBlockedEmptyScope, onCreated,
-    onFailed, onOutcomeUnknown, onProtocolConflict, onQueued, projectId, queryClient, userId,
+    onFailed, onOutcomeUnknown, onProtocolConflict, onQueued, onRefreshConsent,
+    onStaleSourceCount, projectId, queryClient, userId,
   ])
 
   return {

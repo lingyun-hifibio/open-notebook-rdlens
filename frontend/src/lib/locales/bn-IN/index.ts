@@ -1291,6 +1291,7 @@ export const bnIN = {
       aiProtocolConflict: "The server reported an idempotency conflict. Confirm you want a new paid generation, or discard it.",
       aiConfirmDuplicateRisk: "Generate anyway",
       aiDiscardDuplicateRisk: "Discard",
+      aiFailed: "Generation failed. Please try again."
     },
     transformations: {
       newTemplate: "নতুন টেমপ্লেট",
