@@ -146,6 +146,13 @@ export interface UseResearchJobsResult {
    * 已知集合（localStorage + 立即回源）——Chat 创建的任务在 Activity 可见、
    * 刷新后继续轮询同一 Job（§12.2/REQ-COV-09）。
    */
+  /**
+   * Issue #54 S4：登记任意被服务端受理的 Job（localStorage + 立即回源）——
+   * AI Insight 202 等新派发路径复用同一唯一 Jobs Provider（不新增第二套
+   * Job 状态）。
+   */
+  registerJob: (jobId: string) => void
+  /** COV-09 兼容 alias：等价于 `registerJob`（保留旧调用方与测试）。 */
   registerCoverageJob: (jobId: string) => void
   /**
    * COV-09：outcome_unknown 显式人工重试（§12.2）。新幂等键 + 确认计费
@@ -555,13 +562,18 @@ export function useResearchJobs({ projectId }: { projectId: string }): UseResear
       })
   }, [getJobSafe, jobs, mergeJob, projectId])
 
-  // COV-09：登记 all_selected 受理的 Job（Chat 侧创建；Activity 可见 + 轮询）
-  const registerCoverageJob = useCallback((jobId: string) => {
+  // COV-09：登记服务端已受理的 Job（localStorage + 立即回源 + 进入轮询）。
+  // Issue #54 S4：由 registerCoverageJob 泛化为 registerJob（AI Insight 202
+  // 复用同一唯一 Jobs Provider）。
+  const registerJob = useCallback((jobId: string) => {
     knownIdsRef.current.add(jobId)
     writeStoredJobId(projectId, jobId)
     void getJobSafe(jobId)
     void refreshPage1()
   }, [getJobSafe, projectId, refreshPage1])
+
+  // COV-09 兼容 alias：旧调用方（Chat all_selected、retryCoverage）不变
+  const registerCoverageJob = registerJob
 
   // COV-09：outcome_unknown 显式人工重试（§12.2）——新幂等键 + 确认计费
   // 风险；不得复用旧唯一键静默发送（复用 → 服务端 409）。
@@ -606,6 +618,7 @@ export function useResearchJobs({ projectId }: { projectId: string }): UseResear
     createCompare: createCompareJob,
     cancel,
     registerCoverageJob,
+    registerJob,
     retryCoverage,
   }
 }
