@@ -23,7 +23,10 @@ import { listAiInsightRiskMarkers } from '@/lib/research/ai-insight-risk'
 import { QUERY_KEYS } from '@/lib/api/query-client'
 
 vi.mock('@/lib/api/client', () => ({ apiClient: { post: vi.fn(), get: vi.fn() } }))
-vi.mock('@/lib/research/api', () => ({
+// 只替换需要断言的函数——其余导出（researchApiErrorDetail 等）保持真实实现，
+// 否则在这个文件里加失败路径用例会以 TypeError 假红（评审 N-4）
+vi.mock('@/lib/research/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/research/api')>()),
   listInsights: vi.fn(),
   createInsight: vi.fn(),
   listSources: vi.fn(),
@@ -172,6 +175,20 @@ describe('InsightsPanel × 真实 consent 流程（C-1 回归）', () => {
       expect(screen.queryByLabelText('research.notes.titleLabel')).toBeNull(),
     )
     expect(listAiInsightRiskMarkers('u1', PROJECT)).toEqual([])
+
+    // N-1 回归：deferred 路径的 settled 也必须在 operation 内收敛 hook 状态，
+    // 否则 status 停在 dispatching → isSubmitting 恒真 → Save 永久禁用
+    fireEvent.click(screen.getByRole('button', { name: 'research.insights.newInsight' }))
+    expect(screen.getByRole('button', { name: 'research.notes.save' })).not.toBeDisabled()
+    // Manual 创建不得被 AI 派发的在途状态陪绑禁用
+    fireEvent.change(screen.getByLabelText('research.notes.titleLabel'), { target: { value: '手册' } })
+    fireEvent.change(screen.getByLabelText('research.notes.contentLabel'), { target: { value: '内容' } })
+    vi.mocked(researchApi.createInsight).mockResolvedValue({
+      insight_id: 'ins_manual', project_id: PROJECT, title: '手册', content: '内容',
+      insight_type: 'manual', model_id: null, created_at: null, updated_at: null,
+    } as never)
+    fireEvent.click(screen.getByRole('button', { name: 'research.notes.save' }))
+    await waitFor(() => expect(researchApi.createInsight).toHaveBeenCalled())
   })
 
   it('外部模型：确认后 202 必须登记 Job（唯一 Provider）且不宣称已创建', async () => {

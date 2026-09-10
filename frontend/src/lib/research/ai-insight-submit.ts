@@ -159,7 +159,6 @@ export function useAiInsightSubmit(options: Options): {
   const riskAcknowledgedRef = useRef<Set<string>>(new Set())
   const generationRef = useRef(0)
   const mountedRef = useRef(true)
-  const pendingResetRef = useRef(false)
   useEffect(() => {
     mountedRef.current = true
     return () => {
@@ -168,15 +167,22 @@ export function useAiInsightSubmit(options: Options): {
   }, [])
   const identity = `${userId}/${projectId}`
   const identityRef = useRef(identity)
-  if (identityRef.current !== identity) {
-    // M-1：身份切换必须丢弃上一身份的冻结 attempt / 终态闸门 / 待确认 marker，
-    // 否则会以旧项目的 Scope 向新项目派发（或把新项目提交拦成旧项目的冲突）
+  // M-1：身份切换必须丢弃上一身份的冻结 attempt / 终态闸门 / 待确认 marker，否则
+  // 会以旧项目的 Scope 向新项目派发（或把新项目提交拦成旧项目的冲突）。
+  // N-3：ref 写入放在 effect（渲染期写 ref 违反 React 约定，且被丢弃的并发渲染
+  // 也会清掉 ref）；effect 在提交后、任何用户事件前执行，故 submit() 看到的总是
+  // 已重置状态。
+  useEffect(() => {
+    if (identityRef.current === identity) return
     identityRef.current = identity
     activeAttemptRef.current = null
     noticeRef.current = null
     riskAcknowledgedRef.current = new Set()
-    pendingResetRef.current = true
-  }
+    setPendingMarker(null)
+    setRetryableAttempt(null)
+    setStatus('idle')
+    setErrorCode(null)
+  }, [identity])
 
   // FR-03：他标签页写入/清除 marker 时同步展示（无需用户先点一次提交才发现）
   useEffect(() => {
@@ -193,15 +199,6 @@ export function useAiInsightSubmit(options: Options): {
     return () => window.removeEventListener('storage', onStorage)
   }, [projectId, userId])
 
-  // 身份切换时清空渲染态（refs 已在渲染期重置，见上）
-  useEffect(() => {
-    if (!pendingResetRef.current) return
-    pendingResetRef.current = false
-    setPendingMarker(null)
-    setRetryableAttempt(null)
-    setStatus('idle')
-    setErrorCode(null)
-  }, [identity])
 
 
   const clearOwnMarker = useCallback((attemptId: string) => {
@@ -348,6 +345,11 @@ export function useAiInsightSubmit(options: Options): {
         // FR-03：先写自己的 marker（写失败不发送）；此处才生成幂等键——
         // consent 未确认时本闭包不执行 ⇒ 零 key、零 marker、零 POST（C-06）
         if (!markAiInsightAttempt(dispatchUserId, dispatchProjectId, attemptId, 'fresh')) {
+          // N-2：通知同样要在 operation 内（deferred consent 下 submit() 已返回）
+          if (alive()) {
+            onFailed?.(null)
+            progress('failed')
+          }
           return { kind: 'marker_write_failed' }
         }
         // H-2：用户已确认承担重复风险的旧 marker，在本轮新执行写入成功后才
@@ -383,18 +385,27 @@ export function useAiInsightSubmit(options: Options): {
           )
           noticeRef.current = null
           clearOwnMarker(attemptId)
-          if (alive()) onCreated?.(outcome.insight, outcome.generationId)
+          if (alive()) {
+            onCreated?.(outcome.insight, outcome.generationId)
+            progress('created')
+          }
           return { kind: 'settled', status: 'created' }
         }
         if (outcome.kind === 'queued') {
           noticeRef.current = null
           clearOwnMarker(attemptId)
-          if (alive()) onQueued?.(outcome.jobId, outcome.generationId)
+          if (alive()) {
+            onQueued?.(outcome.jobId, outcome.generationId)
+            progress('queued')
+          }
           return { kind: 'settled', status: 'queued' }
         }
         // 缺契约头/畸形载荷/未知 2xx：绝不当成功，保留 marker 供同 key 重试
         noticeRef.current = 'outcome_unknown'
-        if (alive()) onOutcomeUnknown?.()
+        if (alive()) {
+          onOutcomeUnknown?.()
+          progress('outcome_unknown')
+        }
         return { kind: 'settled', status: 'outcome_unknown' }
       } catch (error) {
         const disposition = classifyAiInsightFailure(error)
@@ -403,7 +414,10 @@ export function useAiInsightSubmit(options: Options): {
           // 协议冲突：保留并升级 marker（fresh → recovery），禁止自动重发
           markAiInsightAttempt(dispatchUserId, dispatchProjectId, attemptId, 'recovery')
           noticeRef.current = 'protocol_conflict'
-          if (alive()) onProtocolConflict?.()
+          if (alive()) {
+            onProtocolConflict?.()
+            progress('protocol_conflict')
+          }
           return { kind: 'settled', status: 'protocol_conflict' }
         }
         if (action === 'clear' || action === 'clear_and_refresh_consent') {
@@ -414,12 +428,18 @@ export function useAiInsightSubmit(options: Options): {
             // consent 失效：刷新服务端 consent，下一次派发重新走确认（新 key）
             onRefreshConsent?.()
           }
-          if (alive()) onFailed?.(code)
+          if (alive()) {
+            onFailed?.(code)
+            progress('failed', code)
+          }
           return { kind: 'settled', status: 'failed', errorCode: code }
         }
         // keep：结果未知/可同 key 重试（仍需用户显式确认后才能重发）
         noticeRef.current = 'outcome_unknown'
-        if (alive()) onOutcomeUnknown?.()
+        if (alive()) {
+          onOutcomeUnknown?.()
+          progress('outcome_unknown')
+        }
         return { kind: 'settled', status: 'outcome_unknown' }
       }
     }
