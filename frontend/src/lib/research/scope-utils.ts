@@ -15,14 +15,12 @@
 import type { ResearchScopeSnapshot } from '@/lib/research/scope'
 import type { ResearchNote, ResearchSource } from '@/lib/types/research'
 import { listNotes, listSources } from '@/lib/research/api'
-import { collectResearchPages } from '@/lib/research/pagination'
+import { collectResearchPages, RESEARCH_PAGE_LIMIT } from '@/lib/research/pagination'
 
 export interface ScopeSelectionFetchers {
   listSources: typeof listSources
   listNotes: typeof listNotes
 }
-
-const ENUMERATION_PAGE_SIZE = 100
 
 /** RFC §4.2：CJK（U+4E00-U+9FFF）多于 ASCII 字母 → 'zh'，否则 'en'。 */
 export function detectResponseLanguage(text: string): 'zh' | 'en' {
@@ -69,9 +67,13 @@ function requireEffectiveScope(scope: ResolvedResearchScope): ResolvedResearchSc
 /**
  * 把 Scope 快照解析为显式 Source/Note id 全集（派发时调用一次并冻结）。
  *
- * - `selected`：原样返回副本（与快照不共享引用，防冻结数组泄漏）。
- * - `entire_project`：分页枚举项目全部授权 source/note；空项目返回
- *   空列表由调用方阻断引导；枚举中途失败向上冒泡（调用方 toast）。
+ * - `selected`：返回 Provider 冻结副本的去重拷贝（不共享引用，防冻结
+ *   数组泄漏）。
+ * - `entire_project`：经共享 `collectResearchPages` 分页枚举项目全部
+ *   授权 source/note；Source 仅保留 ready/stale，Note 全保留。
+ * - 最终有效范围为空 → 抛 typed `EmptyEffectiveScopeError`（派发前阻断，
+ *   绝不降级为 entire project）；枚举中途失败/游标循环向上冒泡（调用方
+ *   区分处理：空范围走阻断引导，网关失败走通用失败提示）。
  */
 export async function resolveScopeSelection(
   projectId: string,
@@ -87,14 +89,14 @@ export async function resolveScopeSelection(
   }
   const sources = await collectResearchPages<ResearchSource>(
     (cursor) => fetchers.listSources(projectId, {
-      limit: ENUMERATION_PAGE_SIZE,
+      limit: RESEARCH_PAGE_LIMIT,
       ...(cursor !== undefined ? { cursor } : {}),
     }),
     (item) => item.source_id,
   )
   const notes = await collectResearchPages<ResearchNote>(
     (cursor) => fetchers.listNotes(projectId, {
-      limit: ENUMERATION_PAGE_SIZE,
+      limit: RESEARCH_PAGE_LIMIT,
       ...(cursor !== undefined ? { cursor } : {}),
     }),
     (item) => item.note_id,

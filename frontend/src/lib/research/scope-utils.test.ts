@@ -195,6 +195,21 @@ describe('resolveScopeSelection', () => {
     })
   })
 
+  it('entire_project：Source 全被过滤但仍有 Note → 合法（Note-only 交给 Host S1 路径）', async () => {
+    const result = await resolveScopeSelection('proj_1', snapshot('entire_project'), {
+      listSources: vi.fn().mockResolvedValue(page([
+        { ...source('pending'), status: 'pending' },
+        { ...source('failed'), status: 'failed' },
+      ], null)),
+      listNotes: vi.fn().mockResolvedValue(page([note('n1'), note('n2')], null)),
+    })
+    expect(result).toEqual({
+      sourceIds: [],
+      noteIds: ['n1', 'n2'],
+      staleSourceCount: 0,
+    })
+  })
+
   it('entire_project：A→B→A cursor 循环整体失败，不使用部分范围', async () => {
     const sourcesFetcher = vi
       .fn()

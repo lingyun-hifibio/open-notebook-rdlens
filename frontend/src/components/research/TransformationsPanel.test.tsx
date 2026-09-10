@@ -9,7 +9,11 @@ import {
   setGlobalModelStub,
 } from '@/test/global-model-stub'
 import * as researchApi from '@/lib/research/api'
-import type { ResearchSource, ResearchTransformation } from '@/lib/types/research'
+import type {
+  ResearchPage,
+  ResearchSource,
+  ResearchTransformation,
+} from '@/lib/types/research'
 
 // RWV2-12 Red：TransformationsPanel 迁移到共享 Research Scope。
 // - 运行对话框只读展示当前 Scope 摘要（Entire project / Selected: N sources, M notes）
@@ -397,6 +401,83 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
     // 阻断后 Confirm 禁用（防重复枚举）；无 stale 警告（未被 filter 丢弃）
     expect(screen.getByRole('button', { name: 'research.transformations.confirmRun' })).toBeDisabled()
     expect(screen.queryByTestId('run-stale-sources-warning')).toBeNull()
+  })
+
+  it('S2：Note-only（Source 全 pending → 空）+ Note 保留 → 派发 note_ids，不误导为阻断', async () => {
+    seedScope('entire_project')
+    const { wrapper } = makeWrapper()
+    vi.mocked(researchApi.runTransformation).mockResolvedValue(runResult())
+    render(<TransformationsPanel />, { wrapper })
+    await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
+    await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
+
+    vi.mocked(researchApi.listSources).mockResolvedValueOnce({
+      items: [source({ source_id: 'src_pending', status: 'pending' })],
+      next_cursor: null,
+    })
+    vi.mocked(researchApi.listNotes).mockResolvedValueOnce({
+      items: [{
+        note_id: 'note_1',
+        project_id: 'proj_1',
+        title: 'Note One',
+        content: 'body',
+        note_type: 'human',
+        created_at: '2026-08-06T02:00:00Z',
+        updated_at: '2026-08-06T02:00:00Z',
+      }],
+      next_cursor: null,
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
+    // Note-only 合法：source_ids 空、note_ids 有值，且不被阻断
+    await waitFor(() =>
+      expect(researchApi.runTransformation).toHaveBeenCalledWith('proj_1', 'trans_1', {
+        source_ids: [],
+        note_ids: ['note_1'],
+        model_id: 'm-local',
+      }),
+    )
+    expect(screen.queryByTestId('run-empty-project-blocked')).toBeNull()
+    expect(screen.queryByTestId('run-stale-sources-warning')).toBeNull()
+  })
+
+  it('S2：解析在途关闭并重开对话框后，旧代际的 typed 阻断不得写回新对话框', async () => {
+    seedScope('entire_project')
+    const { wrapper } = makeWrapper()
+    const d = deferred<ResearchPage<ResearchSource>>()
+    vi.mocked(researchApi.listNotes).mockResolvedValue({ items: [], next_cursor: null })
+    render(<TransformationsPanel />, { wrapper })
+    await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
+    await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
+    // 第一次确认：枚举挂起（挂载查询已消费 beforeEach 默认）
+    vi.mocked(researchApi.listSources).mockReturnValueOnce(d.promise)
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
+    await waitFor(() =>
+      expect(researchApi.listSources).toHaveBeenCalledWith('proj_1', { limit: 100 }),
+    )
+    // 解析在途：Esc 关闭 + 重开同一模板（openRun 已复位 blockedReason）
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByTestId('run-scope-summary')).toBeNull())
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
+    await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
+
+    // 旧代际枚举以空有效范围 reject（typed 阻断）——代际守卫必须丢弃，
+    // 不得把「本项目无 Source/Note」写进已重开的对话框
+    d.resolve({ items: [], next_cursor: null })
+    await new Promise((r) => setTimeout(r, 50))
+    expect(screen.queryByTestId('run-empty-project-blocked')).toBeNull()
+    // 新代际 Confirm 可点并正常派发（若旧代际写回 blockedReason 则恒禁用）
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
+    await waitFor(() =>
+      expect(researchApi.runTransformation).toHaveBeenCalledWith('proj_1', 'trans_1', {
+        source_ids: ['src_1'],
+        note_ids: [],
+        model_id: 'm-local',
+      }),
+    )
   })
 
   it('AC-4：派发后修改 Scope 不影响在途运行，且摘要显示派发时快照', async () => {

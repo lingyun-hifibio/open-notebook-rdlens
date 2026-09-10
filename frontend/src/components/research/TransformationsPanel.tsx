@@ -72,9 +72,9 @@ import { resolveCitationSource } from './citation-utils'
  * - 空范围引导：selected 空态（provider 不变量下防御性）与
  *   entire_project 空项目（解析后可达）均英文阻断，不派发。
  * - S2（Issue #54）：唯一解析器在派发前完成过滤——pending/failed Source
- *   不进入载荷，stale Source 进入载荷但先显示警告；解析结果为空有效范围
- *   时抛 typed `EmptyEffectiveScopeError`，同一阻断面呈现（不降级到
- *   entire project）。
+ *   不进入载荷，stale Source 进入载荷但派发时显示警告，Note-only 为合法
+ *   范围；解析结果为空有效范围时抛 typed `EmptyEffectiveScopeError`，
+ *   同一阻断面呈现（不降级到 entire project）。
  */
 export function TransformationsPanel({
   onCitationJump,
@@ -181,10 +181,14 @@ export function TransformationsPanel({
     if (snapshot.mode === 'selected' && !validate(snapshot).valid) return
     setIsResolvingRun(true)
     setBlockedReason(null)
+    setStaleSourceCount(0)
     let resolved: { sourceIds: string[]; noteIds: string[]; staleSourceCount: number } | null = null
     try {
       resolved = await resolveScopeSelection(projectId, snapshot)
     } catch (error) {
+      // 陈旧代际（对话框已关闭/重开）不得写入新一代码对话框状态或弹 toast
+      // （成功路径在下方有同款守卫）
+      if (runGenerationRef.current !== generation) return
       // S2：空有效范围是 typed、可预期的阻断（不派发、不引导降级到
       // entire project）。分页失败仍是网关错误 → 通用失败 toast。
       if (error instanceof EmptyEffectiveScopeError) {
@@ -207,14 +211,7 @@ export function TransformationsPanel({
     // 对话框已关闭/重开同一模板：令牌失效 → 放弃派发（对象同一性比较可被
     // 重开击穿，令牌不依赖对象身份）
     if (runGenerationRef.current !== generation) return
-    if (snapshot.mode === 'entire_project' && resolved.sourceIds.length + resolved.noteIds.length === 0) {
-      setBlockedReason('empty_project')
-      return
-    }
-    // S2：stale Source 可派发，但提交前必须可见（后端会用最后同步版本）。
-    // 仅在真正会用该解析结果的这一代执行流里设置；下一次解析会覆盖。
-    setStaleSourceCount(resolved.staleSourceCount)
-    const { sourceIds, noteIds } = resolved
+    const { sourceIds, noteIds, staleSourceCount: resolvedStaleCount } = resolved
     // RWV2-35：双语 admin 模板按选择器变体语言（Confirm 时刻冻结）；
     // 单 prompt（project/legacy）按 content 检测（R3-D 语义）。
     const bilingual = target.bilingual === true
@@ -227,6 +224,10 @@ export function TransformationsPanel({
           if (runGenerationRef.current !== generation) return
           setRunSnapshot(snapshot)
           setRunLanguage(lang)
+          // S2：stale Source 可派发，但必须在真正派发时可见（后端用最后
+          // 同步版本）。与 runSnapshot/runLanguage 同处设置——consent
+          // 取消/未派发不留下警告。
+          setStaleSourceCount(resolvedStaleCount)
           const result = await runMutation.mutateAsync({
             transformationId: target.transformation_id,
             sourceIds,
