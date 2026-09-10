@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ResearchWorkbench } from './ResearchWorkbench'
 import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
 import { ResearchScopeProvider, scopeStorageKey } from '@/lib/research/scope'
+import { ResearchJobsProvider } from './ResearchJobsProvider'
 import * as researchApi from '@/lib/research/api'
 import type { ResearchNote, ResearchSource, ResearchSourceDetail } from '@/lib/types/research'
 
@@ -17,9 +18,7 @@ import type { ResearchNote, ResearchSource, ResearchSourceDetail } from '@/lib/t
 
 vi.mock('@/lib/research/api', () => ({
   saveResultFromResult: vi.fn(),
-  listSources: vi.fn(),
   getSource: vi.fn(),
-  listNotes: vi.fn(),
   createNote: vi.fn(),
   updateNote: vi.fn(),
   deleteNote: vi.fn(),
@@ -32,6 +31,20 @@ vi.mock('@/lib/research/api', () => ({
   getTransformationResult: vi.fn(),
   createExport: vi.fn(),
   downloadExport: vi.fn(),
+  // S4：唯一 Jobs Provider / AI adapter 依赖
+  listJobs: vi.fn(async () => ({ items: [], next_cursor: null })),
+  getJob: vi.fn(async () => ({
+    job_id: 'job_x', project_id: 'proj_1', job_type: 'research_coverage',
+    status: 'completed', stage: null, progress: 1, model_id: null,
+    generation_epoch: 1, retry_count: 0, last_error: null, result_ref: null,
+    created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-01T00:00:00Z',
+  })),
+  cancelJob: vi.fn(),
+  retryCoverageJob: vi.fn(),
+  createAiInsight: vi.fn(),
+  listSources: vi.fn(async () => ({ items: [], next_cursor: null })),
+  listNotes: vi.fn(async () => ({ items: [], next_cursor: null })),
+  newIdempotencyKey: vi.fn(() => 'ui-test-key'),
 }))
 
 vi.mock('@/lib/hooks/use-translation', () => ({
@@ -62,9 +75,11 @@ function makeWrapper(role: 'owner' | 'admin_readonly' = 'owner') {
   const wrapper = ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>
       <ResearchWorkspaceProvider userId="u1" projectId="proj_1" role={role}>
-        <ResearchScopeProvider userId="u1" projectId="proj_1">
-          {children}
-        </ResearchScopeProvider>
+        <ResearchJobsProvider>
+          <ResearchScopeProvider userId="u1" projectId="proj_1">
+            {children}
+          </ResearchScopeProvider>
+        </ResearchJobsProvider>
       </ResearchWorkspaceProvider>
     </QueryClientProvider>
   )

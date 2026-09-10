@@ -14,9 +14,19 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { useToast } from '@/lib/hooks/use-toast'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
 import { useResearchGlobalModel, researchModelBlockedHint } from '@/lib/hooks/use-research-global-model'
 import { useCreateResearchInsight, useResearchInsights } from '@/lib/hooks/use-research'
+import { useResearchScope } from '@/lib/research/scope'
+import { formatScopeLabel } from '@/lib/research/scope'
+import {
+  detectResponseLanguage,
+  EmptyEffectiveScopeError,
+  resolveScopeSelection,
+} from '@/lib/research/scope-utils'
+import { useAiInsightSubmit, type AiInsightSubmitStatus } from '@/lib/research/ai-insight-submit'
+import { useResearchJobsController } from './ResearchJobsProvider'
 import { AdminReadOnlyBanner } from './AdminReadOnlyBanner'
 
 /**
@@ -41,21 +51,129 @@ export function InsightsPanel({
   revealId?: string | null
 }) {
   const { t } = useTranslation()
-  const { projectId, isAdminReadonly } = useResearchWorkspace()
-  const { canExecute, runGuarded, blockedReason } = useResearchGlobalModel()
+  const { toast } = useToast()
+  const { projectId, userId, isAdminReadonly } = useResearchWorkspace()
+  const { canExecute, runGuarded, blockedReason, confirmedModelId, invalidateConsent } =
+    useResearchGlobalModel()
   const { data, isLoading, isError } = useResearchInsights(projectId)
   const createMutation = useCreateResearchInsight(projectId)
+  const { registerJob } = useResearchJobsController()
+  const { getSnapshot, validate } = useResearchScope()
 
   const [showForm, setShowForm] = useState(false)
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [insightType, setInsightType] = useState<'ai' | 'manual'>('manual')
+  /** S4：AI 派发的可见反馈（可重试/协议冲突/未知结果 + stale 计数） */
+  const [aiNotice, setAiNotice] = useState<AiInsightSubmitStatus | null>(null)
+  const [aiStaleCount, setAiStaleCount] = useState(0)
+  const [aiErrorCode, setAiErrorCode] = useState<string | null>(null)
+  const [isResolvingScope, setIsResolvingScope] = useState(false)
+
+  const aiSubmit = useAiInsightSubmit({
+    projectId,
+    userId: userId ?? '',
+    dispatch: runGuarded,
+    onCreated: () => {
+      // 真实 runGuarded 可能在 consent 确认后才执行 operation——成功后的表单
+      // 重置必须由回调驱动（submitAi 的 await 早已返回，看不到最终状态）
+      resetForm()
+      toast({ title: t('common.success'), description: t('research.workbench.insightCreated') })
+    },
+    onQueued: (jobId) => {
+      // 唯一 Jobs Provider 登记（不新增第二套 Job 状态，C-02/O-03）
+      registerJob(jobId)
+      // 202 只表示 queued：不宣称 Insight 已创建，指引去 Activity 查看并在完成后
+      // 手动 Refresh Insights（O-03/O-04）；toast 因成功路径会关闭表单而必需
+      toast({
+        title: t('common.success'),
+        description: t('research.insights.aiQueued'),
+      })
+    },
+    onBlockedEmptyScope: () => {
+      setAiNotice('blocked_empty_scope')
+    },
+    onOutcomeUnknown: () => {
+      setAiNotice('outcome_unknown')
+      toast({
+        title: t('common.error'),
+        description: t('research.insights.aiOutcomeUnknown'),
+        variant: 'destructive',
+      })
+    },
+    onProtocolConflict: () => {
+      setAiNotice('protocol_conflict')
+      toast({
+        title: t('common.error'),
+        description: t('research.insights.aiProtocolConflict'),
+        variant: 'destructive',
+      })
+    },
+    onFailed: (code) => {
+      setAiErrorCode(code)
+      setAiNotice('failed')
+      // 确定性终态失败必须可见（此前只有内联提示且文案分支缺失 → 用户"点了没反应"）
+      toast({
+        title: t('common.error'),
+        description: t('research.insights.aiFailed'),
+        variant: 'destructive',
+      })
+    },
+    onRefreshConsent: () => {
+      // consent 失效：刷新服务端 consent，下一次派发重新走确认（新 key）
+      invalidateConsent()
+    },
+    onStaleSourceCount: (count) => {
+      setAiStaleCount(count)
+    },
+  })
+
+  /**
+   * S4：AI 派发——Scope 用 S2 唯一 resolver 解析（entire_project 分页枚举、
+   * selected 冻结副本），语言按 content 检出并冻结，随后交给 S4 编排 hook
+   * （consent 闸门 → key/marker → POST → disposition 状态机）。
+   */
+  const submitAi = async (titleSnapshot: string, contentSnapshot: string) => {
+    const snapshot = getSnapshot()
+    if (snapshot.mode === 'selected' && !validate(snapshot).valid) {
+      setAiNotice('blocked_empty_scope')
+      return
+    }
+    setIsResolvingScope(true)
+    let resolved: { sourceIds: string[]; noteIds: string[]; staleSourceCount: number }
+    try {
+      resolved = await resolveScopeSelection(projectId, snapshot)
+    } catch (error) {
+      setAiErrorCode(error instanceof EmptyEffectiveScopeError ? null : t('research.workbench.actionFailed'))
+      setAiNotice(error instanceof EmptyEffectiveScopeError ? 'blocked_empty_scope' : 'failed')
+      return
+    } finally {
+      setIsResolvingScope(false)
+    }
+    // stale 计数由 hook 在真正派发时回传（consent 取消不留痕，L-2）
+    void resolved.staleSourceCount
+    // 模型在派发时刻冻结（consent 确认前后不再漂移，C-04）
+    if (confirmedModelId === null) return
+    await aiSubmit.submit({
+      title: titleSnapshot,
+      content: contentSnapshot,
+      sourceIds: resolved.sourceIds,
+      noteIds: resolved.noteIds,
+      responseLanguage: detectResponseLanguage(contentSnapshot),
+      modelId: confirmedModelId,
+      staleSourceCount: resolved.staleSourceCount,
+      scopeLabel: formatScopeLabel(snapshot, t),
+    })
+  }
 
   const resetForm = () => {
     setTitle('')
     setContent('')
     setInsightType('manual')
     setShowForm(false)
+    setAiNotice(null)
+    setAiStaleCount(0)
+    setAiErrorCode(null)
   }
 
   const submitCreate = () => {
@@ -72,17 +190,25 @@ export function InsightsPanel({
       resetForm()
       return
     }
-    // AI 生成：走根级 guard，模型来自 confirmed 全局模型快照
-    void runGuarded(async (modelId) => {
-      await createMutation.mutateAsync({
-        title: titleSnapshot,
-        content: contentSnapshot,
-        insight_type: 'ai',
-        model_id: modelId,
-      })
-      resetForm()
-    })
+    // AI 生成：S2 resolver 冻结 Scope → S4 编排（consent/幂等/marker/状态机）。
+    // 此处不预清 aiNotice：提交前的 hook gate（未确认 marker）会在开表单时
+    // 写入冲突态，预清会把唯一可见反馈抹掉；终态由 hook 回调改写。
+    setAiErrorCode(null)
+    void submitAi(titleSnapshot, contentSnapshot)
   }
+
+  const aiNoticeMessage =
+    aiNotice === 'blocked_empty_scope'
+      ? t('research.insights.aiEmptyScopeBlocked')
+      : aiNotice === 'queued'
+        ? t('research.insights.aiQueued')
+        : aiNotice === 'outcome_unknown'
+          ? t('research.insights.aiOutcomeUnknown')
+          : aiNotice === 'protocol_conflict'
+            ? t('research.insights.aiProtocolConflict')
+            : aiNotice === 'failed'
+              ? t('research.insights.aiFailed')
+              : null
 
   const items = data?.items ?? []
 
@@ -92,7 +218,16 @@ export function InsightsPanel({
 
       {!isAdminReadonly && (
         <div className="flex justify-end">
-          <Button size="sm" onClick={() => setShowForm((v) => !v)}>
+          <Button
+            size="sm"
+            onClick={() => {
+              // 重新打开表单 = 新的提交意图：清掉上一笔的提示与计数
+              setAiNotice(null)
+              setAiStaleCount(0)
+              setAiErrorCode(null)
+              setShowForm((v) => !v)
+            }}
+          >
             {t('research.insights.newInsight')}
           </Button>
         </div>
@@ -143,14 +278,59 @@ export function InsightsPanel({
                 </p>
               )}
             </div>
+            {/* S4：stale Source 可派发但必须可见（C-03） */}
+            {insightType === 'ai' && aiStaleCount > 0 && (
+              <p className="text-xs text-muted-foreground" role="status" data-testid="insight-stale-warning">
+                {t('research.insights.aiStaleSourcesWarning', { n: aiStaleCount })}
+              </p>
+            )}
+            {insightType === 'ai' && aiNoticeMessage !== null && (
+              <p
+                className={
+                  aiNotice === 'blocked_empty_scope' || aiNotice === 'failed'
+                    ? 'text-xs font-medium text-destructive'
+                    : 'text-xs text-muted-foreground'
+                }
+                role={aiNotice === 'blocked_empty_scope' || aiNotice === 'failed' ? 'alert' : 'status'}
+                data-testid={`insight-ai-notice-${aiNotice}`}
+              >
+                {aiNoticeMessage}
+                {aiNotice === 'failed' && aiErrorCode !== null ? ` (${aiErrorCode})` : ''}
+              </p>
+            )}
+            {insightType === 'ai' && aiNotice === 'protocol_conflict' && aiSubmit.result.pendingMarker !== null && (
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => aiSubmit.result.confirmDuplicateRisk()}
+                  data-testid="insight-confirm-duplicate-risk"
+                >
+                  {t('research.insights.aiConfirmDuplicateRisk')}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    aiSubmit.result.discardDuplicateRisk()
+                    setAiNotice(null)
+                  }}
+                  data-testid="insight-discard-duplicate-risk"
+                >
+                  {t('research.insights.aiDiscardDuplicateRisk')}
+                </Button>
+              </div>
+            )}
             <div className="flex gap-2">
               <Button
                 size="sm"
                 onClick={submitCreate}
                 disabled={
                   createMutation.isPending ||
-                  // 无可用模型时只阻止 AI 模式；Manual 不受影响
-                  (insightType === 'ai' && !canExecute)
+                  // AI 流程的在途状态只作用于 AI 分支——避免「AI 卡住 → Manual 陪绑」
+                  // 这类隐性耦合（评审建议的纵深防御）
+                  (insightType === 'ai' &&
+                    (isResolvingScope || aiSubmit.isSubmitting || !canExecute))
                 }
                 data-testid="insight-submit"
               >
