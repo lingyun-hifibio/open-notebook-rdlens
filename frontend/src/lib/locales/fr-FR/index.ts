@@ -1083,7 +1083,14 @@ export const frFR = {
     retry: "Retry",
     pagination: { loadMore: "Load more", loadingMore: "Loading more…" },
     mainActions: {
-      runTemplate: "Run Template",
+      mindMap: "Mind Map",
+      runTemplate: "Custom Analysis",
+    },
+    // #445：Mind Map 占位动作的约定文案（完整实现由后续独立 Issue 承接）。
+    mindMap: {
+      title: "Mind Map is coming soon",
+      description:
+        "Visualize concepts, evidence, and relationships across your research materials.",
     },
     activity: {
       title: "Activity",

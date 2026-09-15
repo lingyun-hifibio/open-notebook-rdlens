@@ -21,6 +21,7 @@ import { useResearchJobsController } from './ResearchJobsProvider'
 import { ResearchSearchPanel } from './ResearchSearchPanel'
 import { ResearchChatPanel } from './ResearchChatPanel'
 import { ComparePanel } from './ComparePanel'
+import { MindMapPlaceholder } from './MindMapPlaceholder'
 import { TransformationsPanel } from './TransformationsPanel'
 import {
   RESEARCH_MAIN_ACTIONS,
@@ -33,11 +34,13 @@ import type { ResearchCitation } from '@/lib/types/research'
 /**
  * RWV2-40（Fork #44）：主工作区（Main workspace）组合。
  *
- * 目标 IA（RFC §2，v9 冻结）：主区固定为四个研究动作——
- * evidence-search / research-chat / compare / run-template（Jobs 迁往
- * Header 的 Activity 兼容壳，不再占用主区动作位）。动作与保活由组合根
- * （ResearchPageContent）控制：`activeAction` 受控下发，本组件维护
- * `visited` 集合 + 渲染期派生，实现「首次访问后保活」。
+ * 目标 IA（RFC §2，v9 冻结；#445 扩展）：主区固定为五个研究动作——
+ * evidence-search / research-chat / compare / mind-map（占位，coming
+ * soon）/ run-template（用户可见文案为 Custom Analysis，内部动作标识
+ * 不变；Jobs 迁往 Header 的 Activity 兼容壳，不再占用主区动作位）。
+ * 动作与保活由组合根（ResearchPageContent）控制：`activeAction` 受控
+ * 下发，本组件维护 `visited` 集合 + 渲染期派生，实现「首次访问后
+ * 保活」。
  *
  * 资源查询（useResearchSources/Notes）与 reconcile 逻辑留在本组件
  * （R8-1a 选 a：与 Header 同 key 多 observer，共享单一查询缓存；Header
@@ -362,6 +365,9 @@ export function ResearchWorkspace({
             blockedHint={blockedHint}
           />
         )
+      case 'mind-map':
+        // #445：占位动作——无业务逻辑，仅约定文案（完整实现由后续 Issue 承接）。
+        return <MindMapPlaceholder />
       case 'run-template':
         return (
           <TransformationsPanel
@@ -404,16 +410,27 @@ export function ResearchWorkspace({
         >
           {/* RWV2-UIOPT-A：Tabs 行右侧为 ResearchLayout 展开/恢复按钮预留
               固定宽度（w-36 ≥ 按钮宽 + right-3 偏移），按钮位于次级面板
-              右上角时不遮挡四动作 Tab——预留真实空间而非 z-index 遮盖。
+              右上角时不遮挡五动作 Tab——预留真实空间而非 z-index 遮盖。
               预留与按钮可见性同条件（compact <1024px 按钮隐藏，无预留）。
               issue59 回归：窄态（根 data-narrow-secondary=true，按钮收
               icon-only ~34px）时预留经 group 变体收窄为 w-11(44px)——
               rightMin 下 332+44=376 ≤ 387 不再溢出遮挡。 */}
           <div className="flex min-w-0 items-center px-4 pt-2" data-testid="workspace-tabs-row">
-            <TabsList className="w-fit">
+            {/* #445：一级标签单行化——whitespace-nowrap 保证标签文字不折行；
+                min-w-0 将 flex 项 automatic minimum size 归零（可收缩到可用
+                宽度），overflow-x-auto 在内容超出时整组标签横向滚动（触发器
+                的 nowrap 文本 min-content 下限构成内溢出），标签互不重叠，
+                右侧展开按钮预留位（ml-auto）始终不被标签流入。
+                评审 F1：overflow 容器会把 y 轴一并裁剪，触发器设计的外描
+                focus ring（box-shadow 画在边框外）会被整体裁掉——经父级
+                arbitrary variant 把主区触发器的 focus ring 改为 inset 描边
+                并去掉 offset，焦点可见性在滚动容器内保留（active 态仍有
+                border-primary + 文字变色双指示）。 */}
+            <TabsList className="min-w-0 max-w-full overflow-x-auto whitespace-nowrap [&_[data-slot=tabs-trigger]]:focus-visible:ring-inset [&_[data-slot=tabs-trigger]]:focus-visible:ring-offset-0">
               <TabsTrigger value="evidence-search">{t('research.tabSearch')}</TabsTrigger>
               <TabsTrigger value="research-chat">{t('research.tabChat')}</TabsTrigger>
               <TabsTrigger value="compare">{t('research.tabCompare')}</TabsTrigger>
+              <TabsTrigger value="mind-map">{t('research.mainActions.mindMap')}</TabsTrigger>
               <TabsTrigger value="run-template">{t('research.mainActions.runTemplate')}</TabsTrigger>
             </TabsList>
             <div

@@ -1083,7 +1083,13 @@ export const zhCN = {
     retry: "重试",
     pagination: { loadMore: "Load more", loadingMore: "Loading more…" },
     mainActions: {
-      runTemplate: "Run Template",
+      mindMap: "思维导图",
+      runTemplate: "自定义分析",
+    },
+    // #445：Mind Map 占位动作的约定文案（完整实现由后续独立 Issue 承接）。
+    mindMap: {
+      title: "思维导图即将上线",
+      description: "以可视化方式呈现研究资料中的概念、证据与关联关系。",
     },
     activity: {
       title: "Activity",
