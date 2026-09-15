@@ -18,11 +18,13 @@ import {
 } from '@/test/global-model-stub'
 
 // UI-03 Red：工作区组合（REQ-SCOPE-04）——无项目上下文 fail-closed 错误态；
-// 有上下文时加载 Source/Note 并渲染四动作主区。
+// 有上下文时加载 Source/Note 并渲染主区动作。
 // RWV2-40（Fork #44）：主区 = evidence-search / research-chat / compare /
 // run-template 四个动作（Jobs 迁 Header Activity，不再占用主区）。资源
 // 查询与 reconcile 逻辑留在本组件（R8-1a，与 Header 同 key 共享缓存）；
 // Scope Summary 已迁 Header，本组件不再渲染。
+// #445：新增 mind-map 占位动作（Compare 与 run-template 之间），run-template
+// 用户可见文案更名为 Custom Analysis（内部动作标识不变）；标签单行化。
 
 vi.mock('@/lib/research/api', async (importOriginal) => {
   const actual = await importOriginal<typeof api>()
@@ -176,11 +178,12 @@ function seedScope(mode: 'entire_project' | 'selected', sourceIds: string[] = []
   )
 }
 
-function switchTo(action: 'evidence-search' | 'research-chat' | 'compare' | 'run-template') {
+function switchTo(action: 'evidence-search' | 'research-chat' | 'compare' | 'mind-map' | 'run-template') {
   const labels: Record<ResearchMainAction, string> = {
     'evidence-search': 'research.tabSearch',
     'research-chat': 'research.tabChat',
     compare: 'research.tabCompare',
+    'mind-map': 'research.mainActions.mindMap',
     'run-template': 'research.mainActions.runTemplate',
   }
   const tab = screen.getByRole('tab', { name: labels[action] })
@@ -189,7 +192,7 @@ function switchTo(action: 'evidence-search' | 'research-chat' | 'compare' | 'run
   fireEvent.click(tab)
 }
 
-describe('ResearchWorkspace（RWV2-40 四动作主区）', () => {
+describe('ResearchWorkspace（RWV2-40 五动作主区；#445）', () => {
   beforeEach(() => {
     localStorage.clear()
     queryClient.clear()
@@ -205,19 +208,20 @@ describe('ResearchWorkspace（RWV2-40 四动作主区）', () => {
     tokenStore.clearResearchToken()
   })
 
-  it('认证 Shell 注入项目上下文后渲染四动作 Tab（无需 Token 二次解码）', async () => {
+  it('认证 Shell 注入项目上下文后渲染五动作 Tab（无需 Token 二次解码）', async () => {
     tokenStore.clearResearchToken()
     renderHarness()
     expect(await screen.findByRole('tab', { name: 'research.tabChat' })).toBeInTheDocument()
   })
 
-  it('渲染四个动作 Tab（Evidence Search / Chat / Compare / Run Template），无 Scope Summary 与复选框', async () => {
+  it('#445：渲染五个动作 Tab，顺序为 Search / Chat / Compare / Mind Map / Custom Analysis，无 Scope Summary 与复选框', async () => {
     renderHarness()
     const tabs = await screen.findAllByRole('tab')
     expect(tabs.map((tab) => tab.textContent)).toEqual([
       'research.tabSearch',
       'research.tabChat',
       'research.tabCompare',
+      'research.mainActions.mindMap',
       'research.mainActions.runTemplate',
     ])
     // Scope Summary 已迁 Header：本组件不再渲染
@@ -247,8 +251,38 @@ describe('ResearchWorkspace（RWV2-40 四动作主区）', () => {
     // 预留与按钮可见性同条件：<1024px（compact）按钮隐藏，预留同隐（评审 M1）
     expect(reserve).toHaveClass('hidden', 'w-36', 'lg:block')
     expect(reserve).toHaveAttribute('aria-hidden', 'true')
-    // 四动作 Tab 本体不受预留影响
+    // 五动作 Tab 本体不受预留影响
     expect(await screen.findByRole('tab', { name: 'research.mainActions.runTemplate' })).toBeInTheDocument()
+  })
+
+  it('#445：Mind Map 占位动作可进入/离开，占位文案为约定内容', async () => {
+    renderHarness()
+    // 进入：占位面板挂载，触发器为唯一选中项
+    await screen.findByTestId('workspace-tabs-row')
+    switchTo('mind-map')
+    const placeholder = await screen.findByTestId('mind-map-placeholder')
+    expect(placeholder).toHaveTextContent('research.mindMap.title')
+    expect(placeholder).toHaveTextContent('research.mindMap.description')
+    expect(
+      screen.getByRole('tab', { name: 'research.mainActions.mindMap' }),
+    ).toHaveAttribute('aria-selected', 'true')
+    // 离开：切回 Custom Analysis（内部动作标识 run-template 不变），面板隐藏保活
+    switchTo('run-template')
+    await screen.findByTestId('transformations-panel-stub')
+    expect(
+      screen.getByRole('tab', { name: 'research.mainActions.mindMap' }),
+    ).toHaveAttribute('aria-selected', 'false')
+    expect(screen.getByTestId('mind-map-placeholder')).toBeInTheDocument()
+  })
+
+  it('#445：一级标签单行化——标签列表横向滚动且标签文字不折行（窄口不换行/不重叠的组件级约束）', async () => {
+    renderHarness()
+    const tablist = await screen.findByRole('tablist')
+    // 溢出时整组标签横向滚动（flex 项可收缩 + overflow-x-auto），
+    // whitespace-nowrap 继承到各触发器，标签文字自身不折行
+    expect(tablist).toHaveClass('overflow-x-auto')
+    expect(tablist).toHaveClass('whitespace-nowrap')
+    expect(tablist).toHaveClass('min-w-0')
   })
 
   it('issue59：#59 回归——预留为窄态收窄预留契约类（group-data 变体与 w-36 并存）', async () => {

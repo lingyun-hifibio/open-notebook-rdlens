@@ -36,7 +36,7 @@ export type ResearchWorkbenchPane =
  * 分组导航为语义化按钮组（不再使用 Radix Tabs 平铺四键）。Sources/Notes/
  * Insights/Transformation runs 是 Workbench 的子视图开关（aria-current
  * 指示激活项）。RWV2-UIOPT-A（fork #57）：Tools 分组与「Research
- * templates」跨区快捷按钮删除——模板唯一正式入口是主区 Run Template 动作
+ * templates」跨区快捷按钮删除——模板唯一正式入口是主区 Custom Analysis 动作
  * （TransformationsPanel 已在主区单挂载，本组件不渲染它）。
  *
  * RWV2-13 语义保留：ResearchScopeEditor 常驻顶部；Sources/Notes 行首复

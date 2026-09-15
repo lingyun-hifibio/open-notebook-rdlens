@@ -24,9 +24,10 @@ import { useTranslation } from '@/lib/hooks/use-translation'
  *   ml-auto 聚合）；技术 Project 段删除（可读项目名称由 RDLens 父页面展示）。
  * - 左栏（ResearchWorkbench）：Materials(Sources, Notes) / Results(Insights,
  *   Transformation runs 插槽)；Tools/Research templates 跨区快捷入口删除，
- *   模板唯一正式入口是主区 Run Template 动作。
+ *   模板唯一正式入口是主区 Custom Analysis 动作。
  * - 主区（ResearchWorkspace）：Evidence Search / Research Chat / Compare /
- *   Run Template 四动作；Jobs 迁往 Header Activity 兼容壳。
+ *   Mind Map（占位）/ Custom Analysis 五动作（#445）；Jobs 迁往 Header
+ *   Activity 兼容壳。
  * - 组合根同时保活「全局工作区」与「单个创建过的 Source Chat」：显隐只由
  *   `sourceFocusActive` 决定（Back 仅退出 focus，Source Chat 隐藏保留；
  *   A→B 用 projectId:sourceId key 隔离）。唯一 keyed Source Chat、访问便
