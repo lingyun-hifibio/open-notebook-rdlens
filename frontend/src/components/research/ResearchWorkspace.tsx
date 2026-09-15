@@ -417,10 +417,16 @@ export function ResearchWorkspace({
               rightMin 下 332+44=376 ≤ 387 不再溢出遮挡。 */}
           <div className="flex min-w-0 items-center px-4 pt-2" data-testid="workspace-tabs-row">
             {/* #445：一级标签单行化——whitespace-nowrap 保证标签文字不折行；
-                overflow-x-auto 让空间不足时整组标签横向滚动（flex 项溢出时
-                automatic minimum size 归零，可收缩到可用宽度），标签互不
-                重叠，右侧展开按钮预留位（ml-auto）始终不被标签流入。 */}
-            <TabsList className="min-w-0 max-w-full overflow-x-auto whitespace-nowrap">
+                min-w-0 将 flex 项 automatic minimum size 归零（可收缩到可用
+                宽度），overflow-x-auto 在内容超出时整组标签横向滚动（触发器
+                的 nowrap 文本 min-content 下限构成内溢出），标签互不重叠，
+                右侧展开按钮预留位（ml-auto）始终不被标签流入。
+                评审 F1：overflow 容器会把 y 轴一并裁剪，触发器设计的外描
+                focus ring（box-shadow 画在边框外）会被整体裁掉——经父级
+                arbitrary variant 把主区触发器的 focus ring 改为 inset 描边
+                并去掉 offset，焦点可见性在滚动容器内保留（active 态仍有
+                border-primary + 文字变色双指示）。 */}
+            <TabsList className="min-w-0 max-w-full overflow-x-auto whitespace-nowrap [&_[data-slot=tabs-trigger]]:focus-visible:ring-inset [&_[data-slot=tabs-trigger]]:focus-visible:ring-offset-0">
               <TabsTrigger value="evidence-search">{t('research.tabSearch')}</TabsTrigger>
               <TabsTrigger value="research-chat">{t('research.tabChat')}</TabsTrigger>
               <TabsTrigger value="compare">{t('research.tabCompare')}</TabsTrigger>

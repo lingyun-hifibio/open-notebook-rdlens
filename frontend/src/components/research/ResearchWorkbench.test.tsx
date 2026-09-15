@@ -14,7 +14,7 @@ import type { ResearchNote, ResearchSource, ResearchSourceDetail } from '@/lib/t
 // 单一子视图内容区；Source 专注视图由 focusedSourceId 驱动
 // （Back/onExitSourceFocus + SourceDetailPanel）。
 // RWV2-UIOPT-A（fork #57）：Tools/Research templates 跨区快捷入口删除；
-// 模板唯一正式入口是主区 Run Template 动作。
+// 模板唯一正式入口是主区 Custom Analysis 动作（内部标识 run-template）。
 
 vi.mock('@/lib/research/api', () => ({
   saveResultFromResult: vi.fn(),
@@ -271,7 +271,7 @@ describe('ResearchWorkbench', () => {
     expect(screen.getByTestId('source-scope-src_1')).toHaveAttribute('data-state', 'checked')
   })
 
-  it('UIOPT-A：Tools/Research templates 跨区快捷入口删除（模板唯一入口为主区 Run Template）', () => {
+  it('UIOPT-A：Tools/Research templates 跨区快捷入口删除（模板唯一入口为主区 Custom Analysis）', () => {
     vi.mocked(researchApi.listSources).mockResolvedValue({ items: [], next_cursor: null })
     renderWorkbench()
 

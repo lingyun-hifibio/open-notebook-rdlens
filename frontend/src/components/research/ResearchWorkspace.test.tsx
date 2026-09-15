@@ -20,7 +20,7 @@ import {
 // UI-03 Red：工作区组合（REQ-SCOPE-04）——无项目上下文 fail-closed 错误态；
 // 有上下文时加载 Source/Note 并渲染主区动作。
 // RWV2-40（Fork #44）：主区 = evidence-search / research-chat / compare /
-// run-template 四个动作（Jobs 迁 Header Activity，不再占用主区）。资源
+// run-template 等动作（Jobs 迁 Header Activity，不再占用主区）。资源
 // 查询与 reconcile 逻辑留在本组件（R8-1a，与 Header 同 key 共享缓存）；
 // Scope Summary 已迁 Header，本组件不再渲染。
 // #445：新增 mind-map 占位动作（Compare 与 run-template 之间），run-template
@@ -283,6 +283,14 @@ describe('ResearchWorkspace（RWV2-40 五动作主区；#445）', () => {
     expect(tablist).toHaveClass('overflow-x-auto')
     expect(tablist).toHaveClass('whitespace-nowrap')
     expect(tablist).toHaveClass('min-w-0')
+    // 评审 F1：滚动容器裁剪外描 focus ring——主区触发器焦点指示改为
+    // inset ring（键盘焦点可见性不被 overflow 裁掉）
+    expect(tablist).toHaveClass(
+      '[&_[data-slot=tabs-trigger]]:focus-visible:ring-inset',
+    )
+    expect(tablist).toHaveClass(
+      '[&_[data-slot=tabs-trigger]]:focus-visible:ring-offset-0',
+    )
   })
 
   it('issue59：#59 回归——预留为窄态收窄预留契约类（group-data 变体与 w-36 并存）', async () => {
