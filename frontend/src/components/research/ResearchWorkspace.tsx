@@ -6,7 +6,7 @@ import { useToast } from '@/lib/hooks/use-toast'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
-import { createCoverageChat } from '@/lib/research/api'
+import { createCoverageChat, newIdempotencyKey, searchV1 } from '@/lib/research/api'
 import {
   useResearchChat,
   type CoverageSubmitRequest,
@@ -130,6 +130,7 @@ export function ResearchWorkspace({
     createCompare: createCompareJob,
     registerCoverageJob,
     retryCoverage,
+    refreshActivity,
   } = useResearchJobsController()
 
   // Chat SSE 状态机保持组件层（切动作/隐藏不中断流与刷新恢复）
@@ -182,6 +183,35 @@ export function ResearchWorkspace({
       return sent === true
     },
     [runGuarded, sendTurn, t],
+  )
+
+  // Issue #439：persistent_job_required（不可重试）→ 用该 turn 冻结的 Scope
+  // 经 v1 Search 端点重跑为持久化 Job；经 runGuarded（consent/执行守卫）与
+  // 组合根一致，受理后刷新 Jobs 控制器。
+  const runChatAsBackgroundJob = useCallback(
+    async (query: string, snapshot: ResearchScopeSnapshot): Promise<string | null> => {
+      const jobId = await runGuarded(
+        async (modelId) => {
+          const outcome = await searchV1(
+            projectId ?? '',
+            {
+              query,
+              source_ids: [...snapshot.sourceIds],
+              note_ids: [...snapshot.noteIds],
+              mode: 'auto',
+              model_id: modelId,
+              context_level: 'focused',
+            },
+            { idempotencyKey: newIdempotencyKey() },
+          )
+          return outcome.kind === 'background' ? outcome.job_id : null
+        },
+        { scopeLabel: formatScopeLabel(snapshot, t) },
+      )
+      if (jobId) refreshActivity()
+      return jobId ?? null
+    },
+    [projectId, runGuarded, refreshActivity, t],
   )
 
   const createCompare = useCallback(
@@ -318,6 +348,7 @@ export function ResearchWorkspace({
             onCoverageRetry={isAdminReadonly ? undefined : retryCoverage}
             onCitationJump={handleCitationJump}
             backgroundNotice={backgroundNotice}
+            onRunAsBackgroundJob={runChatAsBackgroundJob}
             resolveChatOrigin={resolveChatOrigin}
             prefill={chatPrefill}
             onViewInsight={

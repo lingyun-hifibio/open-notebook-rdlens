@@ -78,6 +78,7 @@ function renderPanel(
     coverageJobs: ResearchJob[]
     onCoverageRetry: (jobId: string) => Promise<boolean>
     resolveChatOrigin: (turnId: string) => Promise<{ messageId: string; generationId: string } | null>
+    onRunAsBackgroundJob: (query: string, snapshot: ResearchScopeSnapshot) => Promise<string | null>
   }> = {},
 ) {
   if (overrides.scope) seedScope(overrides.scope)
@@ -95,6 +96,7 @@ function renderPanel(
         coverageJobs={overrides.coverageJobs}
         onCoverageRetry={overrides.onCoverageRetry ?? vi.fn(async () => true)}
         resolveChatOrigin={overrides.resolveChatOrigin}
+        onRunAsBackgroundJob={overrides.onRunAsBackgroundJob}
       />
     </ResearchScopeProvider>
     </ResearchWorkspaceProvider>
@@ -245,6 +247,44 @@ describe('ResearchChatPanel', () => {
       sourceIds: ['src_1'],
       noteIds: [],
     })
+  })
+
+  it('#439：persistent_job_required 不可重试，提供后台任务 CTA 并回显 job id', async () => {
+    const onRunAsBackgroundJob = vi.fn(async () => 'job_bg_0439')
+    renderPanel(
+      [
+        turn({
+          id: 'u1',
+          role: 'user',
+          content: 'Which biomarkers show response?',
+          scopeSnapshot: SCOPE_A,
+        }),
+        turn({
+          id: 'a1',
+          status: 'error',
+          errorCode: 'persistent_job_required',
+          errorMessage: 'request requires a persistent job: extra_long_persistent_job',
+          scopeSnapshot: SCOPE_A,
+        }),
+      ],
+      vi.fn(),
+      { onRunAsBackgroundJob },
+    )
+    // 主文案来自 #439 新映射（不得再显示“容量不足，稍后重试”）
+    expect(screen.getByText('research.errors.persistentJobRequired')).toBeInTheDocument()
+    expect(screen.queryByText('research.errors.admissionCapacity')).toBeNull()
+    // 不可重试：无 Retry 按钮，只有后台任务 CTA
+    expect(screen.queryByRole('button', { name: /^retry$/i })).toBeNull()
+    fireEvent.click(screen.getByTestId('chat-persistent-job-submit'))
+    await waitFor(() =>
+      expect(onRunAsBackgroundJob).toHaveBeenCalledWith(
+        'Which biomarkers show response?',
+        SCOPE_A,
+      ),
+    )
+    expect(await screen.findByTestId('chat-persistent-job-queued')).toHaveTextContent(
+      'job_bg_0439',
+    )
   })
 
   it('可重试错误但 turn 快照为 null（恢复轮）不渲染重试按钮（R5/K12）', () => {

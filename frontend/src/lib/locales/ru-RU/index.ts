@@ -999,6 +999,10 @@ export const ruRU = {
       httpError: "The request failed. Check your connection and try again.",
       admissionUnavailable: "The service is temporarily unavailable. Try again shortly.",
       admissionCapacity: "The service is at capacity right now. Retry shortly.",
+      persistentJobRequired: "Для этого вопроса нужна фоновая задача исследования — выбранные источники превышают бюджет одного запроса.",
+      persistentJobHint: "Повтор не поможет. Запустите как фоновую задачу, чтобы охватить все выбранные источники.",
+      persistentJobSubmit: "Запустить как фоновую задачу",
+      persistentJobSubmitFailed: "Не удалось отправить фоновую задачу. Повторите попытку на панели поиска.",
       internal: "An unexpected error occurred. Retry, or contact an administrator if it persists.",
     },
     resultActions: {

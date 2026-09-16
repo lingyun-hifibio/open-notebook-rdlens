@@ -999,6 +999,10 @@ export const itIT = {
       httpError: "The request failed. Check your connection and try again.",
       admissionUnavailable: "The service is temporarily unavailable. Try again shortly.",
       admissionCapacity: "The service is at capacity right now. Retry shortly.",
+      persistentJobRequired: "Questa domanda richiede un job di ricerca in background: le fonti selezionate superano il budget di un singolo turno.",
+      persistentJobHint: "Riprovare non servirà. Eseguito in background copre tutte le fonti selezionate.",
+      persistentJobSubmit: "Esegui in background",
+      persistentJobSubmitFailed: "Invio del job in background non riuscito. Riprova dal pannello Ricerca.",
       internal: "An unexpected error occurred. Retry, or contact an administrator if it persists.",
     },
     resultActions: {

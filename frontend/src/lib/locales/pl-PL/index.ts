@@ -999,6 +999,10 @@ export const plPL = {
       httpError: "The request failed. Check your connection and try again.",
       admissionUnavailable: "The service is temporarily unavailable. Try again shortly.",
       admissionCapacity: "The service is at capacity right now. Retry shortly.",
+      persistentJobRequired: "To pytanie wymaga zadania badawczego w tle — wybrane źródła przekraczają budżet jednej tury.",
+      persistentJobHint: "Ponowna próba nie pomoże. Uruchom jako zadanie w tle, aby objąć wszystkie wybrane źródła.",
+      persistentJobSubmit: "Uruchom jako zadanie w tle",
+      persistentJobSubmitFailed: "Nie udało się zlecić zadania w tle. Spróbuj ponownie w panelu wyszukiwania.",
       internal: "An unexpected error occurred. Retry, or contact an administrator if it persists.",
     },
     resultActions: {

@@ -55,6 +55,8 @@ export const RESEARCH_ERROR_USER_COPY: Record<string, string> = {
   http_error: 'research.errors.httpError',
   admission_unavailable: 'research.errors.admissionUnavailable',
   admission_capacity: 'research.errors.admissionCapacity',
+  // Issue #439：必须转持久化 Job（不可重试）——与上面的容量码分文案
+  persistent_job_required: 'research.errors.persistentJobRequired',
   internal: 'research.errors.internal',
 
   // ── Coverage 提交拒绝（#358） ──

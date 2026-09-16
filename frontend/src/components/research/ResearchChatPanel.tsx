@@ -49,6 +49,7 @@ export function ResearchChatPanel({
   onCoverageRetry,
   onCitationJump,
   backgroundNotice,
+  onRunAsBackgroundJob,
   resolveChatOrigin,
   onViewInsight,
   onViewNote,
@@ -84,6 +85,15 @@ export function ResearchChatPanel({
    * 如实呈现（绝不渲染为假「进行中」流式态）。
    */
   backgroundNotice?: ResearchBackgroundNotice | null
+  /**
+   * Issue #439：`persistent_job_required` 的出口——以该 turn 冻结的
+   * Scope 经 v1 search 端点重跑为持久化 Job（重试同一请求恒徒劳）。
+   * 返回 job id 表示已受理；null/异常表示提交失败。
+   */
+  onRunAsBackgroundJob?: (
+    query: string,
+    snapshot: ResearchScopeSnapshot,
+  ) => Promise<string | null>
   /** RWV2-23（D2）：live 轮 Save 的惰性 chat origin 解析（generation_id） */
   resolveChatOrigin?: (turnId: string) => Promise<ResearchChatSaveOrigin | null>
   /** RWV2-23（AC3）：保存成功后跳转 Results/Insights 或 Materials/Notes */
@@ -121,6 +131,31 @@ export function ResearchChatPanel({
     dispatchSnapshot.sourceIds.length > 0 &&
     dispatchSnapshot.sourceIds.length <= COVERAGE_SOURCE_HARD_MAX &&
     dispatchSnapshot.noteIds.length === 0
+
+  // Issue #439：persistent_job_required 的提交态与结果（按 turn 记录）
+  const [jobSubmittingTurn, setJobSubmittingTurn] = useState<string | null>(null)
+  const [jobIdByTurn, setJobIdByTurn] = useState<Record<string, string>>({})
+  const [jobSubmitError, setJobSubmitError] = useState<string | null>(null)
+
+  const runBackgroundJob = async (target: ResearchChatTurn, query: string) => {
+    if (!onRunAsBackgroundJob || target.scopeSnapshot === null) return
+    const trimmed = query.trim()
+    if (!trimmed) return
+    setJobSubmittingTurn(target.id)
+    setJobSubmitError(null)
+    try {
+      const jobId = await onRunAsBackgroundJob(trimmed, target.scopeSnapshot)
+      if (jobId) {
+        setJobIdByTurn((prev) => ({ ...prev, [target.id]: jobId }))
+      } else {
+        setJobSubmitError(t('research.errors.persistentJobSubmitFailed'))
+      }
+    } catch {
+      setJobSubmitError(t('research.errors.persistentJobSubmitFailed'))
+    } finally {
+      setJobSubmittingTurn(null)
+    }
+  }
 
   const submit = () => {
     const trimmed = query.trim()
@@ -325,6 +360,41 @@ export function ResearchChatPanel({
                         </>
                       )}
                   </div>
+                  {/* Issue #439：必须转持久化 Job → 不可重试，改走后端任务 */}
+                  {turn.errorCode === 'persistent_job_required' &&
+                    turn.scopeSnapshot !== null &&
+                    onRunAsBackgroundJob !== undefined && (
+                      <div className="space-y-1" data-testid="chat-persistent-job">
+                        <p className="text-muted-foreground">
+                          {t('research.errors.persistentJobHint')}
+                        </p>
+                        <Button
+                          size="sm"
+                          disabled={jobSubmittingTurn === turn.id}
+                          onClick={() => {
+                            const userTurn = turns[turns.indexOf(turn) - 1]
+                            void runBackgroundJob(turn, userTurn?.content ?? '')
+                          }}
+                          data-testid="chat-persistent-job-submit"
+                        >
+                          {t('research.errors.persistentJobSubmit')}
+                        </Button>
+                        {jobIdByTurn[turn.id] && (
+                          <p
+                            className="text-muted-foreground"
+                            data-testid="chat-persistent-job-queued"
+                          >
+                            {t('research.backgroundQueued')}{' '}
+                            <code>{jobIdByTurn[turn.id]}</code>
+                          </p>
+                        )}
+                        {jobSubmitError && (
+                          <p className="text-destructive" data-testid="chat-persistent-job-error">
+                            {jobSubmitError}
+                          </p>
+                        )}
+                      </div>
+                    )}
                 </div>
               )}
             </div>

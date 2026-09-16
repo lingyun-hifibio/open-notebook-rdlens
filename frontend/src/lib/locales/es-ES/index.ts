@@ -1000,6 +1000,10 @@ export const esES = {
       httpError: "The request failed. Check your connection and try again.",
       admissionUnavailable: "The service is temporarily unavailable. Try again shortly.",
       admissionCapacity: "The service is at capacity right now. Retry shortly.",
+      persistentJobRequired: "Esta pregunta necesita una tarea de investigación en segundo plano: las fuentes seleccionadas superan el presupuesto de un solo turno.",
+      persistentJobHint: "Reintentar no servirá. Ejecútala en segundo plano para abarcar todas las fuentes seleccionadas.",
+      persistentJobSubmit: "Ejecutar en segundo plano",
+      persistentJobSubmitFailed: "No se pudo enviar la tarea en segundo plano. Inténtalo de nuevo desde el panel de Búsqueda.",
       internal: "An unexpected error occurred. Retry, or contact an administrator if it persists.",
     },
     resultActions: {

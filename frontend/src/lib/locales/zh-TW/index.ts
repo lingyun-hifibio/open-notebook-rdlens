@@ -999,6 +999,10 @@ export const zhTW = {
       httpError: "The request failed. Check your connection and try again.",
       admissionUnavailable: "The service is temporarily unavailable. Try again shortly.",
       admissionCapacity: "The service is at capacity right now. Retry shortly.",
+      persistentJobRequired: "此問題需要以後台研究任務執行——所選來源超出單輪對話預算。",
+      persistentJobHint: "重試不會成功。請以後台任務執行，以涵蓋全部所選來源作答。",
+      persistentJobSubmit: "以後台任務執行",
+      persistentJobSubmitFailed: "後台任務提交失敗，請在「檢索」面板重試。",
       internal: "An unexpected error occurred. Retry, or contact an administrator if it persists.",
     },
     resultActions: {

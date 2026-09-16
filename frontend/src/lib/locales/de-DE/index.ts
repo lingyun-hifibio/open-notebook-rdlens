@@ -1001,6 +1001,10 @@ export const deDE = {
       httpError: "The request failed. Check your connection and try again.",
       admissionUnavailable: "The service is temporarily unavailable. Try again shortly.",
       admissionCapacity: "The service is at capacity right now. Retry shortly.",
+      persistentJobRequired: "Diese Frage benötigt einen Hintergrund-Recherchejob – die ausgewählten Quellen überschreiten das Budget eines einzelnen Durchlaufs.",
+      persistentJobHint: "Ein erneuter Versuch hilft nicht. Als Hintergrundjob ausführen, um alle ausgewählten Quellen abzudecken.",
+      persistentJobSubmit: "Als Hintergrundjob ausführen",
+      persistentJobSubmitFailed: "Hintergrundjob konnte nicht eingereiht werden. Bitte im Suchbereich erneut versuchen.",
       internal: "An unexpected error occurred. Retry, or contact an administrator if it persists.",
     },
     resultActions: {

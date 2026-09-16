@@ -999,6 +999,10 @@ export const jaJP = {
       httpError: "The request failed. Check your connection and try again.",
       admissionUnavailable: "The service is temporarily unavailable. Try again shortly.",
       admissionCapacity: "The service is at capacity right now. Retry shortly.",
+      persistentJobRequired: "この質問にはバックグラウンド研究ジョブが必要です — 選択したソースが単一ターンの予算を超えています。",
+      persistentJobHint: "再試行しても成功しません。バックグラウンドジョブとして実行すると、選択したすべてのソースを対象に回答します。",
+      persistentJobSubmit: "バックグラウンドジョブとして実行",
+      persistentJobSubmitFailed: "バックグラウンドジョブを登録できませんでした。検索パネルから再試行してください。",
       internal: "An unexpected error occurred. Retry, or contact an administrator if it persists.",
     },
     resultActions: {
