@@ -999,6 +999,10 @@ export const ptBR = {
       httpError: "The request failed. Check your connection and try again.",
       admissionUnavailable: "The service is temporarily unavailable. Try again shortly.",
       admissionCapacity: "The service is at capacity right now. Retry shortly.",
+      persistentJobRequired: "Esta pergunta exige um job de pesquisa em segundo plano — as fontes selecionadas excedem o orçamento de um único turno.",
+      persistentJobHint: "Tentar novamente não vai funcionar. Execute em segundo plano para cobrir todas as fontes selecionadas.",
+      persistentJobSubmit: "Executar em segundo plano",
+      persistentJobSubmitFailed: "Não foi possível enviar o job em segundo plano. Tente novamente no painel de Busca.",
       internal: "An unexpected error occurred. Retry, or contact an administrator if it persists.",
     },
     resultActions: {

@@ -999,6 +999,10 @@ export const enUS = {
       httpError: "The request failed. Check your connection and try again.",
       admissionUnavailable: "The service is temporarily unavailable. Try again shortly.",
       admissionCapacity: "The service is at capacity right now. Retry shortly.",
+      persistentJobRequired: "This question needs a background research job — the selected sources exceed the single-turn budget.",
+      persistentJobHint: "Retrying will not help. Run it as a background job to get an answer covering all selected sources.",
+      persistentJobSubmit: "Run as background job",
+      persistentJobSubmitFailed: "Could not submit the background job. Try again from the Search panel.",
       internal: "An unexpected error occurred. Retry, or contact an administrator if it persists.",
     },
     resultActions: {

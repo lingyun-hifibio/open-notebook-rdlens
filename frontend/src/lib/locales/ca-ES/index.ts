@@ -999,6 +999,10 @@ export const caES = {
       httpError: "The request failed. Check your connection and try again.",
       admissionUnavailable: "The service is temporarily unavailable. Try again shortly.",
       admissionCapacity: "The service is at capacity right now. Retry shortly.",
+      persistentJobRequired: "Aquesta pregunta necessita una tasca de recerca en segon pla: les fonts seleccionades superen el pressupost d'un sol torn.",
+      persistentJobHint: "Tornar-ho a provar no servirà. Executa-la en segon pla per cobrir totes les fonts seleccionades.",
+      persistentJobSubmit: "Executa en segon pla",
+      persistentJobSubmitFailed: "No s'ha pogut enviar la tasca en segon pla. Torna-ho a provar des del panell de Cerca.",
       internal: "An unexpected error occurred. Retry, or contact an administrator if it persists.",
     },
     resultActions: {

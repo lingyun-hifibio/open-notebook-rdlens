@@ -999,6 +999,10 @@ export const trTR = {
       httpError: "The request failed. Check your connection and try again.",
       admissionUnavailable: "The service is temporarily unavailable. Try again shortly.",
       admissionCapacity: "The service is at capacity right now. Retry shortly.",
+      persistentJobRequired: "Bu soru bir arka plan araştırma görevi gerektiriyor — seçilen kaynaklar tek tur bütçesini aşıyor.",
+      persistentJobHint: "Yeniden denemek işe yaramaz. Tüm seçili kaynakları kapsayan bir yanıt için arka plan görevi olarak çalıştırın.",
+      persistentJobSubmit: "Arka plan görevi olarak çalıştır",
+      persistentJobSubmitFailed: "Arka plan görevi gönderilemedi. Arama panelinden yeniden deneyin.",
       internal: "An unexpected error occurred. Retry, or contact an administrator if it persists.",
     },
     resultActions: {

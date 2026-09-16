@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { ResearchChatPanel } from './ResearchChatPanel'
+import {
+  ResearchChatPanel,
+  type BackgroundJobSubmitResult,
+} from './ResearchChatPanel'
 import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
 import { ResearchScopeProvider, scopeStorageKey, useResearchScope, type ResearchScopeSnapshot } from '@/lib/research/scope'
 import type { ResearchBackgroundNotice, ResearchChatTurn } from '@/lib/hooks/use-research-chat'
@@ -78,6 +81,11 @@ function renderPanel(
     coverageJobs: ResearchJob[]
     onCoverageRetry: (jobId: string) => Promise<boolean>
     resolveChatOrigin: (turnId: string) => Promise<{ messageId: string; generationId: string } | null>
+    onRunAsBackgroundJob: (
+      query: string,
+      snapshot: ResearchScopeSnapshot,
+      turnKey: string,
+    ) => Promise<BackgroundJobSubmitResult>
   }> = {},
 ) {
   if (overrides.scope) seedScope(overrides.scope)
@@ -95,6 +103,7 @@ function renderPanel(
         coverageJobs={overrides.coverageJobs}
         onCoverageRetry={overrides.onCoverageRetry ?? vi.fn(async () => true)}
         resolveChatOrigin={overrides.resolveChatOrigin}
+        onRunAsBackgroundJob={overrides.onRunAsBackgroundJob}
       />
     </ResearchScopeProvider>
     </ResearchWorkspaceProvider>
@@ -245,6 +254,111 @@ describe('ResearchChatPanel', () => {
       sourceIds: ['src_1'],
       noteIds: [],
     })
+  })
+
+  it('#439：persistent_job_required 不可重试，提供后台任务 CTA 并回显 job id', async () => {
+    const onRunAsBackgroundJob = vi.fn(
+      async (): Promise<BackgroundJobSubmitResult> => ({
+        status: 'queued',
+        jobId: 'job_bg_0439',
+      }),
+    )
+    renderPanel(
+      [
+        turn({
+          id: 'u1',
+          role: 'user',
+          content: 'Which biomarkers show response?',
+          scopeSnapshot: SCOPE_A,
+        }),
+        turn({
+          id: 'a1',
+          status: 'error',
+          errorCode: 'persistent_job_required',
+          errorMessage: 'request requires a persistent job: extra_long_persistent_job',
+          scopeSnapshot: SCOPE_A,
+        }),
+      ],
+      vi.fn(),
+      { onRunAsBackgroundJob },
+    )
+    // 主文案来自 #439 新映射（不得再显示“容量不足，稍后重试”）
+    expect(screen.getByText('research.errors.persistentJobRequired')).toBeInTheDocument()
+    expect(screen.queryByText('research.errors.admissionCapacity')).toBeNull()
+    // 不可重试：无 Retry 按钮，只有后台任务 CTA
+    expect(screen.queryByRole('button', { name: /^retry$/i })).toBeNull()
+    fireEvent.click(screen.getByTestId('chat-persistent-job-submit'))
+    await waitFor(() =>
+      expect(onRunAsBackgroundJob).toHaveBeenCalledWith(
+        'Which biomarkers show response?',
+        SCOPE_A,
+        'a1',
+      ),
+    )
+    expect(await screen.findByTestId('chat-persistent-job-queued')).toHaveTextContent(
+      'job_bg_0439',
+    )
+  })
+
+  it('#439 评审修复：前序 user turn 非紧邻时仍取到提问；确认被取消不报失败', async () => {
+    const onRunAsBackgroundJob = vi.fn(
+      async (): Promise<BackgroundJobSubmitResult> => ({ status: 'not_dispatched' }),
+    )
+    renderPanel(
+      [
+        turn({ id: 'u1', role: 'user', content: '原问题', scopeSnapshot: SCOPE_A }),
+        turn({ id: 'mid', status: 'done', content: '中间轮' }),
+        turn({
+          id: 'a1',
+          status: 'error',
+          errorCode: 'persistent_job_required',
+          scopeSnapshot: SCOPE_A,
+        }),
+      ],
+      vi.fn(),
+      { onRunAsBackgroundJob },
+    )
+    fireEvent.click(screen.getByTestId('chat-persistent-job-submit'))
+    await waitFor(() =>
+      // 不假设紧邻：向前找到真正的 user turn
+      expect(onRunAsBackgroundJob).toHaveBeenCalledWith('原问题', SCOPE_A, 'a1'),
+    )
+    // not_dispatched（确认弹窗取消）→ 不报失败、按钮保持可用
+    expect(screen.queryByTestId('chat-persistent-job-error')).toBeNull()
+    expect(screen.getByTestId('chat-persistent-job-submit')).not.toBeDisabled()
+  })
+
+  it('#439 评审修复：job_id 缺失仍按已受理展示，且成功后禁止重复提交', async () => {
+    const onRunAsBackgroundJob = vi.fn(
+      async (): Promise<BackgroundJobSubmitResult> => ({
+        status: 'queued',
+        jobId: null,
+      }),
+    )
+    renderPanel(
+      [
+        turn({ id: 'u1', role: 'user', content: '原问题', scopeSnapshot: SCOPE_A }),
+        turn({
+          id: 'a1',
+          status: 'error',
+          errorCode: 'persistent_job_required',
+          scopeSnapshot: SCOPE_A,
+        }),
+      ],
+      vi.fn(),
+      { onRunAsBackgroundJob },
+    )
+    fireEvent.click(screen.getByTestId('chat-persistent-job-submit'))
+    // 测试环境 t() 回显 key（既有用例同款），断言受理提示的来源键
+    expect(await screen.findByTestId('chat-persistent-job-queued')).toHaveTextContent(
+      /research\.backgroundQueued/,
+    )
+    expect(screen.queryByTestId('chat-persistent-job-error')).toBeNull()
+    // 受理后按钮禁用：再次点击不得产生第二个 Job
+    const button = screen.getByTestId('chat-persistent-job-submit')
+    expect(button).toBeDisabled()
+    fireEvent.click(button)
+    expect(onRunAsBackgroundJob).toHaveBeenCalledTimes(1)
   })
 
   it('可重试错误但 turn 快照为 null（恢复轮）不渲染重试按钮（R5/K12）', () => {

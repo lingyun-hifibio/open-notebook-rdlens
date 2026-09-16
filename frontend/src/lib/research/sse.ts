@@ -9,6 +9,9 @@
  *   `n+1` 起的增量才被应用。
  * - 错误码与可重试集合见 §9.4（admission_unavailable/admission_capacity/
  *   internal 可重试；project_deleted/epoch_mismatch/job_cancelled 不可重试）。
+ * - Issue #439：`persistent_job_required`（引擎判定必须走持久化 Job）是
+ *   **不可重试**码——重试同一请求恒徒劳，UI 改提供"以后台任务运行"入口；
+ *   真实的排队/容量不足仍由 admission_capacity（可重试）表达。
  */
 
 import type {
@@ -22,6 +25,7 @@ import type {
 export const SSE_ERROR_CODES = [
   'admission_unavailable',
   'admission_capacity',
+  'persistent_job_required',
   'project_deleted',
   'epoch_mismatch',
   'job_cancelled',

@@ -999,6 +999,10 @@ export const frFR = {
       httpError: "The request failed. Check your connection and try again.",
       admissionUnavailable: "The service is temporarily unavailable. Try again shortly.",
       admissionCapacity: "The service is at capacity right now. Retry shortly.",
+      persistentJobRequired: "Cette question nécessite une tâche de recherche en arrière-plan — les sources sélectionnées dépassent le budget d'un seul tour.",
+      persistentJobHint: "Réessayer ne servira à rien. Lancez-la en arrière-plan pour couvrir toutes les sources sélectionnées.",
+      persistentJobSubmit: "Lancer en arrière-plan",
+      persistentJobSubmitFailed: "Échec de la soumission de la tâche d'arrière-plan. Réessayez depuis le panneau Recherche.",
       internal: "An unexpected error occurred. Retry, or contact an administrator if it persists.",
     },
     resultActions: {

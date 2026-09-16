@@ -999,6 +999,10 @@ export const zhCN = {
       httpError: "The request failed. Check your connection and try again.",
       admissionUnavailable: "The service is temporarily unavailable. Try again shortly.",
       admissionCapacity: "The service is at capacity right now. Retry shortly.",
+      persistentJobRequired: "该问题需要以后台研究任务运行——所选来源超出单轮对话预算。",
+      persistentJobHint: "重试不会成功。请以后台任务运行，以覆盖全部所选来源作答。",
+      persistentJobSubmit: "以后台任务运行",
+      persistentJobSubmitFailed: "后台任务提交失败，请在「检索」面板重试。",
       internal: "An unexpected error occurred. Retry, or contact an administrator if it persists.",
     },
     resultActions: {

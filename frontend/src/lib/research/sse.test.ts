@@ -5,6 +5,7 @@ import {
   parseResearchEvent,
   parseSseFrame,
   RETRYABLE_SSE_ERROR_CODES,
+  SSE_ERROR_CODES,
   type ResearchSseState,
 } from './sse'
 import type { ResearchSseEvent } from './types'
@@ -159,6 +160,13 @@ describe('sse reducer', () => {
     expect(RETRYABLE_SSE_ERROR_CODES).not.toContain('project_deleted')
     expect(RETRYABLE_SSE_ERROR_CODES).not.toContain('epoch_mismatch')
     expect(RETRYABLE_SSE_ERROR_CODES).not.toContain('job_cancelled')
+  })
+
+  it('#439：persistent_job_required 在枚举内但不可重试（改走后台任务）', () => {
+    expect(SSE_ERROR_CODES).toContain('persistent_job_required')
+    expect(RETRYABLE_SSE_ERROR_CODES).not.toContain('persistent_job_required')
+    // 真实容量不足仍可重试——两码语义必须分开
+    expect(RETRYABLE_SSE_ERROR_CODES).toContain('admission_capacity')
   })
 })
 

@@ -1000,6 +1000,10 @@ export const bnIN = {
       httpError: "The request failed. Check your connection and try again.",
       admissionUnavailable: "The service is temporarily unavailable. Try again shortly.",
       admissionCapacity: "The service is at capacity right now. Retry shortly.",
+      persistentJobRequired: "এই প্রশ্নের জন্য একটি ব্যাকগ্রাউন্ড গবেষণা কাজ প্রয়োজন — নির্বাচিত সূত্রগুলি একক টার্নের বাজেট ছাড়িয়ে গেছে।",
+      persistentJobHint: "আবার চেষ্টা করলে কাজ হবে না। সমস্ত নির্বাচিত সূত্র কভার করতে এটি ব্যাকগ্রাউন্ড কাজ হিসেবে চালান।",
+      persistentJobSubmit: "ব্যাকগ্রাউন্ড কাজ হিসেবে চালান",
+      persistentJobSubmitFailed: "ব্যাকগ্রাউন্ড কাজ জমা দেওয়া যায়নি। অনুসন্ধান প্যানেল থেকে আবার চেষ্টা করুন।",
       internal: "An unexpected error occurred. Retry, or contact an administrator if it persists.",
     },
     resultActions: {
