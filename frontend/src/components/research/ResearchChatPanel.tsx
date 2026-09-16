@@ -37,6 +37,14 @@ import { formatScopeLabel, useResearchScope, type ResearchScopeSnapshot } from '
  *   RWV2-42（AC8）：稳定错误码统一走集中表映射（lib/research/errors），
  *   raw code/errorMessage 仅作诊断行，不作主消息（未知码回落通用文案）。
  */
+/** Issue #439：后台任务 CTA 的提交结果（区分"未派发"与"失败"，避免误报）。 */
+export type BackgroundJobSubmitResult =
+  /** 已受理（jobId 缺失时只提示刷新，不得当失败——否则用户会重复提交） */
+  | { status: 'queued'; jobId: string | null }
+  /** 守卫未执行（如外部模型确认被取消）：不算失败，保持可再次点击 */
+  | { status: 'not_dispatched' }
+  | { status: 'failed' }
+
 export function ResearchChatPanel({
   turns,
   isStreaming,
@@ -93,7 +101,9 @@ export function ResearchChatPanel({
   onRunAsBackgroundJob?: (
     query: string,
     snapshot: ResearchScopeSnapshot,
-  ) => Promise<string | null>
+    /** 该 turn 的稳定键：调用方据此复用幂等键（重复点击不产生第二个 Job） */
+    turnKey: string,
+  ) => Promise<BackgroundJobSubmitResult>
   /** RWV2-23（D2）：live 轮 Save 的惰性 chat origin 解析（generation_id） */
   resolveChatOrigin?: (turnId: string) => Promise<ResearchChatSaveOrigin | null>
   /** RWV2-23（AC3）：保存成功后跳转 Results/Insights 或 Materials/Notes */
@@ -132,26 +142,57 @@ export function ResearchChatPanel({
     dispatchSnapshot.sourceIds.length <= COVERAGE_SOURCE_HARD_MAX &&
     dispatchSnapshot.noteIds.length === 0
 
-  // Issue #439：persistent_job_required 的提交态与结果（按 turn 记录）
+  // Issue #439：persistent_job_required 的提交态与结果（一律按 turn 记录，
+  // 避免跨 turn 泄漏；成功后按钮常驻禁用 → 重复点击不产生第二个 Job）
   const [jobSubmittingTurn, setJobSubmittingTurn] = useState<string | null>(null)
-  const [jobIdByTurn, setJobIdByTurn] = useState<Record<string, string>>({})
-  const [jobSubmitError, setJobSubmitError] = useState<string | null>(null)
+  const [jobQueuedByTurn, setJobQueuedByTurn] = useState<
+    Record<string, string | null>
+  >({})
+  const [jobErrorByTurn, setJobErrorByTurn] = useState<Record<string, string>>({})
 
-  const runBackgroundJob = async (target: ResearchChatTurn, query: string) => {
-    if (!onRunAsBackgroundJob || target.scopeSnapshot === null) return
-    const trimmed = query.trim()
-    if (!trimmed) return
-    setJobSubmittingTurn(target.id)
-    setJobSubmitError(null)
-    try {
-      const jobId = await onRunAsBackgroundJob(trimmed, target.scopeSnapshot)
-      if (jobId) {
-        setJobIdByTurn((prev) => ({ ...prev, [target.id]: jobId }))
-      } else {
-        setJobSubmitError(t('research.errors.persistentJobSubmitFailed'))
+  /** 该 error turn 对应的提问：向前找最近一条 user turn（不假设紧邻）。 */
+  const queryForTurn = (target: ResearchChatTurn): string => {
+    const index = turns.indexOf(target)
+    for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+      const candidate = turns[cursor]
+      if (candidate.role === 'user' && candidate.content.trim() !== '') {
+        return candidate.content
       }
+    }
+    return ''
+  }
+
+  const runBackgroundJob = async (target: ResearchChatTurn) => {
+    if (!onRunAsBackgroundJob || target.scopeSnapshot === null) return
+    if (jobQueuedByTurn[target.id] !== undefined) return // 已受理，禁止重复提交
+    const query = queryForTurn(target)
+    if (!query.trim()) return
+    setJobSubmittingTurn(target.id)
+    setJobErrorByTurn((prev) => {
+      const next = { ...prev }
+      delete next[target.id]
+      return next
+    })
+    try {
+      const result = await onRunAsBackgroundJob(
+        query,
+        target.scopeSnapshot,
+        target.id,
+      )
+      if (result.status === 'queued') {
+        setJobQueuedByTurn((prev) => ({ ...prev, [target.id]: result.jobId }))
+      } else if (result.status === 'failed') {
+        setJobErrorByTurn((prev) => ({
+          ...prev,
+          [target.id]: t('research.errors.persistentJobSubmitFailed'),
+        }))
+      }
+      // not_dispatched（确认弹窗被取消等）：保持无错误、可再次点击
     } catch {
-      setJobSubmitError(t('research.errors.persistentJobSubmitFailed'))
+      setJobErrorByTurn((prev) => ({
+        ...prev,
+        [target.id]: t('research.errors.persistentJobSubmitFailed'),
+      }))
     } finally {
       setJobSubmittingTurn(null)
     }
@@ -370,27 +411,35 @@ export function ResearchChatPanel({
                         </p>
                         <Button
                           size="sm"
-                          disabled={jobSubmittingTurn === turn.id}
+                          disabled={
+                            jobSubmittingTurn === turn.id ||
+                            jobQueuedByTurn[turn.id] !== undefined ||
+                            queryForTurn(turn).trim() === ''
+                          }
                           onClick={() => {
-                            const userTurn = turns[turns.indexOf(turn) - 1]
-                            void runBackgroundJob(turn, userTurn?.content ?? '')
+                            void runBackgroundJob(turn)
                           }}
                           data-testid="chat-persistent-job-submit"
                         >
                           {t('research.errors.persistentJobSubmit')}
                         </Button>
-                        {jobIdByTurn[turn.id] && (
+                        {jobQueuedByTurn[turn.id] !== undefined && (
                           <p
                             className="text-muted-foreground"
                             data-testid="chat-persistent-job-queued"
                           >
-                            {t('research.backgroundQueued')}{' '}
-                            <code>{jobIdByTurn[turn.id]}</code>
+                            {t('research.backgroundQueued')}
+                            {jobQueuedByTurn[turn.id] && (
+                              <>
+                                {' '}
+                                <code>{jobQueuedByTurn[turn.id]}</code>
+                              </>
+                            )}
                           </p>
                         )}
-                        {jobSubmitError && (
+                        {jobErrorByTurn[turn.id] && (
                           <p className="text-destructive" data-testid="chat-persistent-job-error">
-                            {jobSubmitError}
+                            {jobErrorByTurn[turn.id]}
                           </p>
                         )}
                       </div>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useToast } from '@/lib/hooks/use-toast'
 import { Button } from '@/components/ui/button'
@@ -19,7 +19,10 @@ import { useResearchNotes, useResearchSources } from '@/lib/hooks/use-research'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
 import { useResearchJobsController } from './ResearchJobsProvider'
 import { ResearchSearchPanel } from './ResearchSearchPanel'
-import { ResearchChatPanel } from './ResearchChatPanel'
+import {
+  ResearchChatPanel,
+  type BackgroundJobSubmitResult,
+} from './ResearchChatPanel'
 import { ComparePanel } from './ComparePanel'
 import { MindMapPlaceholder } from './MindMapPlaceholder'
 import { TransformationsPanel } from './TransformationsPanel'
@@ -188,11 +191,23 @@ export function ResearchWorkspace({
   // Issue #439：persistent_job_required（不可重试）→ 用该 turn 冻结的 Scope
   // 经 v1 Search 端点重跑为持久化 Job；经 runGuarded（consent/执行守卫）与
   // 组合根一致，受理后刷新 Jobs 控制器。
+  // 幂等键按 turnKey 复用：同一次点击重放（含守卫重试）不产生第二个 Job。
+  const backgroundJobKeys = useRef<Map<string, string>>(new Map())
+
   const runChatAsBackgroundJob = useCallback(
-    async (query: string, snapshot: ResearchScopeSnapshot): Promise<string | null> => {
-      const jobId = await runGuarded(
+    async (
+      query: string,
+      snapshot: ResearchScopeSnapshot,
+      turnKey: string,
+    ): Promise<BackgroundJobSubmitResult> => {
+      let idempotencyKey = backgroundJobKeys.current.get(turnKey)
+      if (idempotencyKey === undefined) {
+        idempotencyKey = newIdempotencyKey()
+        backgroundJobKeys.current.set(turnKey, idempotencyKey)
+      }
+      const outcome = await runGuarded(
         async (modelId) => {
-          const outcome = await searchV1(
+          const response = await searchV1(
             projectId ?? '',
             {
               query,
@@ -202,14 +217,19 @@ export function ResearchWorkspace({
               model_id: modelId,
               context_level: 'focused',
             },
-            { idempotencyKey: newIdempotencyKey() },
+            { idempotencyKey },
           )
-          return outcome.kind === 'background' ? outcome.job_id : null
+          // 202 = 已受理（job_id 缺失只提示刷新，不得报失败——否则重复提交）
+          return response.kind === 'background'
+            ? ({ status: 'queued', jobId: response.job_id ?? null } as const)
+            : ({ status: 'failed' } as const)
         },
         { scopeLabel: formatScopeLabel(snapshot, t) },
       )
-      if (jobId) refreshActivity()
-      return jobId ?? null
+      // undefined = 守卫未执行（确认被取消等）：不算失败，交由用户再次点击
+      if (outcome === undefined) return { status: 'not_dispatched' }
+      if (outcome.status === 'queued') refreshActivity()
+      return outcome
     },
     [projectId, runGuarded, refreshActivity, t],
   )
