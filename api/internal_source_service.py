@@ -112,10 +112,10 @@ class RDLensSourceReadError(Exception):
     """
 
 
-_READBACK_SOURCE_QUERY = "SELECT * FROM ONLY source WHERE id = $source_id;"
-_READBACK_NOTEBOOK_QUERY = "SELECT * FROM ONLY notebook WHERE id = $notebook_id;"
+_READBACK_SOURCE_QUERY = "SELECT * FROM ONLY source WHERE id IN [$a, $b];"
+_READBACK_NOTEBOOK_QUERY = "SELECT * FROM ONLY notebook WHERE id IN [$a, $b];"
 _READBACK_REFERENCES_QUERY = (
-    "SELECT id, in, out FROM reference WHERE in = $source_id ORDER BY id;"
+    "SELECT id, in, out FROM reference WHERE in IN [$a, $b] ORDER BY id;"
 )
 
 _IDENTITY_FIELDS = (
@@ -125,19 +125,40 @@ _IDENTITY_FIELDS = (
 )
 
 
-def _parse_read_record_id(value: str, expected_table: str, kind: str) -> RecordID:
-    """Parse and table-check a GET record id before any query runs.
+def _id_candidates(value: str, expected_table: str, kind: str) -> List[RecordID]:
+    """Parse a GET record id into its possible RecordID interpretations.
 
     RecordID.parse raises ValueError for ids without the ``table:id`` shape -
     the router maps that to 400. The table check rejects cross-table ids the
     parser would otherwise accept (e.g. notebook:... passed as source_id).
+
+    The SDK's str(RecordID) emits the angle-wrapped form for ids that need
+    escaping (e.g. ``notebook:⟨rdlens-p1⟩`` for hyphenated ids), but
+    RecordID.parse does NOT unwrap it - the brackets stay as id content, so
+    the naive parse queries a nonexistent record and a genuinely existing
+    one would 404 (Round 4 finding). Two candidates are generated: the naive
+    parse and the outer-bracket-stripped reading; the IN-query matches
+    whichever record actually exists. (Ids whose content itself contains
+    angle brackets cannot be disambiguated from an escaped form without
+    reimplementing SurrealDB's EscapeRid; both interpretations are tried
+    and the row-id check below still validates the match.)
     """
-    record_id = RecordID.parse(value)
-    if record_id.table_name != expected_table:
+    if ":" not in value:
+        raise ValueError(
+            f"{kind} must have the shape table:id (got {value!r})"
+        )
+    table, rest = value.split(":", 1)
+    if table != expected_table:
         raise ValueError(
             f"{kind} must be a record of table {expected_table!r} (got {value!r})"
         )
-    return record_id
+    plain = RecordID(table, rest)
+    candidates: List[RecordID] = [plain]
+    if rest.startswith("⟨") and rest.endswith("⟩") and len(rest) >= 2:
+        stripped = RecordID(table, rest[1:-1])
+        if stripped != plain:
+            candidates.append(stripped)
+    return candidates
 
 
 def _record_id_or_none(value: Any) -> Optional[RecordID]:
@@ -161,12 +182,10 @@ async def read_rdlens_source(request: RDLensSourceRead) -> dict:
 
     # Validate both incoming ids directly - the GET addresses the Source by
     # its actual record id; it is never re-derived from a document triple.
-    source_record_id = _parse_read_record_id(
-        request.source_id, "source", "source_id"
-    )
-    notebook_record_id = _parse_read_record_id(
-        request.notebook_id, "notebook", "notebook_id"
-    )
+    # Each id yields up to two interpretations (naive parse + outer-bracket-
+    # stripped); the IN-queries match whichever record actually exists.
+    source_candidates = _id_candidates(request.source_id, "source", "source_id")
+    notebook_candidates = _id_candidates(request.notebook_id, "notebook", "notebook_id")
 
     try:
         async with db_connection(
@@ -177,13 +196,16 @@ async def read_rdlens_source(request: RDLensSourceRead) -> dict:
             # the actual RecordID objects, so the readback queries bypass it
             # and run on the shared budgeted connection directly.
             source_rows = await connection.query(
-                _READBACK_SOURCE_QUERY, {"source_id": source_record_id}
+                _READBACK_SOURCE_QUERY,
+                {"a": source_candidates[0], "b": source_candidates[-1]},
             )
             notebook_rows = await connection.query(
-                _READBACK_NOTEBOOK_QUERY, {"notebook_id": notebook_record_id}
+                _READBACK_NOTEBOOK_QUERY,
+                {"a": notebook_candidates[0], "b": notebook_candidates[-1]},
             )
             reference_rows = await connection.query(
-                _READBACK_REFERENCES_QUERY, {"source_id": source_record_id}
+                _READBACK_REFERENCES_QUERY,
+                {"a": source_candidates[0], "b": source_candidates[-1]},
             )
     except asyncio.TimeoutError as e:
         raise RDLensSourceReadError(
@@ -220,7 +242,9 @@ async def read_rdlens_source(request: RDLensSourceRead) -> dict:
         if (
             source_id_value is None
             or source_id_value.table_name != "source"
-            or source_id_value != source_record_id
+            # The IN-query matches either interpretation; the row must be one
+            # of the candidates for the id the caller actually sent.
+            or source_id_value not in source_candidates
         ):
             raise RDLensSourceReadError(
                 "source readback returned a row with unexpected id"
@@ -238,7 +262,7 @@ async def read_rdlens_source(request: RDLensSourceRead) -> dict:
         if (
             notebook_id_value is None
             or notebook_id_value.table_name != "notebook"
-            or notebook_id_value != notebook_record_id
+            or notebook_id_value not in notebook_candidates
         ):
             raise RDLensSourceReadError(
                 "source readback returned a notebook row with unexpected id"
@@ -261,9 +285,9 @@ async def read_rdlens_source(request: RDLensSourceRead) -> dict:
             or ref_id.table_name != "reference"
             or ref_in.table_name != "source"
             or ref_out.table_name != "notebook"
-            # The query filtered on in = $source_id; a row naming any other
-            # source is an invalid result, not a binding.
-            or ref_in != source_record_id
+            # The query filtered on in IN the source candidates; a row naming
+            # any other source is an invalid result, not a binding.
+            or ref_in not in source_candidates
         ):
             raise RDLensSourceReadError(
                 "source readback returned an invalid reference row shape"
@@ -285,17 +309,24 @@ async def read_rdlens_source(request: RDLensSourceRead) -> dict:
             f"source {request.source_id} or notebook {request.notebook_id} not found"
         )
 
-    # Bind on RecordID equality (canonical table:id strings): str() on a
-    # hyphenated id yields the escaped ⟨...⟩ form, which never equals the
-    # plain request string.
-    if not any(ref_out == notebook_record_id for ref_out in reference_outs):
+    # Bind on RecordID equality: str() on a hyphenated id yields the escaped
+    # ⟨...⟩ form, which never equals the plain request string.
+    if not any(ref_out in notebook_candidates for ref_out in reference_outs):
         raise RDLensSourceNotFoundError(
             f"source {request.source_id} is not bound to notebook {request.notebook_id}"
         )
 
+    # Echo the record ids as the plain table:id form (the escaped ⟨...⟩
+    # wrapper is a serialization artifact, not identity content). The row-id
+    # checks above guarantee both values are non-None RecordIDs here.
+    assert source_id_value is not None and notebook_id_value is not None
     return {
-        "source_id": f"{source_record_id.table_name}:{str(source_record_id.id)}",
-        "notebook_id": f"{notebook_record_id.table_name}:{str(notebook_record_id.id)}",
+        "source_id": (
+            f"{source_id_value.table_name}:{str(source_id_value.id)}"
+        ),
+        "notebook_id": (
+            f"{notebook_id_value.table_name}:{str(notebook_id_value.id)}"
+        ),
         "rdlens_document_id": source.get("rdlens_document_id"),
         "rdlens_document_version": source.get("rdlens_document_version"),
         "rdlens_content_hash": source.get("rdlens_content_hash"),

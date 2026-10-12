@@ -258,6 +258,63 @@ class TestReadbackContract:
         assert result["references"][0]["out"] == notebook_id
 
     @pytest.mark.asyncio
+    async def test_escaped_sdk_id_string_resolves_to_real_record(self):
+        """A request id in the SDK's str(RecordID) escaped form
+        (``table:⟨id⟩``) resolves the REAL record: RecordID.parse keeps the
+        brackets as id content, so the query tries both interpretations and
+        the escaped-form request must NOT 404 (Round 4 finding)."""
+        real_source = RecordID.parse(SOURCE_ID)  # raw id, no brackets
+        escaped_source = f"source:⟨{SOURCE_ID.split(':', 1)[1]}⟩"
+        escaped_notebook = f"notebook:⟨{QUERY['notebook_id'].split(':', 1)[1]}⟩"
+        refs = [
+            {
+                "id": RecordID.parse("reference:rdlens_x"),
+                "in": real_source,
+                "out": RecordID.parse(QUERY["notebook_id"]),
+            }
+        ]
+        with _patch_read_queries(
+            _source_row(),  # DB returns the real (unwrapped) record
+            reference_rows=refs,
+        ):
+            result = await read_rdlens_source(
+                RDLensSourceRead(
+                    source_id=escaped_source, notebook_id=escaped_notebook
+                )
+            )
+        # Echo the plain canonical form, never the wrapper.
+        assert result["source_id"] == SOURCE_ID
+        assert result["notebook_id"] == QUERY["notebook_id"]
+
+    @pytest.mark.asyncio
+    async def test_mixed_escaped_and_plain_ids_resolve(self):
+        escaped_source = f"source:⟨{SOURCE_ID.split(':', 1)[1]}⟩"
+        with _patch_read_queries(_source_row()):
+            result = await read_rdlens_source(
+                RDLensSourceRead(
+                    source_id=escaped_source, notebook_id=QUERY["notebook_id"]
+                )
+            )
+        assert result["source_id"] == SOURCE_ID
+
+    @pytest.mark.asyncio
+    async def test_missing_query_includes_both_interpretations(self):
+        """A genuinely absent record still 404s: neither interpretation
+        matches (no false positive from the dual-candidate query)."""
+        with _patch_read_queries(None):
+            with pytest.raises(RDLensSourceNotFoundError):
+                await read_rdlens_source(RDLensSourceRead(**QUERY))
+
+    @pytest.mark.asyncio
+    async def test_row_id_not_among_candidates_is_read_error(self):
+        """A row whose id matches NEITHER interpretation is a 500, not a
+        pass-through (the IN-query matched something unexpected)."""
+        alien = _source_row({"id": RecordID.parse("source:alien")})
+        with _patch_read_queries(alien):
+            with pytest.raises(RDLensSourceReadError, match="unexpected id"):
+                await read_rdlens_source(RDLensSourceRead(**QUERY))
+
+    @pytest.mark.asyncio
     async def test_missing_identity_fields_read_back_as_null(self):
         row = _source_row(
             {
