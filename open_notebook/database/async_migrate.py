@@ -31,6 +31,27 @@ class MigrationSchemaError(RuntimeError):
 _FORBIDDEN_DEFINITION_CLAUSES = re.compile(
     r"\b(VALUE|DEFAULT|ASSERT|READONLY)\b", re.IGNORECASE
 )
+# INFO def-strings are SurrealDB-generated single lines; quoted literals
+# (e.g. COMMENT values) are blanked out before clause scanning so a comment
+# mentioning "default" is not mistaken for a DEFAULT clause (Round 2 #3).
+_QUOTED_LITERAL_RE = re.compile(r"'[^']*'|\"[^\"]*\"")
+# The actual TYPE clause: the token immediately following the top-level TYPE
+# keyword in the quote-stripped definition. An exact-token match prevents a
+# wrong type whose def-string merely CONTAINS the expected substring (e.g.
+# `TYPE int` plus a comment reading 'expected TYPE option<string>') from
+# passing a substring check (Round 2 #1).
+_TYPE_CLAUSE_RE = re.compile(r"\bTYPE\s+(\S+)")
+
+
+def _definition_clauses(definition: str) -> str:
+    """A definition string with quoted literals blanked out."""
+    return _QUOTED_LITERAL_RE.sub("''", definition)
+
+
+def _definition_type(definition: str) -> Optional[str]:
+    """The definition's actual TYPE-clause token (quote-stripped), or None."""
+    match = _TYPE_CLAUSE_RE.search(_definition_clauses(definition))
+    return match.group(1) if match else None
 
 
 class AsyncMigration:
@@ -199,6 +220,11 @@ class AsyncMigrationRunner:
         if current_version > 0:
             logger.info(f"Rolling back migration {current_version}")
             await self.down_migrations[current_version - 1].run(bump=False)
+            if current_version == 24:
+                # Legacy no-target DOWN of migration 24 runs the same
+                # completion contract as the explicit-target path - there is
+                # only one DOWN 24 entry path (Round 2 #4).
+                await _validate_down_completion(current_version)
 
 
 class AsyncMigrationManager:
@@ -408,13 +434,14 @@ async def get_latest_version() -> int:
     """Get the latest version from the migrations table.
 
     Only a SUCCESSFUL read of an empty (or missing) ledger yields 0 - a fresh
-    database. Read failures and malformed rows propagate: swallowing them
-    into a version-0 answer made a transient network/permission failure look
-    like an un-migrated database, and a recovered connection would replay
-    migration 1 on top of an already-migrated schema.
+    database. Read failures, malformed rows, and malformed result shapes
+    propagate: swallowing them into a version-0 answer made a transient
+    network/permission failure look like an un-migrated database, and a
+    recovered connection would replay migration 1 on top of an
+    already-migrated schema.
     """
     versions = await get_all_versions()
-    if not versions:
+    if versions == []:
         return 0
     return max(_validated_ledger_version(row) for row in versions)
 
@@ -424,9 +451,16 @@ async def get_all_versions() -> List[dict]:
 
     A missing table reads back as [] (SurrealDB 2.6.5 returns no error for a
     SELECT on a nonexistent table), which get_latest_version legitimately
-    treats as version 0 on a fresh database. Any query failure raises.
+    treats as version 0 on a fresh database. Any query failure raises; a
+    non-list result (None/dict/str - an invalid shape, NOT an empty ledger)
+    raises instead of masquerading as version 0 (Round 2 #2).
     """
     result = await repo_query("SELECT * FROM _sbl_migrations ORDER BY version;")
+    if not isinstance(result, list):
+        raise MigrationLedgerError(
+            f"Malformed migration ledger read (expected a list, got "
+            f"{type(result).__name__}): {result!r}"
+        )
     return result
 
 
@@ -546,12 +580,20 @@ async def _assert_identity_definitions_compatible(require_present: bool) -> None
                     f"on table source. Re-run the up migration."
                 )
             continue
-        if f"TYPE {field_type}" not in definition:
+        # Exact TYPE-clause token match on the quote-stripped definition: a
+        # substring check would accept e.g. TYPE int with a comment reading
+        # 'expected TYPE option<string>' (Round 2 #1).
+        actual_type = _definition_type(definition)
+        if actual_type != field_type:
             raise MigrationSchemaError(
                 f"Migration 24 schema incompatible: field {name} is defined "
-                f"as {definition!r}, expected TYPE {field_type}."
+                f"as {definition!r}, expected TYPE {field_type} "
+                f"(found {actual_type!r})."
             )
-        clause = _FORBIDDEN_DEFINITION_CLAUSES.search(definition)
+        # Forbidden-clause scan runs on the quote-stripped text AFTER the TYPE
+        # token is accounted for, so a COMMENT mentioning "default" does not
+        # read as a DEFAULT clause (Round 2 #3).
+        clause = _FORBIDDEN_DEFINITION_CLAUSES.search(_definition_clauses(definition))
         if clause:
             raise MigrationSchemaError(
                 f"Migration 24 schema incompatible: field {name} definition "
@@ -568,6 +610,11 @@ async def _validate_down_completion(target_version: int) -> None:
     at N-1 - because the DDL and the ledger delete are two separate commits:
     a partially-applied DOWN must fail loudly, not report success while a
     definition (or the record) survived.
+
+    The record-absence check queries the FIXED record id
+    `_sbl_migrations:N` directly (a version-only scan would miss a surviving
+    record whose version field was tampered); malformed ledger rows raise
+    instead of being silently filtered (Round 2 #4).
     """
     fields = await _source_field_definitions()
     surviving = [name for name in _EXPECTED_IDENTITY_FIELDS if name in fields]
@@ -576,17 +623,20 @@ async def _validate_down_completion(target_version: int) -> None:
             f"Migration {target_version} rollback incomplete: field(s) "
             f"{', '.join(surviving)} still defined on table source."
         )
-    versions = await get_all_versions()
-    versions_by_number = {
-        _validated_ledger_version(row): row for row in versions if isinstance(row, dict)
-    }
-    if target_version in versions_by_number:
+    record_rows = await repo_query(
+        "SELECT * FROM ONLY _sbl_migrations WHERE id = "
+        "type::thing('_sbl_migrations', $version);",
+        {"version": target_version},
+    )
+    if record_rows is not None:
         raise MigrationLedgerError(
             f"Migration {target_version} rollback incomplete: ledger record "
-            f"still present."
+            f"_sbl_migrations:{target_version} still present."
         )
+    versions = await get_all_versions()
+    versions_list = [_validated_ledger_version(row) for row in versions]
     expected_latest = target_version - 1
-    latest = max(versions_by_number) if versions_by_number else 0
+    latest = max(versions_list) if versions_list else 0
     if latest != expected_latest:
         raise MigrationLedgerError(
             f"Migration {target_version} rollback incomplete: ledger latest "

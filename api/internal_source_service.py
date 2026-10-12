@@ -207,42 +207,41 @@ async def read_rdlens_source(request: RDLensSourceRead) -> dict:
             "source readback returned an unexpected reference shape"
         )
 
-    if source_rows is None or notebook_rows is None:
-        # Source or notebook missing (or both). No binding can exist in
-        # either case; this is the GET's 404, not a 500.
-        raise RDLensSourceNotFoundError(
-            f"source {request.source_id} or notebook {request.notebook_id} not found"
-        )
+    # Row-shape validation BEFORE any absence judgment (Round 2 #5): a
+    # malformed row is a database inconsistency -> 500, even when the OTHER
+    # record is missing. Only after every present row validates may a None
+    # result be read as absence -> 404.
+    source: Optional[Dict[str, Any]] = None
+    notebook: Optional[Dict[str, Any]] = None
 
-    # Row-shape validation BEFORE any absence judgment: an id that is not the
-    # expected table's RecordID, a reference row missing any of id/in/out, or
-    # a non-string identity field are database inconsistencies -> 500, never
-    # a silent pass-through or a wrong 404.
-    source = cast(Dict[str, Any], source_rows)
-    source_id_value = _record_id_or_none(source.get("id"))
-    if (
-        source_id_value is None
-        or source_id_value.table_name != "source"
-        or source_id_value != source_record_id
-    ):
-        raise RDLensSourceReadError(
-            "source readback returned a row with unexpected id"
-        )
-    notebook_id_value = _record_id_or_none(notebook_rows.get("id"))
-    if (
-        notebook_id_value is None
-        or notebook_id_value.table_name != "notebook"
-        or notebook_id_value != notebook_record_id
-    ):
-        raise RDLensSourceReadError(
-            "source readback returned a notebook row with unexpected id"
-        )
-
-    for field in _IDENTITY_FIELDS:
-        value = source.get(field)
-        if value is not None and not isinstance(value, str):
+    if source_rows is not None:
+        source = cast(Dict[str, Any], source_rows)
+        source_id_value = _record_id_or_none(source.get("id"))
+        if (
+            source_id_value is None
+            or source_id_value.table_name != "source"
+            or source_id_value != source_record_id
+        ):
             raise RDLensSourceReadError(
-                f"source readback returned a non-string {field}: {value!r}"
+                "source readback returned a row with unexpected id"
+            )
+        for field in _IDENTITY_FIELDS:
+            value = source.get(field)
+            if value is not None and not isinstance(value, str):
+                raise RDLensSourceReadError(
+                    f"source readback returned a non-string {field}: {value!r}"
+                )
+
+    if notebook_rows is not None:
+        notebook = cast(Dict[str, Any], notebook_rows)
+        notebook_id_value = _record_id_or_none(notebook.get("id"))
+        if (
+            notebook_id_value is None
+            or notebook_id_value.table_name != "notebook"
+            or notebook_id_value != notebook_record_id
+        ):
+            raise RDLensSourceReadError(
+                "source readback returned a notebook row with unexpected id"
             )
 
     references: List[dict] = []
@@ -278,6 +277,39 @@ async def read_rdlens_source(request: RDLensSourceRead) -> dict:
         )
         reference_outs.append(ref_out)
 
+    if source is None or notebook is None:
+        # All present rows validated; a remaining None is genuine absence.
+        # No binding can exist in either case; this is the GET's 404, not a
+        # 500.
+        raise RDLensSourceNotFoundError(
+            f"source {request.source_id} or notebook {request.notebook_id} not found"
+        )
+        ref_id = _record_id_or_none(row.get("id"))
+        ref_in = _record_id_or_none(row.get("in"))
+        ref_out = _record_id_or_none(row.get("out"))
+        if (
+            ref_id is None
+            or ref_in is None
+            or ref_out is None
+            or ref_id.table_name != "reference"
+            or ref_in.table_name != "source"
+            or ref_out.table_name != "notebook"
+            # The query filtered on in = $source_id; a row naming any other
+            # source is an invalid result, not a binding.
+            or ref_in != source_record_id
+        ):
+            raise RDLensSourceReadError(
+                "source readback returned an invalid reference row shape"
+            )
+        references.append(
+            {
+                "id": f"{ref_id.table_name}:{str(ref_id.id)}",
+                "in": f"{ref_in.table_name}:{str(ref_in.id)}",
+                "out": f"{ref_out.table_name}:{str(ref_out.id)}",
+            }
+        )
+        reference_outs.append(ref_out)
+
     # Bind on RecordID equality (canonical table:id strings): str() on a
     # hyphenated id yields the escaped ⟨...⟩ form, which never equals the
     # plain request string.
@@ -287,8 +319,8 @@ async def read_rdlens_source(request: RDLensSourceRead) -> dict:
         )
 
     return {
-        "source_id": f"{source_id_value.table_name}:{str(source_id_value.id)}",
-        "notebook_id": f"{notebook_id_value.table_name}:{str(notebook_id_value.id)}",
+        "source_id": f"{source_record_id.table_name}:{str(source_record_id.id)}",
+        "notebook_id": f"{notebook_record_id.table_name}:{str(notebook_record_id.id)}",
         "rdlens_document_id": source.get("rdlens_document_id"),
         "rdlens_document_version": source.get("rdlens_document_version"),
         "rdlens_content_hash": source.get("rdlens_content_hash"),

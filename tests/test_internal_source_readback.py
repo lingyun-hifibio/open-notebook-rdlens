@@ -485,6 +485,37 @@ class TestErrorSemantics:
             with pytest.raises(RDLensSourceReadError, match="reference row"):
                 await read_rdlens_source(RDLensSourceRead(**QUERY))
 
+    # --- Round 2 #5: row-shape validation precedes ANY absence judgment -
+    # a malformed row yields 500 even when the other record is missing. ---
+
+    @pytest.mark.asyncio
+    async def test_missing_notebook_with_malformed_source_id_is_500_not_404(self):
+        bad_source = _source_row({"id": "not-a-record-id"})
+        with _patch_read_queries(bad_source, notebook_rows=None):
+            with pytest.raises(RDLensSourceReadError, match="unexpected id"):
+                await read_rdlens_source(RDLensSourceRead(**QUERY))
+
+    @pytest.mark.asyncio
+    async def test_missing_notebook_with_numeric_identity_field_is_500_not_404(self):
+        bad_source = _source_row({"rdlens_document_id": 12345})
+        with _patch_read_queries(bad_source, notebook_rows=None):
+            with pytest.raises(RDLensSourceReadError, match="non-string"):
+                await read_rdlens_source(RDLensSourceRead(**QUERY))
+
+    @pytest.mark.asyncio
+    async def test_missing_source_with_malformed_reference_rows_is_500_not_404(self):
+        with _patch_read_queries(None, reference_rows=[{"no_id": True}]):
+            with pytest.raises(RDLensSourceReadError, match="reference row"):
+                await read_rdlens_source(RDLensSourceRead(**QUERY))
+
+    @pytest.mark.asyncio
+    async def test_missing_source_with_valid_reference_rows_still_404(self):
+        """Reference rows validate cleanly but the source is absent: the
+        404 stands (validation order must not turn absence into 500)."""
+        with _patch_read_queries(None):
+            with pytest.raises(RDLensSourceNotFoundError):
+                await read_rdlens_source(RDLensSourceRead(**QUERY))
+
 
 class TestRouterErrorMapping:
     """HTTP codes: 422 missing/invalid param, 400 invalid record id, 404

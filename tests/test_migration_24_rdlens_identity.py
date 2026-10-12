@@ -104,7 +104,8 @@ class TestRunnerFixedTarget:
         runner = async_migrate.AsyncMigrationRunner(
             up_migrations=[], down_migrations=[migration],
         )
-        # Post-DOWN triple-verify reads: INFO (no rdlens fields), ledger (23).
+        # Post-DOWN triple-verify reads: INFO (no rdlens fields), ONLY record
+        # fetch (absent), ledger (23).
         with (
             patch.object(
                 async_migrate, "get_latest_version", new=AsyncMock(return_value=23)
@@ -116,6 +117,7 @@ class TestRunnerFixedTarget:
                 new=AsyncMock(
                     side_effect=[
                         {"fields": {}},
+                        None,
                         [{"id": "_sbl_migrations:23", "version": 23}],
                     ]
                 ),
@@ -147,6 +149,7 @@ class TestRunnerFixedTarget:
                 new=AsyncMock(
                     side_effect=[
                         {"fields": {}},
+                        None,
                         [{"id": "_sbl_migrations:23", "version": 23}],
                     ]
                 ),
@@ -167,11 +170,14 @@ class TestRunnerFixedTarget:
         runner = async_migrate.AsyncMigrationRunner(
             up_migrations=[], down_migrations=[migration],
         )
-        # Each of the two DOWNs triple-verifies: INFO + ledger read, twice.
-        post_verify_reads = [
+        # Each of the two DOWNs triple-verifies: INFO + ONLY record + ledger,
+        # twice.
+        post_verify_reads: list = [
             {"fields": {}},
+            None,
             [{"id": "_sbl_migrations:23", "version": 23}],
             {"fields": {}},
+            None,
             [{"id": "_sbl_migrations:23", "version": 23}],
         ]
         with (
@@ -387,6 +393,58 @@ class TestSchemaVerification:
             with pytest.raises(async_migrate.MigrationSchemaError, match="INFO FOR TABLE"):
                 await async_migrate.verify_migration_schema(24)
 
+    # --- Round 2 #1: TYPE must be matched as the exact clause token, not a
+    # substring of the whole def-string. ---
+
+    @pytest.mark.asyncio
+    async def test_verify_rejects_wrong_type_that_merely_contains_expected_substring(self):
+        """`TYPE int` + COMMENT reading 'expected TYPE option<string>' must
+        FAIL: the substring check is gone."""
+        info = {
+            "fields": {
+                "rdlens_document_id": (
+                    "DEFINE FIELD rdlens_document_id ON source TYPE int "
+                    "COMMENT 'expected TYPE option<string>' PERMISSIONS FULL"
+                ),
+            }
+        }
+        with patch.object(async_migrate, "repo_query", new=AsyncMock(return_value=info)):
+            with pytest.raises(async_migrate.MigrationSchemaError, match="incompatible"):
+                await async_migrate.verify_migration_schema(24)
+
+    @pytest.mark.asyncio
+    async def test_verify_accepts_definition_with_benign_comment(self):
+        """A COMMENT mentioning 'default' is not a DEFAULT clause (Round 2
+        #3): the compatible definition must pass."""
+        info = {
+            "fields": {
+                name: (
+                    f"DEFINE FIELD {name} ON source TYPE option<string> "
+                    f"COMMENT 'default identity note' PERMISSIONS FULL"
+                )
+                for name in EXPECTED_FIELDS
+            }
+        }
+        with patch.object(async_migrate, "repo_query", new=AsyncMock(return_value=info)):
+            await async_migrate.verify_migration_schema(24)
+
+    @pytest.mark.asyncio
+    async def test_verify_rejects_default_clause_after_comment(self):
+        """A real DEFAULT clause is still detected even when a COMMENT is
+        present too."""
+        info = {
+            "fields": {
+                "rdlens_document_id": (
+                    "DEFINE FIELD rdlens_document_id ON source "
+                    "TYPE option<string> COMMENT 'note' DEFAULT 'x' "
+                    "PERMISSIONS FULL"
+                ),
+            }
+        }
+        with patch.object(async_migrate, "repo_query", new=AsyncMock(return_value=info)):
+            with pytest.raises(async_migrate.MigrationSchemaError, match="DEFAULT"):
+                await async_migrate.verify_migration_schema(24)
+
     def _info_with_clause(self, clause: str) -> dict:
         """Full three-field INFO shape with `clause` injected on one field."""
         defs = {
@@ -599,6 +657,27 @@ class TestLedgerVersionReading:
         with patch.object(async_migrate, "repo_query", new=AsyncMock(return_value=rows)):
             assert await async_migrate.get_latest_version() == 24
 
+    # --- Round 2 #2: falsy non-list results are invalid shapes, not an
+    # empty ledger; only [] reads as version 0. ---
+
+    @pytest.mark.parametrize("bad_shape", [None, {}, False, "", "nope"])
+    @pytest.mark.asyncio
+    async def test_get_all_versions_rejects_non_list_result(self, bad_shape):
+        with patch.object(
+            async_migrate, "repo_query", new=AsyncMock(return_value=bad_shape)
+        ):
+            with pytest.raises(async_migrate.MigrationLedgerError, match="Malformed"):
+                await async_migrate.get_all_versions()
+
+    @pytest.mark.parametrize("bad_shape", [None, {}, False])
+    @pytest.mark.asyncio
+    async def test_get_latest_version_rejects_non_list_result(self, bad_shape):
+        with patch.object(
+            async_migrate, "repo_query", new=AsyncMock(return_value=bad_shape)
+        ):
+            with pytest.raises(async_migrate.MigrationLedgerError, match="Malformed"):
+                await async_migrate.get_latest_version()
+
 
 class TestDownCompletionVerification:
     """DOWN 24 must triple-verify completion: fields gone, record gone,
@@ -663,7 +742,8 @@ class TestDownCompletionVerification:
         runner = async_migrate.AsyncMigrationRunner(
             up_migrations=[], down_migrations=[migration],
         )
-        # Post-verify reads: INFO (fields gone), ledger (latest 22, not 23).
+        # Post-verify reads: INFO (fields gone), ONLY record (absent), ledger
+        # (latest 22, not 23).
         ledger_rows = [{"id": "_sbl_migrations:22", "version": 22}]
         with (
             patch.object(
@@ -673,7 +753,7 @@ class TestDownCompletionVerification:
             patch.object(
                 async_migrate,
                 "repo_query",
-                new=AsyncMock(side_effect=[{"fields": {}}, ledger_rows]),
+                new=AsyncMock(side_effect=[{"fields": {}}, None, ledger_rows]),
             ),
         ):
             with pytest.raises(async_migrate.MigrationLedgerError, match="expected 23"):
@@ -685,9 +765,8 @@ class TestDownCompletionVerification:
         runner = async_migrate.AsyncMigrationRunner(
             up_migrations=[], down_migrations=[migration],
         )
-        # Post-verify sees: no fields, ledger only 23 (INFO fields absent and
-        # ledger read both flow through repo_query - first call INFO, second
-        # the ledger SELECT).
+        # Post-verify sees: no fields, record 24 absent, ledger only 23 (INFO,
+        # ONLY record fetch, and ledger read all flow through repo_query).
         info_rows = {"fields": {"title": "DEFINE FIELD title ON source TYPE string"}}
         ledger_rows = [{"id": "_sbl_migrations:23", "version": 23}]
         with (
@@ -698,7 +777,7 @@ class TestDownCompletionVerification:
             patch.object(
                 async_migrate,
                 "repo_query",
-                new=AsyncMock(side_effect=[info_rows, ledger_rows]),
+                new=AsyncMock(side_effect=[info_rows, None, ledger_rows]),
             ),
         ):
             await runner.run_one_down(target_version=24)
@@ -713,7 +792,7 @@ class TestDownCompletionVerification:
         )
         info_rows = {"fields": {"title": "DEFINE FIELD title ON source TYPE string"}}
         ledger_rows = [{"id": "_sbl_migrations:23", "version": 23}]
-        # Each DOWN triple-verifies: INFO + ledger read, twice.
+        # Each DOWN triple-verifies: INFO + ONLY record + ledger read, twice.
         with (
             patch.object(
                 async_migrate, "get_latest_version", new=AsyncMock(return_value=23)
@@ -723,7 +802,14 @@ class TestDownCompletionVerification:
                 async_migrate,
                 "repo_query",
                 new=AsyncMock(
-                    side_effect=[info_rows, ledger_rows, info_rows, ledger_rows]
+                    side_effect=[
+                        info_rows,
+                        None,
+                        ledger_rows,
+                        info_rows,
+                        None,
+                        ledger_rows,
+                    ]
                 ),
             ),
         ):
@@ -749,6 +835,130 @@ class TestDownCompletionVerification:
             await runner.run_one_down(target_version=23)
         run.assert_awaited_once_with(bump=False)
         repo_q.assert_not_awaited()  # no post-verify query for non-24 targets
+
+    # --- Round 2 #4: the record-absence check queries the FIXED record id,
+    # malformed ledger rows raise, and the legacy no-target DOWN path is
+    # covered too. ---
+
+    @pytest.mark.asyncio
+    async def test_down_fails_when_record_24_survives_with_tampered_version(self):
+        """A surviving _sbl_migrations:24 record whose version field was
+        rewritten to 23 must still fail: the check is by record id, not by
+        version value."""
+        migration = async_migrate.AsyncMigration(_down_sql(), version=24)
+        runner = async_migrate.AsyncMigrationRunner(
+            up_migrations=[], down_migrations=[migration],
+        )
+        # Post-verify reads: INFO (fields gone), ONLY record fetch (record 24
+        # SURVIVES, version tampered to 23).
+        with (
+            patch.object(
+                async_migrate, "get_latest_version", new=AsyncMock(return_value=24)
+            ),
+            patch.object(async_migrate.AsyncMigration, "run", new=AsyncMock()),
+            patch.object(
+                async_migrate,
+                "repo_query",
+                new=AsyncMock(
+                    side_effect=[
+                        {"fields": {}},
+                        {"id": "_sbl_migrations:24", "version": 23},
+                    ]
+                ),
+            ),
+        ):
+            with pytest.raises(async_migrate.MigrationLedgerError, match="still present"):
+                await runner.run_one_down(target_version=24)
+
+    @pytest.mark.asyncio
+    async def test_down_fails_when_post_verify_ledger_has_malformed_row(self):
+        """A malformed row in the post-verify ledger read raises instead of
+        being filtered out."""
+        migration = async_migrate.AsyncMigration(_down_sql(), version=24)
+        runner = async_migrate.AsyncMigrationRunner(
+            up_migrations=[], down_migrations=[migration],
+        )
+        with (
+            patch.object(
+                async_migrate, "get_latest_version", new=AsyncMock(return_value=24)
+            ),
+            patch.object(async_migrate.AsyncMigration, "run", new=AsyncMock()),
+            patch.object(
+                async_migrate,
+                "repo_query",
+                new=AsyncMock(
+                    side_effect=[
+                        {"fields": {}},
+                        None,  # record 24 absent
+                        [{"id": "_sbl_migrations:23", "version": "bogus"}],
+                    ]
+                ),
+            ),
+        ):
+            with pytest.raises(async_migrate.MigrationLedgerError, match="Malformed"):
+                await runner.run_one_down(target_version=24)
+
+    @pytest.mark.asyncio
+    async def test_legacy_no_target_down_of_24_triple_verifies(self):
+        """run_one_down() with no target at latest=24 runs the same
+        completion contract (Round 2 #4)."""
+        migration = async_migrate.AsyncMigration(_down_sql(), version=24)
+        # Legacy path indexes down_migrations[current_version - 1]; pad with
+        # dummies up to 24 so index 23 is the migration-24 down.
+        runner = async_migrate.AsyncMigrationRunner(
+            up_migrations=[],
+            down_migrations=[
+                async_migrate.AsyncMigration("RETURN 1;") for _ in range(23)
+            ]
+            + [migration],
+        )
+        with (
+            patch.object(
+                async_migrate, "get_latest_version", new=AsyncMock(return_value=24)
+            ),
+            patch.object(async_migrate.AsyncMigration, "run", new=AsyncMock()) as run,
+            patch.object(
+                async_migrate,
+                "repo_query",
+                new=AsyncMock(
+                    side_effect=[
+                        {"fields": {}},
+                        None,  # record 24 absent
+                        [{"id": "_sbl_migrations:23", "version": 23}],
+                    ]
+                ),
+            ),
+        ):
+            await runner.run_one_down()
+        run.assert_awaited_once_with(bump=False)
+
+    @pytest.mark.asyncio
+    async def test_legacy_no_target_down_of_24_fails_when_field_survives(self):
+        migration = async_migrate.AsyncMigration(_down_sql(), version=24)
+        runner = async_migrate.AsyncMigrationRunner(
+            up_migrations=[],
+            down_migrations=[
+                async_migrate.AsyncMigration("RETURN 1;") for _ in range(23)
+            ]
+            + [migration],
+        )
+        with (
+            patch.object(
+                async_migrate, "get_latest_version", new=AsyncMock(return_value=24)
+            ),
+            patch.object(async_migrate.AsyncMigration, "run", new=AsyncMock()),
+            patch.object(
+                async_migrate,
+                "repo_query",
+                new=AsyncMock(
+                    return_value={
+                        "fields": {"rdlens_content_hash": "DEFINE FIELD ..."}
+                    }
+                ),
+            ),
+        ):
+            with pytest.raises(async_migrate.MigrationSchemaError, match="still defined"):
+                await runner.run_one_down()
 
 
 class TestRecordMigrationVersion:
