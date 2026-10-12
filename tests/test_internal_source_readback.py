@@ -260,9 +260,10 @@ class TestReadbackContract:
     @pytest.mark.asyncio
     async def test_escaped_sdk_id_string_resolves_to_real_record(self):
         """A request id in the SDK's str(RecordID) escaped form
-        (``table:⟨id⟩``) resolves the REAL record: RecordID.parse keeps the
-        brackets as id content, so the query tries both interpretations and
-        the escaped-form request must NOT 404 (Round 4 finding)."""
+        (``table:⟨id⟩``) resolves the REAL record: the angle-wrapped form is
+        decoded (outer brackets stripped + inner content unescaped) into one
+        canonical RecordID - RecordID.parse alone keeps the brackets as id
+        content and would query a nonexistent record (Round 4 finding)."""
         real_source = RecordID.parse(SOURCE_ID)  # raw id, no brackets
         escaped_source = f"source:⟨{SOURCE_ID.split(':', 1)[1]}⟩"
         escaped_notebook = f"notebook:⟨{QUERY['notebook_id'].split(':', 1)[1]}⟩"
@@ -276,7 +277,7 @@ class TestReadbackContract:
         with _patch_read_queries(
             _source_row(),  # DB returns the real (unwrapped) record
             reference_rows=refs,
-        ):
+        ) as conn:
             result = await read_rdlens_source(
                 RDLensSourceRead(
                     source_id=escaped_source, notebook_id=escaped_notebook
@@ -285,6 +286,8 @@ class TestReadbackContract:
         # Echo the plain canonical form, never the wrapper.
         assert result["source_id"] == SOURCE_ID
         assert result["notebook_id"] == QUERY["notebook_id"]
+        # Single-candidate query: the bound param is the DECODED record id.
+        assert conn.query.await_args_list[0].args[1]["record_id"] == real_source
 
     @pytest.mark.asyncio
     async def test_mixed_escaped_and_plain_ids_resolve(self):
@@ -298,17 +301,52 @@ class TestReadbackContract:
         assert result["source_id"] == SOURCE_ID
 
     @pytest.mark.asyncio
-    async def test_missing_query_includes_both_interpretations(self):
-        """A genuinely absent record still 404s: neither interpretation
-        matches (no false positive from the dual-candidate query)."""
+    async def test_escaped_id_with_sdk_escaped_close_bracket_resolves(self):
+        """SDK str() of id content containing ⟩ emits ``⟨a\\⟩b⟩``; the decode
+        must unescape the inner ``\\⟩`` (naive outer-strip left it escaped -
+        Round 5 finding)."""
+        from api.internal_source_service import _parse_read_record_id
+
+        record_id = _parse_read_record_id("source:⟨a\\⟩b⟩", "source", "source_id")
+        assert record_id.table_name == "source"
+        assert record_id.id == "a⟩b"
+
+    @pytest.mark.asyncio
+    async def test_literal_bracket_record_addressable_via_sdk_form(self):
+        """The SDK form of a literal-bracket id (content '⟨s⟩' serialized as
+        '⟨⟨s\\⟩⟩') decodes back to the literal-bracket content."""
+        from api.internal_source_service import _parse_read_record_id
+
+        record_id = _parse_read_record_id("source:⟨⟨s\\⟩⟩", "source", "source_id")
+        assert record_id.id == "⟨s⟩"
+
+    @pytest.mark.asyncio
+    async def test_ambiguous_both_records_exist_still_single_lookup(self):
+        """Both the plain record and the literal-bracket record exist: the
+        wrapped request resolves to ONE record (no ONLY multi-match 500, no
+        cross-record binding pass-through - Round 5 findings)."""
+        from surrealdb import RecordID as RID
+
+        from api.internal_source_service import _parse_read_record_id
+
+        # The wrapped form decodes to the plain record; the query param is
+        # exactly one RecordID, so ONLY can never see two matches.
+        record_id = _parse_read_record_id("source:⟨s⟩", "source", "source_id")
+        assert record_id == RID("source", "s")
+        assert record_id != RID("source", "⟨s⟩")
+
+    @pytest.mark.asyncio
+    async def test_missing_query_still_404s(self):
+        """A genuinely absent record still 404s under the single-candidate
+        query."""
         with _patch_read_queries(None):
             with pytest.raises(RDLensSourceNotFoundError):
                 await read_rdlens_source(RDLensSourceRead(**QUERY))
 
     @pytest.mark.asyncio
     async def test_row_id_not_among_candidates_is_read_error(self):
-        """A row whose id matches NEITHER interpretation is a 500, not a
-        pass-through (the IN-query matched something unexpected)."""
+        """A row whose id does not match the decoded request id is a 500,
+        not a pass-through."""
         alien = _source_row({"id": RecordID.parse("source:alien")})
         with _patch_read_queries(alien):
             with pytest.raises(RDLensSourceReadError, match="unexpected id"):

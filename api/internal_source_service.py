@@ -112,10 +112,10 @@ class RDLensSourceReadError(Exception):
     """
 
 
-_READBACK_SOURCE_QUERY = "SELECT * FROM ONLY source WHERE id IN [$a, $b];"
-_READBACK_NOTEBOOK_QUERY = "SELECT * FROM ONLY notebook WHERE id IN [$a, $b];"
+_READBACK_SOURCE_QUERY = "SELECT * FROM ONLY source WHERE id = $record_id;"
+_READBACK_NOTEBOOK_QUERY = "SELECT * FROM ONLY notebook WHERE id = $record_id;"
 _READBACK_REFERENCES_QUERY = (
-    "SELECT id, in, out FROM reference WHERE in IN [$a, $b] ORDER BY id;"
+    "SELECT id, in, out FROM reference WHERE in = $record_id ORDER BY id;"
 )
 
 _IDENTITY_FIELDS = (
@@ -125,8 +125,27 @@ _IDENTITY_FIELDS = (
 )
 
 
-def _id_candidates(value: str, expected_table: str, kind: str) -> List[RecordID]:
-    """Parse a GET record id into its possible RecordID interpretations.
+def _sdk_unescape_angle_wrapped(inner: str) -> str:
+    """Undo the SDK's escaping inside a ``⟨...⟩`` wrapped record id.
+
+    The SDK's str(RecordID) escape map (probed on surrealdb.py 1.x): ``⟩``
+    becomes ``\\⟩``; ``\\`` and ``⟨`` pass through unchanged. A left-to-right
+    scan treating ``\\⟩`` as an escaped ``⟩`` is unambiguous.
+    """
+    out: List[str] = []
+    i = 0
+    while i < len(inner):
+        if inner[i] == "\\" and i + 1 < len(inner) and inner[i + 1] == "⟩":
+            out.append("⟩")
+            i += 2
+        else:
+            out.append(inner[i])
+            i += 1
+    return "".join(out)
+
+
+def _parse_read_record_id(value: str, expected_table: str, kind: str) -> RecordID:
+    """Parse and table-check a GET record id into ONE canonical RecordID.
 
     RecordID.parse raises ValueError for ids without the ``table:id`` shape -
     the router maps that to 400. The table check rejects cross-table ids the
@@ -136,29 +155,29 @@ def _id_candidates(value: str, expected_table: str, kind: str) -> List[RecordID]
     escaping (e.g. ``notebook:⟨rdlens-p1⟩`` for hyphenated ids), but
     RecordID.parse does NOT unwrap it - the brackets stay as id content, so
     the naive parse queries a nonexistent record and a genuinely existing
-    one would 404 (Round 4 finding). Two candidates are generated: the naive
-    parse and the outer-bracket-stripped reading; the IN-query matches
-    whichever record actually exists. (Ids whose content itself contains
-    angle brackets cannot be disambiguated from an escaped form without
-    reimplementing SurrealDB's EscapeRid; both interpretations are tried
-    and the row-id check below still validates the match.)
+    one would 404 (Round 4 finding). The angle-wrapped form is therefore
+    decoded: outer brackets stripped and the inner content unescaped
+    (Round 5 finding - a naive outer-strip alone left SDK-escaped ``\\⟩``
+    sequences inside).
+
+    ONE interpretation is queried, never several: a multi-candidate lookup
+    could match a second record whose id content literally carries brackets
+    (breaking ONLY's single-record contract, 500) and let a reference whose
+    endpoints name that literal-bracket record satisfy the binding check
+    (Round 5 findings). Literal-bracket id content is not addressable via
+    the GET string form - such records cannot be created through this
+    adapter (PUT derives hex ids; notebook ids come from RDLens's store).
     """
     if ":" not in value:
-        raise ValueError(
-            f"{kind} must have the shape table:id (got {value!r})"
-        )
+        raise ValueError(f"{kind} must have the shape table:id (got {value!r})")
     table, rest = value.split(":", 1)
     if table != expected_table:
         raise ValueError(
             f"{kind} must be a record of table {expected_table!r} (got {value!r})"
         )
-    plain = RecordID(table, rest)
-    candidates: List[RecordID] = [plain]
     if rest.startswith("⟨") and rest.endswith("⟩") and len(rest) >= 2:
-        stripped = RecordID(table, rest[1:-1])
-        if stripped != plain:
-            candidates.append(stripped)
-    return candidates
+        rest = _sdk_unescape_angle_wrapped(rest[1:-1])
+    return RecordID(table, rest)
 
 
 def _record_id_or_none(value: Any) -> Optional[RecordID]:
@@ -182,10 +201,14 @@ async def read_rdlens_source(request: RDLensSourceRead) -> dict:
 
     # Validate both incoming ids directly - the GET addresses the Source by
     # its actual record id; it is never re-derived from a document triple.
-    # Each id yields up to two interpretations (naive parse + outer-bracket-
-    # stripped); the IN-queries match whichever record actually exists.
-    source_candidates = _id_candidates(request.source_id, "source", "source_id")
-    notebook_candidates = _id_candidates(request.notebook_id, "notebook", "notebook_id")
+    # Each id resolves to ONE canonical RecordID (angle-wrapped SDK forms
+    # are decoded, never kept as a second interpretation).
+    source_record_id = _parse_read_record_id(
+        request.source_id, "source", "source_id"
+    )
+    notebook_record_id = _parse_read_record_id(
+        request.notebook_id, "notebook", "notebook_id"
+    )
 
     try:
         async with db_connection(
@@ -196,16 +219,13 @@ async def read_rdlens_source(request: RDLensSourceRead) -> dict:
             # the actual RecordID objects, so the readback queries bypass it
             # and run on the shared budgeted connection directly.
             source_rows = await connection.query(
-                _READBACK_SOURCE_QUERY,
-                {"a": source_candidates[0], "b": source_candidates[-1]},
+                _READBACK_SOURCE_QUERY, {"record_id": source_record_id}
             )
             notebook_rows = await connection.query(
-                _READBACK_NOTEBOOK_QUERY,
-                {"a": notebook_candidates[0], "b": notebook_candidates[-1]},
+                _READBACK_NOTEBOOK_QUERY, {"record_id": notebook_record_id}
             )
             reference_rows = await connection.query(
-                _READBACK_REFERENCES_QUERY,
-                {"a": source_candidates[0], "b": source_candidates[-1]},
+                _READBACK_REFERENCES_QUERY, {"record_id": source_record_id}
             )
     except asyncio.TimeoutError as e:
         raise RDLensSourceReadError(
@@ -242,9 +262,9 @@ async def read_rdlens_source(request: RDLensSourceRead) -> dict:
         if (
             source_id_value is None
             or source_id_value.table_name != "source"
-            # The IN-query matches either interpretation; the row must be one
-            # of the candidates for the id the caller actually sent.
-            or source_id_value not in source_candidates
+            # The single-candidate query returned a row naming a different
+            # record than the one the caller addressed.
+            or source_id_value != source_record_id
         ):
             raise RDLensSourceReadError(
                 "source readback returned a row with unexpected id"
@@ -262,7 +282,7 @@ async def read_rdlens_source(request: RDLensSourceRead) -> dict:
         if (
             notebook_id_value is None
             or notebook_id_value.table_name != "notebook"
-            or notebook_id_value not in notebook_candidates
+            or notebook_id_value != notebook_record_id
         ):
             raise RDLensSourceReadError(
                 "source readback returned a notebook row with unexpected id"
@@ -285,9 +305,9 @@ async def read_rdlens_source(request: RDLensSourceRead) -> dict:
             or ref_id.table_name != "reference"
             or ref_in.table_name != "source"
             or ref_out.table_name != "notebook"
-            # The query filtered on in IN the source candidates; a row naming
-            # any other source is an invalid result, not a binding.
-            or ref_in not in source_candidates
+            # The query filtered on in = $record_id; a row naming any other
+            # source is an invalid result, not a binding.
+            or ref_in != source_record_id
         ):
             raise RDLensSourceReadError(
                 "source readback returned an invalid reference row shape"
@@ -311,7 +331,7 @@ async def read_rdlens_source(request: RDLensSourceRead) -> dict:
 
     # Bind on RecordID equality: str() on a hyphenated id yields the escaped
     # ⟨...⟩ form, which never equals the plain request string.
-    if not any(ref_out in notebook_candidates for ref_out in reference_outs):
+    if not any(ref_out == notebook_record_id for ref_out in reference_outs):
         raise RDLensSourceNotFoundError(
             f"source {request.source_id} is not bound to notebook {request.notebook_id}"
         )
