@@ -122,6 +122,8 @@ class TestNativeAIBlocked:
     @pytest.mark.asyncio
     async def test_provision_binds_gateway_and_skips_model_manager(self, monkeypatch):
         _embedded(monkeypatch)
+        from langchain_openai import ChatOpenAI
+
         from open_notebook.ai.provision import provision_langchain_model
 
         with patch(
@@ -130,6 +132,7 @@ class TestNativeAIBlocked:
         ) as mock_mgr:
             model = await provision_langchain_model("hello", None, "transformation")
 
+        assert isinstance(model, ChatOpenAI)
         assert model.openai_api_base == GATEWAY_URL
         assert model.model_name == GATEWAY_MODEL
         mock_mgr.assert_not_called()
@@ -138,6 +141,8 @@ class TestNativeAIBlocked:
     async def test_provision_ignores_user_model_id_in_embedded_mode(self, monkeypatch):
         """客户端指定的 model_id 在嵌入式模式下无效（REQ-DIS-02）。"""
         _embedded(monkeypatch)
+        from langchain_openai import ChatOpenAI
+
         from open_notebook.ai.provision import provision_langchain_model
 
         with patch(
@@ -146,6 +151,7 @@ class TestNativeAIBlocked:
         ) as mock_get_model:
             model = await provision_langchain_model("hello", "model:user-picked", "transformation")
 
+        assert isinstance(model, ChatOpenAI)
         assert model.openai_api_base == GATEWAY_URL
         mock_get_model.assert_not_called()
 

@@ -1,8 +1,9 @@
+import asyncio
 import os
 import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, TypeVar, Union
+from typing import Any, AsyncIterator, Dict, List, Optional, TypeVar, Union
 
 from loguru import logger
 from surrealdb import AsyncSurreal, RecordID  # type: ignore
@@ -16,6 +17,12 @@ from open_notebook.utils.proxy import ensure_internal_no_proxy
 ensure_internal_no_proxy()
 
 T = TypeVar("T", Dict[str, Any], List[Dict[str, Any]])
+
+# Wall-clock budget for the internal RDLens source-readback GET: signin +
+# use + all queries of one db_connection() call. Cleanup (close) runs after
+# the budget context exits; it may extend total wall time, so callers keep
+# their own HTTP timeout on top of this.
+INTERNAL_GET_OPERATION_BUDGET_SECONDS = 5.0
 
 # Bare SurrealDB table/relation identifier: no ':', whitespace, or query
 # syntax. Used to validate the parts of RELATE/UPSERT/UPDATE that name a
@@ -82,30 +89,109 @@ def ensure_record_id(value: Union[str, RecordID]) -> RecordID:
     return RecordID.parse(value)
 
 
-@asynccontextmanager
-async def db_connection():
-    db = AsyncSurreal(get_database_url())
-    await db.signin(
-        {
-            "username": os.environ.get("SURREAL_USER"),
-            "password": get_database_password(),
-        }
-    )
-    await db.use(get_database_namespace(), get_database_name())
+def _external_cancel_pending() -> bool:
+    """Whether the running task has been asked to cancel from outside.
+
+    The SDK's close() awaits its receive task and can absorb a cancellation
+    delivered while the caller was inside the connection (a control probe
+    showed query() completing normally with a pending cancel). Comparing
+    task.cancel() counts before/after lets us re-raise externally-delivered
+    cancels instead of reporting success, while a close() that finishes
+    cleanly on its own is not misread as a cancellation.
+    """
+    task = asyncio.current_task()
+    if task is None:
+        return False
+    return task.cancelling() > 0 and task.uncancel() == 0
+
+
+async def _close_connection(
+    db: Any, prior_error: Optional[BaseException]
+) -> None:
+    """Close the SDK connection without masking an operation error.
+
+    Uses only the SDK's public close(). Normal cleanup failures are logged
+    and dropped so they never overwrite an exception raised by the caller's
+    queries; if the current task picked up a NEW external cancellation while
+    closing (the SDK swallowing it), that cancellation is re-raised.
+    """
     try:
-        yield db
-    finally:
         await db.close()
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        if prior_error is not None:
+            logger.debug(
+                f"Ignoring connection close error after operation error: {e}"
+            )
+        else:
+            logger.warning(f"Connection close failed: {e}")
+    if _external_cancel_pending():
+        raise asyncio.CancelledError()
+
+
+@asynccontextmanager
+async def db_connection(
+    operation_budget_seconds: Optional[float] = None,
+) -> AsyncIterator[Any]:
+    """Yield one connected AsyncSurreal client.
+
+    signin, use, and the caller's queries all run inside try/finally so the
+    connection is closed on every exit path. Pass operation_budget_seconds
+    to bound signin + use + queries with an overall asyncio.timeout (cleanup
+    runs after the budget expires); the default None keeps the historical
+    unbounded behavior for every existing caller.
+    """
+    db = AsyncSurreal(get_database_url())
+    signin_error: Optional[BaseException] = None
+    try:
+        if operation_budget_seconds is not None:
+            async with asyncio.timeout(operation_budget_seconds):
+                await db.signin(
+                    {
+                        "username": os.environ.get("SURREAL_USER"),
+                        "password": get_database_password(),
+                    }
+                )
+                await db.use(get_database_namespace(), get_database_name())
+                signin_error = None
+                yield db
+        else:
+            await db.signin(
+                {
+                    "username": os.environ.get("SURREAL_USER"),
+                    "password": get_database_password(),
+                }
+            )
+            await db.use(get_database_namespace(), get_database_name())
+            yield db
+    except BaseException as e:
+        # Budget timeouts re-raise as TimeoutError; DB errors, caller
+        # exceptions, and cancellations all propagate unchanged. Only the
+        # cleanup below is exception-safe.
+        signin_error = e
+        raise
+    finally:
+        # Outside any budget context: cleanup is never cut short by the
+        # operation timeout itself.
+        await _close_connection(db, signin_error)
 
 
 async def repo_query(
-    query_str: str, vars: Optional[Dict[str, Any]] = None
+    query_str: str,
+    vars: Optional[Dict[str, Any]] = None,
+    connection: Optional[Any] = None,
 ) -> List[Dict[str, Any]]:
-    """Execute a SurrealQL query and return the results"""
+    """Execute a SurrealQL query and return the results.
 
-    async with db_connection() as connection:
+    Pass connection (an AsyncSurreal yielded by db_connection) to run on an
+    existing connection instead of opening a fresh one - used when several
+    statements must execute against one consistent session.
+    """
+
+    async def _run(conn: Any) -> List[Dict[str, Any]]:
         try:
-            result = parse_record_ids(await connection.query(query_str, vars))
+            result = parse_record_ids(await conn.query(query_str, vars))
             if isinstance(result, str):
                 raise RuntimeError(result)
             return result
@@ -116,6 +202,11 @@ async def repo_query(
         except Exception as e:
             logger.exception(e)
             raise
+
+    if connection is not None:
+        return await _run(connection)
+    async with db_connection() as conn:
+        return await _run(conn)
 
 
 async def repo_create(table: str, data: Dict[str, Any]) -> Dict[str, Any]:

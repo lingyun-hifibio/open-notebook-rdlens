@@ -1,0 +1,24 @@
+-- Migration 24: persist RDLens Source identity fields (#66 / RDLens #613).
+-- The internal Source adapter (api/internal_source_service.py) writes
+-- rdlens_document_id / rdlens_document_version / rdlens_content_hash on the
+-- SCHEMAFULL `source` table, but no field definitions existed, so SurrealDB
+-- silently dropped all three values (issue #66: the "write-drop loop" -
+-- RDLens could never prove the fields were persisted).
+--
+-- Add-only migration: three nullable string fields. No defaults, no content
+-- conversion, no hash-format constraints; existing rows keep their current
+-- shape and their identity values simply read back as NONE until RDLens
+-- re-upserts them. Backfill of historical rows is owned by RDLens #613
+-- (production writes need explicit RDLens-side authorization).
+--
+-- Idempotent via IF NOT EXISTS so a crash between this DDL and the ledger
+-- write (or a startup where the ledger already says 24 but a field was
+-- removed out-of-band) can simply re-run it.
+
+BEGIN TRANSACTION;
+
+DEFINE FIELD IF NOT EXISTS rdlens_document_id ON TABLE source TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS rdlens_document_version ON TABLE source TYPE option<string>;
+DEFINE FIELD IF NOT EXISTS rdlens_content_hash ON TABLE source TYPE option<string>;
+
+COMMIT TRANSACTION;

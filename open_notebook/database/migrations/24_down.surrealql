@@ -1,0 +1,20 @@
+-- Migration 24 rollback: remove the RDLens Source identity field definitions
+-- (#66 / RDLens #613). Only the three rdlens_* definitions are removed;
+-- pre-existing source fields (asset/title/topics/full_text/created/updated)
+-- and all row data are untouched. IF EXISTS keeps the rollback idempotent so
+-- a retry after a lost confirmation can simply re-run it.
+--
+-- Rollback is invoked via AsyncMigrationRunner.run_one_down(target_version=24)
+-- (or plain run_one_down() when 24 is the top of the ledger); the executor
+-- deletes exactly the version-24 ledger record and verifies completion.
+-- Note: with the definitions removed, the app code keeps writing the three
+-- keys, but SCHEMAFULL semantics will silently drop them again - keep writes
+-- stopped until migration 24 is re-applied or a successor lands.
+
+BEGIN TRANSACTION;
+
+REMOVE FIELD IF EXISTS rdlens_document_id ON TABLE source;
+REMOVE FIELD IF EXISTS rdlens_document_version ON TABLE source;
+REMOVE FIELD IF EXISTS rdlens_content_hash ON TABLE source;
+
+COMMIT TRANSACTION;
