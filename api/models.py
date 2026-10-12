@@ -394,6 +394,22 @@ class RDLensNotebookDelete(BaseModel):
     notebook_id: str = Field(..., min_length=1, max_length=256)
 
 
+class RDLensSourceRead(BaseModel):
+    """Write-then-read-back verification query for the private adapter.
+
+    RDLens calls this after a PUT to prove the identity fields actually
+    persisted (a PUT response echo cannot - issue #66). The GET addresses
+    the Source directly by its record id plus the notebook whose binding
+    must be present; the id is never re-derived from a document triple, so
+    externally-assigned sources read back too.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    source_id: str = Field(..., min_length=1, max_length=256)
+    notebook_id: str = Field(..., min_length=1, max_length=256)
+
+
 class SourceUpdate(BaseModel):
     title: Optional[str] = Field(None, description="Source title")
     topics: Optional[List[str]] = Field(None, description="Source topics")
