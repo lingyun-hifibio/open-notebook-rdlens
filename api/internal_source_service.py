@@ -284,31 +284,6 @@ async def read_rdlens_source(request: RDLensSourceRead) -> dict:
         raise RDLensSourceNotFoundError(
             f"source {request.source_id} or notebook {request.notebook_id} not found"
         )
-        ref_id = _record_id_or_none(row.get("id"))
-        ref_in = _record_id_or_none(row.get("in"))
-        ref_out = _record_id_or_none(row.get("out"))
-        if (
-            ref_id is None
-            or ref_in is None
-            or ref_out is None
-            or ref_id.table_name != "reference"
-            or ref_in.table_name != "source"
-            or ref_out.table_name != "notebook"
-            # The query filtered on in = $source_id; a row naming any other
-            # source is an invalid result, not a binding.
-            or ref_in != source_record_id
-        ):
-            raise RDLensSourceReadError(
-                "source readback returned an invalid reference row shape"
-            )
-        references.append(
-            {
-                "id": f"{ref_id.table_name}:{str(ref_id.id)}",
-                "in": f"{ref_in.table_name}:{str(ref_in.id)}",
-                "out": f"{ref_out.table_name}:{str(ref_out.id)}",
-            }
-        )
-        reference_outs.append(ref_out)
 
     # Bind on RecordID equality (canonical table:id strings): str() on a
     # hyphenated id yields the escaped ⟨...⟩ form, which never equals the

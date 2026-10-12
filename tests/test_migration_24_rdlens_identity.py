@@ -445,6 +445,91 @@ class TestSchemaVerification:
             with pytest.raises(async_migrate.MigrationSchemaError, match="DEFAULT"):
                 await async_migrate.verify_migration_schema(24)
 
+    # --- Round 3 #1: the full TYPE expression must equal option<string>;
+    # union types sharing the prefix are rejected. ---
+
+    @pytest.mark.asyncio
+    async def test_verify_rejects_union_type_sharing_prefix(self):
+        """`TYPE option<string> | int` passes a first-token check but must
+        fail: the whole TYPE expression is compared exactly."""
+        info = {
+            "fields": {
+                "rdlens_document_id": (
+                    "DEFINE FIELD rdlens_document_id ON source "
+                    "TYPE option<string> | int PERMISSIONS FULL"
+                ),
+            }
+        }
+        with patch.object(async_migrate, "repo_query", new=AsyncMock(return_value=info)):
+            with pytest.raises(async_migrate.MigrationSchemaError, match="incompatible"):
+                await async_migrate.verify_migration_schema(24)
+
+    @pytest.mark.asyncio
+    async def test_verify_rejects_union_type_with_type_comment_spoof(self):
+        info = {
+            "fields": {
+                "rdlens_document_id": (
+                    "DEFINE FIELD rdlens_document_id ON source "
+                    "TYPE option<string> | int COMMENT 'TYPE option<string>' "
+                    "PERMISSIONS FULL"
+                ),
+            }
+        }
+        with patch.object(async_migrate, "repo_query", new=AsyncMock(return_value=info)):
+            with pytest.raises(async_migrate.MigrationSchemaError, match="incompatible"):
+                await async_migrate.verify_migration_schema(24)
+
+    # --- Round 3 #2: quote stripping is escape-aware. ---
+
+    @pytest.mark.asyncio
+    async def test_verify_accepts_comment_with_escaped_delimiters(self):
+        """A COMMENT containing escaped quotes and the word 'default' is
+        fully blanked before clause scanning - it must not trip the
+        forbidden-clause check."""
+        info = {
+            "fields": {
+                name: (
+                    f"DEFINE FIELD {name} ON source TYPE option<string> "
+                    "COMMENT 'it\\'s not a \\'default\\' clause' "
+                    "PERMISSIONS FULL"
+                )
+                for name in EXPECTED_FIELDS
+            }
+        }
+        with patch.object(async_migrate, "repo_query", new=AsyncMock(return_value=info)):
+            await async_migrate.verify_migration_schema(24)
+
+    @pytest.mark.asyncio
+    async def test_verify_accepts_double_quoted_comment_with_escapes(self):
+        info = {
+            "fields": {
+                name: (
+                    f"DEFINE FIELD {name} ON source TYPE option<string> "
+                    'COMMENT "say \\"default\\" loudly" '
+                    "PERMISSIONS FULL"
+                )
+                for name in EXPECTED_FIELDS
+            }
+        }
+        with patch.object(async_migrate, "repo_query", new=AsyncMock(return_value=info)):
+            await async_migrate.verify_migration_schema(24)
+
+    @pytest.mark.asyncio
+    async def test_verify_rejects_default_hidden_after_escaped_comment(self):
+        """A real DEFAULT after an escaped-delimiter COMMENT is still found."""
+        info = {
+            "fields": {
+                "rdlens_document_id": (
+                    "DEFINE FIELD rdlens_document_id ON source "
+                    "TYPE option<string> COMMENT 'it\\'s noted' DEFAULT 'x' "
+                    "PERMISSIONS FULL"
+                ),
+            }
+        }
+        with patch.object(async_migrate, "repo_query", new=AsyncMock(return_value=info)):
+            with pytest.raises(async_migrate.MigrationSchemaError, match="DEFAULT"):
+                await async_migrate.verify_migration_schema(24)
+
     def _info_with_clause(self, clause: str) -> dict:
         """Full three-field INFO shape with `clause` injected on one field."""
         defs = {

@@ -34,13 +34,21 @@ _FORBIDDEN_DEFINITION_CLAUSES = re.compile(
 # INFO def-strings are SurrealDB-generated single lines; quoted literals
 # (e.g. COMMENT values) are blanked out before clause scanning so a comment
 # mentioning "default" is not mistaken for a DEFAULT clause (Round 2 #3).
-_QUOTED_LITERAL_RE = re.compile(r"'[^']*'|\"[^\"]*\"")
-# The actual TYPE clause: the token immediately following the top-level TYPE
-# keyword in the quote-stripped definition. An exact-token match prevents a
-# wrong type whose def-string merely CONTAINS the expected substring (e.g.
-# `TYPE int` plus a comment reading 'expected TYPE option<string>') from
-# passing a substring check (Round 2 #1).
-_TYPE_CLAUSE_RE = re.compile(r"\bTYPE\s+(\S+)")
+# The literal pattern is escape-aware (backslash-escaped quotes and
+# backslashes are consumed as part of the literal) so a COMMENT such as
+# 'it\'s a default' is fully blanked instead of leaving "default" exposed
+# after the naive first-quote match (Round 3 #2).
+_QUOTED_LITERAL_RE = re.compile(r"'(?:[^'\\]|\\.)*'|\"(?:[^\"\\]|\\.)*\"")
+# The actual TYPE expression: everything between TYPE and the next top-level
+# clause keyword (or end of string). An exact-match against the expected
+# type rejects both a wrong type whose def-string merely CONTAINS the
+# expected substring (e.g. `TYPE int` plus a comment reading 'expected TYPE
+# option<string>') and a union type (`option<string> | int`) that only
+# shares a prefix with it (Round 3 #1).
+_TYPE_CLAUSE_RE = re.compile(
+    r"\bTYPE\s+(.*?)(?=\s+(?:VALUE|DEFAULT|ASSERT|READONLY|COMMENT|PERMISSIONS)\b|$)",
+    re.DOTALL,
+)
 
 
 def _definition_clauses(definition: str) -> str:
@@ -49,9 +57,9 @@ def _definition_clauses(definition: str) -> str:
 
 
 def _definition_type(definition: str) -> Optional[str]:
-    """The definition's actual TYPE-clause token (quote-stripped), or None."""
+    """The definition's full TYPE expression (quote-stripped), or None."""
     match = _TYPE_CLAUSE_RE.search(_definition_clauses(definition))
-    return match.group(1) if match else None
+    return match.group(1).strip() if match else None
 
 
 class AsyncMigration:
@@ -580,9 +588,11 @@ async def _assert_identity_definitions_compatible(require_present: bool) -> None
                     f"on table source. Re-run the up migration."
                 )
             continue
-        # Exact TYPE-clause token match on the quote-stripped definition: a
+        # Exact TYPE-expression match on the quote-stripped definition: a
         # substring check would accept e.g. TYPE int with a comment reading
-        # 'expected TYPE option<string>' (Round 2 #1).
+        # 'expected TYPE option<string>' (Round 2 #1), and a first-token
+        # check would accept a union type sharing the prefix, e.g.
+        # `option<string> | int` (Round 3 #1).
         actual_type = _definition_type(definition)
         if actual_type != field_type:
             raise MigrationSchemaError(
@@ -590,9 +600,9 @@ async def _assert_identity_definitions_compatible(require_present: bool) -> None
                 f"as {definition!r}, expected TYPE {field_type} "
                 f"(found {actual_type!r})."
             )
-        # Forbidden-clause scan runs on the quote-stripped text AFTER the TYPE
-        # token is accounted for, so a COMMENT mentioning "default" does not
-        # read as a DEFAULT clause (Round 2 #3).
+        # Forbidden-clause scan runs on the quote-stripped text (escape-aware
+        # literal blanking, Round 3 #2), so a COMMENT mentioning "default"
+        # does not read as a DEFAULT clause.
         clause = _FORBIDDEN_DEFINITION_CLAUSES.search(_definition_clauses(definition))
         if clause:
             raise MigrationSchemaError(
