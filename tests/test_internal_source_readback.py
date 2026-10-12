@@ -420,6 +420,48 @@ class TestReadbackContract:
         assert result["source_id"] == result_id
 
     @pytest.mark.asyncio
+    async def test_numeric_reference_id_row_is_read_error(self):
+        """A reference row with NUMERIC id content is a 500: no GET string
+        form parses back to a numeric id (parse() always yields str), so
+        echoing it would misidentify the relation (Round 7 finding). The
+        naive echo ``reference:⟨123⟩`` would address the string-id record
+        ``"123"``, not the numeric-id record 123."""
+        refs = [
+            {
+                "id": RecordID("reference", 123),
+                "in": RecordID.parse(SOURCE_ID),
+                "out": RecordID.parse(QUERY["notebook_id"]),
+            }
+        ]
+        with _patch_read_queries(_source_row(), reference_rows=refs):
+            with pytest.raises(RDLensSourceReadError, match="invalid reference"):
+                await read_rdlens_source(RDLensSourceRead(**QUERY))
+
+    @pytest.mark.asyncio
+    async def test_numeric_source_id_row_is_read_error(self):
+        """A source row with numeric id content is a 500, never echoed."""
+        row = _source_row({"id": RecordID("source", 456)})
+        with _patch_read_queries(row):
+            with pytest.raises(RDLensSourceReadError, match="unexpected id"):
+                await read_rdlens_source(RDLensSourceRead(**QUERY))
+
+    @pytest.mark.asyncio
+    async def test_numeric_notebook_endpoint_row_is_read_error(self):
+        """A notebook row with numeric id content is a 500 (additional
+        notebook endpoints share the same rule)."""
+        row = _source_row()
+        refs = [
+            {
+                "id": RecordID.parse("reference:rdlens_x"),
+                "in": RecordID.parse(SOURCE_ID),
+                "out": RecordID("notebook", 789),
+            }
+        ]
+        with _patch_read_queries(row, reference_rows=refs):
+            with pytest.raises(RDLensSourceReadError, match="invalid reference"):
+                await read_rdlens_source(RDLensSourceRead(**QUERY))
+
+    @pytest.mark.asyncio
     async def test_echo_reference_endpoints_identity_preserving(self):
         """Reference field echoes go through the same serializer."""
         refs = [

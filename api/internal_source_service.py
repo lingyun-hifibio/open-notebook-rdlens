@@ -187,8 +187,17 @@ def _parse_read_record_id(value: str, expected_table: str, kind: str) -> RecordI
 
 
 def _record_id_or_none(value: Any) -> Optional[RecordID]:
-    """Return value if it is a RecordID, else None (shape validation helper)."""
-    return value if isinstance(value, RecordID) else None
+    """Return value if it is a string-id RecordID, else None (shape helper).
+
+    Non-string id content (numeric/bool record ids) is rejected: the GET's
+    string entry point cannot address such records (no string form parses
+    back to a numeric id - parse() always yields str content), so echoing
+    one would misidentify the relation. Such rows are unexpected record
+    shapes -> 500 via the read-error path.
+    """
+    if not isinstance(value, RecordID) or not isinstance(value.id, str):
+        return None
+    return value
 
 
 def _echo_record_id(record_id: RecordID) -> str:
@@ -201,6 +210,11 @@ def _echo_record_id(record_id: RecordID) -> str:
     finding). For such ids the SDK's canonical escaped form
     ``table:⟨⟨s\\⟩⟩`` is emitted instead, which round-trips through
     _parse_read_record_id.
+
+    Numeric id content never reaches this helper: the row validation
+    rejects non-string ids (they are unaddressable through the string
+    entry point), so every echoed id is a string id whose plain or escaped
+    form round-trips (Round 7 finding).
     """
     plain = f"{record_id.table_name}:{str(record_id.id)}"
     try:
