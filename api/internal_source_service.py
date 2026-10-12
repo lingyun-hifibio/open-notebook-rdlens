@@ -164,9 +164,15 @@ def _parse_read_record_id(value: str, expected_table: str, kind: str) -> RecordI
     could match a second record whose id content literally carries brackets
     (breaking ONLY's single-record contract, 500) and let a reference whose
     endpoints name that literal-bracket record satisfy the binding check
-    (Round 5 findings). Literal-bracket id content is not addressable via
-    the GET string form - such records cannot be created through this
-    adapter (PUT derives hex ids; notebook ids come from RDLens's store).
+    (Round 5 findings).
+
+    Literal-bracket id content remains addressable through the SDK's nested
+    form ``table:⟨⟨s\\⟩⟩``: the decode strips the outer wrapper and unescapes
+    the inner ``\\⟩`` back to the bracket content. Such records cannot be
+    created by this adapter's PUT (hex ids) but may exist via external
+    allocation, so the response echo serializes through ``_echo_record_id``
+    to keep a reused response id addressing the same record (Round 6
+    finding).
     """
     if ":" not in value:
         raise ValueError(f"{kind} must have the shape table:id (got {value!r})")
@@ -183,6 +189,28 @@ def _parse_read_record_id(value: str, expected_table: str, kind: str) -> RecordI
 def _record_id_or_none(value: Any) -> Optional[RecordID]:
     """Return value if it is a RecordID, else None (shape validation helper)."""
     return value if isinstance(value, RecordID) else None
+
+
+def _echo_record_id(record_id: RecordID) -> str:
+    """Serialize a RecordID so re-parsing it yields the SAME record.
+
+    The plain ``table:id`` form is only safe when the id survives the GET
+    parser unchanged: an id whose content contains brackets would echo as
+    ``table:⟨...⟩``, and the parser strips those brackets as wrapper - the
+    next request would silently address a DIFFERENT record (Round 6
+    finding). For such ids the SDK's canonical escaped form
+    ``table:⟨⟨s\\⟩⟩`` is emitted instead, which round-trips through
+    _parse_read_record_id.
+    """
+    plain = f"{record_id.table_name}:{str(record_id.id)}"
+    try:
+        reparsed = _parse_read_record_id(plain, record_id.table_name, "echo")
+    except ValueError:
+        reparsed = None
+    if reparsed == record_id:
+        return plain
+    inner = str(record_id.id).replace("⟩", "\\⟩")
+    return f"{record_id.table_name}:⟨{inner}⟩"
 
 
 async def read_rdlens_source(request: RDLensSourceRead) -> dict:
@@ -314,9 +342,9 @@ async def read_rdlens_source(request: RDLensSourceRead) -> dict:
             )
         references.append(
             {
-                "id": f"{ref_id.table_name}:{str(ref_id.id)}",
-                "in": f"{ref_in.table_name}:{str(ref_in.id)}",
-                "out": f"{ref_out.table_name}:{str(ref_out.id)}",
+                "id": _echo_record_id(ref_id),
+                "in": _echo_record_id(ref_in),
+                "out": _echo_record_id(ref_out),
             }
         )
         reference_outs.append(ref_out)
@@ -336,17 +364,15 @@ async def read_rdlens_source(request: RDLensSourceRead) -> dict:
             f"source {request.source_id} is not bound to notebook {request.notebook_id}"
         )
 
-    # Echo the record ids as the plain table:id form (the escaped ⟨...⟩
-    # wrapper is a serialization artifact, not identity content). The row-id
-    # checks above guarantee both values are non-None RecordIDs here.
+    # Echo record ids through the identity-preserving serializer: the plain
+    # form only when it re-parses to the same RecordID, else the SDK's
+    # escaped form (Round 6 finding - a naive plain echo let a reused
+    # response id silently address a different record). The row-id checks
+    # above guarantee both values are non-None RecordIDs here.
     assert source_id_value is not None and notebook_id_value is not None
     return {
-        "source_id": (
-            f"{source_id_value.table_name}:{str(source_id_value.id)}"
-        ),
-        "notebook_id": (
-            f"{notebook_id_value.table_name}:{str(notebook_id_value.id)}"
-        ),
+        "source_id": _echo_record_id(source_id_value),
+        "notebook_id": _echo_record_id(notebook_id_value),
         "rdlens_document_id": source.get("rdlens_document_id"),
         "rdlens_document_version": source.get("rdlens_document_version"),
         "rdlens_content_hash": source.get("rdlens_content_hash"),

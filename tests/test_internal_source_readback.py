@@ -368,6 +368,87 @@ class TestReadbackContract:
         assert result["rdlens_content_hash"] is None
 
     @pytest.mark.asyncio
+    async def test_echo_preserves_identity_for_literal_bracket_ids(self):
+        """GET on a literal-bracket record (addressed via the SDK's nested
+        form) echoes source_id in the SDK-escaped form, NOT the bare plain
+        form: a plain echo ``source:⟨s⟩`` re-parsed by the GET parser would
+        decode to the plain ``s`` record - a reused response id would
+        silently read a DIFFERENT Source (Round 6 finding)."""
+        from api.internal_source_service import _parse_read_record_id
+
+        literal = RecordID("source", "⟨s⟩")
+        nested_request = "source:⟨⟨s\\⟩⟩"  # SDK form of the literal id
+        row = _source_row({"id": literal})
+        refs = [
+            {
+                "id": RecordID("reference", "⟨r⟩"),
+                "in": literal,
+                "out": RecordID.parse(QUERY["notebook_id"]),
+            }
+        ]
+        with _patch_read_queries(row, reference_rows=refs):
+            result = await read_rdlens_source(
+                RDLensSourceRead(
+                    source_id=nested_request, notebook_id=QUERY["notebook_id"]
+                )
+            )
+        # Echoed id must re-parse to the SAME RecordID.
+        echoed = result["source_id"]
+        assert echoed != "source:⟨s⟩"  # the identity-switching form
+        assert _parse_read_record_id(echoed, "source", "source_id") == literal
+        # And it must be the SDK's canonical escaped form.
+        assert echoed == "source:⟨⟨s\\⟩⟩"
+
+    @pytest.mark.asyncio
+    async def test_echo_uses_plain_form_for_normal_ids(self):
+        """Ids without bracket content keep the plain echo form."""
+        result_id = "source:whatever"
+        row = _source_row({"id": RecordID.parse(result_id)})
+        refs = [
+            {
+                "id": RecordID.parse("reference:rdlens_x"),
+                "in": RecordID.parse(result_id),
+                "out": RecordID.parse(QUERY["notebook_id"]),
+            }
+        ]
+        with _patch_read_queries(row, reference_rows=refs):
+            result = await read_rdlens_source(
+                RDLensSourceRead(
+                    source_id=result_id, notebook_id=QUERY["notebook_id"]
+                )
+            )
+        assert result["source_id"] == result_id
+
+    @pytest.mark.asyncio
+    async def test_echo_reference_endpoints_identity_preserving(self):
+        """Reference field echoes go through the same serializer."""
+        refs = [
+            {
+                "id": RecordID("reference", "⟨r⟩"),
+                "in": RecordID("source", "⟨s⟩"),
+                "out": RecordID("notebook", "⟨n⟩"),
+            }
+        ]
+        with _patch_read_queries(
+            _source_row({"id": RecordID("source", "⟨s⟩")}),
+            notebook_rows={"id": RecordID("notebook", "⟨n⟩")},
+            reference_rows=refs,
+        ) as conn:
+            result = await read_rdlens_source(
+                RDLensSourceRead(
+                    source_id="source:⟨⟨s\\⟩⟩", notebook_id="notebook:⟨⟨n\\⟩⟩"
+                )
+            )
+        ref = result["references"][0]
+        assert ref["id"] == "reference:⟨⟨r\\⟩⟩"
+        assert ref["in"] == "source:⟨⟨s\\⟩⟩"
+        assert ref["out"] == "notebook:⟨⟨n\\⟩⟩"
+        assert result["notebook_id"] == "notebook:⟨⟨n\\⟩⟩"
+        assert conn.query.await_args_list[0].args[1]["record_id"] == RecordID(
+            "source", "⟨s⟩"
+        )
+
+    @pytest.mark.asyncio
     async def test_all_references_returned_sorted_by_id(self):
         refs = [
             {
