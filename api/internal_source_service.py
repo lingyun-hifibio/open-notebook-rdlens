@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-from typing import Any, Dict, List, cast
+from typing import Any, Dict, List, Optional, cast
 
 from surrealdb import RecordID
 
@@ -112,13 +112,37 @@ class RDLensSourceReadError(Exception):
     """
 
 
-_READBACK_QUERY = (
-    "RETURN {"
-    "source: (SELECT * FROM ONLY source WHERE id = $source_id),"
-    "notebook: (SELECT * FROM ONLY notebook WHERE id = $notebook_id),"
-    "references: (SELECT id, in, out FROM reference WHERE in = $source_id ORDER BY id)"
-    "};"
+_READBACK_SOURCE_QUERY = "SELECT * FROM ONLY source WHERE id = $source_id;"
+_READBACK_NOTEBOOK_QUERY = "SELECT * FROM ONLY notebook WHERE id = $notebook_id;"
+_READBACK_REFERENCES_QUERY = (
+    "SELECT id, in, out FROM reference WHERE in = $source_id ORDER BY id;"
 )
+
+_IDENTITY_FIELDS = (
+    "rdlens_document_id",
+    "rdlens_document_version",
+    "rdlens_content_hash",
+)
+
+
+def _parse_read_record_id(value: str, expected_table: str, kind: str) -> RecordID:
+    """Parse and table-check a GET record id before any query runs.
+
+    RecordID.parse raises ValueError for ids without the ``table:id`` shape -
+    the router maps that to 400. The table check rejects cross-table ids the
+    parser would otherwise accept (e.g. notebook:... passed as source_id).
+    """
+    record_id = RecordID.parse(value)
+    if record_id.table_name != expected_table:
+        raise ValueError(
+            f"{kind} must be a record of table {expected_table!r} (got {value!r})"
+        )
+    return record_id
+
+
+def _record_id_or_none(value: Any) -> Optional[RecordID]:
+    """Return value if it is a RecordID, else None (shape validation helper)."""
+    return value if isinstance(value, RecordID) else None
 
 
 async def read_rdlens_source(request: RDLensSourceRead) -> dict:
@@ -135,41 +159,31 @@ async def read_rdlens_source(request: RDLensSourceRead) -> dict:
         db_connection,
     )
 
-    source_id = stable_rdlens_source_id(
-        request.notebook_id, request.document_id, request.document_version,
+    # Validate both incoming ids directly - the GET addresses the Source by
+    # its actual record id; it is never re-derived from a document triple.
+    source_record_id = _parse_read_record_id(
+        request.source_id, "source", "source_id"
     )
-    # RecordID objects, not strings: string binding silently fails to match
-    # against record ids in SurrealQL WHERE clauses. RecordID.parse raises
-    # ValueError for ids without the table:id shape - the router maps that
-    # to 400 before any query runs.
-    params = {
-        "source_id": RecordID.parse(source_id),
-        "notebook_id": RecordID.parse(request.notebook_id),
-    }
-    if params["source_id"].table_name != "source" or params["notebook_id"].table_name != "notebook":
-        raise ValueError(
-            "notebook_id must be a record of table 'notebook' "
-            f"(got {request.notebook_id!r})"
-        )
+    notebook_record_id = _parse_read_record_id(
+        request.notebook_id, "notebook", "notebook_id"
+    )
 
     try:
         async with db_connection(
             operation_budget_seconds=INTERNAL_GET_OPERATION_BUDGET_SECONDS
         ) as connection:
-            source_rows = await repo_query(
-                "SELECT * FROM ONLY source WHERE id = $source_id;",
-                {"source_id": params["source_id"]},
-                connection=connection,
+            # repo_query routes through parse_record_ids(), which stringifies
+            # RecordIDs into the escaped ⟨...⟩ form; binding comparison needs
+            # the actual RecordID objects, so the readback queries bypass it
+            # and run on the shared budgeted connection directly.
+            source_rows = await connection.query(
+                _READBACK_SOURCE_QUERY, {"source_id": source_record_id}
             )
-            notebook_rows = await repo_query(
-                "SELECT * FROM ONLY notebook WHERE id = $notebook_id;",
-                {"notebook_id": params["notebook_id"]},
-                connection=connection,
+            notebook_rows = await connection.query(
+                _READBACK_NOTEBOOK_QUERY, {"notebook_id": notebook_record_id}
             )
-            reference_rows = await repo_query(
-                "SELECT id, in, out FROM reference WHERE in = $source_id ORDER BY id;",
-                {"source_id": params["source_id"]},
-                connection=connection,
+            reference_rows = await connection.query(
+                _READBACK_REFERENCES_QUERY, {"source_id": source_record_id}
             )
     except asyncio.TimeoutError as e:
         raise RDLensSourceReadError(
@@ -197,30 +211,84 @@ async def read_rdlens_source(request: RDLensSourceRead) -> dict:
         # Source or notebook missing (or both). No binding can exist in
         # either case; this is the GET's 404, not a 500.
         raise RDLensSourceNotFoundError(
-            f"source {source_id} or notebook {request.notebook_id} not found"
+            f"source {request.source_id} or notebook {request.notebook_id} not found"
         )
 
+    # Row-shape validation BEFORE any absence judgment: an id that is not the
+    # expected table's RecordID, a reference row missing any of id/in/out, or
+    # a non-string identity field are database inconsistencies -> 500, never
+    # a silent pass-through or a wrong 404.
+    source = cast(Dict[str, Any], source_rows)
+    source_id_value = _record_id_or_none(source.get("id"))
+    if (
+        source_id_value is None
+        or source_id_value.table_name != "source"
+        or source_id_value != source_record_id
+    ):
+        raise RDLensSourceReadError(
+            "source readback returned a row with unexpected id"
+        )
+    notebook_id_value = _record_id_or_none(notebook_rows.get("id"))
+    if (
+        notebook_id_value is None
+        or notebook_id_value.table_name != "notebook"
+        or notebook_id_value != notebook_record_id
+    ):
+        raise RDLensSourceReadError(
+            "source readback returned a notebook row with unexpected id"
+        )
+
+    for field in _IDENTITY_FIELDS:
+        value = source.get(field)
+        if value is not None and not isinstance(value, str):
+            raise RDLensSourceReadError(
+                f"source readback returned a non-string {field}: {value!r}"
+            )
+
     references: List[dict] = []
+    reference_outs: List[RecordID] = []
     for row in reference_rows:
-        if not isinstance(row, dict) or "id" not in row or "out" not in row:
+        if not isinstance(row, dict):
+            raise RDLensSourceReadError(
+                "source readback returned an invalid reference row shape"
+            )
+        ref_id = _record_id_or_none(row.get("id"))
+        ref_in = _record_id_or_none(row.get("in"))
+        ref_out = _record_id_or_none(row.get("out"))
+        if (
+            ref_id is None
+            or ref_in is None
+            or ref_out is None
+            or ref_id.table_name != "reference"
+            or ref_in.table_name != "source"
+            or ref_out.table_name != "notebook"
+            # The query filtered on in = $source_id; a row naming any other
+            # source is an invalid result, not a binding.
+            or ref_in != source_record_id
+        ):
             raise RDLensSourceReadError(
                 "source readback returned an invalid reference row shape"
             )
         references.append(
-            {"id": str(row["id"]), "in": str(row.get("in")), "out": str(row["out"])}
+            {
+                "id": f"{ref_id.table_name}:{str(ref_id.id)}",
+                "in": f"{ref_in.table_name}:{str(ref_in.id)}",
+                "out": f"{ref_out.table_name}:{str(ref_out.id)}",
+            }
         )
+        reference_outs.append(ref_out)
 
-    bound = any(ref["out"] == request.notebook_id for ref in references)
-    if not bound:
+    # Bind on RecordID equality (canonical table:id strings): str() on a
+    # hyphenated id yields the escaped ⟨...⟩ form, which never equals the
+    # plain request string.
+    if not any(ref_out == notebook_record_id for ref_out in reference_outs):
         raise RDLensSourceNotFoundError(
-            f"source {source_id} is not bound to notebook {request.notebook_id}"
+            f"source {request.source_id} is not bound to notebook {request.notebook_id}"
         )
 
-    # Narrowed to dict by the shape check above; ONLY SELECT unwraps to dict.
-    source = cast(Dict[str, Any], source_rows)
     return {
-        "source_id": source_id,
-        "notebook_id": request.notebook_id,
+        "source_id": f"{source_id_value.table_name}:{str(source_id_value.id)}",
+        "notebook_id": f"{notebook_id_value.table_name}:{str(notebook_id_value.id)}",
         "rdlens_document_id": source.get("rdlens_document_id"),
         "rdlens_document_version": source.get("rdlens_document_version"),
         "rdlens_content_hash": source.get("rdlens_content_hash"),

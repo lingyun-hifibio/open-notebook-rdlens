@@ -3,6 +3,7 @@ Async migration system for SurrealDB using the official Python client.
 Based on patterns from sblpy migration system.
 """
 
+import re
 from typing import Any, Dict, List, Optional
 
 from loguru import logger
@@ -19,6 +20,17 @@ class MigrationLedgerError(RuntimeError):
 
 class MigrationSchemaError(RuntimeError):
     """Schema state after a migration does not match the expected contract."""
+
+
+# Used by verify_migration_schema to reject pre-existing field definitions the
+# UP path must not silently coexist with: a VALUE clause would overwrite every
+# write of an identity field back to NONE, a DEFAULT would mask absent values,
+# and extra ASSERT/READONLY/PERMISSIONS-NONE constraints can reject the
+# adapter's writes. SurrealDB keeps IF NOT EXISTS on a conflicting definition,
+# so these must be detected before the ledger records the migration as done.
+_FORBIDDEN_DEFINITION_CLAUSES = re.compile(
+    r"\b(VALUE|DEFAULT|ASSERT|READONLY)\b", re.IGNORECASE
+)
 
 
 class AsyncMigration:
@@ -48,6 +60,14 @@ class AsyncMigration:
     async def run(self, bump: bool = True) -> None:
         """Run the migration."""
         try:
+            if self.version == 24 and bump:
+                # UP pre-check: an incompatible pre-existing definition (wrong
+                # type, VALUE/DEFAULT overwriting writes, extra ASSERT/
+                # READONLY) must stop the migration BEFORE any DDL and before
+                # the ledger records it as done - IF NOT EXISTS would silently
+                # keep such a definition and SurrealDB would then drop every
+                # identity value written through it.
+                await _assert_identity_definitions_compatible(require_present=False)
             async with db_connection() as connection:
                 if self.version is not None:
                     # Explicitly registered (new) migration: check EVERY
@@ -72,6 +92,9 @@ class AsyncMigration:
                 # concurrent executors cannot register different versions, and
                 # a lost confirmation can be retried idempotently (UPSERT).
                 if bump:
+                    # UP post-check: the full schema contract must hold before
+                    # the ledger records success.
+                    await verify_migration_schema(self.version)
                     await record_migration_version(self.version)
                 else:
                     await remove_migration_version(self.version)
@@ -160,6 +183,15 @@ class AsyncMigrationRunner:
             # record - never a re-read "latest" that another writer could
             # have moved.
             await migration.run(bump=False)
+            if target_version == 24:
+                # Completion contract for migration 24's DOWN: all three
+                # identity definitions gone, the target ledger record gone,
+                # and the ledger back at N-1. A ledger record for N-1 that is
+                # itself missing (e.g. record 23 deleted out-of-band) makes
+                # "latest is N-1" unfalsifiable here - get_latest_version
+                # would read the remaining rows; an EMPTY ledger while N-1
+                # was expected is reported by _validate_down_completion.
+                await _validate_down_completion(target_version)
             return
 
         current_version = await get_latest_version()
@@ -373,25 +405,39 @@ class AsyncMigrationManager:
 
 # Database version management functions
 async def get_latest_version() -> int:
-    """Get the latest version from the migrations table."""
-    try:
-        versions = await get_all_versions()
-        if not versions:
-            return 0
-        return max(version["version"] for version in versions)
-    except Exception:
-        # If migrations table doesn't exist, we're at version 0
+    """Get the latest version from the migrations table.
+
+    Only a SUCCESSFUL read of an empty (or missing) ledger yields 0 - a fresh
+    database. Read failures and malformed rows propagate: swallowing them
+    into a version-0 answer made a transient network/permission failure look
+    like an un-migrated database, and a recovered connection would replay
+    migration 1 on top of an already-migrated schema.
+    """
+    versions = await get_all_versions()
+    if not versions:
         return 0
+    return max(_validated_ledger_version(row) for row in versions)
 
 
 async def get_all_versions() -> List[dict]:
-    """Get all versions from the migrations table."""
-    try:
-        result = await repo_query("SELECT * FROM _sbl_migrations ORDER BY version;")
-        return result
-    except Exception:
-        # If table doesn't exist, return empty list
-        return []
+    """Get all versions from the migrations table.
+
+    A missing table reads back as [] (SurrealDB 2.6.5 returns no error for a
+    SELECT on a nonexistent table), which get_latest_version legitimately
+    treats as version 0 on a fresh database. Any query failure raises.
+    """
+    result = await repo_query("SELECT * FROM _sbl_migrations ORDER BY version;")
+    return result
+
+
+def _validated_ledger_version(row: dict) -> int:
+    """Extract and type-check one ledger row's version field."""
+    version = row.get("version") if isinstance(row, dict) else None
+    if not isinstance(version, int) or isinstance(version, bool):
+        raise MigrationLedgerError(
+            f"Malformed migration ledger row (version must be int): {row!r}"
+        )
+    return version
 
 
 async def bump_version() -> None:
@@ -463,22 +509,8 @@ def _raise_on_statement_errors(raw_response: Dict[str, Any], process: str) -> No
             )
 
 
-async def verify_migration_schema(version: int) -> None:
-    """Verify the schema contract a migration version is responsible for.
-
-    Called after the ledger records `version` (and on every startup at the
-    latest version): the migration's own SQL must have taken effect, not just
-    the bookkeeping. Currently covers migration 24's three RDLens identity
-    fields on `source`; a missing definition here means the write path would
-    silently drop values again (issue #66), so startup must fail loudly.
-    """
-    if version != 24:
-        return
-    expected = {
-        "rdlens_document_id": "option<string>",
-        "rdlens_document_version": "option<string>",
-        "rdlens_content_hash": "option<string>",
-    }
+async def _source_field_definitions() -> Dict[str, str]:
+    """Read the current field definition strings of table `source`."""
     try:
         info_rows = await repo_query("INFO FOR TABLE source;")
     except Exception as e:
@@ -491,17 +523,97 @@ async def verify_migration_schema(version: int) -> None:
         raise MigrationSchemaError(
             "Cannot verify migration 24 schema: unexpected INFO result shape"
         )
-    fields: Dict[str, str] = info_rows.get("fields") or {}
-    for name, field_type in expected.items():
+    return info_rows.get("fields") or {}
+
+
+async def _assert_identity_definitions_compatible(require_present: bool) -> None:
+    """Fail when an existing rdlens_* definition conflicts with the UP contract.
+
+    Runs BEFORE migration 24's DDL: IF NOT EXISTS keeps a pre-existing
+    definition, so an incompatible one (wrong type, or a VALUE/DEFAULT clause
+    that would overwrite or mask identity writes, or an extra ASSERT/READONLY
+    constraint) must abort the migration before the ledger records it. A
+    missing definition is fine here (the UP creates it); when
+    `require_present` is set the fields must already exist.
+    """
+    fields = await _source_field_definitions()
+    for name, field_type in _EXPECTED_IDENTITY_FIELDS.items():
         definition = fields.get(name)
         if definition is None:
-            raise MigrationSchemaError(
-                f"Migration 24 schema incomplete: field {name} is not defined "
-                f"on table source. Re-run the up migration."
-            )
+            if require_present:
+                raise MigrationSchemaError(
+                    f"Migration 24 schema incomplete: field {name} is not defined "
+                    f"on table source. Re-run the up migration."
+                )
+            continue
         if f"TYPE {field_type}" not in definition:
             raise MigrationSchemaError(
                 f"Migration 24 schema incompatible: field {name} is defined "
                 f"as {definition!r}, expected TYPE {field_type}."
             )
+        clause = _FORBIDDEN_DEFINITION_CLAUSES.search(definition)
+        if clause:
+            raise MigrationSchemaError(
+                f"Migration 24 schema incompatible: field {name} definition "
+                f"contains a conflicting {clause.group(0)} clause: {definition!r}. "
+                f"Remove or fix the existing definition before re-running."
+            )
+
+
+async def _validate_down_completion(target_version: int) -> None:
+    """Triple-verify migration 24's DOWN actually completed (M5).
+
+    Checks all three completion conditions - the three identity definitions
+    absent, the target ledger record absent, and the ledger's latest version
+    at N-1 - because the DDL and the ledger delete are two separate commits:
+    a partially-applied DOWN must fail loudly, not report success while a
+    definition (or the record) survived.
+    """
+    fields = await _source_field_definitions()
+    surviving = [name for name in _EXPECTED_IDENTITY_FIELDS if name in fields]
+    if surviving:
+        raise MigrationSchemaError(
+            f"Migration {target_version} rollback incomplete: field(s) "
+            f"{', '.join(surviving)} still defined on table source."
+        )
+    versions = await get_all_versions()
+    versions_by_number = {
+        _validated_ledger_version(row): row for row in versions if isinstance(row, dict)
+    }
+    if target_version in versions_by_number:
+        raise MigrationLedgerError(
+            f"Migration {target_version} rollback incomplete: ledger record "
+            f"still present."
+        )
+    expected_latest = target_version - 1
+    latest = max(versions_by_number) if versions_by_number else 0
+    if latest != expected_latest:
+        raise MigrationLedgerError(
+            f"Migration {target_version} rollback incomplete: ledger latest "
+            f"version is {latest}, expected {expected_latest}."
+        )
+
+
+_EXPECTED_IDENTITY_FIELDS = {
+    "rdlens_document_id": "option<string>",
+    "rdlens_document_version": "option<string>",
+    "rdlens_content_hash": "option<string>",
+}
+
+
+async def verify_migration_schema(version: int) -> None:
+    """Verify the schema contract a migration version is responsible for.
+
+    Called after the ledger records `version` (and on every startup at the
+    latest version): the migration's own SQL must have taken effect, not just
+    the bookkeeping. Currently covers migration 24's three RDLens identity
+    fields on `source`; a missing definition here means the write path would
+    silently drop values again (issue #66), so startup must fail loudly.
+    A pre-existing definition with conflicting VALUE/DEFAULT/ASSERT/READONLY
+    clauses also fails: SurrealDB would keep it under IF NOT EXISTS and drop
+    or reject the adapter's identity writes.
+    """
+    if version != 24:
+        return
+    await _assert_identity_definitions_compatible(require_present=True)
     logger.debug("Migration 24 schema verified: rdlens_* identity fields present")

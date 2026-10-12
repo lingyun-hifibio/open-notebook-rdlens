@@ -398,16 +398,16 @@ class RDLensSourceRead(BaseModel):
     """Write-then-read-back verification query for the private adapter.
 
     RDLens calls this after a PUT to prove the identity fields actually
-    persisted (a PUT response echo cannot - issue #66). The identity is the
-    same triple the PUT used: the deterministic source id is derived from
-    it, never supplied by the caller.
+    persisted (a PUT response echo cannot - issue #66). The GET addresses
+    the Source directly by its record id plus the notebook whose binding
+    must be present; the id is never re-derived from a document triple, so
+    externally-assigned sources read back too.
     """
 
     model_config = ConfigDict(extra="forbid")
 
+    source_id: str = Field(..., min_length=1, max_length=256)
     notebook_id: str = Field(..., min_length=1, max_length=256)
-    document_id: str = Field(..., min_length=1, max_length=256)
-    document_version: str = Field(..., min_length=1, max_length=64)
 
 
 class SourceUpdate(BaseModel):

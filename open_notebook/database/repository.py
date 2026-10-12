@@ -89,24 +89,30 @@ def ensure_record_id(value: Union[str, RecordID]) -> RecordID:
     return RecordID.parse(value)
 
 
-def _external_cancel_pending() -> bool:
-    """Whether the running task has been asked to cancel from outside.
+def _cancel_count() -> int:
+    """The running task's pending-cancellation count (0 outside a task)."""
+    task = asyncio.current_task()
+    return task.cancelling() if task is not None else 0
+
+
+def _new_cancel_since(baseline: int) -> bool:
+    """Whether a NEW external cancellation arrived after `baseline` was taken.
 
     The SDK's close() awaits its receive task and can absorb a cancellation
     delivered while the caller was inside the connection (a control probe
-    showed query() completing normally with a pending cancel). Comparing
-    task.cancel() counts before/after lets us re-raise externally-delivered
-    cancels instead of reporting success, while a close() that finishes
-    cleanly on its own is not misread as a cancellation.
+    showed query() completing normally with a pending cancel). Comparing the
+    task's cancel count against the count snapshotted at db_connection entry
+    detects only cancellations delivered DURING the connection's lifetime: a
+    close() that finishes cleanly is not misread as a cancellation, and a
+    stale count inherited from the caller before entry is ignored. Reading
+    the count never mutates cancel state (unlike an uncancel()-based probe,
+    which would consume one pending cancellation and swallow a second one).
     """
-    task = asyncio.current_task()
-    if task is None:
-        return False
-    return task.cancelling() > 0 and task.uncancel() == 0
+    return _cancel_count() > baseline
 
 
 async def _close_connection(
-    db: Any, prior_error: Optional[BaseException]
+    db: Any, prior_error: Optional[BaseException], cancel_baseline: int
 ) -> None:
     """Close the SDK connection without masking an operation error.
 
@@ -126,7 +132,7 @@ async def _close_connection(
             )
         else:
             logger.warning(f"Connection close failed: {e}")
-    if _external_cancel_pending():
+    if _new_cancel_since(cancel_baseline):
         raise asyncio.CancelledError()
 
 
@@ -144,6 +150,10 @@ async def db_connection(
     """
     db = AsyncSurreal(get_database_url())
     signin_error: Optional[BaseException] = None
+    # Snapshot the caller's pending-cancel count at entry: only cancellations
+    # delivered DURING the connection's lifetime are re-raised by the cleanup
+    # path (a stale count from before entry must not be misattributed here).
+    cancel_baseline = _cancel_count()
     try:
         if operation_budget_seconds is not None:
             async with asyncio.timeout(operation_budget_seconds):
@@ -174,7 +184,7 @@ async def db_connection(
     finally:
         # Outside any budget context: cleanup is never cut short by the
         # operation timeout itself.
-        await _close_connection(db, signin_error)
+        await _close_connection(db, signin_error, cancel_baseline)
 
 
 async def repo_query(

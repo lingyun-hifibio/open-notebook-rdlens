@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 
 from api.internal_source_service import (
     RDLensSourceNotFoundError,
@@ -33,17 +34,15 @@ async def delete_source(request: RDLensSourceDelete):
 async def read_source(request: Request):
     """Read back persisted Source identity for write-then-read verification.
 
-    Query parameters only (no body on GET): notebook_id + document_id +
-    document_version identify the deterministic source. 422 = missing
-    parameters, 400 = syntactically invalid record id (no ``table:id``
-    shape or wrong table prefix), 404 (detail.code=source_not_found) =
-    source/notebook/binding absent, 500 = database failure, timeout, or
-    invalid result shape.
+    Query parameters only (no body on GET): source_id + notebook_id address
+    the Source record directly. 422 = missing/invalid parameters (including
+    constraint violations such as an overlong id), 400 = syntactically
+    invalid record id (no ``table:id`` shape or wrong table prefix), 404
+    (detail.code=source_not_found) = source/notebook/binding absent, 500 =
+    database failure, timeout, or invalid result shape.
     """
     missing = [
-        name
-        for name in ("notebook_id", "document_id", "document_version")
-        if not request.query_params.get(name)
+        name for name in ("source_id", "notebook_id") if not request.query_params.get(name)
     ]
     if missing:
         return JSONResponse(
@@ -55,11 +54,23 @@ async def read_source(request: Request):
                 }
             },
         )
-    parsed = RDLensSourceRead(
-        notebook_id=request.query_params.get("notebook_id", ""),
-        document_id=request.query_params.get("document_id", ""),
-        document_version=request.query_params.get("document_version", ""),
-    )
+    # Pydantic constraint violations (e.g. an overlong id) raise before the
+    # service runs; without this handler they would surface as a 500.
+    try:
+        parsed = RDLensSourceRead(
+            source_id=request.query_params.get("source_id", ""),
+            notebook_id=request.query_params.get("notebook_id", ""),
+        )
+    except ValidationError as e:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "detail": {
+                    "code": "invalid_parameter",
+                    "message": "; ".join(err["msg"] for err in e.errors()),
+                }
+            },
+        )
     # RecordID syntax + table-prefix validation happens before any query in
     # the service; ValueError from RecordID.parse is surfaced as 400.
     try:
