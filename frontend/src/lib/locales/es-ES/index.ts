@@ -1257,6 +1257,9 @@ export const esES = {
       transformationCreated: "Plantilla creada",
     },
     sources: {
+      askOnlyThis: 'Ask this source only',
+      stopAskOnly: 'Stop limiting to this source',
+      addMaterials: 'Add materials',
       statusPending: "Sincronizando",
       statusReady: "Listo",
       statusStale: "Actualizando",

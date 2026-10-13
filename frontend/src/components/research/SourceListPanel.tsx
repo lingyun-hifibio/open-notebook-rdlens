@@ -10,6 +10,7 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
 import { useResearchSources } from '@/lib/hooks/use-research'
 import { useResearchScope } from '@/lib/research/scope'
+import { useRequestIngest } from '@/lib/embedded/shell'
 import { formatResearchTimestamp } from '@/lib/research/format'
 import type { ResearchSource, ResearchSourceStatus } from '@/lib/types/research'
 
@@ -68,6 +69,10 @@ export function SourceListPanel({
     toggleSource,
   } = useResearchScope()
   const selectedCount = selectedSourceIds.length + selectedNoteIds.length
+  // PR5（R1-H8/D1）：工作台内「添加资料」入口——经父子通道请求宿主打开
+  // 入库对话框（D-06：无载荷；project_id 由宿主路由决定）。未嵌入/无宿主
+  // 响应时按钮隐藏（context 为 null）。
+  const requestIngest = useRequestIngest()
 
   useEffect(() => {
     setVisibleCount(DISPLAY_PAGE_SIZE)
@@ -88,13 +93,27 @@ export function SourceListPanel({
   }
   const items = data?.items ?? []
   if (items.length === 0) {
-    return <p className="text-sm text-muted-foreground">{t('research.sources.empty')}</p>
+    return (
+      <div className="space-y-2">
+        <p className="text-sm text-muted-foreground">{t('research.sources.empty')}</p>
+        {requestIngest !== null && (
+          <Button size="sm" variant="outline" className="w-full" data-testid="source-add-materials-empty" onClick={requestIngest}>
+            {t('research.sources.addMaterials')}
+          </Button>
+        )}
+      </div>
+    )
   }
 
   const visibleItems = items.slice(0, visibleCount)
 
   return (
     <div className="min-w-0 space-y-2">
+      {requestIngest !== null && (
+        <Button size="sm" variant="outline" className="w-full" data-testid="source-add-materials" onClick={requestIngest}>
+          {t('research.sources.addMaterials')}
+        </Button>
+      )}
       <ul className="divide-y divide-border" data-testid="source-list-rows">
         {visibleItems.map((item) => {
           const config = STATUS_CONFIG[item.status]

@@ -1257,6 +1257,9 @@ export const bnIN = {
       transformationCreated: "টেমপ্লেট তৈরি হয়েছে",
     },
     sources: {
+      askOnlyThis: 'Ask this source only',
+      stopAskOnly: 'Stop limiting to this source',
+      addMaterials: 'Add materials',
       statusPending: "সিংক্রোনাইজ হচ্ছে",
       statusReady: "প্রস্তুত",
       statusStale: "হালনাগাদ হচ্ছে",

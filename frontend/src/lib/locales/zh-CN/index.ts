@@ -1255,6 +1255,9 @@ export const zhCN = {
       transformationCreated: "模板已创建",
     },
     sources: {
+      askOnlyThis: 'Ask this source only',
+      stopAskOnly: 'Stop limiting to this source',
+      addMaterials: 'Add materials',
       statusPending: "同步中",
       statusReady: "就绪",
       statusStale: "内容更新中",

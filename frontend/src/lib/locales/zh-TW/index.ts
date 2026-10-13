@@ -1256,6 +1256,9 @@ export const zhTW = {
       transformationCreated: "範本已建立",
     },
     sources: {
+      askOnlyThis: 'Ask this source only',
+      stopAskOnly: 'Stop limiting to this source',
+      addMaterials: 'Add materials',
       statusPending: "同步中",
       statusReady: "就緒",
       statusStale: "內容更新中",

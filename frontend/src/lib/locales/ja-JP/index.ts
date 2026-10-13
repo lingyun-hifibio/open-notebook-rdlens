@@ -1256,6 +1256,9 @@ export const jaJP = {
       transformationCreated: "テンプレートを作成しました",
     },
     sources: {
+      askOnlyThis: 'Ask this source only',
+      stopAskOnly: 'Stop limiting to this source',
+      addMaterials: 'Add materials',
       statusPending: "同期中",
       statusReady: "準備完了",
       statusStale: "更新中",

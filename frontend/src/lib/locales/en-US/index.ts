@@ -1272,6 +1272,9 @@ export const enUS = {
       transformationCreated: "Template created",
     },
     sources: {
+      askOnlyThis: "Ask this source only",
+      stopAskOnly: "Stop limiting to this source",
+      addMaterials: "Add materials",
       statusPending: "Syncing",
       statusReady: "Ready",
       statusStale: "Updating",

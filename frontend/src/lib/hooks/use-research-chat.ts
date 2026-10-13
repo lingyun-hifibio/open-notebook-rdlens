@@ -27,6 +27,7 @@ import {
 } from '@/lib/research/api'
 import { applySseEvent, createSseState, type ResearchSseState } from '@/lib/research/sse'
 import { buildSourceScope } from '@/lib/research/c05-request'
+import { classifyC05Error } from '@/lib/research/c05-error-actions'
 import {
   parseGenerationIdFromMessageId,
   selectBoundAssistantRow,
@@ -305,6 +306,8 @@ export interface CoverageSubmitRequest {
   source_ids: string[]
   note_ids: string[]
   model_id: string
+  /** R1-H7：派发时生效范围模式（C-05 分支构造 source_scope 用） */
+  scopeMode?: 'all' | 'selected' | 'single'
 }
 
 interface ActiveTurn {
@@ -545,6 +548,9 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
     if (!storedId) return
     restoreStateRef.current = { projectId, done: false }
     sessionIdRef.current = storedId
+    // R1-H5：恢复路径立即核验会话身份——异会话的持久 pin 在**首请求前**
+    // 清除（新对话默认 all，不继承限定）；同会话 pin 得到绑定。
+    bindSessionRef.current?.(storedId)
     let cancelled = false
 
     void (async () => {
@@ -642,6 +648,7 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
               noteIds: active.scopeSnapshot.noteIds,
               singleSourceId: active.scopeSnapshot.singleSourceId,
             }),
+
             note_ids: active.noteIds,
           }
         : {
@@ -711,6 +718,46 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
       onHttpError: (status, body) => {
         const current = activeRef.current
         if (!current || current.turnId !== turnId) return
+        // R1-B2 修复：C-05 契约分支统一消费动作表（classifyC05Error），
+        // 恢复材料（activeRef + 原键）按 acceptance/recovery_action 处置；
+        // 旧 v1 分支保持既有 409 语义不变。
+        if (current.contract === 'c05-v1') {
+          // 构造 axios 形状错误以复用分类器（detail 从 body 提取）
+          const classified = classifyC05Error({ response: { status, data: body } })
+          if (status === 409 && classified.action === 'read_original_result') {
+            // generation_in_progress：同键自愈路径。R1-B2：与网络重连
+            // **共用 attempt 计数**（≤3），不再无条件重连。
+            if (current.attempt >= MAX_STREAM_ATTEMPTS) {
+              patchAssistant(turnId, {
+                status: 'error',
+                errorCode: 'conflict_busy',
+                errorMessage: httpErrorMessage(status, body),
+              })
+              clearActiveIfCurrent(turnId)
+              return
+            }
+            scheduleReconnect()
+            return
+          }
+          if (classified.acceptance === 'unknown' && classified.action !== 'stop_and_confirm') {
+            // acceptance_outcome_unknown：**保留 activeRef 与原键材料**，
+            // 呈现待确认（不写成失败、不产生新键）
+            patchAssistant(turnId, {
+              status: 'reconnecting',
+              errorCode: classified.code,
+              errorMessage: httpErrorMessage(status, body),
+            })
+            return
+          }
+          // 确定性结论（字符串冲突 / 422 / 终态）→ 终态错误呈现并清 activeRef
+          patchAssistant(turnId, {
+            status: 'error',
+            errorCode: classified.code ?? 'conflict_busy',
+            errorMessage: httpErrorMessage(status, body),
+          })
+          clearActiveIfCurrent(turnId)
+          return
+        }
         if (status === 409) {
           // 409 语义按 body 区分（评审 R-A/R-B：全局 /chat 的 409 detail
           // 形态已核实——纯字符串 = begin_turn 会话占用；对象带
@@ -945,6 +992,7 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
       return
     }
     const idempotencyKey = newIdempotencyKey()
+    const snapshot = deriveScopeSnapshot(selection)
     submit(
       {
         query: trimmed,
@@ -952,6 +1000,7 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
         // Notes 不支持 Coverage（§6.1）：防御性恒空，即使调用方漏检
         note_ids: [],
         model_id: modelId,
+        scopeMode: snapshot.mode,
       },
       idempotencyKey,
     )

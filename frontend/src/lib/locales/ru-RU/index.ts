@@ -1256,6 +1256,9 @@ export const ruRU = {
       transformationCreated: "Шаблон создан",
     },
     sources: {
+      askOnlyThis: 'Ask this source only',
+      stopAskOnly: 'Stop limiting to this source',
+      addMaterials: 'Add materials',
       statusPending: "Синхронизация",
       statusReady: "Готово",
       statusStale: "Обновление",

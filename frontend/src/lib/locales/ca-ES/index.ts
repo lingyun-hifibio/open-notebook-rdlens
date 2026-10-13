@@ -1256,6 +1256,9 @@ export const caES = {
       transformationCreated: "Plantilla creada",
     },
     sources: {
+      askOnlyThis: 'Ask this source only',
+      stopAskOnly: 'Stop limiting to this source',
+      addMaterials: 'Add materials',
       statusPending: "Sincronitzant",
       statusReady: "A punt",
       statusStale: "Actualitzant",

@@ -1256,6 +1256,9 @@ export const plPL = {
       transformationCreated: "Szablon utworzony",
     },
     sources: {
+      askOnlyThis: 'Ask this source only',
+      stopAskOnly: 'Stop limiting to this source',
+      addMaterials: 'Add materials',
       statusPending: "Synchronizacja",
       statusReady: "Gotowe",
       statusStale: "Aktualizacja",

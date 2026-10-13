@@ -304,21 +304,36 @@ export function ResearchWorkspace({
   // COV-09：all_selected 受理后登记进 Jobs 控制器（localStorage + 轮询）
   const submitCoverage = useCallback(
     async (request: CoverageSubmitRequest, idempotencyKey: string): Promise<{ job_id: string }> => {
+      // R1-H7：Coverage 的 C-05 分支——能力就绪才走 c05-v1 + source_scope；
+      // 旧契约保持既有形状（coverage_all_selected 能力仍是独立门禁）。
+      const useC05 = c05.dispatchReady('coverage')
       const accepted = await createCoverageChat(
         projectId ?? '',
-        {
-          query: request.query,
-          source_ids: request.source_ids,
-          note_ids: request.note_ids,
-          model_id: request.model_id,
-          synthesis_scope: 'all_selected',
-        },
+        useC05
+          ? {
+              query: request.query,
+              note_ids: [],
+              model_id: request.model_id,
+              synthesis_scope: 'all_selected',
+              source_scope: buildC05GeneratedRequest(
+                { mode: request.scopeMode ?? 'selected', sourceIds: request.source_ids, noteIds: [] },
+                { query: request.query, model_id: request.model_id },
+              ).source_scope,
+            }
+          : {
+              query: request.query,
+              source_ids: request.source_ids,
+              note_ids: request.note_ids,
+              model_id: request.model_id,
+              synthesis_scope: 'all_selected',
+            },
         idempotencyKey,
+        useC05 ? { contract: 'c05-v1' } : {},
       )
       registerCoverageJob(accepted.job_id)
       return { job_id: accepted.job_id }
     },
-    [projectId, registerCoverageJob],
+    [c05, projectId, registerCoverageJob],
   )
 
   const sendCoverageChat = useCallback(

@@ -28,6 +28,8 @@ export interface C05SubmitSignature {
   mode?: string
   responseLanguage?: string
   sessionId?: string | null
+  /** R1-H3：契约版本入签名——能力翻转不会让同签名的恢复降级 */
+  contract?: string
 }
 
 export function signatureOf(sub: C05SubmitSignature): string {
@@ -43,6 +45,7 @@ export function signatureOf(sub: C05SubmitSignature): string {
     sub.mode ?? null,
     sub.responseLanguage ?? null,
     sub.sessionId ?? null,
+    sub.contract ?? null,
   ])
 }
 
@@ -106,8 +109,12 @@ export function settleKey(
     if (detail.shape === 'object') {
       if (detail.acceptance === 'unknown') return { ...hold }
       if (detail.action === 'read_original_result') return { ...hold }
+      // R1-M9 修复：服务端明确 retry_same_key（临时不可用）→ **保留键**
+      //（首次时间与计数一并保留，总尝试预算不被清键绕过）
+      if (detail.action === 'retry_same_key') return { ...hold }
       if (detail.recognised && detail.acceptance === 'accepted') return { ...hold }
-      // 确定性拒绝/校验错误：服务端明确结论 → 清键
+      // 其余 not_accepted（show_validation/reselect/show_unavailable）：
+      // 服务端确定性结论 → 清键（新键=用户明确新意图）
       return { key: null, signature: null, firstSentAt: null, attempts: 0 }
     }
     // ③ 字符串/数组 detail（无机器码，如 409 "idempotency conflict"、
@@ -134,4 +141,18 @@ export function canRetryKey(hold: KeyHold, now: number): boolean {
   if (hold.key === null) return false
   if (hold.attempts >= MAX_ATTEMPTS) return false
   return !keyExpired(hold, now)
+}
+
+/**
+ * R1-B1 修复：耗尽/超龄判定——**恢复资格用尽 ≠ 允许换新键**。
+ * 返回 'fresh'（无在途材料，正常取新键）/ 'resumable'（可同键重试）/
+ * 'exhausted'（有在途材料但资格耗尽 → **停止 POST**、待确认，
+ * 绝不自动换键——§5.2「耗尽保留原键/材料，不因耗尽判定服务端失败」）。
+ */
+export type DispatchEligibility = 'fresh' | 'resumable' | 'exhausted'
+
+export function dispatchEligibility(hold: KeyHold, now: number): DispatchEligibility {
+  if (hold.key === null) return 'fresh'
+  // 有在途材料：资格由 canRetryKey 决定；耗尽即停止（不换键）
+  return canRetryKey(hold, now) ? 'resumable' : 'exhausted'
 }

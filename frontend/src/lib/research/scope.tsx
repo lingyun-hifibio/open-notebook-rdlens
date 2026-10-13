@@ -376,10 +376,17 @@ function ResearchScopeProviderForIdentity({
       return
     }
     if (pin.boundSessionId !== sessionId) {
-      // 会话切换 → 限定不带入新会话（D-04 硬约束）
+      // R1-H5：会话切换 → 限定不带入新会话（D-04 硬约束），并**恢复基础
+      // 范围**（新对话默认 all；不残留 selected 快照冒充继承）。
       updateSinglePin(null)
+      const current = scopeRef.current
+      if (current.mode !== pin.baseMode) {
+        updateScope(pin.baseMode === 'all'
+          ? ALL_SCOPE
+          : { mode: 'selected', sourceIds: current.sourceIds, noteIds: current.noteIds })
+      }
     }
-  }, [updateSinglePin])
+  }, [updateSinglePin, updateScope])
 
   const reconcileSelection = useCallback((
     selectableSourceIds?: readonly string[],
@@ -427,7 +434,10 @@ function ResearchScopeProviderForIdentity({
   const getSnapshot = useCallback((): ResearchScopeSnapshot => {
     const current = scopeRef.current
     const pin = singlePinRef.current
-    const single = pin !== null
+    // R1-H5：pin 生效门控——**已绑定会话**（boundSessionId 非空）才对派发
+    // 生效；恢复的 pin 在 bindSession 核验会话身份前按基础范围派发
+    //（避免"pin 属于会话 A、实际会话 B"的首请求错误携带限定）。
+    const single = pin !== null && pin.boundSessionId !== null
     return Object.freeze({
       mode: single ? 'single' : current.mode,
       sourceIds: Object.freeze([...current.sourceIds]),
@@ -436,7 +446,7 @@ function ResearchScopeProviderForIdentity({
     })
   }, [])
 
-  const effectiveMode: ResearchScopeMode = singlePin !== null ? 'single' : scope.mode
+  const effectiveMode: ResearchScopeMode = (singlePin !== null && singlePin.boundSessionId !== null) ? 'single' : scope.mode
 
   return (
     <ResearchScopeContext.Provider

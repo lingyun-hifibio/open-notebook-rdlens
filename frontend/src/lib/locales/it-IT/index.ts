@@ -1256,6 +1256,9 @@ export const itIT = {
       transformationCreated: "Modello creato",
     },
     sources: {
+      askOnlyThis: 'Ask this source only',
+      stopAskOnly: 'Stop limiting to this source',
+      addMaterials: 'Add materials',
       statusPending: "Sincronizzazione",
       statusReady: "Pronto",
       statusStale: "Aggiornamento",

@@ -1258,6 +1258,9 @@ export const deDE = {
       transformationCreated: "Vorlage erstellt",
     },
     sources: {
+      askOnlyThis: 'Ask this source only',
+      stopAskOnly: 'Stop limiting to this source',
+      addMaterials: 'Add materials',
       statusPending: "Wird synchronisiert",
       statusReady: "Bereit",
       statusStale: "Wird aktualisiert",

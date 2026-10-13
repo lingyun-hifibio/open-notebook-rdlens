@@ -607,20 +607,29 @@ export async function createCoverageChat(
   projectId: string,
   request: {
     query: string
-    source_ids: string[]
-    note_ids: string[]
+    /** 旧 v1：显式集合；C-05 分支禁用（改走 source_scope，且恒空 note_ids） */
+    source_ids?: string[]
+    note_ids?: string[]
     model_id: string
     session_id?: string
     synthesis_scope: 'all_selected'
+    /** PR5/R1-H7：C-05 分支载荷（仅 c05-v1 契约头携带） */
+    source_scope?: {
+      mode: 'all' | 'selected' | 'single'
+      source_ids: string[]
+      single_source_id: string | null
+    }
   },
   idempotencyKey: string,
+  options: { contract?: 'v1' | 'c05-v1' } = {},
 ): Promise<CoverageChatResponse> {
   const response = await apiClient.post<CoverageChatResponse>(
     researchPath(projectId, 'chat'),
     request,
     {
       headers: {
-        'X-Research-Contract': 'v1',
+        // R1-H7：契约头显式分支（能力就绪 → c05-v1；缺省 v1 不变）
+        'X-Research-Contract': options.contract ?? 'v1',
         'Idempotency-Key': idempotencyKey,
       },
     },

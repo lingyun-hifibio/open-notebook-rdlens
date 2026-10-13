@@ -24,7 +24,7 @@ import { extractScopeProjection } from '@/lib/research/c05-scope-projection'
 import { evaluatePreviewGate } from '@/lib/research/c05-preview-gate'
 import {
   acquireKey, countAttempt, newKeyHold, settleKey, signatureOf,
-  canRetryKey,
+  dispatchEligibility,
 } from '@/lib/research/c05-idempotency-key'
 import { monotonicNow } from '@/lib/research/c05-key-retention'
 import { extractResearchErrorCode, userErrorMessageKey } from '@/lib/research/errors'
@@ -105,6 +105,9 @@ export function ResearchSearchPanel({
   c05ReadyRef.current = c05.dispatchReady('search')
   // D-01：范围投影（存在才消费）
   const [scopeProjection, setScopeProjection] = useState<ReturnType<typeof extractScopeProjection>>({ kind: 'absent' })
+  // R1-M10：C-05 Preview budget（preview_supported=true 时由 C-05 preview
+  // 响应填充；当前恒 null = Preview 缺失 → 不阻断、显示"未经预览校验"）
+  const c05BudgetRef = useRef<Parameters<typeof evaluatePreviewGate>[0]['budget']>(null)
 
   const [query, setQuery] = useState('')
   const [result, setResult] = useState<ResearchSearchResponse | null>(null)
@@ -176,8 +179,8 @@ export function ResearchSearchPanel({
     // RWV2-40：inactive（隐藏/非主动作）时不发起 Context Preview——
     // 清除 debounce、清空临时 preview、不启动新请求；重新激活后再算。
     // 正式 Search 执行走 executeSearch（run 回调），不因隐藏而取消。
-    // PR5（D-07/C6）：C-05 就绪但 preview_supported=false → 不发旧 Preview
-    // （旧形状的 source_ids 语义与 all 不是同一范围；未检查不得冒充通过）。
+    // PR5（D-07/C6）：C-05 就绪时只走 C-05 Preview（preview_supported 才发，
+    // 由 fetchC05Preview 消费 budget）；不发旧 Preview（旧形状范围语义不同）。
     if (!active || !trimmed || confirmedModelId === null || c05ReadyRef.current) {
       setPreview(null)
       return
@@ -241,11 +244,10 @@ export function ResearchSearchPanel({
       setError(null)
       setResult(null)
       setBackground(null)
-      const c05 = c05ReadyRef.current
-      const useC05 = c05 && scopeSnapshot.mode !== 'selected'
-        ? true
-        : c05
       const now = monotonicNow()
+      const c05 = c05ReadyRef.current
+      // R1-H3 修复：契约版本入键签名——能力翻转后**同签名的恢复不会降级
+      // 成 v1**（签名不同 = 新键新意图，而非同键换契约）
       const signature = signatureOf({
         entry: 'search',
         query: trimmed,
@@ -257,12 +259,21 @@ export function ResearchSearchPanel({
         },
         modelId,
         contextLevel: level,
+        contract: c05 ? 'c05-v1' : 'v1',
       })
-      if (!canRetryKey(keyHoldRef.current, now)) {
-        keyHoldRef.current = newKeyHold()
+      // R1-B1 修复：耗尽/超龄 → **停止 POST**（保留原材料待确认），
+      // 绝不自动换键再执行（§5.2）
+      if (dispatchEligibility(keyHoldRef.current, now) === 'exhausted') {
+        setError({
+          code: 'key_retry_exhausted',
+          message: 'Recovery window for the previous attempt is exhausted; review the pending result before retrying.',
+        })
+        setLoading(false)
+        return
       }
       const acquired = acquireKey(keyHoldRef.current, now, newIdempotencyKey, signature)
       keyHoldRef.current = countAttempt(acquired.hold)
+      const useC05 = c05
       try {
         if (useC05) {
           // PR5（B3）：C-05 分支——source_scope 载荷 + c05-v1 头；
@@ -349,6 +360,23 @@ export function ResearchSearchPanel({
     // 确认后的新值（不变量 4），consent 弹窗摘要与最终请求同源（K5）。
     const scopeSnapshot = getSnapshot()
     const levelSnapshot = selectedLevel
+    // R1-M10：Preview 门禁接入——有 C-05 budget 数据时按 evaluatePreviewGate
+    // 判定（exceeded/unavailable 阻断；非必需 not_checked 放行并标注）；
+    // 无数据（preview_supported=false）→ 按 D-12 放行 + "未经预览校验"提示。
+    const gate = evaluatePreviewGate({
+      executionReady: true,
+      scopeValid: true,
+      budget: c05BudgetRef.current,
+    })
+    if (!gate.canSubmit) {
+      setError({
+        code: gate.blockedReason,
+        message: gate.blockedReason === 'budget_exceeded'
+          ? 'Preview budget exceeded for the selected path — narrow or split the task.'
+          : 'Required preview checks are unavailable — retry after they complete.',
+      })
+      return
+    }
     void runGuarded(
       (modelId) =>
         executeSearch(trimmed, modelId, levelSnapshot, scopeSnapshot),

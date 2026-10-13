@@ -1,9 +1,16 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
-import { createEmbeddedSession, type SessionState } from './session'
+import { createEmbeddedSession, type EmbeddedSession, type SessionState } from './session'
+import { createContext, useContext } from 'react'
+
+/** PR5（D1/H8）：向子树暴露 requestIngest（面板「添加资料」按钮消费） */
+const IngestRequestContext = createContext<(() => void) | null>(null)
+export function useRequestIngest(): (() => void) | null {
+  return useContext(IngestRequestContext)
+}
 import { getEmbeddedParentOrigins } from './config'
 import { ResearchWorkspaceProvider } from './workspace-context'
 import { ResearchGlobalModelProvider } from '@/lib/hooks/use-research-global-model'
@@ -23,6 +30,7 @@ import { useThemeStore } from '@/lib/stores/theme-store'
 export function ResearchWorkspaceShell({ children }: { children?: React.ReactNode }) {
   const { t } = useTranslation()
   const [state, setState] = useState<SessionState | null>(null)
+  const sessionRef = useRef<EmbeddedSession | null>(null)
   const setEmbeddedTheme = useThemeStore((s) => s.setEmbeddedTheme)
 
   // RWV2-50（RDLens #363）：父页主题仅在 authenticated 会话存续期间应用；
@@ -50,6 +58,7 @@ export function ResearchWorkspaceShell({ children }: { children?: React.ReactNod
       allowedOrigins,
       parentOrigin: allowedOrigins[0],
     })
+    sessionRef.current = session
     setState(session.getState())
     const unsubscribe = session.subscribe(setState)
     return () => {

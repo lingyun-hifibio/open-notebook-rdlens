@@ -1256,6 +1256,9 @@ export const ptBR = {
       transformationCreated: "Modelo criado",
     },
     sources: {
+      askOnlyThis: 'Ask this source only',
+      stopAskOnly: 'Stop limiting to this source',
+      addMaterials: 'Add materials',
       statusPending: "Sincronizando",
       statusReady: "Pronto",
       statusStale: "Atualizando",

@@ -187,6 +187,45 @@ describe('TransformationRunDetail（RWV2-21 detail + rerun）', () => {
     expect(researchApi.runTransformation).not.toHaveBeenCalled()
   })
 
+  // R1-M11：重建「卸载守卫在 consent 确认路径上拦截派发」的可证伪面
+  //（D-11 后枚举卸载场景不存在；deferred-consent 卸载语义保留）。
+  it('R1-M11：consent 待确认时卸载 → 确认后零派发（生命周期守卫 #2）', async () => {
+    seedScope('selected', ['src_1'], [])
+    let registeredOp: ((modelId: string) => unknown) | undefined
+    setGlobalModelStub({
+      confirmedModelId: 'm-ext',
+      needsConsent: true,
+      deferGuarded: true,
+      onGuardedRegistered: (op) => { registeredOp = op as (modelId: string) => unknown },
+      models: [{
+        model_id: 'm-ext',
+        display_name: 'Ext M',
+        data_egress: true,
+        interactive_context_levels: ['focused'],
+      }],
+    })
+    const { wrapper } = makeWrapper()
+    vi.mocked(researchApi.runTransformation).mockResolvedValue({
+      request_id: 'req_9', transformation_id: 'trans_1', requires_job: false,
+      degradation_reason: null, result_id: 'r_9', model_id: 'm-ext',
+      source_refs: ['src_1'], usage: { input_tokens: 1, output_tokens: 1 },
+      citations: [], output: 'late out',
+    })
+    const { unmount } = render(
+      <TransformationRunDetail record={record()} sources={[source()]} showRerun />,
+      { wrapper },
+    )
+    fireEvent.click(screen.getByTestId('rerun-btn'))
+    // 登记发生（未执行）
+    await waitFor(() => expect(registeredOp).toBeDefined())
+    // 卸载 → 令牌失效
+    unmount()
+    // 确认后重放登记的 op → 守卫必须拦截（若移除 op 内存活校验，本用例红）
+    await registeredOp?.('m-ext')
+    await new Promise((r) => setTimeout(r, 30))
+    expect(researchApi.runTransformation).not.toHaveBeenCalled()
+  })
+
   it('Rerun：新幂等键 + v1 契约头 + 正确 body；成功回调新 result_id（AC-4/High-4/Medium-12）', async () => {
     seedScope('selected', ['src_1'], [])
     vi.mocked(researchApi.runTransformation).mockResolvedValue({

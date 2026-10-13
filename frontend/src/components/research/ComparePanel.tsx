@@ -10,7 +10,7 @@ import {
   COMPARE_HARD_MAX,
 } from '@/lib/research/compare'
 import { useResearchScope } from '@/lib/research/scope'
-import { countUniqueDocuments, uniqueDocumentIds } from '@/lib/research/document-set'
+import { countUniqueDocuments } from '@/lib/research/document-set'
 import { userErrorMessageKey } from '@/lib/research/errors'
 import type { ResearchSource } from '@/lib/types/research'
 
@@ -62,7 +62,10 @@ export function ComparePanel({
     mode === 'selected'
       ? sources.filter((source) => source.source_id !== null && snapshot.sourceIds.includes(source.source_id))
       : []
-  const selectedDocuments = uniqueDocumentIds(selectedSourceRows)
+  // R1-H6 修复：**执行载荷保留精确 Source 集合**（服务端 document_ids 解析
+  // 会取最新版——去重会静默丢精确版本）。uniqueDocumentIds 仅用于**计数**
+  // 与"合并多版本"提示（D-16 的计量面），不再替换执行输入。
+  const selectedDocuments = selectedSourceRows.map((source) => source.document_id)
   const documentCount = countUniqueDocuments(selectedSourceRows)
   const check =
     mode === 'all'

@@ -1256,6 +1256,9 @@ export const trTR = {
       transformationCreated: "Şablon oluşturuldu",
     },
     sources: {
+      askOnlyThis: 'Ask this source only',
+      stopAskOnly: 'Stop limiting to this source',
+      addMaterials: 'Add materials',
       statusPending: "Senkronize ediliyor",
       statusReady: "Hazır",
       statusStale: "Güncelleniyor",
