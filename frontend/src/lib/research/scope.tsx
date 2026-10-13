@@ -35,8 +35,10 @@ export interface ResearchScopeState {
 
 /** 临时单篇限定（不进入基础范围的持久化 shape） */
 export interface ResearchSinglePin {
-  /** 绑定的会话（null = 待绑定；本会话内后续查询生效） */
+  /** 绑定的会话（null = 待核验/待绑定；**非空才对派发生效**） */
   boundSessionId: string | null
+  /** R2-H5：pin 声称所属的会话（恢复路径核验用；非持久化字段） */
+  claimedSessionId?: string | null
   sourceId: string
   /** 限定生效前的基础范围（取消后恢复） */
   baseMode: Exclude<ResearchScopeMode, 'single'>
@@ -201,8 +203,13 @@ function restoreSinglePin(userId: string, projectId: string): ResearchSinglePin 
     }
     if (typeof record.sourceId !== 'string' || record.sourceId.length === 0) return null
     if (record.baseMode !== 'all' && record.baseMode !== 'selected') return null
+    // R2-H5 修复：恢复的 pin **一律未核验**（boundSessionId 置 null）——
+    // 持久化的 sessionId 只是"pin 曾经属于哪个会话"，不等于"当前会话就是它"。
+    // 激活只能经 bindSession(当前会话 ID)；无恢复会话时 pin 永不生效，
+    // 异会话的 pin 由 bindSession(新会话) 清除。
     return {
-      boundSessionId: record.sessionId,
+      boundSessionId: null,
+      claimedSessionId: record.sessionId,
       sourceId: record.sourceId,
       baseMode: record.baseMode,
     }
@@ -360,7 +367,14 @@ function ResearchScopeProviderForIdentity({
     const baseMode: Exclude<ResearchScopeMode, 'single'> = current.mode === 'single'
       ? 'all'
       : current.mode
-    updateSinglePin({ boundSessionId: sessionId, sourceId, baseMode })
+    // R2-H4：用户当轮设置 → claimedSessionId 记为**当前传入值**（null=
+    // 待 Chat 首响应绑定）；已核验会话内设置则直接绑定（立即生效）。
+    updateSinglePin({
+      boundSessionId: sessionId,
+      claimedSessionId: sessionId,
+      sourceId,
+      baseMode,
+    })
   }, [updateSinglePin])
 
   const clearSingle = useCallback(() => {
@@ -371,13 +385,23 @@ function ResearchScopeProviderForIdentity({
     const pin = singlePinRef.current
     if (pin === null) return
     if (pin.boundSessionId === null) {
-      // 待绑限定 → 绑定到本会话
-      updateSinglePin({ ...pin, boundSessionId: sessionId })
+      // R2-H5：恢复的 pin 带 claimedSessionId——只有**声明会话 == 核验会话**
+      // 才激活；否则丢弃（异会话 pin 不进新会话首请求，D-04）。
+      // 用户当轮新设的 pin（claimedSessionId 为 undefined）直接绑定。
+      if (pin.claimedSessionId !== undefined && pin.claimedSessionId !== null
+        && pin.claimedSessionId !== sessionId) {
+        updateSinglePin(null)
+        return
+      }
+      updateSinglePin({
+        boundSessionId: sessionId,
+        sourceId: pin.sourceId,
+        baseMode: pin.baseMode,
+      })
       return
     }
     if (pin.boundSessionId !== sessionId) {
-      // R1-H5：会话切换 → 限定不带入新会话（D-04 硬约束），并**恢复基础
-      // 范围**（新对话默认 all；不残留 selected 快照冒充继承）。
+      // 会话切换 → 限定不带入新会话（D-04 硬约束），并**恢复基础范围**。
       updateSinglePin(null)
       const current = scopeRef.current
       if (current.mode !== pin.baseMode) {

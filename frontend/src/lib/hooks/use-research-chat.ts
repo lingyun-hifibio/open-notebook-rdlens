@@ -308,6 +308,8 @@ export interface CoverageSubmitRequest {
   model_id: string
   /** R1-H7：派发时生效范围模式（C-05 分支构造 source_scope 用） */
   scopeMode?: 'all' | 'selected' | 'single'
+  /** R2-H7：single 模式的限定来源 ID */
+  singleSourceId?: string | null
 }
 
 interface ActiveTurn {
@@ -726,11 +728,13 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
           const classified = classifyC05Error({ response: { status, data: body } })
           if (status === 409 && classified.action === 'read_original_result') {
             // generation_in_progress：同键自愈路径。R1-B2：与网络重连
-            // **共用 attempt 计数**（≤3），不再无条件重连。
+            // **共用 attempt 计数**（≤3）。
             if (current.attempt >= MAX_STREAM_ATTEMPTS) {
+              // R2-B2 修复：耗尽 → **待确认终态**（保留材料、不误报失败、
+              // 不清 activeRef 材料——用户重发同一问题时同键查证）
               patchAssistant(turnId, {
                 status: 'error',
-                errorCode: 'conflict_busy',
+                errorCode: 'acceptance_retry_exhausted',
                 errorMessage: httpErrorMessage(status, body),
               })
               clearActiveIfCurrent(turnId)
@@ -739,7 +743,22 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
             scheduleReconnect()
             return
           }
-          if (classified.acceptance === 'unknown' && classified.action !== 'stop_and_confirm') {
+          if (classified.action === 'retry_same_key') {
+            // R2-B2：服务端明确 retry_same_key（临时不可用）→ 保留材料、
+            // 计数继续（不清 activeRef）
+            if (current.attempt >= MAX_STREAM_ATTEMPTS) {
+              patchAssistant(turnId, {
+                status: 'error',
+                errorCode: 'acceptance_retry_exhausted',
+                errorMessage: httpErrorMessage(status, body),
+              })
+              clearActiveIfCurrent(turnId)
+              return
+            }
+            scheduleReconnect()
+            return
+          }
+          if (classified.acceptance === 'unknown' && classified.action === 'reconcile_then_retry') {
             // acceptance_outcome_unknown：**保留 activeRef 与原键材料**，
             // 呈现待确认（不写成失败、不产生新键）
             patchAssistant(turnId, {
@@ -749,7 +768,8 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
             })
             return
           }
-          // 确定性结论（字符串冲突 / 422 / 终态）→ 终态错误呈现并清 activeRef
+          // 确定性结论（字符串冲突 / 422 / 终态 stop_and_confirm）→
+          // 终态错误呈现并清 activeRef（材料保留在 turn 记录中可查证）
           patchAssistant(turnId, {
             status: 'error',
             errorCode: classified.code ?? 'conflict_busy',
@@ -1001,6 +1021,7 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
         note_ids: [],
         model_id: modelId,
         scopeMode: snapshot.mode,
+        singleSourceId: snapshot.singleSourceId,
       },
       idempotencyKey,
     )

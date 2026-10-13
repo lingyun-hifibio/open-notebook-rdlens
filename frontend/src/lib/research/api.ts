@@ -446,6 +446,52 @@ export type ResearchContextPreviewRequest = {
   model_id: string
 }
 
+/**
+ * PR5（R2-M10）：只读 C-05 Preview（target_contract 形状，#615 §4）。
+ * 服务端 preview_supported=false 时以 503 c05_entry_not_ready 拒绝——
+ * 调用方 catch 后 budget=null（D-12：缺失不阻断、显示"未经预览校验"）。
+ * 只读约束：无 Generation/Job/配额预留/模型调用/检索。
+ */
+export interface C05PreviewResponse {
+  request_id: string
+  scope_contract_version: 'c05-v1'
+  budget: {
+    preflight_status: 'validated' | 'not_checked' | 'exceeded' | 'unavailable'
+    checks: Array<{
+      name: string
+      unit: string
+      state: 'not_checked' | 'estimated' | 'validated' | 'exceeded' | 'unavailable'
+      value: number | null
+      limit: number | null
+      limit_source: string | null
+      required_for_submit: boolean
+      reason: string | null
+    }>
+  }
+  execution_hint: 'interactive' | 'background_job' | null
+  needs_consent: boolean
+  warnings: Array<{ code: string; message: string }>
+}
+
+export async function fetchC05Preview(
+  projectId: string,
+  request: {
+    entry: 'search'
+    question: string
+    model_id: string
+    context_level: string
+    source_scope: { mode: 'all' | 'selected' | 'single'; source_ids: string[]; single_source_id: string | null }
+    note_ids: string[]
+  },
+): Promise<C05PreviewResponse> {
+  const response = await apiClient.post<C05PreviewResponse>(
+    researchPath(projectId, 'context-preview'),
+    request,
+    { headers: { 'X-Research-Contract': 'c05-v1' } },
+  )
+  return response.data
+}
+
 export async function fetchContextPreview(
   projectId: string,
   request: ResearchContextPreviewRequest,

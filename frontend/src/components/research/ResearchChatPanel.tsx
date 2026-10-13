@@ -53,6 +53,7 @@ export function ResearchChatPanel({
   sendDisabled,
   blockedHint,
   coverageEnabled = false,
+  coverageC05Ready = false,
   coverageJobs,
   onCoverageRetry,
   onCitationJump,
@@ -82,6 +83,8 @@ export function ResearchChatPanel({
    * 既有 Coverage Job 的展示与轮询不依赖本值（§17.2 准入开关而非终止开关）。
    */
   coverageEnabled?: boolean
+  /** R2-H7：Coverage 的 C-05 执行就绪（all/single 可达的前提） */
+  coverageC05Ready?: boolean
   /** COV-09：Coverage Job 快照列表（Chat 任务卡按 job_id 查找） */
   coverageJobs?: ResearchJob[]
   /** COV-09：outcome_unknown 人工重试（§12.2） */
@@ -205,6 +208,14 @@ export function ResearchChatPanel({
     // 共用同一快照（P2-①，避免渲染期/提交期两次取值）；selection 携带 mode，
     // turn 记录由 hook 推导，consent/幂等/最终请求全部同源（K11）。
     const snapshot = getSnapshot()
+    // R2-H4：显式提交路径的 selection 携带完整快照（含 singleSourceId），
+    // 否则派发链路 deriveScopeSnapshot 会丢限定字段。
+    const selectionWithScope: ResearchChatSelection = {
+      mode: snapshot.mode,
+      sourceIds: [...snapshot.sourceIds],
+      noteIds: [...snapshot.noteIds],
+      singleSourceId: snapshot.singleSourceId,
+    }
     if (scope === 'all_selected') {
       // #358：能力门禁在提交点再次校验（与 coverageAllowed 同源，且用
       // 派发时刻冻结快照）——能力 false/缺失时不发 Coverage 创建请求。
@@ -220,11 +231,7 @@ export function ResearchChatPanel({
       })
       return
     }
-    void onSend(trimmed, {
-      mode: snapshot.mode,
-      sourceIds: [...snapshot.sourceIds],
-      noteIds: [...snapshot.noteIds],
-    }).then((sent) => {
+    void onSend(trimmed, selectionWithScope).then((sent) => {
       if (sent) setQuery('')
     })
   }

@@ -343,6 +343,42 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
     expect(screen.queryByTestId('run-stale-sources-warning')).toBeNull()
   })
 
+  // R2-M11：consent 登记后关闭并重开 → 旧代际确认重放零派发（可证伪）。
+  // 断言链：登记（deferGuarded）→ Esc/重开（runGenerationRef++）→ 重放旧
+  // 登记 op → 代际守卫必须拦截（移除 op 内令牌校验则本用例红）。
+  it('R2-M11：consent 登记后关闭并重开 → 旧代际确认重放零派发', async () => {
+    seedScope('selected', ['src_1'], [])
+    let registeredOp: ((modelId: string) => unknown) | undefined
+    setGlobalModelStub({
+      confirmedModelId: 'm-ext',
+      needsConsent: true,
+      deferGuarded: true,
+      onGuardedRegistered: (op) => { registeredOp = op as (modelId: string) => unknown },
+      models: [{
+        model_id: 'm-ext',
+        display_name: 'Ext M',
+        data_egress: true,
+        interactive_context_levels: ['focused'],
+      }],
+    })
+    const { wrapper } = makeWrapper()
+    render(<TransformationsPanel />, { wrapper })
+    await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
+    await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
+    await waitFor(() => expect(registeredOp).toBeDefined())
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByTestId('run-scope-summary')).toBeNull())
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
+    await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
+
+    await registeredOp?.('m-ext')
+    await new Promise((r) => setTimeout(r, 30))
+    expect(researchApi.runTransformation).not.toHaveBeenCalled()
+  })
+
   it('S2：stale 警告只在真正派发时出现——consent 待确认阶段不得先行显示', async () => {
     // 评审 F2/R4 判别：警告置位在 runGuarded op 体内（与 runSnapshot 同处）。
     // 若被移回 op 外，本用例红（解析成功即显示 = consent 取消也留警告）。

@@ -104,12 +104,16 @@ export function ResearchWorkspaceShell({ children }: { children?: React.ReactNod
   // 提供 confirmed 模型、Search 上下文默认值与外发 consent single-flight
   // guard（计划 §6.1/§6.8）；未认证时不挂载，避免空 projectId 查询。
   if (state.userId !== undefined && state.projectId !== undefined && state.role !== undefined) {
+    // R2-H8 修复：IngestRequestContext.Provider 必须真实包裹——否则
+    // useRequestIngest 恒 null，「添加资料」按钮永远隐藏。
     return (
-      <ResearchWorkspaceProvider userId={state.userId} projectId={state.projectId} role={state.role}>
-        <ResearchScopeProvider userId={state.userId} projectId={state.projectId}>
-          <ResearchGlobalModelProvider>{children}</ResearchGlobalModelProvider>
-        </ResearchScopeProvider>
-      </ResearchWorkspaceProvider>
+      <IngestRequestContext.Provider value={() => sessionRef.current?.requestIngest()}>
+        <ResearchWorkspaceProvider userId={state.userId} projectId={state.projectId} role={state.role}>
+          <ResearchScopeProvider userId={state.userId} projectId={state.projectId}>
+            <ResearchGlobalModelProvider>{children}</ResearchGlobalModelProvider>
+          </ResearchScopeProvider>
+        </ResearchWorkspaceProvider>
+      </IngestRequestContext.Provider>
     )
   }
 

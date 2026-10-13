@@ -316,7 +316,12 @@ export function ResearchWorkspace({
               model_id: request.model_id,
               synthesis_scope: 'all_selected',
               source_scope: buildC05GeneratedRequest(
-                { mode: request.scopeMode ?? 'selected', sourceIds: request.source_ids, noteIds: [] },
+                {
+                  mode: request.scopeMode ?? 'selected',
+                  sourceIds: request.source_ids,
+                  noteIds: [],
+                  singleSourceId: request.singleSourceId ?? null,
+                },
                 { query: request.query, model_id: request.model_id },
               ).source_scope,
             }
@@ -421,6 +426,7 @@ export function ResearchWorkspace({
             sendDisabled={!canExecute}
             blockedHint={blockedHint}
             coverageEnabled={coverageAllSelected}
+            coverageC05Ready={c05.dispatchReady('coverage')}
             coverageJobs={jobs}
             onCoverageRetry={isAdminReadonly ? undefined : retryCoverage}
             onCitationJump={handleCitationJump}

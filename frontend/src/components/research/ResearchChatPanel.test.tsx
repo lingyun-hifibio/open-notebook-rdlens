@@ -510,6 +510,7 @@ describe('ResearchChatPanel coverage scope（COV-09 + RWV2-11 K3）', () => {
       mode: 'selected',
       sourceIds: ['src-1'],
       noteIds: [],
+      singleSourceId: null,
     })
   })
 

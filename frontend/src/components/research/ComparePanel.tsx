@@ -10,7 +10,7 @@ import {
   COMPARE_HARD_MAX,
 } from '@/lib/research/compare'
 import { useResearchScope } from '@/lib/research/scope'
-import { countUniqueDocuments } from '@/lib/research/document-set'
+import { countUniqueDocuments, uniqueDocumentIds } from '@/lib/research/document-set'
 import { userErrorMessageKey } from '@/lib/research/errors'
 import type { ResearchSource } from '@/lib/types/research'
 
@@ -65,12 +65,15 @@ export function ComparePanel({
   // R1-H6 修复：**执行载荷保留精确 Source 集合**（服务端 document_ids 解析
   // 会取最新版——去重会静默丢精确版本）。uniqueDocumentIds 仅用于**计数**
   // 与"合并多版本"提示（D-16 的计量面），不再替换执行输入。
+  // R2-H6 修复：阈值/显示按**唯一文档数**判定（D-16 计量面）；
+  // 执行载荷仍是不去重的 document_id 映射（精确版本语义——服务端按
+  // source_ids 解析版本，不去重不丢版本）。
   const selectedDocuments = selectedSourceRows.map((source) => source.document_id)
   const documentCount = countUniqueDocuments(selectedSourceRows)
   const check =
     mode === 'all'
       ? ({ ok: false, reason: 'all', count: 0 } as const)
-      : checkCompareSelection(selectedDocuments)
+      : { ...checkCompareSelection(uniqueDocumentIds(selectedSourceRows)), count: documentCount.uniqueDocumentCount }
 
   const modelBlocked = modelBlockedProp === true
 

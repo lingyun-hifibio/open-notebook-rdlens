@@ -14,11 +14,12 @@ import {
   CONTEXT_LEVELS,
 } from './SearchContextSelector'
 import { fetchContextPreview, newIdempotencyKey, searchV1 } from '@/lib/research/api'
+import { fetchC05Preview } from '@/lib/research/api'
 import { researchModelBlockedHint, useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
 import { formatScopeLabel, useResearchScope, type ResearchScopeSnapshot } from '@/lib/research/scope'
 import { useResearchC05 } from '@/lib/hooks/use-research-c05'
 import { c05RequestHeaders } from '@/lib/research/c05-contract'
-import { buildC05GeneratedRequest } from '@/lib/research/c05-request'
+import { buildC05GeneratedRequest, buildSourceScope } from '@/lib/research/c05-request'
 import { classifyC05Error } from '@/lib/research/c05-error-actions'
 import { extractScopeProjection } from '@/lib/research/c05-scope-projection'
 import { evaluatePreviewGate } from '@/lib/research/c05-preview-gate'
@@ -176,14 +177,46 @@ export function ResearchSearchPanel({
 
   useEffect(() => {
     const trimmed = query.trim()
-    // RWV2-40：inactive（隐藏/非主动作）时不发起 Context Preview——
-    // 清除 debounce、清空临时 preview、不启动新请求；重新激活后再算。
-    // 正式 Search 执行走 executeSearch（run 回调），不因隐藏而取消。
-    // PR5（D-07/C6）：C-05 就绪时只走 C-05 Preview（preview_supported 才发，
-    // 由 fetchC05Preview 消费 budget）；不发旧 Preview（旧形状范围语义不同）。
-    if (!active || !trimmed || confirmedModelId === null || c05ReadyRef.current) {
+    // RWV2-40：inactive（隐藏/非主动作）时不发起 Context Preview。
+    // PR5（R2-M10）：C-05 就绪时——preview_supported=true 才发 C-05 Preview
+    //（只读、消费 budget 到 c05BudgetRef）；false → 清空（不发旧 Preview）。
+    // 旧 v1 路径保持既有 debounce Preview 不变。
+    if (!active || !trimmed || confirmedModelId === null) {
       setPreview(null)
       return
+    }
+    if (c05ReadyRef.current) {
+      if (!c05.previewSupported) {
+        setPreview(null)
+        return
+      }
+      let cancelled = false
+      const timer = setTimeout(() => {
+        void fetchC05Preview(projectId, {
+          entry: 'search',
+          question: trimmed,
+          model_id: confirmedModelId,
+          context_level: selectedLevel,
+          source_scope: buildSourceScope({
+            mode: getSnapshot().mode,
+            sourceIds: getSnapshot().sourceIds,
+            noteIds: getSnapshot().noteIds,
+            singleSourceId: getSnapshot().singleSourceId,
+          }),
+          note_ids: [...getSnapshot().noteIds],
+        })
+          .then((value) => {
+            if (cancelled) return
+            c05BudgetRef.current = value.budget
+          })
+          .catch(() => {
+            if (cancelled) c05BudgetRef.current = null
+          })
+      }, 400)
+      return () => {
+        cancelled = true
+        clearTimeout(timer)
+      }
     }
     let cancelled = false
     const timer = setTimeout(() => {
@@ -261,9 +294,13 @@ export function ResearchSearchPanel({
         contextLevel: level,
         contract: c05 ? 'c05-v1' : 'v1',
       })
-      // R1-B1 修复：耗尽/超龄 → **停止 POST**（保留原材料待确认），
-      // 绝不自动换键再执行（§5.2）
-      if (dispatchEligibility(keyHoldRef.current, now) === 'exhausted') {
+      // R2-B1 修复：exhausted 仅对**同签名**（同逻辑提交的恢复）停止 POST；
+      // 签名变化 = 用户明确新意图 = 新键（acquireKey 自行处理）。
+      if (
+        keyHoldRef.current.key !== null
+        && keyHoldRef.current.signature === signature
+        && dispatchEligibility(keyHoldRef.current, now) === 'exhausted'
+      ) {
         setError({
           code: 'key_retry_exhausted',
           message: 'Recovery window for the previous attempt is exhausted; review the pending result before retrying.',

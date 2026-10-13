@@ -28,6 +28,8 @@ export interface UseResearchC05Result {
   dispatchReady: (entry: C05Entry) => boolean
   unavailableReason: (entry: C05Entry) => string
   supportsMode: (entry: C05Entry, mode: C05ScopeMode) => boolean
+  /** R2-M10：只读 C-05 Preview 是否可用（顶层 preview_supported 位） */
+  previewSupported: boolean
 }
 
 export function useResearchC05(projectId: string): UseResearchC05Result {
@@ -49,5 +51,6 @@ export function useResearchC05(projectId: string): UseResearchC05Result {
     dispatchReady: (entry) => entryDispatchReady(caps, entry),
     unavailableReason: (entry) => entryUnavailableReason(caps, entry),
     supportsMode: (entry, mode) => entrySupportsMode(caps, entry, mode),
+    previewSupported: caps?.preview_supported ?? false,
   }
 }

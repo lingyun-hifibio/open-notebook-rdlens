@@ -345,6 +345,7 @@ describe('useResearchChat.sendCoverage（COV-09）', () => {
       note_ids: [],
       model_id: MODEL,
       scopeMode: 'selected',
+      singleSourceId: null,
     })
     expect(captured[0].idempotencyKey).toBe('ik-turn')
 
