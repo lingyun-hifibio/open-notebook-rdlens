@@ -348,7 +348,7 @@ export function ResearchWorkspace({
         (modelId) => {
           sendCoverage(
             query,
-            { mode: snapshot.mode, sourceIds: [...snapshot.sourceIds], noteIds: [] },
+            { mode: snapshot.mode, sourceIds: [...snapshot.sourceIds], noteIds: [], singleSourceId: snapshot.singleSourceId },
             modelId,
             submitCoverage,
           )
@@ -426,7 +426,6 @@ export function ResearchWorkspace({
             sendDisabled={!canExecute}
             blockedHint={blockedHint}
             coverageEnabled={coverageAllSelected}
-            coverageC05Ready={c05.dispatchReady('coverage')}
             coverageJobs={jobs}
             onCoverageRetry={isAdminReadonly ? undefined : retryCoverage}
             onCitationJump={handleCitationJump}

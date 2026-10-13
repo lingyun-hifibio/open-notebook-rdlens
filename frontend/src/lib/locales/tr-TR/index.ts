@@ -977,6 +977,7 @@ export const trTR = {
   },
   research: {
     errors: {
+      acceptanceRetryExhausted: 'Your submission is pending confirmation — its result could not be verified automatically. Retry with the original attempt or review it before sending again.',
       generic: "Something went wrong. Check the message below and try again, or contact an administrator.",
       consentRequired: "External model egress consent is required before sending. Acknowledge it to continue.",
       consentRevoked: "External egress consent was revoked. Acknowledge it again to continue.",

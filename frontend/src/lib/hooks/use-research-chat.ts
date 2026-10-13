@@ -730,8 +730,11 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
             // generation_in_progress：同键自愈路径。R1-B2：与网络重连
             // **共用 attempt 计数**（≤3）。
             if (current.attempt >= MAX_STREAM_ATTEMPTS) {
-              // R2-B2 修复：耗尽 → **待确认终态**（保留材料、不误报失败、
-              // 不清 activeRef 材料——用户重发同一问题时同键查证）
+              // R2-B2/R2-N2：耗尽 → **待确认终态**。activeRef 释放（与
+              // #292 P0 不变量一致），但 errorCode/errorMessage 已落 turn
+              // 记录可回访；acceptance_retry_exhausted 文案明确"待确认，
+              // 不因耗尽判定服务端失败"。重发同一问题生成新幂等键 =
+              // 用户明确的新意图（服务端幂等行仍按原键保留原失败）。
               patchAssistant(turnId, {
                 status: 'error',
                 errorCode: 'acceptance_retry_exhausted',
@@ -744,8 +747,8 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
             return
           }
           if (classified.action === 'retry_same_key') {
-            // R2-B2：服务端明确 retry_same_key（临时不可用）→ 保留材料、
-            // 计数继续（不清 activeRef）
+            // R2-B2/R2-N2：服务端明确 retry_same_key（临时不可用）→ 有界
+            // 重连（attempt 共用 ≤3）；耗尽走上方 acceptance_retry_exhausted。
             if (current.attempt >= MAX_STREAM_ATTEMPTS) {
               patchAssistant(turnId, {
                 status: 'error',

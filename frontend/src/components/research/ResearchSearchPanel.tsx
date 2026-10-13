@@ -239,7 +239,7 @@ export function ResearchSearchPanel({
       cancelled = true
       clearTimeout(timer)
     }
-  }, [active, query, projectId, selectedLevel, selectedSourceIds, selectedNoteIds, confirmedModelId])
+  }, [active, query, projectId, selectedLevel, selectedSourceIds, selectedNoteIds, confirmedModelId, c05.previewSupported])
 
   const handleSaveContext = useCallback(
     async (level: ResearchContextLevel) => {

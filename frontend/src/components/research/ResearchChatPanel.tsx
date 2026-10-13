@@ -53,7 +53,6 @@ export function ResearchChatPanel({
   sendDisabled,
   blockedHint,
   coverageEnabled = false,
-  coverageC05Ready = false,
   coverageJobs,
   onCoverageRetry,
   onCitationJump,
@@ -83,8 +82,6 @@ export function ResearchChatPanel({
    * 既有 Coverage Job 的展示与轮询不依赖本值（§17.2 准入开关而非终止开关）。
    */
   coverageEnabled?: boolean
-  /** R2-H7：Coverage 的 C-05 执行就绪（all/single 可达的前提） */
-  coverageC05Ready?: boolean
   /** COV-09：Coverage Job 快照列表（Chat 任务卡按 job_id 查找） */
   coverageJobs?: ResearchJob[]
   /** COV-09：outcome_unknown 人工重试（§12.2） */

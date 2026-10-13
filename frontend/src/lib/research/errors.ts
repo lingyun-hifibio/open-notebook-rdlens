@@ -16,6 +16,10 @@
 
 /** 稳定错误码 → i18n key（未收录的码 → userErrorMessageKey 返回 generic）。 */
 export const RESEARCH_ERROR_USER_COPY: Record<string, string> = {
+  // ── PR5（R2-N3）：接受恢复耗尽 → 待确认（不误报失败） ──
+  acceptance_retry_exhausted: 'research.errors.acceptanceRetryExhausted',
+  key_retry_exhausted: 'research.errors.acceptanceRetryExhausted',
+
   // ── 既有 key 复用（同义文案，M14） ──
   daily_limit_exceeded: 'research.chatErrorDailyLimitExceeded',
   superseded: 'research.chatErrorSuperseded',
