@@ -71,7 +71,7 @@ export function useResearchSources(projectId: string) {
         limit: RESEARCH_PAGE_LIMIT,
         ...(cursor ? { cursor } : {}),
       }, signal),
-      (source) => source.source_id,
+      (source) => source.source_id ?? `doc:${source.document_id}:${source.document_version}`,
     ),
     enabled: !!projectId,
     // Source sync can be initiated outside this component. Active workspaces

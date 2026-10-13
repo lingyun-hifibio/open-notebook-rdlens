@@ -6,11 +6,12 @@
  * `page_number`。
  */
 
-/** SourceMirror 状态（设计 §5.2/§6；stale=内容更新未完成，failed=可审计错误） */
-export type ResearchSourceStatus = 'pending' | 'ready' | 'stale' | 'failed'
+/** SourceMirror 状态（PR5 对齐 `_source_view`：6 值，含退役态） */
+export type ResearchSourceStatus = 'pending' | 'ready' | 'stale' | 'failed' | 'retiring' | 'deleted'
 
 export interface ResearchSource {
-  source_id: string
+  /** PR5（C3）：`_source_view` 的 source_id 可为 null（无镜像身份的行不可选） */
+  source_id: string | null
   document_id: string
   document_version: string
   status: ResearchSourceStatus

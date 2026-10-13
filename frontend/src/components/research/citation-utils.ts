@@ -79,12 +79,28 @@ export function normalizePersistedCitations(
   })
 }
 
-/** 按 document_id 解析 Citation 所属来源（跨项目由服务端保证隔离）。 */
+/**
+ * 按 (document_id, doc_version) 解析 Citation 所属来源（PR5/D-25）。
+ *
+ * C-05 允许同文档多版本共存于镜像（`mixed_versions_of_same_document_allowed`），
+ * **首条 `document_id` 匹配可能指向错误版本**——引用跳转必须校验版本：
+ * - 精确命中 (doc_id, doc_version) → 该行；
+ * - 引用无版本（历史快照）→ 退回首条 document_id 匹配（旧行为，如实保留）；
+ * - 有版本但无精确匹配 → undefined（调用方禁用跳转并说明版本不可用，
+ *   绝不静默打开另一版本——`canJumpToCitation` 的 version_mismatch 语义）。
+ */
 export function resolveCitationSource(
   sources: readonly ResearchSource[] | undefined,
   citation: ResearchCitation,
 ): ResearchSource | undefined {
-  return (sources ?? []).find((source) => source.document_id === citation.doc_id)
+  const list = sources ?? []
+  const byDocument = list.filter((source) => source.document_id === citation.doc_id)
+  if (byDocument.length === 0) return undefined
+  const citationVersion = (citation as { doc_version?: string | null }).doc_version ?? null
+  if (citationVersion === null || citationVersion === '') {
+    return byDocument[0]
+  }
+  return byDocument.find((source) => source.document_version === citationVersion)
 }
 
 /** page_idx（0-based）→ 展示页码（1-based）；null/负值不展示。 */

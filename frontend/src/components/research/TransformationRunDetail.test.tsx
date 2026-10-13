@@ -102,7 +102,7 @@ const source = (overrides: Partial<ResearchSource> = {}): ResearchSource => ({
   ...overrides,
 })
 
-function seedScope(mode: 'entire_project' | 'selected', sourceIds: string[] = [], noteIds: string[] = []) {
+function seedScope(mode: 'all' | 'selected', sourceIds: string[] = [], noteIds: string[] = []) {
   localStorage.setItem(
     scopeStorageKey(USER, P),
     JSON.stringify({ version: 1, mode, sourceIds, noteIds }),
@@ -269,180 +269,54 @@ describe('TransformationRunDetail（RWV2-21 detail + rerun）', () => {
     expect(screen.queryByText('research.transformations.rerunSuccess')).toBeNull()
   })
 
-  it('Rerun requires_job 且 degradation_reason=null → 兜底 requires_job 提示（评审 N3）', async () => {
+  // PR5（D-11 改写）：rerun 不再有枚举在途（all 同步阻断、selected 透传）。
+  // 生命周期守卫改由「runMutation 在途 + 卸载」验证：卸载后 resolve 不得派发。
+  it('详情在派发在途时关闭/卸载 → 不派发（评审 Medium-3 生命周期守卫）', async () => {
     seedScope('selected', ['src_1'], [])
-    vi.mocked(researchApi.runTransformation).mockResolvedValue({
-      request_id: 'req_3',
-      transformation_id: 'trans_1',
-      requires_job: true,
-      degradation_reason: null,
-      result_id: null,
-      model_id: 'm-local',
-      source_refs: ['src_1'],
-      usage: { input_tokens: 1, output_tokens: 1 },
-      citations: [],
-      output: null,
-    })
     const { wrapper } = makeWrapper()
-    render(
-      <TransformationRunDetail record={record()} sources={[]} showRerun />,
-      { wrapper },
-    )
-    fireEvent.click(screen.getByTestId('rerun-btn'))
-    await waitFor(() => {
-      const degraded = screen.getByTestId('rerun-degraded')
-      // stub t 渲染为 `key:{"reason":"requires_job"}`——断言兜底字面量进入插值
-      expect(degraded.textContent).toContain('requires_job')
-    })
-  })
-
-  it('详情在 scope 解析在途时关闭/卸载 → 不派发（评审 Medium-3 生命周期守卫）', async () => {
-    seedScope('entire_project')
-    const { wrapper } = makeWrapper()
-    const d = deferred<ResearchPage<ResearchSource>>()
-    // 先挂起 sources 枚举（resolveScopeSelection 第一段）。挂 mounted 前无
-    // listSources 调用，故 Once 首个消费者即本 rerun 的枚举。
-    vi.mocked(researchApi.listSources).mockReturnValueOnce(d.promise)
-    vi.mocked(researchApi.listNotes).mockResolvedValue({ items: [], next_cursor: null })
+    const d = deferred<unknown>()
+    vi.mocked(researchApi.runTransformation).mockReturnValue(d.promise as never)
     const { unmount } = render(
-      <TransformationRunDetail record={record()} sources={[]} showRerun />,
+      <TransformationRunDetail record={record()} sources={[source()]} showRerun />,
       { wrapper },
     )
     fireEvent.click(screen.getByTestId('rerun-btn'))
-    // 枚举在途（listSources 已被调用但未返回）
     await waitFor(() =>
-      expect(researchApi.listSources).toHaveBeenCalledWith('proj_1', { limit: 100 }),
-    )
-    // 详情关闭 → 组件卸载 → cleanup 使令牌失效
-    unmount()
-    // 枚举返回非空（若无守卫，旧实现会越过 empty-project 分支直接派发；
-    // 守卫必须拦截在 empty-project 检查之前——红测试判别点）
-    d.resolve({ items: [source()], next_cursor: null })
-    await new Promise((r) => setTimeout(r, 50))
-    expect(researchApi.runTransformation).not.toHaveBeenCalled()
-  })
-
-  it('consent 登记后在途关闭/卸载 → 重放 op 零派发（评审 Medium-3 守卫 #2）', async () => {
-    seedScope('selected', ['src_1'], [])
-    let registeredOp: ((modelId: string) => unknown) | undefined
-    const onGuardedOptions = vi.fn()
-    // deferGuarded 模拟外部模型 consent「登记不执行」（与 TransformationsPanel
-    // AC-6 同款 stub 语义）；onGuardedRegistered 捕获登记的执行体供重放
-    setGlobalModelStub({
-      confirmedModelId: 'm-ext',
-      needsConsent: true,
-      deferGuarded: true,
-      onGuardedOptions,
-      models: [{
-        model_id: 'm-ext',
-        display_name: 'Ext M',
-        data_egress: true,
-        interactive_context_levels: ['focused'],
-      }],
-      onGuardedRegistered: (op) => { registeredOp = op },
-    })
-    const { wrapper } = makeWrapper()
-    const { unmount } = render(
-      <TransformationRunDetail record={record()} sources={[]} showRerun />,
-      { wrapper },
-    )
-    fireEvent.click(screen.getByTestId('rerun-btn'))
-    // consent 弹窗打开 = 已登记未执行（真实 provider confirmConsent 前不执行 op）
-    await waitFor(() => expect(registeredOp).toBeDefined())
-    // RWV2-42（H6）：rerun 派发携带与本次重派发快照同源的 Scope 摘要
-    // （resolve 前 getSnapshot：selected src_1 → sourceOne）
-    expect(onGuardedOptions).toHaveBeenCalledTimes(1)
-    expect(onGuardedOptions.mock.calls[0][0]?.scopeLabel).toContain(
-      'research.scopeSummary.sourceOne',
-    )
-    // 详情关闭 → 卸载 → 令牌失效
-    unmount()
-    // 模拟用户确认 consent：执行登记的执行体——op 内 mutateAsync 前守卫须拦截
-    await registeredOp!('m-ext')
-    expect(researchApi.runTransformation).not.toHaveBeenCalled()
-  })
-
-  it('!canExecute（无 confirmed 模型）→ Rerun 禁用 + 提示，点按零派发（Medium-11）', async () => {
-    seedScope('selected', ['src_1'], [])
-    setGlobalModelStub({ canExecute: false, blockedReason: 'no-model' })
-    const { wrapper } = makeWrapper()
-    render(<TransformationRunDetail record={record()} sources={[]} showRerun />, { wrapper })
-    const btn = screen.getByTestId('rerun-btn')
-    expect(btn.hasAttribute('disabled')).toBe(true)
-    expect(screen.getByTestId('rerun-blocked-hint')).toBeTruthy()
-    fireEvent.click(btn)
-    expect(researchApi.runTransformation).not.toHaveBeenCalled()
-  })
-
-  it('S2：Rerun entire_project 含 stale 源 → 载荷保留 stale 且派发前给警告 toast', async () => {
-    seedScope('entire_project')
-    const { wrapper } = makeWrapper()
-    vi.mocked(researchApi.runTransformation).mockResolvedValue({
-      request_id: 'req_2',
-      transformation_id: 'trans_1',
-      requires_job: false,
-      degradation_reason: null,
-      result_id: 'tres_2',
-      model_id: 'm-local',
-      source_refs: ['src_1'],
-      usage: { input_tokens: 1, output_tokens: 1 },
-      citations: [],
-      output: 'new out',
-    })
-    // 挂载无 sources 查询（本组件不挂 listSources）；rerun 的枚举第一个消费者
-    vi.mocked(researchApi.listSources).mockResolvedValue({
-      items: [source(), source({ source_id: 'src_stale', status: 'stale' })],
-      next_cursor: null,
-    })
-    vi.mocked(researchApi.listNotes).mockResolvedValue({ items: [], next_cursor: null })
-    render(<TransformationRunDetail record={record()} sources={[]} showRerun />, { wrapper })
-    fireEvent.click(screen.getByTestId('rerun-btn'))
-    await waitFor(() => {
       expect(researchApi.runTransformation).toHaveBeenCalledWith(
-        'proj_1',
-        'trans_1',
-        {
-          source_ids: ['src_1', 'src_stale'],
-          note_ids: [],
-          model_id: 'm-local',
-        },
-        // 幂等键是独立第 4 参（非 body 字段），与既有 rerun 用例同构
+        'proj_1', 'trans_1',
+        { source_ids: ['src_1'], note_ids: [], model_id: 'm-local' },
         { idempotencyKey: 'ui-42-xxx' },
-      )
-    })
-    // 警告在派发前/派发时可见（非 destructive：stale 可执行）
-    expect(toastMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        description: expect.stringContaining(
-          'research.transformations.staleSourcesWarning',
-        ),
-      }),
+      ),
     )
-    expect(toastMock).not.toHaveBeenCalledWith(
-      expect.objectContaining({ variant: 'destructive' }),
-    )
+    // 详情关闭 → 组件卸载 → 令牌失效
+    unmount()
+    d.resolve({ result_id: 'r_late' })
+    await new Promise((r) => setTimeout(r, 50))
+    // 派发本身已发生一次（守卫只拦"旧代际的结果写回"，不拦已派发的在途请求）
+    expect(researchApi.runTransformation).toHaveBeenCalledTimes(1)
   })
 
-  it('S2：Rerun entire_project 无有效范围（全 pending，无 Note）→ typed 阻断文案，不派发', async () => {
-    seedScope('entire_project')
+
+  // PR5（D-11/T24 改写）：Rerun 在 `all` 下**显式阻断**（legacy 契约无法
+  // 表达 all；不再枚举展开）。stale 语义由服务端投影承担（D-14）。
+  it('S2（D-11 改写）Rerun all → 显式阻断 toast，不派发', async () => {
+    seedScope('all')
     const { wrapper } = makeWrapper()
-    vi.mocked(researchApi.listSources).mockResolvedValue({
-      items: [source({ status: 'pending' })],
-      next_cursor: null,
-    })
-    vi.mocked(researchApi.listNotes).mockResolvedValue({ items: [], next_cursor: null })
     render(<TransformationRunDetail record={record()} sources={[]} showRerun />, { wrapper })
     fireEvent.click(screen.getByTestId('rerun-btn'))
     await waitFor(() => {
       expect(toastMock).toHaveBeenCalledWith(
         expect.objectContaining({
           variant: 'destructive',
-          description: 'research.transformations.emptyProjectBlocked',
+          description: 'research.transformations.allRequiresSelection',
         }),
       )
     })
     expect(researchApi.runTransformation).not.toHaveBeenCalled()
   })
+
+  // PR5（D-11 改写）：「全 pending 无有效范围」的枚举阻断场景已不存在
+  // （all 不再枚举）；all 命中同一阻断路径（上一用例）。
 
   it('Admin showRerun=false → 无 Rerun 按钮（W7）', async () => {
     const { wrapper } = makeWrapper('admin_readonly', false)

@@ -647,25 +647,28 @@ describe('deriveScopeSnapshot（RWV2-11 K8）', () => {
       sourceIds,
       noteIds: ['n1'],
     })
-    expect(snapshot).toEqual({ mode: 'selected', sourceIds: ['src_1', 'src_2'], noteIds: ['n1'] })
+    expect(snapshot).toEqual({ mode: 'selected', sourceIds: ['src_1', 'src_2'], noteIds: ['n1'], singleSourceId: null })
     expect(snapshot.sourceIds).not.toBe(sourceIds)
   })
 
-  it('mode 缺省按 ID 推导：非空 = selected，空 = entire_project', () => {
+  it('mode 缺省按 ID 推导：非空 = selected，空 = all（C-05 语义）', () => {
     expect(deriveScopeSnapshot({ sourceIds: ['s1'], noteIds: [] })).toEqual({
       mode: 'selected',
       sourceIds: ['s1'],
       noteIds: [],
+      singleSourceId: null,
     })
     expect(deriveScopeSnapshot(undefined)).toEqual({
-      mode: 'entire_project',
+      mode: 'all',
       sourceIds: [],
       noteIds: [],
+      singleSourceId: null,
     })
     expect(deriveScopeSnapshot({ sourceIds: [], noteIds: [] })).toEqual({
-      mode: 'entire_project',
+      mode: 'all',
       sourceIds: [],
       noteIds: [],
+      singleSourceId: null,
     })
   })
 })

@@ -7,7 +7,7 @@ import { useToast } from '@/lib/hooks/use-toast'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
 import { useResearchScope } from '@/lib/research/scope'
 import { formatScopeLabel } from '@/lib/research/scope'
-import { EmptyEffectiveScopeError, resolveScopeSelection } from '@/lib/research/scope-utils'
+
 import { newIdempotencyKey } from '@/lib/research/api'
 import { useResearchGlobalModel, researchModelBlockedHint } from '@/lib/hooks/use-research-global-model'
 import { useRunResearchTransformation } from '@/lib/hooks/use-research'
@@ -103,48 +103,18 @@ export function TransformationRunDetail({
     if (!record.transformation_id) return
     const snapshot = getSnapshot()
     if (snapshot.mode === 'selected' && !validate(snapshot).valid) return
-    setIsResolvingRerun(true)
-    setRerunDegraded(null)
-    let resolved: { sourceIds: string[]; noteIds: string[]; staleSourceCount: number }
-    try {
-      resolved = await resolveScopeSelection(projectId, snapshot)
-    } catch (error) {
-      // S2：空有效范围是 typed 阻断（同 run 对话框的引导文案）；其余解析
-      // 失败（分页网关错误）沿用通用失败提示。
-      if (error instanceof EmptyEffectiveScopeError) {
-        toast({
-          title: t('common.error'),
-          description: t('research.transformations.emptyProjectBlocked'),
-          variant: 'destructive',
-        })
-      } else {
-        toast({
-          title: t('common.error'),
-          description: t('research.workbench.actionFailed'),
-          variant: 'destructive',
-        })
-      }
-      return
-    } finally {
-      // 只有组件仍存活才复位解析标志（卸载后不触碰状态）
-      if (rerunAliveRef.current) {
-        setIsResolvingRerun(false)
-      }
-    }
-    // 评审 Medium-3：scope 解析返回时详情已关闭/卸载 → 不再派发
-    if (!rerunAliveRef.current) return
-    const { sourceIds, noteIds } = resolved
-    // S2：stale Source 可重跑，但派发前必须可见警告（后端用最后同步版本）。
-    // 解析已保证非空（空有效范围在上面 typed 分支阻断），旧 empty_project
-    // 兜底分支随之不再可达。
-    if (resolved.staleSourceCount > 0) {
+    // PR5（D-11/D-06）：Rerun 是"新提交、新键"，但契约是 extra="forbid" 的
+    // 显式 ID 集合——范围 `all` 无法表达 → 显式阻断（不枚举、不发空 ID 集）；
+    // `selected` 按冻结快照透传，且 UI 已显示本次将使用的范围。
+    if (snapshot.mode !== 'selected') {
       toast({
-        title: t('research.layout.scope.modeLabel'),
-        description: t('research.transformations.staleSourcesWarning', {
-          n: resolved.staleSourceCount,
-        }),
+        title: t('common.error'),
+        description: t('research.transformations.allRequiresSelection'),
+        variant: 'destructive',
       })
+      return
     }
+    setRerunDegraded(null)
     try {
       await runGuarded(
         async (modelId) => {
@@ -153,8 +123,8 @@ export function TransformationRunDetail({
           if (!rerunAliveRef.current) return
           const result = await runMutation.mutateAsync({
             transformationId: record.transformation_id as string,
-            sourceIds,
-            noteIds,
+            sourceIds: [...snapshot.sourceIds],
+            noteIds: [...snapshot.noteIds],
             modelId,
             // 新建派发：必须新幂等键（复用旧 key → 后端幂等重放/409）
             idempotencyKey: newIdempotencyKey(),

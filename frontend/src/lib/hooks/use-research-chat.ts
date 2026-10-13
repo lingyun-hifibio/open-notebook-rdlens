@@ -26,6 +26,7 @@ import {
   type ResearchGlobalChatMessage,
 } from '@/lib/research/api'
 import { applySseEvent, createSseState, type ResearchSseState } from '@/lib/research/sse'
+import { buildSourceScope } from '@/lib/research/c05-request'
 import {
   parseGenerationIdFromMessageId,
   selectBoundAssistantRow,
@@ -215,8 +216,10 @@ function messageRowToTurn(row: ResearchGlobalChatMessage): ResearchChatTurn | nu
 export interface ResearchChatSelection {
   sourceIds?: string[]
   noteIds?: string[]
-  /** RWV2-11（K8）：本次派发时的 Scope 模式；缺省按 ID 推导（非空=selected，空=entire_project） */
+  /** RWV2-11（K8）+ PR5：派发时的生效范围模式；缺省 all（C-05 语义） */
   mode?: ResearchScopeMode
+  /** PR5（C1）：single 限定下的来源（仅 mode='single' 时非空） */
+  singleSourceId?: string | null
 }
 
 /**
@@ -229,8 +232,10 @@ export interface ResearchChatSaveOrigin {
 }
 
 /**
- * RWV2-11（K8/K12）：由派发时的 selection 推导冻结的不可变 Scope 快照。
- * - mode 缺省推导与 payload 语义一致（空 ID = entire_project）；
+ * RWV2-11（K8/K12）+ PR5（D-10）：由派发时的 selection 推导冻结的
+ * 不可变 Scope 快照。
+ * - mode 缺省推导与 C-05 payload 语义一致（无显式 ID = all，**不再**是旧
+ *   旧枚举语义）；
  * - 返回对象/数组均为冻结副本（与 `getSnapshot()` 同形态），只读不漂移；
  * - 会话内 turn 在创建时写入该快照，供 Scope 徽标、重试与元数据展示使用。
  */
@@ -242,8 +247,11 @@ export function deriveScopeSnapshot(
   const noteIds = [...(selection?.noteIds ?? [])]
   const mode: ResearchScopeMode =
     selection?.mode ??
-    (sourceIds.length + noteIds.length > 0 ? 'selected' : 'entire_project')
-  return { mode, sourceIds, noteIds }
+    (sourceIds.length + noteIds.length > 0 ? 'selected' : 'all')
+  const singleSourceId = mode === 'single'
+    ? (selection?.singleSourceId ?? null)
+    : null
+  return { mode, sourceIds, noteIds, singleSourceId }
 }
 
 export interface UseResearchChatResult {
@@ -304,6 +312,10 @@ interface ActiveTurn {
   query: string
   sourceIds: string[]
   noteIds: string[]
+  /** PR5（C6）：派发时冻结的生效范围快照（含 single） */
+  scopeSnapshot: ResearchScopeSnapshot
+  /** PR5（C6）：本 turn 的契约分支（能力判定结果，重连不重判） */
+  contract: 'v1' | 'c05-v1'
   /** startTurn 已 fail-closed（空 modelId 直接 error 不建 turn），重连必非空 */
   modelId: string
   /** 每 turn 生成一次；断线重连必须复用同一键（后端同键同 hash 可重入，
@@ -338,7 +350,13 @@ function httpErrorMessage(status: number, body: unknown): string {
   return `Research stream HTTP ${status}`
 }
 
-export function useResearchChat({ projectId }: { projectId: string }): UseResearchChatResult {
+export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: {
+  projectId: string
+  /** PR5（C6/C7）：C-05 契约判定（能力就绪回调；undefined = 旧 v1 全量） */
+  c05DispatchReady?: () => boolean
+  /** PR5（D-04）：会话身份确认时回调（绑定/清除 single 限定） */
+  onBindSession?: (sessionId: string) => void
+}): UseResearchChatResult {
   const [turns, setTurns] = useState<ResearchChatTurn[]>([])
   const [backgroundNotice, setBackgroundNotice] = useState<ResearchBackgroundNotice | null>(null)
   const activeRef = useRef<ActiveTurn | null>(null)
@@ -349,6 +367,11 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
    * ——恢复结果不得灌进已开始的对话（旧历史可能晚于新轮返回）。
    */
   const interactedRef = useRef(false)
+  /** PR5：C-05 判定回调 + bindSession 回调（runTurn 闭包内经 ref 读取） */
+  const c05DispatchReadyRef = useRef<(() => boolean) | undefined>(undefined)
+  c05DispatchReadyRef.current = c05DispatchReady
+  const bindSessionRef = useRef<((sessionId: string) => void) | undefined>(undefined)
+  bindSessionRef.current = onBindSession
   /**
    * mount 恢复去重（StrictMode 双挂载友好）：cleanup（首轮被取消）会清
    * 状态允许重跑；completed 后同 project 不再重试。
@@ -607,16 +630,31 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
 
     active.abort = openResearchChatStream({
       projectId,
-      request: {
-        query: active.query,
-        source_ids: active.sourceIds,
-        note_ids: active.noteIds,
-        session_id: active.sessionId ?? undefined,
-        // #238：v1 契约显式透传执行偏好（不变量 2：后端不隐式补值）；
-        // #243 §6.7：类型必填，快照缺失时 startTurn 已 fail-closed，重连
-        // 路径无 undefined 兜底
-        model_id: active.modelId,
-      },
+      request: active.contract === 'c05-v1'
+        ? {
+            // PR5（B3）：C-05 分支——source_scope 载荷，禁止顶层 source_ids
+            query: active.query,
+            session_id: active.sessionId ?? undefined,
+            model_id: active.modelId,
+            source_scope: buildSourceScope({
+              mode: active.scopeSnapshot.mode,
+              sourceIds: active.scopeSnapshot.sourceIds,
+              noteIds: active.scopeSnapshot.noteIds,
+              singleSourceId: active.scopeSnapshot.singleSourceId,
+            }),
+            note_ids: active.noteIds,
+          }
+        : {
+            // #238：v1 契约显式透传执行偏好（不变量 2：后端不隐式补值）；
+            // #243 §6.7：类型必填，快照缺失时 startTurn 已 fail-closed，重连
+            // 路径无 undefined 兜底
+            query: active.query,
+            source_ids: active.sourceIds,
+            note_ids: active.noteIds,
+            session_id: active.sessionId ?? undefined,
+            model_id: active.modelId,
+          },
+      contract: active.contract,
       idempotencyKey: active.idempotencyKey,
       lastEventId: active.lastEventId,
       // Issue #302：响应头首知 session_id 即持久化——刷新窗口比 done 更早
@@ -629,6 +667,8 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
           current.sessionId = headerSessionId
           sessionIdRef.current = headerSessionId
           persistSessionId(projectId, headerSessionId)
+          // PR5（D-04）：会话身份确认 → 绑定/清除 single 限定
+          bindSessionRef.current?.(headerSessionId)
         }
       },
       onEvent: (event: ResearchSseEvent) => {
@@ -746,11 +786,17 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
       })
       return
     }
+    // PR5（C6）：契约判定在派发时刻执行一次，重连沿用同契约（不重判）
+    const contract: 'v1' | 'c05-v1' = c05DispatchReadyRef.current?.() === true
+      ? 'c05-v1'
+      : 'v1'
     const active: ActiveTurn = {
       turnId,
       query: trimmed,
       sourceIds: selection?.sourceIds ?? [],
       noteIds: selection?.noteIds ?? [],
+      scopeSnapshot: deriveScopeSnapshot(selection),
+      contract,
       modelId,
       idempotencyKey: newIdempotencyKey(),
       attempt: 1,

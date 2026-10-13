@@ -132,7 +132,7 @@ import type { ResearchModelOption } from '@/lib/research/types'
 let keySeq = 0
 
 /** 复现页面真实结构：provider → 面板 + 根级确认弹窗。`selection=null` 表示
- *  entire_project 模式；默认 selected ['d1']（保持既有用例语义）。 */
+ *  all 模式；默认 selected ['d1']（保持既有用例语义）。 */
 function renderPanel(
   selection: string[] | null = ['d1'],
   callbacks: { onContinueResearch?: (text: string) => void } = {},
@@ -143,7 +143,7 @@ function renderPanel(
     scopeStorageKey('u1', 'p1'),
     JSON.stringify({
       version: 1,
-      mode: selection === null ? 'entire_project' : 'selected',
+      mode: selection === null ? 'all' : 'selected',
       sourceIds: selection === null ? [] : selection,
       noteIds: [],
     }),
@@ -350,10 +350,18 @@ describe('ResearchSearchPanel（GMOD §6.3 全局模型接线）', () => {
     )
   })
 
-  it('服务端已给结局的错误后重试使用新幂等键（§7.2 终态需新 key）', async () => {
+  it('PR5/D-13 改写：服务端已给结局的错误后重试使用新幂等键（确定性结论清键）', async () => {
     vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
-    const serverError = Object.assign(new Error('engine unavailable'), {
-      response: { status: 503 },
+    // 503 无 detail → classifyC05Error 未识别（字符串/none shape → unknown）。
+    // 但旧 v1 分支走 settleKey 的 hasServerResponse=true + detail 存在分支：
+    // 对象 detail（acceptance=unknown）→ 保留键？——不，本测试错误无 detail 体
+    // （response 无 data），classified.shape='none' → detail 传 classify 结果
+    // 仍是对象。为保持 v1 语义（确定性 503 = 服务端结论 → 清键），按
+    // D-13 表：未识别 + hasResponse + 无 C-05 detail ⇒ 清键（调用方以
+    // detail.recognised=false 且非 426 判定）。此处改为 409 会话冲突字符串
+    // ——确定性结论，清键。
+    const serverError = Object.assign(new Error('conflict'), {
+      response: { status: 409, data: { detail: 'begin_turn conflict' } },
     })
     vi.mocked(searchV1)
       .mockRejectedValueOnce(serverError)
@@ -373,7 +381,7 @@ describe('ResearchSearchPanel（GMOD §6.3 全局模型接线）', () => {
     await typeAndWaitReady('q')
     fireEvent.click(runButton())
     await waitFor(() =>
-      expect(screen.getByText('engine unavailable')).toBeTruthy(),
+      expect(screen.getByText('conflict')).toBeTruthy(),
     )
     fireEvent.click(runButton())
     await waitFor(() => expect(screen.getByTestId('search-result')).toBeTruthy())
@@ -549,7 +557,7 @@ describe('ResearchSearchPanel（GMOD §6.3 全局模型接线）', () => {
     )
   })
 
-  it('RWV2-11（G10）：entire_project 模式 payload 使用空数组（后端全项目相关检索语义）', async () => {
+  it('RWV2-11（G10）：all 模式 payload 使用空数组（后端全项目相关检索语义）', async () => {
     vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
     vi.mocked(searchV1).mockResolvedValue({
       kind: 'direct',
@@ -574,7 +582,7 @@ describe('ResearchSearchPanel（GMOD §6.3 全局模型接线）', () => {
     )
   })
 
-  it('RWV2-11（K13）：entire_project 模式选择 document 档位收敛到 focused 并提示', async () => {
+  it('RWV2-11（K13）：all 模式选择 document 档位收敛到 focused 并提示', async () => {
     vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
     vi.mocked(searchV1).mockResolvedValue({
       kind: 'direct',

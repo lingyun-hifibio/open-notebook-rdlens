@@ -8,7 +8,7 @@ import { useResearchScope } from '@/lib/research/scope'
  * 紧凑 Scope Summary（RWV2-13 Issue #34，RFC §3 唯一 Scope 契约）。
  *
  * 完整 Sources/Notes 选择编辑面在左栏（唯一编辑面）；摘要只保留：
- * - 模式 + 计数摘要（entire_project 显式可见，D2）——常驻展示，不折叠；
+ * - 模式 + 计数摘要（all 显式可见，D2）——常驻展示，不折叠；
  * - `Edit scope` 入口：经组合层退出最大化并回到左栏编辑面，**不持有**任何
  *   第二套选择/模式状态（不变量 1：一个 Scope 真源）；
  * - 加载/失败/重试状态沿用原选择器语义。
@@ -31,13 +31,15 @@ export function ResearchScopeSummary({
   onEditScope: () => void
 }) {
   const { t } = useTranslation()
-  const { mode, selectedSourceIds, selectedNoteIds } = useResearchScope()
-  const label = mode === 'entire_project'
-    ? t('research.layout.scope.entireProject')
-    : t('research.layout.scope.selectedSummary', {
-        sources: selectedSourceIds.length,
-        notes: selectedNoteIds.length,
-      })
+  const { mode, singlePin, selectedSourceIds, selectedNoteIds } = useResearchScope()
+  const label = mode === 'single'
+    ? t('research.layout.scope.singleActive', { source: singlePin?.sourceId ?? '' })
+    : mode === 'all'
+      ? t('research.layout.scope.entireProject')
+      : t('research.layout.scope.selectedSummary', {
+          sources: selectedSourceIds.length,
+          notes: selectedNoteIds.length,
+        })
 
   return (
     <div

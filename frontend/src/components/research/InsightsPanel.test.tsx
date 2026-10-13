@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { InsightsPanel } from './InsightsPanel'
 import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
 import { ResearchJobsProvider } from './ResearchJobsProvider'
-import { ResearchScopeProvider } from '@/lib/research/scope'
+import { ResearchScopeProvider, scopeStorageKey } from '@/lib/research/scope'
 import * as researchApi from '@/lib/research/api'
 import { apiClient } from '@/lib/api/client'
 import type { ResearchInsight } from '@/lib/types/research'
@@ -81,6 +81,14 @@ function makeWrapper(role: 'owner' | 'admin_readonly' = 'owner') {
 }
 
 describe('InsightsPanel', () => {
+  /** PR5（D-09/D-11）：AI 派发用例必须预置 selected 范围（legacy v1 契约） */
+  function seedSelectedScope(): void {
+    localStorage.setItem(
+      scopeStorageKey('u1', 'proj_1'),
+      JSON.stringify({ version: 1, mode: 'selected', sourceIds: ['src_1'], noteIds: [] }),
+    )
+  }
+
   beforeEach(() => {
     vi.clearAllMocks()
     // 每个用例从干净的持久面开始（Jobs Provider 的 localStorage 登记）
@@ -121,8 +129,9 @@ describe('InsightsPanel', () => {
   })
 
   it('AI 类型创建走专用 adapter：契约头 + 冻结 Scope/focused/语言（S4 重写）', async () => {
+    seedSelectedScope()
     vi.mocked(researchApi.listInsights).mockResolvedValue({ items: [], next_cursor: null })
-    // S2 resolver：entire_project 需至少一个可派发 Source，否则空有效范围会被阻断
+    // PR5：预置 selected 范围（D-09/D-11：legacy 契约下 all 被阻断）
     vi.mocked(researchApi.listSources).mockResolvedValue({
       items: [{
         source_id: 'src_1',
@@ -201,6 +210,7 @@ describe('InsightsPanel', () => {
   }
 
   it('S4-202：Job 由唯一 Jobs Provider 登记（localStorage 可见）+ truthful queued 提示', async () => {
+    seedSelectedScope()
     vi.mocked(researchApi.listInsights).mockResolvedValue({ items: [], next_cursor: null })
     vi.mocked(researchApi.listSources).mockResolvedValue({ items: [readySource()], next_cursor: null })
     vi.mocked(apiClient.post).mockResolvedValue({
@@ -230,6 +240,7 @@ describe('InsightsPanel', () => {
   })
 
   it('S4-200：返回的 Insight 合并进列表（不依赖 refetch）', async () => {
+    seedSelectedScope()
     vi.mocked(researchApi.listInsights).mockResolvedValue({ items: [], next_cursor: null })
     vi.mocked(researchApi.listSources).mockResolvedValue({ items: [readySource()], next_cursor: null })
     vi.mocked(apiClient.post).mockResolvedValue({
@@ -248,6 +259,7 @@ describe('InsightsPanel', () => {
   })
 
   it('S4：未确认的旧 marker 拦截派发，确认后可放行', async () => {
+    seedSelectedScope()
     vi.mocked(researchApi.listInsights).mockResolvedValue({ items: [], next_cursor: null })
     vi.mocked(researchApi.listSources).mockResolvedValue({ items: [readySource()], next_cursor: null })
     localStorage.setItem(

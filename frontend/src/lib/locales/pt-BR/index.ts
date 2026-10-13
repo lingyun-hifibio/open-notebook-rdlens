@@ -1081,7 +1081,7 @@ export const ptBR = {
       sourceChat: "Source chat",
       content: "Content",
       chat: "Chat",
-      scope: { modeLabel: "Research scope", entireProject: "Entire project", selected: "Selected sources and notes", selectedSummary: "Selected: {{sources}} sources, {{notes}} notes", selectItemRequired: "Select a source or note to use a selected scope.", editScope: "Edit scope", reconciled: "Scope updated because unavailable items were removed." },
+      scope: { modeLabel: "Research scope", entireProject: "Entire project", selected: "Selected sources and notes", selectedSummary: "Selected: {{sources}} sources, {{notes}} notes", selectItemRequired: "Select a source or note to use a selected scope.", editScope: "Edit scope", reconciled: "Scope updated because unavailable items were removed.", singleActive: 'Asking this source only: {{source}}', singleClear: 'Stop limiting', allHint: 'Picking any source or note switches the scope to Selected.' },
     },
     loadFailed: "Failed to load workspace data",
     retry: "Retry",
@@ -1133,6 +1133,7 @@ export const ptBR = {
     tabCompare: "Compare",
     scopeSummary: {
       entireProject: "Entire project",
+      singleSource: 'This source only: {{name}}',
       sourceOne: "1 source",
       sourceMany: "{{count}} sources",
       noteOne: "1 note",
@@ -1219,6 +1220,7 @@ export const ptBR = {
     compareOverDefault: "Exceeds the default limit of 30 — allowed up to the hard cap of 50.",
     compareOverHard: "Maximum 50 documents (selected {{count}}).",
     compareEmpty: "Select at least one source to compare.",
+    compareMergedVersions: 'Multiple versions of the same document were merged for comparison.',
     compareEntireProjectRequiresSelection: "Compare requires an explicit source selection — switch to Selected sources to compare specific documents.",
     compareCreated: "Compare job created — it runs in the background; see the Jobs tab for progress.",
     jobsEmpty: "No research jobs yet.",
@@ -1258,6 +1260,9 @@ export const ptBR = {
       statusReady: "Pronto",
       statusStale: "Atualizando",
       statusFailed: "Falha na sincronização",
+      statusRetiring: 'Retiring',
+      statusDeleted: 'Removed',
+      noSourceIdentity: 'No selectable identity; this item cannot be included in scope.',
       lastError: "Erro: {{error}}",
       synced: "Sincronizado",
       retryHint: "Uma falha de sincronização pode ser repetida por um administrador",
@@ -1304,6 +1309,7 @@ export const ptBR = {
       aiFailed: "Generation failed. Please try again."
     },
     transformations: {
+      allRequiresSelection: 'This action needs an explicit source selection — pick sources or notes in the left panel first.',
       newTemplate: "Novo modelo",
       nameLabel: "Nome",
       promptLabel: "Modelo de prompt",

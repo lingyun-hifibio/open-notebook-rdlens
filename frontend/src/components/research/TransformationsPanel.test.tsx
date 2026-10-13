@@ -18,9 +18,9 @@ import type {
 // RWV2-12 Red：TransformationsPanel 迁移到共享 Research Scope。
 // - 运行对话框只读展示当前 Scope 摘要（Entire project / Selected: N sources, M notes）
 //   + Edit scope 入口；不再有第三套 Sources/Notes 复选框。
-// - 请求载荷使用 provider 快照：selected=快照 ids；entire_project=派发时
+// - 请求载荷使用 provider 快照：selected=快照 ids；all=派发时
 //   分页枚举的全部授权 id（resolveScopeSelection）。
-// - 打开/关闭/Edit scope 均不重置全局 Scope；空（entire_project 空项目）
+// - 打开/关闭/Edit scope 均不重置全局 Scope；空（all 空项目）
 //   阻断并英文引导；派发后修改 Scope/模型不影响在途运行；外部模型
 //   consent 取消零副作用（runSnapshot 不设置，摘要仍为 live）。
 // - 结果/Citation/requires_job 降级与 Admin 只读行为保持。
@@ -141,7 +141,7 @@ const USER = 'u1'
 const PROJECT = 'proj_1'
 
 /** 预置 provider 的持久化 Scope（与 provider restoreScope 同构）。 */
-function seedScope(mode: 'entire_project' | 'selected', sourceIds: string[] = [], noteIds: string[] = []) {
+function seedScope(mode: 'all' | 'selected', sourceIds: string[] = [], noteIds: string[] = []) {
   localStorage.setItem(
     scopeStorageKey(USER, PROJECT),
     JSON.stringify({ version: 1, mode, sourceIds, noteIds }),
@@ -254,10 +254,11 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
     expect(screen.getByText('引用原文')).toBeInTheDocument()
   })
 
-  it('AC-1 entire_project：载荷=派发时分页枚举的全部授权 id（Entire project 摘要）', async () => {
-    seedScope('entire_project')
+  // PR5（D-11/T24 改写）：`all` 不再被枚举展开为显式 ID（旧 AC-1 语义删除）；
+  // legacy v1 契约（extra=forbid）无法表达 all → 显式阻断，绝不发空 ID 集。
+  it('AC-1（D-11 改写）all：显式阻断，不派发、不枚举、无空 ID 载荷', async () => {
+    seedScope('all')
     const { wrapper } = makeWrapper()
-    vi.mocked(researchApi.runTransformation).mockResolvedValue(runResult())
     render(<TransformationsPanel />, { wrapper })
     await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
 
@@ -265,29 +266,11 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
     await waitFor(() =>
       expect(screen.getByTestId('run-scope-summary')).toHaveTextContent('entireProject'),
     )
-    // 挂载查询已消费默认 mock；枚举在点击时追加跨页序列
-    vi.mocked(researchApi.listSources)
-      .mockResolvedValueOnce({ items: [source()], next_cursor: 'c_2' })
-      .mockResolvedValueOnce({ items: [source({ source_id: 'src_2', document_id: 'doc_2' })], next_cursor: null })
-    vi.mocked(researchApi.listNotes)
-      .mockResolvedValueOnce({ items: [{
-        note_id: 'note_1',
-        project_id: 'proj_1',
-        title: 'Note One',
-        content: 'body',
-        note_type: 'human',
-        created_at: '2026-08-06T02:00:00Z',
-        updated_at: '2026-08-06T02:00:00Z',
-      }], next_cursor: null })
-
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
     await waitFor(() =>
-      expect(researchApi.runTransformation).toHaveBeenCalledWith('proj_1', 'trans_1', {
-        source_ids: ['src_1', 'src_2'],
-        note_ids: ['note_1'],
-        model_id: 'm-local',
-      }),
+      expect(screen.getByTestId('run-all-blocked')).toBeInTheDocument(),
     )
+    expect(researchApi.runTransformation).not.toHaveBeenCalled()
   })
 
   it('AC-2：打开/关闭（含 Edit scope）运行对话框永不重置全局 Scope', async () => {
@@ -310,8 +293,8 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
     expect(screen.getByTestId('run-scope-summary').textContent).toContain('"sources":1')
   })
 
-  it('AC-3 可达分支：entire_project 空项目 → 阻断 + 英文引导，不派发', async () => {
-    seedScope('entire_project')
+  it('AC-3 可达分支：all 空项目 → 阻断 + 英文引导，不派发', async () => {
+    seedScope('all')
     const { wrapper } = makeWrapper()
     render(<TransformationsPanel />, { wrapper })
     await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
@@ -324,7 +307,7 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
     await waitFor(() =>
-      expect(screen.getByTestId('run-empty-project-blocked')).toBeInTheDocument(),
+      expect(screen.getByTestId('run-all-blocked')).toBeInTheDocument(),
     )
     expect(researchApi.runTransformation).not.toHaveBeenCalled()
     // 对话框保持打开（用户可关掉后改 scope）；阻断后 Confirm 禁用防重复枚举
@@ -338,49 +321,32 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
     expect(screen.getByRole('button', { name: 'research.transformations.confirmRun' })).not.toBeDisabled()
   })
 
-  it('S2：entire_project 只保留 ready/stale 源，stale 计数在提交前给出警告', async () => {
-    seedScope('entire_project')
+  // PR5（D-14 改写）：stale 计数不再由客户端枚举产出（`all` 不枚举、
+  // `selected` 的版本可读性由服务端投影/警告承担）。旧用例删除；此处仅
+  // 断言 selected 派发不产生客户端 stale 警告占位。
+  it('S2（D-14 改写）：selected 派发不产生客户端 stale 计数警告', async () => {
+    seedScope('selected', ['src_1'], [])
     const { wrapper } = makeWrapper()
     vi.mocked(researchApi.runTransformation).mockResolvedValue(runResult())
     render(<TransformationsPanel />, { wrapper })
     await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
     await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
-
-    // 枚举：ready + stale 保留，pending/failed 被过滤（显式 cursor 分支；
-    // 挂载查询已消费 beforeEach 的持久默认 mock）
-    vi.mocked(researchApi.listSources).mockResolvedValueOnce({
-      items: [
-        source(),
-        source({ source_id: 'src_stale', document_id: 'doc_s', status: 'stale' }),
-        source({ source_id: 'src_pending', document_id: 'doc_p', status: 'pending' }),
-        source({ source_id: 'src_failed', document_id: 'doc_f', status: 'failed' }),
-      ],
-      next_cursor: null,
-    })
-    vi.mocked(researchApi.listNotes).mockResolvedValueOnce({ items: [], next_cursor: null })
-
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
-    // 载荷只含 ready/stale；pending/failed 不进入请求（旧实现会全量提交）
     await waitFor(() =>
       expect(researchApi.runTransformation).toHaveBeenCalledWith('proj_1', 'trans_1', {
-        source_ids: ['src_1', 'src_stale'],
+        source_ids: ['src_1'],
         note_ids: [],
         model_id: 'm-local',
       }),
     )
-    // stale 可执行但必须警告（提交前可见；后端用最后同步版本）
-    await waitFor(() => {
-      const warning = screen.getByTestId('run-stale-sources-warning')
-      expect(warning.textContent).toContain('research.transformations.staleSourcesWarning')
-      expect(warning.textContent).toContain('"n":1')
-    })
+    expect(screen.queryByTestId('run-stale-sources-warning')).toBeNull()
   })
 
   it('S2：stale 警告只在真正派发时出现——consent 待确认阶段不得先行显示', async () => {
     // 评审 F2/R4 判别：警告置位在 runGuarded op 体内（与 runSnapshot 同处）。
     // 若被移回 op 外，本用例红（解析成功即显示 = consent 取消也留警告）。
-    seedScope('entire_project')
+    seedScope('all')
     setGlobalModelStub({
       confirmedModelId: 'm-ext',
       needsConsent: true,
@@ -411,8 +377,8 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
     expect(researchApi.runTransformation).not.toHaveBeenCalled()
   })
 
-  it('S2：entire_project 枚举后无有效范围（全是 pending）→ typed 阻断，不派发', async () => {
-    seedScope('entire_project')
+  it('S2：all 枚举后无有效范围（全是 pending）→ typed 阻断，不派发', async () => {
+    seedScope('all')
     const { wrapper } = makeWrapper()
     render(<TransformationsPanel />, { wrapper })
     await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
@@ -429,7 +395,7 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
     await waitFor(() =>
-      expect(screen.getByTestId('run-empty-project-blocked')).toBeInTheDocument(),
+      expect(screen.getByTestId('run-all-blocked')).toBeInTheDocument(),
     )
     expect(researchApi.runTransformation).not.toHaveBeenCalled()
     // 阻断后 Confirm 禁用（防重复枚举）；无 stale 警告（未被 filter 丢弃）
@@ -437,34 +403,15 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
     expect(screen.queryByTestId('run-stale-sources-warning')).toBeNull()
   })
 
-  it('S2：Note-only（Source 全 pending → 空）+ Note 保留 → 派发 note_ids，不误导为阻断', async () => {
-    seedScope('entire_project')
+  it('S2（D-10 改写）：Note-only（selected 空 source + 非空 note）→ 派发 note_ids', async () => {
+    seedScope('selected', [], ['note_1'])
     const { wrapper } = makeWrapper()
     vi.mocked(researchApi.runTransformation).mockResolvedValue(runResult())
     render(<TransformationsPanel />, { wrapper })
     await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
     await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
-
-    vi.mocked(researchApi.listSources).mockResolvedValueOnce({
-      items: [source({ source_id: 'src_pending', status: 'pending' })],
-      next_cursor: null,
-    })
-    vi.mocked(researchApi.listNotes).mockResolvedValueOnce({
-      items: [{
-        note_id: 'note_1',
-        project_id: 'proj_1',
-        title: 'Note One',
-        content: 'body',
-        note_type: 'human',
-        created_at: '2026-08-06T02:00:00Z',
-        updated_at: '2026-08-06T02:00:00Z',
-      }],
-      next_cursor: null,
-    })
-
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
-    // Note-only 合法：source_ids 空、note_ids 有值，且不被阻断
     await waitFor(() =>
       expect(researchApi.runTransformation).toHaveBeenCalledWith('proj_1', 'trans_1', {
         source_ids: [],
@@ -473,37 +420,21 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
       }),
     )
     expect(screen.queryByTestId('run-empty-project-blocked')).toBeNull()
-    expect(screen.queryByTestId('run-stale-sources-warning')).toBeNull()
   })
 
-  it('S2：解析在途关闭并重开对话框后，旧代际的 typed 阻断不得写回新对话框', async () => {
-    seedScope('entire_project')
+
+  // PR5（D-11 改写）：枚举在途场景已不存在（all 同步阻断、selected 无网络解析）。
+  // 代际守卫语义改由 runMutation 在途 + Esc/重开验证：旧代际的结果不得写回新对话框。
+  it('S2（D-11 改写）：派发在途关闭并重开对话框后，旧代际的结果不得写回新对话框', async () => {
+    seedScope('selected', ['src_1'], [])
     const { wrapper } = makeWrapper()
-    const d = deferred<ResearchPage<ResearchSource>>()
-    vi.mocked(researchApi.listNotes).mockResolvedValue({ items: [], next_cursor: null })
+    const d = deferred<ReturnType<typeof runResult>>()
+    vi.mocked(researchApi.runTransformation).mockReturnValue(d.promise)
     render(<TransformationsPanel />, { wrapper })
     await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
 
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
     await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
-    // 第一次确认：枚举挂起（挂载查询已消费 beforeEach 默认）
-    vi.mocked(researchApi.listSources).mockReturnValueOnce(d.promise)
-    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
-    await waitFor(() =>
-      expect(researchApi.listSources).toHaveBeenCalledWith('proj_1', { limit: 100 }),
-    )
-    // 解析在途：Esc 关闭 + 重开同一模板（openRun 已复位 blockedReason）
-    fireEvent.keyDown(document, { key: 'Escape' })
-    await waitFor(() => expect(screen.queryByTestId('run-scope-summary')).toBeNull())
-    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
-    await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
-
-    // 旧代际枚举以空有效范围 reject（typed 阻断）——代际守卫必须丢弃，
-    // 不得把「本项目无 Source/Note」写进已重开的对话框
-    d.resolve({ items: [], next_cursor: null })
-    await new Promise((r) => setTimeout(r, 50))
-    expect(screen.queryByTestId('run-empty-project-blocked')).toBeNull()
-    // 新代际 Confirm 可点并正常派发（若旧代际写回 blockedReason 则恒禁用）
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
     await waitFor(() =>
       expect(researchApi.runTransformation).toHaveBeenCalledWith('proj_1', 'trans_1', {
@@ -512,6 +443,20 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
         model_id: 'm-local',
       }),
     )
+
+    // 在途：Esc 关闭 + 重开同一模板
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByTestId('run-scope-summary')).toBeNull())
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
+    await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
+
+    // 旧代际 resolve → 代际守卫必须丢弃，不写回新对话框
+    d.resolve(Object.assign(runResult(), { requires_job: true, degradation_reason: 'input_budget' }) as unknown as ReturnType<typeof runResult>)
+    await new Promise((r) => setTimeout(r, 50))
+    // 旧代际的 runResult 写回被代际守卫丢弃 → 新对话框无 degraded 提示
+    expect(screen.queryByText('research.transformations.degraded')).toBeNull()
+    // 新代际 Confirm 可用且可再次派发
+    expect(screen.getByRole('button', { name: 'research.transformations.confirmRun' })).not.toBeDisabled()
   })
 
   it('AC-4：派发后修改 Scope 不影响在途运行，且摘要显示派发时快照', async () => {
@@ -769,71 +714,41 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
     })
   })
 
-  it('B1 派发中止：entire_project 解析在途时关闭对话框 → 不派发', async () => {
-    seedScope('entire_project')
+  // PR5（D-11/T24 改写）：枚举在途场景已不存在——`all` 在 executeRun 入口
+  // **同步阻断**（无网络解析可挂起），Esc/重开对话框不会留下在途流。
+  it('B1（D-11 改写）all：Confirm 同步阻断 → 不派发、关闭重开后状态干净', async () => {
+    seedScope('all')
     const { wrapper } = makeWrapper()
-    const d = deferred<{ items: ResearchSource[]; next_cursor: string | null }>()
-    vi.mocked(researchApi.listNotes).mockResolvedValue({ items: [], next_cursor: null })
     render(<TransformationsPanel />, { wrapper })
     await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
 
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
     await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
-    // 渲染后挂 deferred：挂载查询已消费 beforeEach 持久默认，第一次枚举
-    // （listSources('proj_1', { limit: 100 })）将消费本 Once → 枚举真实挂起
-    vi.mocked(researchApi.listSources).mockReturnValueOnce(d.promise)
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
-    // 枚举在途（第 2 次 listSources，带 limit）已挂起
-    await waitFor(() =>
-      expect(researchApi.listSources).toHaveBeenCalledWith('proj_1', { limit: 100 }),
-    )
-    // Esc 关闭对话框
+    await waitFor(() => expect(screen.getByTestId('run-all-blocked')).toBeInTheDocument())
+    expect(researchApi.runTransformation).not.toHaveBeenCalled()
+
+    // Esc 关闭 + 重开：blockedReason 已被 openRun 复位，无残留阻断
     fireEvent.keyDown(document, { key: 'Escape' })
     await waitFor(() => expect(screen.queryByTestId('run-scope-summary')).toBeNull())
-    // 枚举返回后：令牌失效 → 不派发（旧代码在此路径也会拦截：
-    // 判别责任在下一个用例的击穿场景）
-    d.resolve({ items: [source()], next_cursor: null })
-    await waitFor(() => expect(researchApi.runTransformation).not.toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
+    await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
+    expect(screen.queryByTestId('run-all-blocked')).toBeNull()
+    expect(researchApi.runTransformation).not.toHaveBeenCalled()
   })
 
-  it('B1 击穿修复：解析在途关闭并重开同一模板 → 旧流不派发，新确认正常派发', async () => {
-    seedScope('entire_project')
+  it('B1（D-11 改写）all：重复 Confirm 不产生第二次派发', async () => {
+    seedScope('all')
     const { wrapper } = makeWrapper()
-    const d = deferred<{ items: ResearchSource[]; next_cursor: string | null }>()
-    vi.mocked(researchApi.listNotes).mockResolvedValue({ items: [], next_cursor: null })
-    vi.mocked(researchApi.runTransformation).mockResolvedValue(runResult())
     render(<TransformationsPanel />, { wrapper })
     await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
 
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
     await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
-    // 挂 deferred 到第一次枚举（渲染后；挂载查询已消费默认）
-    vi.mocked(researchApi.listSources).mockReturnValueOnce(d.promise)
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
-    await waitFor(() =>
-      expect(researchApi.listSources).toHaveBeenCalledWith('proj_1', { limit: 100 }),
-    )
-    // 枚举在途：Esc 关闭 + 重开同一模板（对象同一性守卫曾被击穿的路径）
-    fireEvent.keyDown(document, { key: 'Escape' })
-    await waitFor(() => expect(screen.queryByTestId('run-scope-summary')).toBeNull())
-    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
-    await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
-    // 旧枚举返回：runTargetRef 已重新指向同一模板对象——对象同一性守卫
-    // 会放行（修复前代码此处必红）；令牌守卫必须废弃旧执行流。
-    // 先冲刷宏任务让陈旧流 continuation 确定性执行，避免 waitFor 首次
-    // 同步检查与微任务 continuation 竞速产生假绿（实测时序抖动）。
-    d.resolve({ items: [source()], next_cursor: null })
-    await new Promise((r) => setTimeout(r, 50))
-    await waitFor(() => expect(researchApi.runTransformation).not.toHaveBeenCalled())
-    // 新的 Confirm 正常派发（当前快照；枚举走 beforeEach 持久默认）
     fireEvent.click(screen.getByRole('button', { name: 'research.transformations.confirmRun' }))
-    await waitFor(() =>
-      expect(researchApi.runTransformation).toHaveBeenCalledWith('proj_1', 'trans_1', {
-        source_ids: ['src_1'],
-        note_ids: [],
-        model_id: 'm-local',
-      }),
-    )
+    await waitFor(() => expect(screen.getByTestId('run-all-blocked')).toBeInTheDocument())
+    expect(researchApi.runTransformation).not.toHaveBeenCalled()
   })
 })
 

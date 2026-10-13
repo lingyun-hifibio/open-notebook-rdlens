@@ -21,11 +21,11 @@ import { saveResultFromResult } from '@/lib/research/api'
 // page_idx + 1 展示（契约 §13.2，page_idx 0-based）。
 // RWV2-11（K7/K8/K12）：面板直接消费共享 ResearchScopeProvider——测试经
 // localStorage 预置范围；retry 复用 turn.scopeSnapshot（null 不渲染重试）；
-// Coverage 只允许 selected 模式 1..50 Source；entire_project 显示专属说明。
+// Coverage 只允许 selected 模式 1..50 Source；all 显示专属说明。
 
 const USER_ID = 'u1'
 const PROJECT_ID = 'p1'
-const SCOPE_A: ResearchScopeSnapshot = { mode: 'selected', sourceIds: ['src_1'], noteIds: [] }
+const SCOPE_A: ResearchScopeSnapshot = { mode: 'selected', sourceIds: ['src_1'], noteIds: [], singleSourceId: null }
 
 function turn(overrides: Partial<ResearchChatTurn>): ResearchChatTurn {
   return {
@@ -51,7 +51,7 @@ function turn(overrides: Partial<ResearchChatTurn>): ResearchChatTurn {
   }
 }
 
-function seedScope(scope: { mode: 'entire_project' | 'selected'; sourceIds: readonly string[]; noteIds: readonly string[] }): void {
+function seedScope(scope: ResearchScopeSnapshot | { mode: 'all' | 'selected'; sourceIds: readonly string[]; noteIds: readonly string[] }): void {
   localStorage.setItem(
     scopeStorageKey(USER_ID, PROJECT_ID),
     JSON.stringify({ version: 1, ...scope }),
@@ -75,7 +75,7 @@ function renderPanel(
   send = vi.fn(),
   overrides: Partial<{
     onSendCoverage: (q: string, snapshot: ResearchScopeSnapshot) => Promise<boolean>
-    scope: { mode: 'entire_project' | 'selected'; sourceIds: string[]; noteIds: string[] }
+    scope: { mode: 'all' | 'selected'; sourceIds: string[]; noteIds: string[] }
     // #358：后端 Coverage 能力（默认 true 保 happy-path；能力关闭用例显式传 false）
     coverageEnabled: boolean
     coverageJobs: ResearchJob[]
@@ -460,8 +460,8 @@ describe('ResearchChatPanel coverage scope（COV-09 + RWV2-11 K3）', () => {
     expect(screen.getByTestId('coverage-scope-notice')).toHaveTextContent('research.coverage.notesNotSupported')
   })
 
-  it('entire_project 模式：专属说明（不命中旧 noSourcesHint）+ 提交禁用（R4/W4）', () => {
-    renderPanel([], vi.fn(), { scope: { mode: 'entire_project', sourceIds: [], noteIds: [] } })
+  it('all 模式：专属说明（不命中旧 noSourcesHint）+ 提交禁用（R4/W4）', () => {
+    renderPanel([], vi.fn(), { scope: { mode: 'all', sourceIds: [], noteIds: [] } })
     const notice = screen.getByTestId('coverage-scope-notice')
     expect(notice).toHaveTextContent('research.coverage.entireProjectNotice')
     expect(notice).not.toHaveTextContent('research.coverage.noSourcesHint')
@@ -496,6 +496,7 @@ describe('ResearchChatPanel coverage scope（COV-09 + RWV2-11 K3）', () => {
       mode: 'selected',
       sourceIds: ['src-1'],
       noteIds: [],
+      singleSourceId: null,
     })
     await waitFor(() => expect(screen.getByTestId('chat-input')).toHaveValue(''))
   })
@@ -543,7 +544,7 @@ describe('ResearchChatPanel coverage scope（COV-09 + RWV2-11 K3）', () => {
     const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
     const onSendCoverage = vi.fn(async () => true)
     // 预置 selected 范围（1 个 Source）——all_selected 仅适用于显式选择范围
-    seedScope({ mode: 'selected', sourceIds: ['src-1'], noteIds: [] })
+    seedScope({ mode: 'selected', sourceIds: ['src-1'], noteIds: [], singleSourceId: null })
     const { rerender } = render(
       <QueryClientProvider client={queryClient}>
         <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">

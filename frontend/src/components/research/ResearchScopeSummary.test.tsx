@@ -26,7 +26,7 @@ function summaryWrapper({ children }: { children: React.ReactNode }) {
   )
 }
 
-function seedScope(mode: 'entire_project' | 'selected', sourceIds: string[] = [], noteIds: string[] = []) {
+function seedScope(mode: 'all' | 'selected', sourceIds: string[] = [], noteIds: string[] = []) {
   localStorage.setItem(
     scopeStorageKey(USER, PROJECT),
     JSON.stringify({ version: 1, mode, sourceIds, noteIds }),
@@ -44,8 +44,8 @@ describe('ResearchScopeSummary', () => {
     localStorage.clear()
   })
 
-  it('entire_project 模式显示显式范围标签（不隐式推导）', () => {
-    seedScope('entire_project')
+  it('all 模式显示显式范围标签（不隐式推导）', () => {
+    seedScope('all')
     render(<ResearchScopeSummary loading={false} loadError={null} onRetry={vi.fn()} onEditScope={vi.fn()} />, {
       wrapper: summaryWrapper,
     })
@@ -91,7 +91,7 @@ describe('ResearchScopeSummary', () => {
   })
 
   it('summary 标签声明 aria-live（屏幕阅读器感知左栏选择变化）', () => {
-    seedScope('entire_project')
+    seedScope('all')
     render(<ResearchScopeSummary loading={false} loadError={null} onRetry={vi.fn()} onEditScope={vi.fn()} />, {
       wrapper: summaryWrapper,
     })
@@ -139,7 +139,7 @@ describe('ResearchScopeSummary', () => {
   })
 
   it('UIOPT-A：摘要不再自带底边框与外层 padding（Header 统一负责唯一视觉边界）', () => {
-    seedScope('entire_project')
+    seedScope('all')
     render(<ResearchScopeSummary loading={false} loadError={null} onRetry={vi.fn()} onEditScope={vi.fn()} />, {
       wrapper: summaryWrapper,
     })

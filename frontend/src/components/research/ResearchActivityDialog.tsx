@@ -52,7 +52,7 @@ export function ResearchActivityDialog({
       sourcesQuery.data?.items,
       citation as unknown as ResearchCitation,
     )
-    if (!source) return
+    if (!source || source.source_id === null) return
     onOpenChange(false)
     onCitationJump?.(source.source_id, citation.page_idx)
   }, [onCitationJump, onOpenChange, sourcesQuery.data?.items])

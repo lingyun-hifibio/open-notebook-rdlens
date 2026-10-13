@@ -128,7 +128,7 @@ export function ResearchChatPanel({
   // RWV2-11（K7）：Scope 真源唯一——面板直接消费共享 Provider
   const { mode, getSnapshot } = useResearchScope()
   // RWV2-11（K3）：all_selected 只适用于显式 selected 范围（1～50 Source、无
-  // Notes）。entire_project 无显式 Source 集合（后端空数组必 422
+  // Notes）。`all` 无显式 Source 集合（后端空数组必 422
   // coverage_sources_empty）——提交闸门单点（K3/W4），CoverageScopeSelector
   // 只出 notice。
   const dispatchSnapshot = getSnapshot()

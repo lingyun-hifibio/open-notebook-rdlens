@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import { createCoverageChat, newIdempotencyKey, searchV1 } from '@/lib/research/api'
+import { useResearchC05 } from '@/lib/hooks/use-research-c05'
+import { buildC05GeneratedRequest } from '@/lib/research/c05-request'
 import {
   useResearchChat,
   type CoverageSubmitRequest,
@@ -31,6 +33,7 @@ import {
   type ResearchMainAction,
 } from './research-main-action'
 import { resolveCitationSource } from './citation-utils'
+import type { ResearchSource } from '@/lib/types/research'
 import type { ResearchCitationDisplayItem } from '@/lib/research/types'
 import type { ResearchCitation } from '@/lib/types/research'
 
@@ -94,7 +97,8 @@ export function ResearchWorkspace({
   const { t } = useTranslation()
   const { toast } = useToast()
   const { projectId, isAdminReadonly } = useResearchWorkspace()
-  const { reconcileSelection } = useResearchScope()
+  const scopeApi = useResearchScope()
+  const { reconcileSelection } = scopeApi
   const sourcesQuery = useResearchSources(projectId)
   const notesQuery = useResearchNotes(projectId)
   const sources = useMemo(() => sourcesQuery.data?.items ?? [], [sourcesQuery.data])
@@ -110,7 +114,8 @@ export function ResearchWorkspace({
     const removed = reconcileSelection(
       sourcesQuery.isSuccess
         ? sources
-            .filter((source) => source.status === 'ready' || source.status === 'stale')
+            .filter((source): source is ResearchSource & { source_id: string } =>
+              source.source_id !== null && (source.status === 'ready' || source.status === 'stale'))
             .map((source) => source.source_id)
         : undefined,
       notesQuery.isSuccess ? notes.map((note) => note.note_id) : undefined,
@@ -137,6 +142,10 @@ export function ResearchWorkspace({
   } = useResearchJobsController()
 
   // Chat SSE 状态机保持组件层（切动作/隐藏不中断流与刷新恢复）
+  // PR5（C6）：C-05 能力（与 models 同 query key 共享缓存）；bindSession
+  // 复用组件顶部唯一 scopeApi（D-04 会话绑定）
+  const c05 = useResearchC05(projectId ?? '')
+  const bindSingleSession = scopeApi.bindSession
   const {
     turns,
     isStreaming,
@@ -144,7 +153,12 @@ export function ResearchWorkspace({
     send: sendTurn,
     sendCoverage,
     resolveChatOrigin,
-  } = useResearchChat({ projectId: projectId ?? '' })
+  } = useResearchChat({
+    projectId: projectId ?? '',
+    // PR5（C6/C7）：C-05 契约判定（能力就绪才走 c05-v1）+ 会话绑定回调（D-04）
+    c05DispatchReady: () => c05.dispatchReady('chat'),
+    onBindSession: bindSingleSession,
+  })
 
   // #243 §6.4：Chat/Compare 统一走顶层执行守卫（invariant 9）
   // #358：models 响应顶层能力——覆盖全部所选来源只在后端
@@ -173,19 +187,25 @@ export function ResearchWorkspace({
       query: string,
       selection: ResearchChatSelection | undefined,
     ): Promise<boolean> => {
-      // RWV2-11（K11）：consent 摘要由「面板转发来的 selection」推导（与
-      // 最终请求同一快照），禁止回读本组件 provider 态。
-      const scopeLabel = formatScopeLabel(deriveScopeSnapshot(selection), t)
+      // RWV2-11（K11）+ PR5：selection 缺省时按 provider 生效快照（含 single）
+      const effectiveSelection: ResearchChatSelection = selection ?? {
+        mode: scopeApi.getSnapshot().mode,
+        sourceIds: [...scopeApi.getSnapshot().sourceIds],
+        noteIds: [...scopeApi.getSnapshot().noteIds],
+        singleSourceId: scopeApi.getSnapshot().singleSourceId,
+      }
+      // consent 摘要与最终请求同一快照（K11）
+      const scopeLabel = formatScopeLabel(deriveScopeSnapshot(effectiveSelection), t)
       const sent = await runGuarded(
         (modelId) => {
-          sendTurn(query, selection, modelId)
+          sendTurn(query, effectiveSelection, modelId)
           return true
         },
         { scopeLabel },
       )
       return sent === true
     },
-    [runGuarded, sendTurn, t],
+    [runGuarded, scopeApi, sendTurn, t],
   )
 
   // Issue #439：persistent_job_required（不可重试）→ 用该 turn 冻结的 Scope
@@ -200,6 +220,13 @@ export function ResearchWorkspace({
       snapshot: ResearchScopeSnapshot,
       turnKey: string,
     ): Promise<BackgroundJobSubmitResult> => {
+      // PR5（D-26）：CTA 属 Search 端点的另一派发点，纳入 D-11 矩阵——
+      // `all` 在旧 v1 契约下无法表达 → 阻断（不发空 ID 集）；C-05 就绪时
+      // 走 source_scope 分支。
+      const useC05 = c05.dispatchReady('search')
+      if (snapshot.mode !== 'selected' && !useC05) {
+        return { status: 'failed' }
+      }
       let idempotencyKey = backgroundJobKeys.current.get(turnKey)
       if (idempotencyKey === undefined) {
         idempotencyKey = newIdempotencyKey()
@@ -207,18 +234,32 @@ export function ResearchWorkspace({
       }
       const outcome = await runGuarded(
         async (modelId) => {
-          const response = await searchV1(
-            projectId ?? '',
-            {
-              query,
-              source_ids: [...snapshot.sourceIds],
-              note_ids: [...snapshot.noteIds],
-              mode: 'auto',
-              model_id: modelId,
-              context_level: 'focused',
-            },
-            { idempotencyKey },
-          )
+          const response = useC05
+            ? await searchV1(
+                projectId ?? '',
+                buildC05GeneratedRequest(
+                  {
+                    mode: snapshot.mode,
+                    sourceIds: snapshot.sourceIds,
+                    noteIds: snapshot.noteIds,
+                    singleSourceId: snapshot.singleSourceId,
+                  },
+                  { query, model_id: modelId, mode: 'auto', context_level: 'focused' },
+                ),
+                { idempotencyKey, contract: 'c05-v1' },
+              )
+            : await searchV1(
+                projectId ?? '',
+                {
+                  query,
+                  source_ids: [...snapshot.sourceIds],
+                  note_ids: [...snapshot.noteIds],
+                  mode: 'auto',
+                  model_id: modelId,
+                  context_level: 'focused',
+                },
+                { idempotencyKey },
+              )
           // 202 = 已受理（job_id 缺失只提示刷新，不得报失败——否则重复提交）
           return response.kind === 'background'
             ? ({ status: 'queued', jobId: response.job_id ?? null } as const)
@@ -231,7 +272,7 @@ export function ResearchWorkspace({
       if (outcome.status === 'queued') refreshActivity()
       return outcome
     },
-    [projectId, runGuarded, refreshActivity, t],
+    [c05, projectId, runGuarded, refreshActivity, t],
   )
 
   const createCompare = useCallback(
@@ -244,6 +285,7 @@ export function ResearchWorkspace({
           mode: 'selected',
           sourceIds: [...documentIds],
           noteIds: [],
+          singleSourceId: null,
         },
         t,
       )
@@ -306,7 +348,7 @@ export function ResearchWorkspace({
         sources,
         citation as unknown as ResearchCitation,
       )
-      if (!source) return
+      if (!source || source.source_id === null) return
       onCitationJump(source.source_id, citation.page_idx)
     },
     [onCitationJump, sources],
@@ -316,7 +358,7 @@ export function ResearchWorkspace({
   const handleTransformationCitation = useCallback(
     (citation: ResearchCitation) => {
       const source = resolveCitationSource(sources, citation)
-      if (!source) return
+      if (!source || source.source_id === null) return
       onCitationJump(source.source_id, citation.page_idx)
     },
     [onCitationJump, sources],

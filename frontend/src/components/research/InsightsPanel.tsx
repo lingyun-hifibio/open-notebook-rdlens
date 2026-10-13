@@ -20,11 +20,8 @@ import { useResearchGlobalModel, researchModelBlockedHint } from '@/lib/hooks/us
 import { useCreateResearchInsight, useResearchInsights } from '@/lib/hooks/use-research'
 import { useResearchScope } from '@/lib/research/scope'
 import { formatScopeLabel } from '@/lib/research/scope'
-import {
-  detectResponseLanguage,
-  EmptyEffectiveScopeError,
-  resolveScopeSelection,
-} from '@/lib/research/scope-utils'
+import { detectResponseLanguage } from '@/lib/research/scope-utils'
+import { C05_ENTRY_PENDING_PR4 } from '@/lib/research/c05-contract'
 import { useAiInsightSubmit, type AiInsightSubmitStatus } from '@/lib/research/ai-insight-submit'
 import { useResearchJobsController } from './ResearchJobsProvider'
 import { AdminReadOnlyBanner } from './AdminReadOnlyBanner'
@@ -129,7 +126,7 @@ export function InsightsPanel({
   })
 
   /**
-   * S4：AI 派发——Scope 用 S2 唯一 resolver 解析（entire_project 分页枚举、
+   * S4：AI 派发——PR5（D-09/D-11）：legacy v1 仅接受显式 ID 集合；`all`
    * selected 冻结副本），语言按 content 检出并冻结，随后交给 S4 编排 hook
    * （consent 闸门 → key/marker → POST → disposition 状态机）。
    */
@@ -139,29 +136,23 @@ export function InsightsPanel({
       setAiNotice('blocked_empty_scope')
       return
     }
-    setIsResolvingScope(true)
-    let resolved: { sourceIds: string[]; noteIds: string[]; staleSourceCount: number }
-    try {
-      resolved = await resolveScopeSelection(projectId, snapshot)
-    } catch (error) {
-      setAiErrorCode(error instanceof EmptyEffectiveScopeError ? null : t('research.workbench.actionFailed'))
-      setAiNotice(error instanceof EmptyEffectiveScopeError ? 'blocked_empty_scope' : 'failed')
+    // PR5（D-09）：AI Insight 在本 PR 内不接 C-05（空范围守卫/响应头断言/
+    // attempt 机制需成套改造，属 PR4）。legacy v1 只能表达显式 ID 集合，
+    // `all` 无法表达 → 显式阻断（D-11），绝不枚举展开、绝不发空 ID 集。
+    if (snapshot.mode !== 'selected') {
+      setAiErrorCode(C05_ENTRY_PENDING_PR4)
+      setAiNotice('blocked_all_scope')
       return
-    } finally {
-      setIsResolvingScope(false)
     }
-    // stale 计数由 hook 在真正派发时回传（consent 取消不留痕，L-2）
-    void resolved.staleSourceCount
     // 模型在派发时刻冻结（consent 确认前后不再漂移，C-04）
     if (confirmedModelId === null) return
     await aiSubmit.submit({
       title: titleSnapshot,
       content: contentSnapshot,
-      sourceIds: resolved.sourceIds,
-      noteIds: resolved.noteIds,
+      sourceIds: [...snapshot.sourceIds],
+      noteIds: [...snapshot.noteIds],
       responseLanguage: detectResponseLanguage(contentSnapshot),
       modelId: confirmedModelId,
-      staleSourceCount: resolved.staleSourceCount,
       scopeLabel: formatScopeLabel(snapshot, t),
     })
   }

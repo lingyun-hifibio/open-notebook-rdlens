@@ -497,16 +497,18 @@ export async function revokeExternalEgressConsent(
 export async function searchV1(
   projectId: string,
   request: ResearchSearchRequest,
-  options: { idempotencyKey?: string } = {},
+  options: { idempotencyKey?: string; contract?: 'v1' | 'c05-v1' } = {},
 ): Promise<ResearchSearchOutcome> {
   // 幂等键由调用方决定复用策略；未提供时本次请求生成新键
   const idempotencyKey = options.idempotencyKey ?? newIdempotencyKey()
+  // PR5（B3）：契约头显式分支——C-05 请求必须携带 c05-v1 头；旧分支 v1 不变
+  const contract = options.contract ?? 'v1'
   const response = await apiClient.post<ResearchSearchResponse>(
     researchPath(projectId, 'search'),
     request,
     {
       headers: {
-        'X-Research-Contract': 'v1',
+        'X-Research-Contract': contract,
         'Idempotency-Key': idempotencyKey,
       },
     },
@@ -818,6 +820,8 @@ export interface ResearchChatStreamOptions {
   path?: string
   /** #238：v1 契约幂等键；调用方复用策略决定，缺省新键 */
   idempotencyKey?: string
+  /** PR5（B3）：契约头显式分支——C-05 Chat 携带 c05-v1；缺省 v1 不变 */
+  contract?: 'v1' | 'c05-v1'
   /** 断线重连的 Last-Event-ID（0 = 从头开始） */
   lastEventId?: number
   /** 响应到达时读取一次响应头（Issue #182：X-Chat-Session-Id 回显） */
@@ -844,8 +848,8 @@ export function openResearchChatStream(options: ResearchChatStreamOptions): () =
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Accept: 'text/event-stream',
-    // #238：v1 契约（Phase 6 锁死：生成 POST 必须带版本头 + 幂等键）
-    'X-Research-Contract': 'v1',
+    // #238：契约头显式分支（PR5：C-05 → c05-v1；缺省 v1 不变）
+    'X-Research-Contract': options.contract ?? 'v1',
     'Idempotency-Key': options.idempotencyKey ?? newIdempotencyKey(),
   }
   if (token) {

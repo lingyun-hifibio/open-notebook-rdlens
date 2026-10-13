@@ -171,7 +171,7 @@ function ScopeProbe() {
   )
 }
 
-function seedScope(mode: 'entire_project' | 'selected', sourceIds: string[] = [], noteIds: string[] = []) {
+function seedScope(mode: 'all' | 'selected', sourceIds: string[] = [], noteIds: string[] = []) {
   localStorage.setItem(
     scopeStorageKey('u1', 'proj_1'),
     JSON.stringify({ version: 1, mode, sourceIds, noteIds }),

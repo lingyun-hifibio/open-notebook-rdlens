@@ -16,7 +16,7 @@ import { ResearchEgressConsentDialog } from './ResearchEgressConsentDialog'
 import { ResearchGlobalModelProvider } from '@/lib/hooks/use-research-global-model'
 import { ResearchJobsProvider } from './ResearchJobsProvider'
 import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
-import { ResearchScopeProvider } from '@/lib/research/scope'
+import { ResearchScopeProvider, scopeStorageKey } from '@/lib/research/scope'
 import * as researchApi from '@/lib/research/api'
 import { apiClient } from '@/lib/api/client'
 import { listAiInsightRiskMarkers } from '@/lib/research/ai-insight-risk'
@@ -136,6 +136,11 @@ beforeEach(() => {
   localStorage.clear()
   vi.clearAllMocks()
   Element.prototype.scrollIntoView = vi.fn()
+  // PR5（D-09/D-11）：AI 派发用例必须预置 selected 范围（legacy v1 契约）
+  localStorage.setItem(
+    scopeStorageKey('u1', PROJECT),
+    JSON.stringify({ version: 1, mode: 'selected', sourceIds: ['src_1'], noteIds: [] }),
+  )
   vi.mocked(researchApi.listInsights).mockResolvedValue({ items: [], next_cursor: null })
   vi.mocked(researchApi.listSources).mockResolvedValue({ items: [readySource], next_cursor: null })
   vi.mocked(researchApi.listNotes).mockResolvedValue({ items: [], next_cursor: null })

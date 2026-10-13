@@ -15,7 +15,18 @@ import {
 } from './SearchContextSelector'
 import { fetchContextPreview, newIdempotencyKey, searchV1 } from '@/lib/research/api'
 import { researchModelBlockedHint, useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
-import { formatScopeLabel, useResearchScope } from '@/lib/research/scope'
+import { formatScopeLabel, useResearchScope, type ResearchScopeSnapshot } from '@/lib/research/scope'
+import { useResearchC05 } from '@/lib/hooks/use-research-c05'
+import { c05RequestHeaders } from '@/lib/research/c05-contract'
+import { buildC05GeneratedRequest } from '@/lib/research/c05-request'
+import { classifyC05Error } from '@/lib/research/c05-error-actions'
+import { extractScopeProjection } from '@/lib/research/c05-scope-projection'
+import { evaluatePreviewGate } from '@/lib/research/c05-preview-gate'
+import {
+  acquireKey, countAttempt, newKeyHold, settleKey, signatureOf,
+  canRetryKey,
+} from '@/lib/research/c05-idempotency-key'
+import { monotonicNow } from '@/lib/research/c05-key-retention'
 import { extractResearchErrorCode, userErrorMessageKey } from '@/lib/research/errors'
 import type {
   ResearchContextLevel,
@@ -88,6 +99,12 @@ export function ResearchSearchPanel({
   } = useResearchGlobalModel()
   // RWV2-11（K7）：Scope 真源唯一——本面板不再持有/接收独立选择状态
   const { mode, selectedSourceIds, selectedNoteIds, getSnapshot } = useResearchScope()
+  // PR5（C6）：C-05 能力（与 models 同 query key，共享缓存）
+  const c05 = useResearchC05(projectId)
+  const c05ReadyRef = useRef(false)
+  c05ReadyRef.current = c05.dispatchReady('search')
+  // D-01：范围投影（存在才消费）
+  const [scopeProjection, setScopeProjection] = useState<ReturnType<typeof extractScopeProjection>>({ kind: 'absent' })
 
   const [query, setQuery] = useState('')
   const [result, setResult] = useState<ResearchSearchResponse | null>(null)
@@ -159,7 +176,9 @@ export function ResearchSearchPanel({
     // RWV2-40：inactive（隐藏/非主动作）时不发起 Context Preview——
     // 清除 debounce、清空临时 preview、不启动新请求；重新激活后再算。
     // 正式 Search 执行走 executeSearch（run 回调），不因隐藏而取消。
-    if (!active || !trimmed || confirmedModelId === null) {
+    // PR5（D-07/C6）：C-05 就绪但 preview_supported=false → 不发旧 Preview
+    // （旧形状的 source_ids 语义与 all 不是同一范围；未检查不得冒充通过）。
+    if (!active || !trimmed || confirmedModelId === null || c05ReadyRef.current) {
       setPreview(null)
       return
     }
@@ -207,65 +226,110 @@ export function ResearchSearchPanel({
     [saveSearchContext],
   )
 
+  // PR5（C6/D-13）：键生命周期由 c05-idempotency-key 纯函数管理（以
+  // detail.acceptance 为锚，替换旧"有 response 即清键"）。
+  const keyHoldRef = useRef(newKeyHold())
+
   const executeSearch = useCallback(
     async (
       trimmed: string,
       modelId: string,
       level: ResearchContextLevel,
-      sourceIds: string[],
-      noteIds: string[],
+      scopeSnapshot: ResearchScopeSnapshot,
     ) => {
       setLoading(true)
       setError(null)
       setResult(null)
       setBackground(null)
-      // 同一逻辑提交（同输入）复用幂等键；输入变化即视为新执行（§7.2：
-      // 终态失败后需新 key 才能发起新执行）
-      const signature = JSON.stringify([trimmed, modelId, level, sourceIds, noteIds])
-      if (!idempotencyKeyRef.current || keyInputsRef.current !== signature) {
-        idempotencyKeyRef.current = newIdempotencyKey()
-        keyInputsRef.current = signature
+      const c05 = c05ReadyRef.current
+      const useC05 = c05 && scopeSnapshot.mode !== 'selected'
+        ? true
+        : c05
+      const now = monotonicNow()
+      const signature = signatureOf({
+        entry: 'search',
+        query: trimmed,
+        scope: {
+          mode: scopeSnapshot.mode,
+          sourceIds: scopeSnapshot.sourceIds,
+          noteIds: scopeSnapshot.noteIds,
+          singleSourceId: scopeSnapshot.singleSourceId,
+        },
+        modelId,
+        contextLevel: level,
+      })
+      if (!canRetryKey(keyHoldRef.current, now)) {
+        keyHoldRef.current = newKeyHold()
       }
+      const acquired = acquireKey(keyHoldRef.current, now, newIdempotencyKey, signature)
+      keyHoldRef.current = countAttempt(acquired.hold)
       try {
-        const outcome = await searchV1(
-          projectId,
-          {
-            query: trimmed,
-            source_ids: sourceIds,
-            note_ids: noteIds,
-            mode: 'auto',
-            model_id: modelId,
-            context_level: level,
-          },
-          { idempotencyKey: idempotencyKeyRef.current },
-        )
-        idempotencyKeyRef.current = null
-        keyInputsRef.current = ''
-        if (outcome.kind === 'direct') {
-          lastExecutedQueryRef.current = trimmed
-          setResult(outcome.result)
-        } else {
-          setBackground({
-            generationId: outcome.generation_id,
-            jobId: outcome.job_id,
+        if (useC05) {
+          // PR5（B3）：C-05 分支——source_scope 载荷 + c05-v1 头；
+          // 禁止非空顶层 source_ids（D-11 fail-closed 在构造层）
+          const body = buildC05GeneratedRequest(
+            {
+              mode: scopeSnapshot.mode,
+              sourceIds: scopeSnapshot.sourceIds,
+              noteIds: scopeSnapshot.noteIds,
+              singleSourceId: scopeSnapshot.singleSourceId,
+            },
+            { query: trimmed, model_id: modelId, mode: 'auto', context_level: level },
+          )
+          const outcome = await searchV1(projectId, body, {
+            idempotencyKey: acquired.key,
+            contract: 'c05-v1',
           })
-        }
-      } catch (err) {
-        // 网络层错误（无 response，结果真未知）保留同键防双跑；
-        // 服务端已给确定性结局（有 response）→ 重置允许新执行
-        const hasServerResponse = !!(err as { response?: unknown } | null)?.response
-        const detailCode = extractResearchErrorCode(err)
-        if (hasServerResponse) {
-          idempotencyKeyRef.current = null
-          keyInputsRef.current = ''
-          // 后端 dispatch gate 判定授权失效 → 让 consent 重新生效判定，
-          // 下一次执行由根级 guard 重新弹确认；不在此处自行重试或改模型。
-          if (detailCode !== null && CONSENT_ERROR_CODES.includes(detailCode)) {
-            invalidateConsent()
+          // D-13：确定性完成（200/202）→ 清键（再次提问 = 新执行）
+          keyHoldRef.current = settleKey(keyHoldRef.current, { httpDelivered: true, detail: null, success: true })
+          if (outcome.kind === 'direct') {
+            lastExecutedQueryRef.current = trimmed
+            // D-01：投影存在才消费；缺失不猜测
+            setScopeProjection(extractScopeProjection(outcome.result))
+            setResult(outcome.result)
+          } else {
+            setBackground({
+              generationId: outcome.generation_id,
+              jobId: outcome.job_id,
+            })
+          }
+        } else {
+          const outcome = await searchV1(
+            projectId,
+            {
+              query: trimmed,
+              source_ids: [...scopeSnapshot.sourceIds],
+              note_ids: [...scopeSnapshot.noteIds],
+              mode: 'auto',
+              model_id: modelId,
+              context_level: level,
+            },
+            { idempotencyKey: acquired.key },
+          )
+          keyHoldRef.current = settleKey(keyHoldRef.current, { httpDelivered: true, detail: null, success: true })
+          if (outcome.kind === 'direct') {
+            lastExecutedQueryRef.current = trimmed
+            setResult(outcome.result)
+          } else {
+            setBackground({
+              generationId: outcome.generation_id,
+              jobId: outcome.job_id,
+            })
           }
         }
-        // RWV2-42（AC8）：raw code/消息不作主消息——code 驱动映射主文案，
-        // 原文仅次级诊断行
+      } catch (err) {
+        // D-13：以 detail.acceptance 为锚处置键——unknown/未识别保留；确定性结论清除
+        const classified = classifyC05Error(err)
+        const hasServerResponse = !!(err as { response?: unknown } | null)?.response
+        keyHoldRef.current = settleKey(keyHoldRef.current, {
+          httpDelivered: hasServerResponse,
+          detail: classified,
+          success: false,
+        })
+        const detailCode = classified.code ?? extractResearchErrorCode(err)
+        if (hasServerResponse && detailCode !== null && CONSENT_ERROR_CODES.includes(detailCode)) {
+          invalidateConsent()
+        }
         setError({
           code: detailCode,
           message: err instanceof Error ? err.message : String(err),
@@ -285,11 +349,9 @@ export function ResearchSearchPanel({
     // 确认后的新值（不变量 4），consent 弹窗摘要与最终请求同源（K5）。
     const scopeSnapshot = getSnapshot()
     const levelSnapshot = selectedLevel
-    const sourceSnapshot = [...scopeSnapshot.sourceIds]
-    const noteSnapshot = [...scopeSnapshot.noteIds]
     void runGuarded(
       (modelId) =>
-        executeSearch(trimmed, modelId, levelSnapshot, sourceSnapshot, noteSnapshot),
+        executeSearch(trimmed, modelId, levelSnapshot, scopeSnapshot),
       { scopeLabel: formatScopeLabel(scopeSnapshot, t) },
     )
   }, [
@@ -302,7 +364,7 @@ export function ResearchSearchPanel({
     t,
   ])
 
-  // RWV2-11（K13）：`document` 档位依赖显式 Source 选择；entire_project 下空
+  // RWV2-11（K13）：`document` 档位依赖显式 Source 选择；all 下空
   // ID 后端必 422（runner.py document context requires sources）。
   // P1-1：收敛使用**独立的 scope 归因提示**（documentLevelAdjusted），不写入
   // adjustedFrom——后者驱动「模型能力」横幅，避免把 scope 收敛错误归因于模型
@@ -311,7 +373,7 @@ export function ResearchSearchPanel({
   // 接管清除（防两 effect 互相回弹死循环）。
   const [documentLevelAdjusted, setDocumentLevelAdjusted] = useState(false)
   useEffect(() => {
-    if (mode !== 'entire_project') setDocumentLevelAdjusted(false)
+    if (mode !== 'all') setDocumentLevelAdjusted(false)
   }, [mode])
   // P3-1：模型切换时清除 scope 归因提示（能力 effect 可能主动挪档位）
   useEffect(() => {
@@ -320,7 +382,7 @@ export function ResearchSearchPanel({
 
   useEffect(() => {
     if (
-      mode === 'entire_project' &&
+      mode === 'all' &&
       selectedLevel === 'document' &&
       // P2-⑥：收敛前提是「document 受支持且目标 focused 受支持」——缺一
       // 则由模型能力 effect 全权接管清除（防 K13↔能力 effect 回弹死循环）
@@ -356,7 +418,7 @@ export function ResearchSearchPanel({
             {t('research.searchContext.autoAdjusted', { level: adjustedFrom })}
           </p>
         )}
-        {/* RWV2-11（K13/P1-1）：entire_project 下 document 档位无显式 Source，
+        {/* RWV2-11（K13/P1-1）：all 下 document 档位无显式 Source，
             收敛到 focused 并给出独立归因（scope）的明确英文说明；模型能力
             横幅（adjustedFrom）不受影响、不会同时误显示 */}
         {documentLevelAdjusted && (

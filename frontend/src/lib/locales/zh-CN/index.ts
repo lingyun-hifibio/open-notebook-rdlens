@@ -1081,7 +1081,7 @@ export const zhCN = {
       sourceChat: "来源对话",
       content: "正文",
       chat: "对话",
-      scope: { modeLabel: "Research scope", entireProject: "Entire project", selected: "Selected sources and notes", selectedSummary: "Selected: {{sources}} sources, {{notes}} notes", selectItemRequired: "Select a source or note to use a selected scope.", editScope: "Edit scope", reconciled: "Scope updated because unavailable items were removed." },
+      scope: { modeLabel: "Research scope", entireProject: "Entire project", selected: "Selected sources and notes", selectedSummary: "Selected: {{sources}} sources, {{notes}} notes", selectItemRequired: "Select a source or note to use a selected scope.", editScope: "Edit scope", reconciled: "Scope updated because unavailable items were removed.", singleActive: 'Asking this source only: {{source}}', singleClear: 'Stop limiting', allHint: 'Picking any source or note switches the scope to Selected.' },
     },
     loadFailed: "工作区数据加载失败",
     retry: "重试",
@@ -1132,6 +1132,7 @@ export const zhCN = {
     tabCompare: "对比",
     scopeSummary: {
       entireProject: "Entire project",
+      singleSource: 'This source only: {{name}}',
       sourceOne: "1 source",
       sourceMany: "{{count}} sources",
       noteOne: "1 note",
@@ -1218,6 +1219,7 @@ export const zhCN = {
     compareOverDefault: "超出默认上限 30 篇——允许创建，但不超过硬上限 50 篇。",
     compareOverHard: "最多 50 篇（当前已选 {{count}} 篇）。",
     compareEmpty: "请至少选择一个来源进行对比。",
+    compareMergedVersions: 'Multiple versions of the same document were merged for comparison.',
     compareEntireProjectRequiresSelection: "Compare requires an explicit source selection — switch to Selected sources to compare specific documents.",
     compareCreated: "对比任务已创建——后台继续运行，请在任务页查看进度。",
     jobsEmpty: "暂无研究任务。",
@@ -1257,6 +1259,9 @@ export const zhCN = {
       statusReady: "就绪",
       statusStale: "内容更新中",
       statusFailed: "同步失败",
+      statusRetiring: 'Retiring',
+      statusDeleted: 'Removed',
+      noSourceIdentity: 'No selectable identity; this item cannot be included in scope.',
       lastError: "错误：{{error}}",
       synced: "同步于",
       retryHint: "同步失败可联系管理员重试",
@@ -1303,6 +1308,7 @@ export const zhCN = {
       aiFailed: "Generation failed. Please try again."
     },
     transformations: {
+      allRequiresSelection: 'This action needs an explicit source selection — pick sources or notes in the left panel first.',
       newTemplate: "新建模板",
       nameLabel: "名称",
       promptLabel: "提示词模板",
