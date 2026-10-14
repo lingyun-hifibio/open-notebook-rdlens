@@ -110,6 +110,24 @@ describe('D-11/T24：all 阻断清单完整性（静态守卫）', () => {
     ).toEqual([])
   })
 
+  it('D-05：禁止携带 source_scope 的入口层（adapter/hook）在**代码**里不得出现该字段', () => {
+    // 存在性守卫覆盖不到 hook/adapter 层（那里没有"阻断信号"，只有"不许出现"）。
+    // 这三处分别对应：旧 Source Chat（固定单 Source）、AI Insight adapter（D-09 未解禁）、
+    // Insights adapter（same）。变异演练：任一文件加入 source_scope → 本用例变红。
+    const forbidSources = [
+      'lib/hooks/use-research-source-chat.ts',
+      'lib/research/ai-insight.ts',
+      'lib/research/ai-insight-submit.ts',
+    ]
+    const offenders = forbidSources.filter((rel) => readCode(rel).includes('source_scope'))
+    expect(
+      offenders,
+      `以下入口层不得携带 source_scope（D-05/D-09）：\n${offenders.join('\n')}`,
+    ).toEqual([])
+    // 对照：全局 Chat 是**合法**携带方（否则上面的排除规则会被误用成"到处禁止"）
+    expect(readCode('lib/hooks/use-research-chat.ts')).toContain('buildSourceScope(')
+  })
+
   it('D-11 文案不得用"没有可用资料"式措辞描述 all（必须引导先选择资料）', () => {
     const forbidden = /no available sources|no sources available|没有可用资料|暫無可用資料/i
     const d11Copies = [
