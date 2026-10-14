@@ -89,7 +89,14 @@ describe('summarizeWarnings（T35 有界）', () => {
   })
 
   it('undefined → 全零', () => {
-    expect(summarizeWarnings(undefined)).toEqual({ fallbackCount: 0, excludedCount: 0, detail: [], truncated: 0, total: 0 })
+    expect(summarizeWarnings(undefined)).toEqual({
+      fallbackCount: 0,
+      excludedCount: 0,
+      undetailedCount: 0,
+      detail: [],
+      truncated: 0,
+      total: 0,
+    })
   })
 })
 

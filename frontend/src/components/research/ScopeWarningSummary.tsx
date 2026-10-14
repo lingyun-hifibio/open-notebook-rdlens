@@ -100,6 +100,10 @@ export function ScopeWarningSummary({
               summary.excludedCount > 0
                 ? t('research.scopeDetails.warningsExcluded', { n: summary.excludedCount })
                 : null,
+              // 无文档明细的警告：保持可见，但不混进上面两类篇数（评审 MEDIUM-8）
+              summary.undetailedCount > 0
+                ? t('research.scopeDetails.warningsUndetailed', { n: summary.undetailedCount })
+                : null,
             ]
               .filter((part): part is string => part !== null)
               .join(' · ')}

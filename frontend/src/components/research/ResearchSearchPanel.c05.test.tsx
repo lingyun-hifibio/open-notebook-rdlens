@@ -10,6 +10,8 @@ import { ResearchScopeProvider, scopeStorageKey } from '@/lib/research/scope'
 import { ResearchJobsProvider } from './ResearchJobsProvider'
 import * as researchApi from '@/lib/research/api'
 import { monotonicNow } from '@/lib/research/c05-key-retention'
+import { QUERY_KEYS } from '@/lib/api/query-client'
+import { act } from '@testing-library/react'
 import type { ResearchModelOption } from '@/lib/research/types'
 
 vi.mock('@/lib/research/api', async (importOriginal) => {
@@ -60,8 +62,11 @@ function seedScopeSelected(ids: string[]): void {
   )
 }
 
+let activeQueryClient: QueryClient | null = null
+
 function makeWrapper() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  activeQueryClient = queryClient
   return ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>
       <ResearchWorkspaceProvider projectId="proj_1" role="owner" userId="u1">
@@ -308,20 +313,56 @@ describe('ResearchSearchPanel C-05（C6）', () => {
     })
   })
 
-  it('D-01：旧 v1 契约结果不残留上一次 C-05 的投影（不串台）', async () => {
+  it('D-01：先有 C-05 投影、再退到 v1 结果 → 旧投影必须被清空（不串台）', async () => {
     seedScopeAll()
+    // 第一轮：C-05 携带投影（refs 有值）
+    vi.mocked(researchApi.searchV1).mockResolvedValueOnce({
+      kind: 'direct',
+      result: {
+        ...directResult,
+        scope_contract_version: 'c05-v1',
+        resolved_scope: {
+          mode: 'all', contract_version: 'c05-v1',
+          resolved_source_refs: [{ document_id: 'doc_ref_1', document_version: 'v1' }],
+          note_ids: [], single_source_id: null, missing_source_ids: [],
+          includes_exact_versions: false, contains_document_body: false, warnings: [],
+        },
+      } as unknown as typeof directResult,
+    })
+    render(<ResearchSearchPanel projectId="proj_1" />, { wrapper: makeWrapper() })
+    const input = await screen.findByTestId('search-input')
+    fireEvent.change(input, { target: { value: 'q-c05-first' } })
+    fireEvent.click(screen.getByTestId('search-run'))
+    await waitFor(() => expect(screen.getByTestId('scope-projection-refs')).toBeInTheDocument())
+
+    // 第二轮：能力翻转为 v1（真实落到查询缓存），返回 v1 结果
+    // 评审 LOW-13：此前该用例**直接从 v1 开始**，即使删掉"清空投影"逻辑也不会红。
     vi.mocked(researchApi.listModels).mockResolvedValue({
       models: [], capabilities: { coverage_all_selected: false, c05: c05Caps(false) },
     })
-    vi.mocked(researchApi.searchV1).mockResolvedValue({ kind: 'direct', result: directResult })
-    render(<ResearchSearchPanel projectId="proj_1" />, { wrapper: makeWrapper() })
-    const input = await screen.findByTestId('search-input')
-    fireEvent.change(input, { target: { value: 'q-v1' } })
+    await act(async () => {
+      await activeQueryClient!.invalidateQueries({ queryKey: QUERY_KEYS.researchModelCatalog('proj_1') })
+    })
+    // 等到能力**确实**翻转进缓存（否则第二轮仍会走 C-05 分支，前提不成立）
+    await waitFor(() => {
+      const cached = activeQueryClient!.getQueryData(QUERY_KEYS.researchModelCatalog('proj_1')) as
+        | { capabilities?: { c05?: { enabled?: boolean } } } | undefined
+      expect(cached?.capabilities?.c05?.enabled).toBe(false)
+    })
+    vi.mocked(researchApi.searchV1).mockResolvedValueOnce({ kind: 'direct', result: directResult })
     fireEvent.click(screen.getByTestId('search-run'))
+
+    // **前提断言**：第二轮必须真的走了 v1 分支（契约翻转发散了）。没有这一步，
+    // "投影被清空"可能只是 C-05 分支重新赋值的结果，用例会假绿。
+    await waitFor(() => expect(researchApi.searchV1).toHaveBeenCalledTimes(2))
+    const secondBody = vi.mocked(researchApi.searchV1).mock.calls[1][1] as unknown as Record<string, unknown>
+    expect(secondBody.source_scope).toBeUndefined()
+    expect(vi.mocked(researchApi.searchV1).mock.calls[1][2]?.contract).toBeUndefined()
 
     await waitFor(() => {
       expect(screen.getByTestId('scope-projection-missing')).toBeInTheDocument()
     })
+    // 上一轮的 C-05 投影必须已经消失（否则范围身份与当前 v1 结果不一致）
     expect(screen.queryByTestId('scope-projection-refs')).toBeNull()
   })
 })

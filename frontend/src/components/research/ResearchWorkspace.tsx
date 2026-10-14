@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import { createCoverageChat, newIdempotencyKey, searchV1 } from '@/lib/research/api'
 import { useResearchC05 } from '@/lib/hooks/use-research-c05'
-import { buildC05GeneratedRequest } from '@/lib/research/c05-request'
+import { buildC05GeneratedRequest, buildSourceScope } from '@/lib/research/c05-request'
 import { signatureOf } from '@/lib/research/c05-idempotency-key'
 import {
   useResearchChat,
@@ -37,6 +37,7 @@ import { canJumpToCitation, resolveCitationCandidate, resolveCitationSource } fr
 import type { ResearchSource } from '@/lib/types/research'
 import type { ResearchCitationDisplayItem } from '@/lib/research/types'
 import type { ResearchCitation } from '@/lib/types/research'
+import type { ResearchChatRequest } from '@/lib/research/types'
 
 /**
  * RWV2-40（Fork #44）：主工作区（Main workspace）组合。
@@ -154,6 +155,7 @@ export function ResearchWorkspace({
     send: sendTurn,
     sendCoverage,
     resolveChatOrigin,
+    getCurrentSessionId,
   } = useResearchChat({
     projectId: projectId ?? '',
     // PR5（C6/C7）：C-05 契约判定（能力就绪才走 c05-v1）+ 会话绑定回调（D-04）
@@ -210,6 +212,9 @@ export function ResearchWorkspace({
         query,
         confirmedModelId,
         c05.dispatchReady('chat') ? 'c05-v1' : 'v1',
+        // 评审 MEDIUM-11：会话身份在**登记时**冻结（此前由 hook 在派发时刻
+        // 注入，导致登记体与实际 wire 请求不同源）
+        getCurrentSessionId(),
       )
       const held = pendingChatKeyRef.current
       const frozenKey = held !== null && held.signature === frozen.signature
@@ -218,20 +223,27 @@ export function ResearchWorkspace({
       pendingChatKeyRef.current = { signature: frozen.signature, key: frozenKey }
       const sent = await runGuarded(
         (modelId) => {
-          sendTurn(query, effectiveSelection, modelId, frozenKey, frozen.contract)
+          // D-22（评审 HIGH-1）：键必须在**真正派发的那一刻**释放，而不是在
+          // runGuarded 返回时——需要 consent 时 runGuarded 只登记并返回
+          // undefined，此时若不清键，确认后已完成的同一问题再问一次会复用
+          // 旧键 → 命中服务端重放（拿到旧答案，D-13 表② 违规）。
+          // 用键身份比对，避免释放掉后来者持有的新键。
+          if (pendingChatKeyRef.current?.key === frozenKey) {
+            pendingChatKeyRef.current = null
+          }
+          sendTurn(query, effectiveSelection, modelId, frozenKey, frozen.contract, frozen.request)
           return true
         },
         {
           scopeLabel,
           contract: frozen.contract,
-          envelope: frozen.envelope,
+          // D-22：登记的**就是**将要发出的 wire 请求（逐字段同源）
+          envelope: frozen.request as unknown as Record<string, unknown>,
           idempotencyKey: frozenKey,
         },
       )
-      if (sent === true) {
-        // 已确定性派发：释放冻结键，避免"同题重问"命中服务端重放（D-13 表②）
-        pendingChatKeyRef.current = null
-      }
+      // 取消/未放行：键保留（D-13 表①，重试复用原键）；已派发的清除在上面的
+      // operation 内完成（对 consent 路径同样生效）。
       return sent === true
     },
     [confirmedModelId, runGuarded, scopeApi, sendTurn, t],
@@ -647,7 +659,12 @@ function deriveChatSubmission(
   query: string,
   modelId: string | null,
   contract: 'v1' | 'c05-v1',
-): { signature: string; contract: 'v1' | 'c05-v1'; envelope: Record<string, unknown> } {
+  sessionId: string | null,
+): {
+  signature: string
+  contract: 'v1' | 'c05-v1'
+  request: ResearchChatRequest
+} {
   const scope = {
     mode: selection.mode ?? ('all' as const),
     sourceIds: [...(selection.sourceIds ?? [])],
@@ -662,16 +679,27 @@ function deriveChatSubmission(
     contextLevel: '',
     contract,
   })
-  return {
-    signature,
-    contract,
-    envelope: {
-      query,
-      mode: scope.mode,
-      source_ids: scope.sourceIds,
-      note_ids: scope.noteIds,
-      single_source_id: scope.singleSourceId,
-      model_id: modelId,
-    },
-  }
+  // **就是**将要发出的 wire 请求（形如 runTurn 的构造，含 session_id 与契约
+  // 形状差异）——确认后原样发送，抑制"登记体 ≠ 实际请求"的漂移。
+  const request: ResearchChatRequest = contract === 'c05-v1'
+    ? {
+        query,
+        session_id: sessionId ?? undefined,
+        model_id: modelId ?? '',
+        source_scope: buildSourceScope({
+          mode: scope.mode,
+          sourceIds: scope.sourceIds,
+          noteIds: scope.noteIds,
+          singleSourceId: scope.singleSourceId,
+        }),
+        note_ids: scope.noteIds,
+      }
+    : {
+        query,
+        source_ids: scope.sourceIds,
+        note_ids: scope.noteIds,
+        session_id: sessionId ?? undefined,
+        model_id: modelId ?? '',
+      }
+  return { signature, contract, request }
 }

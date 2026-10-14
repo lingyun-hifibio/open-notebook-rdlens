@@ -39,11 +39,14 @@ export type ResearchStreamEndReason =
   | 'page_change'
   /** 正常读尽（EOF） */
   | 'normal_end'
+  /** 已收到 SSE 终态（done/error）——本地收尾，不重试（评审 MEDIUM-6） */
+  | 'terminal_reached'
 
 /**
  * 仅 `timeout` 可进入既有有界重试策略；用户取消/身份/页面变化一律不得重试
  * （重试它们等于违背用户意图或把请求发给已失效的身份）。
- * `normal_end` 不是 abort，是否重连由调用方按 SSE 终态判定。
+ * `normal_end`／`terminal_reached` 不是"需要重试的 abort"：前者是否重连由
+ * 调用方按 SSE 终态判定，后者表示终态已到达、本地收尾。
  */
 export function isTimeoutRetryEligible(reason: ResearchStreamEndReason): boolean {
   return reason === 'timeout'

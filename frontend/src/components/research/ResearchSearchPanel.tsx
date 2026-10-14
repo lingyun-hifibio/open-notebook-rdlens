@@ -373,9 +373,12 @@ export function ResearchSearchPanel({
             setScopeProjection(extractScopeProjection(outcome.result))
             setResult(outcome.result)
           } else {
-            // 202 受理体在本路径不携带投影 → 如实置 absent（不沿用上一次
-            // 搜索的投影，否则范围身份与当前结果不一致）
-            setScopeProjection({ kind: 'absent' })
+            // D-01（评审 MEDIUM-7）：202 与 200 携带**同一**投影——
+            // 有则消费，无则如实 absent（不沿用上一次搜索的投影）
+            setScopeProjection(extractScopeProjection({
+              scope_contract_version: outcome.scope_contract_version,
+              resolved_scope: outcome.resolved_scope,
+            }))
             setBackground({
               generationId: outcome.generation_id,
               jobId: outcome.job_id,

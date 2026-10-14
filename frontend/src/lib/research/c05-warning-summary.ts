@@ -10,10 +10,15 @@ import type { C05ScopeWarning } from './c05-scope-projection'
 export const WARNING_DETAIL_LIMIT = 5
 
 export interface C05WarningSummary {
-  /** `stale_fallback` 中"回退到旧版本"的文档数 */
+  /** `stale_fallback` 中"回退到旧版本"的**文档**数（逐文档计数） */
   fallbackCount: number
-  /** "无可读版本被排除"的文档数（used_version 为空串） */
+  /** "无可读版本被排除"的**文档**数（`used_version` 为空串） */
   excludedCount: number
+  /**
+   * 评审 MEDIUM-8：无 `documents` 明细的警告条数——**不虚构文档数**。
+   * 这类警告仍然可见（计数摘要里单列），但不混进"回退/排除 N 篇"。
+   */
+  undetailedCount: number
   /** 有界明细（≤ WARNING_DETAIL_LIMIT 条，保留原始顺序） */
   detail: C05ScopeWarning[]
   /** 被截断的警告条数（0 = 无截断） */
@@ -29,19 +34,24 @@ export function summarizeWarnings(
   const total = list.length
   let fallbackCount = 0
   let excludedCount = 0
+  let undetailedCount = 0
   for (const warning of list) {
     if (warning.code !== 'stale_fallback') continue
     const docs = warning.documents ?? []
-    // 两类语义分开计数：`used_version` 为空串 = 无可读版本被**排除**；
-    // 非空 = 回退到旧版本。混合条目（部分回退、部分排除）按**回退**计入
-    // ——回退是更保守的解读（"你少看到的是新版"），且服务端当前对每个文档
-    // 只产出一条同质警告；该取值由用例显式钉住，不靠默认分支偶然成立。
-    const isExclusion = docs.length > 0 && docs.every(doc => doc.used_version === '')
-    if (isExclusion) excludedCount += docs.length
-    else fallbackCount += docs.length > 0 ? docs.length : 1
+    if (docs.length === 0) {
+      // 没有文档明细 → 保留可见性但不编造篇数
+      undetailedCount += 1
+      continue
+    }
+    // 逐文档计数：同一条警告里可以既有"回退到旧版本"又有"无可读版本被排除"
+    // （评审 MEDIUM-8：按整条数组做 every() 判定会把混合情形一律算成回退）
+    for (const doc of docs) {
+      if (doc.used_version === '') excludedCount += 1
+      else fallbackCount += 1
+    }
   }
   const detail = list.slice(0, limit)
-  return { fallbackCount, excludedCount, detail, truncated: Math.max(0, total - detail.length), total }
+  return { fallbackCount, excludedCount, undetailedCount, detail, truncated: Math.max(0, total - detail.length), total }
 }
 
 /**

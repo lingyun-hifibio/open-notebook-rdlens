@@ -27,6 +27,7 @@ import {
 } from '@/lib/research/api'
 import { applySseEvent, createSseState, type ResearchSseState } from '@/lib/research/sse'
 import { buildSourceScope } from '@/lib/research/c05-request'
+import type { ResearchChatRequest } from '@/lib/research/types'
 import { classifyC05Error } from '@/lib/research/c05-error-actions'
 import {
   parseGenerationIdFromMessageId,
@@ -269,6 +270,8 @@ export interface UseResearchChatResult {
    * GET execution preferences），因此后来切换模型不会影响在途 turn，
    * SSE 重连也继续沿用该快照（不变量 4）。
    */
+  /** PR5（D-22）：当前会话身份（供调用方在 consent 登记时冻结进 wire 请求） */
+  getCurrentSessionId: () => string | null
   send: (
     query: string,
     selection: ResearchChatSelection | undefined,
@@ -276,6 +279,8 @@ export interface UseResearchChatResult {
     /** PR5（D-22）：登记前冻结的幂等键/契约（确认后原样复用） */
     frozenIdempotencyKey?: string,
     frozenContract?: 'v1' | 'c05-v1',
+    /** PR5（D-22）：登记时冻结的完整 wire 请求（首次尝试原样发送） */
+    frozenRequest?: ResearchChatRequest,
   ) => void
   /**
    * COV-09：all_selected 覆盖提交（COV-08 §12.1）。不走 SSE——202 受理后
@@ -333,10 +338,16 @@ interface ActiveTurn {
   reconnectCount: number
   lastEventId: number
   sessionId: string | null
+  /**
+   * PR5（D-22，评审 MEDIUM-11）：登记 consent 时冻结的**完整 wire 请求**。
+   * 仅**首次尝试**原样发送；重连按 `active` 重建（须带上响应头回显的
+   * session_id 与 Last-Event-ID，冻结体不具备这些恢复游标）。
+   */
+  initialRequest: ResearchChatRequest | null
   sse: ResearchSseState
   /** PR5（D-24）：中止可带原因（user_cancel/identity/page_change），
    *  供传输层区分"仅 timeout 可重试" */
-  abort: ((reason?: 'user_cancel' | 'identity' | 'page_change') => void) | null
+  abort: ((reason?: 'user_cancel' | 'identity' | 'page_change' | 'terminal_reached') => void) | null
   reconnectTimer: ReturnType<typeof setTimeout> | null
 }
 
@@ -538,6 +549,11 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
       clearTimeout(current.reconnectTimer)
       current.reconnectTimer = null
     }
+    // 评审 MEDIUM-6：终态（done/error/不可恢复 HTTP 错误）之后必须**真的**
+    // 释放传输——只把 abort 置 null 会让看门狗与 reader 一直挂到页面卸载，
+    // 而那时 activeRef 已空、再也释放不掉。`terminal_reached` 表示"已到终态、
+    // 不得据此重试"（仅 timeout 可重试，见 §5.3）。
+    current.abort?.('terminal_reached')
     current.abort = null
     activeRef.current = null
   }, [])
@@ -642,9 +658,12 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
       }, delay)
     }
 
-    active.abort = openResearchChatStream({
-      projectId,
-      request: active.contract === 'c05-v1'
+    // D-22（评审 MEDIUM-11）：**首次尝试**用登记 consent 时冻结的完整 wire
+    // 请求（含 session_id、契约选择与 source_scope 形状）；重连仍按 active
+    // 重建——冻结体不具备响应头回显的 session_id 与 Last-Event-ID 恢复游标。
+    const requestForAttempt: ResearchChatRequest = active.attempt === 1 && active.initialRequest !== null
+      ? active.initialRequest
+      : active.contract === 'c05-v1'
         ? {
             // PR5（B3）：C-05 分支——source_scope 载荷，禁止顶层 source_ids
             query: active.query,
@@ -656,7 +675,6 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
               noteIds: active.scopeSnapshot.noteIds,
               singleSourceId: active.scopeSnapshot.singleSourceId,
             }),
-
             note_ids: active.noteIds,
           }
         : {
@@ -668,7 +686,10 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
             note_ids: active.noteIds,
             session_id: active.sessionId ?? undefined,
             model_id: active.modelId,
-          },
+          }
+    active.abort = openResearchChatStream({
+      projectId,
+      request: requestForAttempt,
       contract: active.contract,
       idempotencyKey: active.idempotencyKey,
       lastEventId: active.lastEventId,
@@ -879,6 +900,8 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
     modelId: string,
     frozenIdempotencyKey?: string,
     frozenContract?: 'v1' | 'c05-v1',
+    /** PR5（D-22）：登记时冻结的完整 wire 请求（首次尝试原样发送） */
+    frozenRequest?: ResearchChatRequest,
   ): void => {
     // #243 §6.4：modelId 由调用方传入（confirmed 全局模型快照），本 hook
     // 不再读取执行偏好——显示什么就执行什么，且快照不随后续切换漂移。
@@ -910,6 +933,7 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
       reconnectCount: 0,
       lastEventId: 0,
       sessionId: sessionIdRef.current,
+      initialRequest: frozenRequest ?? null,
       sse: createSseState(),
       abort: null,
       reconnectTimer: null,
@@ -917,6 +941,13 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
     activeRef.current = active
     runTurn(active)
   }
+
+  /**
+   * PR5（D-22，评审 MEDIUM-11）：把当前会话身份交给调用方，使"登记时的
+   * 完整 wire 请求"能真正包含 session_id（此前只能由 hook 在派发时刻注入，
+   * 于是登记体与实际请求不同源）。
+   */
+  const getCurrentSessionId = useCallback((): string | null => sessionIdRef.current, [])
 
   const send = (
     query: string,
@@ -930,6 +961,8 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
     frozenIdempotencyKey?: string,
     /** PR5（D-22）：登记的契约选择（确认后不再重判能力） */
     frozenContract?: 'v1' | 'c05-v1',
+    /** PR5（D-22）：登记时冻结的完整 wire 请求（首次尝试原样发送） */
+    frozenRequest?: ResearchChatRequest,
   ): void => {
     const trimmed = query.trim()
     if (!trimmed) return
@@ -984,7 +1017,7 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
       generationId: null,
     }
     setTurns((prev) => [...prev, userTurn, assistantTurn])
-    startTurn(trimmed, turnId, selection, modelId, frozenIdempotencyKey, frozenContract)
+    startTurn(trimmed, turnId, selection, modelId, frozenIdempotencyKey, frozenContract, frozenRequest)
   }
 
   const sendCoverage = (
@@ -1097,6 +1130,8 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
 
   return {
     turns,
+    /** PR5（D-22）：当前会话身份（供调用方在登记时冻结进 wire 请求） */
+    getCurrentSessionId,
     isStreaming,
     backgroundNotice,
     send,

@@ -118,7 +118,18 @@ export function resolveCitationCandidate(
   sources: readonly ResearchSource[] | undefined,
   citation: ResearchCitation,
 ): ResearchSource | undefined {
-  return (sources ?? []).find((source) => source.document_id === citation.doc_id)
+  const byDocument = (sources ?? []).filter((source) => source.document_id === citation.doc_id)
+  if (byDocument.length === 0) return undefined
+  // 评审 MEDIUM-10：**先**取精确版本命中——若直接取文档级首条，当镜像里
+  // `[A/v2, A/v1]` 且引用指向 v1 时，canJumpToCitation 会误判 version_mismatch
+  // 而隐藏明明可用的跳转。只有**没有**精确命中时才退回文档级首条（此时
+  // version_mismatch 是如实结论）。
+  const citationVersion = (citation as { doc_version?: string | null }).doc_version ?? null
+  if (citationVersion !== null && citationVersion !== '') {
+    const exact = byDocument.find((source) => source.document_version === citationVersion)
+    if (exact !== undefined) return exact
+  }
+  return byDocument[0]
 }
 
 /** page_idx（0-based）→ 展示页码（1-based）；null/负值不展示。 */

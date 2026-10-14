@@ -33,6 +33,21 @@ function hangingBody(): ReadableStream<Uint8Array> {
   return new ReadableStream<Uint8Array>({ start() { /* 故意挂起 */ } })
 }
 
+/**
+ * 与真实 fetch 行为一致的可中止挂起流：signal abort 时 `read()` 以
+ * AbortError 拒绝。评审 LOW-13 指出：若挂起流与 signal 无关，超时用例里
+ * "不得报网络错误"的负向断言永远走不到（abort 后的 catch 路径没被执行）。
+ */
+function hangingBodyAbortable(signal: AbortSignal | null): ReadableStream<Uint8Array> {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      signal?.addEventListener('abort', () => {
+        controller.error(Object.assign(new Error('The operation was aborted.'), { name: 'AbortError' }))
+      })
+    },
+  })
+}
+
 function sseBody(frames: string[]): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder()
   return new ReadableStream({
@@ -137,9 +152,13 @@ describe('D-24：传输层集成（openResearchChatStream）', () => {
     expect(onNetworkError).not.toHaveBeenCalled()
   })
 
-  it('流空闲超时 → onIdleTimeout 恰好一次，且不与 abort 产生的错误重复结算', async () => {
+  it('流空闲超时 → onIdleTimeout 恰好一次；abort 引起的 read 拒绝不重复上报', async () => {
     vi.useFakeTimers()
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(fetchResponse({ body: hangingBody() })))
+    // 真实行为：abort 会让 read() 以 AbortError 拒绝——该拒绝必须被吞掉
+    //（结算守卫已消费），不能变成第二次失败上报。
+    vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => Promise.resolve(
+      fetchResponse({ body: hangingBodyAbortable(init.signal as AbortSignal | null) }),
+    )))
     const onIdleTimeout = vi.fn()
     const onNetworkError = vi.fn()
     const onEnd = vi.fn()
@@ -159,6 +178,9 @@ describe('D-24：传输层集成（openResearchChatStream）', () => {
 
     await vi.advanceTimersByTimeAsync(STREAM_IDLE_TIMEOUT_MS + 1)
     expect(onIdleTimeout).toHaveBeenCalledTimes(1)
+    // 让 abort 触发的 read() 拒绝真正落地
+    await vi.advanceTimersByTimeAsync(0)
+    await Promise.resolve()
     // 再次推进也不得重复上报
     await vi.advanceTimersByTimeAsync(STREAM_IDLE_TIMEOUT_MS * 2)
     expect(onIdleTimeout).toHaveBeenCalledTimes(1)

@@ -155,6 +155,14 @@ export type ResearchSearchOutcome =
       generation_id: string
       job_id: string | null
       status: string
+      /**
+       * PR5（D-01，评审 MEDIUM-7）：`#615 §3.3` 明确 202 与 200 采用**同一**
+       * 范围投影（`project_scope_response`）。此前 202 分支把响应体裁成
+       * generation/job/status，投影被丢弃 → 排队中的 C-05 检索会显示"服务端
+       * 未返回范围详情"并隐藏排除/回退警告。原样透传，由消费方严格校验。
+       */
+      scope_contract_version?: unknown
+      resolved_scope?: unknown
     }
 
 /** 用户模型列表条目（§5.2 GET models；本地 enabled 且非 embedding） */

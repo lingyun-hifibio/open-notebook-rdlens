@@ -89,11 +89,29 @@ export function parseResolvedScope(value: unknown): C05ProjectionResult {
       if (!isStringRecordArray(item.documents)) {
         return { kind: 'invalid', reason: 'c05_scope_projection_invalid' }
       }
-      documents = (item.documents as Array<Record<string, unknown>>).map(doc => ({
-        document_id: String(doc.document_id ?? ''),
-        used_version: String(doc.used_version ?? ''),
-        skipped_version: String(doc.skipped_version ?? ''),
-      }))
+      // 评审 MEDIUM-9：成员字段必须**校验**而不是 `String(...)` 强转——
+      // `documents:[{}]` 强转后变成 used_version='' 的"被排除文档"，把畸形
+      // 投影当成有效数据展示（本模块的契约是"严格校验，畸形按不可用"）。
+      const mapped: NonNullable<C05ScopeWarning['documents']> = []
+      for (const doc of item.documents as Array<Record<string, unknown>>) {
+        if (typeof doc.document_id !== 'string') {
+          return { kind: 'invalid', reason: 'c05_scope_projection_invalid' }
+        }
+        // `used_version` 允许空串（= 无可读版本，不虚构被回退版本）；
+        // `skipped_version` 缺失时按空串处理（历史载荷），但存在且非字符串即畸形
+        if (doc.used_version !== undefined && typeof doc.used_version !== 'string') {
+          return { kind: 'invalid', reason: 'c05_scope_projection_invalid' }
+        }
+        if (doc.skipped_version !== undefined && typeof doc.skipped_version !== 'string') {
+          return { kind: 'invalid', reason: 'c05_scope_projection_invalid' }
+        }
+        mapped.push({
+          document_id: doc.document_id,
+          used_version: typeof doc.used_version === 'string' ? doc.used_version : '',
+          skipped_version: typeof doc.skipped_version === 'string' ? doc.skipped_version : '',
+        })
+      }
+      documents = mapped
     }
     warnings.push({ code: item.code, message: item.message, documents })
   }

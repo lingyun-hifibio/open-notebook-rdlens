@@ -1142,6 +1142,7 @@ export const ruRU = {
       warningsFallback: '{{n}} documents fell back to an older available version',
       warningsExcluded: '{{n}} documents were excluded (no readable version)',
       warningsTruncated: 'Only the first {{n}} details are shown.',
+      warningsUndetailed: '{{n}} scope notices have no document detail',
       turnScopeUnavailable: 'Scope unavailable (restored from history)',
     },
     scopeSummary: {

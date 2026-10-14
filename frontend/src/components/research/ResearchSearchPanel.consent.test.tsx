@@ -12,7 +12,7 @@
  * 3. 确认后派发的键与信封逐字段等于登记内容（不是重新构造的另一份）。
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ResearchSearchPanel } from './ResearchSearchPanel'
 import { ResearchEgressConsentDialog } from './ResearchEgressConsentDialog'
@@ -24,6 +24,7 @@ import {
 import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
 import { ResearchScopeProvider, scopeStorageKey } from '@/lib/research/scope'
 import * as researchApi from '@/lib/research/api'
+import { QUERY_KEYS } from '@/lib/api/query-client'
 
 vi.mock('@/lib/research/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/research/api')>()),
@@ -59,7 +60,7 @@ function makeTree() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
-  return (
+  return { queryClient, ui: (
     <QueryClientProvider client={queryClient}>
       <ResearchWorkspaceProvider userId="u1" projectId={PROJECT} role="owner">
         <ResearchGlobalModelProvider>
@@ -73,7 +74,7 @@ function makeTree() {
         </ResearchGlobalModelProvider>
       </ResearchWorkspaceProvider>
     </QueryClientProvider>
-  )
+  ) }
 }
 
 /** 外部模型 + 尚未确认（consent.valid=false）→ needsConsent=true */
@@ -166,7 +167,7 @@ beforeEach(() => {
 describe('T40（D-22）：同意登记冻结信封与幂等键', () => {
   it('登记时即冻结契约/信封/键；确认后只用登记内容派发', async () => {
     stubExternalModelPendingConsent(false)
-    render(makeTree())
+    render(makeTree().ui)
 
     await submitSearch('q-consent-1')
     await waitFor(() => expect(screen.getByTestId('egress-consent-dialog')).toBeTruthy())
@@ -197,7 +198,7 @@ describe('T40（D-22）：同意登记冻结信封与幂等键', () => {
 
   it('C-05 登记：契约随登记冻结为 c05-v1，确认后信封为 source_scope 形状', async () => {
     stubExternalModelPendingConsent(true)
-    render(makeTree())
+    render(makeTree().ui)
 
     await submitSearch('q-consent-c05')
     await waitFor(() => expect(screen.getByTestId('egress-consent-dialog')).toBeTruthy())
@@ -220,7 +221,7 @@ describe('T40（D-22）：同意登记冻结信封与幂等键', () => {
 
   it('取消不清键：同一次逻辑提交重试复用**原键**', async () => {
     stubExternalModelPendingConsent(false)
-    render(makeTree())
+    render(makeTree().ui)
 
     await submitSearch('q-consent-cancel')
     await waitFor(() => expect(screen.getByTestId('egress-consent-dialog')).toBeTruthy())
@@ -245,7 +246,7 @@ describe('T40（D-22）：同意登记冻结信封与幂等键', () => {
 
   it('确定性完成后的同题重提 = 新执行 → 新键（D-13 表②，经同意路径）', async () => {
     stubExternalModelPendingConsent(false)
-    render(makeTree())
+    render(makeTree().ui)
 
     await submitSearch('q-repeat')
     await waitFor(() => expect(screen.getByTestId('egress-consent-dialog')).toBeTruthy())
@@ -266,14 +267,16 @@ describe('T40（D-22）：同意登记冻结信封与幂等键', () => {
 
   it('契约/信封在登记后不被能力翻转改写（确认前后同源）', async () => {
     stubExternalModelPendingConsent(false)
-    render(makeTree())
+    const { queryClient, ui } = makeTree()
+    render(ui)
 
     await submitSearch('q-consent-freeze')
     await waitFor(() => expect(screen.getByTestId('egress-consent-dialog')).toBeTruthy())
     const registered = readRegistration()
     expect(registered?.contract).toBe('v1')
 
-    // 登记后能力"翻转"（刷新模型目录）：已登记请求的契约与信封不得改变
+    // 评审 LOW-13：必须让能力**真的**翻转进查询缓存——否则该用例只改了 mock
+    // 返回值，派发时即使重新读取能力也读不到新值，断言是空的。
     vi.mocked(researchApi.listModels).mockResolvedValue({
       models: [{
         model_id: EXTERNAL_MODEL, display_name: 'Ext M', data_egress: true,
@@ -285,6 +288,15 @@ describe('T40（D-22）：同意登记冻结信封与幂等键', () => {
           unavailable_reason: null },
       } } },
     } as never)
+    await act(async () => {
+      await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.researchModelCatalog(PROJECT) })
+    })
+    // 先确认"翻转确实落地了"，再断言契约未被改写
+    await waitFor(() => {
+      const cached = queryClient.getQueryData(QUERY_KEYS.researchModelCatalog(PROJECT)) as
+        | { capabilities?: { c05?: { enabled?: boolean } } } | undefined
+      expect(cached?.capabilities?.c05?.enabled).toBe(true)
+    })
 
     fireEvent.click(screen.getByTestId('egress-consent-confirm'))
     await waitFor(() => expect(researchApi.searchV1).toHaveBeenCalledTimes(1))

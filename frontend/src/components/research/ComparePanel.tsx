@@ -63,13 +63,15 @@ export function ComparePanel({
     mode === 'selected'
       ? sources.filter((source) => source.source_id !== null && snapshot.sourceIds.includes(source.source_id))
       : []
-  // R1-H6 修复：**执行载荷保留精确 Source 集合**（服务端 document_ids 解析
-  // 会取最新版——去重会静默丢精确版本）。uniqueDocumentIds 仅用于**计数**
-  // 与"合并多版本"提示（D-16 的计量面），不再替换执行输入。
-  // R2-H6 修复：阈值/显示按**唯一文档数**判定（D-16 计量面）；
-  // 执行载荷仍是不去重的 document_id 映射（精确版本语义——服务端按
-  // source_ids 解析版本，不去重不丢版本）。
-  const selectedDocuments = selectedSourceRows.map((source) => source.document_id)
+  // D-16（评审 HIGH-2 更正）：Compare 的 `document_ids` 属**文档语义**，
+  // 必须按 `document_id` 去重后再作执行载荷。此前"保留精确版本"的写法基于
+  // 一个**已被证伪的前提**——`POST /compare/jobs` 只接受 `document_ids`，
+  // 且服务端逐条 `get_latest_version(doc_id)`（router.py:2562-2570）：
+  //   · 传重复的同一 doc_id 不会保住旧版本，只会让服务端把 (doc, 最新版)
+  //     解析两次 → 出现"A 与 A 比较"；
+  //   · 精确版本在本端点**无法表达**（见交付文档的 wire 缺口登记）。
+  // 因此执行载荷与计量面统一走唯一文档集合；同文档多版本合并为一次比较。
+  const uniqueDocuments = uniqueDocumentIds(selectedSourceRows)
   const documentCount = countUniqueDocuments(selectedSourceRows)
   const check = (() => {
     if (mode === 'all') return { ok: false, reason: 'all', count: 0 } as const
@@ -77,7 +79,7 @@ export function ComparePanel({
     const floor = checkCompareDocumentFloor(documentCount.uniqueDocumentCount)
     if (!floor.ok) return { ok: false, reason: floor.reason, count: documentCount.uniqueDocumentCount } as const
     return {
-      ...checkCompareSelection(uniqueDocumentIds(selectedSourceRows)),
+      ...checkCompareSelection(uniqueDocuments),
       count: documentCount.uniqueDocumentCount,
     }
   })()
@@ -88,7 +90,7 @@ export function ComparePanel({
     if (!check.ok || isCreating || modelBlocked) return
     // 只在守卫真正派发（本地模型直接执行 / 外部模型确认完成）后置位；
     // consent 取消时 onCreate 返回 false，「已创建」提示不出现
-    const sent = await onCreate(selectedDocuments)
+    const sent = await onCreate(uniqueDocuments)
     if (sent) setSubmitted(true)
   }
 

@@ -7,7 +7,7 @@ import {
 } from './ResearchChatPanel'
 import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
 import { ResearchScopeProvider, scopeStorageKey, useResearchScope, type ResearchScopeSnapshot } from '@/lib/research/scope'
-import type { ResearchBackgroundNotice, ResearchChatTurn } from '@/lib/hooks/use-research-chat'
+import type { ResearchBackgroundNotice, ResearchChatSelection, ResearchChatTurn } from '@/lib/hooks/use-research-chat'
 import type { ResearchCitation, ResearchJob } from '@/lib/research/types'
 
 vi.mock('@/lib/research/api', async (importOriginal) => {
@@ -108,9 +108,26 @@ function renderPanel(
         onRunAsBackgroundJob={overrides.onRunAsBackgroundJob}
         backgroundJobRequiresSelection={overrides.backgroundJobRequiresSelection ?? false}
       />
+      <SinglePinControl />
     </ResearchScopeProvider>
     </ResearchWorkspaceProvider>
     </QueryClientProvider>,
+  )
+}
+
+/**
+ * PR5（T5）：把限定 pin 的设置与观察放进测试树——用于断言"提交派发**不**清除
+ * 限定"（评审 LOW-13：只在 provider 层读两次快照测不到派发路径的清键行为）。
+ */
+function SinglePinControl() {
+  const { setSingle, singlePin } = useResearchScope()
+  return (
+    <div>
+      <button type="button" data-testid="ctl-set-single" onClick={() => setSingle('src_9', 'sess_1')}>
+        single
+      </button>
+      <output data-testid="ctl-single-pin">{singlePin?.sourceId ?? 'none'}</output>
+    </div>
   )
 }
 
@@ -813,6 +830,26 @@ describe('ResearchChatPanel · 范围呈现与后台 CTA 门禁（T9 / D-26）',
   })
   afterEach(() => {
     cleanup()
+  })
+
+  it('T5：提交派发不清除 single 限定，且派发载荷带 single（同会话连续两轮）', async () => {
+    const send = vi.fn(async (_query: string, _selection?: ResearchChatSelection) => true)
+    renderPanel([], send, { scope: { mode: 'selected', sourceIds: [], noteIds: [] } })
+
+    fireEvent.click(screen.getByTestId('ctl-set-single'))
+    expect(screen.getByTestId('ctl-single-pin')).toHaveTextContent('src_9')
+
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: '问题一' } })
+    fireEvent.click(screen.getByRole('button', { name: 'research.chatSend' }))
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1))
+    // 派发载荷携带 single 与限定来源
+    expect(send.mock.calls[0][1]).toMatchObject({ mode: 'single', singleSourceId: 'src_9' })
+    // **提交本身不清除限定**（第二次派发仍带 single）
+    expect(screen.getByTestId('ctl-single-pin')).toHaveTextContent('src_9')
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: '问题二' } })
+    fireEvent.click(screen.getByRole('button', { name: 'research.chatSend' }))
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2))
+    expect(send.mock.calls[1][1]).toMatchObject({ mode: 'single', singleSourceId: 'src_9' })
   })
 
   it('T9：恢复的历史轮无法证明范围 → 显式标注"范围不可用"，不回填当前选择', () => {

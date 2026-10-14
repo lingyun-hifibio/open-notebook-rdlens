@@ -45,12 +45,42 @@ describe('readC05Capabilities（T1）', () => {
     expect(entryUnavailableReason(caps, 'search')).toBe('c05_contract_disabled')
   })
 
-  it('trap 样例（execution_ready_claimed_for_unwired）不被当成就绪', () => {
-    // 该 fixture 在形状上合法但语义错误——由源码投影测试拒绝；这里断言
-    // 前端只信任 enabled+execution_ready 组合与未接线纪律
+  it('trap 样例（execution_ready_claimed_for_unwired）确实被解析器接受，但本地纪律仍拦得住谎报', () => {
+    // 评审 LOW-13：此前只断言 fixture 自己的 `expect` 字段，根本没调用解析器
+    // ——断言是空的。这里做三件真事：
+    // ① 解析器**确实**接受该形状（证明它是"语义陷阱"而非形状陷阱）；
+    // ② 服务端谎报 `ai_insight` 就绪时，本地 PR5 纪律仍拒绝（D-09 本地码）；
+    // ③ 对照：被声明就绪的 search/chat 必须放行（证明谓词不是恒 false）。
     const trap = sample('c05_entry_capability.execution_ready_claimed_for_unwired.trap')
-    expect(trap.expect).toBe('valid')
-    // shape 合法时解析成功——语义正确性由服务端投影测试保证
+    const caps = readC05Capabilities(trap.value)
+    expect(caps, '形状合法 → 解析成功（trap 是语义层的）').not.toBeNull()
+    expect(caps!.entries.search.execution_ready).toBe(true)
+
+    // ② 谎报：把 ai_insight 声明成 ready
+    const lying = readC05Capabilities({
+      ...(trap.value as Record<string, unknown>),
+      entries: {
+        ...(trap.value as { entries: Record<string, unknown> }).entries,
+        ai_insight: {
+          scope_modes: ['all', 'selected', 'single'],
+          execution_modes: ['direct_context'],
+          context_levels: ['focused'],
+          preview_supported: false,
+          execution_ready: true,
+          unavailable_reason: null,
+        },
+      },
+    })
+    expect(lying).not.toBeNull()
+    expect(lying!.entries.ai_insight.execution_ready).toBe(true)
+    expect(entryDispatchReady(lying, 'ai_insight')).toBe(false)
+    expect(entryUnavailableReason(lying, 'ai_insight')).toBe(C05_ENTRY_PENDING_PR4)
+
+    // ③ 对照：服务端声明就绪且 PR5 已接线的入口必须放行
+    expect(entryDispatchReady(caps, 'search')).toBe(true)
+    expect(entryDispatchReady(caps, 'chat')).toBe(true)
+    // 未声明的入口仍拒绝
+    expect(entryDispatchReady(caps, 'transformation')).toBe(false)
   })
 
   it.each([

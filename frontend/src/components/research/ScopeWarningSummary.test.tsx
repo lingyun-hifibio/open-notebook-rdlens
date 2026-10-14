@@ -133,7 +133,7 @@ describe('ScopeWarningSummary（D-17 有界呈现）', () => {
     expect(container.querySelectorAll('*').length).toBeLessThan(10)
   })
 
-  it('T35：混合警告（部分回退/部分排除）按回退计入——取值被显式钉住', () => {
+  it('T35：混合警告**逐文档**计数（1 回退 + 1 排除），不整条归一类', () => {
     const mixed: C05ScopeWarning = {
       code: 'stale_fallback',
       message: 'mixed',
@@ -143,15 +143,29 @@ describe('ScopeWarningSummary（D-17 有界呈现）', () => {
       ],
     }
     const summary = summarizeWarnings([mixed])
-    expect(summary.fallbackCount).toBe(2)
+    expect(summary.fallbackCount).toBe(1)
+    expect(summary.excludedCount).toBe(1)
+    expect(summary.undetailedCount).toBe(0)
+    expect(summary.total).toBe(1)
+  })
+
+  it('T35：无 documents 的警告保持可见（undetailed），但**不虚构**文档篇数', () => {
+    const summary = summarizeWarnings([{ code: 'stale_fallback', message: 'no-docs' }])
+    expect(summary.undetailedCount).toBe(1)
+    expect(summary.fallbackCount).toBe(0)
     expect(summary.excludedCount).toBe(0)
     expect(summary.total).toBe(1)
   })
 
-  it('T35：无 documents 的警告仍计入回退 1（不是被丢弃）', () => {
-    const summary = summarizeWarnings([{ code: 'stale_fallback', message: 'no-docs' }])
-    expect(summary.fallbackCount).toBe(1)
-    expect(summary.total).toBe(1)
+  it('T35：undetailed 警告在 UI 里单列（不静默丢弃）', () => {
+    render(<ScopeWarningSummary projection={scopeWith([
+      { code: 'stale_fallback', message: 'no-docs' },
+      excludedWarning(1, 2),
+    ])} />)
+    const summary = screen.getByTestId('scope-warning-summary')
+    expect(summary).toHaveTextContent('research.scopeDetails.warningsUndetailed')
+    expect(summary).toHaveTextContent('research.scopeDetails.warningsExcluded')
+    expect(summary).not.toHaveTextContent('research.scopeDetails.warningsFallback')
   })
 
   it('非 stale_fallback 的警告不进入两类计数（但计入 total）', () => {

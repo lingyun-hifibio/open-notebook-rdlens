@@ -614,9 +614,9 @@ describe('useResearchChat #292 P0 终态生命周期', () => {
     expect(assistantById(result, secondId).content).toBe('B')
   })
 
-  it('done 后 send next：不再 abort 已终态 turn（activeRef 已释放，stopActive 空转）', () => {
+  it('done 后 send next：终态释放传输一次，且不再对已终态 turn 重复释放', () => {
     const streams = openCapture()
-    let aborted = 0
+    const abortReasons: Array<string | undefined> = []
     vi.mocked(openResearchChatStream).mockImplementation((opts) => {
       streams.push({
         opts,
@@ -624,8 +624,8 @@ describe('useResearchChat #292 P0 终态生命周期', () => {
         fail: (error) => opts.onNetworkError?.(error),
         httpFail: (status, body) => opts.onHttpError?.(status, body),
       })
-      return () => {
-        aborted += 1
+      return (reason?: string) => {
+        abortReasons.push(reason)
       }
     })
     const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
@@ -634,9 +634,12 @@ describe('useResearchChat #292 P0 终态生命周期', () => {
     act(() => {
       streams[0].emit(ev(1, 'done', { session_id: 's1', completion_status: 'success' }))
     })
+    // PR5（D-24，评审 MEDIUM-6）：终态（done）**必须**释放传输——此前只把
+    // abort 置 null，看门狗与 reader 会一直挂到页面卸载且再也释放不掉。
+    expect(abortReasons).toEqual(['terminal_reached'])
     sendNow(result, '第二轮')
-    // done 已清理 ref：第二轮 send 不应对第一轮流调用 abort（服务端已完成）
-    expect(aborted).toBe(0)
+    // activeRef 已释放：第二轮 send 不会**再次**释放第一轮（计数仍为 1）
+    expect(abortReasons).toEqual(['terminal_reached'])
     expect(streams).toHaveLength(2)
   })
 })

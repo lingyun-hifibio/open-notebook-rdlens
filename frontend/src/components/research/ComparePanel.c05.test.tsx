@@ -97,7 +97,7 @@ describe('ComparePanel · 文档计量（D-16 / T32）', () => {
     expect(screen.getByTestId('compare-create')).toBeDisabled()
   })
 
-  it('T32：两个唯一文档（共三行）→ 允许创建，且执行载荷**保留精确版本不去重**', async () => {
+  it('T32：两个唯一文档（共三行）→ 执行载荷按**文档**去重（端点无法表达精确版本）', async () => {
     const rows = [
       source({ source_id: 'src_v1', document_id: 'doc_A', document_version: 'v1' }),
       source({ source_id: 'src_v2', document_id: 'doc_A', document_version: 'v2' }),
@@ -110,8 +110,12 @@ describe('ComparePanel · 文档计量（D-16 / T32）', () => {
     fireEvent.click(button)
 
     await waitFor(() => expect(onCreate).toHaveBeenCalledTimes(1))
-    // 版本语义处不去重：doc_A 的两个版本都必须抵达服务端
-    expect(onCreate.mock.calls[0][0]).toEqual(['doc_A', 'doc_A', 'doc_B'])
+    // `POST /compare/jobs` 只接受 document_ids 且服务端逐条取最新版本
+    //（router.py:2562-2570）——重复 doc_id 不会保住旧版本，只会让服务端把
+    // 同一 (doc, 最新版) 解析两次（A 与 A 比较）。故载荷必须去重。
+    const payload = onCreate.mock.calls[0][0]
+    expect(payload).toEqual(['doc_A', 'doc_B'])
+    expect(new Set(payload).size).toBe(payload.length)
   })
 
   it('T32：单文档单行（未合并）同样不足两份 → 阻断', () => {

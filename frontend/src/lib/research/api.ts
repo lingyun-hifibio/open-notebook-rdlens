@@ -588,6 +588,9 @@ export async function searchV1(
       generation_id: String(body.generation_id ?? ''),
       job_id: body.job_id ?? null,
       status: String(body.status ?? 'queued'),
+      // §3.3：202 与 200 同一投影——**不得**在这里裁掉（评审 MEDIUM-7）
+      scope_contract_version: (body as Record<string, unknown>).scope_contract_version,
+      resolved_scope: (body as Record<string, unknown>).resolved_scope,
     }
   }
   throw new Error(`unexpected search response status: ${response.status}`)
@@ -911,8 +914,13 @@ export interface ResearchChatStreamOptions {
   onIdleTimeout?: (phase: 'response' | 'idle') => void
 }
 
-/** 调用方中止流的原因（D-24/§5.3 第 3 行）；缺省视为用户取消 */
-export type ResearchStreamAbortReason = 'user_cancel' | 'identity' | 'page_change'
+/**
+ * 调用方中止流的原因（D-24/§5.3 第 3 行）；缺省视为用户取消。
+ * `terminal_reached`：SSE 已给出 done/error 终态——本地收尾不应再重试，
+ * 但必须**释放**读取器与看门狗（评审 MEDIUM-6：仅把 disposer 置 null
+ * 会让已完成轮继续持有计时器与 reader）。
+ */
+export type ResearchStreamAbortReason = 'user_cancel' | 'identity' | 'page_change' | 'terminal_reached'
 
 /**
  * 打开 Research Chat SSE 流；返回中止函数（仅关闭本地读取，
