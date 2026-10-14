@@ -27,7 +27,7 @@ ScopeWarningSummary/ScopePreviewPanel 等计划指定产物。**D-24 不再列�
 | C1/D-04/D-10/D-21 | 三档范围模型（all/selected/single）+ 会话级 single（绑定/清除/跨会话丢弃）+ `normalizePersistedScope` 全量迁移 | fork `frontend/src/lib/research/scope.tsx` |
 | B1 | 能力解析（整条形状校验、`c05_entry_pending_pr4`、无 fallback 表） | `c05-contract.ts`、`use-research-c05.ts` |
 | B2/D-03 | 错误动作分类（三形态 detail；字符串 detail → 426 保守识别，其余未识别） | `c05-error-actions.ts` |
-| B2/D-01/D-14 | 投影"存在才消费"+ 严格校验 + stale 来源纪律；**投影真正接入 UI**（缺失→"服务端未返回范围详情"，畸形→暴露 `c05_scope_projection_invalid`，旧 v1 结果清空投影防串台） | `c05-scope-projection.ts`、`ScopeWarningSummary.tsx`、`ResearchSearchPanel.tsx` |
+| B2/D-01/D-14 | 投影"存在才消费"+ 严格校验 + stale 来源纪律；**投影真正接入 UI**（缺失→"服务端未返回范围详情"，畸形→暴露 `c05_scope_projection_invalid`，旧 v1 结果清空投影防串台；202 投影不裁掉） | `c05-scope-projection.ts`、`ScopeWarningSummary.tsx`、`ResearchSearchPanel.tsx` |
 | **D-17** | **有界呈现接线**：计数摘要（回退 N／排除 M）+ ≤5 条明细 + "仅显示前 N 条"标注；`resolved_source_refs` 只出计数；首屏节点数不随规模增长 | `c05-warning-summary.ts`、`ScopeWarningSummary.tsx` |
 | B2/D-02/D-13 | 键生命周期纯函数（acceptance 锚、string-shape 确定性清键、24h 窗口） | `c05-idempotency-key.ts`、`c05-key-retention.ts` |
 | **D-22** | **同意登记冻结完整派发意图**：契约选择 + 请求信封 + 幂等键随登记冻结，确认后原样派发、取消不清键（搜索侧 `prepareDispatch`、Chat 侧签名持有键） | `use-research-global-model.tsx`、`ResearchSearchPanel.tsx`、`use-research-chat.ts`、`ResearchWorkspace.tsx` |
@@ -62,8 +62,8 @@ ScopeWarningSummary/ScopePreviewPanel 等计划指定产物。**D-24 不再列�
 ## 3. 明确排除（非本 PR）
 
 - AI Insight 的 C-05 适配（D-09：PR4 五项解禁条件）；
-- fresh **200** 路径的服务端投影（D-01，PR4）——前端"存在才消费"已交付，
-  **服务端补投影后无需改前端**（202 路径已带投影，客户端已消费，见 §1 D-01 行）；
+- **Chat SSE 的范围投影**（`done`/`usage` 事件未携带 `resolved_scope`，见 §3.1 缺口②）——
+  Search 侧（fresh 200／202／完成重放）**已带且客户端已消费**；
 - `all` 候选读取无 LIMIT 的规模治理（D-18，PR4）；
 - `idempotency_conflict`/426 的对象化 detail（D-03 wire 缺口，PR4）。
 
@@ -72,7 +72,7 @@ ScopeWarningSummary/ScopePreviewPanel 等计划指定产物。**D-24 不再列�
 | # | 缺口 | 事实依据 | 前端当前处置（诚实边界） |
 |---|---|---|---|
 | ① | `idempotency_conflict` / 426 仍是**纯字符串** detail | `router.py` 幂等冲突返回字符串 | 保守识别：仅 426 与覆盖 Note 视为可识别，其余按"未识别"保留原键（D-03） |
-| ② | fresh **200** 响应不携带 `resolved_scope` | `_resolve_all` 之外的主路径未接线 | 严格"存在才消费"：缺失即显示"服务端未返回范围详情"，**不猜测**、不显示 stale 计数 |
+| ② | **Chat SSE 的 `done`/`usage` 事件不携带 `resolved_scope`**（§3.3 的 SSE 一格未接线） | SSE 事件构造只带 `session_id`/`request_id`/`job_id`/`completion_status`（`router.py:4535-4542`）；Search 侧四个表面均已带（fresh 200 `router.py:4274`、202 受理 `:4169`、202 重放 `:3240`、完成重放 `:1669`） | Search 侧已消费投影（有界呈现）；**Chat 侧无投影可用** → 不展示范围警告（不猜测、不显示 stale 计数）。**此前把该缺口写成"fresh 200 不携带投影"是错的**，已更正 |
 | ③ | **Compare 端点无法表达精确版本** | `POST /compare/jobs` 只接受 `document_ids`，服务端逐条 `get_latest_version(doc_id)`（`router.py:2562-2570`） | 同文档多版本**按文档合并**（执行载荷去重）并提示"已合并同文档多版本"；<2 个唯一文档时按不足阻断。**不**声称保留精确版本 |
 
 ## 4. 测试与验证【已实现·测试】
