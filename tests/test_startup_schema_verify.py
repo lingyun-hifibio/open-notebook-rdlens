@@ -70,3 +70,20 @@ async def test_no_verify_callable_is_a_noop():
     await manager.verify_latest_schema()
 
     fake.run.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_unknown_future_version_warns_instead_of_silently_passing():
+    """#613 复审 LOW-2：新增迁移时必须扩展校验，否则**告警**而非静默 no-op。"""
+    from loguru import logger
+
+    from open_notebook.database.async_migrate import verify_migration_schema
+
+    records: list[str] = []
+    sink_id = logger.add(lambda message: records.append(str(message)), level="WARNING")
+    try:
+        await verify_migration_schema(25)
+    finally:
+        logger.remove(sink_id)
+
+    assert any("no schema contract for migration 25" in r for r in records), records

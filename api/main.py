@@ -57,7 +57,10 @@ from api.routers import (
     transformations,
 )
 from api.routers import commands as commands_router
-from open_notebook.database.async_migrate import AsyncMigrationManager
+from open_notebook.database.async_migrate import (
+    AsyncMigrationManager,
+    MigrationSchemaError,
+)
 from open_notebook.exceptions import (
     AuthenticationError,
     ConfigurationError,
@@ -172,6 +175,48 @@ async def _wait_for_database(migration_manager: AsyncMigrationManager) -> None:
             delay = min(delay * 2, DATABASE_STARTUP_RETRY_MAX_DELAY_SECONDS)
 
 
+async def _verify_latest_schema_with_retry(
+    migration_manager: AsyncMigrationManager,
+) -> None:
+    """Verify the latest migration's schema, tolerating transient DB errors.
+
+    `MigrationSchemaError` is **persistent** (it is raised only after the
+    idempotent heal already ran) and must fail fast — retrying it would just
+    repeat DDL. Everything else (connection/timeout errors from the schema
+    read) is treated like a readiness problem and retried within the same
+    budget the startup ping uses, so a transient blip cannot kill a startup
+    that previously could not fail on this path.
+    """
+    attempts = max(1, DATABASE_STARTUP_RETRY_ATTEMPTS)
+    delay = DATABASE_STARTUP_RETRY_INITIAL_DELAY_SECONDS
+
+    for attempt in range(1, attempts + 1):
+        try:
+            await migration_manager.verify_latest_schema()
+            logger.info(
+                "Verified latest migration schema "
+                f"(attempt {attempt}/{attempts})"
+            )
+            return
+        except MigrationSchemaError:
+            # 自愈已执行仍不匹配 ⇒ 立刻失败，不重试（否则只是重复 DDL）
+            raise
+        except Exception as e:
+            if attempt == attempts:
+                logger.error(
+                    "Latest migration schema could not be verified after "
+                    f"{attempts} attempts"
+                )
+                raise
+            logger.warning(
+                "Latest migration schema not verified yet "
+                f"(attempt {attempt}/{attempts}): {str(e)}. "
+                f"Retrying in {delay:g} seconds..."
+            )
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, DATABASE_STARTUP_RETRY_MAX_DELAY_SECONDS)
+
+
 async def _run_database_migrations() -> None:
     """Run startup database migrations after SurrealDB is reachable."""
     migration_manager = AsyncMigrationManager()
@@ -194,7 +239,8 @@ async def _run_database_migrations() -> None:
         # 才调用它 ⇒ 「账本最新但 schema 缺失」（字段被手工删除、或迁移被回滚）
         # 会被静默跳过：应用照常启动，写入被 SCHEMAFULL 丢弃（原始「写-丢闭环」）。
         # 见 RDLens#613 的 apply_and_recovery_acceptance 报告。
-        await migration_manager.verify_latest_schema()
+        # 走带重试的包装：瞬时读故障不应让这条此前不会失败的路直接杀启动。
+        await _verify_latest_schema_with_retry(migration_manager)
 
 
 @asynccontextmanager

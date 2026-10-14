@@ -431,8 +431,10 @@ class AsyncMigrationManager:
         ``SCHEMAFULL`` — the original write-drop closure (issue #66).
 
         Healing is idempotent: the newest migration re-runs its own up-SQL
-        (``DEFINE FIELD IF NOT EXISTS``); only a persistent mismatch raises
-        ``MigrationSchemaError`` and fails startup.
+        (``DEFINE FIELD IF NOT EXISTS``) and its ledger row is re-recorded
+        (so a manual rollback of that migration is undone — logged loudly);
+        only a persistent mismatch raises ``MigrationSchemaError`` and fails
+        startup.
 
         Callers: ``run_migration_up`` (after applying pending migrations) and
         the API startup path even when no migration is pending.
@@ -445,10 +447,17 @@ class AsyncMigrationManager:
         except MigrationSchemaError:
             logger.warning(
                 f"Migration {newest.version} schema incomplete at startup; "
-                f"re-running its up-SQL idempotently"
+                f"re-applying its up-SQL idempotently. NOTE: this records "
+                f"version {newest.version} in the ledger again, so an "
+                f"intentional manual rollback of that migration (e.g. running "
+                f"24_down) is undone by this self-heal."
             )
             await newest.run(bump=True)
             await self.verify_schema(newest.version)
+            logger.warning(
+                f"Migration {newest.version} schema healed and ledger "
+                f"re-recorded"
+            )
 
 
 # Database version management functions
@@ -688,6 +697,14 @@ async def verify_migration_schema(version: int) -> None:
     or reject the adapter's identity writes.
     """
     if version != 24:
+        if version > 24:
+            # 新增迁移时必须扩展本函数：否则「账本最新」校验对本函数而言变成
+            # no-op，schema 漂移会**静默**不再被发现（RDLens#613 复审 LOW）。
+            logger.warning(
+                f"verify_migration_schema has no schema contract for migration "
+                f"{version}; schema drift for it will not be detected. "
+                f"Extend verify_migration_schema when adding a migration."
+            )
         return
     await _assert_identity_definitions_compatible(require_present=True)
     logger.debug("Migration 24 schema verified: rdlens_* identity fields present")

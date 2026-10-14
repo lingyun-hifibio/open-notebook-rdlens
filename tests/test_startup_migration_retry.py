@@ -71,6 +71,51 @@ async def test_startup_verifies_schema_when_ledger_already_latest(
 
 
 @pytest.mark.asyncio
+async def test_schema_verification_fails_fast_without_retry(
+    monkeypatch, no_retry_delay
+):
+    """#613 复审 MED-1/LOW-1：自愈后仍不匹配 ⇒ 立刻失败，**不**重试。
+
+    （此前把 else 分支的调用包进 try/except 吞掉异常，全部用例仍绿——
+    本用例让该契约可证伪。）
+    """
+    from open_notebook.database.async_migrate import MigrationSchemaError
+
+    manager = FakeMigrationManager(
+        ping_side_effect=[None], current_versions=[24], needs_migration=False,
+    )
+    manager.verify_latest_schema = AsyncMock(
+        side_effect=MigrationSchemaError("rdlens_content_hash missing"),
+    )
+    monkeypatch.setattr(api_main, "AsyncMigrationManager", lambda: manager)
+
+    with pytest.raises(MigrationSchemaError):
+        await api_main._run_database_migrations()
+
+    assert manager.verify_latest_schema.await_count == 1, "持久性错误不得重试"
+    no_retry_delay.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_schema_verification_retries_transient_errors(
+    monkeypatch, no_retry_delay
+):
+    """#613 复审 MED-1：瞬时读故障走启动重试预算，不直接杀启动。"""
+    manager = FakeMigrationManager(
+        ping_side_effect=[None], current_versions=[24], needs_migration=False,
+    )
+    manager.verify_latest_schema = AsyncMock(
+        side_effect=[OSError("connection reset"), None],
+    )
+    monkeypatch.setattr(api_main, "AsyncMigrationManager", lambda: manager)
+
+    await api_main._run_database_migrations()
+
+    assert manager.verify_latest_schema.await_count == 2
+    no_retry_delay.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_database_retry_succeeds_after_initial_probe_failures(
     monkeypatch, no_retry_delay
 ):
