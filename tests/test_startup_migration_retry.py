@@ -19,6 +19,8 @@ class FakeMigrationManager:
         self.get_current_version = AsyncMock(side_effect=current_versions or [14])
         self.needs_migration = AsyncMock(return_value=needs_migration)
         self.run_migration_up = AsyncMock(side_effect=migration_side_effect)
+        #: #613：账本已是最新时也必须校验最新迁移的 schema（死代码修正后新增）
+        self.verify_latest_schema = AsyncMock()
 
 
 @pytest.fixture
@@ -48,6 +50,24 @@ async def test_database_reachable_on_first_probe_runs_migrations_once(
     manager.run_migration_up.assert_awaited_once()
     assert manager.get_current_version.await_count == 2
     no_retry_delay.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_startup_verifies_schema_when_ledger_already_latest(
+    monkeypatch, no_retry_delay
+):
+    """#613：账本已是最新时也必须校验 schema（此前校验被 needs_migration 门控跳过）。"""
+    manager = FakeMigrationManager(
+        ping_side_effect=[None],
+        current_versions=[24],
+        needs_migration=False,
+    )
+    monkeypatch.setattr(api_main, "AsyncMigrationManager", lambda: manager)
+
+    await api_main._run_database_migrations()
+
+    manager.run_migration_up.assert_not_awaited()
+    manager.verify_latest_schema.assert_awaited_once()
 
 
 @pytest.mark.asyncio

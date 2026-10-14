@@ -418,23 +418,37 @@ class AsyncMigrationManager:
             logger.info("Database is already at the latest version")
 
         # Even when the ledger says the latest migration is applied, its
-        # schema must actually exist (e.g. the ledger survived while a
-        # definition was removed out-of-band). The newest migration
-        # re-verifies its own contract; a missing/incompatible definition is
-        # first healed by idempotently re-running that migration's up-SQL
-        # (DEFINE FIELD IF NOT EXISTS), and only a persistent mismatch
-        # fails startup.
+        # schema must actually exist — see ``verify_latest_schema``.
+        await self.verify_latest_schema()
+
+    async def verify_latest_schema(self) -> None:
+        """Verify (and, if needed, idempotently heal) the newest migration's schema.
+
+        The ledger can say "latest" while the schema is missing: a definition
+        was removed out-of-band, or a migration was rolled back (e.g.
+        ``24_down``) while its ledger row survived. Without this check the app
+        starts silently and the adapter's identity writes are dropped again by
+        ``SCHEMAFULL`` — the original write-drop closure (issue #66).
+
+        Healing is idempotent: the newest migration re-runs its own up-SQL
+        (``DEFINE FIELD IF NOT EXISTS``); only a persistent mismatch raises
+        ``MigrationSchemaError`` and fails startup.
+
+        Callers: ``run_migration_up`` (after applying pending migrations) and
+        the API startup path even when no migration is pending.
+        """
         newest = self.up_migrations[-1]
-        if newest.version is not None and self.verify_schema is not None:
-            try:
-                await self.verify_schema(newest.version)
-            except MigrationSchemaError:
-                logger.warning(
-                    f"Migration {newest.version} schema incomplete at startup; "
-                    f"re-running its up-SQL idempotently"
-                )
-                await newest.run(bump=True)
-                await self.verify_schema(newest.version)
+        if newest.version is None or self.verify_schema is None:
+            return
+        try:
+            await self.verify_schema(newest.version)
+        except MigrationSchemaError:
+            logger.warning(
+                f"Migration {newest.version} schema incomplete at startup; "
+                f"re-running its up-SQL idempotently"
+            )
+            await newest.run(bump=True)
+            await self.verify_schema(newest.version)
 
 
 # Database version management functions

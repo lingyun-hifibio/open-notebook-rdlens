@@ -189,6 +189,12 @@ async def _run_database_migrations() -> None:
         )
     else:
         logger.info("Database is already at the latest version. No migrations needed.")
+        # Issue #613：账本已是最新也要校验最新迁移的 schema。此前校验只写在
+        # ``run_migration_up()`` 末尾，而本函数只在 ``needs_migration()`` 为真时
+        # 才调用它 ⇒ 「账本最新但 schema 缺失」（字段被手工删除、或迁移被回滚）
+        # 会被静默跳过：应用照常启动，写入被 SCHEMAFULL 丢弃（原始「写-丢闭环」）。
+        # 见 RDLens#613 的 apply_and_recovery_acceptance 报告。
+        await migration_manager.verify_latest_schema()
 
 
 @asynccontextmanager
