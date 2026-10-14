@@ -418,23 +418,46 @@ class AsyncMigrationManager:
             logger.info("Database is already at the latest version")
 
         # Even when the ledger says the latest migration is applied, its
-        # schema must actually exist (e.g. the ledger survived while a
-        # definition was removed out-of-band). The newest migration
-        # re-verifies its own contract; a missing/incompatible definition is
-        # first healed by idempotently re-running that migration's up-SQL
-        # (DEFINE FIELD IF NOT EXISTS), and only a persistent mismatch
-        # fails startup.
+        # schema must actually exist — see ``verify_latest_schema``.
+        await self.verify_latest_schema()
+
+    async def verify_latest_schema(self) -> None:
+        """Verify (and, if needed, idempotently heal) the newest migration's schema.
+
+        The ledger can say "latest" while the schema is missing: a definition
+        was removed out-of-band, or a migration was rolled back (e.g.
+        ``24_down``) while its ledger row survived. Without this check the app
+        starts silently and the adapter's identity writes are dropped again by
+        ``SCHEMAFULL`` — the original write-drop closure (issue #66).
+
+        Healing is idempotent: the newest migration re-runs its own up-SQL
+        (``DEFINE FIELD IF NOT EXISTS``) and its ledger row is re-recorded
+        (so a manual rollback of that migration is undone — logged loudly);
+        only a persistent mismatch raises ``MigrationSchemaError`` and fails
+        startup.
+
+        Callers: ``run_migration_up`` (after applying pending migrations) and
+        the API startup path even when no migration is pending.
+        """
         newest = self.up_migrations[-1]
-        if newest.version is not None and self.verify_schema is not None:
-            try:
-                await self.verify_schema(newest.version)
-            except MigrationSchemaError:
-                logger.warning(
-                    f"Migration {newest.version} schema incomplete at startup; "
-                    f"re-running its up-SQL idempotently"
-                )
-                await newest.run(bump=True)
-                await self.verify_schema(newest.version)
+        if newest.version is None or self.verify_schema is None:
+            return
+        try:
+            await self.verify_schema(newest.version)
+        except MigrationSchemaError:
+            logger.warning(
+                f"Migration {newest.version} schema incomplete at startup; "
+                f"re-applying its up-SQL idempotently. NOTE: this records "
+                f"version {newest.version} in the ledger again, so an "
+                f"intentional manual rollback of that migration (e.g. running "
+                f"24_down) is undone by this self-heal."
+            )
+            await newest.run(bump=True)
+            await self.verify_schema(newest.version)
+            logger.warning(
+                f"Migration {newest.version} schema healed and ledger "
+                f"re-recorded"
+            )
 
 
 # Database version management functions
@@ -674,6 +697,14 @@ async def verify_migration_schema(version: int) -> None:
     or reject the adapter's identity writes.
     """
     if version != 24:
+        if version > 24:
+            # 新增迁移时必须扩展本函数：否则「账本最新」校验对本函数而言变成
+            # no-op，schema 漂移会**静默**不再被发现（RDLens#613 复审 LOW）。
+            logger.warning(
+                f"verify_migration_schema has no schema contract for migration "
+                f"{version}; schema drift for it will not be detected. "
+                f"Extend verify_migration_schema when adding a migration."
+            )
         return
     await _assert_identity_definitions_compatible(require_present=True)
     logger.debug("Migration 24 schema verified: rdlens_* identity fields present")
