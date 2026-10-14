@@ -56,6 +56,10 @@ export const RESEARCH_ERROR_USER_COPY: Record<string, string> = {
 
   // ── Chat SSE / 客户端码 ──
   stream_lost: 'research.errors.streamLost',
+  // PR5（D-24）：传输层新增的两个**客户端码**（AC8：稳定码必须有主文案，
+  // 否则用户只看到 generic 兜底、拿不到下一步动作）
+  stream_idle_timeout: 'research.errors.streamIdleTimeout',
+  stream_protocol_error: 'research.errors.streamProtocolError',
   http_error: 'research.errors.httpError',
   admission_unavailable: 'research.errors.admissionUnavailable',
   admission_capacity: 'research.errors.admissionCapacity',

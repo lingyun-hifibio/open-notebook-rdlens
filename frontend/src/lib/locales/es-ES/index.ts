@@ -998,6 +998,8 @@ export const esES = {
       generationInProgress: "A request with the same inputs is already running. Wait for it to finish.",
       revisionChanged: "The referenced revision changed. Refresh and try again.",
       streamLost: "The connection was lost before the answer finished. Check your connection and try again.",
+      streamIdleTimeout: 'The connection went quiet for too long, so the stream was closed. Retry to continue — the original attempt keeps its idempotency key.',
+      streamProtocolError: 'The server did not return an event stream for this request. This is usually a deployment or proxy issue; retry, and contact an administrator if it persists.',
       httpError: "The request failed. Check your connection and try again.",
       admissionUnavailable: "The service is temporarily unavailable. Try again shortly.",
       admissionCapacity: "The service is at capacity right now. Retry shortly.",
