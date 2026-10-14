@@ -9,6 +9,13 @@
  * 本文件同时钉住三件事：
  * 1. **清单完整性**：每个在 `all` 下有派发能力的入口文件都必须含阻断信号；
  *    新增派发点必须显式登记（这是**有意的摩擦**，不是遗漏）。
+ *
+ * **诚实边界**：这是"信号存在性"守卫，不是"门禁可达性"守卫——它只能证明
+ * 每个清单项仍**引用**了自己的阻断信号（变异演练实测：整体移除某入口的
+ * D-11 门禁会变红），不能证明该分支在运行时可被走到。可达性由各入口的
+ * 行为用例承担（`InsightsPanel.test.tsx` 的 T23、`TransformationRunDetail.test.tsx`
+ * 与 `TransformationsPanel.test.tsx` 的 all 阻断、`ResearchChatPanel.test.tsx`
+ * 的 D-26、`ComparePanel.c05.test.tsx` 的 T38）。
  * 2. **文案纪律**：`all` 的阻断文案不得写成"没有可用资料"（D-11 禁用措辞），
  *    必须引导"先选择资料"。
  * 3. **契约层不可冒充**：`all` 只能经 `source_scope.mode='all'` 表达；
@@ -46,10 +53,24 @@ function readComponent(relative: string): string {
   return readFileSync(join(srcDir, relative), 'utf8')
 }
 
+/**
+ * 去掉注释行后再匹配阻断信号——否则一句"这里应该阻断"的注释就能让守卫变绿
+ * （变异演练实测：只删掉真正的门禁、留下注释时守卫不应通过）。
+ */
+function readCode(relative: string): string {
+  return readComponent(relative)
+    .split('\n')
+    .filter((line) => {
+      const trimmed = line.trim()
+      return !trimmed.startsWith('//') && !trimmed.startsWith('*') && !trimmed.startsWith('/*')
+    })
+    .join('\n')
+}
+
 describe('D-11/T24：all 阻断清单完整性（静态守卫）', () => {
   it('每个在 all 下有派发能力的入口文件都带阻断信号', () => {
     const missing = D11_INVENTORY.filter(({ file, signals }) => {
-      const content = readComponent(file)
+      const content = readCode(file)
       return !signals.some((signal) => content.includes(signal))
     })
     expect(
