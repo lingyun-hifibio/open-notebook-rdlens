@@ -32,6 +32,10 @@ export function summarizeWarnings(
   for (const warning of list) {
     if (warning.code !== 'stale_fallback') continue
     const docs = warning.documents ?? []
+    // 两类语义分开计数：`used_version` 为空串 = 无可读版本被**排除**；
+    // 非空 = 回退到旧版本。混合条目（部分回退、部分排除）按**回退**计入
+    // ——回退是更保守的解读（"你少看到的是新版"），且服务端当前对每个文档
+    // 只产出一条同质警告；该取值由用例显式钉住，不靠默认分支偶然成立。
     const isExclusion = docs.length > 0 && docs.every(doc => doc.used_version === '')
     if (isExclusion) excludedCount += docs.length
     else fallbackCount += docs.length > 0 ? docs.length : 1

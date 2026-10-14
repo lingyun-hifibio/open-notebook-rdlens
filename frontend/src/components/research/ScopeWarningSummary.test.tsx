@@ -133,6 +133,37 @@ describe('ScopeWarningSummary（D-17 有界呈现）', () => {
     expect(container.querySelectorAll('*').length).toBeLessThan(10)
   })
 
+  it('T35：混合警告（部分回退/部分排除）按回退计入——取值被显式钉住', () => {
+    const mixed: C05ScopeWarning = {
+      code: 'stale_fallback',
+      message: 'mixed',
+      documents: [
+        { document_id: 'doc_a', used_version: 'v2', skipped_version: 'v3' },
+        { document_id: 'doc_b', used_version: '', skipped_version: 'v9' },
+      ],
+    }
+    const summary = summarizeWarnings([mixed])
+    expect(summary.fallbackCount).toBe(2)
+    expect(summary.excludedCount).toBe(0)
+    expect(summary.total).toBe(1)
+  })
+
+  it('T35：无 documents 的警告仍计入回退 1（不是被丢弃）', () => {
+    const summary = summarizeWarnings([{ code: 'stale_fallback', message: 'no-docs' }])
+    expect(summary.fallbackCount).toBe(1)
+    expect(summary.total).toBe(1)
+  })
+
+  it('非 stale_fallback 的警告不进入两类计数（但计入 total）', () => {
+    const summary = summarizeWarnings([
+      { code: 'other_code', message: 'x' },
+      excludedWarning(1, 2),
+    ])
+    expect(summary.total).toBe(2)
+    expect(summary.excludedCount).toBe(2)
+    expect(summary.fallbackCount).toBe(0)
+  })
+
   it('无警告时不渲染摘要与明细（不产空节点）', () => {
     render(<ScopeWarningSummary projection={scopeWith([])} />)
 
