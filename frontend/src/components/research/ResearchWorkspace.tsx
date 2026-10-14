@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { createCoverageChat, newIdempotencyKey, searchV1 } from '@/lib/research/api'
 import { useResearchC05 } from '@/lib/hooks/use-research-c05'
 import { buildC05GeneratedRequest } from '@/lib/research/c05-request'
+import { signatureOf } from '@/lib/research/c05-idempotency-key'
 import {
   useResearchChat,
   type CoverageSubmitRequest,
@@ -163,7 +164,7 @@ export function ResearchWorkspace({
   // #243 §6.4：Chat/Compare 统一走顶层执行守卫（invariant 9）
   // #358：models 响应顶层能力——覆盖全部所选来源只在后端
   // coverage_all_selected 为 true 时允许提交（false/缺失/加载中 fail-closed）。
-  const { runGuarded, canExecute, blockedReason, coverageAllSelected } = useResearchGlobalModel()
+  const { runGuarded, canExecute, blockedReason, coverageAllSelected, confirmedModelId } = useResearchGlobalModel()
   const blockedHint = researchModelBlockedHint(blockedReason, t)
 
   // ── keep-alive visited 集合：渲染期并集保证新动作首帧即挂载 ──
@@ -182,8 +183,13 @@ export function ResearchWorkspace({
     void notesQuery.refetch()
   }, [notesQuery, sourcesQuery])
 
-  const sendChat = useCallback(
-    async (
+  /**
+   * PR5（D-22）：Chat 在同意登记前冻结的幂等键（按逻辑提交签名持有）。
+   * 取消 → 保留（重试复用原键）；已派发 → 清空（同题重问 = 新执行）。
+   */
+  const pendingChatKeyRef = useRef<{ signature: string; key: string } | null>(null)
+
+  const sendChat = useCallback(    async (
       query: string,
       selection: ResearchChatSelection | undefined,
     ): Promise<boolean> => {
@@ -196,16 +202,39 @@ export function ResearchWorkspace({
       }
       // consent 摘要与最终请求同一快照（K11）
       const scopeLabel = formatScopeLabel(deriveScopeSnapshot(effectiveSelection), t)
+      // PR5（D-22）：幂等键与契约在**登记之前**冻结。取消 → 保留（重试复用
+      // 原键，D-13 表①）；真正派发过 → 丢弃（同样的提问再问一次即新执行，
+      // D-13 表②）。签名只用于判定"是否同一次逻辑提交"。
+      const frozen = deriveChatSubmission(
+        effectiveSelection,
+        query,
+        confirmedModelId,
+        c05.dispatchReady('chat') ? 'c05-v1' : 'v1',
+      )
+      const held = pendingChatKeyRef.current
+      const frozenKey = held !== null && held.signature === frozen.signature
+        ? held.key
+        : newIdempotencyKey()
+      pendingChatKeyRef.current = { signature: frozen.signature, key: frozenKey }
       const sent = await runGuarded(
         (modelId) => {
-          sendTurn(query, effectiveSelection, modelId)
+          sendTurn(query, effectiveSelection, modelId, frozenKey, frozen.contract)
           return true
         },
-        { scopeLabel },
+        {
+          scopeLabel,
+          contract: frozen.contract,
+          envelope: frozen.envelope,
+          idempotencyKey: frozenKey,
+        },
       )
+      if (sent === true) {
+        // 已确定性派发：释放冻结键，避免"同题重问"命中服务端重放（D-13 表②）
+        pendingChatKeyRef.current = null
+      }
       return sent === true
     },
-    [runGuarded, scopeApi, sendTurn, t],
+    [confirmedModelId, runGuarded, scopeApi, sendTurn, t],
   )
 
   // Issue #439：persistent_job_required（不可重试）→ 用该 turn 冻结的 Scope
@@ -603,4 +632,46 @@ export function ResearchWorkspace({
       </div>
     </div>
   )
+}
+
+/**
+ * PR5（D-22）：Chat 一次逻辑提交的**冻结意图**——签名（用于判定"是否同一次
+ * 提交"）、契约选择与请求信封。三者与幂等键一起在 consent 登记前成型，
+ * 确认后原样派发，杜绝"同意流程换键/换契约"。
+ *
+ * `signatureOf` 的 `contextLevel` 对 Chat 无对应档位，传空串占位——
+ * 该字段只参与签名比较，不进入 Chat 请求体。
+ */
+function deriveChatSubmission(
+  selection: ResearchChatSelection,
+  query: string,
+  modelId: string | null,
+  contract: 'v1' | 'c05-v1',
+): { signature: string; contract: 'v1' | 'c05-v1'; envelope: Record<string, unknown> } {
+  const scope = {
+    mode: selection.mode ?? ('all' as const),
+    sourceIds: [...(selection.sourceIds ?? [])],
+    noteIds: [...(selection.noteIds ?? [])],
+    singleSourceId: selection.singleSourceId ?? null,
+  }
+  const signature = signatureOf({
+    entry: 'chat',
+    query,
+    scope,
+    modelId: modelId ?? '',
+    contextLevel: '',
+    contract,
+  })
+  return {
+    signature,
+    contract,
+    envelope: {
+      query,
+      mode: scope.mode,
+      source_ids: scope.sourceIds,
+      note_ids: scope.noteIds,
+      single_source_id: scope.singleSourceId,
+      model_id: modelId,
+    },
+  }
 }

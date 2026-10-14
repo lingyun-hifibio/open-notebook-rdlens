@@ -273,6 +273,9 @@ export interface UseResearchChatResult {
     query: string,
     selection: ResearchChatSelection | undefined,
     modelId: string,
+    /** PR5（D-22）：登记前冻结的幂等键/契约（确认后原样复用） */
+    frozenIdempotencyKey?: string,
+    frozenContract?: 'v1' | 'c05-v1',
   ) => void
   /**
    * COV-09：all_selected 覆盖提交（COV-08 §12.1）。不走 SSE——202 受理后
@@ -844,6 +847,8 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
     turnId: string,
     selection: ResearchChatSelection | undefined,
     modelId: string,
+    frozenIdempotencyKey?: string,
+    frozenContract?: 'v1' | 'c05-v1',
   ): void => {
     // #243 §6.4：modelId 由调用方传入（confirmed 全局模型快照），本 hook
     // 不再读取执行偏好——显示什么就执行什么，且快照不随后续切换漂移。
@@ -856,10 +861,11 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
       })
       return
     }
-    // PR5（C6）：契约判定在派发时刻执行一次，重连沿用同契约（不重判）
-    const contract: 'v1' | 'c05-v1' = c05DispatchReadyRef.current?.() === true
-      ? 'c05-v1'
-      : 'v1'
+    // PR5（C6）：契约判定在派发时刻执行一次，重连沿用同契约（不重判）。
+    // PR5（D-22）：若调用方在登记 consent 前已冻结契约，则以冻结值为准
+    //（确认期间能力翻转不得改变已登记请求的契约）。
+    const contract: 'v1' | 'c05-v1' = frozenContract
+      ?? (c05DispatchReadyRef.current?.() === true ? 'c05-v1' : 'v1')
     const active: ActiveTurn = {
       turnId,
       query: trimmed,
@@ -868,7 +874,8 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
       scopeSnapshot: deriveScopeSnapshot(selection),
       contract,
       modelId,
-      idempotencyKey: newIdempotencyKey(),
+      // PR5（D-22）：登记时冻结的键优先；缺省（旧接线）仍是每轮新键
+      idempotencyKey: frozenIdempotencyKey ?? newIdempotencyKey(),
       attempt: 1,
       reconnectCount: 0,
       lastEventId: 0,
@@ -885,6 +892,14 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
     query: string,
     selection: ResearchChatSelection | undefined,
     modelId: string,
+    /**
+     * PR5（D-22）：调用方在**登记 consent 之前**冻结的幂等键。确认后必须
+     * 复用它派发——否则"同意取消 → 重试"会换键（D-13 表① 禁止）。
+     * 缺省（旧接线）保持每轮新键的既有语义。
+     */
+    frozenIdempotencyKey?: string,
+    /** PR5（D-22）：登记的契约选择（确认后不再重判能力） */
+    frozenContract?: 'v1' | 'c05-v1',
   ): void => {
     const trimmed = query.trim()
     if (!trimmed) return
@@ -939,7 +954,7 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
       generationId: null,
     }
     setTurns((prev) => [...prev, userTurn, assistantTurn])
-    startTurn(trimmed, turnId, selection, modelId)
+    startTurn(trimmed, turnId, selection, modelId, frozenIdempotencyKey, frozenContract)
   }
 
   const sendCoverage = (

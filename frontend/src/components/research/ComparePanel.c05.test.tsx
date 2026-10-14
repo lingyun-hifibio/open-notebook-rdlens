@@ -47,7 +47,7 @@ function renderPanel(
   rows: ResearchSource[],
   selected: string[],
   mode: 'all' | 'selected' = 'selected',
-  onCreate = vi.fn(async () => true),
+  onCreate = vi.fn(async (_documentIds: string[]) => true),
 ) {
   seedScope(mode, selected)
   return {

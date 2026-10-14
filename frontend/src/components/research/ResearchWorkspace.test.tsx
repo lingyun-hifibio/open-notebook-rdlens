@@ -475,6 +475,42 @@ describe('ResearchWorkspace（RWV2-40 五动作主区；#445）', () => {
     expect(screen.getByTestId('chat-input')).toHaveValue('')
   })
 
+  it('T40（D-22）：Chat 同意取消后重试复用**原键**，确认后以冻结键派发', async () => {
+    tokenStore.setResearchToken(researchToken(), 9999999999)
+    const captured: Array<{
+      idempotencyKey?: string
+      contract?: string
+      envelope?: Record<string, unknown>
+    }> = []
+    setGlobalModelStub({
+      deferGuarded: true,
+      onGuardedOptions: (options) => captured.push(options ?? {}),
+    })
+    renderHarness()
+    switchTo('research-chat')
+    fireEvent.change(await screen.findByTestId('chat-input'), { target: { value: '同题' } })
+
+    // 第一次点击：只登记（consent 未确认）——键/契约/信封已冻结
+    fireEvent.click(screen.getByRole('button', { name: 'research.chatSend' }))
+    expect(captured).toHaveLength(1)
+    const firstKey = captured[0].idempotencyKey
+    expect(firstKey).toBeTruthy()
+    expect(captured[0].envelope).toMatchObject({ query: '同题', source_ids: [] })
+    expect(api.openResearchChatStream).not.toHaveBeenCalled()
+
+    // 取消后重试（仍未放行）→ **复用原键**，不得换键（D-13 表①）
+    fireEvent.click(screen.getByRole('button', { name: 'research.chatSend' }))
+    expect(captured).toHaveLength(2)
+    expect(captured[1].idempotencyKey).toBe(firstKey)
+
+    // 放行 → 用登记中的键真正派发
+    resetGlobalModelStub()
+    fireEvent.click(screen.getByRole('button', { name: 'research.chatSend' }))
+    await waitFor(() => expect(api.openResearchChatStream).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(api.openResearchChatStream).mock.calls[0][0].idempotencyKey).toBe(firstKey)
+
+  })
+
   it('#243 §6.4：Compare 创建经顶层守卫——待确认时不发创建请求；放行后才创建', async () => {
     tokenStore.setResearchToken(researchToken(), 9999999999)
     setGlobalModelStub({ deferGuarded: true })

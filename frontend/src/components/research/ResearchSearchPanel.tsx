@@ -65,6 +65,20 @@ const CONSENT_ERROR_CODES = [
   'policy_denied',
 ]
 
+/**
+ * PR5（D-22）：登记前冻结的完整派发意图。确认（或取消后重试）时**只用**这里
+ * 的键与信封派发，不再重读能力/模型/范围——否则同意流程会在取消/重试时换键。
+ */
+interface FrozenDispatch {
+  /** 冻结的幂等键（D-13 表①：未完成发出时保留） */
+  key: string
+  /** 冻结的契约选择（v1 / c05-v1） */
+  contract: 'v1' | 'c05-v1'
+  /** 冻结的请求信封（原样 POST） */
+  body: Parameters<typeof searchV1>[1]
+  envelope: Record<string, unknown>
+}
+
 export function ResearchSearchPanel({
   projectId,
   active = true,
@@ -267,21 +281,21 @@ export function ResearchSearchPanel({
   // detail.acceptance 为锚，替换旧"有 response 即清键"）。
   const keyHoldRef = useRef(newKeyHold())
 
-  const executeSearch = useCallback(
-    async (
+  /**
+   * PR5（D-22）：派发意图必须在**登记（弹 consent）之前**冻结——幂等键、
+   * 契约选择、完整请求信封三者一次成型，之后不再重读能力/模型/范围。
+   * 否则"同意 → 派发"这条路径会在取消/重试时换键，成为 D-13 表①的漏洞。
+   */
+  const prepareDispatch = useCallback(
+    (
       trimmed: string,
       modelId: string,
       level: ResearchContextLevel,
       scopeSnapshot: ResearchScopeSnapshot,
-    ) => {
-      setLoading(true)
-      setError(null)
-      setResult(null)
-      setBackground(null)
+    ): FrozenDispatch | { blocked: 'exhausted' } => {
       const now = monotonicNow()
-      const c05 = c05ReadyRef.current
-      // R1-H3 修复：契约版本入键签名——能力翻转后**同签名的恢复不会降级
-      // 成 v1**（签名不同 = 新键新意图，而非同键换契约）
+      const contract: 'v1' | 'c05-v1' = c05ReadyRef.current ? 'c05-v1' : 'v1'
+      // R1-H3：契约版本入键签名——能力翻转后同签名的恢复不会降级成 v1
       const signature = signatureOf({
         entry: 'search',
         query: trimmed,
@@ -293,30 +307,24 @@ export function ResearchSearchPanel({
         },
         modelId,
         contextLevel: level,
-        contract: c05 ? 'c05-v1' : 'v1',
+        contract,
       })
-      // R2-B1 修复：exhausted 仅对**同签名**（同逻辑提交的恢复）停止 POST；
+      // R2-B1：exhausted 仅对**同签名**（同逻辑提交的恢复）停止 POST；
       // 签名变化 = 用户明确新意图 = 新键（acquireKey 自行处理）。
       if (
         keyHoldRef.current.key !== null
         && keyHoldRef.current.signature === signature
         && dispatchEligibility(keyHoldRef.current, now) === 'exhausted'
       ) {
-        setError({
-          code: 'key_retry_exhausted',
-          message: 'Recovery window for the previous attempt is exhausted; review the pending result before retrying.',
-        })
-        setLoading(false)
-        return
+        return { blocked: 'exhausted' }
       }
+      // D-13 表①：取键即保留（此时**尚未派发**）；尝试计数在真正 POST 时累加
       const acquired = acquireKey(keyHoldRef.current, now, newIdempotencyKey, signature)
-      keyHoldRef.current = countAttempt(acquired.hold)
-      const useC05 = c05
-      try {
-        if (useC05) {
-          // PR5（B3）：C-05 分支——source_scope 载荷 + c05-v1 头；
-          // 禁止非空顶层 source_ids（D-11 fail-closed 在构造层）
-          const body = buildC05GeneratedRequest(
+      keyHoldRef.current = acquired.hold
+      const body: Parameters<typeof searchV1>[1] = contract === 'c05-v1'
+        // PR5（B3）：C-05 分支——source_scope 载荷 + c05-v1 头；
+        // 禁止非空顶层 source_ids（D-11 fail-closed 在构造层）
+        ? buildC05GeneratedRequest(
             {
               mode: scopeSnapshot.mode,
               sourceIds: scopeSnapshot.sourceIds,
@@ -325,14 +333,42 @@ export function ResearchSearchPanel({
             },
             { query: trimmed, model_id: modelId, mode: 'auto', context_level: level },
           )
-          const outcome = await searchV1(projectId, body, {
-            idempotencyKey: acquired.key,
+        : {
+            query: trimmed,
+            source_ids: [...scopeSnapshot.sourceIds],
+            note_ids: [...scopeSnapshot.noteIds],
+            mode: 'auto',
+            model_id: modelId,
+            context_level: level,
+          }
+      return {
+        key: acquired.key,
+        contract,
+        body,
+        envelope: body as unknown as Record<string, unknown>,
+      }
+    },
+    [],
+  )
+
+  const executeSearch = useCallback(
+    async (frozen: FrozenDispatch) => {
+      setLoading(true)
+      setError(null)
+      setResult(null)
+      setBackground(null)
+      // 派发即计数（初始 POST 与所有重试共用 ≤3）
+      keyHoldRef.current = countAttempt(keyHoldRef.current)
+      try {
+        if (frozen.contract === 'c05-v1') {
+          const outcome = await searchV1(projectId, frozen.body, {
+            idempotencyKey: frozen.key,
             contract: 'c05-v1',
           })
           // D-13：确定性完成（200/202）→ 清键（再次提问 = 新执行）
           keyHoldRef.current = settleKey(keyHoldRef.current, { httpDelivered: true, detail: null, success: true })
           if (outcome.kind === 'direct') {
-            lastExecutedQueryRef.current = trimmed
+            lastExecutedQueryRef.current = frozen.envelope.query as string
             // D-01：投影存在才消费；缺失不猜测
             setScopeProjection(extractScopeProjection(outcome.result))
             setResult(outcome.result)
@@ -346,23 +382,14 @@ export function ResearchSearchPanel({
             })
           }
         } else {
-          const outcome = await searchV1(
-            projectId,
-            {
-              query: trimmed,
-              source_ids: [...scopeSnapshot.sourceIds],
-              note_ids: [...scopeSnapshot.noteIds],
-              mode: 'auto',
-              model_id: modelId,
-              context_level: level,
-            },
-            { idempotencyKey: acquired.key },
-          )
+          const outcome = await searchV1(projectId, frozen.body, {
+            idempotencyKey: frozen.key,
+          })
           keyHoldRef.current = settleKey(keyHoldRef.current, { httpDelivered: true, detail: null, success: true })
           // 旧 v1 契约不携带范围投影：显式清空，避免与上一次 C-05 结果串台
           setScopeProjection({ kind: 'absent' })
           if (outcome.kind === 'direct') {
-            lastExecutedQueryRef.current = trimmed
+            lastExecutedQueryRef.current = frozen.envelope.query as string
             setResult(outcome.result)
           } else {
             setBackground({
@@ -420,15 +447,32 @@ export function ResearchSearchPanel({
       })
       return
     }
+    // PR5（D-22）：键/契约/信封在登记**之前**冻结；确认后只用它们派发
+    const modelId = confirmedModelId
+    if (modelId === null) return // fail-closed（与 runGuarded 的 canExecute 门禁一致）
+    const prepared = prepareDispatch(trimmed, modelId, levelSnapshot, scopeSnapshot)
+    if ('blocked' in prepared) {
+      setError({
+        code: 'key_retry_exhausted',
+        message: 'Recovery window for the previous attempt is exhausted; review the pending result before retrying.',
+      })
+      return
+    }
     void runGuarded(
-      (modelId) =>
-        executeSearch(trimmed, modelId, levelSnapshot, scopeSnapshot),
-      { scopeLabel: formatScopeLabel(scopeSnapshot, t) },
+      () => executeSearch(prepared),
+      {
+        scopeLabel: formatScopeLabel(scopeSnapshot, t),
+        contract: prepared.contract,
+        envelope: prepared.envelope,
+        idempotencyKey: prepared.key,
+      },
     )
   }, [
+    confirmedModelId,
     executeSearch,
     getSnapshot,
     loading,
+    prepareDispatch,
     query,
     runGuarded,
     selectedLevel,

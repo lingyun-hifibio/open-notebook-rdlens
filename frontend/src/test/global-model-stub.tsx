@@ -53,6 +53,11 @@ interface StubOverrides {
   pendingScopeLabel?: string | null
   /** RWV2-42：派发登记的模型快照（弹窗 Model 行展示用） */
   pendingModelId?: string | null
+  pendingConsentRegistration?: {
+    contract: 'v1' | 'c05-v1' | null
+    envelope: Readonly<Record<string, unknown>> | null
+    idempotencyKey: string | null
+  } | null
   onCancelConsent?: () => void
   onConfirmConsent?: () => Promise<void>
   onRunGuarded?: () => void
@@ -60,7 +65,12 @@ interface StubOverrides {
    * RWV2-42：每次 runGuarded 调用回传本次 options（scopeLabel），供
    * 面板测试断言「consent Scope 行摘要与派发同源」。
    */
-  onGuardedOptions?: (options?: { scopeLabel?: string }) => void
+  onGuardedOptions?: (options?: {
+    scopeLabel?: string
+    contract?: 'v1' | 'c05-v1'
+    envelope?: Readonly<Record<string, unknown>>
+    idempotencyKey?: string
+  }) => void
 }
 
 let overrides: StubOverrides = {}
@@ -122,7 +132,12 @@ export function useResearchGlobalModel(): UseResearchGlobalModelResult {
 
   const runGuarded = async <T,>(
     operation: GuardedOperation<T>,
-    options?: { scopeLabel?: string },
+    options?: {
+      scopeLabel?: string
+      contract?: 'v1' | 'c05-v1'
+      envelope?: Readonly<Record<string, unknown>>
+      idempotencyKey?: string
+    },
   ): Promise<T | undefined> => {
     if (!canExecute || confirmedModelId === null) return undefined
     overrides.onGuardedOptions?.(options)
@@ -164,6 +179,7 @@ export function useResearchGlobalModel(): UseResearchGlobalModelResult {
     // RWV2-11（F5 同步）：接口新增字段，stub 必须提供（防 tsc 失败）
     pendingScopeLabel: overrides.pendingScopeLabel ?? null,
     pendingModelId: overrides.pendingModelId ?? null,
+    pendingConsentRegistration: overrides.pendingConsentRegistration ?? null,
     needsConsent: overrides.needsConsent ?? false,
     isConsentPromptOpen: overrides.isConsentPromptOpen ?? false,
     isConsentInFlight: false,
