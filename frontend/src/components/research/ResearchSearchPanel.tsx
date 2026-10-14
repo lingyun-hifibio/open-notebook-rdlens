@@ -22,6 +22,7 @@ import { c05RequestHeaders } from '@/lib/research/c05-contract'
 import { buildC05GeneratedRequest, buildSourceScope } from '@/lib/research/c05-request'
 import { classifyC05Error } from '@/lib/research/c05-error-actions'
 import { extractScopeProjection } from '@/lib/research/c05-scope-projection'
+import { ScopeWarningSummary } from './ScopeWarningSummary'
 import { evaluatePreviewGate } from '@/lib/research/c05-preview-gate'
 import {
   acquireKey, countAttempt, newKeyHold, settleKey, signatureOf,
@@ -336,6 +337,9 @@ export function ResearchSearchPanel({
             setScopeProjection(extractScopeProjection(outcome.result))
             setResult(outcome.result)
           } else {
+            // 202 受理体在本路径不携带投影 → 如实置 absent（不沿用上一次
+            // 搜索的投影，否则范围身份与当前结果不一致）
+            setScopeProjection({ kind: 'absent' })
             setBackground({
               generationId: outcome.generation_id,
               jobId: outcome.job_id,
@@ -355,6 +359,8 @@ export function ResearchSearchPanel({
             { idempotencyKey: acquired.key },
           )
           keyHoldRef.current = settleKey(keyHoldRef.current, { httpDelivered: true, detail: null, success: true })
+          // 旧 v1 契约不携带范围投影：显式清空，避免与上一次 C-05 结果串台
+          setScopeProjection({ kind: 'absent' })
           if (outcome.kind === 'direct') {
             lastExecutedQueryRef.current = trimmed
             setResult(outcome.result)
@@ -552,6 +558,13 @@ export function ResearchSearchPanel({
               )}
             </AlertDescription>
           </Alert>
+        )}
+
+        {/* PR5（D-01/D-14/D-17）：范围投影与警告的**有界**呈现。202/后台
+            受理路径与终态重放携带投影；fresh 主路径不携带时如实说明"服务端
+            未返回范围详情"，不猜测、不显示 stale 计数。 */}
+        {(result !== null || background !== null) && (
+          <ScopeWarningSummary projection={scopeProjection} />
         )}
 
         {result && (

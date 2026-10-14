@@ -204,4 +204,124 @@ describe('ResearchSearchPanel C-05（C6）', () => {
       expect(screen.getByTestId('document-needs-sources-hint')).toBeInTheDocument()
     })
   })
+
+  // ── PR5（D-01/D-14/D-17）：投影**消费**接线（此前只解析不渲染） ──
+
+  it('D-01：响应不携带投影 → 如实说明"服务端未返回范围详情"（不猜测、不显示计数）', async () => {
+    seedScopeAll()
+    vi.mocked(researchApi.searchV1).mockResolvedValue({ kind: 'direct', result: directResult })
+    render(<ResearchSearchPanel projectId="proj_1" />, { wrapper: makeWrapper() })
+    const input = await screen.findByTestId('search-input')
+    fireEvent.change(input, { target: { value: 'q-proj-absent' } })
+    fireEvent.click(screen.getByTestId('search-run'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('scope-projection-missing')).toBeInTheDocument()
+    })
+    expect(screen.queryByTestId('scope-warning-summary')).toBeNull()
+    expect(screen.queryByTestId('scope-projection-refs')).toBeNull()
+  })
+
+  it('D-17/T35：响应携带数百条警告 → 有界呈现（明细受限 + 计数摘要 + 截断标注）', async () => {
+    seedScopeAll()
+    const warnings = Array.from({ length: 300 }, (_, index) => ({
+      code: 'stale_fallback',
+      message: `fallback-${index}`,
+      documents: [{
+        document_id: `doc_${index}`,
+        used_version: index % 2 === 0 ? 'v2' : '',
+        skipped_version: 'v3',
+      }],
+    }))
+    const resultWithProjection = {
+      ...directResult,
+      scope_contract_version: 'c05-v1',
+      resolved_scope: {
+        mode: 'all',
+        contract_version: 'c05-v1',
+        resolved_source_refs: Array.from({ length: 250 }, (_, index) => ({
+          document_id: `doc_ref_${index}`,
+          document_version: 'v2',
+        })),
+        note_ids: [],
+        single_source_id: null,
+        missing_source_ids: [],
+        includes_exact_versions: false,
+        contains_document_body: false,
+        warnings,
+      },
+    }
+    vi.mocked(researchApi.searchV1).mockResolvedValue({
+      kind: 'direct',
+      result: resultWithProjection as unknown as typeof directResult,
+    })
+    const { container } = render(<ResearchSearchPanel projectId="proj_1" />, { wrapper: makeWrapper() })
+    const input = await screen.findByTestId('search-input')
+    fireEvent.change(input, { target: { value: 'q-proj-huge' } })
+    fireEvent.click(screen.getByTestId('search-run'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('scope-warning-summary')).toBeInTheDocument()
+    })
+    // 明细有界
+    expect(
+      container.querySelectorAll('[data-testid="scope-warning-detail"] li'),
+    ).toHaveLength(5)
+    expect(screen.getByTestId('scope-warning-truncated')).toBeInTheDocument()
+    // refs 只出计数：不逐条渲染 250 个 document_id
+    const text = container.textContent ?? ''
+    expect(text).not.toContain('doc_ref_1')
+    expect(text).not.toContain('doc_ref_249')
+    // 首屏节点数不随规模增长（300 条警告仍是固定条明细）
+    expect(container.querySelectorAll('li').length).toBeLessThan(20)
+  })
+
+  it('D-01：投影畸形（contains_document_body=true）→ 按不可用呈现并暴露原因码', async () => {
+    seedScopeAll()
+    const malformed = {
+      ...directResult,
+      scope_contract_version: 'c05-v1',
+      resolved_scope: {
+        mode: 'all',
+        contract_version: 'c05-v1',
+        resolved_source_refs: [],
+        note_ids: [],
+        single_source_id: null,
+        missing_source_ids: [],
+        includes_exact_versions: false,
+        contains_document_body: true,
+        warnings: [],
+      },
+    }
+    vi.mocked(researchApi.searchV1).mockResolvedValue({
+      kind: 'direct',
+      result: malformed as unknown as typeof directResult,
+    })
+    render(<ResearchSearchPanel projectId="proj_1" />, { wrapper: makeWrapper() })
+    const input = await screen.findByTestId('search-input')
+    fireEvent.change(input, { target: { value: 'q-proj-bad' } })
+    fireEvent.click(screen.getByTestId('search-run'))
+
+    await waitFor(() => {
+      const node = screen.getByTestId('scope-projection-invalid')
+      expect(node).toHaveTextContent('c05_scope_projection_invalid')
+    })
+  })
+
+  it('D-01：旧 v1 契约结果不残留上一次 C-05 的投影（不串台）', async () => {
+    seedScopeAll()
+    vi.mocked(researchApi.listModels).mockResolvedValue({
+      models: [], capabilities: { coverage_all_selected: false, c05: c05Caps(false) },
+    })
+    vi.mocked(researchApi.searchV1).mockResolvedValue({ kind: 'direct', result: directResult })
+    render(<ResearchSearchPanel projectId="proj_1" />, { wrapper: makeWrapper() })
+    const input = await screen.findByTestId('search-input')
+    fireEvent.change(input, { target: { value: 'q-v1' } })
+    fireEvent.click(screen.getByTestId('search-run'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('scope-projection-missing')).toBeInTheDocument()
+    })
+    expect(screen.queryByTestId('scope-projection-refs')).toBeNull()
+  })
 })

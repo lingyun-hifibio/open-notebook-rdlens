@@ -32,7 +32,7 @@ import {
   RESEARCH_MAIN_ACTIONS,
   type ResearchMainAction,
 } from './research-main-action'
-import { resolveCitationSource } from './citation-utils'
+import { canJumpToCitation, resolveCitationCandidate, resolveCitationSource } from './citation-utils'
 import type { ResearchSource } from '@/lib/types/research'
 import type { ResearchCitationDisplayItem } from '@/lib/research/types'
 import type { ResearchCitation } from '@/lib/types/research'
@@ -225,7 +225,9 @@ export function ResearchWorkspace({
       // 走 source_scope 分支。
       const useC05 = c05.dispatchReady('search')
       if (snapshot.mode !== 'selected' && !useC05) {
-        return { status: 'failed' }
+        // D-26/D-11：区分"被范围语义阻断"与"提交失败"——否则 UI 只能给
+        // 通用失败文案，而 D-11 明确要求"请先选择资料"。
+        return { status: 'blocked_scope' }
       }
       let idempotencyKey = backgroundJobKeys.current.get(turnKey)
       if (idempotencyKey === undefined) {
@@ -361,6 +363,30 @@ export function ResearchWorkspace({
     [runGuarded, sendCoverage, submitCoverage, t],
   )
 
+  // D-25：跳转被拒**不得静默**。卡片路径（CitationCard）已按
+  // `canJumpToCitation` 显示降级原因且不渲染按钮；此处兜住其它调用方
+  // （Activity 对话框、Workbench 组合根、直接调用）——给出可解释的拒绝，
+  // 绝不"点了没反应"，也绝不改开另一版本。
+  const denyCitationJump = useCallback(
+    (citation: ResearchCitationDisplayItem) => {
+      const asCitation = citation as unknown as ResearchCitation
+      const candidate = resolveCitationCandidate(sources, asCitation) ?? null
+      const evaluation = canJumpToCitation(asCitation, candidate, undefined)
+      const reason = evaluation.reason ?? 'source_unavailable'
+      toast({
+        title: t('research.citation.jumpBlocked'),
+        description: t(
+          reason === 'version_mismatch'
+            ? 'research.citation.degradedVersion'
+            : 'research.citation.degradedSource',
+          { reason },
+        ),
+        variant: 'destructive',
+      })
+    },
+    [sources, t, toast],
+  )
+
   // Chat 报告 Citation → 解析到项目内来源后联动上半屏预览
   const handleCitationJump = useCallback(
     (citation: ResearchCitationDisplayItem) => {
@@ -368,20 +394,26 @@ export function ResearchWorkspace({
         sources,
         citation as unknown as ResearchCitation,
       )
-      if (!source || source.source_id === null) return
+      if (!source || source.source_id === null) {
+        denyCitationJump(citation)
+        return
+      }
       onCitationJump(source.source_id, citation.page_idx)
     },
-    [onCitationJump, sources],
+    [denyCitationJump, onCitationJump, sources],
   )
 
   // run-template（TransformationsPanel）Citation → 同一条组合根链路
   const handleTransformationCitation = useCallback(
     (citation: ResearchCitation) => {
       const source = resolveCitationSource(sources, citation)
-      if (!source || source.source_id === null) return
+      if (!source || source.source_id === null) {
+        denyCitationJump(citation as unknown as ResearchCitationDisplayItem)
+        return
+      }
       onCitationJump(source.source_id, citation.page_idx)
     },
-    [onCitationJump, sources],
+    [denyCitationJump, onCitationJump, sources],
   )
 
   const loadingPlaceholder = (
@@ -431,6 +463,7 @@ export function ResearchWorkspace({
             onCitationJump={handleCitationJump}
             backgroundNotice={backgroundNotice}
             onRunAsBackgroundJob={runChatAsBackgroundJob}
+            backgroundJobRequiresSelection={!c05.dispatchReady('search')}
             resolveChatOrigin={resolveChatOrigin}
             prefill={chatPrefill}
             onViewInsight={

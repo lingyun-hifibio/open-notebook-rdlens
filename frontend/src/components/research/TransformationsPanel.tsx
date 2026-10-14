@@ -42,7 +42,7 @@ import type {
 } from '@/lib/types/research'
 import { AdminReadOnlyBanner } from './AdminReadOnlyBanner'
 import { CitationCard } from './CitationCard'
-import { resolveCitationSource } from './citation-utils'
+import { resolveCitationCandidate } from './citation-utils'
 
 /**
  * Transformations 工作台（UI-02，REQ-SCOPE-04/REQ-DIS-02/03/REQ-API-01，
@@ -503,7 +503,7 @@ export function TransformationsPanel({
                     <CitationCard
                       key={citation.citation_id}
                       citation={citation}
-                      source={resolveCitationSource(sourcesData?.items, citation)}
+                      source={resolveCitationCandidate(sourcesData?.items, citation)}
                       onJump={onCitationJump}
                     />
                   ))}

@@ -193,6 +193,69 @@ describe('InsightsPanel', () => {
     expect(researchApi.createInsight).not.toHaveBeenCalled()
   })
 
+  it('T23（D-09/D-11）：all 范围下 AI 派发被显式阻断，原因码 c05_entry_pending_pr4 可见', async () => {
+    // 不预置范围 → 默认 all（C-05 在 PR5 内不接 Insight）
+    vi.mocked(researchApi.listInsights).mockResolvedValue({ items: [], next_cursor: null })
+    const { wrapper } = makeWrapper()
+    render(<InsightsPanel />, { wrapper })
+    await waitFor(() => expect(researchApi.listInsights).toHaveBeenCalled())
+
+    fireEvent.click(screen.getByRole('button', { name: 'research.insights.newInsight' }))
+    fireEvent.change(screen.getByLabelText('research.notes.titleLabel'), {
+      target: { value: 'AI 阻断' },
+    })
+    fireEvent.change(screen.getByLabelText('research.notes.contentLabel'), {
+      target: { value: '生成内容' },
+    })
+    fireEvent.click(screen.getByLabelText('research.insights.typeLabel'))
+    fireEvent.click(await screen.findByRole('option', { name: 'research.insights.typeAi' }))
+    fireEvent.click(screen.getByRole('button', { name: 'research.notes.save' }))
+
+    // 显式阻断 + 本地原因码可见（不是通用失败、不是空范围误判）
+    const notice = await screen.findByTestId('insight-ai-notice-blocked_all_scope')
+    expect(notice).toHaveTextContent('c05_entry_pending_pr4')
+    // 不发请求、不枚举展开（D-09 解禁前绝不发空 ID 集）
+    expect(apiClient.post).not.toHaveBeenCalled()
+    expect(researchApi.listSources).not.toHaveBeenCalled()
+  })
+
+  it('T23（D-09）：空 selected 阻断不得挂着上一次派发留下的原因码', async () => {
+    vi.mocked(researchApi.listInsights).mockResolvedValue({ items: [], next_cursor: null })
+    const { wrapper } = makeWrapper()
+    // 第一次挂载：默认 all → 留下 c05_entry_pending_pr4
+    const first = render(<InsightsPanel />, { wrapper })
+    await waitFor(() => expect(researchApi.listInsights).toHaveBeenCalled())
+
+    fireEvent.click(screen.getByRole('button', { name: 'research.insights.newInsight' }))
+    fireEvent.change(screen.getByLabelText('research.notes.titleLabel'), { target: { value: 't' } })
+    fireEvent.change(screen.getByLabelText('research.notes.contentLabel'), { target: { value: 'c' } })
+    fireEvent.click(screen.getByLabelText('research.insights.typeLabel'))
+    fireEvent.click(await screen.findByRole('option', { name: 'research.insights.typeAi' }))
+    fireEvent.click(screen.getByRole('button', { name: 'research.notes.save' }))
+    const allNotice = await screen.findByTestId('insight-ai-notice-blocked_all_scope')
+    expect(allNotice).toHaveTextContent('c05_entry_pending_pr4')
+    first.unmount()
+
+    // 第二次挂载：持久范围 = selected 空集 → 走空范围分支，原因码必须清掉
+    localStorage.setItem(
+      scopeStorageKey('u1', 'proj_1'),
+      JSON.stringify({ version: 1, mode: 'selected', sourceIds: [], noteIds: [] }),
+    )
+    render(<InsightsPanel />, { wrapper })
+    await waitFor(() => expect(researchApi.listInsights).toHaveBeenCalledTimes(2))
+
+    fireEvent.click(screen.getByRole('button', { name: 'research.insights.newInsight' }))
+    fireEvent.change(screen.getByLabelText('research.notes.titleLabel'), { target: { value: 't2' } })
+    fireEvent.change(screen.getByLabelText('research.notes.contentLabel'), { target: { value: 'c2' } })
+    fireEvent.click(screen.getByLabelText('research.insights.typeLabel'))
+    fireEvent.click(await screen.findByRole('option', { name: 'research.insights.typeAi' }))
+    fireEvent.click(screen.getByRole('button', { name: 'research.notes.save' }))
+
+    const emptyNotice = await screen.findByTestId('insight-ai-notice-blocked_empty_scope')
+    expect(emptyNotice).not.toHaveTextContent('c05_entry_pending_pr4')
+    expect(apiClient.post).not.toHaveBeenCalled()
+  })
+
 
   const readySource = () => ({
     source_id: 'src_1', document_id: 'doc_1', document_version: 'v1', status: 'ready' as const,

@@ -27,6 +27,9 @@ const ALLOWED_FILES = [
   'lib/research/c05-static-guards.test.ts',
   // 投影校验用例：旧字面量作为**非法 mode 值**参与回归（解析必须拒绝）
   'lib/research/c05-scope-projection.test.ts',
+  // D-21/T39 迁移行为用例：旧 `entire_project` 持久值必须被读作 all（D-19 规则 2
+  // 明确允许"迁移读取"位置出现旧字面量；测试文件是唯一合法宿主）
+  'lib/research/scope-single-c05.test.tsx',
 ]
 
 describe('D-19/T37：entire_project 静态零残留', () => {

@@ -5,6 +5,7 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
+  checkCompareDocumentFloor,
   checkCompareSelection,
   COMPARE_DEFAULT_MAX,
   COMPARE_HARD_MAX,
@@ -70,10 +71,16 @@ export function ComparePanel({
   // source_ids 解析版本，不去重不丢版本）。
   const selectedDocuments = selectedSourceRows.map((source) => source.document_id)
   const documentCount = countUniqueDocuments(selectedSourceRows)
-  const check =
-    mode === 'all'
-      ? ({ ok: false, reason: 'all', count: 0 } as const)
-      : { ...checkCompareSelection(uniqueDocumentIds(selectedSourceRows)), count: documentCount.uniqueDocumentCount }
+  const check = (() => {
+    if (mode === 'all') return { ok: false, reason: 'all', count: 0 } as const
+    // D-16：上限/提示按唯一文档数计；同文档多版本合并后不足两份 → 阻断
+    const floor = checkCompareDocumentFloor(documentCount.uniqueDocumentCount)
+    if (!floor.ok) return { ok: false, reason: floor.reason, count: documentCount.uniqueDocumentCount } as const
+    return {
+      ...checkCompareSelection(uniqueDocumentIds(selectedSourceRows)),
+      count: documentCount.uniqueDocumentCount,
+    }
+  })()
 
   const modelBlocked = modelBlockedProp === true
 
@@ -128,6 +135,13 @@ export function ComparePanel({
       {!check.ok && check.reason === 'all' && (
         <Alert variant="default" data-testid="compare-entire-project">
           <AlertDescription>{t('research.compareEntireProjectRequiresSelection')}</AlertDescription>
+        </Alert>
+      )}
+      {/* PR5（D-16）：同文档多版本共选被合并后不足两份文献 → 按不足阻断，
+          文案必须说"需要两份不同文档"，不得写成"没有可用资料"（D-11）。 */}
+      {!check.ok && check.reason === 'single_document' && (
+        <Alert variant="default" data-testid="compare-single-document">
+          <AlertDescription>{t('research.compareNeedsTwoDocuments')}</AlertDescription>
         </Alert>
       )}
       {modelBlocked && blockedHint && (

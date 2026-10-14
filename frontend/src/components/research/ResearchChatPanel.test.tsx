@@ -86,6 +86,8 @@ function renderPanel(
       snapshot: ResearchScopeSnapshot,
       turnKey: string,
     ) => Promise<BackgroundJobSubmitResult>
+    /** PR5（D-26）：后台 CTA 所在入口是否要求显式资料集合 */
+    backgroundJobRequiresSelection: boolean
   }> = {},
 ) {
   if (overrides.scope) seedScope(overrides.scope)
@@ -104,6 +106,7 @@ function renderPanel(
         onCoverageRetry={overrides.onCoverageRetry ?? vi.fn(async () => true)}
         resolveChatOrigin={overrides.resolveChatOrigin}
         onRunAsBackgroundJob={overrides.onRunAsBackgroundJob}
+        backgroundJobRequiresSelection={overrides.backgroundJobRequiresSelection ?? false}
       />
     </ResearchScopeProvider>
     </ResearchWorkspaceProvider>
@@ -796,5 +799,140 @@ describe('ResearchChatPanel continue-research prefill（RWV2-23 AC4）', () => {
       </QueryClientProvider>,
     )
     expect((screen.getByTestId('chat-input') as HTMLInputElement).value).toBe('draft v2')
+  })
+})
+
+/**
+ * PR5：T9（历史范围不得被冒充 / 范围不可用）+ D-26（后台 CTA 的 D-11 门禁与
+ * 文案）。单列一个 describe 是因为这两条都是"呈现与门禁"的语义断言，
+ * 而既有用例集中在流式渲染与 Save 链路。
+ */
+describe('ResearchChatPanel · 范围呈现与后台 CTA 门禁（T9 / D-26）', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+  afterEach(() => {
+    cleanup()
+  })
+
+  it('T9：恢复的历史轮无法证明范围 → 显式标注"范围不可用"，不回填当前选择', () => {
+    // 当前范围是 selected(src_2)，但恢复轮 scopeSnapshot=null
+    renderPanel(
+      [turn({ id: 'u1', role: 'user', content: '历史提问', scopeSnapshot: null })],
+      vi.fn(),
+      { scope: { mode: 'selected', sourceIds: ['src_2'], noteIds: [] } },
+    )
+
+    expect(screen.getByTestId('chat-turn-scope-unavailable')).toHaveTextContent(
+      'research.scopeDetails.turnScopeUnavailable',
+    )
+    // 不得把当前选择冒充成历史范围
+    expect(screen.queryByTestId('chat-turn-scope-badge')).toBeNull()
+  })
+
+  it('T9 对照：本轮派发的轮显示真实冻结范围', () => {
+    renderPanel(
+      [turn({ id: 'u2', role: 'user', content: '本次提问', scopeSnapshot: SCOPE_A })],
+      vi.fn(),
+    )
+
+    expect(screen.getByTestId('chat-turn-scope-badge')).toBeInTheDocument()
+    expect(screen.queryByTestId('chat-turn-scope-unavailable')).toBeNull()
+  })
+
+  /**
+   * #439 后台 CTA 的完整形态：**前一条 user 提问 + 出错的 assistant 轮**
+   * （`queryForTurn` 向前找最近的法律提问；缺它 CTA 恒禁用，测不到门禁）。
+   */
+  const persistentTurns = (mode: 'all' | 'selected'): ResearchChatTurn[] => {
+    const scopeSnapshot: ResearchScopeSnapshot = {
+      mode,
+      sourceIds: mode === 'selected' ? ['src_1'] : [],
+      noteIds: [],
+      singleSourceId: null,
+    }
+    return [
+      turn({ id: 'u1', role: 'user', content: 'Which biomarkers show response?', scopeSnapshot }),
+      turn({
+        id: 'a1',
+        status: 'error',
+        errorCode: 'persistent_job_required',
+        scopeSnapshot,
+      }),
+    ]
+  }
+
+  it('D-26：all + 入口要求显式集合 → CTA 就近阻断（D-11 文案）且不可点击派发', async () => {
+    const submit = vi.fn(async (
+      _query: string,
+      _snapshot: ResearchScopeSnapshot,
+      _turnKey: string,
+    ): Promise<BackgroundJobSubmitResult> => ({ status: 'queued', jobId: 'j1' }))
+    renderPanel(persistentTurns('all'), vi.fn(), {
+      onRunAsBackgroundJob: submit,
+      backgroundJobRequiresSelection: true,
+    })
+
+    const blocked = screen.getByTestId('chat-persistent-job-blocked-scope')
+    // D-11 禁用"无可用资料"式措辞，必须引导"先选择资料"
+    expect(blocked).toHaveTextContent('research.errors.backgroundJobBlockedScope')
+    const button = screen.getByTestId('chat-persistent-job-submit')
+    expect(button).toBeDisabled()
+    fireEvent.click(button)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    // 绝不发空 ID 集
+    expect(submit).not.toHaveBeenCalled()
+  })
+
+  it('D-26：selected → CTA 正常可用（阻断只针对无法表达的 all）', async () => {
+    const submit = vi.fn(async (
+      _query: string,
+      _snapshot: ResearchScopeSnapshot,
+      _turnKey: string,
+    ): Promise<BackgroundJobSubmitResult> => ({ status: 'queued', jobId: 'j2' }))
+    renderPanel(persistentTurns('selected'), vi.fn(), {
+      onRunAsBackgroundJob: submit,
+      backgroundJobRequiresSelection: true,
+    })
+
+    expect(screen.queryByTestId('chat-persistent-job-blocked-scope')).toBeNull()
+    const button = screen.getByTestId('chat-persistent-job-submit')
+    expect(button).not.toBeDisabled()
+    fireEvent.click(button)
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1))
+    expect(submit.mock.calls[0][1]).toMatchObject({ mode: 'selected', sourceIds: ['src_1'] })
+  })
+
+  it('D-26：C-05 就绪（入口可表达 all）→ 不阻断，走 source_scope 分支', async () => {
+    const submit = vi.fn(async (
+      _query: string,
+      _snapshot: ResearchScopeSnapshot,
+      _turnKey: string,
+    ): Promise<BackgroundJobSubmitResult> => ({ status: 'queued', jobId: 'j3' }))
+    renderPanel(persistentTurns('all'), vi.fn(), {
+      onRunAsBackgroundJob: submit,
+      backgroundJobRequiresSelection: false,
+    })
+
+    expect(screen.queryByTestId('chat-persistent-job-blocked-scope')).toBeNull()
+    fireEvent.click(screen.getByTestId('chat-persistent-job-submit'))
+    await waitFor(() => expect(submit).toHaveBeenCalledTimes(1))
+  })
+
+  it('D-26：组合根返回 blocked_scope → 呈现 D-11 文案，而不是通用提交失败', async () => {
+    const submit = vi.fn(async (): Promise<BackgroundJobSubmitResult> => ({ status: 'blocked_scope' }))
+    renderPanel(persistentTurns('selected'), vi.fn(), {
+      onRunAsBackgroundJob: submit,
+    })
+
+    fireEvent.click(screen.getByTestId('chat-persistent-job-submit'))
+    await waitFor(() => {
+      expect(screen.getByTestId('chat-persistent-job-error')).toHaveTextContent(
+        'research.errors.backgroundJobBlockedScope',
+      )
+    })
+    expect(screen.getByTestId('chat-persistent-job-error')).not.toHaveTextContent(
+      'research.errors.persistentJobSubmitFailed',
+    )
   })
 })

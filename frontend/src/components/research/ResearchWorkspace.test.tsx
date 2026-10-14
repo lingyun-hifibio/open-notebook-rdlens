@@ -478,7 +478,13 @@ describe('ResearchWorkspace（RWV2-40 五动作主区；#445）', () => {
   it('#243 §6.4：Compare 创建经顶层守卫——待确认时不发创建请求；放行后才创建', async () => {
     tokenStore.setResearchToken(researchToken(), 9999999999)
     setGlobalModelStub({ deferGuarded: true })
-    seedScope('selected', ['src_1'])
+    // PR5（D-16）：Compare 以**文档**计量，去重后需 ≥2 份不同文档；
+    // 本用例关心的是 consent 守卫，故给足两份不同文档，避免被下限阻断干扰。
+    seedScope('selected', ['src_1', 'src_2'])
+    vi.mocked(api.listSources).mockResolvedValue({
+      items: [source, { ...source, source_id: 'src_2', document_id: 'doc_2' }],
+      next_cursor: null,
+    })
     vi.mocked(api.createCompare).mockResolvedValue({ job_id: 'job_1', status: 'queued' })
     vi.mocked(api.getJob).mockResolvedValue({
       job_id: 'job_1',

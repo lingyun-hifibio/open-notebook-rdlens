@@ -133,6 +133,8 @@ export function InsightsPanel({
   const submitAi = async (titleSnapshot: string, contentSnapshot: string) => {
     const snapshot = getSnapshot()
     if (snapshot.mode === 'selected' && !validate(snapshot).valid) {
+      // D-09 收口：清掉上一次派发留下的原因码，避免空范围提示挂着别人的 code
+      setAiErrorCode(null)
       setAiNotice('blocked_empty_scope')
       return
     }
@@ -191,15 +193,19 @@ export function InsightsPanel({
   const aiNoticeMessage =
     aiNotice === 'blocked_empty_scope'
       ? t('research.insights.aiEmptyScopeBlocked')
-      : aiNotice === 'queued'
-        ? t('research.insights.aiQueued')
-        : aiNotice === 'outcome_unknown'
-          ? t('research.insights.aiOutcomeUnknown')
-          : aiNotice === 'protocol_conflict'
-            ? t('research.insights.aiProtocolConflict')
-            : aiNotice === 'failed'
-              ? t('research.insights.aiFailed')
-              : null
+      : aiNotice === 'blocked_all_scope'
+        // D-09：此前缺这一分支 → 阻断被计算出来却**没有任何文案**（静默）。
+        // 用 D-11 一致的措辞引导"先选择资料"，不描述"无可用资料"。
+        ? t('research.insights.aiAllScopeBlocked')
+        : aiNotice === 'queued'
+          ? t('research.insights.aiQueued')
+          : aiNotice === 'outcome_unknown'
+            ? t('research.insights.aiOutcomeUnknown')
+            : aiNotice === 'protocol_conflict'
+              ? t('research.insights.aiProtocolConflict')
+              : aiNotice === 'failed'
+                ? t('research.insights.aiFailed')
+                : null
 
   const items = data?.items ?? []
 
@@ -278,15 +284,26 @@ export function InsightsPanel({
             {insightType === 'ai' && aiNoticeMessage !== null && (
               <p
                 className={
-                  aiNotice === 'blocked_empty_scope' || aiNotice === 'failed'
+                  aiNotice === 'blocked_empty_scope'
+                  || aiNotice === 'blocked_all_scope'
+                  || aiNotice === 'failed'
                     ? 'text-xs font-medium text-destructive'
                     : 'text-xs text-muted-foreground'
                 }
-                role={aiNotice === 'blocked_empty_scope' || aiNotice === 'failed' ? 'alert' : 'status'}
+                role={
+                  aiNotice === 'blocked_empty_scope'
+                  || aiNotice === 'blocked_all_scope'
+                  || aiNotice === 'failed'
+                    ? 'alert'
+                    : 'status'
+                }
                 data-testid={`insight-ai-notice-${aiNotice}`}
               >
                 {aiNoticeMessage}
-                {aiNotice === 'failed' && aiErrorCode !== null ? ` (${aiErrorCode})` : ''}
+                {/* D-09：`blocked_all_scope` 的本地原因码必须**可见**
+                    （`c05_entry_pending_pr4`）——此前只在 failed 分支拼接，
+                    用户看不到"这个入口为什么不能跑"。 */}
+                {aiErrorCode !== null ? ` (${aiErrorCode})` : ''}
               </p>
             )}
             {insightType === 'ai' && aiNotice === 'protocol_conflict' && aiSubmit.result.pendingMarker !== null && (

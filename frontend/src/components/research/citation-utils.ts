@@ -103,6 +103,24 @@ export function resolveCitationSource(
   return byDocument.find((source) => source.document_version === citationVersion)
 }
 
+/**
+ * 文档级候选（**不**按版本过滤）——只用于让 `canJumpToCitation` 产出准确的
+ * 拒绝原因（`version_mismatch` 而不是 `source_unavailable`）。
+ *
+ * 用法纪律（D-25）：
+ * - **展示/判定**（`CitationCard` 的 `source` 入参）用本函数：版本不符时
+ *   `canJumpToCitation` 返回 `version_mismatch`，卡片显示 `degradedVersion`
+ *   且不渲染跳转按钮（原文始终保留）。
+ * - **跳转派发**（`onCitationJump` 的目标解析）必须用版本感知的
+ *   `resolveCitationSource`，不得用本函数——否则又回到"打开错误版本"。
+ */
+export function resolveCitationCandidate(
+  sources: readonly ResearchSource[] | undefined,
+  citation: ResearchCitation,
+): ResearchSource | undefined {
+  return (sources ?? []).find((source) => source.document_id === citation.doc_id)
+}
+
 /** page_idx（0-based）→ 展示页码（1-based）；null/负值不展示。 */
 export function displayPage(pageIdx: number | null): number | null {
   if (pageIdx === null || pageIdx < 0) {

@@ -13,11 +13,21 @@
 export const COMPARE_DEFAULT_MAX = 30
 export const COMPARE_HARD_MAX = 50
 
+/**
+ * PR5（D-16）：Compare 以**文档**为计量单位的数量下限。同一文档的多个版本
+ * 合并后不构成"两份文献"，去重后 < 2 时按不足阻断（C-05 允许同文档多版本
+ * 共选，这是常态而非边缘情形）。
+ */
+export const COMPARE_MIN_DOCUMENTS = 2
+
+/** 阻断原因：`all` = 无显式集合（D-11）；`single_document` = 去重后不足两份（D-16） */
+export type CompareDenyReason = 'empty' | 'over_hard' | 'all' | 'single_document'
+
 export type CompareSelectionCheck =
   | { ok: true; count: number; overDefault: boolean }
   | {
       ok: false
-      reason: 'empty' | 'over_hard' | 'all'
+      reason: CompareDenyReason
       count: number
     }
 
@@ -30,4 +40,21 @@ export function checkCompareSelection(documentIds: readonly string[]): CompareSe
     return { ok: false, reason: 'over_hard', count }
   }
   return { ok: true, count, overDefault: count > COMPARE_DEFAULT_MAX }
+}
+
+/**
+ * D-16 的**文档计量下限**判定（与 `checkCompareSelection` 的"按文献计数上限"
+ * 分层）：输入必须已按 `document_id` 去重。仅用于提交前的客户端预检——
+ * 不并入 `checkCompareSelection`，以免改变既有 Compare **重试**路径
+ * （`use-research-jobs`）对历史 Job 的判定语义。
+ */
+export function checkCompareDocumentFloor(
+  uniqueDocumentCount: number,
+): { ok: true } | { ok: false; reason: 'single_document' } {
+  // 注意：**只有恰好 1 篇**才归"合并后不足两份"；0 篇交回 `empty` 分支
+  // （原因归属必须准确——"没有可用资料"与"只有同一份的两版本"是两回事）。
+  if (uniqueDocumentCount === 1) {
+    return { ok: false, reason: 'single_document' }
+  }
+  return { ok: true }
 }

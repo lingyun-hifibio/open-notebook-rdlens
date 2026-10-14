@@ -43,7 +43,9 @@ export function ResearchScopeEditor({
       </p>
       <RadioGroup
         ref={radioGroupRef}
-        value={mode === 'single' ? undefined : mode}
+        // single 是叠加态（不占单选位）；传空串保持**受控**，避免 Radix
+        // 在 controlled/uncontrolled 之间反复切换（React 会告警）
+        value={mode === 'single' ? '' : mode}
         onValueChange={(value) => setMode(value as Exclude<ResearchScopeMode, 'single'>)}
         className="flex min-w-0 flex-wrap gap-x-4 gap-y-2"
         aria-label={t('research.layout.scope.modeLabel')}
