@@ -69,6 +69,19 @@ export function createAttemptSettlement(): { settle: () => boolean } {
 }
 
 /**
+ * 该状态码在上层是否带有"可自愈/可重试"语义（审查轮 3 L1）。
+ *
+ * 409 有 `generation_in_progress` 的同键自愈路径（原 gen 完成后同键 POST 走
+ * completed-replay）；429/5xx 属临时不可用，调用方本就有有界重试。若把
+ * "状态已知但响应体读不完"一律按终态 HTTP 错误上报，这些恢复路径就不可达了
+ * （用户重发会产生新键 = 新的付费执行）。因此这类状态在超时上报时保留
+ * timeout 语义，交回调用方既有的有界策略。
+ */
+export function hasRetrySemanticsStatus(status: number): boolean {
+  return status === 409 || status === 429 || status >= 500
+}
+
+/**
  * heartbeat/keepalive 只是传输活跃信号，**不是**模型进度。
  * 返回 true 时调用方只重置空闲计时，不得改写 turn 的流式状态、
  * 不得把内容当作模型输出。

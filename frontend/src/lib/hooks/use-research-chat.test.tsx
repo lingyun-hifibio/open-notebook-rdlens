@@ -677,7 +677,7 @@ describe('D-22（审查轮 2 B1）：冻结请求的会话身份过期则丢弃'
     expect(request.query).toBe('q-stale-session')
   })
 
-  it('冻结体与会话身份一致时原样发送（对照：不误丢）', () => {
+  it('冻结体与会话身份一致时**原样**发送（用可区分的字段钉住"逐字派发"）', () => {
     // 存储形态是**纯字符串**（lastSessionStorageKey = prefix + projectId）
     localStorage.setItem('rdlens.research.chat.last-session.proj_1', 'sess_same')
     const streams = openCapture()
@@ -692,10 +692,12 @@ describe('D-22（审查轮 2 B1）：冻结请求的会话身份过期则丢弃'
         'v1',
         {
           query: 'q-same-session',
-          source_ids: [],
+          // 审查轮 3 L2：用**只有冻结体才有**的取值做判别——否则"重建"也会
+          // 产出同样的 session_id，用例无法区分"原样派发"与"丢弃后重建"。
+          source_ids: ['frozen_only'],
           note_ids: [],
           session_id: 'sess_same',
-          model_id: MODEL,
+          model_id: 'm-frozen',
         },
       )
     })
@@ -703,6 +705,9 @@ describe('D-22（审查轮 2 B1）：冻结请求的会话身份过期则丢弃'
     expect(streams).toHaveLength(1)
     const request = streams[0].opts.request as unknown as Record<string, unknown>
     expect(request.session_id).toBe('sess_same')
+    // 冻结体被**逐字**派发（不是重建出来的等价体）
+    expect(request.source_ids).toEqual(['frozen_only'])
+    expect(request.model_id).toBe('m-frozen')
   })
 })
 

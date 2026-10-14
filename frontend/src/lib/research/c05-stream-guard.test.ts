@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { API_TIMEOUT_MS } from '@/lib/api/client'
 import {
   STREAM_IDLE_TIMEOUT_MS,
+  hasRetrySemanticsStatus,
   createAttemptSettlement,
   isHeartbeatComment,
   isSseContentType,
@@ -106,6 +107,17 @@ describe('D-24：传输守卫纯函数', () => {
     expect(isTimeoutRetryEligible('identity')).toBe(false)
     expect(isTimeoutRetryEligible('page_change')).toBe(false)
     expect(isTimeoutRetryEligible('normal_end')).toBe(false)
+  })
+
+  it('带重试语义的状态码被识别（409/429/5xx）——其余状态无重试语义', () => {
+    expect(hasRetrySemanticsStatus(409)).toBe(true)
+    expect(hasRetrySemanticsStatus(429)).toBe(true)
+    expect(hasRetrySemanticsStatus(500)).toBe(true)
+    expect(hasRetrySemanticsStatus(503)).toBe(true)
+    expect(hasRetrySemanticsStatus(401)).toBe(false)
+    expect(hasRetrySemanticsStatus(403)).toBe(false)
+    expect(hasRetrySemanticsStatus(422)).toBe(false)
+    expect(hasRetrySemanticsStatus(404)).toBe(false)
   })
 
   it('每次尝试只结算一次（重复终止路径不得二次上报）', () => {
@@ -270,6 +282,55 @@ describe('D-24：传输层集成（openResearchChatStream）', () => {
     expect(onHttpError.mock.calls[0][0]).toBe(401)
     expect(onIdleTimeout).not.toHaveBeenCalled()
     expect(onNetworkError).not.toHaveBeenCalled()
+  })
+
+  it('409 且响应体卡住 → 保留可重试的 timeout 语义（不升级成终态 409）', async () => {
+    vi.useFakeTimers()
+    // 409 有同键自愈（completed-replay）语义：把它判成终态会让用户重发换新键
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: () => new Promise(() => { /* 永久挂起 */ }),
+    }))
+    const onHttpError = vi.fn()
+    const onIdleTimeout = vi.fn()
+
+    openResearchChatStream({
+      projectId: PROJECT,
+      request: { query: 'q', source_ids: ['src_1'], model_id: 'm' },
+      onEvent: vi.fn(),
+      onHttpError,
+      onIdleTimeout,
+    })
+
+    await vi.advanceTimersByTimeAsync(STREAM_IDLE_TIMEOUT_MS + 1)
+    expect(onIdleTimeout).toHaveBeenCalledTimes(1)
+    expect(onHttpError).not.toHaveBeenCalled()
+  })
+
+  it('5xx 且响应体卡住 → 同样保留可重试语义', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: () => new Promise(() => { /* 永久挂起 */ }),
+    }))
+    const onHttpError = vi.fn()
+    const onIdleTimeout = vi.fn()
+
+    openResearchChatStream({
+      projectId: PROJECT,
+      request: { query: 'q', source_ids: ['src_1'], model_id: 'm' },
+      onEvent: vi.fn(),
+      onHttpError,
+      onIdleTimeout,
+    })
+
+    await vi.advanceTimersByTimeAsync(STREAM_IDLE_TIMEOUT_MS + 1)
+    expect(onIdleTimeout).toHaveBeenCalledTimes(1)
+    expect(onHttpError).not.toHaveBeenCalled()
   })
 
   it('字节（含 heartbeat）会重置空闲计时，不把 heartbeat 当模型进度', async () => {

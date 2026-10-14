@@ -26,6 +26,7 @@ import { parseSseFrame } from './sse'
 import {
   STREAM_IDLE_TIMEOUT_MS,
   createAttemptSettlement,
+  hasRetrySemanticsStatus,
   isHeartbeatComment,
   isSseContentType,
   type ResearchStreamEndReason,
@@ -978,7 +979,14 @@ export function openResearchChatStream(
       controller.abort()
       if (!settlement.settle()) return
       if (httpStatusAwaitingBody !== null) {
-        // 已知状态码但体读不完：按 HTTP 错误上报（不谎报 timeout、不触发重试）
+        // 已知状态码但体读不完。审查轮 3 L1：**带重试语义的状态**（409/429/5xx）
+        // 不得在这里被升级成终态错误——那会让 409 的同键自愈（completed-replay）
+        // 与 5xx/429 的有界重试变得不可达。只有"确定无重试语义"的状态才按
+        // HTTP 错误如实上报（保住状态码，不做无意义重试）。
+        if (hasRetrySemanticsStatus(httpStatusAwaitingBody)) {
+          options.onIdleTimeout?.(phase)
+          return
+        }
         options.onHttpError?.(httpStatusAwaitingBody, null)
         return
       }
