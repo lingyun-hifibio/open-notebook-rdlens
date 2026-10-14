@@ -953,6 +953,12 @@ export function openResearchChatStream(
    */
   let watchdog: ReturnType<typeof setTimeout> | null = null
   let watchdogPhase: 'response' | 'idle' = 'response'
+  /**
+   * 审查轮 2 B2：非 2xx 已给出状态码、但响应体读取卡住时，必须**如实按 HTTP
+   * 错误上报**——否则看门狗抢先结算成 `timeout`，调用方会把它当成可重试的
+   * 传输超时（对 401/403/422 重试是徒劳的），真实状态码也丢了。
+   */
+  let httpStatusAwaitingBody: number | null = null
 
   const clearWatchdog = (): void => {
     if (watchdog !== null) {
@@ -970,7 +976,13 @@ export function openResearchChatStream(
       if (abortReason !== null) return // 调用方已中止：不重复上报
       abortReason = 'timeout'
       controller.abort()
-      if (settlement.settle()) options.onIdleTimeout?.(phase)
+      if (!settlement.settle()) return
+      if (httpStatusAwaitingBody !== null) {
+        // 已知状态码但体读不完：按 HTTP 错误上报（不谎报 timeout、不触发重试）
+        options.onHttpError?.(httpStatusAwaitingBody, null)
+        return
+      }
+      options.onIdleTimeout?.(phase)
     }, STREAM_IDLE_TIMEOUT_MS)
   }
 
@@ -1002,6 +1014,8 @@ export function openResearchChatStream(
   })
     .then(async (response) => {
       if (!response.ok) {
+        // 先记录状态码：体读取期间若看门狗到期，按该状态码上报（B2）
+        httpStatusAwaitingBody = response.status
         let body: unknown = null
         try {
           body = await response.json()
@@ -1009,6 +1023,7 @@ export function openResearchChatStream(
           // 非 JSON 错误体：保留 null
         }
         clearWatchdog()
+        httpStatusAwaitingBody = null
         if (settlement.settle()) options.onHttpError?.(response.status, body)
         return
       }

@@ -644,6 +644,68 @@ describe('useResearchChat #292 P0 终态生命周期', () => {
   })
 })
 
+describe('D-22（审查轮 2 B1）：冻结请求的会话身份过期则丢弃', () => {
+  it('冻结体带过期 session_id（当前会话已失效）→ 不原样发送，按当前身份重建', () => {
+    // 前置：本地无持久会话 → 当前会话身份为 null（与冻结体的 sess_stale 不同）
+    localStorage.clear()
+    const streams = openCapture()
+    const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
+
+    act(() => {
+      // 冻结体声称属于 sess_stale，但当前没有会话身份（无存储会话 → null）
+      result.current.send(
+        'q-stale-session',
+        undefined,
+        MODEL,
+        'key-1',
+        'v1',
+        {
+          query: 'q-stale-session',
+          source_ids: [],
+          note_ids: [],
+          session_id: 'sess_stale',
+          model_id: MODEL,
+        },
+      )
+    })
+
+    expect(streams).toHaveLength(1)
+    const request = streams[0].opts.request as unknown as Record<string, unknown>
+    // 不得把已失效的会话身份发出去（否则同轮首次尝试与重连身份不一致）
+    expect(request.session_id).not.toBe('sess_stale')
+    expect(request.session_id).toBeUndefined()
+    expect(request.query).toBe('q-stale-session')
+  })
+
+  it('冻结体与会话身份一致时原样发送（对照：不误丢）', () => {
+    // 存储形态是**纯字符串**（lastSessionStorageKey = prefix + projectId）
+    localStorage.setItem('rdlens.research.chat.last-session.proj_1', 'sess_same')
+    const streams = openCapture()
+    const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
+
+    act(() => {
+      result.current.send(
+        'q-same-session',
+        undefined,
+        MODEL,
+        'key-2',
+        'v1',
+        {
+          query: 'q-same-session',
+          source_ids: [],
+          note_ids: [],
+          session_id: 'sess_same',
+          model_id: MODEL,
+        },
+      )
+    })
+
+    expect(streams).toHaveLength(1)
+    const request = streams[0].opts.request as unknown as Record<string, unknown>
+    expect(request.session_id).toBe('sess_same')
+  })
+})
+
 describe('deriveScopeSnapshot（RWV2-11 K8）', () => {
   it('显式 mode 优先；数组复制不共享引用', () => {
     const sourceIds = ['src_1', 'src_2']

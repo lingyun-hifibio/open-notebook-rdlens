@@ -242,6 +242,36 @@ describe('D-24：传输层集成（openResearchChatStream）', () => {
     }
   })
 
+  it('非 2xx 且响应体卡住 → 按 HTTP 错误上报（保留状态码），不谎报 timeout', async () => {
+    vi.useFakeTimers()
+    // 服务端已给出 401，但响应体永远读不完
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: () => new Promise(() => { /* 永久挂起 */ }),
+    }))
+    const onHttpError = vi.fn()
+    const onIdleTimeout = vi.fn()
+    const onNetworkError = vi.fn()
+
+    openResearchChatStream({
+      projectId: PROJECT,
+      request: { query: 'q', source_ids: ['src_1'], model_id: 'm' },
+      onEvent: vi.fn(),
+      onHttpError,
+      onIdleTimeout,
+      onNetworkError,
+    })
+
+    await vi.advanceTimersByTimeAsync(STREAM_IDLE_TIMEOUT_MS + 1)
+    // 真实状态码必须保留——否则 401 会被当成"可重试的传输超时"（无意义重试）
+    expect(onHttpError).toHaveBeenCalledTimes(1)
+    expect(onHttpError.mock.calls[0][0]).toBe(401)
+    expect(onIdleTimeout).not.toHaveBeenCalled()
+    expect(onNetworkError).not.toHaveBeenCalled()
+  })
+
   it('字节（含 heartbeat）会重置空闲计时，不把 heartbeat 当模型进度', async () => {
     vi.useFakeTimers()
     const encoder = new TextEncoder()

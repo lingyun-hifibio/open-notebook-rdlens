@@ -351,6 +351,19 @@ interface ActiveTurn {
   reconnectTimer: ReturnType<typeof setTimeout> | null
 }
 
+/**
+ * 冻结请求是否仍与当前会话身份一致（审查轮 2 B1）。
+ * 冻结体没有 `session_id` 字段时视为一致（同为空）。
+ */
+function frozenRequestMatchesSession(
+  frozen: ResearchChatRequest | undefined,
+  currentSessionId: string | null,
+): boolean {
+  if (frozen === undefined) return false
+  const frozenSession = (frozen as { session_id?: string | null }).session_id ?? null
+  return frozenSession === (currentSessionId ?? null)
+}
+
 function randomId(): string {
   return `turn_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
 }
@@ -933,7 +946,15 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
       reconnectCount: 0,
       lastEventId: 0,
       sessionId: sessionIdRef.current,
-      initialRequest: frozenRequest ?? null,
+      /**
+       * 审查轮 2 B1：冻结请求里的 `session_id` 是**恢复游标**，可能已被会话
+       * 失效（持久会话 404 → sessionIdRef 置 null）而在确认时过期。此时若原样
+       * 发出，同一轮会出现两个会话身份（首次尝试用旧 id、重连用 null）。
+       * 身份一旦不再一致就丢弃冻结体，改由 hook 用当前身份重建。
+       */
+      initialRequest: frozenRequestMatchesSession(frozenRequest, sessionIdRef.current)
+        ? frozenRequest ?? null
+        : null,
       sse: createSseState(),
       abort: null,
       reconnectTimer: null,
