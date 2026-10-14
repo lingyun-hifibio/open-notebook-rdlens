@@ -503,11 +503,15 @@ describe('ResearchWorkspace（RWV2-40 五动作主区；#445）', () => {
     expect(captured).toHaveLength(2)
     expect(captured[1].idempotencyKey).toBe(firstKey)
 
-    // 放行 → 用登记中的键真正派发
+    // 放行 → 用登记中的键**与登记的完整信封**派发
     resetGlobalModelStub()
     fireEvent.click(screen.getByRole('button', { name: 'research.chatSend' }))
     await waitFor(() => expect(api.openResearchChatStream).toHaveBeenCalledTimes(1))
-    expect(vi.mocked(api.openResearchChatStream).mock.calls[0][0].idempotencyKey).toBe(firstKey)
+    const dispatched = vi.mocked(api.openResearchChatStream).mock.calls[0][0]
+    expect(dispatched.idempotencyKey).toBe(firstKey)
+    // D-22（审查轮 2 Part B）：实际发出的 wire 请求必须与登记的信封**逐字段
+    // 相同**——否则"登记体 ≠ 实际请求"，同意路径又变成另一份载荷。
+    expect(dispatched.request as unknown as Record<string, unknown>).toEqual(captured[0].envelope)
 
   })
 

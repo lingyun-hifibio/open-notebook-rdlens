@@ -665,11 +665,16 @@ function deriveChatSubmission(
   contract: 'v1' | 'c05-v1'
   request: ResearchChatRequest
 } {
+  // 自查（审查轮 2 Part B）：mode 必须与 hook 的 `deriveScopeSnapshot` **同源**
+  // ——否则冻结请求与 hook 自建请求会在"selection.mode 缺省但已选 ID"时分歧
+  // （本函数给 'all'，deriveScopeSnapshot 给 'selected'），首次尝试与重连
+  // 会发出语义不同的载荷。直接复用同一推导函数，杜绝这类漂移。
+  const snapshot = deriveScopeSnapshot(selection)
   const scope = {
-    mode: selection.mode ?? ('all' as const),
-    sourceIds: [...(selection.sourceIds ?? [])],
-    noteIds: [...(selection.noteIds ?? [])],
-    singleSourceId: selection.singleSourceId ?? null,
+    mode: snapshot.mode,
+    sourceIds: [...snapshot.sourceIds],
+    noteIds: [...snapshot.noteIds],
+    singleSourceId: snapshot.singleSourceId,
   }
   const signature = signatureOf({
     entry: 'chat',
