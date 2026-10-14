@@ -171,7 +171,7 @@ function ScopeProbe() {
   )
 }
 
-function seedScope(mode: 'entire_project' | 'selected', sourceIds: string[] = [], noteIds: string[] = []) {
+function seedScope(mode: 'all' | 'selected', sourceIds: string[] = [], noteIds: string[] = []) {
   localStorage.setItem(
     scopeStorageKey('u1', 'proj_1'),
     JSON.stringify({ version: 1, mode, sourceIds, noteIds }),
@@ -475,10 +475,56 @@ describe('ResearchWorkspace（RWV2-40 五动作主区；#445）', () => {
     expect(screen.getByTestId('chat-input')).toHaveValue('')
   })
 
+  it('T40（D-22）：Chat 同意取消后重试复用**原键**，确认后以冻结键派发', async () => {
+    tokenStore.setResearchToken(researchToken(), 9999999999)
+    const captured: Array<{
+      idempotencyKey?: string
+      contract?: string
+      envelope?: Record<string, unknown>
+    }> = []
+    setGlobalModelStub({
+      deferGuarded: true,
+      onGuardedOptions: (options) => captured.push(options ?? {}),
+    })
+    renderHarness()
+    switchTo('research-chat')
+    fireEvent.change(await screen.findByTestId('chat-input'), { target: { value: '同题' } })
+
+    // 第一次点击：只登记（consent 未确认）——键/契约/信封已冻结
+    fireEvent.click(screen.getByRole('button', { name: 'research.chatSend' }))
+    expect(captured).toHaveLength(1)
+    const firstKey = captured[0].idempotencyKey
+    expect(firstKey).toBeTruthy()
+    expect(captured[0].envelope).toMatchObject({ query: '同题', source_ids: [] })
+    expect(api.openResearchChatStream).not.toHaveBeenCalled()
+
+    // 取消后重试（仍未放行）→ **复用原键**，不得换键（D-13 表①）
+    fireEvent.click(screen.getByRole('button', { name: 'research.chatSend' }))
+    expect(captured).toHaveLength(2)
+    expect(captured[1].idempotencyKey).toBe(firstKey)
+
+    // 放行 → 用登记中的键**与登记的完整信封**派发
+    resetGlobalModelStub()
+    fireEvent.click(screen.getByRole('button', { name: 'research.chatSend' }))
+    await waitFor(() => expect(api.openResearchChatStream).toHaveBeenCalledTimes(1))
+    const dispatched = vi.mocked(api.openResearchChatStream).mock.calls[0][0]
+    expect(dispatched.idempotencyKey).toBe(firstKey)
+    // D-22（审查轮 2 Part B）：实际发出的 wire 请求必须与登记的信封**逐字段
+    // 相同**——否则"登记体 ≠ 实际请求"，同意路径又变成另一份载荷。
+    expect(dispatched.request as unknown as Record<string, unknown>).toEqual(captured[0].envelope)
+
+  })
+
   it('#243 §6.4：Compare 创建经顶层守卫——待确认时不发创建请求；放行后才创建', async () => {
     tokenStore.setResearchToken(researchToken(), 9999999999)
     setGlobalModelStub({ deferGuarded: true })
-    seedScope('selected', ['src_1'])
+    // PR5（D-16）：Compare 以**文档**计量，去重后需 ≥2 份不同文档；
+    // 本用例关心的是 consent 守卫，故给足两份不同文档，避免被下限阻断干扰。
+    seedScope('selected', ['src_1', 'src_2'])
+    vi.mocked(api.listSources).mockResolvedValue({
+      items: [source, { ...source, source_id: 'src_2', document_id: 'doc_2' }],
+      next_cursor: null,
+    })
     vi.mocked(api.createCompare).mockResolvedValue({ job_id: 'job_1', status: 'queued' })
     vi.mocked(api.getJob).mockResolvedValue({
       job_id: 'job_1',

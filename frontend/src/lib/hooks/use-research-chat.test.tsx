@@ -344,6 +344,8 @@ describe('useResearchChat.sendCoverage（COV-09）', () => {
       source_ids: ['src-1', 'src-2'],
       note_ids: [],
       model_id: MODEL,
+      scopeMode: 'selected',
+      singleSourceId: null,
     })
     expect(captured[0].idempotencyKey).toBe('ik-turn')
 
@@ -612,9 +614,9 @@ describe('useResearchChat #292 P0 终态生命周期', () => {
     expect(assistantById(result, secondId).content).toBe('B')
   })
 
-  it('done 后 send next：不再 abort 已终态 turn（activeRef 已释放，stopActive 空转）', () => {
+  it('done 后 send next：终态释放传输一次，且不再对已终态 turn 重复释放', () => {
     const streams = openCapture()
-    let aborted = 0
+    const abortReasons: Array<string | undefined> = []
     vi.mocked(openResearchChatStream).mockImplementation((opts) => {
       streams.push({
         opts,
@@ -622,8 +624,8 @@ describe('useResearchChat #292 P0 终态生命周期', () => {
         fail: (error) => opts.onNetworkError?.(error),
         httpFail: (status, body) => opts.onHttpError?.(status, body),
       })
-      return () => {
-        aborted += 1
+      return (reason?: string) => {
+        abortReasons.push(reason)
       }
     })
     const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
@@ -632,10 +634,80 @@ describe('useResearchChat #292 P0 终态生命周期', () => {
     act(() => {
       streams[0].emit(ev(1, 'done', { session_id: 's1', completion_status: 'success' }))
     })
+    // PR5（D-24，评审 MEDIUM-6）：终态（done）**必须**释放传输——此前只把
+    // abort 置 null，看门狗与 reader 会一直挂到页面卸载且再也释放不掉。
+    expect(abortReasons).toEqual(['terminal_reached'])
     sendNow(result, '第二轮')
-    // done 已清理 ref：第二轮 send 不应对第一轮流调用 abort（服务端已完成）
-    expect(aborted).toBe(0)
+    // activeRef 已释放：第二轮 send 不会**再次**释放第一轮（计数仍为 1）
+    expect(abortReasons).toEqual(['terminal_reached'])
     expect(streams).toHaveLength(2)
+  })
+})
+
+describe('D-22（审查轮 2 B1）：冻结请求的会话身份过期则丢弃', () => {
+  it('冻结体带过期 session_id（当前会话已失效）→ 不原样发送，按当前身份重建', () => {
+    // 前置：本地无持久会话 → 当前会话身份为 null（与冻结体的 sess_stale 不同）
+    localStorage.clear()
+    const streams = openCapture()
+    const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
+
+    act(() => {
+      // 冻结体声称属于 sess_stale，但当前没有会话身份（无存储会话 → null）
+      result.current.send(
+        'q-stale-session',
+        undefined,
+        MODEL,
+        'key-1',
+        'v1',
+        {
+          query: 'q-stale-session',
+          source_ids: [],
+          note_ids: [],
+          session_id: 'sess_stale',
+          model_id: MODEL,
+        },
+      )
+    })
+
+    expect(streams).toHaveLength(1)
+    const request = streams[0].opts.request as unknown as Record<string, unknown>
+    // 不得把已失效的会话身份发出去（否则同轮首次尝试与重连身份不一致）
+    expect(request.session_id).not.toBe('sess_stale')
+    expect(request.session_id).toBeUndefined()
+    expect(request.query).toBe('q-stale-session')
+  })
+
+  it('冻结体与会话身份一致时**原样**发送（用可区分的字段钉住"逐字派发"）', () => {
+    // 存储形态是**纯字符串**（lastSessionStorageKey = prefix + projectId）
+    localStorage.setItem('rdlens.research.chat.last-session.proj_1', 'sess_same')
+    const streams = openCapture()
+    const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
+
+    act(() => {
+      result.current.send(
+        'q-same-session',
+        undefined,
+        MODEL,
+        'key-2',
+        'v1',
+        {
+          query: 'q-same-session',
+          // 审查轮 3 L2：用**只有冻结体才有**的取值做判别——否则"重建"也会
+          // 产出同样的 session_id，用例无法区分"原样派发"与"丢弃后重建"。
+          source_ids: ['frozen_only'],
+          note_ids: [],
+          session_id: 'sess_same',
+          model_id: 'm-frozen',
+        },
+      )
+    })
+
+    expect(streams).toHaveLength(1)
+    const request = streams[0].opts.request as unknown as Record<string, unknown>
+    expect(request.session_id).toBe('sess_same')
+    // 冻结体被**逐字**派发（不是重建出来的等价体）
+    expect(request.source_ids).toEqual(['frozen_only'])
+    expect(request.model_id).toBe('m-frozen')
   })
 })
 
@@ -647,25 +719,28 @@ describe('deriveScopeSnapshot（RWV2-11 K8）', () => {
       sourceIds,
       noteIds: ['n1'],
     })
-    expect(snapshot).toEqual({ mode: 'selected', sourceIds: ['src_1', 'src_2'], noteIds: ['n1'] })
+    expect(snapshot).toEqual({ mode: 'selected', sourceIds: ['src_1', 'src_2'], noteIds: ['n1'], singleSourceId: null })
     expect(snapshot.sourceIds).not.toBe(sourceIds)
   })
 
-  it('mode 缺省按 ID 推导：非空 = selected，空 = entire_project', () => {
+  it('mode 缺省按 ID 推导：非空 = selected，空 = all（C-05 语义）', () => {
     expect(deriveScopeSnapshot({ sourceIds: ['s1'], noteIds: [] })).toEqual({
       mode: 'selected',
       sourceIds: ['s1'],
       noteIds: [],
+      singleSourceId: null,
     })
     expect(deriveScopeSnapshot(undefined)).toEqual({
-      mode: 'entire_project',
+      mode: 'all',
       sourceIds: [],
       noteIds: [],
+      singleSourceId: null,
     })
     expect(deriveScopeSnapshot({ sourceIds: [], noteIds: [] })).toEqual({
-      mode: 'entire_project',
+      mode: 'all',
       sourceIds: [],
       noteIds: [],
+      singleSourceId: null,
     })
   })
 })

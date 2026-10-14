@@ -14,7 +14,7 @@ import type { ResearchScopeMode } from '@/lib/research/scope'
  *   （不只依赖颜色，验收标准）——Notes Coverage 首期不支持（§6.1）；
  * - 0 个 Source：all_selected 可选中但提交前给出提示（提交按钮禁用）；
  * - 超过 50 个 Source：前端预检文案（服务端仍是权威，422 兜底）；
- * - RWV2-11（K3/W4）：`entire_project` 无显式 Source 集合——通知文案
+ * - RWV2-11（K3/W4）：`all` 无显式 Source 集合——通知文案
  *   优先于通用 noSourcesHint，说明需切换到 Selected 才能覆盖；提交闸门
  *   在 ChatPanel 单点（本组件只出通知）。
  */
@@ -24,7 +24,7 @@ export const COVERAGE_SOURCE_HARD_MAX = 50
 export interface CoverageScopeSelectorProps {
   value: ResearchSynthesisScope
   onChange: (scope: ResearchSynthesisScope) => void
-  /** RWV2-11（K3）：当前 Scope 模式——entire_project 下显示专属说明 */
+  /** RWV2-11（K3）：当前 Scope 模式——all 下显示专属说明 */
   scopeMode: ResearchScopeMode
   /**
    * #358：后端 Coverage 能力。false/缺失 → 禁用 all_selected 并展示
@@ -62,8 +62,8 @@ export function CoverageScopeSelector({
       count: selectedSourceCount,
       max: COVERAGE_SOURCE_HARD_MAX,
     })
-  } else if (scopeMode === 'entire_project') {
-    // RWV2-11（K3/W4）：entire_project 优先级高于通用 noSourcesHint
+  } else if (scopeMode === 'all') {
+    // RWV2-11（K3/W4）：all 优先级高于通用 noSourcesHint
     notice = t('research.coverage.entireProjectNotice')
   } else if (noSources) {
     notice = t('research.coverage.noSourcesHint')

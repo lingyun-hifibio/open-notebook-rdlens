@@ -87,7 +87,7 @@ function makeWrapper(role: 'owner' | 'admin_readonly' = 'owner') {
 }
 
 /** 预置 provider 持久化 Scope（RWV2-12/13：Sources/Notes 复选框共享）。 */
-function seedScope(mode: 'entire_project' | 'selected', sourceIds: string[] = [], noteIds: string[] = []) {
+function seedScope(mode: 'all' | 'selected', sourceIds: string[] = [], noteIds: string[] = []) {
   localStorage.setItem(
     scopeStorageKey('u1', 'proj_1'),
     JSON.stringify({ version: 1, mode, sourceIds, noteIds }),

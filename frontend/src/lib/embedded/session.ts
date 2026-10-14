@@ -62,6 +62,8 @@ export interface EmbeddedSessionOptions {
 }
 
 export interface EmbeddedSession {
+  /** PR5（D1）：请求宿主打开「添加资料」入库对话框 */
+  requestIngest(): void
   getState(): SessionState
   subscribe(listener: (state: SessionState) => void): () => void
   /** 清除 Token、移除监听、进入终态（组件卸载或 destroy 消息） */
@@ -196,7 +198,16 @@ export function createEmbeddedSession(options: EmbeddedSessionOptions): Embedded
     setState({ status: 'destroyed' })
   }
 
+  /**
+   * PR5（D1/D-06）：请求宿主打开入库对话框（无载荷；project_id 由宿主路由
+   * 决定）。未绑定/已销毁时静默忽略（宿主在握手前也不接受）。
+   */
+  function requestIngest(): void {
+    post({ schema: 'research-v0', channel, type: 'open_ingest' }, options.parentOrigin)
+  }
+
   return {
+    requestIngest,
     getState: () => state,
     subscribe(listener) {
       listeners.add(listener)

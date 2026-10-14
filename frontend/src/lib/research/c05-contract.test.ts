@@ -1,0 +1,179 @@
+/**
+ * Issue #601 PR5：C-05 能力解析测试（T1）——fixtures 驱动；
+ * 每条用例"删掉被断言的条件即变红"。
+ */
+import { describe, expect, it } from 'vitest'
+import {
+  C05_ENTRY_PENDING_PR4,
+  C05_ENTRY_ORDER,
+  entryDispatchReady,
+  entrySupportsMode,
+  entryUnavailableReason,
+  readC05Capabilities,
+} from './c05-contract'
+import contractSamplesJson from './fixtures/issue615_c05/samples.json'
+
+type Sample = { schema: string; expect: 'valid' | 'invalid'; origin: string; value: unknown; note?: string }
+const samples = contractSamplesJson as unknown as Record<string, Sample>
+
+function sample(id: string): Sample {
+  const s = samples[id]
+  if (!s) throw new Error(`missing fixture sample: ${id}`)
+  return s
+}
+
+const enabledSearchWired = sample('c05_capabilities.enabled_search_wired.valid').value
+const disabled = sample('c05_capabilities.disabled.valid').value
+
+describe('readC05Capabilities（T1）', () => {
+  it('解析 enabled_search_wired：search 就绪、其余未接线', () => {
+    const caps = readC05Capabilities(enabledSearchWired)
+    expect(caps).not.toBeNull()
+    expect(caps!.enabled).toBe(true)
+    expect(caps!.entries.search.execution_ready).toBe(true)
+    expect(caps!.entries.chat.execution_ready).toBe(false)
+    expect(caps!.entries.chat.unavailable_reason).toBe('c05_entry_not_wired')
+    // 未接线入口的 execution_modes/context_levels 恒空
+    expect(caps!.entries.chat.execution_modes).toEqual([])
+    expect(caps!.entries.chat.context_levels).toEqual([])
+  })
+
+  it('disabled：全部入口不可用，原因 c05_contract_disabled', () => {
+    const caps = readC05Capabilities(disabled)
+    expect(caps!.enabled).toBe(false)
+    expect(caps!.entries.search.scope_modes).toEqual([])
+    expect(entryUnavailableReason(caps, 'search')).toBe('c05_contract_disabled')
+  })
+
+  it('trap 样例（execution_ready_claimed_for_unwired）确实被解析器接受，但本地纪律仍拦得住谎报', () => {
+    // 评审 LOW-13：此前只断言 fixture 自己的 `expect` 字段，根本没调用解析器
+    // ——断言是空的。这里做三件真事：
+    // ① 解析器**确实**接受该形状（证明它是"语义陷阱"而非形状陷阱）；
+    // ② 服务端谎报 `ai_insight` 就绪时，本地 PR5 纪律仍拒绝（D-09 本地码）；
+    // ③ 对照：被声明就绪的 search/chat 必须放行（证明谓词不是恒 false）。
+    const trap = sample('c05_entry_capability.execution_ready_claimed_for_unwired.trap')
+    const caps = readC05Capabilities(trap.value)
+    expect(caps, '形状合法 → 解析成功（trap 是语义层的）').not.toBeNull()
+    expect(caps!.entries.search.execution_ready).toBe(true)
+
+    // ② 谎报：把 ai_insight 声明成 ready
+    const lying = readC05Capabilities({
+      ...(trap.value as Record<string, unknown>),
+      entries: {
+        ...(trap.value as { entries: Record<string, unknown> }).entries,
+        ai_insight: {
+          scope_modes: ['all', 'selected', 'single'],
+          execution_modes: ['direct_context'],
+          context_levels: ['focused'],
+          preview_supported: false,
+          execution_ready: true,
+          unavailable_reason: null,
+        },
+      },
+    })
+    expect(lying).not.toBeNull()
+    expect(lying!.entries.ai_insight.execution_ready).toBe(true)
+    expect(entryDispatchReady(lying, 'ai_insight')).toBe(false)
+    expect(entryUnavailableReason(lying, 'ai_insight')).toBe(C05_ENTRY_PENDING_PR4)
+
+    // ③ 对照：服务端声明就绪且 PR5 已接线的入口必须放行
+    expect(entryDispatchReady(caps, 'search')).toBe(true)
+    expect(entryDispatchReady(caps, 'chat')).toBe(true)
+    // 未声明的入口仍拒绝
+    expect(entryDispatchReady(caps, 'transformation')).toBe(false)
+  })
+
+  it.each([
+    ['entries 缺失', { contract: 'c05-v1', enabled: true, preview_supported: false }],
+    ['contract 值错误', { contract: 'v1', enabled: true, preview_supported: false, entries: {} }],
+    ['enabled 非布尔', { contract: 'c05-v1', enabled: 'yes', preview_supported: false, entries: {} }],
+    ['entries 非对象', { contract: 'c05-v1', enabled: true, preview_supported: false, entries: 'nope' }],
+  ])('容器畸形 → null（%s）', (_name, value) => {
+    expect(readC05Capabilities(value)).toBeNull()
+  })
+
+  it('单入口 scope_modes 含非字符串 → 该入口不可用（字段级校验拒收）', () => {
+    const caps = readC05Capabilities({
+      contract: 'c05-v1', enabled: true, preview_supported: false,
+      entries: { search: { scope_modes: ['all', 1], execution_modes: [], context_levels: [], preview_supported: false, execution_ready: true, unavailable_reason: null } },
+    })
+    expect(caps).not.toBeNull()
+    expect(caps!.entries.search.execution_ready).toBe(false)
+    expect(caps!.entries.search.scope_modes).toEqual([])
+    expect(caps!.entries.search.unavailable_reason).toBe('c05_entry_not_declared')
+  })
+
+  it('单入口 execution_ready 非布尔 → 该入口不可用', () => {
+    const caps = readC05Capabilities({
+      contract: 'c05-v1', enabled: true, preview_supported: false,
+      entries: { search: { scope_modes: ['all'], execution_modes: [], context_levels: [], preview_supported: false, execution_ready: 'true', unavailable_reason: null } },
+    })
+    expect(caps!.entries.search.execution_ready).toBe(false)
+    expect(caps!.entries.search.unavailable_reason).toBe('c05_entry_not_declared')
+  })
+
+  it('单入口形状不符 → c05_entry_not_declared（不做字段级降级）', () => {
+    const caps = readC05Capabilities({
+      contract: 'c05-v1', enabled: true, preview_supported: false,
+      entries: { search: { execution_ready: true } },
+    })
+    expect(caps).not.toBeNull()
+    expect(caps!.entries.search.unavailable_reason).toBe('c05_entry_not_declared')
+    expect(caps!.entries.search.execution_ready).toBe(false)
+  })
+
+  it('缺失的入口键按不可用处理，不跳过', () => {
+    const caps = readC05Capabilities({
+      contract: 'c05-v1', enabled: true, preview_supported: false,
+      entries: { search: { scope_modes: ['all', 'selected', 'single'], execution_modes: ['auto'], context_levels: ['focused'], preview_supported: false, execution_ready: true, unavailable_reason: null } },
+    })
+    expect(caps!.entries.compare.unavailable_reason).toBe('c05_entry_not_declared')
+    expect(caps!.entries.transformation.execution_ready).toBe(false)
+  })
+})
+
+describe('entryDispatchReady / entryUnavailableReason（D-09）', () => {
+  it('ai_insight 即使 execution_ready=true 也被 PR5 主动禁用', () => {
+    const caps = readC05Capabilities({
+      contract: 'c05-v1', enabled: true, preview_supported: false,
+      entries: {
+        ...JSON.parse(JSON.stringify((enabledSearchWired as Record<string, unknown>).entries)),
+        ai_insight: { scope_modes: ['all', 'selected', 'single'], execution_modes: ['direct_context'], context_levels: ['focused'], preview_supported: false, execution_ready: true, unavailable_reason: null },
+      },
+    })
+    expect(entryDispatchReady(caps, 'ai_insight')).toBe(false)
+    expect(entryUnavailableReason(caps, 'ai_insight')).toBe(C05_ENTRY_PENDING_PR4)
+  })
+
+  it('未接线入口不可派发；就绪入口可派发', () => {
+    const caps = readC05Capabilities(enabledSearchWired)
+    expect(entryDispatchReady(caps, 'search')).toBe(true)
+    expect(entryDispatchReady(caps, 'chat')).toBe(false)
+    expect(entryUnavailableReason(caps, 'chat')).toBe('c05_entry_not_wired')
+  })
+
+  it('null 能力 → 不可派发且不降级', () => {
+    expect(entryDispatchReady(null, 'search')).toBe(false)
+    expect(entryUnavailableReason(null, 'search')).toBe('c05_contract_disabled')
+  })
+})
+
+describe('entrySupportsMode', () => {
+  it('enabled=false 时任何模式都不支持', () => {
+    const caps = readC05Capabilities(disabled)
+    expect(entrySupportsMode(caps, 'search', 'all')).toBe(false)
+  })
+  it('enabled 时声明模式受支持', () => {
+    const caps = readC05Capabilities(enabledSearchWired)
+    expect(entrySupportsMode(caps, 'search', 'all')).toBe(true)
+    expect(entrySupportsMode(caps, 'search', 'single')).toBe(true)
+  })
+})
+
+describe('C05_ENTRY_ORDER', () => {
+  it('与服务端 C05_ENTRIES 同序且完整', () => {
+    expect(C05_ENTRY_ORDER).toEqual([
+      'search', 'chat', 'coverage', 'compare', 'ai_insight', 'transformation',
+    ])
+  })
+})

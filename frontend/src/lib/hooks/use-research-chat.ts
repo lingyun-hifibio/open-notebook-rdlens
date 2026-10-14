@@ -26,6 +26,9 @@ import {
   type ResearchGlobalChatMessage,
 } from '@/lib/research/api'
 import { applySseEvent, createSseState, type ResearchSseState } from '@/lib/research/sse'
+import { buildSourceScope } from '@/lib/research/c05-request'
+import type { ResearchChatRequest } from '@/lib/research/types'
+import { classifyC05Error } from '@/lib/research/c05-error-actions'
 import {
   parseGenerationIdFromMessageId,
   selectBoundAssistantRow,
@@ -215,8 +218,10 @@ function messageRowToTurn(row: ResearchGlobalChatMessage): ResearchChatTurn | nu
 export interface ResearchChatSelection {
   sourceIds?: string[]
   noteIds?: string[]
-  /** RWV2-11（K8）：本次派发时的 Scope 模式；缺省按 ID 推导（非空=selected，空=entire_project） */
+  /** RWV2-11（K8）+ PR5：派发时的生效范围模式；缺省 all（C-05 语义） */
   mode?: ResearchScopeMode
+  /** PR5（C1）：single 限定下的来源（仅 mode='single' 时非空） */
+  singleSourceId?: string | null
 }
 
 /**
@@ -229,8 +234,10 @@ export interface ResearchChatSaveOrigin {
 }
 
 /**
- * RWV2-11（K8/K12）：由派发时的 selection 推导冻结的不可变 Scope 快照。
- * - mode 缺省推导与 payload 语义一致（空 ID = entire_project）；
+ * RWV2-11（K8/K12）+ PR5（D-10）：由派发时的 selection 推导冻结的
+ * 不可变 Scope 快照。
+ * - mode 缺省推导与 C-05 payload 语义一致（无显式 ID = all，**不再**是旧
+ *   旧枚举语义）；
  * - 返回对象/数组均为冻结副本（与 `getSnapshot()` 同形态），只读不漂移；
  * - 会话内 turn 在创建时写入该快照，供 Scope 徽标、重试与元数据展示使用。
  */
@@ -242,8 +249,11 @@ export function deriveScopeSnapshot(
   const noteIds = [...(selection?.noteIds ?? [])]
   const mode: ResearchScopeMode =
     selection?.mode ??
-    (sourceIds.length + noteIds.length > 0 ? 'selected' : 'entire_project')
-  return { mode, sourceIds, noteIds }
+    (sourceIds.length + noteIds.length > 0 ? 'selected' : 'all')
+  const singleSourceId = mode === 'single'
+    ? (selection?.singleSourceId ?? null)
+    : null
+  return { mode, sourceIds, noteIds, singleSourceId }
 }
 
 export interface UseResearchChatResult {
@@ -260,10 +270,17 @@ export interface UseResearchChatResult {
    * GET execution preferences），因此后来切换模型不会影响在途 turn，
    * SSE 重连也继续沿用该快照（不变量 4）。
    */
+  /** PR5（D-22）：当前会话身份（供调用方在 consent 登记时冻结进 wire 请求） */
+  getCurrentSessionId: () => string | null
   send: (
     query: string,
     selection: ResearchChatSelection | undefined,
     modelId: string,
+    /** PR5（D-22）：登记前冻结的幂等键/契约（确认后原样复用） */
+    frozenIdempotencyKey?: string,
+    frozenContract?: 'v1' | 'c05-v1',
+    /** PR5（D-22）：登记时冻结的完整 wire 请求（首次尝试原样发送） */
+    frozenRequest?: ResearchChatRequest,
   ) => void
   /**
    * COV-09：all_selected 覆盖提交（COV-08 §12.1）。不走 SSE——202 受理后
@@ -297,6 +314,10 @@ export interface CoverageSubmitRequest {
   source_ids: string[]
   note_ids: string[]
   model_id: string
+  /** R1-H7：派发时生效范围模式（C-05 分支构造 source_scope 用） */
+  scopeMode?: 'all' | 'selected' | 'single'
+  /** R2-H7：single 模式的限定来源 ID */
+  singleSourceId?: string | null
 }
 
 interface ActiveTurn {
@@ -304,6 +325,10 @@ interface ActiveTurn {
   query: string
   sourceIds: string[]
   noteIds: string[]
+  /** PR5（C6）：派发时冻结的生效范围快照（含 single） */
+  scopeSnapshot: ResearchScopeSnapshot
+  /** PR5（C6）：本 turn 的契约分支（能力判定结果，重连不重判） */
+  contract: 'v1' | 'c05-v1'
   /** startTurn 已 fail-closed（空 modelId 直接 error 不建 turn），重连必非空 */
   modelId: string
   /** 每 turn 生成一次；断线重连必须复用同一键（后端同键同 hash 可重入，
@@ -313,9 +338,30 @@ interface ActiveTurn {
   reconnectCount: number
   lastEventId: number
   sessionId: string | null
+  /**
+   * PR5（D-22，评审 MEDIUM-11）：登记 consent 时冻结的**完整 wire 请求**。
+   * 仅**首次尝试**原样发送；重连按 `active` 重建（须带上响应头回显的
+   * session_id 与 Last-Event-ID，冻结体不具备这些恢复游标）。
+   */
+  initialRequest: ResearchChatRequest | null
   sse: ResearchSseState
-  abort: (() => void) | null
+  /** PR5（D-24）：中止可带原因（user_cancel/identity/page_change），
+   *  供传输层区分"仅 timeout 可重试" */
+  abort: ((reason?: 'user_cancel' | 'identity' | 'page_change' | 'terminal_reached') => void) | null
   reconnectTimer: ReturnType<typeof setTimeout> | null
+}
+
+/**
+ * 冻结请求是否仍与当前会话身份一致（审查轮 2 B1）。
+ * 冻结体没有 `session_id` 字段时视为一致（同为空）。
+ */
+function frozenRequestMatchesSession(
+  frozen: ResearchChatRequest | undefined,
+  currentSessionId: string | null,
+): boolean {
+  if (frozen === undefined) return false
+  const frozenSession = (frozen as { session_id?: string | null }).session_id ?? null
+  return frozenSession === (currentSessionId ?? null)
 }
 
 function randomId(): string {
@@ -338,7 +384,13 @@ function httpErrorMessage(status: number, body: unknown): string {
   return `Research stream HTTP ${status}`
 }
 
-export function useResearchChat({ projectId }: { projectId: string }): UseResearchChatResult {
+export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: {
+  projectId: string
+  /** PR5（C6/C7）：C-05 契约判定（能力就绪回调；undefined = 旧 v1 全量） */
+  c05DispatchReady?: () => boolean
+  /** PR5（D-04）：会话身份确认时回调（绑定/清除 single 限定） */
+  onBindSession?: (sessionId: string) => void
+}): UseResearchChatResult {
   const [turns, setTurns] = useState<ResearchChatTurn[]>([])
   const [backgroundNotice, setBackgroundNotice] = useState<ResearchBackgroundNotice | null>(null)
   const activeRef = useRef<ActiveTurn | null>(null)
@@ -349,6 +401,11 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
    * ——恢复结果不得灌进已开始的对话（旧历史可能晚于新轮返回）。
    */
   const interactedRef = useRef(false)
+  /** PR5：C-05 判定回调 + bindSession 回调（runTurn 闭包内经 ref 读取） */
+  const c05DispatchReadyRef = useRef<(() => boolean) | undefined>(undefined)
+  c05DispatchReadyRef.current = c05DispatchReady
+  const bindSessionRef = useRef<((sessionId: string) => void) | undefined>(undefined)
+  bindSessionRef.current = onBindSession
   /**
    * mount 恢复去重（StrictMode 双挂载友好）：cleanup（首轮被取消）会清
    * 状态允许重跑；completed 后同 project 不再重试。
@@ -482,10 +539,10 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
     [patchAssistant, projectId],
   )
 
-  const stopActive = useCallback(() => {
+  const stopActive = useCallback((reason: 'user_cancel' | 'identity' | 'page_change' = 'user_cancel') => {
     const active = activeRef.current
     if (!active) return
-    if (active.abort) active.abort()
+    if (active.abort) active.abort(reason)
     if (active.reconnectTimer) clearTimeout(active.reconnectTimer)
     activeRef.current = null
   }, [])
@@ -505,11 +562,17 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
       clearTimeout(current.reconnectTimer)
       current.reconnectTimer = null
     }
+    // 评审 MEDIUM-6：终态（done/error/不可恢复 HTTP 错误）之后必须**真的**
+    // 释放传输——只把 abort 置 null 会让看门狗与 reader 一直挂到页面卸载，
+    // 而那时 activeRef 已空、再也释放不掉。`terminal_reached` 表示"已到终态、
+    // 不得据此重试"（仅 timeout 可重试，见 §5.3）。
+    current.abort?.('terminal_reached')
     current.abort = null
     activeRef.current = null
   }, [])
 
-  useEffect(() => stopActive, [stopActive])
+  // 卸载 = 页面变化：中止必须带原因（不得被当成 timeout 进入有界重试）
+  useEffect(() => () => stopActive('page_change'), [stopActive])
 
   // Issue #302：mount 刷新恢复——持久化过最近 session 则拉取详情重放为
   // turns。sessionIdRef 先同步为存储值：恢复完成前用户抢发也续接同一
@@ -522,6 +585,9 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
     if (!storedId) return
     restoreStateRef.current = { projectId, done: false }
     sessionIdRef.current = storedId
+    // R1-H5：恢复路径立即核验会话身份——异会话的持久 pin 在**首请求前**
+    // 清除（新对话默认 all，不继承限定）；同会话 pin 得到绑定。
+    bindSessionRef.current?.(storedId)
     let cancelled = false
 
     void (async () => {
@@ -605,18 +671,39 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
       }, delay)
     }
 
+    // D-22（评审 MEDIUM-11）：**首次尝试**用登记 consent 时冻结的完整 wire
+    // 请求（含 session_id、契约选择与 source_scope 形状）；重连仍按 active
+    // 重建——冻结体不具备响应头回显的 session_id 与 Last-Event-ID 恢复游标。
+    const requestForAttempt: ResearchChatRequest = active.attempt === 1 && active.initialRequest !== null
+      ? active.initialRequest
+      : active.contract === 'c05-v1'
+        ? {
+            // PR5（B3）：C-05 分支——source_scope 载荷，禁止顶层 source_ids
+            query: active.query,
+            session_id: active.sessionId ?? undefined,
+            model_id: active.modelId,
+            source_scope: buildSourceScope({
+              mode: active.scopeSnapshot.mode,
+              sourceIds: active.scopeSnapshot.sourceIds,
+              noteIds: active.scopeSnapshot.noteIds,
+              singleSourceId: active.scopeSnapshot.singleSourceId,
+            }),
+            note_ids: active.noteIds,
+          }
+        : {
+            // #238：v1 契约显式透传执行偏好（不变量 2：后端不隐式补值）；
+            // #243 §6.7：类型必填，快照缺失时 startTurn 已 fail-closed，重连
+            // 路径无 undefined 兜底
+            query: active.query,
+            source_ids: active.sourceIds,
+            note_ids: active.noteIds,
+            session_id: active.sessionId ?? undefined,
+            model_id: active.modelId,
+          }
     active.abort = openResearchChatStream({
       projectId,
-      request: {
-        query: active.query,
-        source_ids: active.sourceIds,
-        note_ids: active.noteIds,
-        session_id: active.sessionId ?? undefined,
-        // #238：v1 契约显式透传执行偏好（不变量 2：后端不隐式补值）；
-        // #243 §6.7：类型必填，快照缺失时 startTurn 已 fail-closed，重连
-        // 路径无 undefined 兜底
-        model_id: active.modelId,
-      },
+      request: requestForAttempt,
+      contract: active.contract,
       idempotencyKey: active.idempotencyKey,
       lastEventId: active.lastEventId,
       // Issue #302：响应头首知 session_id 即持久化——刷新窗口比 done 更早
@@ -629,6 +716,8 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
           current.sessionId = headerSessionId
           sessionIdRef.current = headerSessionId
           persistSessionId(projectId, headerSessionId)
+          // PR5（D-04）：会话身份确认 → 绑定/清除 single 限定
+          bindSessionRef.current?.(headerSessionId)
         }
       },
       onEvent: (event: ResearchSseEvent) => {
@@ -671,6 +760,67 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
       onHttpError: (status, body) => {
         const current = activeRef.current
         if (!current || current.turnId !== turnId) return
+        // R1-B2 修复：C-05 契约分支统一消费动作表（classifyC05Error），
+        // 恢复材料（activeRef + 原键）按 acceptance/recovery_action 处置；
+        // 旧 v1 分支保持既有 409 语义不变。
+        if (current.contract === 'c05-v1') {
+          // 构造 axios 形状错误以复用分类器（detail 从 body 提取）
+          const classified = classifyC05Error({ response: { status, data: body } })
+          if (status === 409 && classified.action === 'read_original_result') {
+            // generation_in_progress：同键自愈路径。R1-B2：与网络重连
+            // **共用 attempt 计数**（≤3）。
+            if (current.attempt >= MAX_STREAM_ATTEMPTS) {
+              // R2-B2/R2-N2：耗尽 → **待确认终态**。activeRef 释放（与
+              // #292 P0 不变量一致），但 errorCode/errorMessage 已落 turn
+              // 记录可回访；acceptance_retry_exhausted 文案明确"待确认，
+              // 不因耗尽判定服务端失败"。重发同一问题生成新幂等键 =
+              // 用户明确的新意图（服务端幂等行仍按原键保留原失败）。
+              patchAssistant(turnId, {
+                status: 'error',
+                errorCode: 'acceptance_retry_exhausted',
+                errorMessage: httpErrorMessage(status, body),
+              })
+              clearActiveIfCurrent(turnId)
+              return
+            }
+            scheduleReconnect()
+            return
+          }
+          if (classified.action === 'retry_same_key') {
+            // R2-B2/R2-N2：服务端明确 retry_same_key（临时不可用）→ 有界
+            // 重连（attempt 共用 ≤3）；耗尽走上方 acceptance_retry_exhausted。
+            if (current.attempt >= MAX_STREAM_ATTEMPTS) {
+              patchAssistant(turnId, {
+                status: 'error',
+                errorCode: 'acceptance_retry_exhausted',
+                errorMessage: httpErrorMessage(status, body),
+              })
+              clearActiveIfCurrent(turnId)
+              return
+            }
+            scheduleReconnect()
+            return
+          }
+          if (classified.acceptance === 'unknown' && classified.action === 'reconcile_then_retry') {
+            // acceptance_outcome_unknown：**保留 activeRef 与原键材料**，
+            // 呈现待确认（不写成失败、不产生新键）
+            patchAssistant(turnId, {
+              status: 'reconnecting',
+              errorCode: classified.code,
+              errorMessage: httpErrorMessage(status, body),
+            })
+            return
+          }
+          // 确定性结论（字符串冲突 / 422 / 终态 stop_and_confirm）→
+          // 终态错误呈现并清 activeRef（材料保留在 turn 记录中可查证）
+          patchAssistant(turnId, {
+            status: 'error',
+            errorCode: classified.code ?? 'conflict_busy',
+            errorMessage: httpErrorMessage(status, body),
+          })
+          clearActiveIfCurrent(turnId)
+          return
+        }
         if (status === 409) {
           // 409 语义按 body 区分（评审 R-A/R-B：全局 /chat 的 409 detail
           // 形态已核实——纯字符串 = begin_turn 会话占用；对象带
@@ -711,6 +861,33 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
         // #292 P0：非 409 HTTP 错误是不可恢复终态
         clearActiveIfCurrent(turnId)
       },
+      onProtocolError: (reason) => {
+        const current = activeRef.current
+        if (!current || current.turnId !== turnId) return
+        // D-24/§5.3：非 SSE Content-Type = 协议违反，fail-closed。
+        // 重试只会拿到同样的非流响应 → **不**进入有界重连。
+        patchAssistant(turnId, {
+          status: 'error',
+          errorCode: 'stream_protocol_error',
+          errorMessage: reason,
+        })
+        clearActiveIfCurrent(turnId)
+      },
+      onIdleTimeout: () => {
+        const current = activeRef.current
+        if (!current || current.turnId !== turnId) return
+        // D-24/§5.3：timeout 是**唯一**可进入既有有界策略的 abort 原因
+        if (current.attempt >= MAX_STREAM_ATTEMPTS) {
+          patchAssistant(turnId, {
+            status: 'error',
+            errorCode: 'stream_idle_timeout',
+            errorMessage: `No stream data within the idle budget after ${MAX_STREAM_ATTEMPTS} attempts`,
+          })
+          clearActiveIfCurrent(turnId)
+          return
+        }
+        scheduleReconnect()
+      },
       onNetworkError: (error) => {
         const current = activeRef.current
         if (!current || current.turnId !== turnId) return
@@ -734,6 +911,10 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
     turnId: string,
     selection: ResearchChatSelection | undefined,
     modelId: string,
+    frozenIdempotencyKey?: string,
+    frozenContract?: 'v1' | 'c05-v1',
+    /** PR5（D-22）：登记时冻结的完整 wire 请求（首次尝试原样发送） */
+    frozenRequest?: ResearchChatRequest,
   ): void => {
     // #243 §6.4：modelId 由调用方传入（confirmed 全局模型快照），本 hook
     // 不再读取执行偏好——显示什么就执行什么，且快照不随后续切换漂移。
@@ -746,17 +927,34 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
       })
       return
     }
+    // PR5（C6）：契约判定在派发时刻执行一次，重连沿用同契约（不重判）。
+    // PR5（D-22）：若调用方在登记 consent 前已冻结契约，则以冻结值为准
+    //（确认期间能力翻转不得改变已登记请求的契约）。
+    const contract: 'v1' | 'c05-v1' = frozenContract
+      ?? (c05DispatchReadyRef.current?.() === true ? 'c05-v1' : 'v1')
     const active: ActiveTurn = {
       turnId,
       query: trimmed,
       sourceIds: selection?.sourceIds ?? [],
       noteIds: selection?.noteIds ?? [],
+      scopeSnapshot: deriveScopeSnapshot(selection),
+      contract,
       modelId,
-      idempotencyKey: newIdempotencyKey(),
+      // PR5（D-22）：登记时冻结的键优先；缺省（旧接线）仍是每轮新键
+      idempotencyKey: frozenIdempotencyKey ?? newIdempotencyKey(),
       attempt: 1,
       reconnectCount: 0,
       lastEventId: 0,
       sessionId: sessionIdRef.current,
+      /**
+       * 审查轮 2 B1：冻结请求里的 `session_id` 是**恢复游标**，可能已被会话
+       * 失效（持久会话 404 → sessionIdRef 置 null）而在确认时过期。此时若原样
+       * 发出，同一轮会出现两个会话身份（首次尝试用旧 id、重连用 null）。
+       * 身份一旦不再一致就丢弃冻结体，改由 hook 用当前身份重建。
+       */
+      initialRequest: frozenRequestMatchesSession(frozenRequest, sessionIdRef.current)
+        ? frozenRequest ?? null
+        : null,
       sse: createSseState(),
       abort: null,
       reconnectTimer: null,
@@ -765,10 +963,27 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
     runTurn(active)
   }
 
+  /**
+   * PR5（D-22，评审 MEDIUM-11）：把当前会话身份交给调用方，使"登记时的
+   * 完整 wire 请求"能真正包含 session_id（此前只能由 hook 在派发时刻注入，
+   * 于是登记体与实际请求不同源）。
+   */
+  const getCurrentSessionId = useCallback((): string | null => sessionIdRef.current, [])
+
   const send = (
     query: string,
     selection: ResearchChatSelection | undefined,
     modelId: string,
+    /**
+     * PR5（D-22）：调用方在**登记 consent 之前**冻结的幂等键。确认后必须
+     * 复用它派发——否则"同意取消 → 重试"会换键（D-13 表① 禁止）。
+     * 缺省（旧接线）保持每轮新键的既有语义。
+     */
+    frozenIdempotencyKey?: string,
+    /** PR5（D-22）：登记的契约选择（确认后不再重判能力） */
+    frozenContract?: 'v1' | 'c05-v1',
+    /** PR5（D-22）：登记时冻结的完整 wire 请求（首次尝试原样发送） */
+    frozenRequest?: ResearchChatRequest,
   ): void => {
     const trimmed = query.trim()
     if (!trimmed) return
@@ -823,7 +1038,7 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
       generationId: null,
     }
     setTurns((prev) => [...prev, userTurn, assistantTurn])
-    startTurn(trimmed, turnId, selection, modelId)
+    startTurn(trimmed, turnId, selection, modelId, frozenIdempotencyKey, frozenContract, frozenRequest)
   }
 
   const sendCoverage = (
@@ -899,6 +1114,7 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
       return
     }
     const idempotencyKey = newIdempotencyKey()
+    const snapshot = deriveScopeSnapshot(selection)
     submit(
       {
         query: trimmed,
@@ -906,6 +1122,8 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
         // Notes 不支持 Coverage（§6.1）：防御性恒空，即使调用方漏检
         note_ids: [],
         model_id: modelId,
+        scopeMode: snapshot.mode,
+        singleSourceId: snapshot.singleSourceId,
       },
       idempotencyKey,
     )
@@ -933,6 +1151,8 @@ export function useResearchChat({ projectId }: { projectId: string }): UseResear
 
   return {
     turns,
+    /** PR5（D-22）：当前会话身份（供调用方在登记时冻结进 wire 请求） */
+    getCurrentSessionId,
     isStreaming,
     backgroundNotice,
     send,

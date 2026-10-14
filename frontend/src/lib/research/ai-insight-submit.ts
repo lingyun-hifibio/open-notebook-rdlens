@@ -57,6 +57,8 @@ export type AiInsightSubmitStatus =
   | 'outcome_unknown'
   | 'protocol_conflict'
   | 'failed'
+  /** PR5（D-09/D-11）：`all` 范围在本 PR 被显式阻断（legacy v1 无法表达） */
+  | 'blocked_all_scope'
 
 export interface AiInsightSubmitInput {
   title: string

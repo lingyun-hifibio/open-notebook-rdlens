@@ -7,7 +7,7 @@ import { useToast } from '@/lib/hooks/use-toast'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
 import { useResearchScope } from '@/lib/research/scope'
 import { formatScopeLabel } from '@/lib/research/scope'
-import { EmptyEffectiveScopeError, resolveScopeSelection } from '@/lib/research/scope-utils'
+
 import { newIdempotencyKey } from '@/lib/research/api'
 import { useResearchGlobalModel, researchModelBlockedHint } from '@/lib/hooks/use-research-global-model'
 import { useRunResearchTransformation } from '@/lib/hooks/use-research'
@@ -15,7 +15,7 @@ import { formatResearchTimestamp, researchLanguageLabelKey } from '@/lib/researc
 import type { ResearchCitation, ResearchSource, TransformationResultRecord } from '@/lib/types/research'
 import { normalizePersistedCitations } from './citation-utils'
 import { CitationCard } from './CitationCard'
-import { resolveCitationSource } from './citation-utils'
+import { resolveCitationCandidate } from './citation-utils'
 import { ResultActions } from './ResultActions'
 
 /**
@@ -89,6 +89,19 @@ export function TransformationRunDetail({
 
   const citations = normalizePersistedCitations(record.citations)
   const rerunnable = showRerun === true && record.transformation_id !== null
+  // PR5（D-06）：Rerun 是"新提交、新键"，但**必须显示本次将使用的范围**；
+  // 它与记录里的冻结范围不同时另行提示——避免用户以为"沿用旧范围"。
+  // 记录侧只有 selected 记录才有显式 ID 集合（all 记录为空集，不可比）。
+  const rerunSnapshot = getSnapshot()
+  const rerunScopeExpressible = rerunSnapshot.mode === 'selected'
+  const rerunScopeLabel = formatScopeLabel(rerunSnapshot, t)
+  const rerunScopeDiffers = rerunnable
+    && rerunScopeExpressible
+    && !sameIdSet(rerunSnapshot.sourceIds, record.source_ids)
+  const rerunNoteScopeDiffers = rerunnable
+    && rerunScopeExpressible
+    && !sameIdSet(rerunSnapshot.noteIds, record.note_ids)
+  const rerunScopeChanged = rerunScopeDiffers || rerunNoteScopeDiffers
   const blockedHint = researchModelBlockedHint(blockedReason, t)
   // RWV2-43：语言 en/zh → 英文标签；未知非 null → 原码；null → '—'（F4/C-M1）
   const languageKey = researchLanguageLabelKey(record.response_language)
@@ -103,48 +116,18 @@ export function TransformationRunDetail({
     if (!record.transformation_id) return
     const snapshot = getSnapshot()
     if (snapshot.mode === 'selected' && !validate(snapshot).valid) return
-    setIsResolvingRerun(true)
-    setRerunDegraded(null)
-    let resolved: { sourceIds: string[]; noteIds: string[]; staleSourceCount: number }
-    try {
-      resolved = await resolveScopeSelection(projectId, snapshot)
-    } catch (error) {
-      // S2：空有效范围是 typed 阻断（同 run 对话框的引导文案）；其余解析
-      // 失败（分页网关错误）沿用通用失败提示。
-      if (error instanceof EmptyEffectiveScopeError) {
-        toast({
-          title: t('common.error'),
-          description: t('research.transformations.emptyProjectBlocked'),
-          variant: 'destructive',
-        })
-      } else {
-        toast({
-          title: t('common.error'),
-          description: t('research.workbench.actionFailed'),
-          variant: 'destructive',
-        })
-      }
-      return
-    } finally {
-      // 只有组件仍存活才复位解析标志（卸载后不触碰状态）
-      if (rerunAliveRef.current) {
-        setIsResolvingRerun(false)
-      }
-    }
-    // 评审 Medium-3：scope 解析返回时详情已关闭/卸载 → 不再派发
-    if (!rerunAliveRef.current) return
-    const { sourceIds, noteIds } = resolved
-    // S2：stale Source 可重跑，但派发前必须可见警告（后端用最后同步版本）。
-    // 解析已保证非空（空有效范围在上面 typed 分支阻断），旧 empty_project
-    // 兜底分支随之不再可达。
-    if (resolved.staleSourceCount > 0) {
+    // PR5（D-11/D-06）：Rerun 是"新提交、新键"，但契约是 extra="forbid" 的
+    // 显式 ID 集合——范围 `all` 无法表达 → 显式阻断（不枚举、不发空 ID 集）；
+    // `selected` 按冻结快照透传，且 UI 已显示本次将使用的范围。
+    if (snapshot.mode !== 'selected') {
       toast({
-        title: t('research.layout.scope.modeLabel'),
-        description: t('research.transformations.staleSourcesWarning', {
-          n: resolved.staleSourceCount,
-        }),
+        title: t('common.error'),
+        description: t('research.transformations.allRequiresSelection'),
+        variant: 'destructive',
       })
+      return
     }
+    setRerunDegraded(null)
     try {
       await runGuarded(
         async (modelId) => {
@@ -153,8 +136,8 @@ export function TransformationRunDetail({
           if (!rerunAliveRef.current) return
           const result = await runMutation.mutateAsync({
             transformationId: record.transformation_id as string,
-            sourceIds,
-            noteIds,
+            sourceIds: [...snapshot.sourceIds],
+            noteIds: [...snapshot.noteIds],
             modelId,
             // 新建派发：必须新幂等键（复用旧 key → 后端幂等重放/409）
             idempotencyKey: newIdempotencyKey(),
@@ -250,7 +233,7 @@ export function TransformationRunDetail({
               <CitationCard
                 key={citation.key}
                 citation={richCitation}
-                source={resolveCitationSource(sources, richCitation)}
+                source={resolveCitationCandidate(sources, richCitation)}
                 onJump={onCitationJump}
               />
             )
@@ -288,6 +271,25 @@ export function TransformationRunDetail({
               {t('research.transformations.degraded', { reason: rerunDegraded })}
             </p>
           )}
+          {/* PR5（D-06）：本次将使用的范围必须**可见**（Rerun 会按当前范围
+              以新键重新执行，不沿用记录里的旧范围）。 */}
+          {rerunnable && rerunScopeExpressible && (
+            <p className="text-xs text-muted-foreground" data-testid="rerun-scope" role="status">
+              {t('research.transformations.rerunScopeLabel', { scope: rerunScopeLabel })}
+            </p>
+          )}
+          {rerunScopeChanged && (
+            <p className="text-xs font-medium text-amber-600" data-testid="rerun-scope-changed" role="status">
+              {t('research.transformations.rerunScopeNotice')}
+            </p>
+          )}
+          {/* PR5（D-11 就近可见）：`all` 在 legacy 契约下无法表达 → 阻断说明
+              放在按钮旁（点击同样阻断并 toast，两条路径文案一致）。 */}
+          {rerunnable && !rerunScopeExpressible && (
+            <p className="text-xs font-medium text-destructive" data-testid="rerun-scope-unexpressible" role="alert">
+              {t('research.transformations.allRequiresSelection')}
+            </p>
+          )}
           <Button
             size="sm"
             onClick={() => void rerun()}
@@ -305,4 +307,17 @@ export function TransformationRunDetail({
       )}
     </div>
   )
+}
+
+/**
+ * D-06：范围集合等价判定（顺序无关）。记录侧的 `source_ids`/`note_ids` 是
+ * 冻结快照，可能与当前选择的顺序不同；顺序差异不构成"范围变化"。
+ */
+function sameIdSet(a: readonly string[] | null | undefined, b: readonly string[] | null | undefined): boolean {
+  const left = a ?? []
+  const right = b ?? []
+  if (left.length !== right.length) return false
+  const sortedLeft = [...left].sort()
+  const sortedRight = [...right].sort()
+  return sortedLeft.every((value, index) => value === sortedRight[index])
 }

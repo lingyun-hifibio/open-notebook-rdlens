@@ -33,6 +33,9 @@ function fetchMock(ok: boolean, status: number, body?: ReadableStream<Uint8Array
   const response = {
     ok,
     status,
+    // PR5（D-24）：真实 SSE 响应带 text/event-stream —— 传输层据此在
+    // 消费流之前 fail-closed（非流响应不得被当作事件流解析）
+    headers: new Headers({ 'content-type': 'text/event-stream' }),
     body: body ?? null,
     json: async () => ({ detail: 'resume_after' }),
   }
@@ -272,7 +275,10 @@ describe('openResearchChatStream', () => {
     const response = {
       ok: true,
       status: 200,
-      headers: new Headers({ 'X-Chat-Session-Id': 'sess_echo' }),
+      headers: new Headers({
+        'X-Chat-Session-Id': 'sess_echo',
+        'content-type': 'text/event-stream',
+      }),
       body: sseBody([
         'event: done\ndata: {"event_id": 1, "type": "done", "completion_status": "success"}\n\n',
       ]),
@@ -323,7 +329,13 @@ describe('openResearchChatStream', () => {
         release = () => controller.close()
       },
     })
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, status: 200, headers: new Headers(), body, json: async () => ({}) }))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'text/event-stream' }),
+      body,
+      json: async () => ({}),
+    }))
 
     const onEnd = vi.fn()
     const abort = openResearchChatStream({

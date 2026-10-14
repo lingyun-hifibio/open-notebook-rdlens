@@ -432,6 +432,28 @@ export function useResearchSourceChat({
         }
         scheduleReconnect()
       },
+      /**
+       * PR5（D-24，评审 MEDIUM-5）：传输层的两个新终止路径必须在本 hook 也有
+       * 归属——否则超时/协议违反会让 Source Chat 永远停在 streaming（此前
+       * 没有看门狗，问题被"永不超时"掩盖；接入看门狗后不接回调即为回归）。
+       * timeout 是本模块既有有界重试允许的**唯一** abort 原因。
+       */
+      onIdleTimeout: (phase) => {
+        const current = activeRef.current
+        if (!current || current.turnId !== turnId) return
+        if (current.attempt >= SOURCE_CHAT_MAX_STREAM_ATTEMPTS) {
+          finishError(
+            'stream_lost',
+            `No stream data within the ${phase} budget after ${SOURCE_CHAT_MAX_STREAM_ATTEMPTS} attempts`,
+          )
+          return
+        }
+        scheduleReconnect()
+      },
+      // 协议违反（非 event-stream）：重试只会拿到同样的响应 → 终态、不重连
+      onProtocolError: (reason) => {
+        finishError('stream_protocol_error', reason)
+      },
       onEnd: () => {
         const current = activeRef.current
         if (!current || current.turnId !== turnId) return
