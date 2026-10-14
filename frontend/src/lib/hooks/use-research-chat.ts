@@ -334,7 +334,9 @@ interface ActiveTurn {
   lastEventId: number
   sessionId: string | null
   sse: ResearchSseState
-  abort: (() => void) | null
+  /** PR5（D-24）：中止可带原因（user_cancel/identity/page_change），
+   *  供传输层区分"仅 timeout 可重试" */
+  abort: ((reason?: 'user_cancel' | 'identity' | 'page_change') => void) | null
   reconnectTimer: ReturnType<typeof setTimeout> | null
 }
 
@@ -513,10 +515,10 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
     [patchAssistant, projectId],
   )
 
-  const stopActive = useCallback(() => {
+  const stopActive = useCallback((reason: 'user_cancel' | 'identity' | 'page_change' = 'user_cancel') => {
     const active = activeRef.current
     if (!active) return
-    if (active.abort) active.abort()
+    if (active.abort) active.abort(reason)
     if (active.reconnectTimer) clearTimeout(active.reconnectTimer)
     activeRef.current = null
   }, [])
@@ -540,7 +542,8 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
     activeRef.current = null
   }, [])
 
-  useEffect(() => stopActive, [stopActive])
+  // 卸载 = 页面变化：中止必须带原因（不得被当成 timeout 进入有界重试）
+  useEffect(() => () => stopActive('page_change'), [stopActive])
 
   // Issue #302：mount 刷新恢复——持久化过最近 session 则拉取详情重放为
   // turns。sessionIdRef 先同步为存储值：恢复完成前用户抢发也续接同一
@@ -823,6 +826,33 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
         })
         // #292 P0：非 409 HTTP 错误是不可恢复终态
         clearActiveIfCurrent(turnId)
+      },
+      onProtocolError: (reason) => {
+        const current = activeRef.current
+        if (!current || current.turnId !== turnId) return
+        // D-24/§5.3：非 SSE Content-Type = 协议违反，fail-closed。
+        // 重试只会拿到同样的非流响应 → **不**进入有界重连。
+        patchAssistant(turnId, {
+          status: 'error',
+          errorCode: 'stream_protocol_error',
+          errorMessage: reason,
+        })
+        clearActiveIfCurrent(turnId)
+      },
+      onIdleTimeout: () => {
+        const current = activeRef.current
+        if (!current || current.turnId !== turnId) return
+        // D-24/§5.3：timeout 是**唯一**可进入既有有界策略的 abort 原因
+        if (current.attempt >= MAX_STREAM_ATTEMPTS) {
+          patchAssistant(turnId, {
+            status: 'error',
+            errorCode: 'stream_idle_timeout',
+            errorMessage: `No stream data within the idle budget after ${MAX_STREAM_ATTEMPTS} attempts`,
+          })
+          clearActiveIfCurrent(turnId)
+          return
+        }
+        scheduleReconnect()
       },
       onNetworkError: (error) => {
         const current = activeRef.current

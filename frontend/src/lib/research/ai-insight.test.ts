@@ -9,6 +9,8 @@ import { markerActionForDisposition } from './ai-insight-risk'
 
 vi.mock('@/lib/api/client', () => ({
   apiClient: { post: vi.fn() },
+  // PR5（D-24）：传输守卫消费同一超时预算；模块 mock 需保留该导出
+  API_TIMEOUT_MS: 600000,
 }))
 
 const request: CreateAiInsightRequest = {

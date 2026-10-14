@@ -22,7 +22,11 @@ import { apiClient } from '@/lib/api/client'
 import { listAiInsightRiskMarkers } from '@/lib/research/ai-insight-risk'
 import { QUERY_KEYS } from '@/lib/api/query-client'
 
-vi.mock('@/lib/api/client', () => ({ apiClient: { post: vi.fn(), get: vi.fn() } }))
+vi.mock('@/lib/api/client', () => ({
+  apiClient: { post: vi.fn(), get: vi.fn() },
+  // PR5（D-24）：传输守卫消费同一超时预算；模块 mock 需保留该导出
+  API_TIMEOUT_MS: 600000,
+}))
 // 只替换需要断言的函数——其余导出（researchApiErrorDetail 等）保持真实实现，
 // 否则在这个文件里加失败路径用例会以 TypeError 假红（评审 N-4）
 vi.mock('@/lib/research/api', async (importOriginal) => ({

@@ -16,7 +16,11 @@ import type { ResearchInsight } from '@/lib/types/research'
 // （测试替身提供 confirmed 模型），本文件断言「ai 创建携带顶层快照」。
 
 // ai-insight adapter 直接走 apiClient.post（非 api 模块函数）——只 mock HTTP 边界
-vi.mock('@/lib/api/client', () => ({ apiClient: { post: vi.fn(), get: vi.fn() } }))
+vi.mock('@/lib/api/client', () => ({
+  apiClient: { post: vi.fn(), get: vi.fn() },
+  // PR5（D-24）：传输守卫消费同一超时预算；模块 mock 需保留该导出
+  API_TIMEOUT_MS: 600000,
+}))
 vi.mock('@/lib/research/api', () => ({
   saveResultFromResult: vi.fn(),
   listInsights: vi.fn(),
