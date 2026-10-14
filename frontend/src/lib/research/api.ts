@@ -26,6 +26,7 @@ import { parseSseFrame } from './sse'
 import {
   STREAM_IDLE_TIMEOUT_MS,
   createAttemptSettlement,
+  isHeartbeatComment,
   isSseContentType,
   type ResearchStreamEndReason,
 } from './c05-stream-guard'
@@ -902,10 +903,12 @@ export interface ResearchChatStreamOptions {
    */
   onProtocolError?: (reason: string) => void
   /**
-   * PR5（D-24/§5.3 第 2 行）：流空闲超时（校验状态与 Content-Type 后才计时；
-   * 收到字节/heartbeat 重置）。**这是唯一可进入有界重试的 abort 原因**。
+   * PR5（D-24/§5.3 第 1、2 行）：传输超时。`phase` 区分两个计时制度——
+   * `'response'` = 等待响应头（§5.3 第 1 行的"等待响应"，预算 API_TIMEOUT_MS）；
+   * `'idle'` = 已进入事件流后的空闲计时（收到字节/heartbeat 重置）。
+   * **这是唯一可进入有界重试的 abort 原因**。
    */
-  onIdleTimeout?: () => void
+  onIdleTimeout?: (phase: 'response' | 'idle') => void
 }
 
 /** 调用方中止流的原因（D-24/§5.3 第 3 行）；缺省视为用户取消 */
@@ -933,29 +936,33 @@ export function openResearchChatStream(
   const settlement = createAttemptSettlement()
   /** 调用方中止的原因（用于区分 timeout / 取消 / 身份 / 页面变化） */
   let abortReason: ResearchStreamEndReason | null = null
-  /** 空闲计时器（仅在状态 + Content-Type 校验通过后武装） */
-  let idleTimer: ReturnType<typeof setTimeout> | null = null
+  /**
+   * 传输看门狗（两相位共用一个计时器）：
+   * - `'response'`：fetch 发出后即武装（§5.3 第 1 行的"等待响应"）；
+   * - `'idle'`：响应头 + Content-Type 校验通过后武装，每收到一批字节重置
+   *   （§5.3 第 2 行）。
+   * `STREAM_IDLE_TIMEOUT_MS <= 0` 时**明确禁用**（与 axios `timeout: 0` 一致）。
+   */
+  let watchdog: ReturnType<typeof setTimeout> | null = null
+  let watchdogPhase: 'response' | 'idle' = 'response'
 
-  const clearIdle = (): void => {
-    if (idleTimer !== null) {
-      clearTimeout(idleTimer)
-      idleTimer = null
+  const clearWatchdog = (): void => {
+    if (watchdog !== null) {
+      clearTimeout(watchdog)
+      watchdog = null
     }
   }
 
-  /**
-   * (Re)arm 空闲看门狗：`STREAM_IDLE_TIMEOUT_MS <= 0` 时**明确禁用**
-   *（与 axios 客户端 `timeout: 0` 的语义一致）。
-   */
-  const armIdle = (): void => {
-    clearIdle()
+  const armWatchdog = (phase: 'response' | 'idle'): void => {
+    clearWatchdog()
+    watchdogPhase = phase
     if (STREAM_IDLE_TIMEOUT_MS <= 0) return
-    idleTimer = setTimeout(() => {
-      idleTimer = null
+    watchdog = setTimeout(() => {
+      watchdog = null
       if (abortReason !== null) return // 调用方已中止：不重复上报
       abortReason = 'timeout'
       controller.abort()
-      if (settlement.settle()) options.onIdleTimeout?.()
+      if (settlement.settle()) options.onIdleTimeout?.(phase)
     }, STREAM_IDLE_TIMEOUT_MS)
   }
 
@@ -974,6 +981,10 @@ export function openResearchChatStream(
     headers['Last-Event-ID'] = String(options.lastEventId)
   }
 
+  // §5.3 第 1 行：等待响应头也必须在预算内（此前只有流内空闲计时，
+  // 代理吞掉响应头会让请求永久悬挂）
+  armWatchdog('response')
+
   fetch(url, {
     method: 'POST',
     headers,
@@ -989,6 +1000,7 @@ export function openResearchChatStream(
         } catch {
           // 非 JSON 错误体：保留 null
         }
+        clearWatchdog()
         if (settlement.settle()) options.onHttpError?.(response.status, body)
         return
       }
@@ -996,17 +1008,19 @@ export function openResearchChatStream(
       // 不是 SSE 就在消费流之前 fail-closed（不武装空闲计时、不读 body）
       const contentType = response.headers?.get?.('content-type') ?? null
       if (!isSseContentType(contentType)) {
+        clearWatchdog()
         if (settlement.settle()) options.onProtocolError?.(`unexpected_content_type:${contentType ?? 'none'}`)
         return
       }
       if (!response.body) {
+        clearWatchdog()
         if (settlement.settle()) options.onNetworkError?.(new Error('no response body'))
         return
       }
       // Issue #182：响应头只读一次透传（X-Chat-Session-Id 回显），不作行为依赖
       options.onResponseMeta?.(response.headers)
       // 校验通过 → 切换为流空闲计时（每收到一批字节即重置）
-      armIdle()
+      armWatchdog('idle')
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
@@ -1015,11 +1029,14 @@ export function openResearchChatStream(
           const { done, value } = await reader.read()
           if (done) break
           // 收到字节（含 heartbeat 注释帧）→ 重置传输空闲；**不**当作模型进度
-          armIdle()
+          armWatchdog('idle')
           buffer += decoder.decode(value, { stream: true })
           const frames = buffer.split('\n\n')
           buffer = frames.pop() ?? ''
           for (const frame of frames) {
+            // §5.3 第 2 行：heartbeat/注释帧只是传输活跃信号，**不是**模型进度
+            // ——不解析、不产生事件（它已在上面重置过空闲计时）
+            if (isHeartbeatComment(frame)) continue
             const event = parseSseFrame(frame)
             if (event) {
               options.onEvent(event)
@@ -1028,20 +1045,20 @@ export function openResearchChatStream(
         }
         // 正常读尽（EOF）：终态与否由调用方依 sse 状态判定；
         // 调用方 abort 的收尾不算 EOF（不触发 onEnd）
-        clearIdle()
+        clearWatchdog()
         if (abortReason === null && !controller.signal.aborted && settlement.settle()) {
           abortReason = 'normal_end'
           options.onEnd?.()
         }
       } catch (error) {
-        clearIdle()
+        clearWatchdog()
         if ((error as Error).name !== 'AbortError' && settlement.settle()) {
           options.onNetworkError?.(error as Error)
         }
       }
     })
     .catch((error) => {
-      clearIdle()
+      clearWatchdog()
       if ((error as Error).name !== 'AbortError' && settlement.settle()) {
         options.onNetworkError?.(error as Error)
       }
@@ -1051,7 +1068,7 @@ export function openResearchChatStream(
     // 调用方主动中止：区分原因（仅 timeout 可重试——此处必非 timeout），
     // 并让终止路径保持"只结算一次"。timeout 由空闲看门狗自行 abort。
     if (abortReason === null) abortReason = reason
-    clearIdle()
+    clearWatchdog()
     controller.abort()
   }
 }

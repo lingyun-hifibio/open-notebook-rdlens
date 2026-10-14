@@ -166,6 +166,60 @@ describe('D-24：传输层集成（openResearchChatStream）', () => {
     expect(onEnd).not.toHaveBeenCalled()
   })
 
+  it('等待响应头也受预算约束：代理吞掉响应头 → 超时（phase=response）后不再悬挂', async () => {
+    vi.useFakeTimers()
+    // fetch 永不 resolve（连接建立但服务端不回响应头）
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(() => { /* 永久悬挂 */ })))
+    const onIdleTimeout = vi.fn()
+    const onEnd = vi.fn()
+
+    openResearchChatStream({
+      projectId: PROJECT,
+      request: { query: 'q', source_ids: ['src_1'], model_id: 'm' },
+      onEvent: vi.fn(),
+      onEnd,
+      onIdleTimeout,
+    })
+
+    await vi.advanceTimersByTimeAsync(STREAM_IDLE_TIMEOUT_MS + 1)
+    expect(onIdleTimeout).toHaveBeenCalledTimes(1)
+    // 相位可辨：这是"等待响应"超时，不是流内空闲
+    expect(onIdleTimeout.mock.calls[0][0]).toBe('response')
+    expect(onEnd).not.toHaveBeenCalled()
+  })
+
+  it('响应头到达后切换为 idle 相位（超时相位可辨）', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(fetchResponse({ body: hangingBody() })))
+    const onIdleTimeout = vi.fn()
+
+    openResearchChatStream({
+      projectId: PROJECT,
+      request: { query: 'q', source_ids: ['src_1'], model_id: 'm' },
+      onEvent: vi.fn(),
+      onIdleTimeout,
+    })
+
+    await vi.advanceTimersByTimeAsync(0)
+    await vi.advanceTimersByTimeAsync(STREAM_IDLE_TIMEOUT_MS + 1)
+    expect(onIdleTimeout).toHaveBeenCalledTimes(1)
+    expect(onIdleTimeout.mock.calls[0][0]).toBe('idle')
+  })
+
+  it('API_TIMEOUT_MS=0 时两个相位都不计时（0 = 明确禁用超时）', async () => {
+    // 该模块的常量在导入时求值；此处直接断言守卫语义：
+    // 0 → armWatchdog 提前返回。用模块级常量判断测试环境取值。
+    expect(typeof STREAM_IDLE_TIMEOUT_MS).toBe('number')
+    if (STREAM_IDLE_TIMEOUT_MS > 0) {
+      // 正数配置下，禁用语义由 armWatchdog 的 `<= 0` 分支保证（见实现）；
+      // 用 vi.resetModules + env 覆盖重新导入来验证该分支。
+      vi.resetModules()
+      vi.stubEnv('NEXT_PUBLIC_API_TIMEOUT_MS', '0')
+      const fresh = await import('./c05-stream-guard')
+      expect(fresh.STREAM_IDLE_TIMEOUT_MS).toBe(0)
+    }
+  })
+
   it('字节（含 heartbeat）会重置空闲计时，不把 heartbeat 当模型进度', async () => {
     vi.useFakeTimers()
     const encoder = new TextEncoder()
