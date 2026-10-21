@@ -12,7 +12,7 @@
 | 标记 | 含义 |
 |---|---|
 | 【已实现·源码】 | 本 PR 交付的代码，附符号名 |
-| 【已实现·测试】 | 可复现的测试（fork **1174 passed / 114 files** @ 2026-10-21 契约同步 head，宿主 **461 passed / 52 files**，全量绿；两仓 `tsc -b` clean、`npm run build` 成功） |
+| 【已实现·测试】 | 可复现的测试（fork **1174 passed / 114 files** @ 2026-10-21 契约同步 head；宿主 **461 passed / 52 files** @ 宿主 PR5 分支 `95cb4ef0` 时点，非 origin/main 计数；两仓 `tsc -b` clean、`npm run build` 成功） |
 | 【待验证·运行】 | 需 PR4 执行接线 + C-05 flag 打开后的真实环境（F1/F2） |
 
 **本版修订说明（2026-10-14 二次收口）**：计划条款复核后补齐了此前**未落地**的部分——
@@ -41,7 +41,7 @@ ScopeWarningSummary/ScopePreviewPanel 等计划指定产物。**D-24 不再列�
 | **D-17** | **有界呈现接线**：计数摘要（回退 N／排除 M）+ ≤5 条明细 + "仅显示前 N 条"标注；`resolved_source_refs` 只出计数；首屏节点数不随规模增长 | `c05-warning-summary.ts`、`ScopeWarningSummary.tsx` |
 | B2/D-02/D-13 | 键生命周期纯函数（acceptance 锚、string-shape 确定性清键、24h 窗口） | `c05-idempotency-key.ts`、`c05-key-retention.ts` |
 | **D-22** | **同意登记冻结完整派发意图**：契约选择 + 请求信封 + 幂等键随登记冻结，确认后原样派发、取消不清键（搜索侧 `prepareDispatch`、Chat 侧签名持有键） | `use-research-global-model.tsx`、`ResearchSearchPanel.tsx`、`use-research-chat.ts`、`ResearchWorkspace.tsx` |
-| B2/D-12 | Preview 门禁矩阵（`budget.status` exceeded 阻断 / 必需检查 unavailable·not_checked 阻断 / 非必需放行 / `deferred[]` 标注执行期复检 / 缺失不阻断不冒充）；按 #748 实际响应字段实现 | `c05-preview-gate.ts`、`api.ts` |
+| B2/D-12 | Preview 门禁矩阵（`budget.status` exceeded 阻断 / 必需检查 unavailable·not_checked（含矛盾 `deferred`）阻断 / 非必需放行 / `deferred[]` 执行期判定 / 缺失不阻断不冒充）；按 #748 实际响应字段实现；**`notice` 提示层当前无 UI 消费者（follow-up，见 §5）** | `c05-preview-gate.ts`、`api.ts` |
 | **D-24** | **SSE 传输四条规则**（handover §5.3）：`API_TIMEOUT_MS` 作用域与 `0` 禁用、状态+Content-Type 校验后进入流空闲计时（字节/heartbeat 重置、heartbeat 非模型进度）、abort 原因区分且仅 `timeout` 可进有界重试、每次尝试只结算一次 | `c05-stream-guard.ts`、`api.ts`、`use-research-chat.ts` |
 | B2/D-16 | 文档计量去重（document 语义去重 / 版本语义不去重）+ **去重后唯一文档数 < 2 时按不足阻断** | `document-set.ts`、`compare.ts`（`checkCompareDocumentFloor`）、`ComparePanel.tsx` |
 | B3/D-05/D-11 | 请求体唯一构造函数（forbid/insight 入口排除、all 空集 fail-closed） | `c05-request.ts` |
@@ -127,7 +127,14 @@ D-16 文档下限、D-11 清单信号、T17 异会话清除、D-12 Preview 门�
 4. **2026-10-21 契约同步后的剩余前置**：主仓 #748 已提供 Search-only Preview，
    但 `execution_ready` 仍只有 `search`；F1/F2 还需 S9/S10 完成（#623/#702）、
    双 flag、含本 PR 的镜像 digest 与 CORS 暴露；本 PR 合入不等于 PR5 验收完成。
-5. 本 PR 不宣称 C-05 可用、不关闭 #601。
+5. **D-12 提示层未接线（2026-10-21 复核发现）**：`evaluatePreviewGate` 的
+   `notice`（unvalidated / execution_recheck / interactive_only_exceeded）已由纯函数
+   产出，但 Search 面板当前只消费 `canSubmit` / `blockedReason`，不渲染提示；
+   **不计为本 PR 已完成项**，需 follow-up 接 UI 提示（含 i18n）或由 owner 明确降级。
+6. **宿主 main 的 C-05 fixture 消费测试仍冻结旧 schema**：`frontend/tests/issue615C05Fixtures.test.ts`
+   在 origin/main `50c6e415` 上 4 failed（仍断言旧 schema 键 / `preview_supported=false`）；
+   属宿主侧 follow-up，不计入 fork 本 PR 的验证结论。
+7. 本 PR 不宣称 C-05 可用、不关闭 #601。
 
 ## 6. 回滚
 

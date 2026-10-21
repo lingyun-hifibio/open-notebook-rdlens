@@ -81,7 +81,11 @@ export function evaluatePreviewGate(input: C05PreviewGateInput): C05PreviewGateR
     return { canSubmit: false, blockedReason: 'budget_exceeded', notice: null }
   }
   const requiredIncomplete = required.find(
-    check => check.status === 'unavailable' || check.status === 'not_checked',
+    check => check.status === 'unavailable'
+      || check.status === 'not_checked'
+      // 契约 schema 的 checks[].status 与 deferred 同 enum；required + deferred
+      // 属矛盾形状（执行期检查不应标记为提交前必需）——fail-closed，不静默放行。
+      || check.status === 'deferred',
   )
   if (
     budget.status === 'unavailable'

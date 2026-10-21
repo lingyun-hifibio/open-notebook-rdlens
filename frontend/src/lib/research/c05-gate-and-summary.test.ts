@@ -70,6 +70,14 @@ describe('evaluatePreviewGate（T26，#748 c05_preview_response 形状）', () =
     expect(evaluatePreviewGate({ ...ready, budget }).blockedReason).toBe('budget_exceeded')
   })
 
+  it('聚合位 exceeded 单独也能阻断（明细无常量 exceeded 也 fail-closed）', () => {
+    const budget = budgetOf({
+      status: 'exceeded',
+      checks: [budgetCheck({ status: 'validated' })],
+    })
+    expect(evaluatePreviewGate({ ...ready, budget }).blockedReason).toBe('budget_exceeded')
+  })
+
   it('必需检查 unavailable → 阻断（budget_incomplete）', () => {
     const budget = budgetOf({
       status: 'unavailable',
@@ -82,6 +90,14 @@ describe('evaluatePreviewGate（T26，#748 c05_preview_response 形状）', () =
     const budget = budgetOf({
       status: 'not_checked',
       checks: [budgetCheck({ status: 'not_checked', observed: null, limit: null })],
+    })
+    expect(evaluatePreviewGate({ ...ready, budget }).blockedReason).toBe('budget_incomplete')
+  })
+
+  it('必需检查 deferred（矛盾形状）→ 阻断（budget_incomplete）', () => {
+    const budget = budgetOf({
+      status: 'validated',
+      checks: [budgetCheck({ status: 'deferred', observed: null, limit: null })],
     })
     expect(evaluatePreviewGate({ ...ready, budget }).blockedReason).toBe('budget_incomplete')
   })
@@ -165,13 +181,27 @@ describe('evaluatePreviewGate（T26，#748 c05_preview_response 形状）', () =
     expect(r.notice).toBeNull()
   })
 
-  it('主仓 #748 fixture 的合法 preview.response 样例可直接用于门禁（字段漂移会编译失败）', () => {
+  it('主仓 #748 fixture 的 preview.response.all.valid 在运行时字段齐全（防 JSON 键漂移）', () => {
     const sample = contractSamples['preview.response.all.valid']
     expect(sample, 'missing fixture sample: preview.response.all.valid').toBeDefined()
     const value = sample.value as { budget: C05Budget }
     const budget: C05Budget = value.budget
+    // 运行时逐字段断言（不能用 `as` 当作形状探针：JSON 以 unknown 导入，
+    // 改名/漏字段不会让 tsc 变红，只有断言才会）。
     expect(budget.status).toBe('validated')
-    expect(budget.checks[0].required).toBe(true)
+    expect(Array.isArray(budget.checks)).toBe(true)
+    expect(Array.isArray(budget.deferred)).toBe(true)
+    expect(budget.estimate_kind).toBe('source_and_note_units')
+    expect(budget.checks.length).toBeGreaterThan(0)
+    for (const check of budget.checks) {
+      expect(typeof check.name).toBe('string')
+      expect(typeof check.path).toBe('string')
+      expect(typeof check.phase).toBe('string')
+      expect(typeof check.required).toBe('boolean')
+      expect(typeof check.status).toBe('string')
+      expect('observed' in check).toBe(true)
+      expect(typeof check.limit_source).toBe('string')
+    }
     const r = evaluatePreviewGate({ ...ready, budget })
     expect(r.canSubmit).toBe(true)
     expect(r.notice).toBeNull()

@@ -114,7 +114,7 @@ export function ResearchSearchPanel({
     runGuarded,
   } = useResearchGlobalModel()
   // RWV2-11（K7）：Scope 真源唯一——本面板不再持有/接收独立选择状态
-  const { mode, selectedSourceIds, selectedNoteIds, getSnapshot } = useResearchScope()
+  const { mode, selectedSourceIds, selectedNoteIds, singlePin, getSnapshot } = useResearchScope()
   // PR5（C6）：C-05 能力（与 models 同 query key，共享缓存）
   const c05 = useResearchC05(projectId)
   const c05ReadyRef = useRef(false)
@@ -197,14 +197,20 @@ export function ResearchSearchPanel({
     //（只读、消费 budget 到 c05BudgetRef）；false → 清空（不发旧 Preview）。
     // 旧 v1 路径保持既有 debounce Preview 不变。
     if (!active || !trimmed || confirmedModelId === null) {
+      // 意图失效：旧预算不得留在 ref 里被下一次提交消费（handover §4.3）。
+      c05BudgetRef.current = null
       setPreview(null)
       return
     }
     if (c05ReadyRef.current) {
       if (!c05.previewSupported) {
+        c05BudgetRef.current = null
         setPreview(null)
         return
       }
+      // 意图已变化（query/model/level/scope）：debounce 窗口内立即作废旧预算，
+      // 避免用旧意图的 exceeded/validated 阻断或放行新意图。
+      c05BudgetRef.current = null
       let cancelled = false
       const timer = setTimeout(() => {
         void fetchC05Preview(projectId, {
@@ -225,7 +231,8 @@ export function ResearchSearchPanel({
             c05BudgetRef.current = value.budget
           })
           .catch(() => {
-            if (cancelled) c05BudgetRef.current = null
+            // 只有**当前**请求失败才清空；已取消的旧请求失败不得清掉新值。
+            if (!cancelled) c05BudgetRef.current = null
           })
       }, 400)
       return () => {
@@ -233,6 +240,8 @@ export function ResearchSearchPanel({
         clearTimeout(timer)
       }
     }
+    // 旧 v1 Preview 路径：C-05 budget 不适用，清空避免跨契约残留。
+    c05BudgetRef.current = null
     let cancelled = false
     const timer = setTimeout(() => {
       void fetchContextPreview(projectId, {
@@ -254,7 +263,7 @@ export function ResearchSearchPanel({
       cancelled = true
       clearTimeout(timer)
     }
-  }, [active, query, projectId, selectedLevel, selectedSourceIds, selectedNoteIds, confirmedModelId, c05.previewSupported])
+  }, [active, query, projectId, selectedLevel, selectedSourceIds, selectedNoteIds, mode, singlePin, confirmedModelId, c05.previewSupported])
 
   const handleSaveContext = useCallback(
     async (level: ResearchContextLevel) => {
