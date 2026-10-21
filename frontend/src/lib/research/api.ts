@@ -31,6 +31,8 @@ import {
   isSseContentType,
   type ResearchStreamEndReason,
 } from './c05-stream-guard'
+import type { C05Budget } from './c05-preview-gate'
+import type { C05ResolvedScope } from './c05-scope-projection'
 import type {
   ResearchChatRequest,
   ResearchCompareCreateRequest,
@@ -455,30 +457,28 @@ export type ResearchContextPreviewRequest = {
 }
 
 /**
- * PR5（R2-M10）：只读 C-05 Preview（target_contract 形状，#615 §4）。
+ * PR5（R2-M10/D-12）：只读 C-05 Preview（#748 实际响应形状，主仓
+ * `50c6e415` 的 `c05_preview_response` schema）。
  * 服务端 preview_supported=false 时以 503 c05_entry_not_ready 拒绝——
  * 调用方 catch 后 budget=null（D-12：缺失不阻断、显示"未经预览校验"）。
  * 只读约束：无 Generation/Job/配额预留/模型调用/检索。
  */
+export interface C05PreviewAvailability {
+  source_versions: number | null
+  chunks: number | null
+  requested_notes: number | null
+  nonempty_notes: number | null
+}
+
 export interface C05PreviewResponse {
-  request_id: string
   scope_contract_version: 'c05-v1'
-  budget: {
-    preflight_status: 'validated' | 'not_checked' | 'exceeded' | 'unavailable'
-    checks: Array<{
-      name: string
-      unit: string
-      state: 'not_checked' | 'estimated' | 'validated' | 'exceeded' | 'unavailable'
-      value: number | null
-      limit: number | null
-      limit_source: string | null
-      required_for_submit: boolean
-      reason: string | null
-    }>
-  }
+  resolved_scope: C05ResolvedScope
+  availability: C05PreviewAvailability
+  budget: C05Budget
   execution_hint: 'interactive' | 'background_job' | null
   needs_consent: boolean
-  warnings: Array<{ code: string; message: string }>
+  /** 上下文 warnings（非范围投影 warnings；#748 实际为稳定码字符串数组）。 */
+  warnings: string[]
 }
 
 export async function fetchC05Preview(

@@ -1,17 +1,18 @@
 # Issue #601 PR 5：前端资料交互与联合验收（交付说明 · fork 配对副本）
 
-> 日期：2026-10-14；状态：**已实现（前端层），联合验收待 PR4 集成**
+> 日期：2026-10-21（契约同步 #748）；状态：**已实现（前端层），联合验收待 PR4 剩余接线**
 > 权威计划：实施计划 v8 + 终审增补（D-19…D-26）；plan9 §4/§5
 > 分支：主仓 `codex/issue601-pr5-frontend`（基线 `389ac8a6`）；
 > fork `codex/issue601-pr5-c05-frontend`（基线 `260fe5d`，配对 PR 另开）
-> 关联：#601（`Refs #601`）、#615（接口交接）、#610（PR4 承接）
+> 契约基线：机器契约 fixtures 已同步主仓 `50c6e415`（内容提交 `9addb721` = #748）
+> 关联：#601（`Refs #601`）、#615（接口交接）、#610（PR4 承接）、#625/#748（Search Preview）
 
 ## 0. 证据分级
 
 | 标记 | 含义 |
 |---|---|
 | 【已实现·源码】 | 本 PR 交付的代码，附符号名 |
-| 【已实现·测试】 | 可复现的测试（fork **1154+ passed / 114 files**，宿主 **461 passed / 52 files**，全量绿；两仓 `tsc -b` clean、`npm run build` 成功） |
+| 【已实现·测试】 | 可复现的测试（fork **1174 passed / 114 files** @ 2026-10-21 契约同步 head，宿主 **461 passed / 52 files**，全量绿；两仓 `tsc -b` clean、`npm run build` 成功） |
 | 【待验证·运行】 | 需 PR4 执行接线 + C-05 flag 打开后的真实环境（F1/F2） |
 
 **本版修订说明（2026-10-14 二次收口）**：计划条款复核后补齐了此前**未落地**的部分——
@@ -19,6 +20,15 @@ D-01/D-14 投影消费、D-17 有界呈现接线、D-06 rerun 范围显示、D-0
 D-22 同意登记信封与幂等键、D-24 SSE 传输四条规则、D-25 跳转拒绝可见、
 D-26 后台 CTA 门禁、D-16 文档计量下限，以及 T5/T17/T23/T35/T38/T40 用例与
 ScopeWarningSummary/ScopePreviewPanel 等计划指定产物。**D-24 不再列为排除项**。
+
+**本版修订说明（2026-10-21 契约同步）**：主仓 #748 已把 Search-only C-05 Preview
+按实际实现落成（`c05_preview_response`），其 `budget` 字段为 `status` / `checks[].status` /
+`checks[].required` / `deferred[]`，与本 PR 初版按交接 §4 草案字段名
+（`preflight_status` / `checks[].state` / `required_for_submit`）实现的消费层不一致；
+在 C-05 打开、`preview_supported=true` 的真实链路上，旧实现会**静默放行**超限。
+本版同步 fork 的机器契约副本（`ba07a1d4…` / `618363a8…`，含 WU-J 的
+`execution_modes` 收窄）并改接 Preview 门禁，新增 fixture 形状探针与
+“聚合位/明细矛盾 fail-closed”用例（+4 用例）。
 
 ## 1. 交付内容（fork，全部【已实现·源码】）
 
@@ -31,7 +41,7 @@ ScopeWarningSummary/ScopePreviewPanel 等计划指定产物。**D-24 不再列�
 | **D-17** | **有界呈现接线**：计数摘要（回退 N／排除 M）+ ≤5 条明细 + "仅显示前 N 条"标注；`resolved_source_refs` 只出计数；首屏节点数不随规模增长 | `c05-warning-summary.ts`、`ScopeWarningSummary.tsx` |
 | B2/D-02/D-13 | 键生命周期纯函数（acceptance 锚、string-shape 确定性清键、24h 窗口） | `c05-idempotency-key.ts`、`c05-key-retention.ts` |
 | **D-22** | **同意登记冻结完整派发意图**：契约选择 + 请求信封 + 幂等键随登记冻结，确认后原样派发、取消不清键（搜索侧 `prepareDispatch`、Chat 侧签名持有键） | `use-research-global-model.tsx`、`ResearchSearchPanel.tsx`、`use-research-chat.ts`、`ResearchWorkspace.tsx` |
-| B2/D-12 | Preview 门禁矩阵（exceeded 阻断 / 非必需放行 / 缺失不阻断不冒充） | `c05-preview-gate.ts` |
+| B2/D-12 | Preview 门禁矩阵（`budget.status` exceeded 阻断 / 必需检查 unavailable·not_checked 阻断 / 非必需放行 / `deferred[]` 标注执行期复检 / 缺失不阻断不冒充）；按 #748 实际响应字段实现 | `c05-preview-gate.ts`、`api.ts` |
 | **D-24** | **SSE 传输四条规则**（handover §5.3）：`API_TIMEOUT_MS` 作用域与 `0` 禁用、状态+Content-Type 校验后进入流空闲计时（字节/heartbeat 重置、heartbeat 非模型进度）、abort 原因区分且仅 `timeout` 可进有界重试、每次尝试只结算一次 | `c05-stream-guard.ts`、`api.ts`、`use-research-chat.ts` |
 | B2/D-16 | 文档计量去重（document 语义去重 / 版本语义不去重）+ **去重后唯一文档数 < 2 时按不足阻断** | `document-set.ts`、`compare.ts`（`checkCompareDocumentFloor`）、`ComparePanel.tsx` |
 | B3/D-05/D-11 | 请求体唯一构造函数（forbid/insight 入口排除、all 空集 fail-closed） | `c05-request.ts` |
@@ -75,11 +85,15 @@ ScopeWarningSummary/ScopePreviewPanel 等计划指定产物。**D-24 不再列�
 | ② | **Chat SSE 的 `done`/`usage` 事件不携带 `resolved_scope`**（§3.3 的 SSE 一格未接线） | SSE 事件构造只带 `session_id`/`request_id`/`job_id`/`completion_status`（`router.py:4535-4542`）；Search 侧四个表面均已带（fresh 200 `router.py:4274`、202 受理 `:4169`、202 重放 `:3240`、完成重放 `:1669`） | Search 侧已消费投影（有界呈现）；**Chat 侧无投影可用** → 不展示范围警告（不猜测、不显示 stale 计数）。**此前把该缺口写成"fresh 200 不携带投影"是错的**，已更正 |
 | ③ | **Compare 端点无法表达精确版本** | `POST /compare/jobs` 只接受 `document_ids`，服务端逐条 `get_latest_version(doc_id)`（`router.py:2562-2570`） | 同文档多版本**按文档合并**（执行载荷去重）并提示"已合并同文档多版本"；<2 个唯一文档时按不足阻断。**不**声称保留精确版本 |
 
+> 2026-10-21：D-12 的 Preview 响应形状已由主仓 #748 实际实现（Search-only），本 PR 已同步
+> `c05_preview_response` schema 并按实际字段消费；§4 的草案字段名（`preflight_status` 等）
+> 不再是权威。此前四条 wire 缺口不受影响。
+
 ## 4. 测试与验证【已实现·测试】
 
 ```bash
 # fork（frontend/）— 全量
-npx vitest run          # 1154 passed / 114 files
+npx vitest run          # 1174 passed / 114 files（2026-10-21）
 npx tsc -b              # clean
 npm run build           # 成功
 # 主仓（frontend/）— 全量
@@ -95,11 +109,13 @@ T23（Insight `all` 阻断 + 原因码）、T24/D-11 清单（跨入口）、
 T25（D-11 阻断/引擎模式）、T32/T33（去重/版本常显/文档下限）、
 T35（**400 条警告有界呈现**，纯函数 + 组件 + 面板三层）、T37（静态守卫）、
 T38（Compare 阻断原因）、T39（旧持久快照迁移）、T40（**同意路径同键同信封**）、
-T42（citation 版本）、D-24 传输（空闲超时恰好一次/字节重置/中止不误报/协议违反不重连）。
+T42（citation 版本）、D-24 传输（空闲超时恰好一次/字节重置/中止不误报/协议违反不重连）、
+D-12 Preview（#748 形状：`budget.status` / `checks[].required` / `deferred[]`；fixture
+`preview.response.all.valid` 形状探针；聚合位与明细矛盾时 fail-closed）。
 
 变异演练（移除被断言条件 → 用例必须变红）已对 D-24 Content-Type 校验、
 D-22 键复用、D-25 版本感知、D-17 截断、D-09 文案分支、D-01 缺失文案、
-D-16 文档下限、D-11 清单信号、T17 异会话清除逐项执行通过。
+D-16 文档下限、D-11 清单信号、T17 异会话清除、D-12 Preview 门禁（#748 字段映射）逐项执行通过。
 
 ## 5. 已知风险与承接
 
@@ -108,7 +124,10 @@ D-16 文档下限、D-11 清单信号、T17 异会话清除逐项执行通过。
 2. D-01（服务端投影补齐）/D-03/D-09 解禁/D-18 均 PR4 承接（见 §3）。
 3. **D-18 `all` 规模**：真实大项目上候选读取与响应体量无上限，F1/F2 超阈值记
    `limited` 而非 `pass`。
-4. 本 PR 不宣称 C-05 可用、不关闭 #601。
+4. **2026-10-21 契约同步后的剩余前置**：主仓 #748 已提供 Search-only Preview，
+   但 `execution_ready` 仍只有 `search`；F1/F2 还需 S9/S10 完成（#623/#702）、
+   双 flag、含本 PR 的镜像 digest 与 CORS 暴露；本 PR 合入不等于 PR5 验收完成。
+5. 本 PR 不宣称 C-05 可用、不关闭 #601。
 
 ## 6. 回滚
 

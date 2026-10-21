@@ -2,12 +2,52 @@
  * Issue #601 PR5：Preview 门禁（T26）+ 警告有界聚合（T35）+ 文档计量（T32）测试。
  */
 import { describe, expect, it } from 'vitest'
-import { evaluatePreviewGate, type C05Budget } from './c05-preview-gate'
+import {
+  evaluatePreviewGate,
+  type C05Budget,
+  type C05BudgetCheck,
+} from './c05-preview-gate'
 import { summarizeWarnings, WARNING_DETAIL_LIMIT } from './c05-warning-summary'
 import { countUniqueDocuments, uniqueDocumentIds } from './document-set'
 import type { C05ScopeWarning } from './c05-scope-projection'
+import contractSamplesJson from './fixtures/issue615_c05/samples.json'
 
-describe('evaluatePreviewGate（T26）', () => {
+type Sample = {
+  schema: string
+  expect: 'valid' | 'invalid'
+  origin: string
+  value: unknown
+}
+const contractSamples = contractSamplesJson as unknown as Record<string, Sample>
+
+const budgetCheck = (over: Partial<C05BudgetCheck> = {}): C05BudgetCheck => ({
+  name: 'known_input',
+  path: 'selected',
+  unit: 'tokens',
+  phase: 'preflight',
+  required: true,
+  status: 'validated',
+  observed: 1000,
+  limit: 4_000_000,
+  limit_source: 'config',
+  ...over,
+})
+
+const budgetOf = (input: {
+  status: C05Budget['status']
+  checks?: C05BudgetCheck[]
+  deferred?: C05BudgetCheck[]
+}): C05Budget => ({
+  status: input.status,
+  checks: input.checks ?? [],
+  deferred: input.deferred ?? [],
+  token_estimate: null,
+  estimate_kind: 'source_and_note_units',
+  resolved_mode: null,
+  input_budget: null,
+})
+
+describe('evaluatePreviewGate（T26，#748 c05_preview_response 形状）', () => {
   const ready = { executionReady: true, scopeValid: true }
 
   it('entry 未就绪 → 阻断', () => {
@@ -22,42 +62,116 @@ describe('evaluatePreviewGate（T26）', () => {
     expect(r.notice).toBe('unvalidated')
   })
 
-  it('必需检查 exceeded → 阻断', () => {
-    const budget: C05Budget = { preflight_status: 'exceeded', checks: [
-      { name: 'workspace_chars', unit: 'chars', state: 'exceeded', value: 5_000_000, limit: 4_000_000, limit_source: 'config', required_for_submit: true, reason: null },
-    ] }
+  it('budget.status=exceeded → 阻断', () => {
+    const budget = budgetOf({
+      status: 'exceeded',
+      checks: [budgetCheck({ status: 'exceeded', observed: 5_000_000 })],
+    })
     expect(evaluatePreviewGate({ ...ready, budget }).blockedReason).toBe('budget_exceeded')
   })
 
   it('必需检查 unavailable → 阻断（budget_incomplete）', () => {
-    const budget: C05Budget = { preflight_status: 'unavailable', checks: [
-      { name: 'model_input', unit: 'tokens', state: 'unavailable', value: null, limit: null, limit_source: null, required_for_submit: true, reason: 'estimator missing' },
-    ] }
+    const budget = budgetOf({
+      status: 'unavailable',
+      checks: [budgetCheck({ status: 'unavailable', observed: null, limit: null })],
+    })
     expect(evaluatePreviewGate({ ...ready, budget }).blockedReason).toBe('budget_incomplete')
   })
 
-  it('非必需 not_checked（执行期检查）→ 放行 + execution_recheck', () => {
-    const budget: C05Budget = { preflight_status: 'validated', checks: [
-      { name: 'prompt_tokens_after_retrieval', unit: 'tokens', state: 'not_checked', value: null, limit: null, limit_source: null, required_for_submit: false, reason: 'deferred to execution' },
-    ] }
+  it('必需检查 not_checked → 阻断（budget_incomplete）', () => {
+    const budget = budgetOf({
+      status: 'not_checked',
+      checks: [budgetCheck({ status: 'not_checked', observed: null, limit: null })],
+    })
+    expect(evaluatePreviewGate({ ...ready, budget }).blockedReason).toBe('budget_incomplete')
+  })
+
+  it('聚合位与明细矛盾（status=validated 但必需检查 exceeded）→ fail-closed 阻断', () => {
+    const budget = budgetOf({
+      status: 'validated',
+      checks: [budgetCheck({ status: 'exceeded', observed: 5_000_000 })],
+    })
+    expect(evaluatePreviewGate({ ...ready, budget }).blockedReason).toBe('budget_exceeded')
+  })
+
+  it('执行期 deferred[] → 放行 + execution_recheck', () => {
+    const budget = budgetOf({
+      status: 'validated',
+      checks: [budgetCheck()],
+      deferred: [budgetCheck({
+        name: 'retrieved_evidence',
+        path: 'hybrid_rag',
+        phase: 'execution',
+        required: false,
+        status: 'deferred',
+        observed: null,
+        limit: null,
+        limit_source: 'actual_serialized_call',
+      })],
+    })
+    const r = evaluatePreviewGate({ ...ready, budget })
+    expect(r.canSubmit).toBe(true)
+    expect(r.notice).toBe('execution_recheck')
+  })
+
+  it('非必需 not_checked → 放行 + execution_recheck', () => {
+    const budget = budgetOf({
+      status: 'validated',
+      checks: [
+        budgetCheck(),
+        budgetCheck({
+          name: 'interactive_input',
+          path: 'interactive',
+          required: false,
+          status: 'not_checked',
+          observed: null,
+          limit: null,
+        }),
+      ],
+    })
     const r = evaluatePreviewGate({ ...ready, budget })
     expect(r.canSubmit).toBe(true)
     expect(r.notice).toBe('execution_recheck')
   })
 
   it('交互阈值 exceeded（非必需）只提示，不阻断全局（H-01）', () => {
-    const budget: C05Budget = { preflight_status: 'validated', checks: [
-      { name: 'interactive_input', unit: 'tokens', state: 'exceeded', value: 9000, limit: 8000, limit_source: 'config', required_for_submit: false, reason: 'interactive path only' },
-    ] }
+    const budget = budgetOf({
+      status: 'validated',
+      checks: [
+        budgetCheck(),
+        budgetCheck({
+          name: 'interactive_input',
+          path: 'interactive',
+          required: false,
+          status: 'exceeded',
+          observed: 9000,
+          limit: 8000,
+          limit_source: 'model_interactive_input_cap',
+        }),
+      ],
+    })
     const r = evaluatePreviewGate({ ...ready, budget })
     expect(r.canSubmit).toBe(true)
     expect(r.notice).toBe('interactive_only_exceeded')
   })
 
   it('全部必需 validated → 放行无提示', () => {
-    const budget: C05Budget = { preflight_status: 'validated', checks: [
-      { name: 'workspace_chars', unit: 'chars', state: 'validated', value: 1000, limit: 4_000_000, limit_source: 'config', required_for_submit: true, reason: null },
-    ] }
+    const budget = budgetOf({
+      status: 'validated',
+      checks: [budgetCheck()],
+    })
+    const r = evaluatePreviewGate({ ...ready, budget })
+    expect(r.canSubmit).toBe(true)
+    expect(r.notice).toBeNull()
+  })
+
+  it('主仓 #748 fixture 的合法 preview.response 样例可直接用于门禁（字段漂移会编译失败）', () => {
+    const sample = contractSamples['preview.response.all.valid']
+    expect(sample, 'missing fixture sample: preview.response.all.valid').toBeDefined()
+    const value = sample.value as { budget: C05Budget }
+    const budget: C05Budget = value.budget
+    expect(budget.status).toBe('validated')
+    expect(budget.checks[0].required).toBe(true)
     const r = evaluatePreviewGate({ ...ready, budget })
     expect(r.canSubmit).toBe(true)
     expect(r.notice).toBeNull()
