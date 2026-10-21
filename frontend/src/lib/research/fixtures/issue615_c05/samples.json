@@ -127,7 +127,6 @@
       }
     }
   },
-
   "resolved_scope.selected.valid": {
     "schema": "resolved_scope",
     "expect": "valid",
@@ -244,7 +243,6 @@
     },
     "note": "范围对象不含正文（``contains_document_body`` 恒 false）。"
   },
-
   "c05_scope_response_projection.selected.valid": {
     "schema": "c05_scope_response_projection",
     "expect": "valid",
@@ -281,7 +279,6 @@
     },
     "note": "响应范围契约版本恒 c05-v1；不得与生成契约 v1 混用（§3.1：不全局修改响应头默认值）。"
   },
-
   "c05_capabilities.enabled_search_wired.valid": {
     "schema": "c05_capabilities",
     "expect": "valid",
@@ -289,18 +286,35 @@
     "value": {
       "contract": "c05-v1",
       "enabled": true,
-      "preview_supported": false,
+      "preview_supported": true,
       "entries": {
         "search": {
-          "scope_modes": ["all", "selected", "single"],
-          "execution_modes": ["auto", "direct_context", "hybrid_rag", "planned_rag", "deep_compare"],
-          "context_levels": ["focused", "document", "workspace"],
-          "preview_supported": false,
+          "scope_modes": [
+            "all",
+            "selected",
+            "single"
+          ],
+          "execution_modes": [
+            "auto",
+            "direct_context",
+            "hybrid_rag",
+            "planned_rag"
+          ],
+          "context_levels": [
+            "focused",
+            "document",
+            "workspace"
+          ],
+          "preview_supported": true,
           "execution_ready": true,
           "unavailable_reason": null
         },
         "chat": {
-          "scope_modes": ["all", "selected", "single"],
+          "scope_modes": [
+            "all",
+            "selected",
+            "single"
+          ],
           "execution_modes": [],
           "context_levels": [],
           "preview_supported": false,
@@ -308,7 +322,11 @@
           "unavailable_reason": "c05_entry_not_wired"
         },
         "coverage": {
-          "scope_modes": ["all", "selected", "single"],
+          "scope_modes": [
+            "all",
+            "selected",
+            "single"
+          ],
           "execution_modes": [],
           "context_levels": [],
           "preview_supported": false,
@@ -316,7 +334,11 @@
           "unavailable_reason": "c05_entry_not_wired"
         },
         "compare": {
-          "scope_modes": ["all", "selected", "single"],
+          "scope_modes": [
+            "all",
+            "selected",
+            "single"
+          ],
           "execution_modes": [],
           "context_levels": [],
           "preview_supported": false,
@@ -324,7 +346,11 @@
           "unavailable_reason": "c05_entry_not_wired"
         },
         "ai_insight": {
-          "scope_modes": ["all", "selected", "single"],
+          "scope_modes": [
+            "all",
+            "selected",
+            "single"
+          ],
           "execution_modes": [],
           "context_levels": [],
           "preview_supported": false,
@@ -332,7 +358,11 @@
           "unavailable_reason": "c05_entry_not_wired"
         },
         "transformation": {
-          "scope_modes": ["all", "selected", "single"],
+          "scope_modes": [
+            "all",
+            "selected",
+            "single"
+          ],
           "execution_modes": [],
           "context_levels": [],
           "preview_supported": false,
@@ -418,13 +448,19 @@
     "note": "契约支持（scope_modes 非空）与执行就绪（false）必须分别表达。"
   },
   "c05_entry_capability.preview_supported_claimed.invalid": {
-    "schema": "c05_entry_capability",
+    "schema": "c05_entry_capability_pr615",
     "expect": "invalid",
     "origin": "current_api",
     "value": {
-      "scope_modes": ["all"],
-      "execution_modes": ["auto"],
-      "context_levels": ["focused"],
+      "scope_modes": [
+        "all"
+      ],
+      "execution_modes": [
+        "auto"
+      ],
+      "context_levels": [
+        "focused"
+      ],
       "preview_supported": true,
       "execution_ready": true,
       "unavailable_reason": null
@@ -493,7 +529,6 @@
     },
     "note": "本样例在**形状**上合法但语义错误——由 §6 的源码投影测试（execution_ready 必须等于 builder 输出）拒绝，不由纯 schema 拒绝。"
   },
-
   "c05_error.scope_selected_empty.valid": {
     "schema": "c05_error_detail",
     "expect": "valid",
@@ -581,5 +616,246 @@
     "origin": "current_api",
     "value": { "message": "no stable code" },
     "note": "契约 `stable_code_required`：每个拒绝都必须携带稳定字符串码。"
+  },
+  "preview.request.search_all.valid": {
+    "schema": "c05_preview_request",
+    "expect": "valid",
+    "origin": "current_api",
+    "value": {
+      "entry": "search",
+      "source_scope": {
+        "mode": "all"
+      },
+      "question": "synthetic question",
+      "model_id": "synthetic-model"
+    }
+  },
+  "preview.request.unknown_option.invalid": {
+    "schema": "c05_preview_request",
+    "expect": "invalid",
+    "origin": "current_api",
+    "value": {
+      "entry": "search",
+      "source_scope": {
+        "mode": "all"
+      },
+      "question": "synthetic question",
+      "model_id": "synthetic-model",
+      "execution_options": {
+        "unknown": true
+      }
+    }
+  },
+  "preview.response.all.valid": {
+    "schema": "c05_preview_response",
+    "expect": "valid",
+    "origin": "current_api",
+    "value": {
+      "scope_contract_version": "c05-v1",
+      "resolved_scope": {
+        "mode": "all",
+        "contract_version": "c05-v1",
+        "resolved_source_refs": [],
+        "note_ids": [],
+        "single_source_id": null,
+        "missing_source_ids": [],
+        "includes_exact_versions": true,
+        "contains_document_body": false,
+        "warnings": []
+      },
+      "availability": {
+        "source_versions": 0,
+        "chunks": 0,
+        "requested_notes": 0,
+        "nonempty_notes": 0
+      },
+      "budget": {
+        "status": "validated",
+        "checks": [
+          {
+            "name": "known_input",
+            "path": "selected",
+            "unit": "tokens",
+            "phase": "preflight",
+            "required": true,
+            "status": "validated",
+            "observed": 10,
+            "limit": 100,
+            "limit_source": "synthetic_model"
+          }
+        ],
+        "deferred": [],
+        "token_estimate": 0,
+        "estimate_kind": "source_and_note_units",
+        "resolved_mode": "hybrid_rag",
+        "input_budget": 100
+      },
+      "execution_hint": "interactive",
+      "needs_consent": false,
+      "warnings": []
+    }
+  },
+  "preview.response.unknown_required_field.invalid": {
+    "schema": "c05_preview_response",
+    "expect": "invalid",
+    "origin": "current_api",
+    "value": {
+      "scope_contract_version": "c05-v1",
+      "resolved_scope": {
+        "mode": "all",
+        "contract_version": "c05-v1",
+        "resolved_source_refs": [],
+        "note_ids": [],
+        "single_source_id": null,
+        "missing_source_ids": [],
+        "includes_exact_versions": true,
+        "contains_document_body": false,
+        "warnings": []
+      },
+      "availability": {
+        "source_versions": 0,
+        "chunks": 0,
+        "requested_notes": 0,
+        "nonempty_notes": 0
+      },
+      "budget": {
+        "status": "validated",
+        "checks": [
+          {
+            "name": "known_input",
+            "path": "selected",
+            "unit": "tokens",
+            "phase": "preflight",
+            "required": true,
+            "status": "validated",
+            "observed": 10,
+            "limit": 100,
+            "limit_source": "synthetic_model"
+          }
+        ],
+        "deferred": [],
+        "token_estimate": 0,
+        "estimate_kind": "source_and_note_units",
+        "resolved_mode": "hybrid_rag",
+        "input_budget": 100
+      },
+      "execution_hint": "interactive",
+      "needs_consent": false,
+      "warnings": [],
+      "can_submit": true
+    }
+  },
+  "c05_entry_capability.pr615_stage.valid": {
+    "schema": "c05_entry_capability_pr615",
+    "expect": "valid",
+    "origin": "current_api",
+    "value": {
+      "scope_modes": [
+        "all"
+      ],
+      "execution_modes": [
+        "auto"
+      ],
+      "context_levels": [
+        "focused"
+      ],
+      "preview_supported": false,
+      "execution_ready": true,
+      "unavailable_reason": null
+    }
+  },
+  "c05_capabilities.pr615_search_wired.valid": {
+    "schema": "c05_capabilities",
+    "expect": "valid",
+    "origin": "current_api",
+    "value": {
+      "contract": "c05-v1",
+      "enabled": true,
+      "preview_supported": false,
+      "entries": {
+        "search": {
+          "scope_modes": [
+            "all",
+            "selected",
+            "single"
+          ],
+          "execution_modes": [
+            "auto",
+            "direct_context",
+            "hybrid_rag",
+            "planned_rag"
+          ],
+          "context_levels": [
+            "focused",
+            "document",
+            "workspace"
+          ],
+          "preview_supported": false,
+          "execution_ready": true,
+          "unavailable_reason": null
+        },
+        "chat": {
+          "scope_modes": [
+            "all",
+            "selected",
+            "single"
+          ],
+          "execution_modes": [],
+          "context_levels": [],
+          "preview_supported": false,
+          "execution_ready": false,
+          "unavailable_reason": "c05_entry_not_wired"
+        },
+        "coverage": {
+          "scope_modes": [
+            "all",
+            "selected",
+            "single"
+          ],
+          "execution_modes": [],
+          "context_levels": [],
+          "preview_supported": false,
+          "execution_ready": false,
+          "unavailable_reason": "c05_entry_not_wired"
+        },
+        "compare": {
+          "scope_modes": [
+            "all",
+            "selected",
+            "single"
+          ],
+          "execution_modes": [],
+          "context_levels": [],
+          "preview_supported": false,
+          "execution_ready": false,
+          "unavailable_reason": "c05_entry_not_wired"
+        },
+        "ai_insight": {
+          "scope_modes": [
+            "all",
+            "selected",
+            "single"
+          ],
+          "execution_modes": [],
+          "context_levels": [],
+          "preview_supported": false,
+          "execution_ready": false,
+          "unavailable_reason": "c05_entry_not_wired"
+        },
+        "transformation": {
+          "scope_modes": [
+            "all",
+            "selected",
+            "single"
+          ],
+          "execution_modes": [],
+          "context_levels": [],
+          "preview_supported": false,
+          "execution_ready": false,
+          "unavailable_reason": "c05_entry_not_wired"
+        }
+      }
+    },
+    "note": "Historical PR615 stage before Search Preview wiring."
   }
 }

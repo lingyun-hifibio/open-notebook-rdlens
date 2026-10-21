@@ -464,8 +464,7 @@
         }
       },
       "preview_supported": {
-        "type": "boolean",
-        "const": false
+        "type": "boolean"
       },
       "execution_ready": {
         "type": "boolean"
@@ -477,7 +476,28 @@
         ]
       }
     },
-    "additionalProperties": false
+    "additionalProperties": false,
+    "allOf": [
+      {
+        "if": {
+          "properties": {
+            "execution_ready": {
+              "const": false
+            }
+          },
+          "required": [
+            "execution_ready"
+          ]
+        },
+        "then": {
+          "properties": {
+            "preview_supported": {
+              "const": false
+            }
+          }
+        }
+      }
+    ]
   },
   "c05_capabilities": {
     "$schema": "http://json-schema.org/draft-07/schema#",
@@ -499,8 +519,7 @@
         "type": "boolean"
       },
       "preview_supported": {
-        "type": "boolean",
-        "const": false
+        "type": "boolean"
       },
       "entries": {
         "type": "object",
@@ -577,8 +596,7 @@
             }
           },
           "preview_supported": {
-            "type": "boolean",
-            "const": false
+            "type": "boolean"
           },
           "execution_ready": {
             "type": "boolean"
@@ -590,7 +608,28 @@
             ]
           }
         },
-        "additionalProperties": false
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "execution_ready": {
+                  "const": false
+                }
+              },
+              "required": [
+                "execution_ready"
+              ]
+            },
+            "then": {
+              "properties": {
+                "preview_supported": {
+                  "const": false
+                }
+              }
+            }
+          }
+        ]
       }
     },
     "additionalProperties": false
@@ -670,5 +709,666 @@
       }
     },
     "additionalProperties": true
+  },
+  "c05_entry_capability_pr615": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "Per-entry C-05 capability (contract c05-v1)",
+    "description": "#615 §3.3：契约支持与执行就绪分别表达。execution_ready=false 时 execution_modes/context_levels 为空数组——不得据 scope_modes 推断可执行。",
+    "type": "object",
+    "required": [
+      "scope_modes",
+      "execution_modes",
+      "context_levels",
+      "preview_supported",
+      "execution_ready",
+      "unavailable_reason"
+    ],
+    "properties": {
+      "scope_modes": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": [
+            "all",
+            "selected",
+            "single"
+          ]
+        },
+        "uniqueItems": true
+      },
+      "execution_modes": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "context_levels": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "enum": [
+            "focused",
+            "document",
+            "workspace"
+          ]
+        }
+      },
+      "preview_supported": {
+        "type": "boolean",
+        "const": false
+      },
+      "execution_ready": {
+        "type": "boolean"
+      },
+      "unavailable_reason": {
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "additionalProperties": false
+  },
+  "c05_preview_request": {
+    "additionalProperties": false,
+    "properties": {
+      "entry": {
+        "type": "string",
+        "enum": [
+          "search",
+          "chat",
+          "coverage",
+          "compare",
+          "ai_insight",
+          "transformation"
+        ]
+      },
+      "source_scope": {
+        "type": "object",
+        "required": [
+          "mode"
+        ],
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "all",
+              "selected",
+              "single"
+            ]
+          },
+          "source_ids": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "description": "缺失／null 归一为 []；成员只能是字符串。"
+          },
+          "single_source_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "只能是字符串／null；非字符串拒绝。"
+          }
+        },
+        "additionalProperties": false
+      },
+      "question": {
+        "minLength": 1,
+        "title": "Question",
+        "type": "string"
+      },
+      "model_id": {
+        "minLength": 1,
+        "title": "Model Id",
+        "type": "string"
+      },
+      "context_level": {
+        "default": "focused",
+        "enum": [
+          "focused",
+          "document",
+          "workspace"
+        ],
+        "title": "Context Level",
+        "type": "string"
+      },
+      "note_ids": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "type": "string"
+        }
+      },
+      "source_ids": {
+        "type": [
+          "array",
+          "null"
+        ],
+        "items": {
+          "type": "string"
+        },
+        "maxItems": 0
+      },
+      "execution_options": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "enum": [
+              "auto",
+              "direct_context",
+              "hybrid_rag",
+              "planned_rag",
+              "deep_compare"
+            ]
+          },
+          "response_language": {
+            "enum": [
+              "zh",
+              "en",
+              null
+            ]
+          }
+        }
+      }
+    },
+    "required": [
+      "entry",
+      "source_scope",
+      "question",
+      "model_id"
+    ],
+    "title": "C05PreviewRequest",
+    "type": "object",
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "allOf": [
+      {
+        "if": {
+          "properties": {
+            "source_scope": {
+              "properties": {
+                "mode": {
+                  "const": "all"
+                }
+              },
+              "required": [
+                "mode"
+              ]
+            }
+          },
+          "required": [
+            "source_scope"
+          ]
+        },
+        "then": {
+          "properties": {
+            "source_scope": {
+              "properties": {
+                "source_ids": {
+                  "maxItems": 0
+                },
+                "single_source_id": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "source_scope": {
+              "properties": {
+                "mode": {
+                  "const": "selected"
+                }
+              },
+              "required": [
+                "mode"
+              ]
+            }
+          },
+          "required": [
+            "source_scope"
+          ]
+        },
+        "then": {
+          "properties": {
+            "source_scope": {
+              "properties": {
+                "single_source_id": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "if": {
+          "properties": {
+            "source_scope": {
+              "properties": {
+                "mode": {
+                  "const": "single"
+                }
+              },
+              "required": [
+                "mode"
+              ]
+            }
+          },
+          "required": [
+            "source_scope"
+          ]
+        },
+        "then": {
+          "properties": {
+            "source_scope": {
+              "properties": {
+                "single_source_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "source_ids": {
+                  "maxItems": 0
+                }
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  "c05_preview_response": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "scope_contract_version",
+      "resolved_scope",
+      "availability",
+      "budget",
+      "execution_hint",
+      "needs_consent",
+      "warnings"
+    ],
+    "properties": {
+      "scope_contract_version": {
+        "const": "c05-v1"
+      },
+      "resolved_scope": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "Resolved scope without document body (contract c05-v1)",
+        "description": "#615 §3.3：范围快照不含正文；精确引用键为 {document_id, document_version}。fresh、202、完成重放与 SSE usage/done 采用同一 schema。",
+        "type": "object",
+        "required": [
+          "mode",
+          "contract_version",
+          "resolved_source_refs",
+          "note_ids",
+          "single_source_id",
+          "missing_source_ids",
+          "includes_exact_versions",
+          "contains_document_body",
+          "warnings"
+        ],
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "all",
+              "selected",
+              "single"
+            ]
+          },
+          "contract_version": {
+            "type": "string",
+            "const": "c05-v1"
+          },
+          "resolved_source_refs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "document_id",
+                "document_version"
+              ],
+              "properties": {
+                "document_id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "document_version": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "note_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "single_source_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "missing_source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "includes_exact_versions": {
+            "type": "boolean",
+            "const": true
+          },
+          "contains_document_body": {
+            "type": "boolean",
+            "const": false
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "code",
+                "message",
+                "documents"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "message": {
+                  "type": "string"
+                },
+                "documents": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "document_id",
+                      "used_version",
+                      "skipped_version"
+                    ],
+                    "properties": {
+                      "document_id": {
+                        "type": "string"
+                      },
+                      "used_version": {
+                        "type": "string",
+                        "description": "无可读版本而被排除时为空字符串。"
+                      },
+                      "skipped_version": {
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "availability": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source_versions",
+          "chunks",
+          "requested_notes",
+          "nonempty_notes"
+        ],
+        "properties": {
+          "source_versions": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "chunks": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "requested_notes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "nonempty_notes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          }
+        }
+      },
+      "budget": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "checks",
+          "deferred",
+          "token_estimate",
+          "estimate_kind",
+          "resolved_mode",
+          "input_budget"
+        ],
+        "properties": {
+          "status": {
+            "enum": [
+              "validated",
+              "exceeded",
+              "unavailable",
+              "not_checked"
+            ]
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "path",
+                "unit",
+                "phase",
+                "required",
+                "status",
+                "observed",
+                "limit",
+                "limit_source"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "unit": {
+                  "enum": [
+                    "tokens",
+                    "policy",
+                    "characters",
+                    "sources"
+                  ]
+                },
+                "phase": {
+                  "enum": [
+                    "preflight",
+                    "execution"
+                  ]
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "status": {
+                  "enum": [
+                    "validated",
+                    "exceeded",
+                    "unavailable",
+                    "not_checked",
+                    "deferred"
+                  ]
+                },
+                "observed": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0
+                },
+                "limit": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0
+                },
+                "limit_source": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "deferred": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "path",
+                "unit",
+                "phase",
+                "required",
+                "status",
+                "observed",
+                "limit",
+                "limit_source"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "unit": {
+                  "enum": [
+                    "tokens",
+                    "policy",
+                    "characters",
+                    "sources"
+                  ]
+                },
+                "phase": {
+                  "enum": [
+                    "preflight",
+                    "execution"
+                  ]
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "status": {
+                  "enum": [
+                    "validated",
+                    "exceeded",
+                    "unavailable",
+                    "not_checked",
+                    "deferred"
+                  ]
+                },
+                "observed": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0
+                },
+                "limit": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0
+                },
+                "limit_source": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "token_estimate": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          },
+          "estimate_kind": {
+            "const": "source_and_note_units"
+          },
+          "resolved_mode": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "input_budget": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0
+          }
+        }
+      },
+      "execution_hint": {
+        "enum": [
+          "interactive",
+          "background_job",
+          null
+        ]
+      },
+      "needs_consent": {
+        "type": "boolean"
+      },
+      "warnings": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
   }
 }
