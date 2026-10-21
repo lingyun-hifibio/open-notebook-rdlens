@@ -117,8 +117,12 @@ export function ResearchSearchPanel({
   const { mode, selectedSourceIds, selectedNoteIds, singlePin, getSnapshot } = useResearchScope()
   // PR5（C6）：C-05 能力（与 models 同 query key，共享缓存）
   const c05 = useResearchC05(projectId)
-  const c05ReadyRef = useRef(false)
-  c05ReadyRef.current = c05.dispatchReady('search')
+  // 派生值参与 preview effect 依赖：capability refetch 只翻 execution_ready
+  // 时也必须重跑（C-05↔v1 切换不能沿用旧 budget/preview）。
+  // 同时保留 ref 供 memoized 的 run/prepareDispatch 在派发时刻读当前真值。
+  const searchReady = c05.dispatchReady('search')
+  const searchReadyRef = useRef(searchReady)
+  searchReadyRef.current = searchReady
   // D-01：范围投影（存在才消费）
   const [scopeProjection, setScopeProjection] = useState<ReturnType<typeof extractScopeProjection>>({ kind: 'absent' })
   // R1-M10：C-05 Preview budget（preview_supported=true 时由 C-05 preview
@@ -202,12 +206,14 @@ export function ResearchSearchPanel({
       setPreview(null)
       return
     }
-    if (c05ReadyRef.current) {
+    if (searchReady) {
       if (!c05.previewSupported) {
         c05BudgetRef.current = null
         setPreview(null)
         return
       }
+      // 进入 C-05 路径后不再展示旧 v1 Preview（契约切换不混用两套展示）。
+      setPreview(null)
       // 意图已变化（query/model/level/scope）：debounce 窗口内立即作废旧预算，
       // 避免用旧意图的 exceeded/validated 阻断或放行新意图。
       c05BudgetRef.current = null
@@ -263,7 +269,7 @@ export function ResearchSearchPanel({
       cancelled = true
       clearTimeout(timer)
     }
-  }, [active, query, projectId, selectedLevel, selectedSourceIds, selectedNoteIds, mode, singlePin, confirmedModelId, c05.previewSupported])
+  }, [active, query, projectId, selectedLevel, selectedSourceIds, selectedNoteIds, mode, singlePin, searchReady, confirmedModelId, c05.previewSupported])
 
   const handleSaveContext = useCallback(
     async (level: ResearchContextLevel) => {
@@ -303,7 +309,7 @@ export function ResearchSearchPanel({
       scopeSnapshot: ResearchScopeSnapshot,
     ): FrozenDispatch | { blocked: 'exhausted' } => {
       const now = monotonicNow()
-      const contract: 'v1' | 'c05-v1' = c05ReadyRef.current ? 'c05-v1' : 'v1'
+      const contract: 'v1' | 'c05-v1' = searchReadyRef.current ? 'c05-v1' : 'v1'
       // R1-H3：契约版本入键签名——能力翻转后同签名的恢复不会降级成 v1
       const signature = signatureOf({
         entry: 'search',

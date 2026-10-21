@@ -192,6 +192,9 @@ describe('evaluatePreviewGate（T26，#748 c05_preview_response 形状）', () =
     expect(Array.isArray(budget.checks)).toBe(true)
     expect(Array.isArray(budget.deferred)).toBe(true)
     expect(budget.estimate_kind).toBe('source_and_note_units')
+    expect(budget.token_estimate).toBe(0)
+    expect(budget.resolved_mode).toBe('hybrid_rag')
+    expect(budget.input_budget).toBe(100)
     expect(budget.checks.length).toBeGreaterThan(0)
     for (const check of budget.checks) {
       expect(typeof check.name).toBe('string')
@@ -200,8 +203,11 @@ describe('evaluatePreviewGate（T26，#748 c05_preview_response 形状）', () =
       expect(typeof check.required).toBe('boolean')
       expect(typeof check.status).toBe('string')
       expect('observed' in check).toBe(true)
+      expect('limit' in check).toBe(true)
       expect(typeof check.limit_source).toBe('string')
+      expect(typeof check.unit).toBe('string')
     }
+    expect(budget.checks[0].required).toBe(true)
     const r = evaluatePreviewGate({ ...ready, budget })
     expect(r.canSubmit).toBe(true)
     expect(r.notice).toBeNull()

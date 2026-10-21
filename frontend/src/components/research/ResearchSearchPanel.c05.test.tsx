@@ -20,6 +20,7 @@ vi.mock('@/lib/research/api', async (importOriginal) => {
     ...actual,
     searchV1: vi.fn(),
     fetchContextPreview: vi.fn(),
+    fetchC05Preview: vi.fn(),
     listModels: vi.fn(),
   }
 })
@@ -80,17 +81,17 @@ function makeWrapper() {
   )
 }
 
-function c05Caps(enabled: boolean, searchReady = true) {
+function c05Caps(enabled: boolean, searchReady = true, previewSupported = false) {
   return {
     contract: 'c05-v1',
     enabled,
-    preview_supported: false,
+    preview_supported: previewSupported,
     entries: {
       search: {
         scope_modes: enabled ? ['all', 'selected', 'single'] : [],
         execution_modes: enabled && searchReady ? ['auto', 'direct_context', 'hybrid_rag', 'planned_rag', 'deep_compare'] : [],
         context_levels: enabled && searchReady ? ['focused', 'document', 'workspace'] : [],
-        preview_supported: false,
+        preview_supported: previewSupported,
         execution_ready: enabled && searchReady,
         unavailable_reason: enabled ? (searchReady ? null : 'c05_entry_not_wired') : 'c05_contract_disabled',
       },
@@ -117,6 +118,35 @@ const directResult = {
   evidence: [], citations: [],
   usage: { input_tokens: 1, output_tokens: 1, estimated: true },
   degradation_reason: null, conclusion: 'ok',
+}
+
+/** #748 `c05_preview_response` 的合法最小形状（预算 exceeded，供门禁行为测试）。 */
+function previewExceeded() {
+  return {
+    scope_contract_version: 'c05-v1',
+    resolved_scope: {
+      mode: 'all', contract_version: 'c05-v1', resolved_source_refs: [],
+      note_ids: [], single_source_id: null, missing_source_ids: [],
+      includes_exact_versions: true, contains_document_body: false, warnings: [],
+    },
+    availability: { source_versions: 0, chunks: 0, requested_notes: 0, nonempty_notes: 0 },
+    budget: {
+      status: 'exceeded',
+      checks: [{
+        name: 'known_input', path: 'selected', unit: 'tokens', phase: 'preflight',
+        required: true, status: 'exceeded', observed: 5_000_000,
+        limit: 4_000_000, limit_source: 'model_window/admission/reserves',
+      }],
+      deferred: [],
+      token_estimate: null,
+      estimate_kind: 'source_and_note_units',
+      resolved_mode: 'hybrid_rag',
+      input_budget: 100,
+    },
+    execution_hint: 'interactive',
+    needs_consent: false,
+    warnings: [],
+  }
 }
 
 describe('ResearchSearchPanel C-05（C6）', () => {
@@ -198,6 +228,7 @@ describe('ResearchSearchPanel C-05（C6）', () => {
     fireEvent.change(input, { target: { value: 'q5' } })
     await new Promise((r) => setTimeout(r, 500))
     expect(researchApi.fetchContextPreview).not.toHaveBeenCalled()
+    expect(researchApi.fetchC05Preview).not.toHaveBeenCalled()
   })
 
   it('T11：all 下 document 档位收敛到 focused（scope 归因提示）', async () => {
@@ -364,5 +395,82 @@ describe('ResearchSearchPanel C-05（C6）', () => {
     })
     // 上一轮的 C-05 投影必须已经消失（否则范围身份与当前 v1 结果不一致）
     expect(screen.queryByTestId('scope-projection-refs')).toBeNull()
+  })
+
+  // ── PR5（D-12/2026-10-21 复核 M1）：Preview budget 生命周期与门禁行为 ──
+
+  function previewReadyCaps() {
+    return {
+      models: [], capabilities: { coverage_all_selected: false, c05: c05Caps(true, true, true) },
+    }
+  }
+
+  it('D-12：Preview exceeded → Run 被门禁阻断（不发 searchV1）', async () => {
+    seedScopeAll()
+    vi.mocked(researchApi.listModels).mockResolvedValue(previewReadyCaps())
+    vi.mocked(researchApi.fetchC05Preview).mockResolvedValue(previewExceeded() as never)
+    vi.mocked(researchApi.searchV1).mockResolvedValue({ kind: 'direct', result: directResult })
+    render(<ResearchSearchPanel projectId="proj_1" />, { wrapper: makeWrapper() })
+    const input = await screen.findByTestId('search-input')
+    fireEvent.change(input, { target: { value: 'q-budget-exceeded' } })
+    await waitFor(() => expect(researchApi.fetchC05Preview).toHaveBeenCalledTimes(1), { timeout: 2000 })
+    fireEvent.click(screen.getByTestId('search-run'))
+    await waitFor(() => expect(screen.getByTestId('search-error')).toBeInTheDocument())
+    expect(researchApi.searchV1).not.toHaveBeenCalled()
+  })
+
+  it('D-12：query 变化立即作废旧 budget（旧 exceeded 不阻断新意图）', async () => {
+    seedScopeAll()
+    vi.mocked(researchApi.listModels).mockResolvedValue(previewReadyCaps())
+    vi.mocked(researchApi.fetchC05Preview).mockResolvedValue(previewExceeded() as never)
+    vi.mocked(researchApi.searchV1).mockResolvedValue({ kind: 'direct', result: directResult })
+    render(<ResearchSearchPanel projectId="proj_1" />, { wrapper: makeWrapper() })
+    const input = await screen.findByTestId('search-input')
+    fireEvent.change(input, { target: { value: 'q-old-intent' } })
+    await waitFor(() => expect(researchApi.fetchC05Preview).toHaveBeenCalledTimes(1), { timeout: 2000 })
+    // 不等待新 debounce：新意图提交时必须已作废旧预算（否则会被旧 exceeded 阻断）
+    fireEvent.change(input, { target: { value: 'q-new-intent' } })
+    fireEvent.click(screen.getByTestId('search-run'))
+    await waitFor(() => expect(researchApi.searchV1).toHaveBeenCalledTimes(1))
+  })
+
+  it('D-12：已取消旧 Preview 的 reject 不得清掉新 budget（新意图仍被阻断）', async () => {
+    seedScopeAll()
+    vi.mocked(researchApi.listModels).mockResolvedValue(previewReadyCaps())
+    let rejectOld: (error: Error) => void = () => {}
+    const oldPreview = new Promise((_resolve, reject) => { rejectOld = reject })
+    vi.mocked(researchApi.fetchC05Preview)
+      .mockReturnValueOnce(oldPreview as never)
+      .mockResolvedValueOnce(previewExceeded() as never)
+    vi.mocked(researchApi.searchV1).mockResolvedValue({ kind: 'direct', result: directResult })
+    render(<ResearchSearchPanel projectId="proj_1" />, { wrapper: makeWrapper() })
+    const input = await screen.findByTestId('search-input')
+    fireEvent.change(input, { target: { value: 'q-stale-old' } })
+    await waitFor(() => expect(researchApi.fetchC05Preview).toHaveBeenCalledTimes(1), { timeout: 2000 })
+    fireEvent.change(input, { target: { value: 'q-stale-new' } })
+    await waitFor(() => expect(researchApi.fetchC05Preview).toHaveBeenCalledTimes(2), { timeout: 2000 })
+    await act(async () => {
+      rejectOld(new Error('stale-preview-failed'))
+      await Promise.resolve()
+    })
+    fireEvent.click(screen.getByTestId('search-run'))
+    await waitFor(() => expect(screen.getByTestId('search-error')).toBeInTheDocument())
+    expect(researchApi.searchV1).not.toHaveBeenCalled()
+  })
+
+  it('D-12：inactive 清空旧 budget（重新提交不被旧 exceeded 阻断）', async () => {
+    seedScopeAll()
+    vi.mocked(researchApi.listModels).mockResolvedValue(previewReadyCaps())
+    vi.mocked(researchApi.fetchC05Preview).mockResolvedValue(previewExceeded() as never)
+    vi.mocked(researchApi.searchV1).mockResolvedValue({ kind: 'direct', result: directResult })
+    const wrapper = makeWrapper()
+    const { rerender } = render(<ResearchSearchPanel projectId="proj_1" active />, { wrapper })
+    const input = await screen.findByTestId('search-input')
+    fireEvent.change(input, { target: { value: 'q-inactive' } })
+    await waitFor(() => expect(researchApi.fetchC05Preview).toHaveBeenCalledTimes(1), { timeout: 2000 })
+    rerender(<ResearchSearchPanel projectId="proj_1" active={false} />)
+    await act(async () => { await Promise.resolve() })
+    fireEvent.click(screen.getByTestId('search-run'))
+    await waitFor(() => expect(researchApi.searchV1).toHaveBeenCalledTimes(1))
   })
 })

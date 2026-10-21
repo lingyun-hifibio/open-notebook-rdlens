@@ -12,7 +12,7 @@
 | 标记 | 含义 |
 |---|---|
 | 【已实现·源码】 | 本 PR 交付的代码，附符号名 |
-| 【已实现·测试】 | 可复现的测试（fork **1174 passed / 114 files** @ 2026-10-21 契约同步 head；宿主 **461 passed / 52 files** @ 宿主 PR5 分支 `95cb4ef0` 时点，非 origin/main 计数；两仓 `tsc -b` clean、`npm run build` 成功） |
+| 【已实现·测试】 | 可复现的测试（fork **1180 passed / 114 files** @ 2026-10-22 head；宿主 **461 passed / 52 files** @ 宿主 PR5 分支 `95cb4ef0` 时点，非 origin/main 计数；两仓 `tsc -b` clean、`npm run build` 成功） |
 | 【待验证·运行】 | 需 PR4 执行接线 + C-05 flag 打开后的真实环境（F1/F2） |
 
 **本版修订说明（2026-10-14 二次收口）**：计划条款复核后补齐了此前**未落地**的部分——
@@ -93,7 +93,7 @@ ScopeWarningSummary/ScopePreviewPanel 等计划指定产物。**D-24 不再列�
 
 ```bash
 # fork（frontend/）— 全量
-npx vitest run          # 1174 passed / 114 files（2026-10-21）
+npx vitest run          # 1180 passed / 114 files（2026-10-22）
 npx tsc -b              # clean
 npm run build           # 成功
 # 主仓（frontend/）— 全量
@@ -111,7 +111,9 @@ T35（**400 条警告有界呈现**，纯函数 + 组件 + 面板三层）、T37
 T38（Compare 阻断原因）、T39（旧持久快照迁移）、T40（**同意路径同键同信封**）、
 T42（citation 版本）、D-24 传输（空闲超时恰好一次/字节重置/中止不误报/协议违反不重连）、
 D-12 Preview（#748 形状：`budget.status` / `checks[].required` / `deferred[]`；fixture
-`preview.response.all.valid` 形状探针；聚合位与明细矛盾时 fail-closed）。
+`preview.response.all.valid` 运行时形状探针；聚合位与明细矛盾时 fail-closed；
+面板级预算生命周期：exceeded 阻断、意图变化立即作废、旧请求 reject 不清新值、
+inactive 清空）。
 
 变异演练（移除被断言条件 → 用例必须变红）已对 D-24 Content-Type 校验、
 D-22 键复用、D-25 版本感知、D-17 截断、D-09 文案分支、D-01 缺失文案、
@@ -132,7 +134,7 @@ D-16 文档下限、D-11 清单信号、T17 异会话清除、D-12 Preview 门�
    产出，但 Search 面板当前只消费 `canSubmit` / `blockedReason`，不渲染提示；
    **不计为本 PR 已完成项**，需 follow-up 接 UI 提示（含 i18n）或由 owner 明确降级。
 6. **宿主 main 的 C-05 fixture 消费测试仍冻结旧 schema**：`frontend/tests/issue615C05Fixtures.test.ts`
-   在 origin/main `50c6e415` 上 4 failed（仍断言旧 schema 键 / `preview_supported=false`）；
+   在 merge `50c6e415`（复核时宿主 main 头；现 origin/main `20b99f2`，该测试未变）上 4 failed（仍断言旧 schema 键 / `preview_supported=false`）；
    属宿主侧 follow-up，不计入 fork 本 PR 的验证结论。
 7. 本 PR 不宣称 C-05 可用、不关闭 #601。
 
