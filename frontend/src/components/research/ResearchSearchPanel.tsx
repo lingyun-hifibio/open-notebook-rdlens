@@ -23,7 +23,7 @@ import { buildC05GeneratedRequest, buildSourceScope } from '@/lib/research/c05-r
 import { classifyC05Error } from '@/lib/research/c05-error-actions'
 import { extractScopeProjection } from '@/lib/research/c05-scope-projection'
 import { ScopeWarningSummary } from './ScopeWarningSummary'
-import { evaluatePreviewGate } from '@/lib/research/c05-preview-gate'
+import { evaluatePreviewGate, type C05Budget } from '@/lib/research/c05-preview-gate'
 import {
   acquireKey, countAttempt, newKeyHold, settleKey, signatureOf,
   dispatchEligibility,
@@ -64,6 +64,25 @@ const CONSENT_ERROR_CODES = [
   'consent_scope_changed',
   'policy_denied',
 ]
+
+/** D-12（2026-10-22 收口）：`evaluatePreviewGate().notice` 的 UI 提示层映射。 */
+type C05PreviewNotice = ReturnType<typeof evaluatePreviewGate>['notice']
+
+const C05_NOTICE_KEYS: Record<NonNullable<C05PreviewNotice>, string> = {
+  unvalidated: 'research.c05PreviewUnvalidated',
+  execution_recheck: 'research.c05PreviewExecutionRecheck',
+  interactive_only_exceeded: 'research.c05PreviewInteractiveOnlyExceeded',
+}
+
+/**
+ * D-12（2026-10-22 收口）：由 Preview budget 推出提示（**只展示、不阻断**）。
+ * budget 缺失 → `unvalidated`：不得把"未检查"渲染成通过；畸形形状同样落
+ * `unvalidated`（异常由调用方 `.catch` 收敛，仍不冒充通过）。
+ */
+function previewNoticeOf(budget: C05Budget | null | undefined): C05PreviewNotice {
+  if (budget === null || budget === undefined) return 'unvalidated'
+  return evaluatePreviewGate({ executionReady: true, scopeValid: true, budget }).notice
+}
 
 /**
  * PR5（D-22）：登记前冻结的完整派发意图。确认（或取消后重试）时**只用**这里
@@ -126,8 +145,13 @@ export function ResearchSearchPanel({
   // D-01：范围投影（存在才消费）
   const [scopeProjection, setScopeProjection] = useState<ReturnType<typeof extractScopeProjection>>({ kind: 'absent' })
   // R1-M10：C-05 Preview budget（preview_supported=true 时由 C-05 preview
-  // 响应填充；当前恒 null = Preview 缺失 → 不阻断、显示"未经预览校验"）
+  // 响应填充；null = 无可用预算（未请求/失败/能力位关闭）→ 不阻断、显示
+  // "未经预览校验"）。
   const c05BudgetRef = useRef<Parameters<typeof evaluatePreviewGate>[0]['budget']>(null)
+  // D-12（2026-10-22 收口）：Preview 提示层——`unvalidated` /
+  // `execution_recheck` / `interactive_only_exceeded` 仅作展示，不改变
+  // submit 门禁（门禁仍只消费 canSubmit / blockedReason）。
+  const [c05Notice, setC05Notice] = useState<C05PreviewNotice>(null)
 
   const [query, setQuery] = useState('')
   const [result, setResult] = useState<ResearchSearchResponse | null>(null)
@@ -198,18 +222,24 @@ export function ResearchSearchPanel({
     const trimmed = query.trim()
     // RWV2-40：inactive（隐藏/非主动作）时不发起 Context Preview。
     // PR5（R2-M10）：C-05 就绪时——preview_supported=true 才发 C-05 Preview
-    //（只读、消费 budget 到 c05BudgetRef）；false → 清空（不发旧 Preview）。
+    //（只读、消费 budget 到 c05BudgetRef）；false → 不发请求，按严格 D-12
+    // 显示"未经预览校验"（2026-10-22 复核 F1）。
     // 旧 v1 路径保持既有 debounce Preview 不变。
     if (!active || !trimmed || confirmedModelId === null) {
       // 意图失效：旧预算不得留在 ref 里被下一次提交消费（handover §4.3）。
       c05BudgetRef.current = null
       setPreview(null)
+      // D-12：无意图/隐藏 → 旧提示同样失效（inactive 不得残留上一次判定）。
+      setC05Notice(null)
       return
     }
     if (searchReady) {
       if (!c05.previewSupported) {
         c05BudgetRef.current = null
         setPreview(null)
+        // D-12（严格口径，2026-10-22 复核 F1）：能力位声明"无 Preview"同样属于
+        // "Preview 不可用"——显示"未经预览校验"，不推断超限、不阻断提交。
+        setC05Notice('unvalidated')
         return
       }
       // 进入 C-05 路径后不再展示旧 v1 Preview（契约切换不混用两套展示）。
@@ -217,6 +247,8 @@ export function ResearchSearchPanel({
       // 意图已变化（query/model/level/scope）：debounce 窗口内立即作废旧预算，
       // 避免用旧意图的 exceeded/validated 阻断或放行新意图。
       c05BudgetRef.current = null
+      // D-12：新意图的提示在本次 Preview 返回前不成立，先清旧提示。
+      setC05Notice(null)
       let cancelled = false
       const timer = setTimeout(() => {
         void fetchC05Preview(projectId, {
@@ -234,11 +266,18 @@ export function ResearchSearchPanel({
         })
           .then((value) => {
             if (cancelled) return
-            c05BudgetRef.current = value.budget
+            // 2xx 缺 budget 时按"缺失"处理，避免 run() 门禁拿到 undefined 抛错。
+            c05BudgetRef.current = value.budget ?? null
+            // D-12（2026-10-22 收口）：只读提示层——与 run() 的门禁纯函数同源。
+            setC05Notice(previewNoticeOf(value.budget))
           })
           .catch(() => {
             // 只有**当前**请求失败才清空；已取消的旧请求失败不得清掉新值。
-            if (!cancelled) c05BudgetRef.current = null
+            if (!cancelled) {
+              c05BudgetRef.current = null
+              // D-12：Preview 失败/不可用 → 明确"未经预览校验"，但**不阻断**。
+              setC05Notice('unvalidated')
+            }
           })
       }, 400)
       return () => {
@@ -248,6 +287,8 @@ export function ResearchSearchPanel({
     }
     // 旧 v1 Preview 路径：C-05 budget 不适用，清空避免跨契约残留。
     c05BudgetRef.current = null
+    // D-12：旧契约没有 C-05 提示层，不得显示 C-05 notice。
+    setC05Notice(null)
     let cancelled = false
     const timer = setTimeout(() => {
       void fetchContextPreview(projectId, {
@@ -450,7 +491,8 @@ export function ResearchSearchPanel({
     const levelSnapshot = selectedLevel
     // R1-M10：Preview 门禁接入——有 C-05 budget 数据时按 evaluatePreviewGate
     // 判定（exceeded/unavailable 阻断；非必需 not_checked 放行并标注）；
-    // 无数据（preview_supported=false）→ 按 D-12 放行 + "未经预览校验"提示。
+    // 无数据（preview_supported=false / Preview 失败）→ 按 D-12 放行，面板
+    // 同步显示"未经预览校验"（unvalidated，仅提示不阻断）。
     const gate = evaluatePreviewGate({
       executionReady: true,
       scopeValid: true,
@@ -582,6 +624,13 @@ export function ResearchSearchPanel({
               <span className="ml-2">{t('research.previewDirectHint')}</span>
             )}
           </div>
+        )}
+        {/* PR5（D-12，2026-10-22 收口）：C-05 Preview 提示层。`notice` 只
+            提示、不参与 submit 判定；null（全 validated / 已阻断）不渲染。 */}
+        {c05Notice !== null && (
+          <p className="mt-1 text-xs text-muted-foreground" data-testid="c05-preview-notice">
+            {t(C05_NOTICE_KEYS[c05Notice])}
+          </p>
         )}
       </div>
 
