@@ -62,7 +62,7 @@ uv run python -m pytest tests/research/test_issue601_pr1_contract_prep.py -q
 
 ## Fork 消费副本（Issue #601 PR5）
 
-版本化复制自主仓 `codex/issue601-pr5-frontend` @ `50c6e415`（origin/main；契约内容提交
+版本化复制自主仓 `HiFiBiO-Therapeutics/RDLens` 的 `main` @ `50c6e415`（契约内容提交
 `9addb721` = PR #748，含 #623 S9 WU-J 的 `execution_modes` 收窄与 Search C-05 Preview）。
 
 | 文件 | SHA256 |
