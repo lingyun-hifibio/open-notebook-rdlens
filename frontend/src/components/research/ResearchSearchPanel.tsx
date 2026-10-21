@@ -145,7 +145,8 @@ export function ResearchSearchPanel({
   // D-01：范围投影（存在才消费）
   const [scopeProjection, setScopeProjection] = useState<ReturnType<typeof extractScopeProjection>>({ kind: 'absent' })
   // R1-M10：C-05 Preview budget（preview_supported=true 时由 C-05 preview
-  // 响应填充；当前恒 null = Preview 缺失 → 不阻断、显示"未经预览校验"）
+  // 响应填充；null = 无可用预算（未请求/失败/能力位关闭）→ 不阻断、显示
+  // "未经预览校验"）。
   const c05BudgetRef = useRef<Parameters<typeof evaluatePreviewGate>[0]['budget']>(null)
   // D-12（2026-10-22 收口）：Preview 提示层——`unvalidated` /
   // `execution_recheck` / `interactive_only_exceeded` 仅作展示，不改变
@@ -221,7 +222,8 @@ export function ResearchSearchPanel({
     const trimmed = query.trim()
     // RWV2-40：inactive（隐藏/非主动作）时不发起 Context Preview。
     // PR5（R2-M10）：C-05 就绪时——preview_supported=true 才发 C-05 Preview
-    //（只读、消费 budget 到 c05BudgetRef）；false → 清空（不发旧 Preview）。
+    //（只读、消费 budget 到 c05BudgetRef）；false → 不发请求，按严格 D-12
+    // 显示"未经预览校验"（2026-10-22 复核 F1）。
     // 旧 v1 路径保持既有 debounce Preview 不变。
     if (!active || !trimmed || confirmedModelId === null) {
       // 意图失效：旧预算不得留在 ref 里被下一次提交消费（handover §4.3）。
@@ -235,9 +237,9 @@ export function ResearchSearchPanel({
       if (!c05.previewSupported) {
         c05BudgetRef.current = null
         setPreview(null)
-        // D-12：能力位声明不支持 Preview → 不渲染"未经预览校验"提示
-        // （无 Preview 能力 ≠ Preview 失败）。
-        setC05Notice(null)
+        // D-12（严格口径，2026-10-22 复核 F1）：能力位声明"无 Preview"同样属于
+        // "Preview 不可用"——显示"未经预览校验"，不推断超限、不阻断提交。
+        setC05Notice('unvalidated')
         return
       }
       // 进入 C-05 路径后不再展示旧 v1 Preview（契约切换不混用两套展示）。
@@ -264,7 +266,8 @@ export function ResearchSearchPanel({
         })
           .then((value) => {
             if (cancelled) return
-            c05BudgetRef.current = value.budget
+            // 2xx 缺 budget 时按"缺失"处理，避免 run() 门禁拿到 undefined 抛错。
+            c05BudgetRef.current = value.budget ?? null
             // D-12（2026-10-22 收口）：只读提示层——与 run() 的门禁纯函数同源。
             setC05Notice(previewNoticeOf(value.budget))
           })
@@ -488,7 +491,8 @@ export function ResearchSearchPanel({
     const levelSnapshot = selectedLevel
     // R1-M10：Preview 门禁接入——有 C-05 budget 数据时按 evaluatePreviewGate
     // 判定（exceeded/unavailable 阻断；非必需 not_checked 放行并标注）；
-    // 无数据（preview_supported=false）→ 按 D-12 放行 + "未经预览校验"提示。
+    // 无数据（preview_supported=false / Preview 失败）→ 按 D-12 放行，面板
+    // 同步显示"未经预览校验"（unvalidated，仅提示不阻断）。
     const gate = evaluatePreviewGate({
       executionReady: true,
       scopeValid: true,

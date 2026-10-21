@@ -182,6 +182,11 @@ function deferredExecutionCheck() {
   }
 }
 
+/** 以给定 budget 覆盖 #748 Preview 形状（供 notice 三态映射用例注入 checks）。 */
+function previewWithBudget(budget: unknown) {
+  return { ...previewExceeded(), budget }
+}
+
 describe('ResearchSearchPanel C-05（C6）', () => {
   it('T3：all 下派发 → C-05 形状（source_scope.mode=all、无顶层 source_ids）+ c05-v1 头', async () => {
     seedScopeAll()
@@ -550,6 +555,65 @@ describe('ResearchSearchPanel C-05（C6）', () => {
     expect(notice).toHaveTextContent('research.c05PreviewUnvalidated')
 
     // D-12：不得把"未检查"渲染成通过，也不得因此阻断提交
+    fireEvent.click(screen.getByTestId('search-run'))
+    await waitFor(() => expect(researchApi.searchV1).toHaveBeenCalledTimes(1))
+    expect(screen.queryByTestId('search-error')).toBeNull()
+  })
+
+  it('D-12（2026-10-22 复核 F1）：preview_supported=false → unvalidated 提示可见且不阻断', async () => {
+    seedScopeAll()
+    // 能力位声明"无 Preview"：不请求 C-05 Preview，但严格 D-12 仍提示未校验
+    vi.mocked(researchApi.listModels).mockResolvedValue({
+      models: [], capabilities: { coverage_all_selected: false, c05: c05Caps(true, true, false) },
+    })
+    vi.mocked(researchApi.searchV1).mockResolvedValue({ kind: 'direct', result: directResult })
+    render(<ResearchSearchPanel projectId="proj_1" />, { wrapper: makeWrapper() })
+    const input = await screen.findByTestId('search-input')
+    fireEvent.change(input, { target: { value: 'q-notice-no-preview' } })
+
+    const notice = await screen.findByTestId('c05-preview-notice', {}, { timeout: 2000 })
+    expect(notice).toHaveTextContent('research.c05PreviewUnvalidated')
+    // 无 Preview 能力 → 不发起 C-05 Preview 请求（不猜测、不阻塞能力位）
+    expect(researchApi.fetchC05Preview).not.toHaveBeenCalled()
+    // 只提示不阻断：仍可提交
+    fireEvent.click(screen.getByTestId('search-run'))
+    await waitFor(() => expect(researchApi.searchV1).toHaveBeenCalledTimes(1))
+    expect(screen.queryByTestId('search-error')).toBeNull()
+  })
+
+  it('D-12（2026-10-22 复核 F2）：非必需 interactive 阈值 exceeded → interactive_only_exceeded 且不阻断', async () => {
+    seedScopeAll()
+    vi.mocked(researchApi.listModels).mockResolvedValue(previewReadyCaps())
+    vi.mocked(researchApi.fetchC05Preview).mockResolvedValue(previewWithBudget({
+      status: 'validated',
+      checks: [
+        {
+          name: 'known_input', path: 'selected', unit: 'tokens', phase: 'preflight',
+          required: true, status: 'validated', observed: 1_000,
+          limit: 4_000_000, limit_source: 'model_window/admission/reserves',
+        },
+        {
+          // H-01：非必需检查超出交互阈值 → 只提示"转后台"，不阻断全局提交
+          name: 'interactive_input', path: 'selected', unit: 'tokens', phase: 'preflight',
+          required: false, status: 'exceeded', observed: 2_000_000,
+          limit: 1_000_000, limit_source: 'interactive/admission',
+        },
+      ],
+      deferred: [],
+      token_estimate: 1_000,
+      estimate_kind: 'source_and_note_units',
+      resolved_mode: 'hybrid_rag',
+      input_budget: 4_000_000,
+    }) as never)
+    vi.mocked(researchApi.searchV1).mockResolvedValue({ kind: 'direct', result: directResult })
+    render(<ResearchSearchPanel projectId="proj_1" />, { wrapper: makeWrapper() })
+    const input = await screen.findByTestId('search-input')
+    fireEvent.change(input, { target: { value: 'q-notice-interactive' } })
+
+    const notice = await screen.findByTestId('c05-preview-notice', {}, { timeout: 2000 })
+    expect(notice).toHaveTextContent('research.c05PreviewInteractiveOnlyExceeded')
+    expect(notice).not.toHaveTextContent('research.c05PreviewExecutionRecheck')
+    // H-01：非必需 exceeded 只提示、不阻断提交
     fireEvent.click(screen.getByTestId('search-run'))
     await waitFor(() => expect(researchApi.searchV1).toHaveBeenCalledTimes(1))
     expect(screen.queryByTestId('search-error')).toBeNull()
