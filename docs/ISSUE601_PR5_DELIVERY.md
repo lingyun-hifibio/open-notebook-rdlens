@@ -1,6 +1,6 @@
 # Issue #601 PR 5：前端资料交互与联合验收（交付说明 · fork 配对副本）
 
-> 日期：2026-10-21（契约同步 #748）；状态：**已实现（前端层），联合验收待 PR4 剩余接线**
+> 日期：2026-10-21（契约同步 #748）；2026-10-22（D-12 提示层收口）；状态：**已实现（前端层），联合验收待 PR4 剩余接线**
 > 权威计划：实施计划 v8 + 终审增补（D-19…D-26）；plan9 §4/§5
 > 分支：主仓 `codex/issue601-pr5-frontend`（基线 `389ac8a6`）；
 > fork `codex/issue601-pr5-c05-frontend`（基线 `260fe5d`，配对 PR 另开）
@@ -12,7 +12,7 @@
 | 标记 | 含义 |
 |---|---|
 | 【已实现·源码】 | 本 PR 交付的代码，附符号名 |
-| 【已实现·测试】 | 可复现的测试（fork **1180 passed / 114 files** @ 2026-10-22 head；宿主 **461 passed / 52 files** @ 宿主 PR5 分支 `95cb4ef0` 时点，非 origin/main 计数；两仓 `tsc -b` clean、`npm run build` 成功） |
+| 【已实现·测试】 | 可复现的测试（fork **1184 passed / 114 files** @ 2026-10-22 提示层收口 head（base `4393fb0d`）；宿主 **461 passed / 52 files** @ 宿主 PR5 分支 `95cb4ef0` 时点，非 origin/main 计数；两仓 `tsc -b` clean、`npm run build` 成功） |
 | 【待验证·运行】 | 需 PR4 执行接线 + C-05 flag 打开后的真实环境（F1/F2） |
 
 **本版修订说明（2026-10-14 二次收口）**：计划条款复核后补齐了此前**未落地**的部分——
@@ -30,6 +30,12 @@ ScopeWarningSummary/ScopePreviewPanel 等计划指定产物。**D-24 不再列�
 `execution_modes` 收窄）并改接 Preview 门禁，新增 fixture 形状探针与
 “聚合位/明细矛盾 fail-closed”用例（+4 用例）。
 
+**本版修订说明（2026-10-22 提示层收口）**：D-12 `evaluatePreviewGate().notice`
+提示层接入 Search 面板（`c05-preview-notice`；14 语言包各 +3 键；面板 +4 用例）。
+**仅新增提示渲染，门禁判定（`canSubmit` / `blockedReason`）与预览预算生命周期未变**。
+§5 第 5 条“未接线”登记据此关闭；F1/F2、PR4 承接项、D-18、宿主 fixture 等其它
+未完成项**不因本次收口变化**。
+
 ## 1. 交付内容（fork，全部【已实现·源码】）
 
 | 决定 | 实现 | 位置 |
@@ -41,7 +47,7 @@ ScopeWarningSummary/ScopePreviewPanel 等计划指定产物。**D-24 不再列�
 | **D-17** | **有界呈现接线**：计数摘要（回退 N／排除 M）+ ≤5 条明细 + "仅显示前 N 条"标注；`resolved_source_refs` 只出计数；首屏节点数不随规模增长 | `c05-warning-summary.ts`、`ScopeWarningSummary.tsx` |
 | B2/D-02/D-13 | 键生命周期纯函数（acceptance 锚、string-shape 确定性清键、24h 窗口） | `c05-idempotency-key.ts`、`c05-key-retention.ts` |
 | **D-22** | **同意登记冻结完整派发意图**：契约选择 + 请求信封 + 幂等键随登记冻结，确认后原样派发、取消不清键（搜索侧 `prepareDispatch`、Chat 侧签名持有键） | `use-research-global-model.tsx`、`ResearchSearchPanel.tsx`、`use-research-chat.ts`、`ResearchWorkspace.tsx` |
-| B2/D-12 | Preview 门禁矩阵（`budget.status` exceeded 阻断 / 必需检查 unavailable·not_checked（含矛盾 `deferred`）阻断 / 非必需放行 / `deferred[]` 执行期判定 / 缺失不阻断不冒充）；按 #748 实际响应字段实现；**`notice` 提示层当前无 UI 消费者（follow-up，见 §5）** | `c05-preview-gate.ts`、`api.ts` |
+| B2/D-12 | Preview 门禁矩阵（`budget.status` exceeded 阻断 / 必需检查 unavailable·not_checked（含矛盾 `deferred`）阻断 / 非必需放行 / `deferred[]` 执行期判定 / 缺失不阻断不冒充）；按 #748 实际响应字段实现；**`notice` 提示层已接线（2026-10-22 收口）：`c05-preview-notice` 渲染 unvalidated / execution_recheck / interactive_only_exceeded，只提示不阻断** | `c05-preview-gate.ts`、`api.ts`、`ResearchSearchPanel.tsx` |
 | **D-24** | **SSE 传输四条规则**（handover §5.3）：`API_TIMEOUT_MS` 作用域与 `0` 禁用、状态+Content-Type 校验后进入流空闲计时（字节/heartbeat 重置、heartbeat 非模型进度）、abort 原因区分且仅 `timeout` 可进有界重试、每次尝试只结算一次 | `c05-stream-guard.ts`、`api.ts`、`use-research-chat.ts` |
 | B2/D-16 | 文档计量去重（document 语义去重 / 版本语义不去重）+ **去重后唯一文档数 < 2 时按不足阻断** | `document-set.ts`、`compare.ts`（`checkCompareDocumentFloor`）、`ComparePanel.tsx` |
 | B3/D-05/D-11 | 请求体唯一构造函数（forbid/insight 入口排除、all 空集 fail-closed） | `c05-request.ts` |
@@ -56,7 +62,7 @@ ScopeWarningSummary/ScopePreviewPanel 等计划指定产物。**D-24 不再列�
 | D-19/T37 | 静态零残留守卫（`entire_project` 仅存于迁移点） | `c05-static-guards.test.ts` |
 | **D-11/D-26 清单守卫** | 每个在 `all` 下有派发能力的入口文件必须带阻断信号；未登记的派发点会被反向检出 | `ScopeAllBlocked.c05.test.tsx` |
 | D-16/D-25 | Citation 版本感知解析（不静默打开错误版本）+ 判定展示用候选解析（`resolveCitationCandidate`）+ 被拒时可解释提示 | `citation-utils.ts`、`TransformationsPanel.tsx`、`TransformationRunDetail.tsx`、`ResearchWorkspace.tsx` |
-| i18n | **26 个新键**（en-US 为真源；其余 13 语言包按 E1 复制英文值），14 语言包 parity 绿 | `locales/*/index.ts` |
+| i18n | **26 个新键**（en-US 为真源；其余 13 语言包按 E1 复制英文值），14 语言包 parity 绿；D-12 提示层 2026-10-22 再 +3 键（`c05PreviewUnvalidated` / `c05PreviewExecutionRecheck` / `c05PreviewInteractiveOnlyExceeded`） | `locales/*/index.ts` |
 
 ## 2. 交付内容（宿主）
 
@@ -93,7 +99,7 @@ ScopeWarningSummary/ScopePreviewPanel 等计划指定产物。**D-24 不再列�
 
 ```bash
 # fork（frontend/）— 全量
-npx vitest run          # 1180 passed / 114 files（2026-10-22）
+npx vitest run          # 1184 passed / 114 files（2026-10-22 收口）
 npx tsc -b              # clean
 npm run build           # 成功
 # 主仓（frontend/）— 全量
@@ -113,11 +119,16 @@ T42（citation 版本）、D-24 传输（空闲超时恰好一次/字节重置/�
 D-12 Preview（#748 形状：`budget.status` / `checks[].required` / `deferred[]`；fixture
 `preview.response.all.valid` 运行时形状探针；聚合位与明细矛盾时 fail-closed；
 面板级预算生命周期：exceeded 阻断、意图变化立即作废、旧请求 reject 不清新值、
-inactive 清空）。
+inactive 清空；**2026-10-22 提示层**：deferred→`execution_recheck` 可见且不阻断、
+Preview 失败/缺失→`unvalidated` 可见且不阻断、全 validated→不渲染、能力关闭退回
+旧 v1→提示清空）。
 
 变异演练（移除被断言条件 → 用例必须变红）已对 D-24 Content-Type 校验、
 D-22 键复用、D-25 版本感知、D-17 截断、D-09 文案分支、D-01 缺失文案、
-D-16 文档下限、D-11 清单信号、T17 异会话清除、D-12 Preview 门禁（#748 字段映射）逐项执行通过。
+D-16 文档下限、D-11 清单信号、T17 异会话清除、D-12 Preview 门禁（#748 字段映射）
+逐项执行通过；2026-10-22 提示层另做三次变异：删提示渲染 → 3 条正向用例红、
+删成功分支 `setC05Notice` → deferred/能力翻转用例红、删失败分支 `setC05Notice` →
+unvalidated 用例红（均恢复后全绿）。
 
 ## 5. 已知风险与承接
 
@@ -129,10 +140,12 @@ D-16 文档下限、D-11 清单信号、T17 异会话清除、D-12 Preview 门�
 4. **2026-10-21 契约同步后的剩余前置**：主仓 #748 已提供 Search-only Preview，
    但 `execution_ready` 仍只有 `search`；F1/F2 还需 S9/S10 完成（#623/#702）、
    双 flag、含本 PR 的镜像 digest 与 CORS 暴露；本 PR 合入不等于 PR5 验收完成。
-5. **D-12 提示层未接线（2026-10-21 复核发现）**：`evaluatePreviewGate` 的
-   `notice`（unvalidated / execution_recheck / interactive_only_exceeded）已由纯函数
-   产出，但 Search 面板当前只消费 `canSubmit` / `blockedReason`，不渲染提示；
-   **不计为本 PR 已完成项**，需 follow-up 接 UI 提示（含 i18n）或由 owner 明确降级。
+5. **D-12 提示层已接线（2026-10-22 收口）**：`evaluatePreviewGate` 的 `notice`
+   （unvalidated / execution_recheck / interactive_only_exceeded）不再只是纯函数
+   产出——Search 面板在 Preview 返回后渲染 `c05-preview-notice` 提示行
+   （失败/缺失 → `unvalidated`；inactive / `preview_supported=false` / 旧 v1 路径
+   清空），14 语言包各 +3 键，面板 +4 用例覆盖。**只提示，不改变**既有
+   `canSubmit` / `blockedReason` 阻断逻辑与 `c05BudgetRef` 生命周期。
 6. **宿主 main 的 C-05 fixture 消费测试仍冻结旧 schema**：`frontend/tests/issue615C05Fixtures.test.ts`
    在 merge `50c6e415`（复核时宿主 main 头；现 origin/main `20b99f2`，该测试未变）上 4 failed（仍断言旧 schema 键 / `preview_supported=false`）；
    属宿主侧 follow-up，不计入 fork 本 PR 的验证结论。

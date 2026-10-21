@@ -149,6 +149,39 @@ function previewExceeded() {
   }
 }
 
+/**
+ * #748 `c05_preview_response` 的 validated 形状（`deferred[]` 可注入执行期检查）。
+ * D-12（2026-10-22 收口）：validated + deferred → `execution_recheck` 提示；
+ * validated 且 deferred 为空 → 无提示。
+ */
+function previewValidated(deferred: unknown[] = []) {
+  return {
+    ...previewExceeded(),
+    budget: {
+      status: 'validated',
+      checks: [{
+        name: 'known_input', path: 'selected', unit: 'tokens', phase: 'preflight',
+        required: true, status: 'validated', observed: 1_000,
+        limit: 4_000_000, limit_source: 'model_window/admission/reserves',
+      }],
+      deferred,
+      token_estimate: 1_000,
+      estimate_kind: 'source_and_note_units',
+      resolved_mode: 'hybrid_rag',
+      input_budget: 4_000_000,
+    },
+  }
+}
+
+/** 执行期检查（`deferred[]` 元素）——D-12 "执行期复检"提示的触发位。 */
+function deferredExecutionCheck() {
+  return {
+    name: 'actual_prompt_tokens', path: 'selected', unit: 'tokens', phase: 'execution',
+    required: false, status: 'deferred', observed: null, limit: null,
+    limit_source: 'resolved_mode/prompt_budget',
+  }
+}
+
 describe('ResearchSearchPanel C-05（C6）', () => {
   it('T3：all 下派发 → C-05 形状（source_scope.mode=all、无顶层 source_ids）+ c05-v1 头', async () => {
     seedScopeAll()
@@ -472,5 +505,107 @@ describe('ResearchSearchPanel C-05（C6）', () => {
     await act(async () => { await Promise.resolve() })
     fireEvent.click(screen.getByTestId('search-run'))
     await waitFor(() => expect(researchApi.searchV1).toHaveBeenCalledTimes(1))
+  })
+
+  // ── PR5（D-12，2026-10-22 收口）：Preview 提示层接线 ──
+  // 面板只消费 `canSubmit` / `blockedReason` 的口径不变；`notice` 仅渲染提示。
+  // 注：测试环境把 `useTranslation` mock 成 `t(key) => key`（见 src/test/setup.ts），
+  // 因此断言的是**映射到的 i18n 键**；键值本身由 en-US 真源 + locale parity 测试保证。
+
+  it('D-12（2026-10-22 收口）：deferred[] → 提示"执行期复检"且不阻断提交；inactive 清空', async () => {
+    seedScopeAll()
+    vi.mocked(researchApi.listModels).mockResolvedValue(previewReadyCaps())
+    vi.mocked(researchApi.fetchC05Preview).mockResolvedValue(
+      previewValidated([deferredExecutionCheck()]) as never,
+    )
+    vi.mocked(researchApi.searchV1).mockResolvedValue({ kind: 'direct', result: directResult })
+    const { rerender } = render(<ResearchSearchPanel projectId="proj_1" />, { wrapper: makeWrapper() })
+    const input = await screen.findByTestId('search-input')
+    fireEvent.change(input, { target: { value: 'q-notice-deferred' } })
+
+    const notice = await screen.findByTestId('c05-preview-notice', {}, { timeout: 2000 })
+    expect(notice).toHaveTextContent('research.c05PreviewExecutionRecheck')
+    expect(notice).not.toHaveTextContent('research.c05PreviewUnvalidated')
+
+    // D-12：execution_recheck 只提示、不阻断（validated + deferred 仍应放行）
+    fireEvent.click(screen.getByTestId('search-run'))
+    await waitFor(() => expect(researchApi.searchV1).toHaveBeenCalledTimes(1))
+    expect(screen.queryByTestId('search-error')).toBeNull()
+
+    // inactive（隐藏/切走）→ 旧意图的提示不得残留
+    rerender(<ResearchSearchPanel projectId="proj_1" active={false} />)
+    await waitFor(() => expect(screen.queryByTestId('c05-preview-notice')).toBeNull())
+  })
+
+  it('D-12（2026-10-22 收口）：Preview 失败/不可用 → unvalidated 提示可见且不阻断', async () => {
+    seedScopeAll()
+    vi.mocked(researchApi.listModels).mockResolvedValue(previewReadyCaps())
+    vi.mocked(researchApi.fetchC05Preview).mockRejectedValue(new Error('c05_entry_not_ready'))
+    vi.mocked(researchApi.searchV1).mockResolvedValue({ kind: 'direct', result: directResult })
+    render(<ResearchSearchPanel projectId="proj_1" />, { wrapper: makeWrapper() })
+    const input = await screen.findByTestId('search-input')
+    fireEvent.change(input, { target: { value: 'q-notice-missing' } })
+
+    const notice = await screen.findByTestId('c05-preview-notice', {}, { timeout: 2000 })
+    expect(notice).toHaveTextContent('research.c05PreviewUnvalidated')
+
+    // D-12：不得把"未检查"渲染成通过，也不得因此阻断提交
+    fireEvent.click(screen.getByTestId('search-run'))
+    await waitFor(() => expect(researchApi.searchV1).toHaveBeenCalledTimes(1))
+    expect(screen.queryByTestId('search-error')).toBeNull()
+  })
+
+  it('D-12（2026-10-22 收口）：全 validated 无 deferred → 不渲染提示', async () => {
+    seedScopeAll()
+    vi.mocked(researchApi.listModels).mockResolvedValue(previewReadyCaps())
+    let resolvePreview: (value: unknown) => void = () => {}
+    const previewPromise = new Promise<unknown>((resolve) => { resolvePreview = resolve })
+    vi.mocked(researchApi.fetchC05Preview).mockReturnValue(previewPromise as never)
+    render(<ResearchSearchPanel projectId="proj_1" />, { wrapper: makeWrapper() })
+    const input = await screen.findByTestId('search-input')
+    fireEvent.change(input, { target: { value: 'q-notice-clean' } })
+    await waitFor(() => expect(researchApi.fetchC05Preview).toHaveBeenCalledTimes(1), { timeout: 2000 })
+
+    // 显式放行响应，确保断言发生在组件**消费**结果之后（否则负向断言是假绿）
+    await act(async () => {
+      resolvePreview(previewValidated())
+      await previewPromise
+    })
+    await act(async () => { await Promise.resolve() })
+    expect(screen.queryByTestId('c05-preview-notice')).toBeNull()
+  })
+
+  it('D-12（2026-10-22 收口）：能力关闭退回旧 v1 路径 → 提示清空', async () => {
+    seedScopeAll()
+    vi.mocked(researchApi.listModels).mockResolvedValue(previewReadyCaps())
+    vi.mocked(researchApi.fetchC05Preview).mockResolvedValue(
+      previewValidated([deferredExecutionCheck()]) as never,
+    )
+    vi.mocked(researchApi.fetchContextPreview).mockResolvedValue({
+      source_count: 1, chunk_count: 1, note_count: 0, token_estimate: 10,
+      direct_or_background: 'direct', needs_consent: false, coverage: {}, warnings: [],
+    } as never)
+    render(<ResearchSearchPanel projectId="proj_1" />, { wrapper: makeWrapper() })
+    const input = await screen.findByTestId('search-input')
+    fireEvent.change(input, { target: { value: 'q-notice-flip' } })
+    await screen.findByTestId('c05-preview-notice', {}, { timeout: 2000 })
+
+    // 能力翻转（真实写进查询缓存）→ 面板退回旧 v1 Preview 路径
+    vi.mocked(researchApi.listModels).mockResolvedValue({
+      models: [], capabilities: { coverage_all_selected: false, c05: c05Caps(false) },
+    })
+    await act(async () => {
+      await activeQueryClient!.invalidateQueries({
+        queryKey: QUERY_KEYS.researchModelCatalog('proj_1'),
+      })
+    })
+    await waitFor(() => {
+      const cached = activeQueryClient!.getQueryData(QUERY_KEYS.researchModelCatalog('proj_1')) as
+        | { capabilities?: { c05?: { enabled?: boolean } } } | undefined
+      expect(cached?.capabilities?.c05?.enabled).toBe(false)
+    })
+    // 前提断言：确实退回 v1 路径发起了 Preview（否则"提示消失"可能是假绿）
+    await waitFor(() => expect(researchApi.fetchContextPreview).toHaveBeenCalled(), { timeout: 2000 })
+    await waitFor(() => expect(screen.queryByTestId('c05-preview-notice')).toBeNull())
   })
 })
