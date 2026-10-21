@@ -108,7 +108,7 @@ export function ResearchWorkbench({
   const handleRunsCitationJump = useCallback(
     (citation: ResearchCitation) => {
       const source = resolveCitationSource(sourcesQuery.data?.items, citation)
-      if (!source) return
+      if (!source || source.source_id === null) return
       onOpenSource(source.source_id, citation.page_idx)
     },
     [onOpenSource, sourcesQuery.data?.items],

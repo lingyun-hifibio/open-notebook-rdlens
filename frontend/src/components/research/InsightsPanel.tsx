@@ -20,11 +20,8 @@ import { useResearchGlobalModel, researchModelBlockedHint } from '@/lib/hooks/us
 import { useCreateResearchInsight, useResearchInsights } from '@/lib/hooks/use-research'
 import { useResearchScope } from '@/lib/research/scope'
 import { formatScopeLabel } from '@/lib/research/scope'
-import {
-  detectResponseLanguage,
-  EmptyEffectiveScopeError,
-  resolveScopeSelection,
-} from '@/lib/research/scope-utils'
+import { detectResponseLanguage } from '@/lib/research/scope-utils'
+import { C05_ENTRY_PENDING_PR4 } from '@/lib/research/c05-contract'
 import { useAiInsightSubmit, type AiInsightSubmitStatus } from '@/lib/research/ai-insight-submit'
 import { useResearchJobsController } from './ResearchJobsProvider'
 import { AdminReadOnlyBanner } from './AdminReadOnlyBanner'
@@ -129,39 +126,35 @@ export function InsightsPanel({
   })
 
   /**
-   * S4：AI 派发——Scope 用 S2 唯一 resolver 解析（entire_project 分页枚举、
+   * S4：AI 派发——PR5（D-09/D-11）：legacy v1 仅接受显式 ID 集合；`all`
    * selected 冻结副本），语言按 content 检出并冻结，随后交给 S4 编排 hook
    * （consent 闸门 → key/marker → POST → disposition 状态机）。
    */
   const submitAi = async (titleSnapshot: string, contentSnapshot: string) => {
     const snapshot = getSnapshot()
     if (snapshot.mode === 'selected' && !validate(snapshot).valid) {
+      // D-09 收口：清掉上一次派发留下的原因码，避免空范围提示挂着别人的 code
+      setAiErrorCode(null)
       setAiNotice('blocked_empty_scope')
       return
     }
-    setIsResolvingScope(true)
-    let resolved: { sourceIds: string[]; noteIds: string[]; staleSourceCount: number }
-    try {
-      resolved = await resolveScopeSelection(projectId, snapshot)
-    } catch (error) {
-      setAiErrorCode(error instanceof EmptyEffectiveScopeError ? null : t('research.workbench.actionFailed'))
-      setAiNotice(error instanceof EmptyEffectiveScopeError ? 'blocked_empty_scope' : 'failed')
+    // PR5（D-09）：AI Insight 在本 PR 内不接 C-05（空范围守卫/响应头断言/
+    // attempt 机制需成套改造，属 PR4）。legacy v1 只能表达显式 ID 集合，
+    // `all` 无法表达 → 显式阻断（D-11），绝不枚举展开、绝不发空 ID 集。
+    if (snapshot.mode !== 'selected') {
+      setAiErrorCode(C05_ENTRY_PENDING_PR4)
+      setAiNotice('blocked_all_scope')
       return
-    } finally {
-      setIsResolvingScope(false)
     }
-    // stale 计数由 hook 在真正派发时回传（consent 取消不留痕，L-2）
-    void resolved.staleSourceCount
     // 模型在派发时刻冻结（consent 确认前后不再漂移，C-04）
     if (confirmedModelId === null) return
     await aiSubmit.submit({
       title: titleSnapshot,
       content: contentSnapshot,
-      sourceIds: resolved.sourceIds,
-      noteIds: resolved.noteIds,
+      sourceIds: [...snapshot.sourceIds],
+      noteIds: [...snapshot.noteIds],
       responseLanguage: detectResponseLanguage(contentSnapshot),
       modelId: confirmedModelId,
-      staleSourceCount: resolved.staleSourceCount,
       scopeLabel: formatScopeLabel(snapshot, t),
     })
   }
@@ -200,15 +193,19 @@ export function InsightsPanel({
   const aiNoticeMessage =
     aiNotice === 'blocked_empty_scope'
       ? t('research.insights.aiEmptyScopeBlocked')
-      : aiNotice === 'queued'
-        ? t('research.insights.aiQueued')
-        : aiNotice === 'outcome_unknown'
-          ? t('research.insights.aiOutcomeUnknown')
-          : aiNotice === 'protocol_conflict'
-            ? t('research.insights.aiProtocolConflict')
-            : aiNotice === 'failed'
-              ? t('research.insights.aiFailed')
-              : null
+      : aiNotice === 'blocked_all_scope'
+        // D-09：此前缺这一分支 → 阻断被计算出来却**没有任何文案**（静默）。
+        // 用 D-11 一致的措辞引导"先选择资料"，不描述"无可用资料"。
+        ? t('research.insights.aiAllScopeBlocked')
+        : aiNotice === 'queued'
+          ? t('research.insights.aiQueued')
+          : aiNotice === 'outcome_unknown'
+            ? t('research.insights.aiOutcomeUnknown')
+            : aiNotice === 'protocol_conflict'
+              ? t('research.insights.aiProtocolConflict')
+              : aiNotice === 'failed'
+                ? t('research.insights.aiFailed')
+                : null
 
   const items = data?.items ?? []
 
@@ -287,15 +284,26 @@ export function InsightsPanel({
             {insightType === 'ai' && aiNoticeMessage !== null && (
               <p
                 className={
-                  aiNotice === 'blocked_empty_scope' || aiNotice === 'failed'
+                  aiNotice === 'blocked_empty_scope'
+                  || aiNotice === 'blocked_all_scope'
+                  || aiNotice === 'failed'
                     ? 'text-xs font-medium text-destructive'
                     : 'text-xs text-muted-foreground'
                 }
-                role={aiNotice === 'blocked_empty_scope' || aiNotice === 'failed' ? 'alert' : 'status'}
+                role={
+                  aiNotice === 'blocked_empty_scope'
+                  || aiNotice === 'blocked_all_scope'
+                  || aiNotice === 'failed'
+                    ? 'alert'
+                    : 'status'
+                }
                 data-testid={`insight-ai-notice-${aiNotice}`}
               >
                 {aiNoticeMessage}
-                {aiNotice === 'failed' && aiErrorCode !== null ? ` (${aiErrorCode})` : ''}
+                {/* D-09：`blocked_all_scope` 的本地原因码必须**可见**
+                    （`c05_entry_pending_pr4`）——此前只在 failed 分支拼接，
+                    用户看不到"这个入口为什么不能跑"。 */}
+                {aiErrorCode !== null ? ` (${aiErrorCode})` : ''}
               </p>
             )}
             {insightType === 'ai' && aiNotice === 'protocol_conflict' && aiSubmit.result.pendingMarker !== null && (

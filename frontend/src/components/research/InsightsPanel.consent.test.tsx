@@ -16,13 +16,17 @@ import { ResearchEgressConsentDialog } from './ResearchEgressConsentDialog'
 import { ResearchGlobalModelProvider } from '@/lib/hooks/use-research-global-model'
 import { ResearchJobsProvider } from './ResearchJobsProvider'
 import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
-import { ResearchScopeProvider } from '@/lib/research/scope'
+import { ResearchScopeProvider, scopeStorageKey } from '@/lib/research/scope'
 import * as researchApi from '@/lib/research/api'
 import { apiClient } from '@/lib/api/client'
 import { listAiInsightRiskMarkers } from '@/lib/research/ai-insight-risk'
 import { QUERY_KEYS } from '@/lib/api/query-client'
 
-vi.mock('@/lib/api/client', () => ({ apiClient: { post: vi.fn(), get: vi.fn() } }))
+vi.mock('@/lib/api/client', () => ({
+  apiClient: { post: vi.fn(), get: vi.fn() },
+  // PR5（D-24）：传输守卫消费同一超时预算；模块 mock 需保留该导出
+  API_TIMEOUT_MS: 600000,
+}))
 // 只替换需要断言的函数——其余导出（researchApiErrorDetail 等）保持真实实现，
 // 否则在这个文件里加失败路径用例会以 TypeError 假红（评审 N-4）
 vi.mock('@/lib/research/api', async (importOriginal) => ({
@@ -136,6 +140,11 @@ beforeEach(() => {
   localStorage.clear()
   vi.clearAllMocks()
   Element.prototype.scrollIntoView = vi.fn()
+  // PR5（D-09/D-11）：AI 派发用例必须预置 selected 范围（legacy v1 契约）
+  localStorage.setItem(
+    scopeStorageKey('u1', PROJECT),
+    JSON.stringify({ version: 1, mode: 'selected', sourceIds: ['src_1'], noteIds: [] }),
+  )
   vi.mocked(researchApi.listInsights).mockResolvedValue({ items: [], next_cursor: null })
   vi.mocked(researchApi.listSources).mockResolvedValue({ items: [readySource], next_cursor: null })
   vi.mocked(researchApi.listNotes).mockResolvedValue({ items: [], next_cursor: null })

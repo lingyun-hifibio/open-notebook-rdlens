@@ -111,7 +111,7 @@ describe('ResearchWorkspaceShell', () => {
     render(<ResearchWorkspaceShell><ScopeProbe /></ResearchWorkspaceShell>)
     const ready = captures.posted[0].data
     dispatchMessage(validTokenMessage(String(ready.nonce), String(ready.channel)))
-    expect(screen.getByTestId('scope-probe')).toHaveTextContent('entire_project')
+    expect(screen.getByTestId('scope-probe')).toHaveTextContent('all')
   })
 
   it('error 消息显示错误面板（含 code 与本地化文案）', () => {

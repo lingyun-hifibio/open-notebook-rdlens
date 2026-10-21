@@ -28,11 +28,7 @@ import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
 import { useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
 import { useResearchScope, type ResearchScopeSnapshot } from '@/lib/research/scope'
 import { formatScopeLabel } from '@/lib/research/scope'
-import {
-  detectResponseLanguage,
-  EmptyEffectiveScopeError,
-  resolveScopeSelection,
-} from '@/lib/research/scope-utils'
+import { detectResponseLanguage } from '@/lib/research/scope-utils'
 import {
   useCreateResearchTransformation,
   useResearchSources,
@@ -46,7 +42,7 @@ import type {
 } from '@/lib/types/research'
 import { AdminReadOnlyBanner } from './AdminReadOnlyBanner'
 import { CitationCard } from './CitationCard'
-import { resolveCitationSource } from './citation-utils'
+import { resolveCitationCandidate } from './citation-utils'
 
 /**
  * Transformations 工作台（UI-02，REQ-SCOPE-04/REQ-DIS-02/03/REQ-API-01，
@@ -61,7 +57,7 @@ import { resolveCitationSource } from './citation-utils'
  *   Issue #34 已把模式与 Sources/Notes 复选框迁入左栏，右栏仅留紧凑
  *   Scope Summary）。Scope 权威只来自根级 ResearchScopeProvider。
  * - **派发冻结**：点击 Confirm 时一次性把 Scope 快照解析为显式 id 全集
- *   （entire_project 分页枚举；selected 透传）并冻结；confirmed 全局模型
+ *   （selected 显式集合透传；`all` 由 C-05 服务端解析，本面板不表达）并冻结；confirmed 全局模型
  *   由 runGuarded 在调用时刻捕获；response language 按模板单 Prompt 在
  *   派发时刻检测并固定（RFC §4.2；请求字段由 RWV2-M3 接线）。派发后
  *   修改 Scope/模型不影响在途运行（不变量 5/6）。
@@ -70,7 +66,7 @@ import { resolveCitationSource } from './citation-utils'
  * - 结果展示 output + Citation（CitationCard，失效降级保留原文）；
  *   requires_job 降级提示（输出超预算 → 持久化任务，UI-03 查看）。
  * - 空范围引导：selected 空态（provider 不变量下防御性）与
- *   entire_project 空项目（解析后可达）均英文阻断，不派发。
+ *   `all` 一律显式阻断（D-11），不派发。
  * - S2（Issue #54）：唯一解析器在派发前完成过滤——pending/failed Source
  *   不进入载荷，stale Source 进入载荷但派发时显示警告，Note-only 为合法
  *   范围；解析结果为空有效范围时抛 typed `EmptyEffectiveScopeError`，
@@ -120,11 +116,11 @@ export function TransformationsPanel({
    *  均在 operation 体内设置；取消/未派发不设置） */
   const [runSnapshot, setRunSnapshot] = useState<ResearchScopeSnapshot | null>(null)
   const [runLanguage, setRunLanguage] = useState<'zh' | 'en' | null>(null)
-  /** 解析中（entire_project 分页枚举），防止重复派发 */
+  /** 派发在途标志，防止重复派发 */
   const [isResolvingRun, setIsResolvingRun] = useState(false)
-  /** 可达阻断：空有效范围（entire_project 空项目或枚举后全被过滤；
+  /** 可达阻断：空 selected 或 `all` 被 D-11 拦截；
    *  selected 空态用渲染期条件） */
-  const [blockedReason, setBlockedReason] = useState<'empty_project' | null>(null)
+  const [blockedReason, setBlockedReason] = useState<'empty_project' | 'all_blocked' | null>(null)
   /** S2：本次解析结果中的 stale Source 数（>0 时提交前展示警告） */
   const [staleSourceCount, setStaleSourceCount] = useState(0)
 
@@ -166,9 +162,9 @@ export function TransformationsPanel({
   /**
    * RWV2-12 派发：Confirm 时刻一次性解析并冻结 Scope（RFC §3 不变量 5/6）。
    *
-   * - selected：快照 ids 透传；entire_project：分页枚举全部授权 id。
+   * - selected：快照 ids 透传；`all`/single 由 D-11 阻断（legacy 契约无法表达）。
    * - 解析在 runGuarded 之前完成：外部模型 consent 确认前后不再二次
-   *   解析（快照不漂移）；entire_project 空项目在入闸门前阻断。
+   *   解析（快照不漂移）；`all` 在入闸门前阻断（D-11）。
    * - runSnapshot/runLanguage 在 operation 体内设置——operation 只在
    *   真正派发时执行（本地立即路径与 consent 确认路径均覆盖），consent
    *   取消则不设置（零副作用证据）。
@@ -179,39 +175,20 @@ export function TransformationsPanel({
     const generation = runGenerationRef.current
     const snapshot = getSnapshot()
     if (snapshot.mode === 'selected' && !validate(snapshot).valid) return
-    setIsResolvingRun(true)
+    // PR5（D-11）：Transformation run 请求契约是 extra="forbid" 的显式 ID
+    // 集合（旧 v1）。范围 `all` 无法被该契约表达——**显式阻断**，绝不以
+    // 空 ID 集冒充 all 意图（前端已不再枚举展开）。
+    if (snapshot.mode !== 'selected') {
+      setBlockedReason('all_blocked')
+      return
+    }
     setBlockedReason(null)
     setStaleSourceCount(0)
-    let resolved: { sourceIds: string[]; noteIds: string[]; staleSourceCount: number } | null = null
-    try {
-      resolved = await resolveScopeSelection(projectId, snapshot)
-    } catch (error) {
-      // 陈旧代际（对话框已关闭/重开）不得写入新一代码对话框状态或弹 toast
-      // （成功路径在下方有同款守卫）
-      if (runGenerationRef.current !== generation) return
-      // S2：空有效范围是 typed、可预期的阻断（不派发、不引导降级到
-      // entire project）。分页失败仍是网关错误 → 通用失败 toast。
-      if (error instanceof EmptyEffectiveScopeError) {
-        setBlockedReason('empty_project')
-      } else {
-        toast({
-          title: t('common.error'),
-          description: t('research.workbench.actionFailed'),
-          variant: 'destructive',
-        })
-      }
-      return
-    } finally {
-      // 只有当前代执行流才允许复位解析标志（陈旧流不得清掉新流的标志）
-      if (runGenerationRef.current === generation) {
-        setIsResolvingRun(false)
-      }
-    }
-    if (resolved === null) return
     // 对话框已关闭/重开同一模板：令牌失效 → 放弃派发（对象同一性比较可被
     // 重开击穿，令牌不依赖对象身份）
     if (runGenerationRef.current !== generation) return
-    const { sourceIds, noteIds, staleSourceCount: resolvedStaleCount } = resolved
+    const sourceIds = [...snapshot.sourceIds]
+    const noteIds = [...snapshot.noteIds]
     // RWV2-35：双语 admin 模板按选择器变体语言（Confirm 时刻冻结）；
     // 单 prompt（project/legacy）按 content 检测（R3-D 语义）。
     const bilingual = target.bilingual === true
@@ -224,10 +201,6 @@ export function TransformationsPanel({
           if (runGenerationRef.current !== generation) return
           setRunSnapshot(snapshot)
           setRunLanguage(lang)
-          // S2：stale Source 可派发，但必须在真正派发时可见（后端用最后
-          // 同步版本）。与 runSnapshot/runLanguage 同处设置——consent
-          // 取消/未派发不留下警告。
-          setStaleSourceCount(resolvedStaleCount)
           const result = await runMutation.mutateAsync({
             transformationId: target.transformation_id,
             sourceIds,
@@ -257,6 +230,7 @@ export function TransformationsPanel({
     mode,
     sourceIds: selectedSourceIds,
     noteIds: selectedNoteIds,
+    singleSourceId: null,
   }
   const scopeInvalidSelected =
     mode === 'selected' && selectedSourceIds.length + selectedNoteIds.length === 0
@@ -402,7 +376,7 @@ export function TransformationsPanel({
               {t('research.transformations.scopeSummary')}
             </p>
             <p className="text-sm" data-testid="run-scope-summary">
-              {summarySnapshot.mode === 'entire_project'
+              {summarySnapshot.mode === 'all'
                 ? t('research.layout.scope.entireProject')
                 : t('research.layout.scope.selectedSummary', {
                     sources: summarySnapshot.sourceIds.length,
@@ -479,6 +453,15 @@ export function TransformationsPanel({
               {t('research.transformations.staleSourcesWarning', { n: staleSourceCount })}
             </p>
           )}
+          {blockedReason === 'all_blocked' && (
+            <p
+              className="text-xs font-medium text-destructive"
+              role="alert"
+              data-testid="run-all-blocked"
+            >
+              {t('research.transformations.allRequiresSelection')}
+            </p>
+          )}
           {blockedReason === 'empty_project' && (
             <p
               className="text-xs font-medium text-destructive"
@@ -520,7 +503,7 @@ export function TransformationsPanel({
                     <CitationCard
                       key={citation.citation_id}
                       citation={citation}
-                      source={resolveCitationSource(sourcesData?.items, citation)}
+                      source={resolveCitationCandidate(sourcesData?.items, citation)}
                       onJump={onCitationJump}
                     />
                   ))}

@@ -1,9 +1,16 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
-import { createEmbeddedSession, type SessionState } from './session'
+import { createEmbeddedSession, type EmbeddedSession, type SessionState } from './session'
+import { createContext, useContext } from 'react'
+
+/** PR5（D1/H8）：向子树暴露 requestIngest（面板「添加资料」按钮消费） */
+const IngestRequestContext = createContext<(() => void) | null>(null)
+export function useRequestIngest(): (() => void) | null {
+  return useContext(IngestRequestContext)
+}
 import { getEmbeddedParentOrigins } from './config'
 import { ResearchWorkspaceProvider } from './workspace-context'
 import { ResearchGlobalModelProvider } from '@/lib/hooks/use-research-global-model'
@@ -23,6 +30,7 @@ import { useThemeStore } from '@/lib/stores/theme-store'
 export function ResearchWorkspaceShell({ children }: { children?: React.ReactNode }) {
   const { t } = useTranslation()
   const [state, setState] = useState<SessionState | null>(null)
+  const sessionRef = useRef<EmbeddedSession | null>(null)
   const setEmbeddedTheme = useThemeStore((s) => s.setEmbeddedTheme)
 
   // RWV2-50（RDLens #363）：父页主题仅在 authenticated 会话存续期间应用；
@@ -50,6 +58,7 @@ export function ResearchWorkspaceShell({ children }: { children?: React.ReactNod
       allowedOrigins,
       parentOrigin: allowedOrigins[0],
     })
+    sessionRef.current = session
     setState(session.getState())
     const unsubscribe = session.subscribe(setState)
     return () => {
@@ -95,12 +104,16 @@ export function ResearchWorkspaceShell({ children }: { children?: React.ReactNod
   // 提供 confirmed 模型、Search 上下文默认值与外发 consent single-flight
   // guard（计划 §6.1/§6.8）；未认证时不挂载，避免空 projectId 查询。
   if (state.userId !== undefined && state.projectId !== undefined && state.role !== undefined) {
+    // R2-H8 修复：IngestRequestContext.Provider 必须真实包裹——否则
+    // useRequestIngest 恒 null，「添加资料」按钮永远隐藏。
     return (
-      <ResearchWorkspaceProvider userId={state.userId} projectId={state.projectId} role={state.role}>
-        <ResearchScopeProvider userId={state.userId} projectId={state.projectId}>
-          <ResearchGlobalModelProvider>{children}</ResearchGlobalModelProvider>
-        </ResearchScopeProvider>
-      </ResearchWorkspaceProvider>
+      <IngestRequestContext.Provider value={() => sessionRef.current?.requestIngest()}>
+        <ResearchWorkspaceProvider userId={state.userId} projectId={state.projectId} role={state.role}>
+          <ResearchScopeProvider userId={state.userId} projectId={state.projectId}>
+            <ResearchGlobalModelProvider>{children}</ResearchGlobalModelProvider>
+          </ResearchScopeProvider>
+        </ResearchWorkspaceProvider>
+      </IngestRequestContext.Provider>
     )
   }
 

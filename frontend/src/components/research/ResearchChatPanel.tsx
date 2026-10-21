@@ -43,6 +43,11 @@ export type BackgroundJobSubmitResult =
   | { status: 'queued'; jobId: string | null }
   /** 守卫未执行（如外部模型确认被取消）：不算失败，保持可再次点击 */
   | { status: 'not_dispatched' }
+  /**
+   * PR5（D-26）：`all` 在本入口的契约下**无法表达** → 显式阻断（D-11）。
+   * 与 `failed` 分开，UI 才能给"请先选择资料"而不是通用提交失败。
+   */
+  | { status: 'blocked_scope' }
   | { status: 'failed' }
 
 export function ResearchChatPanel({
@@ -58,6 +63,7 @@ export function ResearchChatPanel({
   onCitationJump,
   backgroundNotice,
   onRunAsBackgroundJob,
+  backgroundJobRequiresSelection = false,
   resolveChatOrigin,
   onViewInsight,
   onViewNote,
@@ -104,6 +110,12 @@ export function ResearchChatPanel({
     /** 该 turn 的稳定键：调用方据此复用幂等键（重复点击不产生第二个 Job） */
     turnKey: string,
   ) => Promise<BackgroundJobSubmitResult>
+  /**
+   * PR5（D-26/D-11）：后台 CTA 所在入口的契约**需要显式资料集合**（C-05 未
+   * 就绪 / 旧 v1 端点）。为 true 时 `all` 的快照无法表达 → CTA 就近说明并
+   * 禁用（不派发空 ID 集）；为 false（C-05 已就绪）时 `all` 走 source_scope。
+   */
+  backgroundJobRequiresSelection?: boolean
   /** RWV2-23（D2）：live 轮 Save 的惰性 chat origin 解析（generation_id） */
   resolveChatOrigin?: (turnId: string) => Promise<ResearchChatSaveOrigin | null>
   /** RWV2-23（AC3）：保存成功后跳转 Results/Insights 或 Materials/Notes */
@@ -128,7 +140,7 @@ export function ResearchChatPanel({
   // RWV2-11（K7）：Scope 真源唯一——面板直接消费共享 Provider
   const { mode, getSnapshot } = useResearchScope()
   // RWV2-11（K3）：all_selected 只适用于显式 selected 范围（1～50 Source、无
-  // Notes）。entire_project 无显式 Source 集合（后端空数组必 422
+  // Notes）。`all` 无显式 Source 集合（后端空数组必 422
   // coverage_sources_empty）——提交闸门单点（K3/W4），CoverageScopeSelector
   // 只出 notice。
   const dispatchSnapshot = getSnapshot()
@@ -162,9 +174,25 @@ export function ResearchChatPanel({
     return ''
   }
 
+  /**
+   * PR5（D-26/D-11）：该 turn 的后台 CTA 是否被范围语义阻断。
+   * `backgroundJobRequiresSelection` 由组合根给出（C-05 是否已就绪）；
+   * `all` 在需要显式 ID 集合的契约下无法表达 → 阻断，绝不发空 ID 集。
+   */
+  const scopeUnavailableFor = (target: ResearchChatTurn): boolean =>
+    backgroundJobRequiresSelection && target.scopeSnapshot?.mode !== 'selected'
+
   const runBackgroundJob = async (target: ResearchChatTurn) => {
     if (!onRunAsBackgroundJob || target.scopeSnapshot === null) return
     if (jobQueuedByTurn[target.id] !== undefined) return // 已受理，禁止重复提交
+    // D-26：就近阻断也已生效，这里再兜一层——绝不把 `all` 发成空 ID 集
+    if (scopeUnavailableFor(target)) {
+      setJobErrorByTurn((prev) => ({
+        ...prev,
+        [target.id]: t('research.errors.backgroundJobBlockedScope'),
+      }))
+      return
+    }
     const query = queryForTurn(target)
     if (!query.trim()) return
     setJobSubmittingTurn(target.id)
@@ -181,6 +209,12 @@ export function ResearchChatPanel({
       )
       if (result.status === 'queued') {
         setJobQueuedByTurn((prev) => ({ ...prev, [target.id]: result.jobId }))
+      } else if (result.status === 'blocked_scope') {
+        // D-26：阻断文案必须与 D-11 一致（"请先选择资料"），不得写成通用失败
+        setJobErrorByTurn((prev) => ({
+          ...prev,
+          [target.id]: t('research.errors.backgroundJobBlockedScope'),
+        }))
       } else if (result.status === 'failed') {
         setJobErrorByTurn((prev) => ({
           ...prev,
@@ -205,6 +239,14 @@ export function ResearchChatPanel({
     // 共用同一快照（P2-①，避免渲染期/提交期两次取值）；selection 携带 mode，
     // turn 记录由 hook 推导，consent/幂等/最终请求全部同源（K11）。
     const snapshot = getSnapshot()
+    // R2-H4：显式提交路径的 selection 携带完整快照（含 singleSourceId），
+    // 否则派发链路 deriveScopeSnapshot 会丢限定字段。
+    const selectionWithScope: ResearchChatSelection = {
+      mode: snapshot.mode,
+      sourceIds: [...snapshot.sourceIds],
+      noteIds: [...snapshot.noteIds],
+      singleSourceId: snapshot.singleSourceId,
+    }
     if (scope === 'all_selected') {
       // #358：能力门禁在提交点再次校验（与 coverageAllowed 同源，且用
       // 派发时刻冻结快照）——能力 false/缺失时不发 Coverage 创建请求。
@@ -220,11 +262,7 @@ export function ResearchChatPanel({
       })
       return
     }
-    void onSend(trimmed, {
-      mode: snapshot.mode,
-      sourceIds: [...snapshot.sourceIds],
-      noteIds: [...snapshot.noteIds],
-    }).then((sent) => {
+    void onSend(trimmed, selectionWithScope).then((sent) => {
       if (sent) setQuery('')
     })
   }
@@ -254,9 +292,10 @@ export function ResearchChatPanel({
               <div className="max-w-[80%] rounded-lg bg-primary/10 px-3 py-2 text-sm">
                 {turn.content}
               </div>
-              {/* RWV2-11：会话内 turn 显示派发 Scope 徽标；刷新恢复 turn
-                  （scopeSnapshot null）如实不显示（B13/K6） */}
-              {turn.scopeSnapshot !== null && (
+              {/* RWV2-11：会话内 turn 显示派发 Scope 徽标。PR5（T9/D-01）：
+                  刷新恢复的历史 turn 无法证明当时的范围 → 显式标注"范围
+                  不可用"，**绝不**回填当前选择冒充历史范围。 */}
+              {turn.scopeSnapshot !== null ? (
                 <span
                   className="text-xs text-muted-foreground"
                   data-testid="chat-turn-scope-badge"
@@ -264,6 +303,13 @@ export function ResearchChatPanel({
                   {t('research.chatScopeBadge', {
                     scope: formatScopeLabel(turn.scopeSnapshot, t),
                   })}
+                </span>
+              ) : (
+                <span
+                  className="text-xs text-muted-foreground"
+                  data-testid="chat-turn-scope-unavailable"
+                >
+                  {t('research.scopeDetails.turnScopeUnavailable')}
                 </span>
               )}
             </div>
@@ -409,9 +455,22 @@ export function ResearchChatPanel({
                         <p className="text-muted-foreground">
                           {t('research.errors.persistentJobHint')}
                         </p>
+                        {/* PR5（D-26/D-11）：该入口契约需要显式资料集合，而
+                            该 turn 冻结的是 `all`（无法表达）→ 就近说明并禁用，
+                            不发空 ID 集、也不误导成"提交失败"。 */}
+                        {scopeUnavailableFor(turn) && (
+                          <p
+                            className="text-destructive"
+                            data-testid="chat-persistent-job-blocked-scope"
+                            role="alert"
+                          >
+                            {t('research.errors.backgroundJobBlockedScope')}
+                          </p>
+                        )}
                         <Button
                           size="sm"
                           disabled={
+                            scopeUnavailableFor(turn) ||
                             jobSubmittingTurn === turn.id ||
                             jobQueuedByTurn[turn.id] !== undefined ||
                             queryForTurn(turn).trim() === ''

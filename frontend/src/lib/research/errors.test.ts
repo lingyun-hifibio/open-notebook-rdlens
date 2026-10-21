@@ -73,3 +73,17 @@ describe('extractResearchErrorCode（shape 守卫，R6-4）', () => {
     expect(extractResearchErrorCode({})).toBeNull()
   })
 })
+
+/**
+ * PR5（D-24/AC8）：传输层新增的客户端码必须有**主文案**——否则用户只拿到
+ * generic 兜底，看到「出错了」却不知道下一步做什么（与 D-09 同类缺陷）。
+ */
+describe('PR5（D-24）：传输层客户端码有稳定文案', () => {
+  it('stream_idle_timeout / stream_protocol_error 均映射到专用文案（不是 generic）', () => {
+    expect(userErrorMessageKey('stream_idle_timeout')).toBe('research.errors.streamIdleTimeout')
+    expect(userErrorMessageKey('stream_protocol_error')).toBe('research.errors.streamProtocolError')
+    expect(userErrorMessageKey('stream_lost')).toBe('research.errors.streamLost')
+    // 对照：真正未知的码仍兜底 generic
+    expect(userErrorMessageKey('definitely_not_a_code')).toBe('research.errors.generic')
+  })
+})

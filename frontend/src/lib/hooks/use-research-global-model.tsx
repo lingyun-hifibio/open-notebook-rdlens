@@ -115,7 +115,15 @@ export interface UseResearchGlobalModelResult {
    */
   runGuarded: <T>(
     operation: GuardedOperation<T>,
-    options?: { scopeLabel?: string },
+    options?: {
+      scopeLabel?: string
+      /** PR5（D-22）：契约选择随登记冻结（确认后不再判定能力） */
+      contract?: 'v1' | 'c05-v1'
+      /** PR5（D-22）：请求信封随登记冻结（确认后原样派发） */
+      envelope?: Readonly<Record<string, unknown>>
+      /** PR5（D-22）：幂等键随登记冻结（确认后原样复用） */
+      idempotencyKey?: string
+    },
   ) => Promise<T | undefined>
   /**
    * RWV2-11（K10）：本次待确认派发登记的 Scope 摘要；弹窗仅在其非空时
@@ -129,6 +137,16 @@ export interface UseResearchGlobalModelResult {
    * 取消/确认/未登记 → null。
    */
   pendingModelId: string | null
+  /**
+   * PR5（D-22）：本次登记的**冻结派发意图**（契约 / 请求信封 / 幂等键）。
+   * 确认后只用这里的信封与键派发；取消/确认/未登记 → null。
+   * 暴露出来的目的是让"同意流程与直发同键同信封"可被断言（T40）。
+   */
+  pendingConsentRegistration: {
+    contract: 'v1' | 'c05-v1' | null
+    envelope: Readonly<Record<string, unknown>> | null
+    idempotencyKey: string | null
+  } | null
   /** consent 状态（§6.8） */
   needsConsent: boolean
   isConsentPromptOpen: boolean
@@ -169,6 +187,16 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
     operation: GuardedOperation<unknown>
     modelId: string
     scopeLabel: string | null
+    /**
+     * PR5（D-22）：登记必须冻结**完整派发意图**，不只是模型快照 + Scope 摘要。
+     * 若请求信封与幂等键在确认之后才构造，取消/重试就会换键——而 D-13 表①
+     * 要求"未完成发出"时保留原键，同意流程会因此成为幂等漏洞。
+     */
+    contract: 'v1' | 'c05-v1' | null
+    /** 冻结的请求信封（确认后**只用它**派发） */
+    envelope: Readonly<Record<string, unknown>> | null
+    /** 冻结的幂等键（确认后**只用它**派发；取消不得清除） */
+    idempotencyKey: string | null
   }
   const pendingRegistrationRef = useRef<PendingConsentRegistration | null>(null)
 
@@ -389,7 +417,12 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
   const runGuarded = useCallback(
     async <T,>(
       operation: GuardedOperation<T>,
-      options?: { scopeLabel?: string },
+      options?: {
+        scopeLabel?: string
+        contract?: 'v1' | 'c05-v1'
+        envelope?: Readonly<Record<string, unknown>>
+        idempotencyKey?: string
+      },
     ): Promise<T | undefined> => {
       const snapshot = confirmedModelId
       if (!canExecute || snapshot === null) return undefined
@@ -404,11 +437,15 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
       ) {
         return undefined
       }
-      // K10：执行体 + 模型快照 + 派发 Scope 摘要单记录登记
+      // K10 + PR5（D-22）：执行体 + 模型快照 + Scope 摘要 + **契约/信封/幂等键**
+      // 单记录登记——确认后只用登记中的信封与键派发，取消不清键。
       pendingRegistrationRef.current = {
         operation: operation as GuardedOperation<unknown>,
         modelId: snapshot,
         scopeLabel: options?.scopeLabel ?? null,
+        contract: options?.contract ?? null,
+        envelope: options?.envelope ?? null,
+        idempotencyKey: options?.idempotencyKey ?? null,
       }
       setIsConsentPromptOpen(true)
       return undefined
@@ -426,6 +463,19 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
   const pendingModelId = isConsentPromptOpen
     ? pendingRegistrationRef.current?.modelId ?? null
     : null
+
+  // PR5（D-22）：登记中冻结的契约/信封/幂等键（可断言"同意流程与直发同键
+  // 同信封"）；未登记或已确认/取消 → null。
+  const pendingConsentRegistration = useMemo(() => {
+    if (!isConsentPromptOpen) return null
+    const registration = pendingRegistrationRef.current
+    if (registration === null) return null
+    return {
+      contract: registration.contract,
+      envelope: registration.envelope,
+      idempotencyKey: registration.idempotencyKey,
+    }
+  }, [isConsentPromptOpen])
 
   const value = useMemo<UseResearchGlobalModelResult>(() => ({
     confirmedModelId,
@@ -449,6 +499,7 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
     runGuarded,
     pendingScopeLabel,
     pendingModelId,
+    pendingConsentRegistration,
     needsConsent,
     isConsentPromptOpen,
     isConsentInFlight,
@@ -481,6 +532,7 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
     needsConsent,
     pendingScopeLabel,
     pendingModelId,
+    pendingConsentRegistration,
     runGuarded,
     saveModel,
     saveModelError,

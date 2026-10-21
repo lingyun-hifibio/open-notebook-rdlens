@@ -1,0 +1,861 @@
+{
+  "scope_request.all.valid": {
+    "schema": "c05_scope_request",
+    "expect": "valid",
+    "origin": "current_api",
+    "value": {
+      "source_scope": {
+        "mode": "all",
+        "source_ids": [],
+        "single_source_id": null
+      },
+      "note_ids": []
+    }
+  },
+  "scope_request.selected.exact_versions.valid": {
+    "schema": "c05_scope_request",
+    "expect": "valid",
+    "origin": "current_api",
+    "value": {
+      "source_scope": {
+        "mode": "selected",
+        "source_ids": ["source:synth_a_v2", "source:synth_a_v1"],
+        "single_source_id": null
+      },
+      "note_ids": []
+    }
+  },
+  "scope_request.single.valid": {
+    "schema": "c05_scope_request",
+    "expect": "valid",
+    "origin": "current_api",
+    "value": {
+      "source_scope": {
+        "mode": "single",
+        "source_ids": [],
+        "single_source_id": "source:synth_a_v2"
+      },
+      "note_ids": ["note:synth_1"]
+    }
+  },
+  "scope_request.null_containers.valid": {
+    "schema": "c05_scope_request",
+    "expect": "valid",
+    "origin": "current_api",
+    "value": {
+      "source_scope": {
+        "mode": "selected",
+        "source_ids": null,
+        "single_source_id": null
+      },
+      "note_ids": null
+    },
+    "note": "#615 §3.2：容器缺失/null 归一为 []（合法）；成员层 null 不合法（见下一条）。"
+  },
+  "scope_request.numeric_member.invalid": {
+    "schema": "c05_scope_request",
+    "expect": "invalid",
+    "origin": "current_api",
+    "value": {
+      "source_scope": {
+        "mode": "selected",
+        "source_ids": [123],
+        "single_source_id": null
+      }
+    },
+    "note": "#615 §3.2：数组成员只能是字符串——数字不得被转成 ID。"
+  },
+  "scope_request.bool_member.invalid": {
+    "schema": "c05_scope_request",
+    "expect": "invalid",
+    "origin": "current_api",
+    "value": {
+      "source_scope": {
+        "mode": "single",
+        "source_ids": [],
+        "single_source_id": true
+      }
+    }
+  },
+  "scope_request.null_member.invalid": {
+    "schema": "c05_scope_request",
+    "expect": "invalid",
+    "origin": "current_api",
+    "value": {
+      "source_scope": {
+        "mode": "selected",
+        "source_ids": [null],
+        "single_source_id": null
+      }
+    }
+  },
+  "scope_request.wrong_container.invalid": {
+    "schema": "c05_scope_request",
+    "expect": "invalid",
+    "origin": "current_api",
+    "value": {
+      "source_scope": {
+        "mode": "all",
+        "source_ids": "source:synth_a_v2",
+        "single_source_id": null
+      }
+    },
+    "note": "§3.2：错误容器不得被 ``or []`` 静默当作空集合。"
+  },
+  "scope_request.all_with_ids.invalid": {
+    "schema": "c05_scope_request",
+    "expect": "invalid",
+    "origin": "current_api",
+    "value": {
+      "source_scope": {
+        "mode": "all",
+        "source_ids": ["source:synth_a_v2"],
+        "single_source_id": null
+      }
+    }
+  },
+  "scope_request.unknown_field.invalid": {
+    "schema": "c05_scope_request",
+    "expect": "invalid",
+    "origin": "current_api",
+    "value": {
+      "source_scope": {
+        "mode": "all",
+        "source_ids": [],
+        "single_source_id": null,
+        "document_ids": ["doc_1"]
+      }
+    }
+  },
+  "resolved_scope.selected.valid": {
+    "schema": "resolved_scope",
+    "expect": "valid",
+    "origin": "current_api",
+    "value": {
+      "mode": "selected",
+      "contract_version": "c05-v1",
+      "resolved_source_refs": [
+        { "document_id": "doc_synth_a", "document_version": "v2" },
+        { "document_id": "doc_synth_a", "document_version": "v1" }
+      ],
+      "note_ids": [],
+      "single_source_id": null,
+      "missing_source_ids": [],
+      "includes_exact_versions": true,
+      "contains_document_body": false,
+      "warnings": []
+    },
+    "note": "同文档多版本合法（selected 不自动升级、不去重文档）。"
+  },
+  "resolved_scope.all.stale_fallback.valid": {
+    "schema": "resolved_scope",
+    "expect": "valid",
+    "origin": "current_api",
+    "value": {
+      "mode": "all",
+      "contract_version": "c05-v1",
+      "resolved_source_refs": [
+        { "document_id": "doc_synth_a", "document_version": "v1" }
+      ],
+      "note_ids": [],
+      "single_source_id": null,
+      "missing_source_ids": [],
+      "includes_exact_versions": true,
+      "contains_document_body": false,
+      "warnings": [
+        {
+          "code": "stale_fallback",
+          "message": "newest version is not readable; fell back to the previous readable version",
+          "documents": [
+            {
+              "document_id": "doc_synth_a",
+              "used_version": "v1",
+              "skipped_version": "v2"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "resolved_scope.all.excluded_no_readable.valid": {
+    "schema": "resolved_scope",
+    "expect": "valid",
+    "origin": "current_api",
+    "value": {
+      "mode": "all",
+      "contract_version": "c05-v1",
+      "resolved_source_refs": [],
+      "note_ids": [],
+      "single_source_id": null,
+      "missing_source_ids": [],
+      "includes_exact_versions": true,
+      "contains_document_body": false,
+      "warnings": [
+        {
+          "code": "stale_fallback",
+          "message": "no readable version is available; document excluded from the resolved scope",
+          "documents": [
+            {
+              "document_id": "doc_synth_b",
+              "used_version": "",
+              "skipped_version": "v3"
+            }
+          ]
+        }
+      ]
+    },
+    "note": "无可读版本时被排除：used_version 为空字符串（不虚构被回退版本）。"
+  },
+  "resolved_scope.single_with_note.valid": {
+    "schema": "resolved_scope",
+    "expect": "valid",
+    "origin": "current_api",
+    "value": {
+      "mode": "single",
+      "contract_version": "c05-v1",
+      "resolved_source_refs": [
+        { "document_id": "doc_synth_a", "document_version": "v2" }
+      ],
+      "note_ids": ["note:synth_1"],
+      "single_source_id": "source:synth_a_v2",
+      "missing_source_ids": [],
+      "includes_exact_versions": true,
+      "contains_document_body": false,
+      "warnings": []
+    }
+  },
+  "resolved_scope.with_body.invalid": {
+    "schema": "resolved_scope",
+    "expect": "invalid",
+    "origin": "current_api",
+    "value": {
+      "mode": "all",
+      "contract_version": "c05-v1",
+      "resolved_source_refs": [
+        { "document_id": "doc_synth_a", "document_version": "v1" }
+      ],
+      "note_ids": [],
+      "single_source_id": null,
+      "missing_source_ids": [],
+      "includes_exact_versions": true,
+      "contains_document_body": true,
+      "warnings": []
+    },
+    "note": "范围对象不含正文（``contains_document_body`` 恒 false）。"
+  },
+  "c05_scope_response_projection.selected.valid": {
+    "schema": "c05_scope_response_projection",
+    "expect": "valid",
+    "origin": "current_api",
+    "value": {
+      "scope_contract_version": "c05-v1",
+      "resolved_scope": {
+        "mode": "selected",
+        "contract_version": "c05-v1",
+        "resolved_source_refs": [
+          { "document_id": "doc_synth_a", "document_version": "v2" }
+        ],
+        "note_ids": [],
+        "single_source_id": null,
+        "missing_source_ids": [],
+        "includes_exact_versions": true,
+        "contains_document_body": false,
+        "warnings": []
+      }
+    },
+    "note": "#615 §3.3：fresh、202、完成重放与 SSE usage/done 采用**同一**投影；由 scope.project_scope_response() 生成。"
+  },
+  "c05_scope_response_projection.wrong_contract_version.invalid": {
+    "schema": "c05_scope_response_projection",
+    "expect": "invalid",
+    "origin": "current_api",
+    "value": {
+      "scope_contract_version": "v1",
+      "resolved_scope": {
+        "mode": "all",
+        "contract_version": "c05-v1",
+        "resolved_source_refs": []
+      }
+    },
+    "note": "响应范围契约版本恒 c05-v1；不得与生成契约 v1 混用（§3.1：不全局修改响应头默认值）。"
+  },
+  "c05_capabilities.enabled_search_wired.valid": {
+    "schema": "c05_capabilities",
+    "expect": "valid",
+    "origin": "current_api",
+    "value": {
+      "contract": "c05-v1",
+      "enabled": true,
+      "preview_supported": true,
+      "entries": {
+        "search": {
+          "scope_modes": [
+            "all",
+            "selected",
+            "single"
+          ],
+          "execution_modes": [
+            "auto",
+            "direct_context",
+            "hybrid_rag",
+            "planned_rag"
+          ],
+          "context_levels": [
+            "focused",
+            "document",
+            "workspace"
+          ],
+          "preview_supported": true,
+          "execution_ready": true,
+          "unavailable_reason": null
+        },
+        "chat": {
+          "scope_modes": [
+            "all",
+            "selected",
+            "single"
+          ],
+          "execution_modes": [],
+          "context_levels": [],
+          "preview_supported": false,
+          "execution_ready": false,
+          "unavailable_reason": "c05_entry_not_wired"
+        },
+        "coverage": {
+          "scope_modes": [
+            "all",
+            "selected",
+            "single"
+          ],
+          "execution_modes": [],
+          "context_levels": [],
+          "preview_supported": false,
+          "execution_ready": false,
+          "unavailable_reason": "c05_entry_not_wired"
+        },
+        "compare": {
+          "scope_modes": [
+            "all",
+            "selected",
+            "single"
+          ],
+          "execution_modes": [],
+          "context_levels": [],
+          "preview_supported": false,
+          "execution_ready": false,
+          "unavailable_reason": "c05_entry_not_wired"
+        },
+        "ai_insight": {
+          "scope_modes": [
+            "all",
+            "selected",
+            "single"
+          ],
+          "execution_modes": [],
+          "context_levels": [],
+          "preview_supported": false,
+          "execution_ready": false,
+          "unavailable_reason": "c05_entry_not_wired"
+        },
+        "transformation": {
+          "scope_modes": [
+            "all",
+            "selected",
+            "single"
+          ],
+          "execution_modes": [],
+          "context_levels": [],
+          "preview_supported": false,
+          "execution_ready": false,
+          "unavailable_reason": "c05_entry_not_wired"
+        }
+      }
+    },
+    "note": "#615 W3 交付时的**真实**能力位：只有 Search 执行就绪（PR 4 接通其余入口）。"
+  },
+  "c05_capabilities.disabled.valid": {
+    "schema": "c05_capabilities",
+    "expect": "valid",
+    "origin": "current_api",
+    "value": {
+      "contract": "c05-v1",
+      "enabled": false,
+      "preview_supported": false,
+      "entries": {
+        "search": {
+          "scope_modes": [],
+          "execution_modes": [],
+          "context_levels": [],
+          "preview_supported": false,
+          "execution_ready": false,
+          "unavailable_reason": "c05_contract_disabled"
+        },
+        "chat": {
+          "scope_modes": [],
+          "execution_modes": [],
+          "context_levels": [],
+          "preview_supported": false,
+          "execution_ready": false,
+          "unavailable_reason": "c05_contract_disabled"
+        },
+        "coverage": {
+          "scope_modes": [],
+          "execution_modes": [],
+          "context_levels": [],
+          "preview_supported": false,
+          "execution_ready": false,
+          "unavailable_reason": "c05_contract_disabled"
+        },
+        "compare": {
+          "scope_modes": [],
+          "execution_modes": [],
+          "context_levels": [],
+          "preview_supported": false,
+          "execution_ready": false,
+          "unavailable_reason": "c05_contract_disabled"
+        },
+        "ai_insight": {
+          "scope_modes": [],
+          "execution_modes": [],
+          "context_levels": [],
+          "preview_supported": false,
+          "execution_ready": false,
+          "unavailable_reason": "c05_contract_disabled"
+        },
+        "transformation": {
+          "scope_modes": [],
+          "execution_modes": [],
+          "context_levels": [],
+          "preview_supported": false,
+          "execution_ready": false,
+          "unavailable_reason": "c05_contract_disabled"
+        }
+      }
+    }
+  },
+  "c05_entry_capability.not_wired.valid": {
+    "schema": "c05_entry_capability",
+    "expect": "valid",
+    "origin": "current_api",
+    "value": {
+      "scope_modes": ["all", "selected", "single"],
+      "execution_modes": [],
+      "context_levels": [],
+      "preview_supported": false,
+      "execution_ready": false,
+      "unavailable_reason": "c05_entry_not_wired"
+    },
+    "note": "契约支持（scope_modes 非空）与执行就绪（false）必须分别表达。"
+  },
+  "c05_entry_capability.preview_supported_claimed.invalid": {
+    "schema": "c05_entry_capability_pr615",
+    "expect": "invalid",
+    "origin": "current_api",
+    "value": {
+      "scope_modes": [
+        "all"
+      ],
+      "execution_modes": [
+        "auto"
+      ],
+      "context_levels": [
+        "focused"
+      ],
+      "preview_supported": true,
+      "execution_ready": true,
+      "unavailable_reason": null
+    },
+    "note": "只读 C-05 Preview 的接线属 PR 4：能力位恒 false，不得宣称可用。"
+  },
+  "c05_entry_capability.execution_ready_claimed_for_unwired.trap": {
+    "schema": "c05_capabilities",
+    "expect": "valid",
+    "origin": "target_contract",
+    "note": "形状**合法但语义错误**的诱饵样例（chat 被宣称 execution_ready）。纯 schema 无法拒绝它——这正是 §3.3 需要源码投影测试的原因：`test_only_search_is_execution_ready` 要求 execution_ready 必须等于 builder 输出，本样例即该守卫的证伪输入。expect=valid 只表示**形状**合法。",
+    "value": {
+      "contract": "c05-v1",
+      "enabled": true,
+      "preview_supported": false,
+      "entries": {
+        "search": {
+          "scope_modes": ["all", "selected", "single"],
+          "execution_modes": ["auto"],
+          "context_levels": ["focused"],
+          "preview_supported": false,
+          "execution_ready": true,
+          "unavailable_reason": null
+        },
+        "chat": {
+          "scope_modes": ["all", "selected", "single"],
+          "execution_modes": ["auto"],
+          "context_levels": ["focused"],
+          "preview_supported": false,
+          "execution_ready": true,
+          "unavailable_reason": null
+        },
+        "coverage": {
+          "scope_modes": ["all"],
+          "execution_modes": [],
+          "context_levels": [],
+          "preview_supported": false,
+          "execution_ready": false,
+          "unavailable_reason": "c05_entry_not_wired"
+        },
+        "compare": {
+          "scope_modes": ["all"],
+          "execution_modes": [],
+          "context_levels": [],
+          "preview_supported": false,
+          "execution_ready": false,
+          "unavailable_reason": "c05_entry_not_wired"
+        },
+        "ai_insight": {
+          "scope_modes": ["all"],
+          "execution_modes": [],
+          "context_levels": [],
+          "preview_supported": false,
+          "execution_ready": false,
+          "unavailable_reason": "c05_entry_not_wired"
+        },
+        "transformation": {
+          "scope_modes": ["all"],
+          "execution_modes": [],
+          "context_levels": [],
+          "preview_supported": false,
+          "execution_ready": false,
+          "unavailable_reason": "c05_entry_not_wired"
+        }
+      }
+    },
+    "note": "本样例在**形状**上合法但语义错误——由 §6 的源码投影测试（execution_ready 必须等于 builder 输出）拒绝，不由纯 schema 拒绝。"
+  },
+  "c05_error.scope_selected_empty.valid": {
+    "schema": "c05_error_detail",
+    "expect": "valid",
+    "origin": "current_api",
+    "value": {
+      "code": "scope_selected_empty",
+      "message": "mode=selected has no resolvable source; select at least one source or provide a non-empty note",
+      "recovery_action": "reselect_sources",
+      "acceptance": "not_accepted"
+    },
+    "note": "HTTP 422 + 对象 detail；接受写入之前拒绝 ⇒ not_accepted。"
+  },
+  "c05_error.entry_not_ready.valid": {
+    "schema": "c05_error_detail",
+    "expect": "valid",
+    "origin": "current_api",
+    "value": {
+      "code": "c05_entry_not_ready",
+      "entry": "chat",
+      "message": "the C-05 scope contract is not wired for this entry yet; keep the c05-v1 intent and do not resend as v1",
+      "retryable": false,
+      "recovery_action": "show_unavailable",
+      "acceptance": "not_accepted"
+    },
+    "note": "HTTP 503；门禁在接受之前 ⇒ not_accepted；retryable=false 表示同部署重试不会变绿。"
+  },
+  "c05_error.acceptance_outcome_unknown.valid": {
+    "schema": "c05_error_detail",
+    "expect": "valid",
+    "origin": "current_api",
+    "value": {
+      "code": "acceptance_outcome_unknown",
+      "message": "the acceptance outcome could not be verified",
+      "generation_id": "gen_synth_0001",
+      "retry_with_original_idempotency_key": true,
+      "recovery_action": "reconcile_then_retry",
+      "acceptance": "unknown"
+    },
+    "note": "HTTP 409：结果**不明**——保留原材料与原键查证，不写成失败、不新建替代执行。`retry_with_original_idempotency_key` 只授权**查证**。"
+  },
+  "c05_error.terminal_model_unknown.valid": {
+    "schema": "c05_error_detail",
+    "expect": "valid",
+    "origin": "current_api",
+    "value": {
+      "code": "outcome_unknown",
+      "message": "generation outcome is unknown; do not retry with the same idempotency key",
+      "generation_id": "gen_synth_0002",
+      "state": "outcome_unknown",
+      "recovery_action": "stop_and_confirm",
+      "acceptance": "accepted"
+    },
+    "note": "外部模型调用**可能已发送**：不自动重发、不因换 key 重新执行；沿既有显式人工恢复机制。与上一条的 recovery_action 必须不同。"
+  },
+  "c05_error.unconfirmed_rollback.valid": {
+    "schema": "c05_error_detail",
+    "expect": "valid",
+    "origin": "current_api",
+    "value": {
+      "code": "acceptance_budget_exhausted",
+      "message": "the acceptance budget was exhausted before arming timeouts",
+      "retryable": true,
+      "recovery_action": "reconcile_then_retry",
+      "acceptance": "unknown"
+    },
+    "note": "同一稳定码在**回滚未确认**（zero_accept_writes=false）时出现：本次尝试**可能已写入**，因此不得报 not_accepted。§5 表：以具体分支 rollback/commit_attempted 为准。"
+  },
+  "c05_error.unrecognised_code.valid": {
+    "schema": "c05_error_detail",
+    "expect": "valid",
+    "origin": "current_api",
+    "value": {
+      "code": "quota_unavailable",
+      "message": "quota ledger is not configured",
+      "retryable": false,
+      "recovery_action": "stop_and_confirm",
+      "acceptance": "unknown",
+      "action_recognised": false
+    },
+    "note": "既有层错误不落入 #615 的自动重试 blanket：acceptance=unknown（状态码本身不能证明零接受），action_recognised=false 提示按既有语义处理。"
+  },
+  "c05_error.code_missing.invalid": {
+    "schema": "c05_error_detail",
+    "expect": "invalid",
+    "origin": "current_api",
+    "value": { "message": "no stable code" },
+    "note": "契约 `stable_code_required`：每个拒绝都必须携带稳定字符串码。"
+  },
+  "preview.request.search_all.valid": {
+    "schema": "c05_preview_request",
+    "expect": "valid",
+    "origin": "current_api",
+    "value": {
+      "entry": "search",
+      "source_scope": {
+        "mode": "all"
+      },
+      "question": "synthetic question",
+      "model_id": "synthetic-model"
+    }
+  },
+  "preview.request.unknown_option.invalid": {
+    "schema": "c05_preview_request",
+    "expect": "invalid",
+    "origin": "current_api",
+    "value": {
+      "entry": "search",
+      "source_scope": {
+        "mode": "all"
+      },
+      "question": "synthetic question",
+      "model_id": "synthetic-model",
+      "execution_options": {
+        "unknown": true
+      }
+    }
+  },
+  "preview.response.all.valid": {
+    "schema": "c05_preview_response",
+    "expect": "valid",
+    "origin": "current_api",
+    "value": {
+      "scope_contract_version": "c05-v1",
+      "resolved_scope": {
+        "mode": "all",
+        "contract_version": "c05-v1",
+        "resolved_source_refs": [],
+        "note_ids": [],
+        "single_source_id": null,
+        "missing_source_ids": [],
+        "includes_exact_versions": true,
+        "contains_document_body": false,
+        "warnings": []
+      },
+      "availability": {
+        "source_versions": 0,
+        "chunks": 0,
+        "requested_notes": 0,
+        "nonempty_notes": 0
+      },
+      "budget": {
+        "status": "validated",
+        "checks": [
+          {
+            "name": "known_input",
+            "path": "selected",
+            "unit": "tokens",
+            "phase": "preflight",
+            "required": true,
+            "status": "validated",
+            "observed": 10,
+            "limit": 100,
+            "limit_source": "synthetic_model"
+          }
+        ],
+        "deferred": [],
+        "token_estimate": 0,
+        "estimate_kind": "source_and_note_units",
+        "resolved_mode": "hybrid_rag",
+        "input_budget": 100
+      },
+      "execution_hint": "interactive",
+      "needs_consent": false,
+      "warnings": []
+    }
+  },
+  "preview.response.unknown_required_field.invalid": {
+    "schema": "c05_preview_response",
+    "expect": "invalid",
+    "origin": "current_api",
+    "value": {
+      "scope_contract_version": "c05-v1",
+      "resolved_scope": {
+        "mode": "all",
+        "contract_version": "c05-v1",
+        "resolved_source_refs": [],
+        "note_ids": [],
+        "single_source_id": null,
+        "missing_source_ids": [],
+        "includes_exact_versions": true,
+        "contains_document_body": false,
+        "warnings": []
+      },
+      "availability": {
+        "source_versions": 0,
+        "chunks": 0,
+        "requested_notes": 0,
+        "nonempty_notes": 0
+      },
+      "budget": {
+        "status": "validated",
+        "checks": [
+          {
+            "name": "known_input",
+            "path": "selected",
+            "unit": "tokens",
+            "phase": "preflight",
+            "required": true,
+            "status": "validated",
+            "observed": 10,
+            "limit": 100,
+            "limit_source": "synthetic_model"
+          }
+        ],
+        "deferred": [],
+        "token_estimate": 0,
+        "estimate_kind": "source_and_note_units",
+        "resolved_mode": "hybrid_rag",
+        "input_budget": 100
+      },
+      "execution_hint": "interactive",
+      "needs_consent": false,
+      "warnings": [],
+      "can_submit": true
+    }
+  },
+  "c05_entry_capability.pr615_stage.valid": {
+    "schema": "c05_entry_capability_pr615",
+    "expect": "valid",
+    "origin": "current_api",
+    "value": {
+      "scope_modes": [
+        "all"
+      ],
+      "execution_modes": [
+        "auto"
+      ],
+      "context_levels": [
+        "focused"
+      ],
+      "preview_supported": false,
+      "execution_ready": true,
+      "unavailable_reason": null
+    }
+  },
+  "c05_capabilities.pr615_search_wired.valid": {
+    "schema": "c05_capabilities",
+    "expect": "valid",
+    "origin": "current_api",
+    "value": {
+      "contract": "c05-v1",
+      "enabled": true,
+      "preview_supported": false,
+      "entries": {
+        "search": {
+          "scope_modes": [
+            "all",
+            "selected",
+            "single"
+          ],
+          "execution_modes": [
+            "auto",
+            "direct_context",
+            "hybrid_rag",
+            "planned_rag"
+          ],
+          "context_levels": [
+            "focused",
+            "document",
+            "workspace"
+          ],
+          "preview_supported": false,
+          "execution_ready": true,
+          "unavailable_reason": null
+        },
+        "chat": {
+          "scope_modes": [
+            "all",
+            "selected",
+            "single"
+          ],
+          "execution_modes": [],
+          "context_levels": [],
+          "preview_supported": false,
+          "execution_ready": false,
+          "unavailable_reason": "c05_entry_not_wired"
+        },
+        "coverage": {
+          "scope_modes": [
+            "all",
+            "selected",
+            "single"
+          ],
+          "execution_modes": [],
+          "context_levels": [],
+          "preview_supported": false,
+          "execution_ready": false,
+          "unavailable_reason": "c05_entry_not_wired"
+        },
+        "compare": {
+          "scope_modes": [
+            "all",
+            "selected",
+            "single"
+          ],
+          "execution_modes": [],
+          "context_levels": [],
+          "preview_supported": false,
+          "execution_ready": false,
+          "unavailable_reason": "c05_entry_not_wired"
+        },
+        "ai_insight": {
+          "scope_modes": [
+            "all",
+            "selected",
+            "single"
+          ],
+          "execution_modes": [],
+          "context_levels": [],
+          "preview_supported": false,
+          "execution_ready": false,
+          "unavailable_reason": "c05_entry_not_wired"
+        },
+        "transformation": {
+          "scope_modes": [
+            "all",
+            "selected",
+            "single"
+          ],
+          "execution_modes": [],
+          "context_levels": [],
+          "preview_supported": false,
+          "execution_ready": false,
+          "unavailable_reason": "c05_entry_not_wired"
+        }
+      }
+    },
+    "note": "Historical PR615 stage before Search Preview wiring."
+  }
+}

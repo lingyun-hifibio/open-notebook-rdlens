@@ -23,6 +23,16 @@ import { getAuthToken } from '@/lib/auth-token'
 import { isEmbeddedMode, getEmbeddedGatewayUrl } from '@/lib/embedded/config'
 import { getResearchToken } from '@/lib/embedded/token-store'
 import { parseSseFrame } from './sse'
+import {
+  STREAM_IDLE_TIMEOUT_MS,
+  createAttemptSettlement,
+  hasRetrySemanticsStatus,
+  isHeartbeatComment,
+  isSseContentType,
+  type ResearchStreamEndReason,
+} from './c05-stream-guard'
+import type { C05Budget } from './c05-preview-gate'
+import type { C05ResolvedScope } from './c05-scope-projection'
 import type {
   ResearchChatRequest,
   ResearchCompareCreateRequest,
@@ -446,6 +456,50 @@ export type ResearchContextPreviewRequest = {
   model_id: string
 }
 
+/**
+ * PR5（R2-M10/D-12）：只读 C-05 Preview（#748 实际响应形状，主仓
+ * `50c6e415` 的 `c05_preview_response` schema）。
+ * 服务端 preview_supported=false 时以 503 c05_entry_not_ready 拒绝——
+ * 调用方 catch 后 budget=null（D-12：缺失不阻断、显示"未经预览校验"）。
+ * 只读约束：无 Generation/Job/配额预留/模型调用/检索。
+ */
+export interface C05PreviewAvailability {
+  source_versions: number | null
+  chunks: number | null
+  requested_notes: number | null
+  nonempty_notes: number | null
+}
+
+export interface C05PreviewResponse {
+  scope_contract_version: 'c05-v1'
+  resolved_scope: C05ResolvedScope
+  availability: C05PreviewAvailability
+  budget: C05Budget
+  execution_hint: 'interactive' | 'background_job' | null
+  needs_consent: boolean
+  /** 上下文 warnings（非范围投影 warnings；#748 实际为稳定码字符串数组）。 */
+  warnings: string[]
+}
+
+export async function fetchC05Preview(
+  projectId: string,
+  request: {
+    entry: 'search'
+    question: string
+    model_id: string
+    context_level: string
+    source_scope: { mode: 'all' | 'selected' | 'single'; source_ids: string[]; single_source_id: string | null }
+    note_ids: string[]
+  },
+): Promise<C05PreviewResponse> {
+  const response = await apiClient.post<C05PreviewResponse>(
+    researchPath(projectId, 'context-preview'),
+    request,
+    { headers: { 'X-Research-Contract': 'c05-v1' } },
+  )
+  return response.data
+}
+
 export async function fetchContextPreview(
   projectId: string,
   request: ResearchContextPreviewRequest,
@@ -497,16 +551,18 @@ export async function revokeExternalEgressConsent(
 export async function searchV1(
   projectId: string,
   request: ResearchSearchRequest,
-  options: { idempotencyKey?: string } = {},
+  options: { idempotencyKey?: string; contract?: 'v1' | 'c05-v1' } = {},
 ): Promise<ResearchSearchOutcome> {
   // 幂等键由调用方决定复用策略；未提供时本次请求生成新键
   const idempotencyKey = options.idempotencyKey ?? newIdempotencyKey()
+  // PR5（B3）：契约头显式分支——C-05 请求必须携带 c05-v1 头；旧分支 v1 不变
+  const contract = options.contract ?? 'v1'
   const response = await apiClient.post<ResearchSearchResponse>(
     researchPath(projectId, 'search'),
     request,
     {
       headers: {
-        'X-Research-Contract': 'v1',
+        'X-Research-Contract': contract,
         'Idempotency-Key': idempotencyKey,
       },
     },
@@ -533,6 +589,9 @@ export async function searchV1(
       generation_id: String(body.generation_id ?? ''),
       job_id: body.job_id ?? null,
       status: String(body.status ?? 'queued'),
+      // §3.3：202 与 200 同一投影——**不得**在这里裁掉（评审 MEDIUM-7）
+      scope_contract_version: (body as Record<string, unknown>).scope_contract_version,
+      resolved_scope: (body as Record<string, unknown>).resolved_scope,
     }
   }
   throw new Error(`unexpected search response status: ${response.status}`)
@@ -605,20 +664,29 @@ export async function createCoverageChat(
   projectId: string,
   request: {
     query: string
-    source_ids: string[]
-    note_ids: string[]
+    /** 旧 v1：显式集合；C-05 分支禁用（改走 source_scope，且恒空 note_ids） */
+    source_ids?: string[]
+    note_ids?: string[]
     model_id: string
     session_id?: string
     synthesis_scope: 'all_selected'
+    /** PR5/R1-H7：C-05 分支载荷（仅 c05-v1 契约头携带） */
+    source_scope?: {
+      mode: 'all' | 'selected' | 'single'
+      source_ids: string[]
+      single_source_id: string | null
+    }
   },
   idempotencyKey: string,
+  options: { contract?: 'v1' | 'c05-v1' } = {},
 ): Promise<CoverageChatResponse> {
   const response = await apiClient.post<CoverageChatResponse>(
     researchPath(projectId, 'chat'),
     request,
     {
       headers: {
-        'X-Research-Contract': 'v1',
+        // R1-H7：契约头显式分支（能力就绪 → c05-v1；缺省 v1 不变）
+        'X-Research-Contract': options.contract ?? 'v1',
         'Idempotency-Key': idempotencyKey,
       },
     },
@@ -818,6 +886,8 @@ export interface ResearchChatStreamOptions {
   path?: string
   /** #238：v1 契约幂等键；调用方复用策略决定，缺省新键 */
   idempotencyKey?: string
+  /** PR5（B3）：契约头显式分支——C-05 Chat 携带 c05-v1；缺省 v1 不变 */
+  contract?: 'v1' | 'c05-v1'
   /** 断线重连的 Last-Event-ID（0 = 从头开始） */
   lastEventId?: number
   /** 响应到达时读取一次响应头（Issue #182：X-Chat-Session-Id 回显） */
@@ -830,30 +900,118 @@ export interface ResearchChatStreamOptions {
   onHttpError?: (status: number, body: unknown) => void
   /** 传输层错误（断线/网络不可达） */
   onNetworkError?: (error: Error) => void
+  /**
+   * PR5（D-24/§5.3 第 2 行）：状态码通过但 `Content-Type` 不是
+   * `text/event-stream` —— 协议违反，**在消费流之前** fail-closed。
+   * 不进入有界重连（重试只会拿到同样的非流响应）。
+   */
+  onProtocolError?: (reason: string) => void
+  /**
+   * PR5（D-24/§5.3 第 1、2 行）：传输超时。`phase` 区分两个计时制度——
+   * `'response'` = 等待响应头（§5.3 第 1 行的"等待响应"，预算 API_TIMEOUT_MS）；
+   * `'idle'` = 已进入事件流后的空闲计时（收到字节/heartbeat 重置）。
+   * **这是唯一可进入有界重试的 abort 原因**。
+   */
+  onIdleTimeout?: (phase: 'response' | 'idle') => void
 }
+
+/**
+ * 调用方中止流的原因（D-24/§5.3 第 3 行）；缺省视为用户取消。
+ * `terminal_reached`：SSE 已给出 done/error 终态——本地收尾不应再重试，
+ * 但必须**释放**读取器与看门狗（评审 MEDIUM-6：仅把 disposer 置 null
+ * 会让已完成轮继续持有计时器与 reader）。
+ */
+export type ResearchStreamAbortReason = 'user_cancel' | 'identity' | 'page_change' | 'terminal_reached'
 
 /**
  * 打开 Research Chat SSE 流；返回中止函数（仅关闭本地读取，
  * 浏览器断开 ≠ 取消——服务端继续执行，契约 §9.6）。
+ *
+ * PR5（D-24/§5.3）：
+ * - 校验状态与 `Content-Type` **之后**才切换为流空闲计时；收到字节重置空闲
+ *   （heartbeat 同样是字节，但它**不是**模型进度）；
+ * - abort 原因区分（timeout／用户取消／身份／页面变化／正常结束），仅
+ *   `timeout` 可进入调用方的有界重试；
+ * - 每次尝试**只结算一次**：所有终止路径（HTTP 错误/协议错误/空闲超时/
+ *   网络错误/EOF）共用同一个 settlement 守卫，避免一次尝试上报两次；
+ * - `Last-Event-ID`、事件去重、终态一次保持；不新增 SSE 事件类型。
  */
-export function openResearchChatStream(options: ResearchChatStreamOptions): () => void {
+export function openResearchChatStream(
+  options: ResearchChatStreamOptions,
+): (reason?: ResearchStreamAbortReason) => void {
   const controller = new AbortController()
   const url = `${requireResearchGateway()}${buildResearchUrl(options.projectId, options.path ?? '/chat')}`
   const token = researchBearerToken()
+  const settlement = createAttemptSettlement()
+  /** 调用方中止的原因（用于区分 timeout / 取消 / 身份 / 页面变化） */
+  let abortReason: ResearchStreamEndReason | null = null
+  /**
+   * 传输看门狗（两相位共用一个计时器）：
+   * - `'response'`：fetch 发出后即武装（§5.3 第 1 行的"等待响应"）；
+   * - `'idle'`：响应头 + Content-Type 校验通过后武装，每收到一批字节重置
+   *   （§5.3 第 2 行）。
+   * `STREAM_IDLE_TIMEOUT_MS <= 0` 时**明确禁用**（与 axios `timeout: 0` 一致）。
+   */
+  let watchdog: ReturnType<typeof setTimeout> | null = null
+  let watchdogPhase: 'response' | 'idle' = 'response'
+  /**
+   * 审查轮 2 B2：非 2xx 已给出状态码、但响应体读取卡住时，必须**如实按 HTTP
+   * 错误上报**——否则看门狗抢先结算成 `timeout`，调用方会把它当成可重试的
+   * 传输超时（对 401/403/422 重试是徒劳的），真实状态码也丢了。
+   */
+  let httpStatusAwaitingBody: number | null = null
+
+  const clearWatchdog = (): void => {
+    if (watchdog !== null) {
+      clearTimeout(watchdog)
+      watchdog = null
+    }
+  }
+
+  const armWatchdog = (phase: 'response' | 'idle'): void => {
+    clearWatchdog()
+    watchdogPhase = phase
+    if (STREAM_IDLE_TIMEOUT_MS <= 0) return
+    watchdog = setTimeout(() => {
+      watchdog = null
+      if (abortReason !== null) return // 调用方已中止：不重复上报
+      abortReason = 'timeout'
+      controller.abort()
+      if (!settlement.settle()) return
+      if (httpStatusAwaitingBody !== null) {
+        // 已知状态码但体读不完。审查轮 3 L1：**带重试语义的状态**（409/429/5xx）
+        // 不得在这里被升级成终态错误——那会让 409 的同键自愈（completed-replay）
+        // 与 5xx/429 的有界重试变得不可达。只有"确定无重试语义"的状态才按
+        // HTTP 错误如实上报（保住状态码，不做无意义重试）。
+        if (hasRetrySemanticsStatus(httpStatusAwaitingBody)) {
+          options.onIdleTimeout?.(phase)
+          return
+        }
+        options.onHttpError?.(httpStatusAwaitingBody, null)
+        return
+      }
+      options.onIdleTimeout?.(phase)
+    }, STREAM_IDLE_TIMEOUT_MS)
+  }
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Accept: 'text/event-stream',
-    // #238：v1 契约（Phase 6 锁死：生成 POST 必须带版本头 + 幂等键）
-    'X-Research-Contract': 'v1',
+    // #238：契约头显式分支（PR5：C-05 → c05-v1；缺省 v1 不变）
+    'X-Research-Contract': options.contract ?? 'v1',
     'Idempotency-Key': options.idempotencyKey ?? newIdempotencyKey(),
   }
   if (token) {
     headers.Authorization = `Bearer ${token}`
   }
   if (options.lastEventId && options.lastEventId > 0) {
+    // §5.3 第 4 行：Last-Event-ID 语义保持（重连从服务端缓冲游标续读）
     headers['Last-Event-ID'] = String(options.lastEventId)
   }
+
+  // §5.3 第 1 行：等待响应头也必须在预算内（此前只有流内空闲计时，
+  // 代理吞掉响应头会让请求永久悬挂）
+  armWatchdog('response')
 
   fetch(url, {
     method: 'POST',
@@ -864,21 +1022,36 @@ export function openResearchChatStream(options: ResearchChatStreamOptions): () =
   })
     .then(async (response) => {
       if (!response.ok) {
+        // 先记录状态码：体读取期间若看门狗到期，按该状态码上报（B2）
+        httpStatusAwaitingBody = response.status
         let body: unknown = null
         try {
           body = await response.json()
         } catch {
           // 非 JSON 错误体：保留 null
         }
-        options.onHttpError?.(response.status, body)
+        clearWatchdog()
+        httpStatusAwaitingBody = null
+        if (settlement.settle()) options.onHttpError?.(response.status, body)
+        return
+      }
+      // D-24（§5.3 第 2 行）：状态通过后**先**校验 Content-Type，
+      // 不是 SSE 就在消费流之前 fail-closed（不武装空闲计时、不读 body）
+      const contentType = response.headers?.get?.('content-type') ?? null
+      if (!isSseContentType(contentType)) {
+        clearWatchdog()
+        if (settlement.settle()) options.onProtocolError?.(`unexpected_content_type:${contentType ?? 'none'}`)
         return
       }
       if (!response.body) {
-        options.onNetworkError?.(new Error('no response body'))
+        clearWatchdog()
+        if (settlement.settle()) options.onNetworkError?.(new Error('no response body'))
         return
       }
       // Issue #182：响应头只读一次透传（X-Chat-Session-Id 回显），不作行为依赖
       options.onResponseMeta?.(response.headers)
+      // 校验通过 → 切换为流空闲计时（每收到一批字节即重置）
+      armWatchdog('idle')
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
@@ -886,10 +1059,15 @@ export function openResearchChatStream(options: ResearchChatStreamOptions): () =
         for (;;) {
           const { done, value } = await reader.read()
           if (done) break
+          // 收到字节（含 heartbeat 注释帧）→ 重置传输空闲；**不**当作模型进度
+          armWatchdog('idle')
           buffer += decoder.decode(value, { stream: true })
           const frames = buffer.split('\n\n')
           buffer = frames.pop() ?? ''
           for (const frame of frames) {
+            // §5.3 第 2 行：heartbeat/注释帧只是传输活跃信号，**不是**模型进度
+            // ——不解析、不产生事件（它已在上面重置过空闲计时）
+            if (isHeartbeatComment(frame)) continue
             const event = parseSseFrame(frame)
             if (event) {
               options.onEvent(event)
@@ -898,22 +1076,30 @@ export function openResearchChatStream(options: ResearchChatStreamOptions): () =
         }
         // 正常读尽（EOF）：终态与否由调用方依 sse 状态判定；
         // 调用方 abort 的收尾不算 EOF（不触发 onEnd）
-        if (!controller.signal.aborted) {
+        clearWatchdog()
+        if (abortReason === null && !controller.signal.aborted && settlement.settle()) {
+          abortReason = 'normal_end'
           options.onEnd?.()
         }
       } catch (error) {
-        if ((error as Error).name !== 'AbortError') {
+        clearWatchdog()
+        if ((error as Error).name !== 'AbortError' && settlement.settle()) {
           options.onNetworkError?.(error as Error)
         }
       }
     })
     .catch((error) => {
-      if ((error as Error).name !== 'AbortError') {
+      clearWatchdog()
+      if ((error as Error).name !== 'AbortError' && settlement.settle()) {
         options.onNetworkError?.(error as Error)
       }
     })
 
-  return () => {
+  return (reason: ResearchStreamAbortReason = 'user_cancel') => {
+    // 调用方主动中止：区分原因（仅 timeout 可重试——此处必非 timeout），
+    // 并让终止路径保持"只结算一次"。timeout 由空闲看门狗自行 abort。
+    if (abortReason === null) abortReason = reason
+    clearWatchdog()
     controller.abort()
   }
 }

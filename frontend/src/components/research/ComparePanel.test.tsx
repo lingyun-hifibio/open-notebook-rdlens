@@ -7,7 +7,7 @@ import type { ResearchSource } from '@/lib/types/research'
 // UI-03 Red：Compare 面板边界（REQ-QUOTA-01）——51 篇拒绝（组件级）、
 // 31–50 超默认提示、空选禁用、document_ids 正确映射。
 // RWV2-11（K2/K7）：面板直接消费共享 ResearchScopeProvider——测试经
-// localStorage 预置范围（仿 scope.test.tsx 模式）；entire_project 模式
+// localStorage 预置范围（仿 scope.test.tsx 模式）；all 模式
 // 显示专属英文消息并禁用创建（mode 前置，不落入通用 empty）。
 
 const USER_ID = 'u1'
@@ -26,7 +26,7 @@ function sources(count: number): ResearchSource[] {
 }
 
 function seedScope(
-  mode: 'entire_project' | 'selected',
+  mode: 'all' | 'selected',
   sourceIds: string[],
   noteIds: string[] = [],
 ): void {
@@ -36,7 +36,7 @@ function seedScope(
   )
 }
 
-function renderPanel(sources: ResearchSource[], selected: string[], mode: 'entire_project' | 'selected' = 'selected') {
+function renderPanel(sources: ResearchSource[], selected: string[], mode: 'all' | 'selected' = 'selected') {
   seedScope(mode, selected)
   return render(
     <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
@@ -60,8 +60,8 @@ describe('ComparePanel', () => {
     localStorage.clear()
   })
 
-  it('entire_project 模式：明确英文消息并禁用创建（不落入通用 empty）', () => {
-    renderPanel(sources(5), [], 'entire_project')
+  it('all 模式：明确英文消息并禁用创建（不落入通用 empty）', () => {
+    renderPanel(sources(5), [], 'all')
     expect(screen.getByRole('button', { name: /compare/ })).toBeDisabled()
     expect(screen.getByTestId('compare-entire-project')).toBeInTheDocument()
     expect(screen.queryByTestId('compare-empty')).toBeNull()
@@ -69,21 +69,21 @@ describe('ComparePanel', () => {
 
   it('51 篇被拒绝：创建按钮禁用并显示硬上限提示', () => {
     const all = sources(51)
-    renderPanel(all, all.map((s) => s.source_id))
+    renderPanel(all, all.map((s) => s.source_id ?? `doc:${s.document_id}`))
     expect(screen.getByRole('button', { name: /compare/ })).toBeDisabled()
     expect(screen.getByText(/50/)).toBeInTheDocument()
   })
 
   it('31–50 篇允许创建但显示超默认警告', () => {
     const all = sources(31)
-    renderPanel(all, all.map((s) => s.source_id))
+    renderPanel(all, all.map((s) => s.source_id ?? `doc:${s.document_id}`))
     expect(screen.getByRole('button', { name: /compare/ })).toBeEnabled()
     expect(screen.getByText(/30/)).toBeInTheDocument()
   })
 
   it('30 篇以内无警告，按钮可用', () => {
     const all = sources(30)
-    renderPanel(all, all.map((s) => s.source_id))
+    renderPanel(all, all.map((s) => s.source_id ?? `doc:${s.document_id}`))
     expect(screen.getByRole('button', { name: /compare/ })).toBeEnabled()
     expect(screen.queryByText(/Exceeds/)).toBeNull()
   })
@@ -137,7 +137,7 @@ describe('ComparePanel', () => {
 
   it('创建中禁用按钮并显示进度文案', () => {
     const all = sources(2)
-    seedScope('selected', all.map((s) => s.source_id))
+    seedScope('selected', all.map((s) => s.source_id ?? `doc:${s.document_id}`))
     render(
       <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
         <ComparePanel
@@ -153,7 +153,7 @@ describe('ComparePanel', () => {
 
   it('错误信息透出：generic 主文案 + raw 仅次级诊断（RWV2-42 AC8）', () => {
     const all = sources(2)
-    seedScope('selected', all.map((s) => s.source_id))
+    seedScope('selected', all.map((s) => s.source_id ?? `doc:${s.document_id}`))
     render(
       <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
         <ComparePanel
@@ -171,7 +171,7 @@ describe('ComparePanel', () => {
 
   it('RWV2-42：HTTP 稳定码 → 映射主文案；raw code 不作主消息', () => {
     const all = sources(2)
-    seedScope('selected', all.map((s) => s.source_id))
+    seedScope('selected', all.map((s) => s.source_id ?? `doc:${s.document_id}`))
     render(
       <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
         <ComparePanel

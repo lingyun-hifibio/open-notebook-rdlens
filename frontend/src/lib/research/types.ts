@@ -155,6 +155,14 @@ export type ResearchSearchOutcome =
       generation_id: string
       job_id: string | null
       status: string
+      /**
+       * PR5（D-01，评审 MEDIUM-7）：`#615 §3.3` 明确 202 与 200 采用**同一**
+       * 范围投影（`project_scope_response`）。此前 202 分支把响应体裁成
+       * generation/job/status，投影被丢弃 → 排队中的 C-05 检索会显示"服务端
+       * 未返回范围详情"并隐藏排除/回退警告。原样透传，由消费方严格校验。
+       */
+      scope_contract_version?: unknown
+      resolved_scope?: unknown
     }
 
 /** 用户模型列表条目（§5.2 GET models；本地 enabled 且非 embedding） */
@@ -181,6 +189,8 @@ export interface ResearchModelOption {
 export interface ResearchCapabilities {
   /** 后端 research_coverage_enabled 真值；仅 true 允许提交 all_selected */
   coverage_all_selected?: unknown
+  /** PR5（B1）：C-05 能力块（加性；缺失/畸形按不可用处理，不降级） */
+  c05?: unknown
 }
 
 /** GET models 响应（#358：能力与模型同一次返回，避免两次请求间竞态） */
@@ -254,6 +264,7 @@ export interface ResearchContextPreview {
 
 export interface ResearchChatRequest {
   query: string
+  /** 旧 v1 契约：显式 ID 集合；C-05 分支禁用（改走 source_scope） */
   source_ids?: string[]
   note_ids?: string[]
   session_id?: string
@@ -261,6 +272,12 @@ export interface ResearchChatRequest {
   model_id: string
   /** COV-08 §12.1：显式合成范围；缺省 relevant（旧客户端兼容） */
   synthesis_scope?: ResearchSynthesisScope
+  /** PR5（B3）：C-05 范围载荷（仅 c05-v1 分支携带） */
+  source_scope?: {
+    mode: 'all' | 'selected' | 'single'
+    source_ids: string[]
+    single_source_id: string | null
+  }
 }
 
 /** COV-08 §12.1：调用方显式选择相关证据回答或覆盖全部所选来源 */

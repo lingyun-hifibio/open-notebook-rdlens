@@ -4,7 +4,7 @@ import { CoverageScopeSelector } from './CoverageScopeSelector'
 
 // COV-09：合成范围选择器（§12.3）——显式二选一、Notes 禁用 + 可访问
 // 文字说明（不只依赖颜色）、0/超限 Source 预检文案、onChange 契约。
-// RWV2-11（K3/W4）：entire_project 模式显示专属说明（优先级高于通用
+// RWV2-11（K3/W4）：all 模式显示专属说明（优先级高于通用
 // noSourcesHint）；提交闸门在 ChatPanel，本组件只出通知。
 // #358：后端能力关闭时禁用 all_selected 并展示能力说明（fail-closed）。
 
@@ -13,7 +13,7 @@ describe('CoverageScopeSelector', () => {
 
   function renderSelector(overrides: Partial<{
     value: 'relevant' | 'all_selected'
-    scopeMode: 'entire_project' | 'selected'
+    scopeMode: 'all' | 'selected'
     capabilityEnabled: boolean
     selectedSourceCount: number
     selectedNoteCount: number
@@ -60,8 +60,8 @@ describe('CoverageScopeSelector', () => {
     expect(notice).toHaveAttribute('id', 'coverage-scope-notice')
   })
 
-  it('RWV2-11（W4）：entire_project 模式显示专属说明，优先级高于 noSourcesHint', () => {
-    renderSelector({ scopeMode: 'entire_project' })
+  it('RWV2-11（W4）：all 模式显示专属说明，优先级高于 noSourcesHint', () => {
+    renderSelector({ scopeMode: 'all' })
     const notice = screen.getByTestId('coverage-scope-notice')
     expect(notice).toHaveTextContent('research.coverage.entireProjectNotice')
     expect(notice).not.toHaveTextContent('research.coverage.noSourcesHint')

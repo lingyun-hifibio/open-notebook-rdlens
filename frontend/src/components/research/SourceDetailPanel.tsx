@@ -6,7 +6,9 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
 import { useResearchSource } from '@/lib/hooks/use-research'
 import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
+import { Button } from '@/components/ui/button'
 import { displayPage } from './citation-utils'
+import { useResearchScope } from '@/lib/research/scope'
 import { cn } from '@/lib/utils'
 
 /**
@@ -30,6 +32,10 @@ export function SourceDetailPanel({
   const { t } = useTranslation()
   const { projectId } = useResearchWorkspace()
   const { data, isLoading, isError } = useResearchSource(projectId, sourceId)
+  // PR5/R1-H4：「只问此来源」——会话级临时限定（D-04）。sessionId 未知时
+  // 入待绑态（bindSession 在 Chat 首响应时绑定）。
+  const { setSingle, mode, singlePin, clearSingle } = useResearchScope()
+  const pinnedHere = mode === 'single' && singlePin?.sourceId === sourceId
   const headingRef = useRef<HTMLHeadingElement>(null)
   const handledFocusRequestIdRef = useRef<number | null>(null)
 
@@ -64,7 +70,19 @@ export function SourceDetailPanel({
         <h2 ref={headingRef} tabIndex={-1} className="text-base font-semibold">
           {data.title || data.document_id}
         </h2>
-        <Badge variant="secondary">{data.document_version}</Badge>
+        <div className="flex shrink-0 items-center gap-2">
+          <Badge variant="secondary">{data.document_version}</Badge>
+          {/* PR5/R1-H4：「只问此来源」——会话级临时限定（D-04）；
+              sessionId 未知时入待绑态（Chat 首响应 bindSession 绑定） */}
+          <Button
+            size="sm"
+            variant={pinnedHere ? 'secondary' : 'outline'}
+            data-testid="source-ask-only"
+            onClick={() => (pinnedHere ? clearSingle() : setSingle(sourceId, null))}
+          >
+            {pinnedHere ? t('research.sources.stopAskOnly') : t('research.sources.askOnlyThis')}
+          </Button>
+        </div>
       </div>
       {data.markdown_chunks.length === 0 && (
         <p className="text-sm text-muted-foreground">{t('research.sources.empty')}</p>

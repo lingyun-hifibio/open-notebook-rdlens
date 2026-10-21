@@ -53,7 +53,7 @@ export function ResearchSourceChatPanel({
       // consent Scope 行必须展示该来源摘要
       {
         scopeLabel: formatScopeLabel(
-          { mode: 'selected', sourceIds: [sourceId], noteIds: [] },
+          { mode: 'selected', sourceIds: [sourceId], noteIds: [], singleSourceId: null },
           t,
         ),
       },

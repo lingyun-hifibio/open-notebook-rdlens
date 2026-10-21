@@ -3,8 +3,8 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { ResearchScopeProvider, scopeStorageKey, useResearchScope } from '@/lib/research/scope'
 import { ResearchScopeEditor } from './ResearchScopeEditor'
 
-// RWV2-13（Issue #34）：左栏唯一 Scope 编辑面的模式控件——entire_project
-// 显式可见（D2）；selected 需 ≥1 项选择（D3）；切换回 entire_project 立即
+// RWV2-13（Issue #34）：左栏唯一 Scope 编辑面的模式控件——all
+// 显式可见（D2）；selected 需 ≥1 项选择（D3）；切换回 all 立即
 // 反映到 provider（D5 持久化）。
 
 vi.mock('@/lib/hooks/use-translation', () => ({
@@ -24,7 +24,7 @@ function editorWrapper({ children }: { children: React.ReactNode }) {
   )
 }
 
-function seedScope(mode: 'entire_project' | 'selected', sourceIds: string[] = []) {
+function seedScope(mode: 'all' | 'selected', sourceIds: string[] = []) {
   localStorage.setItem(
     scopeStorageKey(USER, PROJECT),
     JSON.stringify({ version: 1, mode, sourceIds, noteIds: [] }),
@@ -86,7 +86,7 @@ describe('ResearchScopeEditor', () => {
     expect(screen.getByTestId('scope-entire-project')).toHaveAttribute('data-state', 'checked')
     expect(screen.getByTestId('probe-selected')).toHaveTextContent('')
     const persisted = JSON.parse(localStorage.getItem(scopeStorageKey(USER, PROJECT)) ?? '{}')
-    expect(persisted.mode).toBe('entire_project')
+    expect(persisted.mode).toBe('all')
     expect(persisted.sourceIds).toEqual([])
   })
 

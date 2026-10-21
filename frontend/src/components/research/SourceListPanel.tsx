@@ -10,22 +10,25 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
 import { useResearchSources } from '@/lib/hooks/use-research'
 import { useResearchScope } from '@/lib/research/scope'
+import { useRequestIngest } from '@/lib/embedded/shell'
 import { formatResearchTimestamp } from '@/lib/research/format'
-import type { ResearchSourceStatus } from '@/lib/types/research'
+import type { ResearchSource, ResearchSourceStatus } from '@/lib/types/research'
 
 /**
  * Sources 状态面板（UI-02，REQ-SRC-04/05，契约 §6）。
  *
- * - 每项目独立 Source（REQ-SRC-04）；状态 pending/ready/stale/failed 全部
- *   可见，缓存失败只表现为 Workspace stale/failed（不阻塞 RDLens RAG）；
- * - failed 附 last_error（可审计，不含正文）；同步重试仅 Admin（契约 §6，
- *   UI-04 管理员入口），Owner 面板只提示 retry 可见性，不放重试按钮；
- * - 项目隔离：source_id 服务端解析，跨项目 404（REQ-SCOPE-02）。
+ * PR5（C3/D-33）：
+ * - 状态 6 值全部可见（pending/ready/stale/failed/retiring/deleted），
+ *   `retiring`/`deleted` 与 `failed` 视觉与文案区分；
+ * - `source_id` 可为 null（无镜像身份的行）→ 复选与打开按钮 disabled 并
+ *   给出原因，绝不作为可选项出现；
+ * - **版本号常显纪律**：`document_version` 始终渲染在行内 meta（D-33/T33），
+ *   不得移入 tooltip 或断点隐藏——同文档多版本必须可辨；
+ * - React key 用 document 维度（`document_id:version:source_id`），避免
+ *   null→真实 ID 的 key 漂移导致重挂载。
  *
- * RWV2-13（Issue #34）：行首复选框是本面板唯一的 Scope 选择入口（写入根级
- * ResearchScopeProvider，与右栏摘要/所有动作即时同步）；「View content」
- * 打开预览与选择互不干扰；selected 模式最后一项不可取消（provider 不变量
- * D3，复选框禁用给出可见状态）。
+ * RWV2-13（Issue #34）：行首复选框是本面板唯一的 Scope 选择入口；「View
+ * content」打开预览与选择互不干扰；selected 模式最后一项不可取消。
  */
 
 const STATUS_CONFIG: Record<
@@ -36,9 +39,19 @@ const STATUS_CONFIG: Record<
   ready: { labelKey: 'research.sources.statusReady', variant: 'default' },
   stale: { labelKey: 'research.sources.statusStale', variant: 'outline' },
   failed: { labelKey: 'research.sources.statusFailed', variant: 'destructive' },
+  retiring: { labelKey: 'research.sources.statusRetiring', variant: 'outline' },
+  deleted: { labelKey: 'research.sources.statusDeleted', variant: 'destructive' },
 }
 
 const DISPLAY_PAGE_SIZE = 20
+
+function isSelectableStatus(status: ResearchSourceStatus): boolean {
+  return status === 'ready' || status === 'stale'
+}
+
+function rowKey(item: ResearchSource): string {
+  return `${item.document_id}:${item.document_version}:${item.source_id ?? 'null'}`
+}
 
 export function SourceListPanel({
   onOpenSource,
@@ -56,6 +69,10 @@ export function SourceListPanel({
     toggleSource,
   } = useResearchScope()
   const selectedCount = selectedSourceIds.length + selectedNoteIds.length
+  // PR5（R1-H8/D1）：工作台内「添加资料」入口——经父子通道请求宿主打开
+  // 入库对话框（D-06：无载荷；project_id 由宿主路由决定）。未嵌入/无宿主
+  // 响应时按钮隐藏（context 为 null）。
+  const requestIngest = useRequestIngest()
 
   useEffect(() => {
     setVisibleCount(DISPLAY_PAGE_SIZE)
@@ -76,38 +93,54 @@ export function SourceListPanel({
   }
   const items = data?.items ?? []
   if (items.length === 0) {
-    return <p className="text-sm text-muted-foreground">{t('research.sources.empty')}</p>
+    return (
+      <div className="space-y-2">
+        <p className="text-sm text-muted-foreground">{t('research.sources.empty')}</p>
+        {requestIngest !== null && (
+          <Button size="sm" variant="outline" className="w-full" data-testid="source-add-materials-empty" onClick={requestIngest}>
+            {t('research.sources.addMaterials')}
+          </Button>
+        )}
+      </div>
+    )
   }
 
   const visibleItems = items.slice(0, visibleCount)
 
   return (
     <div className="min-w-0 space-y-2">
+      {requestIngest !== null && (
+        <Button size="sm" variant="outline" className="w-full" data-testid="source-add-materials" onClick={requestIngest}>
+          {t('research.sources.addMaterials')}
+        </Button>
+      )}
       <ul className="divide-y divide-border" data-testid="source-list-rows">
         {visibleItems.map((item) => {
           const config = STATUS_CONFIG[item.status]
-          const isSelectable = item.status === 'ready' || item.status === 'stale'
-          // R2-1：synced 段仅当 synced_at 非 null 渲染（pending/failed 恒 null →
-          // 整段省略，不凭空显示悬空「Synced: —」）
+          const selectable = item.source_id !== null && isSelectableStatus(item.status)
+          const selected = item.source_id !== null && selectedSourceIds.includes(item.source_id)
+          // R2-1：synced 段仅当 synced_at 非 null 渲染
           const syncedText = item.synced_at !== null
             ? formatResearchTimestamp(item.synced_at)
             : null
           return (
             <li
-              key={item.source_id}
+              key={rowKey(item)}
               className="group flex min-w-0 items-center gap-2 overflow-hidden rounded px-2 py-1.5 hover:bg-accent/60"
             >
               <Checkbox
-                checked={selectedSourceIds.includes(item.source_id)}
-                onCheckedChange={() => toggleSource(item.source_id)}
+                checked={selected}
+                onCheckedChange={() => {
+                  if (item.source_id !== null) toggleSource(item.source_id)
+                }}
                 disabled={
-                  !isSelectable ||
+                  !selectable ||
                   mode === 'selected' &&
                   selectedCount === 1 &&
-                  selectedSourceIds.includes(item.source_id)
+                  selected
                 }
                 aria-label={t('research.sources.scopeSelect', { name: item.document_id })}
-                data-testid={`source-scope-${item.source_id}`}
+                data-testid={`source-scope-${item.source_id ?? `doc-${item.document_id}-${item.document_version}`}`}
                 className="shrink-0"
               />
               <Badge variant={config.variant} className="shrink-0">
@@ -115,7 +148,8 @@ export function SourceListPanel({
               </Badge>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm">{item.document_id}</p>
-                <p className="truncate text-xs text-muted-foreground">
+                {/* D-33：版本号常显（不放 tooltip、不断点隐藏） */}
+                <p className="truncate text-xs text-muted-foreground" data-testid="source-row-version">
                   {item.document_version}
                   {syncedText !== null && (
                     <>
@@ -124,6 +158,11 @@ export function SourceListPanel({
                     </>
                   )}
                 </p>
+                {item.source_id === null && (
+                  <p className="truncate text-xs text-muted-foreground">
+                    {t('research.sources.noSourceIdentity')}
+                  </p>
+                )}
                 {item.status === 'failed' && item.last_error && (
                   <p className="truncate text-xs text-destructive">
                     {t('research.sources.lastError', { error: item.last_error })}
@@ -140,15 +179,17 @@ export function SourceListPanel({
                   </p>
                 )}
               </div>
-              {/* F13/C-M4：图标按钮（aria-label/title），保留 hover/focus 显形——
-                  行内常驻占宽≈32px 而非文字按钮 ~90px，缓解 280px 左栏密度 */}
+              {/* F13/C-M4：图标按钮（aria-label/title），保留 hover/focus 显形 */}
               <Button
                 size="sm"
                 variant="ghost"
+                disabled={item.source_id === null}
                 className="shrink-0 px-2 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
                 aria-label={t('research.sources.open')}
                 title={t('research.sources.open')}
-                onClick={() => onOpenSource?.(item.source_id)}
+                onClick={() => {
+                  if (item.source_id !== null) onOpenSource?.(item.source_id)
+                }}
               >
                 <ArrowRight />
               </Button>

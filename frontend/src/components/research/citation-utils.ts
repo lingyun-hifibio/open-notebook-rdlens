@@ -79,12 +79,57 @@ export function normalizePersistedCitations(
   })
 }
 
-/** 按 document_id 解析 Citation 所属来源（跨项目由服务端保证隔离）。 */
+/**
+ * 按 (document_id, doc_version) 解析 Citation 所属来源（PR5/D-25）。
+ *
+ * C-05 允许同文档多版本共存于镜像（`mixed_versions_of_same_document_allowed`），
+ * **首条 `document_id` 匹配可能指向错误版本**——引用跳转必须校验版本：
+ * - 精确命中 (doc_id, doc_version) → 该行；
+ * - 引用无版本（历史快照）→ 退回首条 document_id 匹配（旧行为，如实保留）；
+ * - 有版本但无精确匹配 → undefined（调用方禁用跳转并说明版本不可用，
+ *   绝不静默打开另一版本——`canJumpToCitation` 的 version_mismatch 语义）。
+ */
 export function resolveCitationSource(
   sources: readonly ResearchSource[] | undefined,
   citation: ResearchCitation,
 ): ResearchSource | undefined {
-  return (sources ?? []).find((source) => source.document_id === citation.doc_id)
+  const list = sources ?? []
+  const byDocument = list.filter((source) => source.document_id === citation.doc_id)
+  if (byDocument.length === 0) return undefined
+  const citationVersion = (citation as { doc_version?: string | null }).doc_version ?? null
+  if (citationVersion === null || citationVersion === '') {
+    return byDocument[0]
+  }
+  return byDocument.find((source) => source.document_version === citationVersion)
+}
+
+/**
+ * 文档级候选（**不**按版本过滤）——只用于让 `canJumpToCitation` 产出准确的
+ * 拒绝原因（`version_mismatch` 而不是 `source_unavailable`）。
+ *
+ * 用法纪律（D-25）：
+ * - **展示/判定**（`CitationCard` 的 `source` 入参）用本函数：版本不符时
+ *   `canJumpToCitation` 返回 `version_mismatch`，卡片显示 `degradedVersion`
+ *   且不渲染跳转按钮（原文始终保留）。
+ * - **跳转派发**（`onCitationJump` 的目标解析）必须用版本感知的
+ *   `resolveCitationSource`，不得用本函数——否则又回到"打开错误版本"。
+ */
+export function resolveCitationCandidate(
+  sources: readonly ResearchSource[] | undefined,
+  citation: ResearchCitation,
+): ResearchSource | undefined {
+  const byDocument = (sources ?? []).filter((source) => source.document_id === citation.doc_id)
+  if (byDocument.length === 0) return undefined
+  // 评审 MEDIUM-10：**先**取精确版本命中——若直接取文档级首条，当镜像里
+  // `[A/v2, A/v1]` 且引用指向 v1 时，canJumpToCitation 会误判 version_mismatch
+  // 而隐藏明明可用的跳转。只有**没有**精确命中时才退回文档级首条（此时
+  // version_mismatch 是如实结论）。
+  const citationVersion = (citation as { doc_version?: string | null }).doc_version ?? null
+  if (citationVersion !== null && citationVersion !== '') {
+    const exact = byDocument.find((source) => source.document_version === citationVersion)
+    if (exact !== undefined) return exact
+  }
+  return byDocument[0]
 }
 
 /** page_idx（0-based）→ 展示页码（1-based）；null/负值不展示。 */

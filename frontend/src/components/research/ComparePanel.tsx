@@ -5,11 +5,13 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 import { Button } from '@/components/ui/button'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
+  checkCompareDocumentFloor,
   checkCompareSelection,
   COMPARE_DEFAULT_MAX,
   COMPARE_HARD_MAX,
 } from '@/lib/research/compare'
 import { useResearchScope } from '@/lib/research/scope'
+import { countUniqueDocuments, uniqueDocumentIds } from '@/lib/research/document-set'
 import { userErrorMessageKey } from '@/lib/research/errors'
 import type { ResearchSource } from '@/lib/types/research'
 
@@ -22,9 +24,9 @@ import type { ResearchSource } from '@/lib/types/research'
  * 提交反馈为本地 UI 状态，Job 真实状态以 Jobs 面板轮询为准。
  *
  * RWV2-11（K2/K7）：Scope 真源唯一——面板直接消费共享 Provider；
- * `entire_project` 模式无显式 Source 集合（Compare 是 Source-only 动作，且
+ * `all` 模式无显式 Source 集合（Compare 是 Source-only 动作，且
  * 当前来源列表受 20 条/页限制，全量映射必静默截断）→ **mode 前置判断**
- * 产生 `reason:'entire_project'` 明确英文消息并禁用创建，不落入通用
+ * 产生 `reason:'all'` 明确英文消息并禁用创建，不落入通用
  * `empty`；`selected` 模式从快照 ID 映射 document_ids（`sources` prop 来自
  * 查询缓存单源；映射基于已加载列表，列表外的 selected source 静默不参与
  * ——删除/失效清理属 RWV2-14，此处如实登记为已知限制）。
@@ -53,18 +55,34 @@ export function ComparePanel({
   const [submitted, setSubmitted] = useState(false)
   const { mode, getSnapshot } = useResearchScope()
 
-  // K2 前置：entire_project → 明确消息；selected → 快照 ID 映射 + 既有边界
+  // K2 前置：all → 明确消息；selected → 快照 ID 映射 + 既有边界
+  // PR5（D-16）：以"文档"为计量单位 → 按 document_id 去重后计数，
+  // 同文档多版本共选不得被当两篇文献（C-05 允许 mixed_versions）
   const snapshot = getSnapshot()
-  const selectedDocuments =
+  const selectedSourceRows =
     mode === 'selected'
-      ? sources
-          .filter((source) => snapshot.sourceIds.includes(source.source_id))
-          .map((source) => source.document_id)
+      ? sources.filter((source) => source.source_id !== null && snapshot.sourceIds.includes(source.source_id))
       : []
-  const check =
-    mode === 'entire_project'
-      ? ({ ok: false, reason: 'entire_project', count: 0 } as const)
-      : checkCompareSelection(selectedDocuments)
+  // D-16（评审 HIGH-2 更正）：Compare 的 `document_ids` 属**文档语义**，
+  // 必须按 `document_id` 去重后再作执行载荷。此前"保留精确版本"的写法基于
+  // 一个**已被证伪的前提**——`POST /compare/jobs` 只接受 `document_ids`，
+  // 且服务端逐条 `get_latest_version(doc_id)`（router.py:2562-2570）：
+  //   · 传重复的同一 doc_id 不会保住旧版本，只会让服务端把 (doc, 最新版)
+  //     解析两次 → 出现"A 与 A 比较"；
+  //   · 精确版本在本端点**无法表达**（见交付文档的 wire 缺口登记）。
+  // 因此执行载荷与计量面统一走唯一文档集合；同文档多版本合并为一次比较。
+  const uniqueDocuments = uniqueDocumentIds(selectedSourceRows)
+  const documentCount = countUniqueDocuments(selectedSourceRows)
+  const check = (() => {
+    if (mode === 'all') return { ok: false, reason: 'all', count: 0 } as const
+    // D-16：上限/提示按唯一文档数计；同文档多版本合并后不足两份 → 阻断
+    const floor = checkCompareDocumentFloor(documentCount.uniqueDocumentCount)
+    if (!floor.ok) return { ok: false, reason: floor.reason, count: documentCount.uniqueDocumentCount } as const
+    return {
+      ...checkCompareSelection(uniqueDocuments),
+      count: documentCount.uniqueDocumentCount,
+    }
+  })()
 
   const modelBlocked = modelBlockedProp === true
 
@@ -72,7 +90,7 @@ export function ComparePanel({
     if (!check.ok || isCreating || modelBlocked) return
     // 只在守卫真正派发（本地模型直接执行 / 外部模型确认完成）后置位；
     // consent 取消时 onCreate 返回 false，「已创建」提示不出现
-    const sent = await onCreate(selectedDocuments)
+    const sent = await onCreate(uniqueDocuments)
     if (sent) setSubmitted(true)
   }
 
@@ -106,14 +124,26 @@ export function ComparePanel({
           </AlertDescription>
         </Alert>
       )}
+      {check.ok && documentCount.mergedDuplicates && (
+        <Alert variant="default" data-testid="compare-merged-versions">
+          <AlertDescription>{t('research.compareMergedVersions')}</AlertDescription>
+        </Alert>
+      )}
       {!check.ok && check.reason === 'empty' && (
         <Alert variant="default" data-testid="compare-empty">
           <AlertDescription>{t('research.compareEmpty')}</AlertDescription>
         </Alert>
       )}
-      {!check.ok && check.reason === 'entire_project' && (
+      {!check.ok && check.reason === 'all' && (
         <Alert variant="default" data-testid="compare-entire-project">
           <AlertDescription>{t('research.compareEntireProjectRequiresSelection')}</AlertDescription>
+        </Alert>
+      )}
+      {/* PR5（D-16）：同文档多版本共选被合并后不足两份文献 → 按不足阻断，
+          文案必须说"需要两份不同文档"，不得写成"没有可用资料"（D-11）。 */}
+      {!check.ok && check.reason === 'single_document' && (
+        <Alert variant="default" data-testid="compare-single-document">
+          <AlertDescription>{t('research.compareNeedsTwoDocuments')}</AlertDescription>
         </Alert>
       )}
       {modelBlocked && blockedHint && (

@@ -14,8 +14,21 @@ import {
   CONTEXT_LEVELS,
 } from './SearchContextSelector'
 import { fetchContextPreview, newIdempotencyKey, searchV1 } from '@/lib/research/api'
+import { fetchC05Preview } from '@/lib/research/api'
 import { researchModelBlockedHint, useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
-import { formatScopeLabel, useResearchScope } from '@/lib/research/scope'
+import { formatScopeLabel, useResearchScope, type ResearchScopeSnapshot } from '@/lib/research/scope'
+import { useResearchC05 } from '@/lib/hooks/use-research-c05'
+import { c05RequestHeaders } from '@/lib/research/c05-contract'
+import { buildC05GeneratedRequest, buildSourceScope } from '@/lib/research/c05-request'
+import { classifyC05Error } from '@/lib/research/c05-error-actions'
+import { extractScopeProjection } from '@/lib/research/c05-scope-projection'
+import { ScopeWarningSummary } from './ScopeWarningSummary'
+import { evaluatePreviewGate } from '@/lib/research/c05-preview-gate'
+import {
+  acquireKey, countAttempt, newKeyHold, settleKey, signatureOf,
+  dispatchEligibility,
+} from '@/lib/research/c05-idempotency-key'
+import { monotonicNow } from '@/lib/research/c05-key-retention'
 import { extractResearchErrorCode, userErrorMessageKey } from '@/lib/research/errors'
 import type {
   ResearchContextLevel,
@@ -52,6 +65,20 @@ const CONSENT_ERROR_CODES = [
   'policy_denied',
 ]
 
+/**
+ * PR5（D-22）：登记前冻结的完整派发意图。确认（或取消后重试）时**只用**这里
+ * 的键与信封派发，不再重读能力/模型/范围——否则同意流程会在取消/重试时换键。
+ */
+interface FrozenDispatch {
+  /** 冻结的幂等键（D-13 表①：未完成发出时保留） */
+  key: string
+  /** 冻结的契约选择（v1 / c05-v1） */
+  contract: 'v1' | 'c05-v1'
+  /** 冻结的请求信封（原样 POST） */
+  body: Parameters<typeof searchV1>[1]
+  envelope: Record<string, unknown>
+}
+
 export function ResearchSearchPanel({
   projectId,
   active = true,
@@ -87,7 +114,20 @@ export function ResearchSearchPanel({
     runGuarded,
   } = useResearchGlobalModel()
   // RWV2-11（K7）：Scope 真源唯一——本面板不再持有/接收独立选择状态
-  const { mode, selectedSourceIds, selectedNoteIds, getSnapshot } = useResearchScope()
+  const { mode, selectedSourceIds, selectedNoteIds, singlePin, getSnapshot } = useResearchScope()
+  // PR5（C6）：C-05 能力（与 models 同 query key，共享缓存）
+  const c05 = useResearchC05(projectId)
+  // 派生值参与 preview effect 依赖：capability refetch 只翻 execution_ready
+  // 时也必须重跑（C-05↔v1 切换不能沿用旧 budget/preview）。
+  // 同时保留 ref 供 memoized 的 run/prepareDispatch 在派发时刻读当前真值。
+  const searchReady = c05.dispatchReady('search')
+  const searchReadyRef = useRef(searchReady)
+  searchReadyRef.current = searchReady
+  // D-01：范围投影（存在才消费）
+  const [scopeProjection, setScopeProjection] = useState<ReturnType<typeof extractScopeProjection>>({ kind: 'absent' })
+  // R1-M10：C-05 Preview budget（preview_supported=true 时由 C-05 preview
+  // 响应填充；当前恒 null = Preview 缺失 → 不阻断、显示"未经预览校验"）
+  const c05BudgetRef = useRef<Parameters<typeof evaluatePreviewGate>[0]['budget']>(null)
 
   const [query, setQuery] = useState('')
   const [result, setResult] = useState<ResearchSearchResponse | null>(null)
@@ -156,13 +196,58 @@ export function ResearchSearchPanel({
 
   useEffect(() => {
     const trimmed = query.trim()
-    // RWV2-40：inactive（隐藏/非主动作）时不发起 Context Preview——
-    // 清除 debounce、清空临时 preview、不启动新请求；重新激活后再算。
-    // 正式 Search 执行走 executeSearch（run 回调），不因隐藏而取消。
+    // RWV2-40：inactive（隐藏/非主动作）时不发起 Context Preview。
+    // PR5（R2-M10）：C-05 就绪时——preview_supported=true 才发 C-05 Preview
+    //（只读、消费 budget 到 c05BudgetRef）；false → 清空（不发旧 Preview）。
+    // 旧 v1 路径保持既有 debounce Preview 不变。
     if (!active || !trimmed || confirmedModelId === null) {
+      // 意图失效：旧预算不得留在 ref 里被下一次提交消费（handover §4.3）。
+      c05BudgetRef.current = null
       setPreview(null)
       return
     }
+    if (searchReady) {
+      if (!c05.previewSupported) {
+        c05BudgetRef.current = null
+        setPreview(null)
+        return
+      }
+      // 进入 C-05 路径后不再展示旧 v1 Preview（契约切换不混用两套展示）。
+      setPreview(null)
+      // 意图已变化（query/model/level/scope）：debounce 窗口内立即作废旧预算，
+      // 避免用旧意图的 exceeded/validated 阻断或放行新意图。
+      c05BudgetRef.current = null
+      let cancelled = false
+      const timer = setTimeout(() => {
+        void fetchC05Preview(projectId, {
+          entry: 'search',
+          question: trimmed,
+          model_id: confirmedModelId,
+          context_level: selectedLevel,
+          source_scope: buildSourceScope({
+            mode: getSnapshot().mode,
+            sourceIds: getSnapshot().sourceIds,
+            noteIds: getSnapshot().noteIds,
+            singleSourceId: getSnapshot().singleSourceId,
+          }),
+          note_ids: [...getSnapshot().noteIds],
+        })
+          .then((value) => {
+            if (cancelled) return
+            c05BudgetRef.current = value.budget
+          })
+          .catch(() => {
+            // 只有**当前**请求失败才清空；已取消的旧请求失败不得清掉新值。
+            if (!cancelled) c05BudgetRef.current = null
+          })
+      }, 400)
+      return () => {
+        cancelled = true
+        clearTimeout(timer)
+      }
+    }
+    // 旧 v1 Preview 路径：C-05 budget 不适用，清空避免跨契约残留。
+    c05BudgetRef.current = null
     let cancelled = false
     const timer = setTimeout(() => {
       void fetchContextPreview(projectId, {
@@ -184,7 +269,7 @@ export function ResearchSearchPanel({
       cancelled = true
       clearTimeout(timer)
     }
-  }, [active, query, projectId, selectedLevel, selectedSourceIds, selectedNoteIds, confirmedModelId])
+  }, [active, query, projectId, selectedLevel, selectedSourceIds, selectedNoteIds, mode, singlePin, searchReady, confirmedModelId, c05.previewSupported])
 
   const handleSaveContext = useCallback(
     async (level: ResearchContextLevel) => {
@@ -207,65 +292,143 @@ export function ResearchSearchPanel({
     [saveSearchContext],
   )
 
-  const executeSearch = useCallback(
-    async (
+  // PR5（C6/D-13）：键生命周期由 c05-idempotency-key 纯函数管理（以
+  // detail.acceptance 为锚，替换旧"有 response 即清键"）。
+  const keyHoldRef = useRef(newKeyHold())
+
+  /**
+   * PR5（D-22）：派发意图必须在**登记（弹 consent）之前**冻结——幂等键、
+   * 契约选择、完整请求信封三者一次成型，之后不再重读能力/模型/范围。
+   * 否则"同意 → 派发"这条路径会在取消/重试时换键，成为 D-13 表①的漏洞。
+   */
+  const prepareDispatch = useCallback(
+    (
       trimmed: string,
       modelId: string,
       level: ResearchContextLevel,
-      sourceIds: string[],
-      noteIds: string[],
-    ) => {
+      scopeSnapshot: ResearchScopeSnapshot,
+    ): FrozenDispatch | { blocked: 'exhausted' } => {
+      const now = monotonicNow()
+      const contract: 'v1' | 'c05-v1' = searchReadyRef.current ? 'c05-v1' : 'v1'
+      // R1-H3：契约版本入键签名——能力翻转后同签名的恢复不会降级成 v1
+      const signature = signatureOf({
+        entry: 'search',
+        query: trimmed,
+        scope: {
+          mode: scopeSnapshot.mode,
+          sourceIds: scopeSnapshot.sourceIds,
+          noteIds: scopeSnapshot.noteIds,
+          singleSourceId: scopeSnapshot.singleSourceId,
+        },
+        modelId,
+        contextLevel: level,
+        contract,
+      })
+      // R2-B1：exhausted 仅对**同签名**（同逻辑提交的恢复）停止 POST；
+      // 签名变化 = 用户明确新意图 = 新键（acquireKey 自行处理）。
+      if (
+        keyHoldRef.current.key !== null
+        && keyHoldRef.current.signature === signature
+        && dispatchEligibility(keyHoldRef.current, now) === 'exhausted'
+      ) {
+        return { blocked: 'exhausted' }
+      }
+      // D-13 表①：取键即保留（此时**尚未派发**）；尝试计数在真正 POST 时累加
+      const acquired = acquireKey(keyHoldRef.current, now, newIdempotencyKey, signature)
+      keyHoldRef.current = acquired.hold
+      const body: Parameters<typeof searchV1>[1] = contract === 'c05-v1'
+        // PR5（B3）：C-05 分支——source_scope 载荷 + c05-v1 头；
+        // 禁止非空顶层 source_ids（D-11 fail-closed 在构造层）
+        ? buildC05GeneratedRequest(
+            {
+              mode: scopeSnapshot.mode,
+              sourceIds: scopeSnapshot.sourceIds,
+              noteIds: scopeSnapshot.noteIds,
+              singleSourceId: scopeSnapshot.singleSourceId,
+            },
+            { query: trimmed, model_id: modelId, mode: 'auto', context_level: level },
+          )
+        : {
+            query: trimmed,
+            source_ids: [...scopeSnapshot.sourceIds],
+            note_ids: [...scopeSnapshot.noteIds],
+            mode: 'auto',
+            model_id: modelId,
+            context_level: level,
+          }
+      return {
+        key: acquired.key,
+        contract,
+        body,
+        envelope: body as unknown as Record<string, unknown>,
+      }
+    },
+    [],
+  )
+
+  const executeSearch = useCallback(
+    async (frozen: FrozenDispatch) => {
       setLoading(true)
       setError(null)
       setResult(null)
       setBackground(null)
-      // 同一逻辑提交（同输入）复用幂等键；输入变化即视为新执行（§7.2：
-      // 终态失败后需新 key 才能发起新执行）
-      const signature = JSON.stringify([trimmed, modelId, level, sourceIds, noteIds])
-      if (!idempotencyKeyRef.current || keyInputsRef.current !== signature) {
-        idempotencyKeyRef.current = newIdempotencyKey()
-        keyInputsRef.current = signature
-      }
+      // 派发即计数（初始 POST 与所有重试共用 ≤3）
+      keyHoldRef.current = countAttempt(keyHoldRef.current)
       try {
-        const outcome = await searchV1(
-          projectId,
-          {
-            query: trimmed,
-            source_ids: sourceIds,
-            note_ids: noteIds,
-            mode: 'auto',
-            model_id: modelId,
-            context_level: level,
-          },
-          { idempotencyKey: idempotencyKeyRef.current },
-        )
-        idempotencyKeyRef.current = null
-        keyInputsRef.current = ''
-        if (outcome.kind === 'direct') {
-          lastExecutedQueryRef.current = trimmed
-          setResult(outcome.result)
-        } else {
-          setBackground({
-            generationId: outcome.generation_id,
-            jobId: outcome.job_id,
+        if (frozen.contract === 'c05-v1') {
+          const outcome = await searchV1(projectId, frozen.body, {
+            idempotencyKey: frozen.key,
+            contract: 'c05-v1',
           })
-        }
-      } catch (err) {
-        // 网络层错误（无 response，结果真未知）保留同键防双跑；
-        // 服务端已给确定性结局（有 response）→ 重置允许新执行
-        const hasServerResponse = !!(err as { response?: unknown } | null)?.response
-        const detailCode = extractResearchErrorCode(err)
-        if (hasServerResponse) {
-          idempotencyKeyRef.current = null
-          keyInputsRef.current = ''
-          // 后端 dispatch gate 判定授权失效 → 让 consent 重新生效判定，
-          // 下一次执行由根级 guard 重新弹确认；不在此处自行重试或改模型。
-          if (detailCode !== null && CONSENT_ERROR_CODES.includes(detailCode)) {
-            invalidateConsent()
+          // D-13：确定性完成（200/202）→ 清键（再次提问 = 新执行）
+          keyHoldRef.current = settleKey(keyHoldRef.current, { httpDelivered: true, detail: null, success: true })
+          if (outcome.kind === 'direct') {
+            lastExecutedQueryRef.current = frozen.envelope.query as string
+            // D-01：投影存在才消费；缺失不猜测
+            setScopeProjection(extractScopeProjection(outcome.result))
+            setResult(outcome.result)
+          } else {
+            // D-01（评审 MEDIUM-7）：202 与 200 携带**同一**投影——
+            // 有则消费，无则如实 absent（不沿用上一次搜索的投影）
+            setScopeProjection(extractScopeProjection({
+              scope_contract_version: outcome.scope_contract_version,
+              resolved_scope: outcome.resolved_scope,
+            }))
+            setBackground({
+              generationId: outcome.generation_id,
+              jobId: outcome.job_id,
+            })
+          }
+        } else {
+          const outcome = await searchV1(projectId, frozen.body, {
+            idempotencyKey: frozen.key,
+          })
+          keyHoldRef.current = settleKey(keyHoldRef.current, { httpDelivered: true, detail: null, success: true })
+          // 旧 v1 契约不携带范围投影：显式清空，避免与上一次 C-05 结果串台
+          setScopeProjection({ kind: 'absent' })
+          if (outcome.kind === 'direct') {
+            lastExecutedQueryRef.current = frozen.envelope.query as string
+            setResult(outcome.result)
+          } else {
+            setBackground({
+              generationId: outcome.generation_id,
+              jobId: outcome.job_id,
+            })
           }
         }
-        // RWV2-42（AC8）：raw code/消息不作主消息——code 驱动映射主文案，
-        // 原文仅次级诊断行
+      } catch (err) {
+        // D-13：以 detail.acceptance 为锚处置键——unknown/未识别保留；确定性结论清除
+        const classified = classifyC05Error(err)
+        const hasServerResponse = !!(err as { response?: unknown } | null)?.response
+        keyHoldRef.current = settleKey(keyHoldRef.current, {
+          httpDelivered: hasServerResponse,
+          detail: classified,
+          success: false,
+        })
+        const detailCode = classified.code ?? extractResearchErrorCode(err)
+        if (hasServerResponse && detailCode !== null && CONSENT_ERROR_CODES.includes(detailCode)) {
+          invalidateConsent()
+        }
         setError({
           code: detailCode,
           message: err instanceof Error ? err.message : String(err),
@@ -285,24 +448,56 @@ export function ResearchSearchPanel({
     // 确认后的新值（不变量 4），consent 弹窗摘要与最终请求同源（K5）。
     const scopeSnapshot = getSnapshot()
     const levelSnapshot = selectedLevel
-    const sourceSnapshot = [...scopeSnapshot.sourceIds]
-    const noteSnapshot = [...scopeSnapshot.noteIds]
+    // R1-M10：Preview 门禁接入——有 C-05 budget 数据时按 evaluatePreviewGate
+    // 判定（exceeded/unavailable 阻断；非必需 not_checked 放行并标注）；
+    // 无数据（preview_supported=false）→ 按 D-12 放行 + "未经预览校验"提示。
+    const gate = evaluatePreviewGate({
+      executionReady: true,
+      scopeValid: true,
+      budget: c05BudgetRef.current,
+    })
+    if (!gate.canSubmit) {
+      setError({
+        code: gate.blockedReason,
+        message: gate.blockedReason === 'budget_exceeded'
+          ? 'Preview budget exceeded for the selected path — narrow or split the task.'
+          : 'Required preview checks are unavailable — retry after they complete.',
+      })
+      return
+    }
+    // PR5（D-22）：键/契约/信封在登记**之前**冻结；确认后只用它们派发
+    const modelId = confirmedModelId
+    if (modelId === null) return // fail-closed（与 runGuarded 的 canExecute 门禁一致）
+    const prepared = prepareDispatch(trimmed, modelId, levelSnapshot, scopeSnapshot)
+    if ('blocked' in prepared) {
+      setError({
+        code: 'key_retry_exhausted',
+        message: 'Recovery window for the previous attempt is exhausted; review the pending result before retrying.',
+      })
+      return
+    }
     void runGuarded(
-      (modelId) =>
-        executeSearch(trimmed, modelId, levelSnapshot, sourceSnapshot, noteSnapshot),
-      { scopeLabel: formatScopeLabel(scopeSnapshot, t) },
+      () => executeSearch(prepared),
+      {
+        scopeLabel: formatScopeLabel(scopeSnapshot, t),
+        contract: prepared.contract,
+        envelope: prepared.envelope,
+        idempotencyKey: prepared.key,
+      },
     )
   }, [
+    confirmedModelId,
     executeSearch,
     getSnapshot,
     loading,
+    prepareDispatch,
     query,
     runGuarded,
     selectedLevel,
     t,
   ])
 
-  // RWV2-11（K13）：`document` 档位依赖显式 Source 选择；entire_project 下空
+  // RWV2-11（K13）：`document` 档位依赖显式 Source 选择；all 下空
   // ID 后端必 422（runner.py document context requires sources）。
   // P1-1：收敛使用**独立的 scope 归因提示**（documentLevelAdjusted），不写入
   // adjustedFrom——后者驱动「模型能力」横幅，避免把 scope 收敛错误归因于模型
@@ -311,7 +506,7 @@ export function ResearchSearchPanel({
   // 接管清除（防两 effect 互相回弹死循环）。
   const [documentLevelAdjusted, setDocumentLevelAdjusted] = useState(false)
   useEffect(() => {
-    if (mode !== 'entire_project') setDocumentLevelAdjusted(false)
+    if (mode !== 'all') setDocumentLevelAdjusted(false)
   }, [mode])
   // P3-1：模型切换时清除 scope 归因提示（能力 effect 可能主动挪档位）
   useEffect(() => {
@@ -320,7 +515,7 @@ export function ResearchSearchPanel({
 
   useEffect(() => {
     if (
-      mode === 'entire_project' &&
+      mode === 'all' &&
       selectedLevel === 'document' &&
       // P2-⑥：收敛前提是「document 受支持且目标 focused 受支持」——缺一
       // 则由模型能力 effect 全权接管清除（防 K13↔能力 effect 回弹死循环）
@@ -356,7 +551,7 @@ export function ResearchSearchPanel({
             {t('research.searchContext.autoAdjusted', { level: adjustedFrom })}
           </p>
         )}
-        {/* RWV2-11（K13/P1-1）：entire_project 下 document 档位无显式 Source，
+        {/* RWV2-11（K13/P1-1）：all 下 document 档位无显式 Source，
             收敛到 focused 并给出独立归因（scope）的明确英文说明；模型能力
             横幅（adjustedFrom）不受影响、不会同时误显示 */}
         {documentLevelAdjusted && (
@@ -425,6 +620,13 @@ export function ResearchSearchPanel({
               )}
             </AlertDescription>
           </Alert>
+        )}
+
+        {/* PR5（D-01/D-14/D-17）：范围投影与警告的**有界**呈现。202/后台
+            受理路径与终态重放携带投影；fresh 主路径不携带时如实说明"服务端
+            未返回范围详情"，不猜测、不显示 stale 计数。 */}
+        {(result !== null || background !== null) && (
+          <ScopeWarningSummary projection={scopeProjection} />
         )}
 
         {result && (

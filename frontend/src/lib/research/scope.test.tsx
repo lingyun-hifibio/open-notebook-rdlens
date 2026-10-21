@@ -60,7 +60,7 @@ describe('ResearchScopeProvider', () => {
       result.current.setMode('selected')
     })
 
-    expect(result.current.mode).toBe('entire_project')
+    expect(result.current.mode).toBe('all')
     expect(result.current.validate()).toEqual({ valid: true })
   })
 
@@ -142,7 +142,7 @@ describe('ResearchScopeProvider', () => {
     })
     const snapshot = result.current.getSnapshot()
 
-    expect(snapshot).toEqual({ mode: 'selected', sourceIds: ['src_1'], noteIds: [] })
+    expect(snapshot).toEqual({ mode: 'selected', sourceIds: ['src_1'], noteIds: [], singleSourceId: null })
     expect(Object.isFrozen(snapshot)).toBe(true)
     expect(Object.isFrozen(snapshot.sourceIds)).toBe(true)
     expect(Object.isFrozen(snapshot.noteIds)).toBe(true)
@@ -150,7 +150,7 @@ describe('ResearchScopeProvider', () => {
     act(() => {
       result.current.toggleNote('note_1')
     })
-    expect(snapshot).toEqual({ mode: 'selected', sourceIds: ['src_1'], noteIds: [] })
+    expect(snapshot).toEqual({ mode: 'selected', sourceIds: ['src_1'], noteIds: [], singleSourceId: null })
   })
 
   it('remounts by encoded user and project identity without leaking the previous scope', () => {
@@ -176,7 +176,7 @@ describe('ResearchScopeProvider', () => {
     rerender(
       <ResearchScopeProvider userId="user_1" projectId="project_2"><ScopeProbe /></ResearchScopeProvider>,
     )
-    expect(screen.getByTestId('scope-probe')).toHaveTextContent('entire_project:')
+    expect(screen.getByTestId('scope-probe')).toHaveTextContent('all:')
     expect(localStorage.getItem(scopeStorageKey('user_1', 'project_2'))).toBeNull()
   })
 })
@@ -186,15 +186,15 @@ describe('formatScopeLabel（RWV2-11 K11）', () => {
   const t = (key: string, opts?: Record<string, unknown>) =>
     opts === undefined ? key : `${key}|${JSON.stringify(opts)}`
 
-  it('entire_project → Entire project 语义 key', () => {
+  it('all → Entire project 语义 key', () => {
     expect(
-      formatScopeLabel({ mode: 'entire_project', sourceIds: [], noteIds: [] }, t),
+      formatScopeLabel({ mode: 'all', sourceIds: [], noteIds: [], singleSourceId: null }, t),
     ).toBe('research.scopeSummary.entireProject')
   })
 
   it('selected 单 Source → sourceOne', () => {
     const label = formatScopeLabel(
-      { mode: 'selected', sourceIds: ['s1'], noteIds: [] },
+      { mode: 'selected', sourceIds: ['s1'], noteIds: [], singleSourceId: null },
       t,
     )
     expect(label).toBe('research.scopeSummary.sourceOne')
@@ -202,7 +202,7 @@ describe('formatScopeLabel（RWV2-11 K11）', () => {
 
   it('selected 多 Source 单 Note → sourceMany + noteOne（join 有序）', () => {
     const label = formatScopeLabel(
-      { mode: 'selected', sourceIds: ['s1', 's2'], noteIds: ['n1'] },
+      { mode: 'selected', sourceIds: ['s1', 's2'], noteIds: ['n1'], singleSourceId: null },
       t,
     )
     expect(label).toBe(
@@ -211,7 +211,7 @@ describe('formatScopeLabel（RWV2-11 K11）', () => {
   })
 
   it('selected 空（失效 ID 清理后）→ 显式回退 selected 标签', () => {
-    const label = formatScopeLabel({ mode: 'selected', sourceIds: [], noteIds: [] }, t)
+    const label = formatScopeLabel({ mode: 'selected', sourceIds: [], noteIds: [], singleSourceId: null }, t)
     expect(label).toBe('research.layout.scope.selected')
   })
 })

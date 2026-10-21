@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SourceDetailPanel } from './SourceDetailPanel'
 import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
+import { ResearchScopeProvider } from '@/lib/research/scope'
 import * as researchApi from '@/lib/research/api'
 
 // UI-02 Red：来源内容面板（REQ-SRC-04/REQ-DATA-04，契约 §6）——规范
@@ -35,7 +36,9 @@ function makeWrapper() {
   const wrapper = ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>
       <ResearchWorkspaceProvider projectId="proj_1" role="owner">
+        <ResearchScopeProvider userId="u1" projectId="proj_1">
         {children}
+        </ResearchScopeProvider>
       </ResearchWorkspaceProvider>
     </QueryClientProvider>
   )
