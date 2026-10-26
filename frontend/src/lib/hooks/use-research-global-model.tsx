@@ -37,7 +37,17 @@ import {
   type ReactNode,
 } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { QUERY_KEYS } from '@/lib/api/query-client'
+import {
+  QUERY_KEYS,
+  RESEARCH_MUTATION_OPTIONS,
+  adminReadonlyResearchIdentity,
+  ownerResearchIdentity,
+  researchEgressConsentIdentityKey,
+  researchExecutionPreferencesIdentityKey,
+  researchIdentityEquals,
+  researchModelCatalogIdentityKey,
+  type ResearchQueryIdentity,
+} from '@/lib/api/query-client'
 import {
   acknowledgeExternalEgressConsent,
   getExecutionPreferences,
@@ -70,6 +80,16 @@ export type ResearchModelBlockedReason =
 
 /** §6.8 受保护的执行体：接收调用时刻捕获的 confirmed model 快照。 */
 export type GuardedOperation<T> = (modelId: string) => T | Promise<T>
+
+/**
+ * 显式「未派发/已派发」通知（DESIGN L200/L1120）：身份变化、consent 取消、
+ * 被禁用时**不能只关弹窗/返回 undefined**，调用方据此释放 submit hold。
+ */
+export interface GuardedOperationCompletion {
+  readonly dispatched: boolean
+  readonly reason?: 'cancelled' | 'identity-changed' | 'blocked'
+  readonly modelId: string | null
+}
 
 export interface UseResearchGlobalModelResult {
   /** 服务端保存成功并确认的权威模型；null = 未选择（不自动改选） */
@@ -123,6 +143,8 @@ export interface UseResearchGlobalModelResult {
       envelope?: Readonly<Record<string, unknown>>
       /** PR5（D-22）：幂等键随登记冻结（确认后原样复用） */
       idempotencyKey?: string
+      /** PR-1：未派发/已派发完成通知（consent 取消、身份失效、被禁用） */
+      onCompletion?: (completion: GuardedOperationCompletion) => void
     },
   ) => Promise<T | undefined>
   /**
@@ -168,8 +190,34 @@ export interface UseResearchGlobalModelResult {
 const ResearchGlobalModelContext = createContext<UseResearchGlobalModelResult | null>(null)
 
 export function ResearchGlobalModelProvider({ children }: { children: ReactNode }) {
-  const { projectId, isAdminReadonly } = useResearchWorkspace()
+  const { projectId, isAdminReadonly, userId, role, authGeneration } = useResearchWorkspace()
   const queryClient = useQueryClient()
+
+  // 判别身份（DESIGN §3.2）：owner 带 viewer，Admin 只读不带 viewer；查询键
+  // 尾部追加身份段，认证代际/viewer 变化后旧缓存不可见。
+  const researchIdentity = useMemo<ResearchQueryIdentity | null>(() => {
+    const generation = authGeneration ?? 0
+    if (role === 'admin_readonly') {
+      return adminReadonlyResearchIdentity(projectId, generation)
+    }
+    if (!userId) return null
+    return ownerResearchIdentity(projectId, userId, generation)
+  }, [authGeneration, projectId, role, userId])
+  const identityRef = useRef<ResearchQueryIdentity | null>(researchIdentity)
+  identityRef.current = researchIdentity
+  // runGuarded 必须绑定“调用时闭包携带的身份”，而不是执行时再读 ref：
+  // 旧闭包在身份变化后不得用新身份重新通过校验（review F4）。
+  const identityAtRender = researchIdentity
+
+  const modelCatalogKey = researchIdentity
+    ? researchModelCatalogIdentityKey(researchIdentity)
+    : QUERY_KEYS.researchModelCatalog(projectId)
+  const preferencesKey = researchIdentity
+    ? researchExecutionPreferencesIdentityKey(researchIdentity)
+    : QUERY_KEYS.researchExecutionPreferences(projectId)
+  const consentKey = researchIdentity
+    ? researchEgressConsentIdentityKey(researchIdentity)
+    : QUERY_KEYS.researchEgressConsent(projectId)
 
   const [draftModelId, setDraftModelId] = useState<string | null>(null)
   const [saveModelError, setSaveModelError] = useState<string | null>(null)
@@ -197,11 +245,30 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
     envelope: Readonly<Record<string, unknown>> | null
     /** 冻结的幂等键（确认后**只用它**派发；取消不得清除） */
     idempotencyKey: string | null
+    /** 登记时捕获的认证身份（ACK 后/派发前复核；变化即不派发） */
+    identity: ResearchQueryIdentity | null
+    /** 未派发/已派发通知（释放 submit hold 用） */
+    onCompletion?: (completion: GuardedOperationCompletion) => void
   }
   const pendingRegistrationRef = useRef<PendingConsentRegistration | null>(null)
 
+  // Provider 卸载（登出/会话结束）后，迟到的 ACK/执行不得再触发执行体。
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+
+  const isIdentityCurrent = useCallback(
+    (identity: ResearchQueryIdentity | null): boolean =>
+      mountedRef.current && researchIdentityEquals(identity, identityRef.current),
+    [],
+  )
+
   const modelsQuery = useQuery({
-    queryKey: QUERY_KEYS.researchModelCatalog(projectId),
+    queryKey: modelCatalogKey,
     queryFn: () => listModels(projectId),
     enabled: !!projectId,
     refetchOnWindowFocus: true,
@@ -216,14 +283,14 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
   )
 
   const preferencesQuery = useQuery({
-    queryKey: QUERY_KEYS.researchExecutionPreferences(projectId),
+    queryKey: preferencesKey,
     queryFn: () => getExecutionPreferences(projectId),
     enabled: !!projectId,
     refetchOnWindowFocus: true,
   })
 
   const consentQuery = useQuery({
-    queryKey: QUERY_KEYS.researchEgressConsent(projectId),
+    queryKey: consentKey,
     queryFn: () => getExternalEgressConsent(projectId),
     enabled: !!projectId,
     refetchOnWindowFocus: true,
@@ -244,7 +311,7 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
   // §6.8 第 6 步：切换 model/provider 时 refetch consent，不复用旧 destination
   const refetchConsent = useCallback(() => {
     void queryClient.invalidateQueries({
-      queryKey: QUERY_KEYS.researchEgressConsent(projectId),
+      queryKey: consentKey,
     })
   }, [projectId, queryClient])
 
@@ -263,26 +330,58 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
   const patchPreferences = (input: Parameters<typeof patchExecutionPreferences>[1]) =>
     patchExecutionPreferences(projectId, input)
 
-  const onPatchSuccess = (saved: Awaited<ReturnType<typeof patchExecutionPreferences>>) => {
+  /** 每次 PATCH 携带派发时捕获的身份：共享 ref 无法区分并发 mutation。 */
+  interface PatchMutationVariables {
+    readonly input: Parameters<typeof patchExecutionPreferences>[1]
+    readonly identity: ResearchQueryIdentity | null
+  }
+
+  const onPatchSuccess = (
+    saved: Awaited<ReturnType<typeof patchExecutionPreferences>>,
+    variables: PatchMutationVariables,
+  ) => {
     // 服务端响应即权威值：直接写入缓存（比 invalidate 更快且避免
-    // 多标签页并发 PATCH 期间读到陈旧快照），仍保留 invalidate 语义
+    // 多标签页并发 PATCH 期间读到陈旧快照），仍保留 invalidate 语义。
+    // PR-1：回填前校验**本次派发**的身份（旧代 PATCH 成功不得覆盖新代缓存）。
+    if (!isIdentityCurrent(variables.identity)) return
+    const currentIdentity = identityRef.current
     queryClient.setQueryData(
-      QUERY_KEYS.researchExecutionPreferences(projectId),
+      currentIdentity
+        ? researchExecutionPreferencesIdentityKey(currentIdentity)
+        : QUERY_KEYS.researchExecutionPreferences(projectId),
       saved,
     )
   }
 
-  const modelPatch = useMutation({ mutationFn: patchPreferences, onSuccess: onPatchSuccess })
-  const contextPatch = useMutation({ mutationFn: patchPreferences, onSuccess: onPatchSuccess })
+  const patchMutationOptions = {
+    ...RESEARCH_MUTATION_OPTIONS,
+    mutationFn: async ({ input, identity }: PatchMutationVariables) => {
+      // 派发前校验（DESIGN L197）：身份已变化则不再发出旧身份请求。
+      if (!isIdentityCurrent(identity)) {
+        throw new Error('research patch superseded by new auth generation')
+      }
+      return patchPreferences(input)
+    },
+    onSuccess: onPatchSuccess,
+  } as const
+
+  const modelPatch = useMutation(patchMutationOptions)
+  const contextPatch = useMutation(patchMutationOptions)
 
   const saveModel = useCallback(async (): Promise<void> => {
     if (isAdminReadonly || draftModelId === null) return
+    const dispatchIdentity = identityRef.current
     setSaveModelError(null)
     try {
       // 只 PATCH preferred_model_id；成功后服务端权威值成为 confirmed
       // （draft 保留为用户选择，正常情况下两者相等）
-      await modelPatch.mutateAsync({ preferred_model_id: draftModelId })
+      await modelPatch.mutateAsync({
+        input: { preferred_model_id: draftModelId },
+        identity: dispatchIdentity,
+      })
     } catch (err) {
+      // 身份已变化的失败结果不得写本地错误/回滚新代 draft。
+      if (!isIdentityCurrent(dispatchIdentity)) return
       setSaveModelError(err instanceof Error ? err.message : String(err))
       // 失败丢弃 draft，回滚到服务端值（§6.1：refetch authority）；
       // 保存期间服务端值可能已变（如多标签页 refetch），闭包里的
@@ -290,30 +389,37 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
       setDraftModelId(confirmedModelId)
       setDraftTouched(false)
       void queryClient.invalidateQueries({
-        queryKey: QUERY_KEYS.researchExecutionPreferences(projectId),
+        queryKey: preferencesKey,
       })
       throw err
     }
-  }, [confirmedModelId, draftModelId, isAdminReadonly, modelPatch, projectId, queryClient])
+  }, [confirmedModelId, draftModelId, isAdminReadonly, isIdentityCurrent, modelPatch, projectId, queryClient])
 
   const clearModel = useCallback(async (): Promise<void> => {
     if (isAdminReadonly) return
+    const dispatchIdentity = identityRef.current
     setSaveModelError(null)
     try {
-      await modelPatch.mutateAsync({ preferred_model_id: null })
+      await modelPatch.mutateAsync({ input: { preferred_model_id: null }, identity: dispatchIdentity })
+      // 旧代 clear 的迟到成功不得覆盖新代本地选择（review F3）。
+      if (!isIdentityCurrent(dispatchIdentity)) return
       setDraftModelId(null)
       setDraftTouched(false)
     } catch (err) {
+      if (!isIdentityCurrent(dispatchIdentity)) return
       setSaveModelError(err instanceof Error ? err.message : String(err))
       throw err
     }
-  }, [isAdminReadonly, modelPatch])
+  }, [isAdminReadonly, isIdentityCurrent, modelPatch])
 
   const saveSearchContext = useCallback(
     async (level: ResearchContextLevel): Promise<void> => {
       if (isAdminReadonly) return
       // 只 PATCH default_context_level，不触碰模型（不变量 8）
-      await contextPatch.mutateAsync({ default_context_level: level })
+      await contextPatch.mutateAsync({
+        input: { default_context_level: level },
+        identity: identityRef.current,
+      })
     },
     [isAdminReadonly, contextPatch],
   )
@@ -354,10 +460,17 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
   const cancelConsent = useCallback(() => {
     // 已在途的确认不可取消（避免半执行），只丢弃尚未开始的登记
     if (isConsentInFlight) return
-    // 不变量 9：取消不创建/不改变任何执行状态；单记录整体丢弃（K10）
+    // 不变量 9：取消不创建/不改变任何执行状态；单记录整体丢弃（K10）。
+    // PR-1：显式通知「执行未发生」（DESIGN L200/L1120），调用方释放 hold。
+    const discarded = pendingRegistrationRef.current
     pendingRegistrationRef.current = null
     setIsConsentPromptOpen(false)
     setConsentError(null)
+    discarded?.onCompletion?.({
+      dispatched: false,
+      reason: 'cancelled',
+      modelId: discarded.modelId,
+    })
   }, [isConsentInFlight])
 
   // RWV2-42（评审 R7-1）：登记后当前权威模型被改变（跨标签页 / focus
@@ -369,6 +482,19 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
     if (!isConsentPromptOpen || isConsentInFlight) return
     const registration = pendingRegistrationRef.current
     if (!registration) return
+    // PR-1：登记身份随 token refresh/viewer 变化失效——确认后不得用新 token
+    // 派发旧意图；显式通知「执行未发生」，不依赖 confirmConsent 的 ACK 后复核。
+    if (!researchIdentityEquals(registration.identity, identityRef.current)) {
+      pendingRegistrationRef.current = null
+      setIsConsentPromptOpen(false)
+      setConsentError(null)
+      registration.onCompletion?.({
+        dispatched: false,
+        reason: 'identity-changed',
+        modelId: registration.modelId,
+      })
+      return
+    }
     if (confirmedModelId !== registration.modelId) {
       cancelConsent()
     }
@@ -378,20 +504,28 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
     if (!isConsentPromptOpen || consentInFlightRef.current) return
     consentInFlightRef.current = true
     setIsConsentInFlight(true)
+    // ACK 派发时捕获身份：ACK 在途换代时结果不得写进新代 consent 缓存。
+    const ackIdentity = identityRef.current
     let acknowledged = false
     try {
       // acknowledge 的响应即服务端权威 consent 状态（§6.8 第 4 步）
       const updated = await acknowledgeExternalEgressConsent(projectId)
-      queryClient.setQueryData(
-        QUERY_KEYS.researchEgressConsent(projectId),
-        updated,
-      )
-      setConsentError(null)
+      if (isIdentityCurrent(ackIdentity)) {
+        queryClient.setQueryData(
+          ackIdentity
+            ? researchEgressConsentIdentityKey(ackIdentity)
+            : QUERY_KEYS.researchEgressConsent(projectId),
+          updated,
+        )
+        setConsentError(null)
+      }
       acknowledged = true
     } catch (err) {
       // acknowledge 失败：弹窗保持打开、登记保留可重试，并给出可见反馈
-      //（不静默吞错，也不产生未处理 rejection）
-      setConsentError(err instanceof Error ? err.message : String(err))
+      //（不静默吞错，也不产生未处理 rejection）；身份已失效时不写新代错误。
+      if (isIdentityCurrent(ackIdentity)) {
+        setConsentError(err instanceof Error ? err.message : String(err))
+      }
     }
     // 用登记时捕获的快照执行——不重新读取当前 confirmed（不变量 4）；
     // 登记仅在 acknowledge 成功后清除，失败时保留可重试（K10）
@@ -401,18 +535,38 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
       pendingRegistrationRef.current = null
     }
     if (acknowledged && registration && registration.modelId) {
-      try {
-        await registration.operation(registration.modelId)
-      } catch {
-        // 执行体错误与 consent 状态无关（acknowledge 已成功、弹窗已关）：
-        // 不写 consentError，避免下次弹窗误标「确认失败」；重拉服务端
-        // consent，让下一次执行重新走确认判断
+      // ACK 返回后、实际派发前复核身份（DESIGN L200）：身份已变化则显式
+      // 通知「执行未发生」，不得拿新 token 派发旧意图。
+      if (!isIdentityCurrent(registration.identity)) {
+        registration.onCompletion?.({
+          dispatched: false,
+          reason: 'identity-changed',
+          modelId: registration.modelId,
+        })
         void refetchConsent()
+      } else {
+        // 执行失败也必须结算 completion（dispatched=true：执行体已调用），
+        // 否则调用方的 submit hold 会悬挂（DESIGN L1120）。
+        let dispatched = false
+        try {
+          dispatched = true
+          await registration.operation(registration.modelId)
+        } catch {
+          // 执行体错误与 consent 状态无关（acknowledge 已成功、弹窗已关）：
+          // 不写 consentError，避免下次弹窗误标「确认失败」；重拉服务端
+          // consent，让下一次执行重新走确认判断
+          void refetchConsent()
+        } finally {
+          registration.onCompletion?.({
+            dispatched,
+            modelId: registration.modelId,
+          })
+        }
       }
     }
     consentInFlightRef.current = false
     setIsConsentInFlight(false)
-  }, [isConsentPromptOpen, projectId, queryClient, refetchConsent])
+  }, [isConsentPromptOpen, isIdentityCurrent, projectId, queryClient, refetchConsent])
 
   const runGuarded = useCallback(
     async <T,>(
@@ -422,11 +576,57 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
         contract?: 'v1' | 'c05-v1'
         envelope?: Readonly<Record<string, unknown>>
         idempotencyKey?: string
+        onCompletion?: (completion: GuardedOperationCompletion) => void
       },
     ): Promise<T | undefined> => {
       const snapshot = confirmedModelId
-      if (!canExecute || snapshot === null) return undefined
-      if (!needsConsent) return operation(snapshot)
+      // 绑定本次渲染时的身份：旧闭包调用时既有权限/consent 判断与身份一致，
+      // 身份变化后 isIdentityCurrent 必然判旧（review F4）。
+      const dispatchIdentity = identityAtRender
+      if (!mountedRef.current) {
+        options?.onCompletion?.({
+          dispatched: false,
+          reason: 'identity-changed',
+          modelId: snapshot,
+        })
+        return undefined
+      }
+      if (!canExecute || snapshot === null) {
+        options?.onCompletion?.({
+          dispatched: false,
+          reason: 'blocked',
+          modelId: snapshot,
+        })
+        return undefined
+      }
+      if (!needsConsent) {
+        // 直发路径同样先校验调用时刻的身份（DESIGN L197）。
+        if (!isIdentityCurrent(dispatchIdentity)) {
+          options?.onCompletion?.({
+            dispatched: false,
+            reason: 'identity-changed',
+            modelId: snapshot,
+          })
+          return undefined
+        }
+        // 直发也必须显式 completion（释放 hold 不依赖 Promise finally）；
+        // 执行体抛错时同样结算一次。completion 放在 try 之外，避免回调自身
+        // 抛错导致二次结算或遮蔽执行体异常（review N2）。
+        let result: T
+        try {
+          result = await operation(snapshot)
+        } catch (error) {
+          // completion 回调自身异常不得遮蔽执行体原异常（review N2）。
+          try {
+            options?.onCompletion?.({ dispatched: true, modelId: snapshot })
+          } catch {
+            // 释放 hold 的通知失败不改变执行结果语义
+          }
+          throw error
+        }
+        options?.onCompletion?.({ dispatched: true, modelId: snapshot })
+        return result
+      }
       // 外部模型且 consent 未生效：single-flight，只登记不执行。
       // pendingRegistrationRef（同步 ref）同时检查：同 tick 内第二次调用时
       // isConsentPromptOpen 仍是旧值，若只查 state 会覆盖第一次的登记。
@@ -435,6 +635,11 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
         isConsentPromptOpen ||
         pendingRegistrationRef.current !== null
       ) {
+        options?.onCompletion?.({
+          dispatched: false,
+          reason: 'blocked',
+          modelId: snapshot,
+        })
         return undefined
       }
       // K10 + PR5（D-22）：执行体 + 模型快照 + Scope 摘要 + **契约/信封/幂等键**
@@ -446,11 +651,13 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
         contract: options?.contract ?? null,
         envelope: options?.envelope ?? null,
         idempotencyKey: options?.idempotencyKey ?? null,
+        identity: dispatchIdentity,
+        onCompletion: options?.onCompletion,
       }
       setIsConsentPromptOpen(true)
       return undefined
     },
-    [canExecute, confirmedModelId, isConsentPromptOpen, needsConsent],
+    [canExecute, confirmedModelId, identityAtRender, isConsentPromptOpen, isIdentityCurrent, needsConsent],
   )
 
   // K10：弹窗仅在打开且本次派发登记了 Scope 摘要时展示（K5）；未登记派发

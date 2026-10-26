@@ -33,6 +33,13 @@ export type SessionStatus = 'booting' | 'ready' | 'authenticated' | 'error' | 'd
 
 export interface SessionState {
   status: SessionStatus
+  /**
+   * 认证代际（单调递增；DESIGN §3.2）：每条 `token`/`refresh` 消息处理成功
+   * 都 +1（同一 token 重发也算），`logout`/`destroy` 也 +1。不得从
+   * `tokenExpiresAt`/`projectId`/effect 派生——刷新后它必须可观察地变化，
+   * 否则旧代响应无法与新一代区分。
+   */
+  authEpoch: number
   errorCode?: PmErrorCode
   errorMessage?: string
   tokenExpiresAt?: number
@@ -92,7 +99,8 @@ export function createEmbeddedSession(options: EmbeddedSessionOptions): Embedded
   const addListener = options.addListener ?? ((handler) => window.addEventListener('message', handler))
   const removeListener = options.removeListener ?? ((handler) => window.removeEventListener('message', handler))
 
-  let state: SessionState = { status: 'booting' }
+  let state: SessionState = { status: 'booting', authEpoch: 0 }
+  let authEpoch = 0
   const listeners = new Set<(state: SessionState) => void>()
   let destroyed = false
 
@@ -112,18 +120,26 @@ export function createEmbeddedSession(options: EmbeddedSessionOptions): Embedded
         // （契约 v0 §4.1；设计 §4.4）。签名/权威校验仍在 Gateway。
         const claims = decodeResearchClaims(message.token)
         if (claims === null) {
+          // session_invalid 属于“令牌不可信”：立即清空身份（§3.2 清空分支），
+          // 并推进代际使旧代请求/回调一律失效。
           clearResearchToken()
+          authEpoch += 1
           setState({
             status: 'error',
             errorCode: 'session_invalid',
             errorMessage: 'research token claims are invalid',
+            authEpoch,
           })
           break
         }
-        // 首次交付或过期前刷新：替换内存 Token（REQ-EMB-02）
+        // 首次交付或过期前刷新：替换内存 Token（REQ-EMB-02）。
+        // 每条成功 token/refresh（含同 token 重发）都推进 authEpoch：
+        // 新代 transport 与旧代在途回调据此区分。
         setResearchToken(message.token, message.expiresAt)
+        authEpoch += 1
         setState({
           status: 'authenticated',
+          authEpoch,
           tokenExpiresAt: message.expiresAt,
           userId: claims.userId,
           projectId: claims.projectId,
@@ -134,17 +150,30 @@ export function createEmbeddedSession(options: EmbeddedSessionOptions): Embedded
         break
       }
       case 'error':
-        // bootstrap/刷新失败：不清除既有 Token（过期前仍有效，父页面会重试刷新）
+        // bootstrap/刷新失败：不清除既有 Token（过期前仍有效，父页面重试刷新）。
+        // 若此前已认证成功，显式保留最后身份（projectId/role/userId）供 shell
+        // 维持 Provider 挂载并遮蔽（DESIGN §3.2）；从未认证过则保持空白错误页。
         setState({
           status: 'error',
+          authEpoch,
           errorCode: message.code,
           errorMessage: message.message,
+          ...(state.userId !== undefined
+            ? {
+                tokenExpiresAt: state.tokenExpiresAt,
+                userId: state.userId,
+                projectId: state.projectId,
+                role: state.role,
+                embeddedTheme: state.embeddedTheme,
+              }
+            : {}),
         })
         break
       case 'logout':
-        // 立即清除 Token 与内存状态，回到等待状态
+        // 立即清除 Token 与内存状态，回到等待状态；代际 +1 使旧代全部失效。
         clearResearchToken()
-        setState({ status: 'ready' })
+        authEpoch += 1
+        setState({ status: 'ready', authEpoch })
         break
       case 'destroy':
         destroy()
@@ -186,7 +215,7 @@ export function createEmbeddedSession(options: EmbeddedSessionOptions): Embedded
     { schema: 'research-v0', channel, type: 'ready', nonce },
     options.parentOrigin,
   )
-  setState({ status: 'ready' })
+  setState({ status: 'ready', authEpoch })
 
   function destroy(): void {
     if (destroyed) {
@@ -195,7 +224,8 @@ export function createEmbeddedSession(options: EmbeddedSessionOptions): Embedded
     destroyed = true
     removeListener(onMessage)
     clearResearchToken()
-    setState({ status: 'destroyed' })
+    authEpoch += 1
+    setState({ status: 'destroyed', authEpoch })
   }
 
   /**

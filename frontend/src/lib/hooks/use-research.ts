@@ -1,7 +1,16 @@
 'use client'
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { QUERY_KEYS } from '@/lib/api/query-client'
+import { useRef } from 'react'
+import {
+  QUERY_KEYS,
+  adminReadonlyResearchIdentity,
+  ownerResearchIdentity,
+  researchNotesIdentityKey,
+  researchSourcesIdentityKey,
+  type ResearchQueryIdentity,
+} from '@/lib/api/query-client'
+import { useResearchWorkspaceOptional } from '@/lib/embedded/workspace-context'
 import { useToast } from '@/lib/hooks/use-toast'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { collectResearchPages, RESEARCH_PAGE_LIMIT } from '@/lib/research/pagination'
@@ -63,22 +72,73 @@ function useMutationErrorToast() {
 
 export const RESEARCH_SOURCE_REFRESH_MS = 30_000
 
+/**
+ * 认证身份 → Research 私有查询键判别段（DESIGN §3.2 / L193–196）。
+ *
+ * 没有工作台上下文（孤立渲染/历史测试）时返回 null，调用方沿用旧查询键，
+ * 保持既有行为；工作台内一律带身份段，使旧代/旧 viewer 的缓存不可见。
+ */
+interface ResearchLoadIdentity {
+  readonly identity: ResearchQueryIdentity | null
+  /** 是否位于工作台上下文（决定身份缺失时 fail-closed 还是沿用旧行为）。 */
+  readonly hasWorkspace: boolean
+}
+
+function useResearchQueryIdentity(): ResearchLoadIdentity {
+  const workspace = useResearchWorkspaceOptional()
+  if (!workspace) return { identity: null, hasWorkspace: false }
+  const generation = workspace.authGeneration ?? 0
+  if (workspace.role === 'admin_readonly') {
+    return { identity: adminReadonlyResearchIdentity(workspace.projectId, generation), hasWorkspace: true }
+  }
+  if (!workspace.userId) return { identity: null, hasWorkspace: true }
+  return {
+    identity: ownerResearchIdentity(workspace.projectId, workspace.userId, generation),
+    hasWorkspace: true,
+  }
+}
+
+/**
+ * 守卫：加载期间若认证代际已变化，迟到结果一律丢弃（不回填新代）；
+ * 同时 in-flight fetch 会被 `purgeResearchAuthScope` 的 cancelQueries 中止
+ * （DESIGN L186/L752）。
+ */
+function useResearchLoadGeneration(
+  identity: ResearchQueryIdentity | null,
+): { readonly current: number } {
+  const generationRef = useRef<number>(identity?.authGeneration ?? 0)
+  generationRef.current = identity?.authGeneration ?? 0
+  return generationRef
+}
+
 export function useResearchSources(projectId: string) {
-  return useQuery({
-    queryKey: QUERY_KEYS.researchSources(projectId),
-    queryFn: ({ signal }) => collectResearchPages(
-      (cursor) => listSources(projectId, {
-        limit: RESEARCH_PAGE_LIMIT,
-        ...(cursor ? { cursor } : {}),
-      }, signal),
-      (source) => source.source_id ?? `doc:${source.document_id}:${source.document_version}`,
-    ),
-    enabled: !!projectId,
+  const { identity, hasWorkspace } = useResearchQueryIdentity()
+  const generationRef = useResearchLoadGeneration(identity)
+  const query = useQuery({
+    queryKey: identity
+      ? researchSourcesIdentityKey(identity)
+      : QUERY_KEYS.researchSources(projectId),
+    queryFn: async ({ signal }) => {
+      const pages = await collectResearchPages(
+        (cursor) => listSources(projectId, {
+          limit: RESEARCH_PAGE_LIMIT,
+          ...(cursor ? { cursor } : {}),
+        }, signal),
+        (source) => source.source_id ?? `doc:${source.document_id}:${source.document_version}`,
+      )
+      if (identity !== null && generationRef.current !== (identity.authGeneration ?? 0)) {
+        throw new Error('research sources query superseded by new auth generation')
+      }
+      return pages
+    },
+    // 工作台内身份未确认（owner 无 viewer）时 fail-closed；孤立渲染沿用旧行为。
+    enabled: !!projectId && (!hasWorkspace || identity !== null),
     // Source sync can be initiated outside this component. Active workspaces
     // periodically observe status transitions so invalid selected IDs are
     // reconciled without relying on a manual cache invalidation.
     refetchInterval: RESEARCH_SOURCE_REFRESH_MS,
   })
+  return query
 }
 
 export function useResearchSource(projectId: string, sourceId: string | null) {
@@ -92,17 +152,27 @@ export function useResearchSource(projectId: string, sourceId: string | null) {
 // ── Notes（Owner 写；保存永不触发 Embedding，REQ-DIS-01） ──
 
 export function useResearchNotes(projectId: string, search?: string) {
+  const { identity, hasWorkspace } = useResearchQueryIdentity()
+  const generationRef = useResearchLoadGeneration(identity)
   return useQuery({
-    queryKey: [...QUERY_KEYS.researchNotes(projectId), search ?? ''] as const,
-    queryFn: ({ signal }) => collectResearchPages(
-      (cursor) => listNotes(projectId, {
-        ...(search ? { q: search } : {}),
-        limit: RESEARCH_PAGE_LIMIT,
-        ...(cursor ? { cursor } : {}),
-      }, signal),
-      (note) => note.note_id,
-    ),
-    enabled: !!projectId,
+    queryKey: identity
+      ? researchNotesIdentityKey(identity, search ?? '')
+      : ([...QUERY_KEYS.researchNotes(projectId), search ?? ''] as const),
+    queryFn: async ({ signal }) => {
+      const pages = await collectResearchPages(
+        (cursor) => listNotes(projectId, {
+          ...(search ? { q: search } : {}),
+          limit: RESEARCH_PAGE_LIMIT,
+          ...(cursor ? { cursor } : {}),
+        }, signal),
+        (note) => note.note_id,
+      )
+      if (identity !== null && generationRef.current !== (identity.authGeneration ?? 0)) {
+        throw new Error('research notes query superseded by new auth generation')
+      }
+      return pages
+    },
+    enabled: !!projectId && (!hasWorkspace || identity !== null),
   })
 }
 

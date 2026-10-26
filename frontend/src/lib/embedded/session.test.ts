@@ -142,6 +142,25 @@ describe('createEmbeddedSession（REQ-EMB-01/02，契约 v0 §12）', () => {
     expect(getResearchTokenExpiry()).toBe(1754460900)
   })
 
+  it('authEpoch 单调递增：每条成功 token/refresh（含同 token 重发）、logout、destroy 都 +1（review D8/F5）', () => {
+    const h = makeHarness()
+    expect(h.session.getState().authEpoch).toBe(0)
+    const ready = h.posted[0].data
+    h.dispatch({ data: inboundMessage(ready) })
+    expect(h.session.getState().authEpoch).toBe(1)
+    // 同一 token 重发也是新的认证代际（服务端可能已换权限/项目）
+    h.dispatch({ data: inboundMessage(ready, { type: 'refresh' }) })
+    expect(h.session.getState().authEpoch).toBe(2)
+    h.dispatch({ data: inboundMessage(ready, { type: 'refresh', token: validToken({ project_id: 'proj_x' }) }) })
+    expect(h.session.getState().authEpoch).toBe(3)
+    h.dispatch({ data: inboundMessage(ready, { type: 'logout' }) })
+    expect(h.session.getState().authEpoch).toBe(4)
+    h.dispatch({ data: inboundMessage(ready, { type: 'destroy' }) })
+    expect(h.session.getState().authEpoch).toBe(5)
+    // 不得从 tokenExpiresAt/projectId 派生：destroy 后仍保留最后的递增计数
+    expect(h.session.getState().authEpoch).toBeGreaterThan(3)
+  })
+
   // ── UI-02：authenticated 携带 projectId/role（工作台路径与权限矩阵）──
 
   it('合法 token 进入 authenticated 并携带 userId、projectId 与 role（owner）', () => {
