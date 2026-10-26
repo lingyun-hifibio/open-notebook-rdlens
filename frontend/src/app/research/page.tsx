@@ -442,13 +442,19 @@ function ResearchPageContent() {
   const compact = !isDesktop
   const focusedSourceId = sourceMode ? navSelectedSourceId : null
 
-  // 半接线隔离（Codex review B8 / R4 / R5）：新导航可用时旧 Chat 面板仍未接线
-  // 到新会话（面板归 PR-4/PR-5b 改造），不能同时显示两套“当前会话”。门禁只
-  // 覆盖未接线的 Chat 内容（global chat tabpanel、Source Chat 面板），不覆盖
-  // Workbench、tabs 行、其它动作与阅读区；门禁表达“未接线”，与能力是否降级
-  // 无关（R4：能力降级不得撤销门禁）。
-  const globalChatGated = !sourceMode && activeMainAction === 'research-chat'
-  const sourceChatGated = sourceMode
+  // 半接线隔离（Codex review B8 / R4 / R5，Lead P2 裁定）：只有**新导航真正
+  // 可用**时才关闭未接线的旧 Chat 内容（避免同时显示两套“当前会话”）。可用
+  // 条件 = 会话契约能力就绪 + 非 403 终态 + runtime/identity 就绪（可列表）：
+  // 能力缺失/降级或 unauthorized 时新导航列表/创建本身不可用，按 DESIGN §3.3
+  // “原兼容阅读入口仍可用”，不得 inert/aria-hidden 旧兼容入口。门禁只覆盖
+  // Chat 内容（global chat tabpanel、Source Chat 面板），不覆盖 Workbench、
+  // tabs、其它动作与阅读区。
+  const globalNavUsable =
+    globalSessions.capabilitiesReady && !globalSessions.unauthorized && globalSessions.canList
+  const sourceNavUsable =
+    sourceSessions.capabilitiesReady && !sourceSessions.unauthorized && sourceSessions.canList
+  const globalChatGated = !sourceMode && activeMainAction === 'research-chat' && globalNavUsable
+  const sourceChatGated = sourceMode && sourceNavUsable
 
   /** 门禁区的合成事件兜底：inert 之外再阻断发送/输入类控件的 click/keydown
    *  冒泡（R4）。只拦“执行/输入”入口：引用跳转、阅读、tabs 等仍可用，避免

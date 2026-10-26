@@ -229,26 +229,33 @@ export function ResearchSessionSwitcher({
         </span>
       </button>
 
-      <button
-        type="button"
-        data-testid="session-switcher-new"
-        className="shrink-0 rounded-md border border-border/60 bg-background px-2 py-1 text-sm hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
-        onClick={handleNew}
-        disabled={createDisabled || sessions.creating || sessions.unauthorized}
-        title={createHint ?? undefined}
-        aria-describedby={createHint ? `session-create-hint-${surface}` : undefined}
-      >
-        {sessions.creating ? copy.creating : t('research.sourceChat.newSession')}
-      </button>
-      {createHint ? (
-        <span
-          id={`session-create-hint-${surface}`}
-          data-testid="session-create-disabled-reason"
-          className="max-w-[16rem] truncate text-xs text-muted-foreground"
-        >
-          {createHint}
-        </span>
-      ) : null}
+      {/* 403 `chat_owner_required` 终态：DESIGN §4.7 要求“不显示新对话入口”
+          （不能只靠 disabled 属性；§3.3 每个禁用原因必须有可见文案）。
+          终态下入口直接隐藏，抽屉内只剩无权限原因。 */}
+      {sessions.unauthorized ? null : (
+        <>
+          <button
+            type="button"
+            data-testid="session-switcher-new"
+            className="shrink-0 rounded-md border border-border/60 bg-background px-2 py-1 text-sm hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={handleNew}
+            disabled={createDisabled || sessions.creating}
+            title={createHint ?? undefined}
+            aria-describedby={createHint ? `session-create-hint-${surface}` : undefined}
+          >
+            {sessions.creating ? copy.creating : t('research.sourceChat.newSession')}
+          </button>
+          {createHint ? (
+            <span
+              id={`session-create-hint-${surface}`}
+              data-testid="session-create-disabled-reason"
+              className="max-w-[16rem] truncate text-xs text-muted-foreground"
+            >
+              {createHint}
+            </span>
+          ) : null}
+        </>
+      )}
       {sessions.createError ? (
         <span
           role="status"

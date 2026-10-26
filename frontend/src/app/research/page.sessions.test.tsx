@@ -864,6 +864,38 @@ describe('ResearchPage 会话导航：review B6/B7/B8/Major 回归', () => {
     })
   })
 
+  it('Admin/403 终态：页面导航不渲染“新对话”入口（P0）', async () => {
+    listChatSessions.mockRejectedValue(
+      Object.assign(new Error('forbidden'), {
+        response: { status: 403, data: { detail: { code: 'chat_owner_required' } } },
+      }),
+    )
+    renderPage()
+    await waitFor(() => expect(nav()).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByTestId('session-switcher-trigger')).toBeInTheDocument())
+    expect(
+      within(screen.getByTestId('session-switcher-global')).queryByTestId('session-switcher-new'),
+    ).toBeNull()
+  })
+
+  it('能力缺失/降级：新导航不可用时不门禁旧兼容阅读入口（P2）', async () => {
+    runtimeRef.current = new FakeRuntime({
+      capabilities: null,
+      lastBootstrap: 'degraded',
+    })
+    renderPage()
+    await waitFor(() => expect(nav()).toBeInTheDocument())
+
+    fireEvent.click(screen.getByTestId('workspace-tab-chat'))
+    await waitFor(() => expect(screen.getByTestId('chat-panel')).toBeInTheDocument())
+    const panel = screen.getByTestId('chat-panel')
+    expect(panel).not.toHaveAttribute('inert')
+    expect(panel).not.toHaveAttribute('data-session-chat-gated')
+    // §3.3：能力未就绪时旧兼容阅读入口仍可用（不被 inert 冻结）。
+    fireEvent.click(screen.getByTestId('chat-send'))
+    expect(workspaceSpies.chatSend).toHaveBeenCalledTimes(1)
+  })
+
   it('列表 404 session_not_found → 清 global 指针与 display，显示空态', async () => {
     const displayRef = {
       domain: 'research' as const,

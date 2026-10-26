@@ -282,7 +282,7 @@ describe('ResearchSessionSwitcher：列表状态、分页与错误（§4.7）', 
     expect(loadMore).toHaveBeenCalledTimes(1)
   })
 
-  it('未授权终态：显示无权限解释，不显示重试按钮，新对话按钮禁用', () => {
+  it('未授权终态：显示无权限解释，不显示重试按钮，隐藏新对话入口（P0）', () => {
     const sessions = makeSessions({
       unauthorized: true,
       error: 'unauthorized',
@@ -299,7 +299,8 @@ describe('ResearchSessionSwitcher：列表状态、分页与错误（§4.7）', 
       RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.unauthorized,
     )
     expect(screen.queryByTestId('session-list-retry')).toBeNull()
-    expect(screen.getByTestId('session-switcher-new')).toBeDisabled()
+    // DESIGN §4.7：403 终态“不显示新对话入口”，不能只 disabled（§3.3）。
+    expect(screen.queryByTestId('session-switcher-new')).toBeNull()
   })
 
   it('来源解析 404：显示“来源暂不可用”并保留重试，不显示“会话不存在”', () => {
