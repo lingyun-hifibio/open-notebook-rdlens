@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useResearchChat, deriveScopeSnapshot, MAX_STREAM_ATTEMPTS } from './use-research-chat'
+import { messageRowToTurn, useResearchChat, deriveScopeSnapshot, MAX_STREAM_ATTEMPTS } from './use-research-chat'
 import { newIdempotencyKey, openResearchChatStream } from '@/lib/research/api'
 import type { ResearchSseEvent } from '@/lib/research/types'
 import type { ResearchSessionRef } from '@/lib/research/session-contract'
@@ -775,5 +775,67 @@ describe('PR-5a（D2）：显式 session 接线', () => {
     unmount()
     expect(controller.detach).toHaveBeenCalled()
     expect(releaseConversation).toHaveBeenCalledWith(ref, controller)
+  })
+})
+
+describe('PR-5a F13：持久化恢复路径保留扩展字段', () => {
+  const baseRow = {
+    message_id: 'msg_gen_abc123',
+    role: 'assistant' as const,
+    content: '答案正文',
+    thinking: '思考',
+    citations: [{ citation_id: 'c1', source_id: 's1', source_title: 't', locator: null, snippet: null }],
+  }
+
+  it('context_report / context_coverage / record_visibility 随恢复轮保留；未知 report 保持 null', () => {
+    const turn = messageRowToTurn({
+      ...baseRow,
+      context_report: {
+        version: 1,
+        status: 'trimmed',
+        history: { available_turns: 5, included_turns: 2, omitted_turns: 3 },
+        evidence: { included_chunks: 4, omitted_chunks: 1 },
+        input_budget: 8000,
+        serialized_input_tokens: 6400,
+        estimator_version: 'v1',
+        reason_codes: ['history_omitted'],
+        required_context_missing: false,
+        measurement_scope: 'final_reasoning_call',
+      },
+      context_coverage: { selected_full: 3, relevant_extra: 1, trimmed: 0, missing: 2, token_estimate: 123, input_budget: 8000 },
+      record_visibility: 'legacy_context_unverifiable',
+    })
+    expect(turn?.contextReport?.status).toBe('trimmed')
+    expect(turn?.contextReport?.history.omittedTurns).toBe(3)
+    expect(turn?.contextCoverage?.missing).toBe(2)
+    expect(turn?.recordVisibility).toBe('legacy_context_unverifiable')
+    expect(turn?.content).toBe('答案正文')
+
+    const unknown = messageRowToTurn({ ...baseRow, context_report: null })
+    expect(unknown?.contextReport).toBeUndefined()
+    expect(unknown?.contextReport).not.toEqual(expect.objectContaining({ status: 'complete' }))
+  })
+
+  it('受限消息强制安全投影：正文/思考/引用不渲染', () => {
+    const turn = messageRowToTurn({
+      ...baseRow,
+      record_visibility: 'restricted',
+      context_report: {
+        version: 1,
+        status: 'unknown',
+        history: { available_turns: null, included_turns: null, omitted_turns: null },
+        evidence: { included_chunks: null, omitted_chunks: null },
+        input_budget: null,
+        serialized_input_tokens: null,
+        estimator_version: null,
+        reason_codes: [],
+        required_context_missing: false,
+        measurement_scope: 'unknown',
+      },
+    })
+    expect(turn?.content).toBe('')
+    expect(turn?.thinking).toBe('')
+    expect(turn?.citations).toEqual([])
+    expect(turn?.recordVisibility).toBe('restricted')
   })
 })

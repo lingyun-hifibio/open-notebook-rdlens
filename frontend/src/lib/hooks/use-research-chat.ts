@@ -29,10 +29,17 @@ import {
 import {
   applySseEvent,
   createSseState,
+  parseContextCoverageWire,
+  parseContextReportWire,
+  projectContextReport,
   type ResearchAcceptedReceipt,
   type ResearchSseState,
 } from '@/lib/research/sse'
-import { sessionKey, type ResearchSessionRef } from '@/lib/research/session-contract'
+import {
+  sessionKey,
+  type ResearchContextReportProjection,
+  type ResearchSessionRef,
+} from '@/lib/research/session-contract'
 import type {
   ConversationController,
   ConversationSendInput,
@@ -49,6 +56,7 @@ import {
 } from '@/lib/research/chat-origin'
 import type {
   ResearchCitationDisplayItem,
+  ResearchContextCoverage,
   ResearchSseEvent,
   ResearchTokenUsage,
 } from '@/lib/research/types'
@@ -176,18 +184,35 @@ export interface ResearchChatTurn {
    */
   serverMessageId: string | null
   generationId: string | null
+  /**
+   * PR-5a F13：持久化恢复轮保留 context_report / context_coverage /
+   * record_visibility（修复/回溯路径与 live SSE 同源；未知保持 null，
+   * 不伪造 0 或 complete）。受限消息强制安全投影（正文/思考/引用为空）。
+   */
+  contextReport?: ResearchContextReportProjection | null
+  contextCoverage?: ResearchContextCoverage | null
+  recordVisibility?: string | null
+}
+
+/** 持久化消息行 + PR-5a 扩展（服务端可选下发；缺失按 null 处理）。 */
+type DurableMessageRow = ResearchGlobalChatMessage & {
+  context_report?: unknown
+  context_coverage?: unknown
+  record_visibility?: string | null
 }
 
 /** 已持久化消息行 → 展示 turn（阅读顺序重放；completed 轮 status 恒 done） */
-function messageRowToTurn(row: ResearchGlobalChatMessage): ResearchChatTurn | null {
+export function messageRowToTurn(row: DurableMessageRow): ResearchChatTurn | null {
   if (row.role !== 'user' && row.role !== 'assistant') {
     return null
   }
+  // §6.9：受限消息不得以任何形式显示正文/思考/引用（仅保留安全投影）。
+  const restricted = row.record_visibility === 'restricted'
   const usage = row.usage
   const base = {
     id: row.message_id,
     role: row.role,
-    content: row.content ?? '',
+    content: restricted ? '' : (row.content ?? ''),
     thinking: '',
     citations: [] as ResearchCitationDisplayItem[],
     usage: null as ResearchTokenUsage | null,
@@ -203,16 +228,29 @@ function messageRowToTurn(row: ResearchGlobalChatMessage): ResearchChatTurn | nu
     serverMessageId: null,
     generationId: null,
   }
+  const extensions: Pick<ResearchChatTurn, 'contextReport' | 'contextCoverage' | 'recordVisibility'> = {}
+  const reportWire = parseContextReportWire(row.context_report)
+  if (reportWire !== null) {
+    extensions.contextReport = projectContextReport(reportWire)
+  }
+  const coverageWire = parseContextCoverageWire(row.context_coverage)
+  if (coverageWire !== null) {
+    extensions.contextCoverage = coverageWire
+  }
+  if (row.record_visibility !== undefined && row.record_visibility !== null) {
+    extensions.recordVisibility = row.record_visibility
+  }
   if (row.role === 'user') {
-    return base
+    return { ...base, ...extensions }
   }
   const generationId = parseGenerationIdFromMessageId(row.message_id)
   return {
     ...base,
-    thinking: row.thinking ?? '',
+    ...extensions,
+    thinking: restricted ? '' : (row.thinking ?? ''),
     serverMessageId: row.message_id ?? null,
     generationId,
-    citations: Array.isArray(row.citations)
+    citations: !restricted && Array.isArray(row.citations)
       ? row.citations
         .filter(
           (item): item is Record<string, unknown> =>
