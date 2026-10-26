@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { createEmbeddedSession, type EmbeddedSession, type SessionState } from './session'
+import type { SessionRuntime } from '@/lib/research/session-runtime'
 import { createContext, useContext } from 'react'
 
 /** PR5（D1/H8）：向子树暴露 requestIngest（面板「添加资料」按钮消费） */
@@ -32,6 +33,10 @@ export function ResearchWorkspaceShell({ children }: { children?: React.ReactNod
   const { t } = useTranslation()
   const [state, setState] = useState<SessionState | null>(null)
   const sessionRef = useRef<EmbeddedSession | null>(null)
+  // 认证失效需在 Provider 卸载前**同步** dispose 旧运行时（§3.4）：否则子
+  // 组件 cleanup 只能报 'unmount'，旧 viewer 明文缓存与写入守卫会残留到
+  // 下一个会话（review F1）。
+  const runtimeHandleRef = useRef<SessionRuntime | null>(null)
   const setEmbeddedTheme = useThemeStore((s) => s.setEmbeddedTheme)
 
   // RWV2-50（RDLens #363）：父页主题仅在 authenticated 会话存续期间应用；
@@ -61,8 +66,34 @@ export function ResearchWorkspaceShell({ children }: { children?: React.ReactNod
       parentOrigin: allowedOrigins[0],
     })
     sessionRef.current = session
-    setState(session.getState())
-    const unsubscribe = session.subscribe(setState)
+    const initialState = session.getState()
+    setState(initialState)
+    const previousStateRef = { current: initialState as SessionState }
+    const unsubscribe = session.subscribe((next) => {
+      const previous = previousStateRef.current
+      previousStateRef.current = next
+      const runtime = runtimeHandleRef.current
+      if (runtime) {
+        const hadIdentity =
+          previous.userId !== undefined &&
+          previous.projectId !== undefined &&
+          previous.role !== undefined
+        const hasIdentity =
+          next.userId !== undefined && next.projectId !== undefined && next.role !== undefined
+        if (hadIdentity && !hasIdentity) {
+          // logout / destroy（含曾认证后 error）：先失效写入并清本机分区，
+          // 再让子树卸载。
+          runtime.dispose('logout')
+        } else if (
+          previous.userId !== undefined &&
+          next.userId !== undefined &&
+          previous.userId !== next.userId
+        ) {
+          runtime.dispose('viewer-change')
+        }
+      }
+      setState(next)
+    })
     return () => {
       unsubscribe()
       session.destroy()
@@ -137,6 +168,7 @@ export function ResearchWorkspaceShell({ children }: { children?: React.ReactNod
           viewerUserId={identity.userId}
           role={identity.role}
           masked={masked}
+          runtimeHandleRef={runtimeHandleRef}
         >
           <ResearchScopeProvider userId={identity.userId} projectId={identity.projectId}>
             <ResearchGlobalModelProvider>

@@ -222,15 +222,16 @@ export async function purgeResearchAuthScope(
   const { projectId, current } = options
   const scopeKey = ['research', projectId] as const
   const queries = client.getQueryCache().findAll({ queryKey: scopeKey })
-  await client.cancelQueries({ queryKey: scopeKey })
-  let removed = 0
-  for (const query of queries) {
-    const identity = identityFromQuery(query)
-    if (current !== null && researchIdentityEquals(identity, current)) {
-      continue
-    }
+  // 取消与移除使用同一 predicate：当前身份的在途查询必须存活（认证切换时
+  // 新代已开始的加载不能被旧代清理误杀）。
+  const stale = queries.filter(
+    (query) => current === null || !researchIdentityEquals(identityFromQuery(query), current),
+  )
+  await Promise.all(
+    stale.map((query) => client.cancelQueries({ queryKey: query.queryKey, exact: true })),
+  )
+  for (const query of stale) {
     client.removeQueries({ queryKey: query.queryKey, exact: true })
-    removed += 1
   }
-  return removed
+  return stale.length
 }

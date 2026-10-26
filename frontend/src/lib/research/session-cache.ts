@@ -197,16 +197,15 @@ function classifyStorageError(error: unknown): SessionCacheWriteReason {
 }
 
 function readRaw(entry: CacheEntry, key: string): { value: string | null; reason: SessionCacheWriteReason } {
+  // 内存兜底代表“本进程最近一次成功写入”（持久化失败时的降级副本），
+  // 必须优先于可能已过期的持久值返回（DESIGN §3.5 durable 不是权威）。
+  const fallbackValue = entry.fallback.get(key)
+  if (fallbackValue !== undefined) return { value: fallbackValue, reason: null }
+  if (!entry.storage) return { value: null, reason: null }
   try {
-    const value = entry.storage ? entry.storage.getItem(key) : null
-    if (value !== null) return { value, reason: null }
-    if (!entry.storage) {
-      return { value: entry.fallback.get(key) ?? null, reason: null }
-    }
-    // 主要存储没有时也查内存兜底（同一会话内刚降级写入的记录）
-    return { value: entry.fallback.get(key) ?? null, reason: null }
+    return { value: entry.storage.getItem(key), reason: null }
   } catch (error) {
-    return { value: entry.fallback.get(key) ?? null, reason: classifyStorageError(error) }
+    return { value: null, reason: classifyStorageError(error) }
   }
 }
 
@@ -379,6 +378,33 @@ export function readPointer(
     raw,
     (ref) => ref.kind === surface && ref.projectId === scope.projectId && (surface === 'global' ? ref.sourceId === null : ref.sourceId === sourceId),
   )
+}
+
+/**
+ * 读「最近保存的 source 指针」：刷新恢复时 source surface 需要独立于 display
+ * 指针从自己的键恢复（DESIGN §4.5），但本机不知道当前 source，只能按键前缀
+ * 取最近写入的一条。越权/旧代/未认证一律返回 null。
+ */
+export function readLatestSourcePointer(
+  scope: SessionCacheScope,
+  authority: SessionCacheAuthority,
+  options?: CacheOptions,
+): SessionPointerRecord | null {
+  if (!isViewerScopedCacheReadable(scope, authority)) return null
+  const entry = entryFor(options)
+  const prefix = `${buildKey(['source', scope.viewerUserId, scope.projectId])}.`
+  let latest: SessionPointerRecord | null = null
+  for (const key of listStorageKeys(entry, prefix)) {
+    const raw = parseJson(readRaw(entry, key).value)
+    if (!isRecord(raw) || raw.version !== 1) continue
+    const pointer = normalizePointer(
+      raw,
+      (ref) => ref.kind === 'source' && ref.projectId === scope.projectId && ref.sourceId !== null,
+    )
+    if (pointer === null) continue
+    if (latest === null || pointer.savedAt > latest.savedAt) latest = pointer
+  }
+  return latest
 }
 
 /** 写 surface 指针；`ref=null` 表示清除该 surface 指针。 */
@@ -620,9 +646,11 @@ export function writeSubmissionMarker(
   marker: SessionSubmissionMarker,
   options?: CacheOptions,
 ): SessionCacheWriteResult {
-  if (!marker.exactRequestAvailable && marker.request !== null) {
+  const sanitized = sanitizeSubmissionMarker(marker)
+  if (sanitized === null) {
     return { ok: false, persisted: false, degraded: true, reason: null }
   }
+  const markerToWrite = sanitized
   const entry = entryFor(options)
   const key = submissionKey(scope, ref, marker.draftToken)
   const existing = readRaw(entry, key).value
@@ -638,7 +666,43 @@ export function writeSubmissionMarker(
       return { ok: false, persisted: false, degraded: true, reason: null }
     }
   }
-  return writeResult(writeRaw(entry, key, JSON.stringify(marker)))
+  return writeResult(writeRaw(entry, key, JSON.stringify(markerToWrite)))
+}
+
+/**
+ * 持久化边界校验：请求头只保留白名单（Authorization/Cookie 永不落盘），
+ * body 必须是可 JSON 往返的普通对象；`exactRequestAvailable` 不得脱离
+ * 完整快照成立。不满足时拒绝写入而非静默截断。
+ */
+function isPlainJsonObject(value: unknown): value is Record<string, unknown> {
+  if (!isRecord(value)) return false
+  const prototype = Object.getPrototypeOf(value)
+  return prototype === Object.prototype || prototype === null
+}
+
+function sanitizeSubmissionMarker(marker: SessionSubmissionMarker): SessionSubmissionMarker | null {
+  if (marker.request === null) {
+    return marker.exactRequestAvailable ? null : marker
+  }
+  if (!marker.exactRequestAvailable) return null
+  if (!isPlainJsonObject(marker.request.body)) return null
+  let roundTrip: unknown
+  try {
+    roundTrip = JSON.parse(JSON.stringify(marker.request.body))
+  } catch {
+    return null
+  }
+  if (!isRecord(roundTrip)) return null
+  const headers = persistableSubmissionHeaders(marker.request.headers)
+  return {
+    ...marker,
+    request: {
+      method: marker.request.method,
+      path: marker.request.path,
+      headers,
+      body: roundTrip,
+    },
+  }
 }
 
 export function readSubmissionMarker(
@@ -785,7 +849,7 @@ export function purgeViewer(
       continue
     }
     const viewer = segments[1]
-    if (viewer === keepViewerUserId) {
+    if (viewer === sessionCacheSegment(keepViewerUserId)) {
       decisions.push({ key, action: 'retained', reason: 'kept-viewer' })
       continue
     }
@@ -809,8 +873,8 @@ export function purgeViewerScope(
   for (const key of listStorageKeys(entry, `${SESSION_CACHE_PREFIX}.`)) {
     const segments = key.slice(SESSION_CACHE_PREFIX.length + 1).split('.')
     if (segments[0] === 'candidate') continue
-    if (segments[1] !== scope.viewerUserId) continue
-    if (segments[2] !== scope.projectId) continue
+    if (segments[1] !== sessionCacheSegment(scope.viewerUserId)) continue
+    if (segments[2] !== sessionCacheSegment(scope.projectId)) continue
     removeRaw(entry, key)
     removed += 1
   }

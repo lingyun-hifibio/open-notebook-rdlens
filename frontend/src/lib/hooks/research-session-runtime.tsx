@@ -22,6 +22,7 @@ import {
   useEffect,
   useRef,
   useSyncExternalStore,
+  type MutableRefObject,
   type ReactNode,
 } from 'react'
 import { QueryClientContext } from '@tanstack/react-query'
@@ -51,6 +52,11 @@ export interface ResearchSessionRuntimeProviderProps {
   readonly masked?: boolean
   /** 显式 QueryClient（缺省取最近的 QueryClientProvider）。 */
   readonly queryClient?: QueryClient | null
+  /**
+   * 可选外部句柄：shell 在认证失效（logout/destroy/viewer 变化）时需要在
+   * Provider 卸载前**同步** dispose 旧运行时（DESIGN §3.4：先失效写入再清理）。
+   */
+  readonly runtimeHandleRef?: MutableRefObject<SessionRuntime | null> | null
   readonly children?: ReactNode
 }
 
@@ -72,6 +78,7 @@ export function ResearchSessionRuntimeProvider(
     storage,
     masked = false,
     queryClient: explicitQueryClient,
+    runtimeHandleRef = null,
     children,
   } = props
   const contextClient = useContext(QueryClientContext)
@@ -91,6 +98,13 @@ export function ResearchSessionRuntimeProvider(
   }
   const runtime = runtimeRef.current
   const mountedRef = useRef(false)
+
+  useEffect(() => {
+    if (runtimeHandleRef) runtimeHandleRef.current = runtime
+    return () => {
+      if (runtimeHandleRef) runtimeHandleRef.current = null
+    }
+  }, [runtime, runtimeHandleRef])
 
   // 认证代际/项目/viewer/role 变化：运行时自行保留或清理内存态。
   useEffect(() => {

@@ -32,6 +32,7 @@ import {
   readDisplayPointer,
   readPointer,
   resolveSessionCacheStorage,
+  readLatestSourcePointer,
   writeCandidatePointer,
   writeDisplayPointer,
   writePointer,
@@ -194,7 +195,7 @@ export interface CreateMutationRecordInput {
 
 /** 创建不可变 MutationRecord（深冻结，禁止调用方后续改写请求体）。 */
 export function createMutationRecord(input: CreateMutationRecordInput): MutationRecord {
-  const requestBody = deepFreeze({ ...input.requestBody })
+  const requestBody = deepFreeze(cloneJsonValue({ ...input.requestBody }))
   return Object.freeze({
     mutationId: input.mutationId,
     kind: input.kind,
@@ -265,11 +266,25 @@ export function transportAttemptMatches(
 function deepFreeze<T>(value: T): T {
   if (Array.isArray(value)) {
     value.forEach((entry) => deepFreeze(entry))
+    Object.freeze(value)
     return value
   }
   if (typeof value === 'object' && value !== null) {
     Object.values(value as Record<string, unknown>).forEach((entry) => deepFreeze(entry))
     Object.freeze(value)
+  }
+  return value
+}
+
+/** 请求快照必须是调用后的深拷贝：调用方后续修改不得影响可重放的原请求。 */
+function cloneJsonValue<T>(value: T): T {
+  if (Array.isArray(value)) return value.map((entry) => cloneJsonValue(entry)) as T
+  if (typeof value === 'object' && value !== null) {
+    const result: Record<string, unknown> = {}
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      result[key] = cloneJsonValue(entry)
+    }
+    return result as T
   }
   return value
 }
@@ -331,7 +346,7 @@ export interface SessionRuntime {
   /** viewer 分区缓存作用域；Admin 只读为 null（不读 owner 分区）。 */
   readonly cacheScope: () => SessionCacheScope | null
   /** 当前代际的缓存读取授权（旧代/未认证时不可读）。 */
-  readonly cacheAuthority: () => SessionCacheAuthority
+  readonly cacheAuthority: () => SessionCacheAuthority | null
   readonly createWriteGuard: (label: string) => SessionWriteGuard
   /** 只在当前身份有效时执行回调（迟到回调/定时器守卫）。 */
   readonly runIfCurrent: <T>(generation: number, operation: () => T) => { readonly status: 'ok'; readonly value: T } | { readonly status: 'stale' }
@@ -359,6 +374,9 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
   let transport = options.transport ?? null
   const queryClient = options.queryClient ?? null
   let confirmedViewerUserId: string | null = options.viewerUserId ?? null
+  // 只有 bootstrap 成功（服务端 list 确认 viewer）后才允许读 viewer 分区；
+  // 未接线/遮蔽/旧代时不得把 claims 当成确认结果（DESIGN §3.2/§3.5）。
+  let viewerConfirmed = false
 
   const state: MutableState = {
     scope: {
@@ -421,9 +439,13 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
     return { viewerUserId: viewer, projectId: state.scope.projectId }
   }
 
-  function cacheAuthorityInternal(): SessionCacheAuthority {
+  function cacheAuthorityInternal(): SessionCacheAuthority | null {
+    // 读取授权只在「已认证且 viewer 已由服务端确认、当前代、未遮蔽、未 dispose」
+    // 时发放；Admin 不读 owner 分区。
+    if (state.disposed || state.phase !== 'ready' || state.scope.role !== 'owner') return null
+    if (!viewerConfirmed || confirmedViewerUserId === null) return null
     return {
-      authenticatedViewerUserId: confirmedViewerUserId ?? state.scope.viewerUserId,
+      authenticatedViewerUserId: confirmedViewerUserId,
       projectId: state.scope.projectId,
       authGeneration: state.scope.authGeneration,
       currentAuthGeneration: state.scope.authGeneration,
@@ -434,9 +456,8 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
     if (state.disposed || state.phase !== 'ready') return null
     const { role, projectId, authGeneration } = state.scope
     if (role === 'owner') {
-      const viewer = confirmedViewerUserId ?? state.scope.viewerUserId
-      if (!viewer) return null
-      return { role: 'owner', projectId, authGeneration, viewerUserId: viewer }
+      if (!viewerConfirmed || confirmedViewerUserId === null) return null
+      return { role: 'owner', projectId, authGeneration, viewerUserId: confirmedViewerUserId }
     }
     return { role: 'admin_readonly', projectId, authGeneration }
   }
@@ -449,17 +470,19 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
     const scope = cacheScopeInternal()
     if (!scope) return
     const authority = cacheAuthorityInternal()
+    if (!authority) return
     const display = readDisplayPointer(scope, authority, { storage: storage() })
     const globalPointer = readPointer(scope, authority, 'global', null, { storage: storage() })
     const displayGlobal = display?.surface === 'global' ? display.ref : null
     const global = displayGlobal ?? globalPointer?.ref ?? null
-    let source: ResearchSessionRef | null = null
-    if (display?.surface === 'source') {
-      source =
-        display.ref ??
+    // 两个 surface 各自从自己的指针恢复；display 只决定显示哪个 surface，
+    // 不得让另一 surface 丢失（DESIGN §4.5）。
+    const source = display?.surface === 'source'
+      ? display.ref ??
         readPointer(scope, authority, 'source', display.sourceId, { storage: storage() })?.ref ??
+        readLatestSourcePointer(scope, authority, { storage: storage() })?.ref ??
         null
-    }
+      : readLatestSourcePointer(scope, authority, { storage: storage() })?.ref ?? null
     if (global !== null && global.kind !== 'global') return
     if (source !== null && source.kind !== 'source') return
     state.active = { global, source }
@@ -477,14 +500,19 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
     state.started = true
     state.masked = true
     if (transport === null) {
-      // 未接线（PR-1）：保留只读降级能力，不伪装真实接入；无 bootstrap
-      // 端口时 viewer 以 claims 为准（identity 可用），因此不处于遮蔽态。
-      state.masked = false
-      state.phase = 'ready'
+      // 未接线（PR-1）：不伪装真实接入。Admin artifacts 只读不依赖 Chat
+      // bootstrap，可保持 ready；owner 在服务端确认 viewer 前必须保持遮蔽，
+      // 不发放本机缓存读取授权。
       state.lastBootstrap = 'degraded'
       state.capabilities = degradedCapabilities('missing')
       state.viewerChanged = false
-      restoreActiveFromCache()
+      if (state.scope.role === 'admin_readonly') {
+        state.masked = false
+        state.phase = 'ready'
+      } else {
+        state.masked = true
+        state.phase = 'masked'
+      }
       commit()
       return
     }
@@ -535,22 +563,25 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
         const serverViewer = String(result.viewerUserId)
         const expectedViewer = state.scope.viewerUserId
         if (expectedViewer !== null && serverViewer !== expectedViewer) {
-          // viewer 变化：立即遮蔽并清除旧内容，等待下一次认证消息重新 bootstrap。
+          // viewer 变化：立即遮蔽并清除旧 viewer 内容，等待下一次认证消息重新
+          // bootstrap。必须先捕获旧分区再改 confirmedViewer，且不得清掉新
+          // viewer 自己的恢复数据。
+          const staleScope = cacheScopeInternal()
           confirmedViewerUserId = serverViewer
+          viewerConfirmed = false
           state.phase = 'viewer_changed'
           state.masked = true
           state.viewerChanged = true
           state.capabilities = null
           state.active = { global: null, source: null }
           invalidateGuards()
-          const staleScope = cacheScopeInternal()
           if (staleScope) purgeViewerScope(staleScope, { storage: storage() })
-          purgeViewerCache(serverViewer, { storage: storage() })
           purgeQueryCaches(state.scope.projectId, null)
           commit()
           return
         }
         confirmedViewerUserId = serverViewer
+        viewerConfirmed = true
         state.capabilities = result.capabilities
         state.phase = 'ready'
         state.masked = false
@@ -575,6 +606,7 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
     const scope = cacheScopeInternal()
     state.disposed = true
     state.started = false
+    viewerConfirmed = false
     state.bootstrapAttemptId += 1
     state.phase = 'locked'
     state.masked = false
@@ -613,6 +645,7 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
       // 换人：旧内容立即清除，本机分区按新 viewer 重新确认。
       invalidateGuards()
       confirmedViewerUserId = null
+      viewerConfirmed = false
       state.phase = 'masked'
       state.masked = true
       state.active = { global: null, source: null }
@@ -624,13 +657,15 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
           ? { viewerUserId: previous.viewerUserId, projectId: previous.projectId }
           : null
       if (oldScope) purgeViewerScope(oldScope, { storage: storage() })
-      purgeViewerCache(next.viewerUserId ?? '', { storage: storage() })
+      // 新 viewer 自己的本机恢复数据不得在确认前被误删。
       purgeQueryCaches(previousProject, null)
       if (projectChanged && previousProject !== next.projectId) {
         purgeQueryCaches(next.projectId, null)
       }
     } else if (generationChanged || projectChanged) {
-      // 同 viewer refresh：保留 editor store/内存 dirty/可见消息，只换 transport 代际。
+      // 同 viewer refresh：保留 editor store/内存 dirty/可见消息，只换 transport 代际；
+      // 新代际仍需重新 bootstrap 确认 viewer 后才恢复缓存读取授权。
+      if (projectChanged) viewerConfirmed = false
       state.phase = 'masked'
       state.masked = true
       state.started = false
@@ -664,7 +699,7 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
     if (masked) {
       state.phase = 'masked'
     } else if (state.phase === 'masked') {
-      state.phase = confirmedViewerUserId ? 'ready' : 'bootstrapping'
+      state.phase = viewerConfirmed ? 'ready' : 'bootstrapping'
     }
     commit()
   }
@@ -684,7 +719,7 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
     const scope = cacheScopeInternal()
     if (scope) {
       const authority = cacheAuthorityInternal()
-      if (!isViewerScopedCacheReadable(scope, authority)) {
+      if (!authority || !isViewerScopedCacheReadable(scope, authority)) {
         commit()
         return true
       }
@@ -701,7 +736,7 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
     const scope = cacheScopeInternal()
     if (!scope) return
     const authority = cacheAuthorityInternal()
-    if (!isViewerScopedCacheReadable(scope, authority)) return
+    if (!authority || !isViewerScopedCacheReadable(scope, authority)) return
     writeDisplayPointer(scope, display, { storage: storage() })
   }
 

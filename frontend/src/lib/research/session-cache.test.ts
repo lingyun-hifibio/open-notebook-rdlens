@@ -404,3 +404,74 @@ describe('session-cache: purge 语义（登出/换 viewer）', () => {
     expect(keys.some((key) => key.includes('proj_2'))).toBe(true)
   })
 })
+
+// ── review 补证：编码分区清理、quota 降级优先级、提交标记写入边界（F7/F8/F10） ──
+
+describe('session-cache: review 补证（编码分区 / quota 优先级 / 写入边界）', () => {
+  it('项目/viewer 含 `.` 时清理仍按同一编码比较（F7）', () => {
+    const storage = new MapStorage()
+    const dottedScope: SessionCacheScope = { viewerUserId: 'user.101', projectId: 'org.team' }
+    const dottedRef: ResearchSessionRef = { ...globalRef, projectId: 'org.team' }
+    writeDraft(dottedScope, dottedRef, 'writer_a', draftRecord(), { storage })
+    writeDraft({ viewerUserId: 'user.101', projectId: P }, globalRef, 'writer_a', draftRecord(), { storage })
+    const removed = purgeViewerScope(dottedScope, { storage })
+    expect(removed).toBeGreaterThanOrEqual(1)
+    // 同一编码分区已清；其他项目分区不受影响
+    expect(
+      [...storage.map.keys()].some((key) => key.includes('user%2E101') && key.includes('org%2Eteam')),
+    ).toBe(false)
+    expect([...storage.map.keys()].some((key) => key.includes(`${P}`))).toBe(true)
+    // purgeViewer 的 keep 比较同样走编码段
+    writeDraft({ viewerUserId: 'user.202', projectId: P }, globalRef, 'writer_b', draftRecord(), { storage })
+    const result = purgeViewer('user.101', { storage })
+    expect(result.removed).toBeGreaterThanOrEqual(1)
+    expect([...storage.map.keys()].some((key) => key.includes('user%2E202'))).toBe(false)
+    expect([...storage.map.keys()].some((key) => key.includes('user%2E101'))).toBe(true)
+  })
+
+  it('更新写入遇到 quota 降级时，读回必须是本进程最新文本（F8）', () => {
+    const storage = new MapStorage()
+    expect(writeDraft(scope, globalRef, 'writer_a', draftRecord({ text: '第一次' }), { storage }).ok).toBe(true)
+    storage.failWith = Object.assign(new Error('quota'), { name: 'QuotaExceededError' })
+    const degraded = writeDraft(scope, globalRef, 'writer_a', draftRecord({ text: '第二次', localVersion: 2 }), {
+      storage,
+    })
+    expect(degraded.ok).toBe(true)
+    expect(degraded.persisted).toBe(false)
+    expect(degraded.degraded).toBe(true)
+    expect(degraded.reason).toBe('quota')
+    // 旧持久值仍存在于 storage，但读取必须优先返回最近降级副本
+    expect(storage.getItem([...storage.map.keys()][0])).toContain('第一次')
+    expect(readDraft(scope, authorityFor(), globalRef, 'writer_a', { storage })?.text).toBe('第二次')
+  })
+
+  it('writeSubmissionMarker 在持久化边界过滤鉴权头并校验完整请求（F10）', () => {
+    const storage = new MapStorage()
+    const unsafeMarker = marker({
+      request: {
+        method: 'POST',
+        path: '/v1/research/projects/proj_1/chat/sessions/sess_global/submissions',
+        headers: {
+          'X-Research-Session-Contract': 'research-session-v1',
+          'X-Research-Contract': 'c05-v1',
+          Authorization: 'Bearer secret-token',
+          Cookie: 'session=abc',
+        },
+        body: { draft_token: 'draft_token_1', text: 'hello' },
+      },
+    })
+    expect(writeSubmissionMarker(scope, globalRef, unsafeMarker, { storage }).ok).toBe(true)
+    const persisted = readSubmissionMarker(scope, authorityFor(), globalRef, 'draft_token_1', { storage })
+    expect(persisted?.request?.headers).toEqual({
+      'X-Research-Session-Contract': 'research-session-v1',
+      'X-Research-Contract': 'c05-v1',
+    })
+    expect(JSON.stringify(persisted)).not.toContain('secret-token')
+    expect(JSON.stringify(persisted)).not.toContain('session=abc')
+    // body 不是可 JSON 往返的普通对象时不得声明可重放
+    const invalidBody = marker({
+      request: { method: 'POST', path: '/p', headers: {}, body: new Map([['a', 1]]) },
+    } as Partial<SessionSubmissionMarker>)
+    expect(writeSubmissionMarker(scope, globalRef, invalidBody, { storage }).ok).toBe(false)
+  })
+})

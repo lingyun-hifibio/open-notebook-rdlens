@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, renderHook, screen, waitFor } from '@testing-library/react'
+import { renderToString } from 'react-dom/server'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 vi.mock('@/lib/research/api', () => ({
@@ -62,18 +63,21 @@ import {
   researchIdentityEquals,
   researchExecutionPreferencesIdentityKey,
   researchSourcesIdentityKey,
+  researchEgressConsentIdentityKey,
   purgeResearchAuthScope,
 } from '@/lib/api/query-client'
 import {
   SESSION_CACHE_PREFIX,
   clearSessionCacheMemoryFallback,
   readDraft,
+  writeDisplayPointer,
   writeDraft,
+  writePointer,
   type SessionCacheAuthority,
   type SessionCacheStorage,
   type SessionDraftRecord,
 } from '@/lib/research/session-cache'
-import { useResearchSources } from '@/lib/hooks/use-research'
+import { useResearchNotes, useResearchSources } from '@/lib/hooks/use-research'
 import {
   ResearchGlobalModelProvider,
   useResearchGlobalModel,
@@ -228,6 +232,25 @@ describe('session-runtime：bootstrap 状态机（§3.2 / §3.6）', () => {
     expect(runtime.cacheScope()).toBeNull()
   })
 
+  it('owner 未接线（无 transport）：保持遮蔽，不把 claims 当 viewer 确认', () => {
+    const storage = new MapStorage()
+    const runtime = createSessionRuntime({
+      authGeneration: 1,
+      projectId: P,
+      viewerUserId: VIEWER,
+      role: 'owner',
+      storage,
+      now: () => NOW,
+    })
+    runtime.start()
+    const snapshot = runtime.getSnapshot()
+    expect(snapshot.phase).toBe('masked')
+    expect(snapshot.masked).toBe(true)
+    expect(snapshot.lastBootstrap).toBe('degraded')
+    expect(runtime.identity()).toBeNull()
+    expect(runtime.cacheAuthority()).toBeNull()
+  })
+
   it('bootstrap ok：viewer 确认、能力就绪、owner 身份带 viewer', async () => {
     const storage = new MapStorage()
     const transport = okTransport('7')
@@ -326,7 +349,7 @@ describe('session-runtime：bootstrap 状态机（§3.2 / §3.6）', () => {
     await waitFor(() => expect(client.getQueryData(oldKey)).toBeUndefined())
   })
 
-  it('masked 可显式设置（页头提示时遮蔽内容但不卸载 Provider）', () => {
+  it('masked 可显式设置（页头提示时遮蔽内容但不卸载 Provider）', async () => {
     const storage = new MapStorage()
     const runtime = createSessionRuntime({
       authGeneration: 1,
@@ -334,21 +357,24 @@ describe('session-runtime：bootstrap 状态机（§3.2 / §3.6）', () => {
       viewerUserId: VIEWER,
       role: 'owner',
       storage,
+      transport: okTransport(VIEWER),
       now: () => NOW,
     })
     runtime.start()
+    await waitFor(() => expect(runtime.getSnapshot().phase).toBe('ready'))
     runtime.setMasked(true)
     expect(runtime.getSnapshot().masked).toBe(true)
     expect(runtime.getSnapshot().phase).toBe('masked')
     runtime.setMasked(false)
     expect(runtime.getSnapshot().masked).toBe(false)
+    expect(runtime.getSnapshot().phase).toBe('ready')
   })
 })
 
 // ── 运行时：代际更新 / dispose / activate ──────────────────────────────────
 
 describe('session-runtime：代际更新、写入守卫与活动会话（§3.2 / §3.4）', () => {
-  it('同 viewer refresh：保留内存 dirty 稿，旧代回调 stale、新代回调 ok', () => {
+  it('同 viewer refresh：保留内存 dirty 稿，旧代回调 stale、新代回调 ok', async () => {
     const storage = new MapStorage()
     seedDraft(storage)
     const runtime = createSessionRuntime({
@@ -357,13 +383,29 @@ describe('session-runtime：代际更新、写入守卫与活动会话（§3.2 /
       viewerUserId: VIEWER,
       role: 'owner',
       storage,
+      transport: okTransport(VIEWER),
       now: () => NOW,
     })
     runtime.start()
-    expect(readDraft({ viewerUserId: VIEWER, projectId: P }, runtime.cacheAuthority(), globalRef, 'writer_a', { storage })?.text).toBe('内存 dirty 稿')
+    await waitFor(() => expect(runtime.getSnapshot().phase).toBe('ready'))
+    const firstAuthority = runtime.cacheAuthority()
+    expect(firstAuthority).not.toBeNull()
+    expect(
+      readDraft({ viewerUserId: VIEWER, projectId: P }, firstAuthority!, globalRef, 'writer_a', {
+        storage,
+      })?.text,
+    ).toBe('内存 dirty 稿')
+    // 刷新代际时新 bootstrap 仍在途 → 遮蔽且不发放授权，但分区数据不得被销毁
     runtime.updateAuth(scopeFor({ authGeneration: 2 }))
+    await waitFor(() => expect(runtime.getSnapshot().phase).toBe('ready'))
     // 同 viewer 新代：dirty 稿仍在（不销毁 editor store/本机分区）
-    expect(readDraft({ viewerUserId: VIEWER, projectId: P }, runtime.cacheAuthority(), globalRef, 'writer_a', { storage })?.text).toBe('内存 dirty 稿')
+    const secondAuthority = runtime.cacheAuthority()
+    expect(secondAuthority).not.toBeNull()
+    expect(
+      readDraft({ viewerUserId: VIEWER, projectId: P }, secondAuthority!, globalRef, 'writer_a', {
+        storage,
+      })?.text,
+    ).toBe('内存 dirty 稿')
     // 旧代迟到回调被丢弃
     expect(runtime.runIfCurrent(1, () => '旧代结果')).toEqual({ status: 'stale' })
     expect(runtime.runIfCurrent(2, () => '新代结果')).toEqual({ status: 'ok', value: '新代结果' })
@@ -452,7 +494,7 @@ describe('session-runtime：代际更新、写入守卫与活动会话（§3.2 /
     expect(guard.run(() => 'write cache')).toEqual({ status: 'ok', value: 'write cache' })
   })
 
-  it('activate 双 surface 独立：global 与 source 同时存在，display 指针不覆盖 surface 指针', () => {
+  it('activate 双 surface 独立：global 与 source 同时存在，display 指针不覆盖 surface 指针', async () => {
     const storage = new MapStorage()
     const runtime = createSessionRuntime({
       authGeneration: 1,
@@ -460,9 +502,11 @@ describe('session-runtime：代际更新、写入守卫与活动会话（§3.2 /
       viewerUserId: VIEWER,
       role: 'owner',
       storage,
+      transport: okTransport(VIEWER),
       now: () => NOW,
     })
     runtime.start()
+    await waitFor(() => expect(runtime.getSnapshot().phase).toBe('ready'))
     expect(runtime.activate('global', globalRef)).toBe(true)
     expect(runtime.activate('source', sourceRef)).toBe(true)
     expect(runtime.active('global')).toEqual(globalRef)
@@ -553,8 +597,9 @@ describe('ResearchSessionRuntimeProvider：StrictMode 与 SSR 稳定快照（§3
     expect(screen.getByTestId('masked').textContent).toBe('false')
   })
 
-  it('provider 随 authGeneration 更新代际；旧代快照不得复用于新代', () => {
+  it('provider 随 authGeneration 更新代际；旧代快照不得复用于新代', async () => {
     const storage = new MapStorage()
+    const transport = okTransport(VIEWER)
     const { rerender } = render(
       <ResearchSessionRuntimeProvider
         authGeneration={1}
@@ -562,12 +607,13 @@ describe('ResearchSessionRuntimeProvider：StrictMode 与 SSR 稳定快照（§3
         viewerUserId={VIEWER}
         role="owner"
         storage={storage}
+        transport={transport}
       >
         <RuntimeConsumer />
       </ResearchSessionRuntimeProvider>,
     )
+    await waitFor(() => expect(screen.getByTestId('phase').textContent).toBe('ready'))
     expect(screen.getByTestId('generation').textContent).toBe('1')
-    expect(screen.getByTestId('phase').textContent).toBe('ready')
     rerender(
       <ResearchSessionRuntimeProvider
         authGeneration={2}
@@ -575,6 +621,7 @@ describe('ResearchSessionRuntimeProvider：StrictMode 与 SSR 稳定快照（§3
         viewerUserId={VIEWER}
         role="owner"
         storage={storage}
+        transport={transport}
       >
         <RuntimeConsumer />
       </ResearchSessionRuntimeProvider>,
@@ -601,6 +648,51 @@ describe('ResearchSessionRuntimeProvider：StrictMode 与 SSR 稳定快照（§3
     rerender(<SsrConsumer />)
     expect(snapshots[snapshots.length - 1]).toBe(first)
     expect(first).toBe(SESSION_RUNTIME_SERVER_SNAPSHOT)
+  })
+
+  it('SSR：renderToString 使用 server snapshot（不读 localStorage、不抛错）', () => {
+    function SsrTree() {
+      const snapshot = useSessionSnapshot()
+      return <span data-testid="ssr-html-phase">{snapshot.phase}</span>
+    }
+    const html = renderToString(
+      <ResearchSessionRuntimeProvider
+        authGeneration={1}
+        projectId={P}
+        viewerUserId={VIEWER}
+        role="owner"
+        storage={new MapStorage()}
+      >
+        <SsrTree />
+      </ResearchSessionRuntimeProvider>,
+    )
+    expect(html).toContain('locked')
+  })
+
+  it('刷新恢复：新 runtime 从本机多会话指针/草稿恢复 global 与 source 活动会话（review D8）', async () => {
+    const storage = new MapStorage()
+    const scope = { viewerUserId: VIEWER, projectId: P }
+    writePointer(scope, 'global', null, globalRef, NOW, { storage })
+    writePointer(scope, 'source', 'src_a', sourceRef, NOW, { storage })
+    writeDisplayPointer(scope, { version: 1, surface: 'global', ref: globalRef }, { storage })
+    writeDraft(scope, globalRef, 'writer_a', draftRecord(), { storage })
+
+    const runtime = createSessionRuntime({
+      authGeneration: 1,
+      projectId: P,
+      viewerUserId: VIEWER,
+      role: 'owner',
+      storage,
+      transport: okTransport(VIEWER),
+      now: () => NOW,
+    })
+    runtime.start()
+    await waitFor(() => expect(runtime.getSnapshot().phase).toBe('ready'))
+    expect(runtime.active('global')).toEqual(globalRef)
+    expect(runtime.active('source')).toEqual(sourceRef)
+    const authority = runtime.cacheAuthority()
+    expect(authority).not.toBeNull()
+    expect(readDraft(scope, authority!, globalRef, 'writer_a', { storage })?.text).toBe('内存 dirty 稿')
   })
 
   it('useResearchSessionRuntime 无 Provider 时抛错（fail-closed）', () => {
@@ -636,6 +728,26 @@ describe('QueryClient：判别身份键与旧代清理（§3.2 / §3.5）', () =
     expect(JSON.stringify(adminKey)).not.toContain(VIEWER)
     expect(ownerKey).not.toEqual(adminKey)
     expect(researchSourcesIdentityKey(ownerGen2)).not.toEqual(ownerKey)
+  })
+
+  it('purgeResearchAuthScope：当前身份的在途查询不被取消/移除（review F6/D7）', async () => {
+    const client = new QueryClient()
+    const current = ownerResearchIdentity(P, VIEWER, 2)
+    const capture: { signal: AbortSignal | null } = { signal: null }
+    void client.prefetchQuery({
+      queryKey: researchSourcesIdentityKey(current),
+      queryFn: ({ signal }) =>
+        new Promise((resolve) => {
+          capture.signal = signal
+          signal.addEventListener('abort', () => resolve({ items: [], next_cursor: null }))
+        }),
+      staleTime: Infinity,
+    })
+    await waitFor(() => expect(capture.signal).not.toBeNull())
+    const removed = await purgeResearchAuthScope(client, { projectId: P, current })
+    expect(removed).toBe(0)
+    expect(capture.signal?.aborted).toBe(false)
+    expect(client.getQueryCache().find({ queryKey: researchSourcesIdentityKey(current) })).toBeDefined()
   })
 
   it('purgeResearchAuthScope：取消在途旧代查询、移除旧代/无身份段旧键、保留当前身份', async () => {
@@ -946,5 +1058,195 @@ describe('use-research-global-model：Research mutation 不自动重试 + runGua
     })
     expect(operation).toHaveBeenCalledTimes(1)
     expect(completions).toEqual([{ dispatched: true, modelId: 'm-ext' }])
+  })
+})
+
+// ── review D10/D11 补证：completion 结算、ACK 在途身份/卸载、旧 PATCH、Notes abort ──
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((res) => {
+    resolve = res
+  })
+  return { promise, resolve }
+}
+
+const ACK_OK = {
+  consent: {
+    project_id: P,
+    acknowledged_by: 1,
+    acknowledged_at: '2026-08-28T00:00:00+00:00',
+    policy_version: '1',
+    scope_hash: 'hash',
+    revoked_at: null,
+    revoked_by: null,
+    valid: true,
+  },
+  required_scope: CONSENT_MISSING.required_scope,
+}
+
+function NotesHarness({ projectId }: { projectId: string }) {
+  const query = useResearchNotes(projectId)
+  return <span data-testid="notes-count">{query.data?.items.length ?? -1}</span>
+}
+
+describe('review 补证：直发 completion / 执行失败 / ACK 在途身份与卸载 / 旧 PATCH 回填 / Notes abort', () => {
+  it('直发 runGuarded：执行成功也显式 completion dispatched:true（D10）', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    vi.mocked(listModels).mockResolvedValue({ models: MODELS })
+    vi.mocked(getExecutionPreferences).mockResolvedValue(PREFS_LOCAL)
+    vi.mocked(getExternalEgressConsent).mockResolvedValue(CONSENT_MISSING)
+    render(<GlobalModelApp client={client} authGeneration={1} />)
+    await waitFor(() => expect(latestGlobalModel?.canExecute).toBe(true))
+    const completions: GuardedOperationCompletion[] = []
+    const operation = vi.fn(() => 'executed')
+    await act(async () => {
+      const result = await latestGlobalModel?.runGuarded(operation, {
+        onCompletion: (completion) => completions.push(completion),
+      })
+      expect(result).toBe('executed')
+    })
+    expect(operation).toHaveBeenCalledTimes(1)
+    expect(completions).toEqual([{ dispatched: true, modelId: 'm-local' }])
+  })
+
+  it('直发 runGuarded：执行体抛错也结算一次 dispatched:true（D10）', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    vi.mocked(listModels).mockResolvedValue({ models: MODELS })
+    vi.mocked(getExecutionPreferences).mockResolvedValue(PREFS_LOCAL)
+    vi.mocked(getExternalEgressConsent).mockResolvedValue(CONSENT_MISSING)
+    render(<GlobalModelApp client={client} authGeneration={1} />)
+    await waitFor(() => expect(latestGlobalModel?.canExecute).toBe(true))
+    const completions: GuardedOperationCompletion[] = []
+    const operation = vi.fn(() => {
+      throw new Error('boom')
+    })
+    await act(async () => {
+      await expect(
+        latestGlobalModel?.runGuarded(operation, {
+          onCompletion: (completion) => completions.push(completion),
+        }),
+      ).rejects.toThrow('boom')
+    })
+    expect(completions).toEqual([{ dispatched: true, modelId: 'm-local' }])
+  })
+
+  it('ACK 在途时认证代际前进：不写新代 consent、不执行旧意图、completion identity-changed（F2/D10）', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    vi.mocked(listModels).mockResolvedValue({ models: MODELS })
+    vi.mocked(getExecutionPreferences).mockResolvedValue(PREFS_EXT)
+    vi.mocked(getExternalEgressConsent).mockResolvedValue(CONSENT_MISSING)
+    const ack = deferred<typeof ACK_OK>()
+    vi.mocked(acknowledgeExternalEgressConsent).mockReturnValueOnce(ack.promise)
+    const { rerender } = render(<GlobalModelApp client={client} authGeneration={1} />)
+    await waitFor(() => expect(latestGlobalModel?.needsConsent).toBe(true))
+    const completions: GuardedOperationCompletion[] = []
+    const operation = vi.fn(() => 'ok')
+    await act(async () => {
+      await latestGlobalModel?.runGuarded(operation, {
+        onCompletion: (completion) => completions.push(completion),
+      })
+    })
+    let confirmPromise: Promise<void> = Promise.resolve()
+    act(() => {
+      confirmPromise = latestGlobalModel?.confirmConsent() ?? Promise.resolve()
+    })
+    await waitFor(() => expect(vi.mocked(acknowledgeExternalEgressConsent)).toHaveBeenCalledTimes(1))
+    rerender(<GlobalModelApp client={client} authGeneration={2} />)
+    // ACK 在途时确认流程不允许并发取消；ACK 返回后按新代际复核并显式通知
+    await act(async () => {
+      ack.resolve(ACK_OK)
+      await confirmPromise
+    })
+    await waitFor(() => expect(completions).toHaveLength(1))
+    expect(operation).not.toHaveBeenCalled()
+    expect(completions).toEqual([{ dispatched: false, reason: 'identity-changed', modelId: 'm-ext' }])
+    // 新代 consent 缓存仍是 query 的服务端值（valid:false），旧 ACK 结果不得写入
+    const gen2Key = researchEgressConsentIdentityKey(ownerResearchIdentity(P, VIEWER, 2))
+    expect((client.getQueryData(gen2Key) as { consent: { valid: boolean } | null } | undefined)?.consent ?? null).toBeNull()
+  })
+
+  it('ACK 在途时 Provider 卸载：迟到 ACK 不执行旧意图、completion identity-changed（F1/D10）', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    vi.mocked(listModels).mockResolvedValue({ models: MODELS })
+    vi.mocked(getExecutionPreferences).mockResolvedValue(PREFS_EXT)
+    vi.mocked(getExternalEgressConsent).mockResolvedValue(CONSENT_MISSING)
+    const ack = deferred<typeof ACK_OK>()
+    vi.mocked(acknowledgeExternalEgressConsent).mockReturnValueOnce(ack.promise)
+    const { unmount } = render(<GlobalModelApp client={client} authGeneration={1} />)
+    await waitFor(() => expect(latestGlobalModel?.needsConsent).toBe(true))
+    const completions: GuardedOperationCompletion[] = []
+    const operation = vi.fn(() => 'ok')
+    await act(async () => {
+      await latestGlobalModel?.runGuarded(operation, {
+        onCompletion: (completion) => completions.push(completion),
+      })
+    })
+    let confirmPromise: Promise<void> = Promise.resolve()
+    act(() => {
+      confirmPromise = latestGlobalModel?.confirmConsent() ?? Promise.resolve()
+    })
+    await waitFor(() => expect(vi.mocked(acknowledgeExternalEgressConsent)).toHaveBeenCalledTimes(1))
+    unmount()
+    await act(async () => {
+      ack.resolve(ACK_OK)
+      await confirmPromise
+    })
+    expect(operation).not.toHaveBeenCalled()
+    expect(completions).toEqual([{ dispatched: false, reason: 'identity-changed', modelId: 'm-ext' }])
+  })
+
+  it('旧代 PATCH 迟到成功：不写入新代 preferences（F3/D11）', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    vi.mocked(listModels).mockResolvedValue({ models: MODELS })
+    vi.mocked(getExecutionPreferences).mockResolvedValue(PREFS_LOCAL)
+    vi.mocked(getExternalEgressConsent).mockResolvedValue(CONSENT_MISSING)
+    const patch = deferred<typeof PREFS_EXT>()
+    vi.mocked(patchExecutionPreferences).mockReturnValueOnce(patch.promise)
+    const { rerender } = render(<GlobalModelApp client={client} authGeneration={1} />)
+    await waitFor(() => expect(latestGlobalModel?.confirmedModelId).toBe('m-local'))
+    act(() => latestGlobalModel?.setDraftModelId('m-ext'))
+    let savePromise: Promise<void> = Promise.resolve()
+    act(() => {
+      savePromise = latestGlobalModel?.saveModel() ?? Promise.resolve()
+    })
+    await waitFor(() => expect(vi.mocked(patchExecutionPreferences)).toHaveBeenCalledTimes(1))
+    rerender(<GlobalModelApp client={client} authGeneration={2} />)
+    await act(async () => {
+      patch.resolve(PREFS_EXT)
+      await savePromise.catch(() => undefined)
+    })
+    const gen2Key = researchExecutionPreferencesIdentityKey(ownerResearchIdentity(P, VIEWER, 2))
+    await waitFor(() => expect(client.getQueryData(gen2Key)).toEqual(PREFS_LOCAL))
+    const gen2Data = client.getQueryData(gen2Key) as { preferred_model_id: string | null }
+    expect(gen2Data.preferred_model_id).not.toBe('m-ext')
+  })
+
+  it('authGeneration 变化：Notes 旧代加载 abort 且旧代数据不回填（D11）', async () => {
+    const capture: { signal: AbortSignal | null } = { signal: null }
+    vi.mocked(listNotes).mockResolvedValue({ items: [], next_cursor: null })
+    vi.mocked(listNotes).mockImplementationOnce(
+      (_projectId, _params, signal) =>
+        new Promise((resolve) => {
+          capture.signal = signal ?? null
+          signal?.addEventListener('abort', () => resolve({ items: [], next_cursor: null }))
+        }),
+    )
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    function App({ generation }: { generation: number }) {
+      return (
+        <QueryClientProvider client={client}>
+          <ResearchWorkspaceProvider projectId={P} userId={VIEWER} role="owner" authGeneration={generation}>
+            <NotesHarness projectId={P} />
+          </ResearchWorkspaceProvider>
+        </QueryClientProvider>
+      )
+    }
+    const { rerender } = render(<App generation={1} />)
+    await waitFor(() => expect(capture.signal).not.toBeNull())
+    rerender(<App generation={2} />)
+    await waitFor(() => expect(capture.signal?.aborted).toBe(true))
+    expect(client.getQueryData(['research', P, 'notes', '', 'research-identity', { role: 'owner', projectId: P, viewerUserId: VIEWER, authGeneration: 1 }])).toBeUndefined()
+    await waitFor(() => expect(vi.mocked(listNotes)).toHaveBeenCalledTimes(2))
   })
 })

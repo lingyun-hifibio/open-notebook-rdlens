@@ -311,6 +311,56 @@ describe('session-contract: submission_response 状态矩阵', () => {
     expect(parseSubmissionResponse({ ...unknown, generation_state: 'failed' }).ok).toBe(false)
   })
 
+  it('accepted 带完整 context_report：逐字段投影且非法形状被拒绝（review D3）', () => {
+    const contextReport = {
+      version: 1,
+      status: 'trimmed',
+      history: { available_turns: 8, included_turns: 5, omitted_turns: 3 },
+      evidence: { included_chunks: 4, omitted_chunks: 2 },
+      input_budget: 32000,
+      serialized_input_tokens: 27890,
+      estimator_version: 'est-v1',
+      reason_codes: ['history_trimmed', 'budget_trimmed'],
+      required_context_missing: false,
+      measurement_scope: 'final_reasoning_call',
+    }
+    const accepted = {
+      ...base,
+      acceptance_state: 'accepted',
+      generation_id: 'gen_ctx',
+      generation_state: 'running',
+      accepted_editor_revision: 9,
+      editor_intent_hash: HASH,
+      submitted_draft_text: '带上下文报告',
+      context_report: contextReport,
+    }
+    const parsed = parseSubmissionResponse(accepted)
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(parsed.value.contextReport).toEqual({
+      version: 1,
+      status: 'trimmed',
+      history: { availableTurns: 8, includedTurns: 5, omittedTurns: 3 },
+      evidence: { includedChunks: 4, omittedChunks: 2 },
+      inputBudget: 32000,
+      serializedInputTokens: 27890,
+      estimatorVersion: 'est-v1',
+      reasonCodes: ['history_trimmed', 'budget_trimmed'],
+      requiredContextMissing: false,
+      measurementScope: 'final_reasoning_call',
+    })
+    // 非法 context_report 不得静默透传
+    expect(
+      parseSubmissionResponse({ ...accepted, context_report: { ...contextReport, status: 'bogus' } }).ok,
+    ).toBe(false)
+    expect(
+      parseSubmissionResponse({
+        ...accepted,
+        context_report: { ...contextReport, measurement_scope: 'bogus' },
+      }).ok,
+    ).toBe(false)
+  })
+
   it('拒绝矩阵违例：not_observed 带派生值、非 not_observed 缺 hash/text/generation', () => {
     expect(parseSubmissionResponse({ ...base, generation_id: 'gen_1' }).ok).toBe(false)
     const accepted = {

@@ -5,6 +5,13 @@ import { ResearchWorkspaceShell } from './shell'
 import { clearResearchToken, getResearchToken } from './token-store'
 import { useResearchScope } from '@/lib/research/scope'
 import { useThemeStore } from '@/lib/stores/theme-store'
+import {
+  SESSION_CACHE_PREFIX,
+  clearSessionCacheMemoryFallback,
+  writeDraft,
+  type SessionDraftRecord,
+} from '@/lib/research/session-cache'
+import type { ResearchSessionRef } from '@/lib/research/session-contract'
 
 // UI-01 Red：ResearchWorkspaceShell 加载/错误/就绪三态 + ready 握手 +
 // 卸载销毁（任务卡 Checklist：bootstrap、session state、销毁无残留）。
@@ -66,6 +73,15 @@ function validTokenMessage(nonce: string, channel: string, overrides: Record<str
     expires_at: 1754460300,
     ...overrides,
   }
+}
+
+function localStorageKeys(): string[] {
+  const keys: string[] = []
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index)
+    if (key !== null) keys.push(key)
+  }
+  return keys
 }
 
 function ScopeProbe() {
@@ -140,6 +156,48 @@ describe('ResearchWorkspaceShell', () => {
     dispatchMessage({ schema: 'research-v0', channel: ready.channel, type: 'logout', nonce: ready.nonce })
     expect(screen.queryByText('workspace-panels')).not.toBeInTheDocument()
     expect(screen.getByText('research.loading')).toBeInTheDocument()
+  })
+
+  it('logout 在 Provider 卸载前以 logout 语义 dispose：当前 viewer 本机草稿被清除（review F1/D9）', () => {
+    localStorage.clear()
+    clearSessionCacheMemoryFallback()
+    const globalRef: ResearchSessionRef = {
+      domain: 'research',
+      kind: 'global',
+      projectId: 'proj_abc',
+      sessionId: 'sess_1',
+      sourceId: null,
+    }
+    const record: SessionDraftRecord = {
+      version: 1,
+      text: '待确认草稿',
+      token: 'draft_token_a',
+      baseScope: null,
+      singleSourceId: null,
+      noteIds: [],
+      localVersion: 3,
+      baseRevision: 7,
+      savedAt: '2026-10-26T09:00:00.000Z',
+      dirty: true,
+    }
+    writeDraft({ viewerUserId: 'user_1', projectId: 'proj_abc' }, globalRef, 'writer_a', record)
+    writeDraft({ viewerUserId: 'user_2', projectId: 'proj_abc' }, globalRef, 'writer_a', record)
+    expect(localStorageKeys().some((key) => key.includes('.draft.user_1.'))).toBe(true)
+
+    const captures = stubParentWindow()
+    render(<ResearchWorkspaceShell>workspace-panels</ResearchWorkspaceShell>)
+    const ready = captures.posted[0].data
+    dispatchMessage(validTokenMessage(String(ready.nonce), String(ready.channel)))
+    expect(screen.getByText('workspace-panels')).toBeInTheDocument()
+
+    dispatchMessage({ schema: 'research-v0', channel: ready.channel, type: 'logout', nonce: ready.nonce })
+    expect(screen.queryByText('workspace-panels')).not.toBeInTheDocument()
+    const keys = localStorageKeys()
+    // 当前 viewer 的明文草稿在卸载前被同步清理（若是 'unmount' 语义则不会被清）
+    expect(keys.some((key) => key.includes('.draft.user_1.'))).toBe(false)
+    // 其他 viewer 分区不在本次清理范围
+    expect(keys.some((key) => key.includes('.draft.user_2.'))).toBe(true)
+    expect(keys.some((key) => key.startsWith(`${SESSION_CACHE_PREFIX}.`))).toBe(true)
   })
 
   it('destroy 消息后清空渲染并终止会话（无残留）', () => {
