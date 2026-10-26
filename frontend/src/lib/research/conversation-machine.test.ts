@@ -550,7 +550,7 @@ describe('conversation-machine：查回顺序与并发上限（DESIGN §3.5/§6.
 
 describe('conversation-controller：副作用与迟到隔离', () => {
   function setup(over: {
-    submission?: () => Promise<unknown> | unknown
+    submission?: (input: { sessionRef: ResearchSessionRef; token: string }) => Promise<unknown> | unknown
     loadDetail?: (input: { sessionRef: ResearchSessionRef; cursor?: string | null }) => Promise<unknown> | unknown
     lookupBackoffMs?: readonly number[]
   } = {}) {
@@ -769,29 +769,33 @@ describe('conversation-controller：副作用与迟到隔离', () => {
     expect(releases).toContain('op-1')
   })
 
-  it('查回并发峰值 ≤2（review-1 P1-#12）', async () => {
+  it('查回并发：历史 token 被 blocked 不占并发；当前 token 重复查回单飞', async () => {
     const pending = new Map<string, ReturnType<typeof deferred<unknown>>>()
-    let inFlight = 0
+    let started = 0
+    let active = 0
     let peak = 0
     const { controller } = setup({
-      submission: () => {
+      submission: ({ token }: { token: string }) => {
+        started += 1
+        active += 1
+        peak = Math.max(peak, active)
         const d = deferred<unknown>()
-        const id = String(pending.size)
-        pending.set(id, d)
-        inFlight += 1
-        peak = Math.max(peak, inFlight)
-        return d.promise.finally(() => { inFlight -= 1 })
+        pending.set(`${token}-${started}`, d)
+        return d.promise.finally(() => { active = Math.max(0, active - 1) })
       },
     })
     await controller.send(sendInput())
-    await controller.lookupSubmission('tok_a')
-    await controller.lookupSubmission('tok_b')
-    await controller.lookupSubmission('tok_c')
+    expect((await controller.lookupSubmission('tok_a')).status).toBe('blocked')
+    expect((await controller.lookupSubmission('tok_b')).status).toBe('blocked')
+    void controller.lookupSubmission()
+    void controller.lookupSubmission()
+    await flush()
+    // 历史 token 不进入查回队列；当前 token 两次调用只启动一个在飞查回。
+    expect(started).toBe(1)
+    expect(peak).toBe(1)
+    for (const d of pending.values()) d.resolve(submissionResponse())
     await flush()
     expect(peak).toBeLessThanOrEqual(MAX_CONCURRENT_SUBMISSION_LOOKUPS)
-    expect(peak).toBe(2)
-    for (const d of pending.values()) d.resolve(submissionResponse({ draft_token: 'tok_x' }))
-    await flush()
   })
 
   it('accepted 后 done 不得提前释放；clear 结算后才释放（review-1 P1-#9）', async () => {
@@ -966,7 +970,7 @@ describe('conversation-controller：副作用与迟到隔离', () => {
         if (detailCalls.length === 1) {
           return { messages: [{ message_id: 'msg_1', role: 'assistant', content: 'prefix' }], next_cursor: 'c1' }
         }
-        return { messages: [{ message_id: 'msg_2', role: 'assistant', content: 'tail' }], next_cursor: null }
+        return { messages: [{ message_id: 'msg_2', role: 'assistant', content: 'tail', generation_id: 'gen_1' }], next_cursor: null }
       },
     })
     await controller.send(sendInput())
@@ -1047,37 +1051,26 @@ describe('conversation-controller：副作用与迟到隔离', () => {
     expect(releases).toContain('op-1')
   })
 
-  it('B9：查回并发峰值不超过 2，第三个排队等待', async () => {
+  it('B9：历史 token 查回被 blocked，不得占用并发或结算当前 turn', async () => {
     const started: string[] = []
-    const resolvers: Array<(value: unknown) => void> = []
-    let active = 0
-    let peak = 0
     const submission = ({ token }: { token: string }) => {
       started.push(token)
-      active += 1
-      peak = Math.max(peak, active)
-      return new Promise<unknown>((resolve) => {
-        resolvers.push((value) => {
-          active = Math.max(0, active - 1)
-          resolve(value)
-        })
-      })
+      return submissionResponse()
     }
-    const { controller } = setup({ submission: submission as never })
+    const { controller, releases } = setup({ submission: submission as never })
     await controller.send(sendInput())
-    void controller.lookupSubmission('tok_a')
-    void controller.lookupSubmission('tok_b')
-    void controller.lookupSubmission('tok_c')
+    for (const token of ['tok_a', 'tok_b', 'tok_c']) {
+      const result = await controller.lookupSubmission(token)
+      expect(result.status).toBe('blocked')
+    }
     await flush()
-    expect(peak).toBe(2)
-    expect(started).toHaveLength(2)
-    resolvers[0](submissionResponse({ draft_token: 'tok_a' }))
+    expect(started).toEqual([])
+    expect(controller.getSnapshot().turn?.state).toBe('submitting')
+    await controller.lookupSubmission()
     await flush()
-    expect(started).toHaveLength(3)
-    expect(peak).toBeLessThanOrEqual(2)
-    for (const resolve of resolvers.slice(1)) resolve(submissionResponse())
     await flush()
-    controller.dispose()
+    expect(started).toEqual([TOKEN])
+    expect(releases).toContain('op-1')
   })
 
   it('B9/§10.3：冷启动 external lookup 走 durable detail 恢复内容，不以水位续传', async () => {
@@ -1096,7 +1089,7 @@ describe('conversation-controller：副作用与迟到隔离', () => {
         return {
           messages: [
             { message_id: 'msg_1', role: 'user', content: 'q1' },
-            { message_id: 'msg_2', role: 'assistant', content: 'full durable answer' },
+            { message_id: 'msg_2', role: 'assistant', content: 'full durable answer', generation_id: 'gen_1' },
           ],
           next_cursor: null,
         }
@@ -1114,10 +1107,207 @@ describe('conversation-controller：副作用与迟到隔离', () => {
     expect(controller.getSnapshot().detailMessages).toHaveLength(2)
     expect(turn?.incomplete).toBe(false)
   })
+  it('B3(round3)：响应头 session 冲突撤销 attempt；查回 accepted 后旧回调仍被丢弃', async () => {
+    const submission = () => submissionResponse({
+      acceptance_state: 'accepted',
+      generation_id: 'gen_1',
+      generation_state: 'running',
+      accepted_editor_revision: 3,
+      editor_intent_hash: HASH,
+      submitted_draft_text: 'q1',
+    })
+    const { controller, calls, aborts } = setup({ submission })
+    await controller.send(sendInput())
+    calls[0].input.onEvent(sse(1, 'answer', { delta: 'A' }))
+    calls[0].input.onResponseMeta?.({ sessionId: 'sess_OTHER' })
+    await flush()
+    await flush()
+    expect(aborts).toContain('identity')
+    const before = controller.getSnapshot().turn?.sse.answer
+    calls[0].input.onEvent(sse(2, 'answer', { delta: 'FOREIGN LATE ANSWER' }))
+    await flush()
+    const turn = controller.getSnapshot().turn
+    expect(turn?.state).toBe('accepted')
+    expect(turn?.sse.answer).toBe(before)
+    expect(turn?.sse.answer).not.toContain('FOREIGN')
+  })
+
+  it('B5(round3)：查回在飞期间 detach/reattach，旧任务结束后必须补派发而非被 in-flight 去重吞掉', async () => {
+    let lookupCalls = 0
+    let resolveFirst: (value: unknown) => void = () => {}
+    const submission = () => {
+      lookupCalls += 1
+      if (lookupCalls === 1) {
+        return new Promise<unknown>((resolve) => { resolveFirst = resolve })
+      }
+      return Promise.resolve(submissionResponse())
+    }
+    const { controller, calls, releases } = setup({ submission })
+    await controller.send(sendInput())
+    calls[0].input.onNetworkError?.(new Error('disconnect'))
+    await flush()
+    expect(lookupCalls).toBe(1)
+    controller.detach()
+    // 旧查回仍在飞时重新接管：新查回请求不能被 in-flight 去重直接吞掉。
+    await controller.reattach()
+    await flush()
+    // 旧任务返回不匹配的结果（协议失败），旧任务 finally 必须补派发新查回。
+    resolveFirst({ detail: 'invalid submission response' })
+    await flush()
+    await flush()
+    expect(lookupCalls).toBe(2)
+    expect(releases).toContain('op-1')
+    expect(controller.getSnapshot().turn?.state).toBe('not_observed')
+  })
+
+  it('B7(round3)：缺口后断线转查回，completed 必须触发 durable 恢复，不得把前缀当完整答案', async () => {
+    const detailCalls: Array<string | null> = []
+    const submission = () => submissionResponse({
+      acceptance_state: 'terminal',
+      generation_id: 'gen_1',
+      generation_state: 'completed',
+      accepted_editor_revision: 3,
+      editor_intent_hash: HASH,
+      submitted_draft_text: 'q1',
+    })
+    const { controller, calls } = setup({
+      submission,
+      loadDetail: ({ cursor }) => {
+        detailCalls.push(cursor ?? null)
+        return {
+          messages: [{ message_id: 'msg_1', role: 'assistant', content: 'full answer', generation_id: 'gen_1' }],
+          next_cursor: null,
+        }
+      },
+    })
+    await controller.send(sendInput())
+    calls[0].input.onEvent(sse(1, 'answer', { delta: 'A' }))
+    calls[0].input.onEvent(sse(3, 'answer', { delta: 'C' }))
+    calls[0].input.onNetworkError?.(new Error('disconnect'))
+    await flush()
+    await flush()
+    const turn = controller.getSnapshot().turn
+    expect(turn?.state).toBe('terminal')
+    expect(turn?.gapDetected).toBe(true)
+    expect(turn?.incomplete).toBe(false)
+    expect(detailCalls).toEqual([null])
+  })
+
+  it('B8(round3)：末页但无目标消息不得宣告完整；目标 generation 出现后才完整', async () => {
+    // 末页是其他 generation 的消息：next_cursor=null 只是必要条件，不能宣告恢复完整。
+    let pageIndex = 0
+    const detailCalls: Array<string | null> = []
+    const pages = [
+      { messages: [] as unknown[], next_cursor: 'c1' as string | null },
+      {
+        messages: [{ message_id: 'msg_x', role: 'assistant', content: 'other generation', generation_id: 'gen_other' }],
+        next_cursor: null as string | null,
+      },
+    ]
+    const submission = () => submissionResponse({
+      acceptance_state: 'terminal',
+      generation_id: 'gen_1',
+      generation_state: 'completed',
+      accepted_editor_revision: 3,
+      editor_intent_hash: HASH,
+      submitted_draft_text: 'q1',
+    })
+    const { controller } = setup({
+      submission,
+      loadDetail: ({ cursor }) => {
+        detailCalls.push(cursor ?? null)
+        const page = pages[pageIndex] ?? { messages: [], next_cursor: null }
+        pageIndex += 1
+        return page
+      },
+    })
+    await controller.lookupSubmission(TOKEN)
+    await flush()
+    await flush()
+    expect(controller.getSnapshot().turn?.incomplete).toBe(true)
+    await controller.loadMore()
+    await flush()
+    expect(detailCalls).toEqual([null, 'c1'])
+    // 末页没有目标 generation/非空 assistant 消息：仍不得宣告完整。
+    expect(controller.getSnapshot().turn?.incomplete).toBe(true)
+
+    // 对照：末页出现目标 generation 后同一流程宣告完整。
+    pageIndex = 0
+    const target = setup({
+      submission,
+      loadDetail: ({ cursor }) => {
+        void cursor
+        const page = pageIndex === 0
+          ? { messages: [{ message_id: 'msg_1', role: 'assistant', content: 'full answer', generation_id: 'gen_1' }], next_cursor: null }
+          : { messages: [], next_cursor: null }
+        pageIndex += 1
+        return page
+      },
+    })
+    await target.controller.lookupSubmission(TOKEN)
+    await flush()
+    await flush()
+    expect(target.controller.getSnapshot().turn?.incomplete).toBe(false)
+  })
+
+  it('B7(round3)：活动 token A 时查回历史 token B 返回 blocked，不得结算当前 turn', async () => {
+    const { controller, releases } = setup()
+    await controller.send(sendInput())
+    for (let index = 0; index < 3; index += 1) {
+      const result = await controller.lookupSubmission('other_draft')
+      expect(result.status).toBe('blocked')
+      expect(result.status === 'blocked' ? result.error?.code : null).toBe('historical_token_not_supported')
+    }
+    await flush()
+    const turn = controller.getSnapshot().turn
+    expect(turn?.state).toBe('submitting')
+    expect(releases).toEqual([])
+  })
+
+  it('B2(round3)：同 viewer 认证刷新保留 controller 与 hold 结算责任，旧代次回调失效', async () => {
+    const releases: string[] = []
+    const aborts: string[] = []
+    let lookupCalls = 0
+    let resolveLookup: (value: unknown) => void = () => {}
+    const streamCalls: Array<Parameters<Parameters<typeof createSessionRuntime>[0]['transport'] extends undefined ? never : never>> = []
+    void streamCalls
+    const openCalls: Array<{ onEvent?: (event: unknown) => void }> = []
+    const transport = {
+      openStream: () => {
+        const holder: { onEvent?: (event: unknown) => void } = {}
+        openCalls.push(holder)
+        return { abort: (reason?: string) => { aborts.push(reason ?? '') } }
+      },
+      getSubmission: () => {
+        lookupCalls += 1
+        return new Promise<unknown>((resolve) => { resolveLookup = resolve })
+      },
+      releaseHold: (operationId: string) => { releases.push(operationId) },
+    }
+    void openCalls
+    const runtime = createSessionRuntime({
+      authGeneration: 1,
+      projectId: 'proj_1',
+      viewerUserId: 'user_1',
+      role: 'owner',
+    })
+    const controller = runtime.conversation(REF, { transport })
+    await controller.send(sendInput())
+    runtime.updateAuth({ authGeneration: 2, projectId: 'proj_1', viewerUserId: 'user_1', role: 'owner' })
+    const again = runtime.conversation(REF, { transport })
+    expect(again).toBe(controller)
+    resolveLookup(submissionResponse())
+    await flush()
+    await flush()
+    expect(lookupCalls).toBeGreaterThanOrEqual(1)
+    expect(releases).toContain('op-1')
+    expect(controller.getSnapshot().turn?.state).toBe('not_observed')
+  })
+
 })
 
 describe('review-2：认证代次切换使 controller 失效（B1）', () => {
-  it('updateAuth 更换 authGeneration 后旧 controller stale，新 acquire 返回新实例', async () => {
+  it('updateAuth 认证刷新：同 viewer 复用 controller（移交 turn），跨 viewer 新实例', async () => {
     const transport = {
       openStream: () => ({ abort: () => {} }),
       getSubmission: () => submissionResponse(),
@@ -1131,7 +1321,8 @@ describe('review-2：认证代次切换使 controller 失效（B1）', () => {
     const first = runtime.conversation(REF, { transport })
     runtime.updateAuth({ authGeneration: 2, projectId: 'proj_1', viewerUserId: 'user_1', role: 'owner' })
     const second = runtime.conversation(REF, { transport })
-    expect(second).not.toBe(first)
+    // 同一 viewer/project 的认证刷新移交未结算 turn，复用同一 controller（review-3 #2）。
+    expect(second).toBe(first)
     const input = {
       query: 'q1',
       modelId: 'model-1',
@@ -1144,6 +1335,6 @@ describe('review-2：认证代次切换使 controller 失效（B1）', () => {
       idempotencyKey: KEY,
       operationId: 'op-1',
     }
-    expect((await first.send(input)).status).toBe('stale')
+    expect((await first.send(input)).status).toBe('ok')
   })
 })

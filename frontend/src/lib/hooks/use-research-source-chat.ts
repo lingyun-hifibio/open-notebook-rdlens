@@ -358,14 +358,24 @@ export function useResearchSourceChat({
       ),
       // 注意：源会话 detail 接口（interface freeze）没有 cursor 参数，
       // 因此源会话 durable 恢复只回填首屏；分页缺口在 PR-6 接后端参数后补齐。
-      loadDetail: () =>
-        getSourceChatSession(projectIdRef.current, String(ref.sourceId), ref.sessionId),
+      loadDetail: ({ cursor }) => {
+        if (cursor !== undefined && cursor !== null) {
+          // source 详情在接口冻结中尚无游标参数：明确失败，绝不把首屏当下一页
+          // 重复读入（review-3 #6）；分页能力随 PR-6 真实接线补齐。
+          throw new Error('source_detail_pagination_unsupported')
+        }
+        return getSourceChatSession(projectIdRef.current, String(ref.sourceId), ref.sessionId)
+      },
       releaseHold: (operationId) => releaseHold?.(operationId),
       clearAfterSubmission: (receipt, operationId) => clearAfterSubmission?.(receipt, operationId),
     }
     const controller = options.runtime.conversation(ref, { transport })
     setConversation(controller)
     // 冷启动/返回：durable detail 回填完整消息（不据持久水位续接 SSE）。
+    const snapshot = controller.getSnapshot()
+    if (snapshot.turn !== null && snapshot.turn.identity.detached) {
+      void controller.reattach()
+    }
     void controller.load().then((result) => {
       if (result.status !== 'ok') return
       if (activeRef.current !== null) return

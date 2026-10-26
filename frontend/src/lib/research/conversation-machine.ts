@@ -585,6 +585,9 @@ function enterLookup(
   const next: ConversationTurn = {
     ...turn,
     state: 'lookup_pending',
+    // 进入查回时必须固化缺口证据：真实 SSE 缺口后经断线/超时转查回的路径
+    // 不得重新宣告答案完整（review-3 #4）。
+    gapDetected: turn.gapDetected || turn.sse.pending.length > 0,
     lookup: turn.lookup ?? {
       token: turn.identity.draftToken,
       view: null,
@@ -1063,7 +1066,12 @@ export function reduceConversation(
         const terminal: 'done' | 'error' = view.generationState === 'completed' ? 'done' : 'error'
         const next: ConversationTurn = {
           ...turn,
-          incomplete: turn.gapDetected ? true : turn.incomplete,
+          incomplete: true,
+          // 恢复目标必须绑定到查回观测到的 generation，durable 才能验证目标消息。
+          identity: {
+            ...turn.identity,
+            generationId: turn.identity.generationId ?? view.generationId,
+          },
           lookup: { token: view.token, view, failures: 0, lastFailure: null },
         }
         const reduction = enterTerminal(

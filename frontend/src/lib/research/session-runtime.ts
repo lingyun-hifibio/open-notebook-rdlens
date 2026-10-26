@@ -763,7 +763,7 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
       next.viewerUserId !== null && next.viewerUserId !== (confirmedViewerUserId ?? previous.viewerUserId)
     const generationChanged = previous.authGeneration !== next.authGeneration
     const projectChanged = previous.projectId !== next.projectId
-    if (viewerChanged || generationChanged || projectChanged) {
+    if (viewerChanged || projectChanged) {
       disposeConversations()
     }
     const previousProject = previous.projectId
@@ -772,6 +772,14 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
       projectId: next.projectId,
       viewerUserId: next.viewerUserId,
       role: next.role,
+    }
+    if (!viewerChanged && !projectChanged && generationChanged) {
+      // 同一 viewer/project 的认证刷新不销毁对话：先把 controller 的期望代次
+      // 与新 scope 对齐，再移交未结算 turn/hold（review-3 #2）。
+      for (const entry of conversations.values()) {
+        entry.authRef.generation = next.authGeneration
+        entry.controller.rebaseAuth(next.authGeneration)
+      }
     }
     if (viewerChanged) {
       // 换人：旧内容立即清除，本机分区按新 viewer 重新确认。
@@ -976,7 +984,7 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
 
   const conversations = new Map<
     string,
-    { controller: ConversationController; refs: number }
+    { controller: ConversationController; refs: number; authRef: { generation: number } }
   >()
 
   /**
@@ -998,21 +1006,21 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
     }
     // 捕获创建时的认证身份：换 viewer / 代际 / 项目后，旧控制器必须先失效，
     // 不能继续把答案写进已切换的会话（review-1 P1-#1）。
-    const generation = state.scope.authGeneration
+    const authRef = { generation: state.scope.authGeneration }
     const viewerUserId = state.scope.viewerUserId
     const projectId = state.scope.projectId
     const controller = createConversationController({
       ref,
-      authGeneration: generation,
+      authGeneration: authRef.generation,
       transport: options.transport,
       isDisposed: () =>
         state.disposed
-        || state.scope.authGeneration !== generation
+        || state.scope.authGeneration !== authRef.generation
         || state.scope.viewerUserId !== viewerUserId
         || state.scope.projectId !== projectId,
       now,
     })
-    conversations.set(key, { controller, refs: 1 })
+    conversations.set(key, { controller, refs: 1, authRef })
     if (state.disposed) controller.invalidate()
     return controller
   }
@@ -1242,6 +1250,8 @@ export interface ConversationController {
     operationId: string,
     outcome: 'cleared' | 'superseded' | 'failed' | 'blocked',
   ) => void
+  /** 同 viewer 认证刷新：移交未结算 turn/hold 的结算责任到新代次。 */
+  readonly rebaseAuth: (authGeneration: number) => void
   /** 是否仍有未终结 turn（决定运行时是否可安全丢弃控制器）。 */
   readonly hasActiveTurn: () => boolean
   /** 运行时注销/身份失效：停止本地读取并使后续调用 stale。 */
@@ -1319,6 +1329,12 @@ export function createConversationController(input: {
   const lookupQueue: string[] = []
   const lookupInFlight = new Set<string>()
   let currentAbort: ConversationStreamHandle | null = null
+  // 已永久撤销的流回调（turnId:attempt）：响应头冲突/注销/换流后迟到事件不得写入。
+  const revokedStreams = new Set<string>()
+  // 查回在飞期间再次被请求：旧任务结束后必须补派发，不能被去重吞掉。
+  const lookupWanted = new Set<string>()
+  // 当前活跃流：只撤销被替换的旧流，不得误撤销新流自身。
+  let liveStream: { turnId: string; attempt: number } | null = null
   let turnSequence = 0
   let version = 0
   let cached: ConversationSnapshot | null = null
@@ -1370,6 +1386,16 @@ export function createConversationController(input: {
 
   function dispatch(event: ConversationEvent): void {
     if (disposed || isDisposed()) return
+    if (
+      (event.type === 'sse'
+        || event.type === 'stream_end'
+        || event.type === 'http_failure'
+        || event.type === 'network_failure')
+      && revokedStreams.has(`${event.turnId}:${event.attempt}`)
+    ) {
+      // 该 attempt 已被响应头冲突/重连/注销永久撤销：迟到回调不得写入。
+      return
+    }
     const reduction = reduceConversation(state, event)
     if (reduction.state === state && reduction.effects.length === 0) return
     state = reduction.state
@@ -1390,7 +1416,11 @@ export function createConversationController(input: {
       })
       return
     }
+    if (liveStream !== null) {
+      revokedStreams.add(`${liveStream.turnId}:${liveStream.attempt}`)
+    }
     currentAbort?.abort('superseded')
+    liveStream = { turnId: turn.identity.turnId, attempt: effect.attempt }
     const turnId = turn.identity.turnId
     let handle: ConversationStreamHandle | null = null
     const stream = transport.openStream({
@@ -1446,6 +1476,7 @@ export function createConversationController(input: {
         if (meta.sessionId !== null && meta.sessionId !== ref.sessionId) {
           // 会话身份冲突：立刻中止本流并使该 attempt 的后续回调失效（reducer
           // 离开流式窗口后丢弃迟到事件），随后转查回（review-2 B3）。
+          if (liveStream !== null && liveStream.attempt === effect.attempt) liveStream = null
           handle?.abort('identity')
           if (currentAbort === handle) currentAbort = null
           dispatch({
@@ -1454,6 +1485,8 @@ export function createConversationController(input: {
             attempt: effect.attempt,
             hadTerminal: terminalSeen(),
           })
+          // 转换事件处理完后再永久撤销该 attempt 的迟到回调。
+          revokedStreams.add(`${turnId}:${effect.attempt}`)
         }
       },
     })
@@ -1466,10 +1499,15 @@ export function createConversationController(input: {
       case 'open_stream':
         openStream(effect)
         return
-      case 'abort_stream':
+      case 'abort_stream': {
+        if (liveStream !== null) {
+          revokedStreams.add(`${liveStream.turnId}:${liveStream.attempt}`)
+        }
+        liveStream = null
         currentAbort?.abort('identity')
         currentAbort = null
         return
+      }
       case 'release_hold':
         if (effect.operationId !== null) transport.releaseHold?.(effect.operationId)
         return
@@ -1487,7 +1525,11 @@ export function createConversationController(input: {
 
   function scheduleLookup(token: string | null): void {
     if (token === null || token.length === 0) return
-    if (lookupInFlight.has(token) || lookupQueue.includes(token)) return
+    if (lookupInFlight.has(token)) {
+      lookupWanted.add(token)
+      return
+    }
+    if (lookupQueue.includes(token)) return
     const turn = currentTurn()
     if (turn !== null && !turn.identity.detached) {
       // 记录调度时的 turn/attempt：迟到结果不得写入 detached 或下一轮。
@@ -1540,6 +1582,24 @@ export function createConversationController(input: {
       lookupInFlight.add(token)
       void performLookup(token).finally(() => {
         lookupInFlight.delete(token)
+        // detach/reattach 交错时，旧任务被丢弃且期间的新查回请求被去重：
+        // 旧任务结束后补派发，避免恢复查回被吞掉（review-3 #3）。
+        if (lookupWanted.delete(token)) {
+          const turn = currentTurn()
+          if (
+            turn !== null
+            && !turn.identity.detached
+            && (turn.state === 'lookup_pending' || turn.state === 'unknown')
+            && !lookupInFlight.has(token)
+            && !lookupQueue.includes(token)
+          ) {
+            lookupTasks.set(token, {
+              turnId: turn.identity.turnId,
+              attempt: turn.identity.attempt,
+            })
+            lookupQueue.push(token)
+          }
+        }
         drainLookups()
       })
     }
@@ -1778,6 +1838,16 @@ export function createConversationController(input: {
         error: { code: 'no_active_turn', message: 'No turn to settle' },
       })
     }
+    if (token !== undefined && token.length > 0 && token !== turn.identity.draftToken) {
+      // 历史 token 查回不得混入当前活动 turn 的身份/失败预算（review-3 #7）。
+      return Promise.resolve({
+        status: 'blocked',
+        error: {
+          code: 'historical_token_not_supported',
+          message: 'Historical token lookup is not supported while a turn is active',
+        },
+      })
+    }
     dispatch({ type: 'manual_lookup', token: token ?? null, reason: 'manual' })
     return Promise.resolve({ status: 'ok' })
   }
@@ -1806,6 +1876,35 @@ export function createConversationController(input: {
   function detach(): void {
     if (isDisposed()) return
     dispatch({ type: 'detach' })
+  }
+
+  /**
+   * 同 viewer 认证刷新：未终结 turn 连同 submit hold/查回责任移交新代次
+   * （review-3 #2）。旧代次流回调立即撤销，随后由查回继续结算。
+   */
+  function rebaseAuth(authGeneration: number): void {
+    if (disposed) return
+    const turn = currentTurn()
+    if (turn === null || isTerminalTurn(turn)) return
+    const stream = liveStream
+    liveStream = null
+    currentAbort?.abort('identity')
+    currentAbort = null
+    if (turn.state !== 'lookup_pending' && turn.state !== 'unknown') {
+      dispatch({
+        type: 'network_failure',
+        turnId: turn.identity.turnId,
+        attempt: turn.identity.attempt,
+        hadTerminal: terminalSeen(),
+      })
+    }
+    // 旧代次的迟到回调（含已排队事件）一律作废；转换事件已先派发。
+    const staleAttempt = stream ?? { turnId: turn.identity.turnId, attempt: turn.identity.attempt }
+    revokedStreams.add(`${staleAttempt.turnId}:${staleAttempt.attempt}`)
+    const latest = currentTurn()
+    if (latest !== null && latest.state === 'lookup_pending' && !latest.identity.detached) {
+      dispatch({ type: 'manual_lookup', token: latest.identity.draftToken })
+    }
   }
 
   function notifyClearSettled(
@@ -1848,11 +1947,29 @@ export function createConversationController(input: {
       commit()
       const turn = currentTurn()
       if (turn !== null && turn.incomplete) {
-        // 仍有 next_cursor 时只回填了一页，不能宣告恢复完整（review-2 B8）。
+        // 末页只是必要条件：还要验证恢复目标消息已出现或存在安全占位，
+        // 否则空页/别的 generation 也会被宣告完整（review-3 #5）。
+        const targetGeneration = turn.identity.generationId
+        const hasAssistant = detailMessages.some((row) => {
+          if (typeof row !== 'object' || row === null) return false
+          const record = row as Record<string, unknown>
+          return record.role === 'assistant'
+            && typeof record.content === 'string'
+            && record.content.length > 0
+        })
+        const hasGeneration = targetGeneration === null
+          ? detailMessages.length > 0
+          : detailMessages.some((row) => {
+              if (typeof row !== 'object' || row === null) return false
+              const record = row as Record<string, unknown>
+              return record.generation_id === targetGeneration
+                || record.generationId === targetGeneration
+                || record.background_generation_id === targetGeneration
+            })
         dispatch({
           type: 'durable_restored',
           turnId: turn.identity.turnId,
-          complete: nextCursor === null,
+          complete: nextCursor === null && (hasGeneration || (targetGeneration === null && hasAssistant)),
         })
       }
       return { status: 'ok', value: { messages } }
@@ -1912,6 +2029,7 @@ export function createConversationController(input: {
     detach,
     reattach,
     notifyClearSettled,
+    rebaseAuth,
     hasActiveTurn,
     invalidate: dispose,
     dispose,

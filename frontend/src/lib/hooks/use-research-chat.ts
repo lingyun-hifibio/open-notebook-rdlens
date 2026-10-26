@@ -593,6 +593,12 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
     setConversation(controller)
     // 冷启动/切换返回：durable detail 恢复完整消息，替换临时轮（§6.5）；
     // 缺口水位不会据此续接 SSE，只用于渲染（review-1 P1-#10）。
+    // 认证刷新/重新挂载后，若上一次离开把 turn 标记为 detached，必须主动
+    // 重新接管并继续查回结算（review-3 #2）。
+    const snapshot = controller.getSnapshot()
+    if (snapshot.turn !== null && snapshot.turn.identity.detached) {
+      void controller.reattach()
+    }
     void controller.load().then((result) => {
       if (result.status !== 'ok') return
       if (interactedRef.current || activeRef.current) return

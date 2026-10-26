@@ -704,6 +704,7 @@ describe('PR-5a（D2）：显式 session 接线（source）', () => {
       detach: vi.fn(),
       hasActiveTurn: vi.fn(() => false),
       load: vi.fn(async () => ({ status: 'blocked' as const })),
+      getSnapshot: vi.fn(() => ({ turn: null, authGeneration: 1 })),
     } as unknown as ConversationController
     const conversation = vi.fn((..._args: unknown[]) => controller)
     const releaseConversation = vi.fn()
@@ -741,6 +742,7 @@ describe('PR-5a（D2）：显式 session 接线（source）', () => {
       detach: vi.fn(),
       hasActiveTurn: vi.fn(() => false),
       load: vi.fn(async () => ({ status: 'blocked' as const })),
+      getSnapshot: vi.fn(() => ({ turn: null, authGeneration: 1 })),
     } as unknown as ConversationController
     let capturedOptions: { transport: { openStream: (input: Record<string, unknown>) => { abort: (reason?: string) => void } } } | null = null
     const conversation = vi.fn((...args: unknown[]) => {
