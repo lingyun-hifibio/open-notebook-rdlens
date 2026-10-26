@@ -28,7 +28,7 @@ import {
   type ConversationSubmissionView,
   type ConversationTurn,
 } from './conversation-machine'
-import { createConversationController } from './session-runtime'
+import { createConversationController, createSessionRuntime } from './session-runtime'
 import { sessionKey, type ResearchSessionRef } from './session-contract'
 import type { ResearchAcceptedReceipt } from './sse'
 import type { ResearchAcceptedReceiptWire, ResearchSseEvent } from './types'
@@ -510,8 +510,12 @@ describe('conversation-machine：热恢复 / 缺口（F07/F08）', () => {
       query: 'q2',
     }).state
     expect(turnOf(next).identity.lastEventId).toBe(0)
-    const streaming = reduceConversation(next, {
-      type: 'sse', turnId: 'turn-2', attempt: 0, event: sse(1, 'answer', { delta: 'new' }),
+    const dispatched = reduceConversation(next, {
+      type: 'prepare_succeeded', turnId: 'turn-2',
+    }).state
+    expect(turnOf(dispatched).identity.attempt).toBe(1)
+    const streaming = reduceConversation(dispatched, {
+      type: 'sse', turnId: 'turn-2', attempt: 1, event: sse(1, 'answer', { delta: 'new' }),
     }).state
     expect(turnOf(streaming).sse.answer).toBe('new')
   })
@@ -858,5 +862,288 @@ describe('conversation-controller：副作用与迟到隔离', () => {
     const { controller } = setup()
     expect((await controller.load()).status).toBe('blocked')
     expect((await controller.loadMore()).status).toBe('blocked')
+  })
+
+  // review-2（B2/B4/B5/B6/B7/B8）回归：守卫必须由端到端 controller/机器路径覆盖。
+  it('B2：已绑定 generation 后查回返回 null generation（not_observed）按协议冲突拒绝', async () => {
+    const { controller, calls, clears } = setup()
+    await controller.send(sendInput())
+    calls[0].input.onEvent(sse(1, 'usage', {
+      usage: { input_tokens: 1, output_tokens: 1 },
+      accepted: receiptWire(),
+    }))
+    await controller.lookupSubmission()
+    await flush()
+    const turn = controller.getSnapshot().turn
+    // 身份矛盾不得把 accepted 降级为 not_observed，也不得提前清稿/释放。
+    expect(turn?.state).not.toBe('not_observed')
+    expect(turn?.lookup?.failures ?? 0).toBeGreaterThanOrEqual(1)
+    expect(clears).toHaveLength(1)
+  })
+
+  it('B6：有界查回失败遵守 clear 租约；clear ACK 之后才释放 hold', () => {
+    const accepted = reduceConversation(submitting(), {
+      type: 'accepted', turnId: TURN, attempt: 1, receipt: receipt(),
+    }).state
+    expect(turnOf(accepted).clearPending).toBe(true)
+    const bounded = reduceConversation(accepted, {
+      type: 'lookup_failure', turnId: TURN, token: TOKEN, failure: 'network', bounded: true,
+    })
+    expect(turnOf(bounded.state).state).toBe('unknown')
+    // clear 尚未 ACK：任何 settlement 都不许释放 hold（review-2 B6）。
+    expect(bounded.effects.filter((e) => e.type === 'release_hold')).toHaveLength(0)
+    const settled = reduceConversation(bounded.state, {
+      type: 'clear_settled', turnId: TURN, operationId: 'op-1', outcome: 'cleared',
+    })
+    expect(settled.effects).toEqual([{ type: 'release_hold', operationId: 'op-1' }])
+  })
+
+  it('B4：查回在途期间重连使 attempt 变化 → 旧结果必须丢弃（attempt 守卫）', async () => {
+    let resolveLookup: (value: unknown) => void = () => {}
+    const submission = () => new Promise<unknown>((resolve) => { resolveLookup = resolve })
+    const { controller, calls, releases } = setup({ submission })
+    await controller.send(sendInput())
+    calls[0].input.onEvent(sse(1, 'answer', { delta: 'a' }))
+    calls[0].input.onEvent(sse(2, 'answer', { delta: 'b' }))
+    // 流式期间发起查回（在途未决）
+    void controller.lookupSubmission()
+    await flush()
+    const attemptBefore = controller.getSnapshot().turn?.identity.attempt
+    expect(attemptBefore).toBe(1)
+    controller.detach()
+    await controller.reattach()
+    const attemptAfter = controller.getSnapshot().turn?.identity.attempt
+    expect(attemptAfter).toBe(2)
+    expect(calls).toHaveLength(2)
+    // 旧 attempt 的查回此刻才返回 terminal：不得写入 attempt 2 的流式轮。
+    resolveLookup(submissionResponse({
+      acceptance_state: 'terminal',
+      generation_id: 'gen_1',
+      generation_state: 'completed',
+      accepted_editor_revision: 3,
+      editor_intent_hash: HASH,
+      submitted_draft_text: 'q1',
+    }))
+    await flush()
+    await flush()
+    const turn = controller.getSnapshot().turn
+    expect(turn?.state).toBe('streaming')
+    expect(turn?.identity.terminal).toBeNull()
+    expect(releases).not.toContain('op-1')
+  })
+
+  it('B5：lookup_pending 期间 detach 后 reattach 重新接管并发起有效查回', async () => {
+    let resolveLookup: (value: unknown) => void = () => {}
+    const submission = () => new Promise<unknown>((resolve) => { resolveLookup = resolve })
+    const { controller, calls, releases } = setup({ submission })
+    await controller.send(sendInput())
+    calls[0].input.onNetworkError?.(new Error('disconnect'))
+    await flush()
+    controller.detach()
+    await controller.reattach()
+    expect(controller.getSnapshot().turn?.identity.detached).toBe(false)
+    resolveLookup(submissionResponse())
+    await flush()
+    await flush()
+    const turn = controller.getSnapshot().turn
+    expect(turn?.state).toBe('not_observed')
+    expect(releases).toContain('op-1')
+  })
+
+  it('B7/B8：真实 SSE 缺口 reattach → 查回 completed 触发 durable 恢复；分页未完成不宣告完整', async () => {
+    const detailCalls: Array<string | null> = []
+    const { controller, calls } = setup({
+      submission: () => submissionResponse({
+        acceptance_state: 'terminal',
+        generation_id: 'gen_1',
+        generation_state: 'completed',
+        accepted_editor_revision: 3,
+        editor_intent_hash: HASH,
+        submitted_draft_text: 'q1',
+      }),
+      loadDetail: ({ cursor }) => {
+        detailCalls.push(cursor ?? null)
+        if (detailCalls.length === 1) {
+          return { messages: [{ message_id: 'msg_1', role: 'assistant', content: 'prefix' }], next_cursor: 'c1' }
+        }
+        return { messages: [{ message_id: 'msg_2', role: 'assistant', content: 'tail' }], next_cursor: null }
+      },
+    })
+    await controller.send(sendInput())
+    calls[0].input.onEvent(sse(1, 'answer', { delta: 'prefix' }))
+    calls[0].input.onEvent(sse(2, 'answer', { delta: 'more' }))
+    calls[0].input.onEvent(sse(4, 'answer', { delta: 'gap' }))
+    controller.detach()
+    await controller.reattach()
+    expect(controller.getSnapshot().turn?.gapDetected).toBe(true)
+    await flush()
+    await flush()
+    const turn = controller.getSnapshot().turn
+    expect(turn?.state).toBe('terminal')
+    expect(turn?.incomplete).toBe(true)
+    // 第一页仍有 next_cursor → 仍未完整；loadMore 必须带游标。
+    expect(detailCalls).toEqual([null])
+    await controller.loadMore()
+    expect(detailCalls).toEqual([null, 'c1'])
+    expect(controller.getSnapshot().turn?.incomplete).toBe(false)
+  })
+
+  it('B3：响应头 session 冲突中止本流，后续迟到事件不写入答案', async () => {
+    const { controller, calls, aborts } = setup()
+    await controller.send(sendInput())
+    calls[0].input.onResponseMeta?.({ sessionId: 'sess_other' })
+    expect(aborts).toContain('identity')
+    calls[0].input.onEvent(sse(1, 'answer', { delta: 'foreign' }))
+    const turn = controller.getSnapshot().turn
+    expect(turn?.sse.answer).toBe('')
+    expect(turn?.state).toBe('lookup_pending')
+  })
+
+  it('B9：T2 开始后 T1 的清稿 ACK 不得清掉 T2 的 operationId / clear 租约', () => {
+    let state = createConversationState({ sessionKey: SESSION_KEY, authGeneration: 1 })
+    state = reduceConversation(state, {
+      type: 'prepare', identity: identity(), operationId: 'op-1', query: 'q1',
+    }).state
+    state = reduceConversation(state, { type: 'prepare_succeeded', turnId: TURN }).state
+    state = reduceConversation(state, {
+      type: 'accepted', turnId: TURN, attempt: 1, receipt: receipt(),
+    }).state
+    expect(turnOf(state).clearPending).toBe(true)
+    // 清稿 ACK 的 operationId 必须匹配本轮自己的 hold：不匹配一律不结算。
+    const mismatchedAck = reduceConversation(state, {
+      type: 'clear_settled', turnId: TURN, operationId: 'op-0', outcome: 'cleared',
+    })
+    expect(mismatchedAck.effects).toEqual([])
+    expect(turnOf(mismatchedAck.state).operationId).toBe('op-1')
+    expect(turnOf(mismatchedAck.state).clearPending).toBe(true)
+    // 清稿尚未 ACK 时流终态到达：hold 仍被 clear 租约持有（B6），T1 结束。
+    state = reduceConversation(state, {
+      type: 'sse', turnId: TURN, attempt: 1, event: sse(1, 'done', {}),
+    }).state
+    expect(turnOf(state).state).toBe('terminal')
+    state = reduceConversation(state, {
+      type: 'prepare', identity: identity({ turnId: 'turn-2' }), operationId: 'op-2', query: 'q2',
+    }).state
+    state = reduceConversation(state, { type: 'prepare_succeeded', turnId: 'turn-2' }).state
+    const late = reduceConversation(state, {
+      type: 'clear_settled', turnId: TURN, operationId: 'op-1', outcome: 'cleared',
+    })
+    expect(late.state.turn?.identity.turnId).toBe('turn-2')
+    expect(turnOf(late.state).operationId).toBe('op-2')
+    expect(late.effects).toEqual([])
+  })
+
+  it('B9：有界查回失败按退避重试到上限后进入 unknown 并释放 hold', async () => {
+    const { controller, releases } = setup({
+      submission: () => Promise.reject(new Error('boom')),
+      lookupBackoffMs: [1],
+    })
+    await controller.send(sendInput())
+    await controller.lookupSubmission()
+    await new Promise((r) => setTimeout(r, 80))
+    const turn = controller.getSnapshot().turn
+    expect(turn?.state).toBe('unknown')
+    expect(turn?.lookup?.failures).toBeGreaterThanOrEqual(BOUNDED_LOOKUP_FAILURES)
+    expect(releases).toContain('op-1')
+  })
+
+  it('B9：查回并发峰值不超过 2，第三个排队等待', async () => {
+    const started: string[] = []
+    const resolvers: Array<(value: unknown) => void> = []
+    let active = 0
+    let peak = 0
+    const submission = ({ token }: { token: string }) => {
+      started.push(token)
+      active += 1
+      peak = Math.max(peak, active)
+      return new Promise<unknown>((resolve) => {
+        resolvers.push((value) => {
+          active = Math.max(0, active - 1)
+          resolve(value)
+        })
+      })
+    }
+    const { controller } = setup({ submission: submission as never })
+    await controller.send(sendInput())
+    void controller.lookupSubmission('tok_a')
+    void controller.lookupSubmission('tok_b')
+    void controller.lookupSubmission('tok_c')
+    await flush()
+    expect(peak).toBe(2)
+    expect(started).toHaveLength(2)
+    resolvers[0](submissionResponse({ draft_token: 'tok_a' }))
+    await flush()
+    expect(started).toHaveLength(3)
+    expect(peak).toBeLessThanOrEqual(2)
+    for (const resolve of resolvers.slice(1)) resolve(submissionResponse())
+    await flush()
+    controller.dispose()
+  })
+
+  it('B9/§10.3：冷启动 external lookup 走 durable detail 恢复内容，不以水位续传', async () => {
+    const detailCalls: Array<string | null> = []
+    const { controller } = setup({
+      submission: () => submissionResponse({
+        acceptance_state: 'terminal',
+        generation_id: 'gen_1',
+        generation_state: 'completed',
+        accepted_editor_revision: 3,
+        editor_intent_hash: HASH,
+        submitted_draft_text: 'q1',
+      }),
+      loadDetail: ({ cursor }) => {
+        detailCalls.push(cursor ?? null)
+        return {
+          messages: [
+            { message_id: 'msg_1', role: 'user', content: 'q1' },
+            { message_id: 'msg_2', role: 'assistant', content: 'full durable answer' },
+          ],
+          next_cursor: null,
+        }
+      },
+    })
+    const empty = createConversationState({ sessionKey: SESSION_KEY, authGeneration: 1 })
+    expect(empty.turn).toBeNull()
+    const result = await controller.lookupSubmission(TOKEN)
+    expect(result.status).toBe('ok')
+    await flush()
+    await flush()
+    const turn = controller.getSnapshot().turn
+    expect(turn?.external).toBe(true)
+    expect(detailCalls).toEqual([null])
+    expect(controller.getSnapshot().detailMessages).toHaveLength(2)
+    expect(turn?.incomplete).toBe(false)
+  })
+})
+
+describe('review-2：认证代次切换使 controller 失效（B1）', () => {
+  it('updateAuth 更换 authGeneration 后旧 controller stale，新 acquire 返回新实例', async () => {
+    const transport = {
+      openStream: () => ({ abort: () => {} }),
+      getSubmission: () => submissionResponse(),
+    }
+    const runtime = createSessionRuntime({
+      authGeneration: 1,
+      projectId: 'proj_1',
+      viewerUserId: 'user_1',
+      role: 'owner',
+    })
+    const first = runtime.conversation(REF, { transport })
+    runtime.updateAuth({ authGeneration: 2, projectId: 'proj_1', viewerUserId: 'user_1', role: 'owner' })
+    const second = runtime.conversation(REF, { transport })
+    expect(second).not.toBe(first)
+    const input = {
+      query: 'q1',
+      modelId: 'model-1',
+      sourceIds: ['src_1'],
+      noteIds: [],
+      scope: { mode: 'all' as const, sourceIds: [] as string[], singleSourceId: null },
+      editorRevision: 3,
+      draftToken: TOKEN,
+      editorIntentHash: HASH,
+      idempotencyKey: KEY,
+      operationId: 'op-1',
+    }
+    expect((await first.send(input)).status).toBe('stale')
   })
 })

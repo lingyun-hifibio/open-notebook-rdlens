@@ -293,6 +293,21 @@ export function useResearchSourceChat({
   projectIdRef.current = projectId
   const conversationKey = session === undefined ? null : sessionKey(session.ref)
 
+  // 认证代次变化时必须重新取得 controller（review-2 B1）。
+  const authRuntime = session?.runtime
+  const [authEpoch, setAuthEpoch] = useState(
+    () => authRuntime?.getSnapshot().authGeneration ?? 0,
+  )
+  useEffect(() => {
+    if (authRuntime === undefined) return
+    const sync = (): void => {
+      const next = authRuntime.getSnapshot().authGeneration
+      setAuthEpoch((prev) => (prev === next ? prev : next))
+    }
+    sync()
+    return authRuntime.subscribe(sync)
+  }, [authRuntime])
+
   useEffect(() => {
     const options = sessionOptionsRef.current
     if (options === undefined || conversationKey === null) {
@@ -341,6 +356,8 @@ export function useResearchSourceChat({
         ref.sessionId,
         token,
       ),
+      // 注意：源会话 detail 接口（interface freeze）没有 cursor 参数，
+      // 因此源会话 durable 恢复只回填首屏；分页缺口在 PR-6 接后端参数后补齐。
       loadDetail: () =>
         getSourceChatSession(projectIdRef.current, String(ref.sourceId), ref.sessionId),
       releaseHold: (operationId) => releaseHold?.(operationId),
@@ -360,7 +377,7 @@ export function useResearchSourceChat({
       options.runtime.releaseConversation(ref, controller)
       setConversation((current) => (current === controller ? null : current))
     }
-  }, [conversationKey])
+  }, [conversationKey, authEpoch])
 
   const patchAssistant = useCallback((turnId: string, patch: Partial<ResearchSourceChatTurn>) => {
     setTurns((prev) => {

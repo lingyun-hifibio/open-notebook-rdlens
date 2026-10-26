@@ -1334,6 +1334,13 @@ export function createConversationController(input: {
   function commit(): void {
     version += 1
     cached = null
+    // 旧 turn 的查回任务不再有效：turn 切换后集中清理，避免迟到回调结算新轮。
+    const activeTurnId = state.turn?.identity.turnId ?? null
+    for (const token of [...lookupTasks.keys()]) {
+      if (lookupTasks.get(token)?.turnId !== activeTurnId) {
+        lookupTasks.delete(token)
+      }
+    }
     for (const listener of [...listeners]) listener()
   }
 
@@ -1385,7 +1392,8 @@ export function createConversationController(input: {
     }
     currentAbort?.abort('superseded')
     const turnId = turn.identity.turnId
-    currentAbort = transport.openStream({
+    let handle: ConversationStreamHandle | null = null
+    const stream = transport.openStream({
       sessionRef: ref,
       editorRevision: meta.editorRevision,
       draftToken: meta.draftToken,
@@ -1436,6 +1444,10 @@ export function createConversationController(input: {
       // 响应头 X-Chat-Session-Id 必须等于请求的 session_id（DESIGN §6.4）。
       onResponseMeta: (meta) => {
         if (meta.sessionId !== null && meta.sessionId !== ref.sessionId) {
+          // 会话身份冲突：立刻中止本流并使该 attempt 的后续回调失效（reducer
+          // 离开流式窗口后丢弃迟到事件），随后转查回（review-2 B3）。
+          handle?.abort('identity')
+          if (currentAbort === handle) currentAbort = null
           dispatch({
             type: 'network_failure',
             turnId,
@@ -1445,6 +1457,8 @@ export function createConversationController(input: {
         }
       },
     })
+    handle = stream
+    currentAbort = stream
   }
 
   function runEffect(effect: ConversationEffect): void {
@@ -1486,13 +1500,33 @@ export function createConversationController(input: {
     drainLookups()
   }
 
-  function scheduleLookupRetry(token: string, attemptIndex: number): void {
+  function scheduleLookupRetry(
+    token: string,
+    attemptIndex: number,
+    task: Readonly<{ turnId: string; attempt: number }>,
+  ): void {
     if (disposed || isDisposed()) return
     const delay = lookupBackoff[Math.min(attemptIndex, lookupBackoff.length - 1)] ?? 1000
     const timer = setTimeout(() => {
       lookupTimers.delete(timer)
       if (disposed || isDisposed()) return
-      scheduleLookup(token)
+      // 退避到期时严格核验仍是原 turn/attempt：旧 turn 结束或被替换后的
+      // 定时器不得结算下一轮（review-2 B4）。
+      const turn = currentTurn()
+      if (
+        turn === null
+        || turn.identity.turnId !== task.turnId
+        || turn.identity.attempt !== task.attempt
+        || turn.identity.detached
+      ) {
+        lookupTasks.delete(token)
+        return
+      }
+      lookupTasks.set(token, task)
+      if (!lookupInFlight.has(token) && !lookupQueue.includes(token)) {
+        lookupQueue.push(token)
+        drainLookups()
+      }
     }, delay)
     lookupTimers.add(timer)
   }
@@ -1605,7 +1639,7 @@ export function createConversationController(input: {
     })
     if (!bounded) {
       // 有界退避：首次失败不结算，重试到上限后由 reducer 进入 unknown + release。
-      scheduleLookupRetry(token, nextAttempts - 1)
+      scheduleLookupRetry(token, nextAttempts - 1, task)
     }
   }
 
@@ -1763,8 +1797,9 @@ export function createConversationController(input: {
     }
     // 热恢复资格：同一运行时仍持有该 turn 的完整 reducer 状态且水位连续
     // （无未消费缓冲）；否则 reducer 会转 durable 查回，不跳水位。
-    const eligible = turn.sse.pending.length === 0
-    dispatch({ type: 'reattach', eligible })
+    const hasPendingGap = turn.sse.pending.length > 0 || turn.gapDetected
+    const eligible = !hasPendingGap
+    dispatch({ type: 'reattach', eligible, gap: hasPendingGap })
     return Promise.resolve({ status: 'ok' })
   }
 
@@ -1813,8 +1848,12 @@ export function createConversationController(input: {
       commit()
       const turn = currentTurn()
       if (turn !== null && turn.incomplete) {
-        // durable detail 已回填完整历史 → 缺口答案不再标记为残缺。
-        dispatch({ type: 'durable_restored', turnId: turn.identity.turnId, complete: true })
+        // 仍有 next_cursor 时只回填了一页，不能宣告恢复完整（review-2 B8）。
+        dispatch({
+          type: 'durable_restored',
+          turnId: turn.identity.turnId,
+          complete: nextCursor === null,
+        })
       }
       return { status: 'ok', value: { messages } }
     } catch (error) {

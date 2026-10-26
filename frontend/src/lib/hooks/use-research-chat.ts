@@ -502,6 +502,22 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
   const conversationKey = session === undefined ? null : sessionKey(session.ref)
   const sessionMode = session !== undefined
 
+  // 认证代次变化时必须重新取得 controller（review-2 B1）：旧实例绑定旧
+  // authGeneration，继续复用会让新请求被 runtime 判为 stale。
+  const authRuntime = session?.runtime
+  const [authEpoch, setAuthEpoch] = useState(
+    () => authRuntime?.getSnapshot().authGeneration ?? 0,
+  )
+  useEffect(() => {
+    if (authRuntime === undefined) return
+    const sync = (): void => {
+      const next = authRuntime.getSnapshot().authGeneration
+      setAuthEpoch((prev) => (prev === next ? prev : next))
+    }
+    sync()
+    return authRuntime.subscribe(sync)
+  }, [authRuntime])
+
   useEffect(() => {
     const options = sessionOptionsRef.current
     if (options === undefined || conversationKey === null) {
@@ -564,7 +580,11 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
         ref.sessionId,
         token,
       ),
-      loadDetail: () => getResearchChatSession(projectIdRef.current, ref.sessionId),
+      loadDetail: ({ cursor }) => getResearchChatSession(
+        projectIdRef.current,
+        ref.sessionId,
+        cursor === null || cursor === undefined ? {} : { cursor },
+      ),
       releaseHold: (operationId) => releaseHold?.(operationId),
       clearAfterSubmission: (receipt, operationId) => clearAfterSubmission?.(receipt, operationId),
     }
@@ -591,7 +611,7 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
         setConversation(null)
       }
     }
-  }, [conversationKey])
+  }, [conversationKey, authEpoch])
 
   /**
    * RWV2-23（D2）：会话 origin 解析缓存——按阅读顺序累积的行、已见

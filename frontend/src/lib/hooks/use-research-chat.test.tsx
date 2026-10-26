@@ -756,7 +756,12 @@ describe('PR-5a（D2）：显式 session 接线', () => {
     } as unknown as ConversationController
     const conversation = vi.fn((..._args: unknown[]) => controller)
     const releaseConversation = vi.fn()
-    const runtime = { conversation, releaseConversation } as unknown as SessionRuntime
+    const runtime = {
+      conversation,
+      releaseConversation,
+      getSnapshot: () => ({ authGeneration: 1 }),
+      subscribe: () => () => {},
+    } as unknown as SessionRuntime
     const ref: ResearchSessionRef = {
       domain: 'research',
       kind: 'global',
@@ -778,6 +783,42 @@ describe('PR-5a（D2）：显式 session 接线', () => {
     expect(releaseConversation).toHaveBeenCalledWith(ref, controller)
   })
 
+  it('认证代次切换后重新 acquire controller（review-2 B1）', () => {
+    const makeController = () => ({
+      detach: vi.fn(),
+      hasActiveTurn: vi.fn(() => false),
+      load: vi.fn(async () => ({ status: 'blocked' as const })),
+    }) as unknown as ConversationController
+    const controllers = [makeController(), makeController()]
+    let generation = 1
+    let listener: (() => void) | null = null
+    const conversation = vi.fn((..._args: unknown[]) => controllers[conversation.mock.calls.length - 1])
+    const releaseConversation = vi.fn()
+    const runtime = {
+      conversation,
+      releaseConversation,
+      getSnapshot: () => ({ authGeneration: generation }),
+      subscribe: (next: () => void) => {
+        listener = next
+        return () => { listener = null }
+      },
+    } as unknown as SessionRuntime
+    const ref: ResearchSessionRef = {
+      domain: 'research', kind: 'global', projectId: 'proj_1', sessionId: 'sess_1', sourceId: null,
+    }
+    const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime, ref } }))
+    expect(conversation).toHaveBeenCalledTimes(1)
+
+    act(() => {
+      generation = 2
+      listener?.()
+    })
+
+    expect(conversation).toHaveBeenCalledTimes(2)
+    expect(releaseConversation).toHaveBeenCalledWith(ref, controllers[0])
+    expect(result.current.conversation).toBe(controllers[1])
+  })
+
   it('global 新协议请求：携带 source_scope 且不发送顶层 source_ids（review-1 P1-#2）', () => {
     const captures = openCapture()
     const controller = {
@@ -793,6 +834,8 @@ describe('PR-5a（D2）：显式 session 接线', () => {
     const runtime = {
       conversation,
       releaseConversation: vi.fn(),
+      getSnapshot: () => ({ authGeneration: 1 }),
+      subscribe: () => () => {},
     } as unknown as SessionRuntime
     const ref: ResearchSessionRef = {
       domain: 'research',

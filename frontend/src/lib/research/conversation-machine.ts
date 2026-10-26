@@ -290,11 +290,9 @@ export function submissionViewMatches(
   ) {
     return false
   }
-  if (
-    identity.generationId !== null
-    && view.generationId !== null
-    && view.generationId !== identity.generationId
-  ) {
+  if (identity.generationId !== null && view.generationId !== identity.generationId) {
+    // 已绑定 generationId 后必须严格相等；返回 null（如 not_observed）是矛盾响应，
+    // 按协议冲突处理，不能借此降级状态并释放 hold（review-2 B2）。
     return false
   }
   return true
@@ -498,6 +496,8 @@ export type ConversationEvent =
       readonly type: 'reattach'
       readonly eligible: boolean
       readonly resumeAfter?: number | null
+      /** 真实存在未消费缺口（如 SSE pending 非空/还原水位不一致）。 */
+      readonly gap?: boolean
     }
   | {
       readonly type: 'lookup_result'
@@ -553,6 +553,15 @@ function pushHistory(state: ConversationState, turn: ConversationTurn): readonly
 
 function settleRelease(turn: ConversationTurn): ConversationEffect {
   return { type: 'release_hold', operationId: turn.operationId }
+}
+
+/**
+ * 统一结算释放（review-2 B6）：存在未 ACK 的清稿租约时 hold 必须保留到
+ * `clear_settled`，所有 settlement 分支共用此规则，避免有界查回失败等路径
+ * 提前释放正在清稿的 hold。
+ */
+function settleEffects(turn: ConversationTurn): readonly ConversationEffect[] {
+  return turn.clearPending ? [] : [settleRelease(turn)]
 }
 
 function lookupEffect(
@@ -773,6 +782,15 @@ export function reduceConversation(
       if (!eventSessionMatches(turn.identity, event.event)) {
         return unchanged
       }
+      // 已离开流式窗口（查回/未知/终态）后的迟到流事件一律丢弃：响应头
+      // session 冲突中止读取后仍可能有排队事件，不能写入答案（review-2 B3）。
+      if (
+        turn.state !== 'submitting'
+        && turn.state !== 'streaming'
+        && turn.state !== 'accepted'
+      ) {
+        return unchanged
+      }
       let nextTurn: ConversationTurn = {
         ...turn,
         sse: applySseEvent(turn.sse, event.event),
@@ -869,7 +887,7 @@ export function reduceConversation(
         }
         return {
           state: withTurn(state, next),
-          effects: [settleRelease(turn)],
+          effects: settleEffects(turn),
         }
       }
       if (classification === 'terminal') {
@@ -919,15 +937,21 @@ export function reduceConversation(
         return unchanged
       }
       if (turn.state === 'lookup_pending' || turn.state === 'unknown') {
-        return unchanged
+        // 断线查回期间 detach：重新接管时解除 detached 并重新发起一次有效
+        // 查回；旧任务结果仍由 attempt/detached 守卫隔离（review-2 B5）。
+        const next: ConversationTurn = {
+          ...turn,
+          identity: { ...turn.identity, detached: false },
+        }
+        return enterLookup(state, next, 'reattach')
       }
       const lastEventId = turn.identity.lastEventId
       const canResume = event.eligible
         && turn.identity.attempt < MAX_REATTACH_ATTEMPTS
         && (event.resumeAfter === undefined || event.resumeAfter === null || event.resumeAfter <= lastEventId + 1)
       if (!canResume) {
-        if (event.eligible) {
-          // 热恢复不可续接（缺口/超上限）：转 durable，不跳水位。
+        if (event.eligible || event.gap === true) {
+          // 热恢复不可续接（缺口/超上限）：转 durable，不跳水位（review-2 B7）。
           const next: ConversationTurn = {
             ...turn,
             identity: { ...turn.identity, detached: false },
@@ -989,7 +1013,7 @@ export function reduceConversation(
           }
           return {
             state: withTurn(state, next),
-            effects: [settleRelease(turn)],
+            effects: settleEffects(turn),
           }
         }
         return {
@@ -1005,7 +1029,7 @@ export function reduceConversation(
         }
         return {
           state: withTurn(state, next),
-          effects: [settleRelease(turn)],
+          effects: settleEffects(turn),
         }
       }
       if (view.acceptance === 'accepted') {
@@ -1048,9 +1072,10 @@ export function reduceConversation(
           terminal,
           terminal === 'done' ? null : (view.generationState ?? 'failed'),
         )
-        if (next.gapDetected) {
+        if (next.gapDetected || turn.external) {
           // 缺口后的 completed 不能静默当完整答案：保留 incomplete 并触发
-          // durable 恢复（review-1 P1-#10）。
+          // durable 恢复（review-1 P1-#10）；冷启动 external 查回同样必须
+          // 走 durable detail 恢复（不得只凭持久水位）。
           return {
             state: reduction.state,
             effects: [...reduction.effects, { type: 'durable_restore', token: view.token }],
@@ -1066,7 +1091,7 @@ export function reduceConversation(
       }
       return {
         state: withTurn(state, next),
-        effects: [settleRelease(turn)],
+        effects: settleEffects(turn),
       }
     }
 
@@ -1092,7 +1117,7 @@ export function reduceConversation(
         }
         return {
           state: withTurn(state, next),
-          effects: [settleRelease(turn)],
+          effects: settleEffects(turn),
         }
       }
       return {

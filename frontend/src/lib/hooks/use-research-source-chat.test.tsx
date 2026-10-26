@@ -707,7 +707,12 @@ describe('PR-5a（D2）：显式 session 接线（source）', () => {
     } as unknown as ConversationController
     const conversation = vi.fn((..._args: unknown[]) => controller)
     const releaseConversation = vi.fn()
-    const runtime = { conversation, releaseConversation } as unknown as SessionRuntime
+    const runtime = {
+      conversation,
+      releaseConversation,
+      getSnapshot: () => ({ authGeneration: 1 }),
+      subscribe: () => () => {},
+    } as unknown as SessionRuntime
     const ref: ResearchSessionRef = {
       domain: 'research',
       kind: 'source',
@@ -745,6 +750,8 @@ describe('PR-5a（D2）：显式 session 接线（source）', () => {
     const runtime = {
       conversation,
       releaseConversation: vi.fn(),
+      getSnapshot: () => ({ authGeneration: 1 }),
+      subscribe: () => () => {},
     } as unknown as SessionRuntime
     const ref: ResearchSessionRef = {
       domain: 'research',
