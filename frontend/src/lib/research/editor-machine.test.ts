@@ -1936,6 +1936,9 @@ describe('verifier 第二轮回归：GET 恢复基线只认文本内容', () => 
     await loadPromise
     await flushMicrotasks()
     await advance(100)
+    // 触发一次本机 merge（锚点变化会安排 100ms 写入），验证恢复后的本机写与 storage 一致。
+    harness.controller.setChatAnchor({ messageId: 'msg1', offsetPx: 4, followTail: false })
+    await advance(100)
     const snapshot = harness.controller.getSnapshot()
     expect(snapshot.draftText).toBe('PRIVATE-UNSAVED')
     const stored = readDraft(harness.scope, harness.authority, REF, 'w-test', { storage })
@@ -2042,5 +2045,93 @@ describe('verifier 第二轮回归：瞬时遮蔽不得丢弃排队 save/clear',
     lastPut(harness).response.resolve(saveResponse(lastPut(harness).body.mutation_id, { revision: 7 }))
     await flushMicrotasks()
     await expect(clearPromise).resolves.toBe('cleared')
+  })
+})
+
+describe('verifier 第三轮回归：恢复/能力边界', () => {
+  it('masked 中 editor_state_unreadable：解除遮蔽后本机 merge 不得清空非空未同步稿', async () => {
+    const storage = new MapStorage()
+    writeDraft(
+      { viewerUserId: '1', projectId: 'p1' },
+      REF,
+      'w-test',
+      draftRecord({ text: 'PRIVATE-UNSAVED', token: 'tk-local', localVersion: 3 }),
+      { storage },
+    )
+    const harness = createHarness({ storage })
+    await flushMicrotasks()
+    expect(harness.gets.length).toBe(1)
+    harness.controller.setChatAnchor({ messageId: 'msg1', offsetPx: 12, followTail: false })
+    harness.setRuntime({ phase: 'masked', ready: false })
+    harness.gets[0].resolve(
+      editorResponse({ state: null, hash: null, warnings: ['editor_state_unreadable'] }),
+    )
+    await flushMicrotasks()
+    // 遮蔽中缓存授权为空：恢复读不到本机稿，shadow 仍为空但已 loaded=true（unreadable）。
+    expect(harness.controller.getSnapshot().draftText).toBe('')
+    harness.setRuntime({ phase: 'ready', ready: true })
+    await flushMicrotasks()
+    await advance(100)
+    const stored = readDraft(harness.scope, harness.authority, REF, 'w-test', { storage })
+    expect(stored?.text).toBe('PRIVATE-UNSAVED')
+  })
+
+  it('editorReady=false→true：能力恢复后保留的排队 save 续派发一次', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.setDraftText('T1')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    const t1 = lastPut(harness)
+    harness.controller.setDraftText('T2')
+    const flushPromise = harness.controller.flush('switch')
+    harness.setRuntime({ editorReady: false })
+    await flushMicrotasks()
+    expect(harness.controller.getSnapshot().readOnly).toBe(true)
+    t1.response.resolve(saveResponse(t1.body.mutation_id, { revision: 6 }))
+    await flushMicrotasks()
+    // 能力关闭：排队项保留，promise 未结算。
+    expect(harness.puts.length).toBe(1)
+    harness.setRuntime({ editorReady: true })
+    await flushMicrotasks()
+    expect(harness.puts.length).toBe(2)
+    const t2 = lastPut(harness)
+    expect(t2.body.editor_state.draft.text).toBe('T2')
+    expect(harness.controller.getSnapshot().readOnly).toBe(false)
+    t2.response.resolve(saveResponse(t2.body.mutation_id, { revision: 7 }))
+    await flushMicrotasks()
+    await expect(flushPromise).resolves.toBe('saved')
+    expect(harness.controller.getSnapshot().phase).toBe('ready')
+  })
+
+  it('队列被占用时第二个 clear 被拒不得泄漏其 hold', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.setDraftText('hello!')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    const t1 = lastPut(harness)
+    const before = harness.controller.getSnapshot()
+    harness.controller.hold('submit', 'op-A')
+    const clearA = harness.controller.clearAfterSubmission(
+      { sessionRef: REF, draftToken: before.draftToken, text: before.draftText },
+      'op-A',
+    )
+    harness.setRuntime({ phase: 'masked', ready: false })
+    t1.response.resolve(saveResponse(t1.body.mutation_id, { revision: 6 }))
+    await flushMicrotasks()
+    const snapB = harness.controller.getSnapshot()
+    const clearB = harness.controller.clearAfterSubmission(
+      { sessionRef: REF, draftToken: snapB.draftToken, text: snapB.draftText },
+      'op-B',
+    )
+    await expect(clearB).resolves.toBe('blocked')
+    expect(harness.controller.getSnapshot().holds.map((hold) => hold.operationId)).toEqual(['op-A'])
+    harness.setRuntime({ phase: 'ready', ready: true })
+    await flushMicrotasks()
+    expect(harness.puts.length).toBe(2)
+    const clearCall = lastPut(harness)
+    clearCall.response.resolve(saveResponse(clearCall.body.mutation_id, { revision: 7 }))
+    await flushMicrotasks()
+    await expect(clearA).resolves.toBe('cleared')
+    expect(harness.controller.getSnapshot().holds).toHaveLength(0)
   })
 })

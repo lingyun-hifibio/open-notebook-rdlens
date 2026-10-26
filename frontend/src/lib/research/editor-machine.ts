@@ -244,6 +244,7 @@ export type EditorEvent =
   | { readonly type: 'save/conflict'; readonly kind: 'revision' | 'mutation'; readonly failure: EditorSaveFailure }
   | { readonly type: 'save/blocked'; readonly failure: EditorSaveFailure }
   | { readonly type: 'save/readonly'; readonly failure: EditorSaveFailure }
+  | { readonly type: 'capability/restored' }
   | { readonly type: 'save/unsynced'; readonly failure: EditorSaveFailure }
   | { readonly type: 'save/unconfirmed'; readonly failure: EditorSaveFailure }
   | {
@@ -568,6 +569,13 @@ export function reduceEditor(state: EditorSnapshot, event: EditorEvent): EditorS
         readOnly: true,
         saveFailure: event.failure,
       }
+    case 'capability/restored':
+      // 仅解除“editor 能力不可用”造成的只读；unreadable/服务端权限等其它只读原因不在此列
+      // （review 第三轮 P2：能力关闭再恢复后不得永久只读）。
+      if (state.invalidated || !state.readOnly || state.unreadable) {
+        return state
+      }
+      return { ...state, phase: 'ready', readOnly: false, blocked: false }
     case 'save/unsynced':
       return {
         ...state,
@@ -1018,13 +1026,21 @@ export function createEditorController(deps: EditorDeps): EditorController {
 
   /** 用户是否主动改过文本（用于避免未编辑的空 shadow 覆盖已有非空本机稿）。 */
   let hasLocalTextEdit = false
+  /**
+   * 当前 shadow 是否已获权威确认（服务端 load/ACK 采纳，或本机稿 readback）。
+   * 不能用 `loaded` 代替：masked 下 unreadable 也会置 loaded=true，但缓存授权为空、
+   * 本机稿并未恢复（review 第三轮 P1：防御守卫必须等到 shadow 真正被确认）。
+   */
+  let shadowConfirmed = false
+  /** 只读是否由 editor 能力不可用（editor_ready=false）造成（能力恢复后需解除）。 */
+  let capabilityReadOnly = false
 
   const writeLocalDraft = (): void => {
     if (state.invalidated || released) return
     // 防御性保护：加载未完成、用户未改过文本、当前 shadow 为空时，绝不用空文本覆盖
     // 同一 writer 分支上已有的非空未同步稿（verifier 第二轮 P1：仅锚点变化也会触发
     // 100ms 本机 merge，若恢复被跳过会清空唯一副本）。
-    if (!loaded && !hasLocalTextEdit && state.draftText === '') {
+    if (!shadowConfirmed && !hasLocalTextEdit && state.draftText === '') {
       const existing = readOwnDraft()
       if (existing !== null && existing.text !== '' && existing.dirty) return
     }
@@ -1072,7 +1088,10 @@ export function createEditorController(deps: EditorDeps): EditorController {
   /** GET 失败/不可解析时仍读回本 writer 草稿并刷新恢复候选（§5.2；不删指针）。 */
   const recoverLocalDraft = (): void => {
     const record = readOwnDraft()
-    if (record !== null) reduce({ type: 'draft/readback', record })
+    if (record !== null) {
+      reduce({ type: 'draft/readback', record })
+      shadowConfirmed = true
+    }
     refreshDraftCandidates()
   }
 
@@ -1288,6 +1307,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
     // 重放/首次保存的成功 ACK 已证明当前代际的 revision 权威，后续 autosave 不得
     // 因跨代 loaded=false 而静默停摆（同 viewer refresh 的接管路径）。
     loaded = true
+    shadowConfirmed = true
     reduce({
       type: 'save/success',
       revision: projection.editorRevision,
@@ -1334,6 +1354,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
     if (stillSameDraft) {
       const previousToken = state.draftToken
       const previousLocalVersion = state.localVersion
+      shadowConfirmed = true
       reduce({
         type: 'clear/applied',
         revision: projection.editorRevision,
@@ -1518,8 +1539,14 @@ export function createEditorController(deps: EditorDeps): EditorController {
       const runtime = runtimeView()
       if (!runtime.ready || runtime.editorReady === false) {
         // 瞬时遮蔽：保留排队 clear 与其 hold，ready 后续派发；不得提前释放 hold。
-        if (queued === null) queued = pending
-        else pending.resolve('blocked')
+        if (queued === null) {
+          queued = pending
+        } else {
+          // 队列已被占用：拒绝本 clear 时必须释放本 operation 的 hold，
+          // 不得泄漏（review 第三轮 P2）。
+          pending.resolve('blocked')
+          if (pending.operationId !== null) releaseHold(pending.operationId)
+        }
         return
       }
       pending.resolve('blocked')
@@ -1694,12 +1721,18 @@ export function createEditorController(deps: EditorDeps): EditorController {
     if (!runtime.ready) return
     if (runtime.editorReady === false) {
       if (!state.readOnly) {
+        capabilityReadOnly = true
         reduce({
           type: 'save/readonly',
           failure: { code: 'editor_capability_unavailable', retryable: false },
         })
       }
       return
+    }
+    // 能力恢复（editor_ready=false→true）：先解除能力型只读，再续跑排队项。
+    if (capabilityReadOnly && state.readOnly && !state.unreadable) {
+      capabilityReadOnly = false
+      reduce({ type: 'capability/restored' })
     }
     if (active !== null) {
       if (active.unconfirmed && (identityChanged || !sameGeneration(active.attempt))) {
@@ -1847,7 +1880,10 @@ export function createEditorController(deps: EditorDeps): EditorController {
       })
       // 服务端不可读时同样只在文本基线未变时读回磁盘草稿，避免覆盖新输入。
       const unreadableRecord = state.draftText === loadBaselineText ? readOwnDraft() : null
-      if (unreadableRecord !== null) reduce({ type: 'draft/readback', record: unreadableRecord })
+      if (unreadableRecord !== null) {
+        reduce({ type: 'draft/readback', record: unreadableRecord })
+        shadowConfirmed = true
+      }
       refreshDraftCandidates()
       return false
     }
@@ -1866,6 +1902,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
       // 同一 revision：保留本机文本，继续 autosave；仍须归约 load/ready，
       // 否则 loading 永不清除、canSubmit 永远 not_loaded（二次 review P1）。
       reduce({ type: 'load/ready', projection: parsed.value })
+    shadowConfirmed = true
       if (!state.oversize) scheduleTextSave()
       refreshDraftCandidates()
       return false
@@ -1910,6 +1947,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
     refreshDraftCandidates()
     if (runtimeView().editorReady === false) {
       // editor 能力不可用：即使读回快照也保持只读（不得因 load/ready 清除 readonly）。
+      capabilityReadOnly = true
       reduce({
         type: 'save/readonly',
         failure: { code: 'editor_capability_unavailable', retryable: false },
@@ -1944,6 +1982,9 @@ export function createEditorController(deps: EditorDeps): EditorController {
     if (localTimer !== null) clearTimeout(localTimer)
     localTimer = null
     guard.invalidate()
+    shadowConfirmed = false
+    hasLocalTextEdit = false
+    capabilityReadOnly = false
     if (active !== null) {
       active.resolve('skipped')
       active = null
@@ -2312,6 +2353,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
     lastSeenViewer = initialRuntime.viewerUserId
     lastSeenProject = initialRuntime.projectId
     if (initialRuntime.editorReady === false) {
+      capabilityReadOnly = true
       reduce({
         type: 'save/readonly',
         failure: { code: 'editor_capability_unavailable', retryable: false },
