@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type SyntheticEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { ResearchWorkspaceShell } from '@/lib/embedded/shell'
 import { isEmbeddedMode } from '@/lib/embedded/config'
@@ -83,6 +83,9 @@ export default function ResearchPage() {
   )
 }
 
+const GATED_CHAT_CONTROL_SELECTOR =
+  'input, textarea, [contenteditable="true"], [data-testid="chat-input"], [data-testid="chat-send"], [data-testid="srcchat-input"], [data-testid="srcchat-send"], [data-testid="srcchat-new-session"], [data-testid="srcchat-error-retry"], [data-testid^="srcchat-session-"]'
+
 function ResearchPageContent() {
   const { t } = useTranslation()
 
@@ -128,6 +131,11 @@ function ResearchPageContent() {
   const restoredSourceGuardRef = useRef<string | null>(null)
   // 该来源已完成的 runtime/display 同步（避免快照变化反复写指针）。
   const syncedSourceRef = useRef<string | null>(null)
+  // 显式打开来源（含 Back 后重开同一来源）的请求序号：syncedSourceRef 按
+  // sourceId 短路会让“重开同一来源”不再同步 runtime/display（R3）。
+  const [sourceOpenRequest, setSourceOpenRequest] = useState(0)
+  const workspaceSurfaceRef = useRef<HTMLDivElement | null>(null)
+  const sourceSurfaceRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (!sessionRuntime) {
@@ -223,6 +231,13 @@ function ResearchPageContent() {
   // 指针存在时恢复它，否则进入“该来源新会话”状态（F-M3，不写 `.source`）。
   useEffect(() => {
     if (!sessionRuntime || !navSelectedSourceId) return
+    // 离开该来源后遗留的 display 恢复 guard 不得跳过下一次显式打开（R3）。
+    if (
+      restoredSourceGuardRef.current !== null &&
+      restoredSourceGuardRef.current !== navSelectedSourceId
+    ) {
+      restoredSourceGuardRef.current = null
+    }
     if (syncedSourceRef.current === navSelectedSourceId) return
     const snapshot = sessionRuntime.getSnapshot()
     if (snapshot.phase !== 'ready') return
@@ -263,7 +278,7 @@ function ResearchPageContent() {
       sourceId: navSelectedSourceId,
       ref: null,
     })
-  }, [sessionRuntime, runtimeSnapshot, navSelectedSourceId, navSourceNewSessionFor])
+  }, [sessionRuntime, runtimeSnapshot, navSelectedSourceId, navSourceNewSessionFor, sourceOpenRequest])
 
   // 列表返回 404 `session_not_found`（§4.1 / §4.7）：清该 surface 指针并显示
   // 空态；本机草稿由 PR-3 的草稿分区各自保留，不在本 PR 注入其他会话。
@@ -271,9 +286,13 @@ function ResearchPageContent() {
     if (!sessionRuntime) return
     if (globalSessions.error !== 'not_found') return
     sessionRuntime.activate('global', null)
-    sessionRuntime.setDisplayPointer({ version: 1, surface: 'global', ref: null })
     setActiveGlobalRef(null)
-  }, [globalSessions.error, sessionRuntime])
+    // R7：global 列表 404 只清 global active/指针；若用户正在看 source，
+    // 不得把 display 改写成 global（刷新位置会被意外改变）。
+    if (!(navSourceFocusActive && navSelectedSourceId !== null)) {
+      sessionRuntime.setDisplayPointer({ version: 1, surface: 'global', ref: null })
+    }
+  }, [globalSessions.error, sessionRuntime, navSourceFocusActive, navSelectedSourceId])
 
   // 页面级导航（§9.6 / §4.2-1）：source 会话先进入该来源 Source focus，再
   // 激活该 surface 会话；global 会话返回全局 surface。activate 同时校验
@@ -287,6 +306,7 @@ function ResearchPageContent() {
         setSelectedSourceId(ref.sourceId)
         setSourceFocusActive(true)
         setSourceNewSessionFor(null)
+        restoredSourceGuardRef.current = null
         syncedSourceRef.current = ref.sourceId
         if (sessionRuntime) {
           const accepted = sessionRuntime.activate('source', ref)
@@ -302,6 +322,9 @@ function ResearchPageContent() {
         return
       }
       setSourceFocusActive(false)
+      // R3：返回全局后同一来源再次被打开时必须重新同步 runtime/display。
+      syncedSourceRef.current = null
+      restoredSourceGuardRef.current = null
       if (sessionRuntime) {
         const accepted = sessionRuntime.activate('global', ref)
         if (!accepted) return
@@ -364,6 +387,11 @@ function ResearchPageContent() {
   const openSource = useCallback((sourceId: string, pageIdx?: number | null) => {
     setSelectedSourceId(sourceId)
     setSourceFocusActive(true)
+    // 显式打开（含关闭后重开同一来源）：强制重新同步该来源 runtime/display（R3）。
+    syncedSourceRef.current = null
+    restoredSourceGuardRef.current = null
+    setSourceNewSessionFor(null)
+    setSourceOpenRequest((request) => request + 1)
     setSourceCompactPanel('primary')
     const nextHighlight = pageIdx ?? null
     setHighlightPageIdx(nextHighlight)
@@ -377,6 +405,9 @@ function ResearchPageContent() {
   // 来源指针保留、且不清 active('global')（§4.5 返回全局）。
   const exitSourceFocus = useCallback(() => {
     setSourceFocusActive(false)
+    // R3：Back 会改 display；下次打开来源必须重新同步，不能沿用旧标记。
+    syncedSourceRef.current = null
+    restoredSourceGuardRef.current = null
     if (sessionRuntime) {
       sessionRuntime.setDisplayPointer({
         version: 1,
@@ -411,10 +442,55 @@ function ResearchPageContent() {
   const compact = !isDesktop
   const focusedSourceId = sourceMode ? navSelectedSourceId : null
 
-  // 半接线隔离（Codex review B8）：新导航可用时，旧 Chat 面板仍按自身旧会话
-  // 挂载（面板归 PR-4/PR-5b 改造），不能同时显示两套“当前会话”。因此在页面
-  // 写作用域内关闭旧内容区交互并给出可见原因，避免新导航显示 B、旧面板显示 A。
-  const sessionContentPending = globalSessions.capabilitiesReady
+  // 半接线隔离（Codex review B8 / R4 / R5）：新导航可用时旧 Chat 面板仍未接线
+  // 到新会话（面板归 PR-4/PR-5b 改造），不能同时显示两套“当前会话”。门禁只
+  // 覆盖未接线的 Chat 内容（global chat tabpanel、Source Chat 面板），不覆盖
+  // Workbench、tabs 行、其它动作与阅读区；门禁表达“未接线”，与能力是否降级
+  // 无关（R4：能力降级不得撤销门禁）。
+  const globalChatGated = !sourceMode && activeMainAction === 'research-chat'
+  const sourceChatGated = sourceMode
+
+  /** 门禁区的合成事件兜底：inert 之外再阻断发送/输入类控件的 click/keydown
+   *  冒泡（R4）。只拦“执行/输入”入口：引用跳转、阅读、tabs 等仍可用，避免
+   *  把阅读链路也一并冻结（R5）。 */
+  const blockGatedChatEvent = useCallback((event: SyntheticEvent) => {
+    const target = event.target
+    if (!(target instanceof Element)) return
+    if (!target.closest('[data-session-chat-gated="true"]')) return
+    const control = target.closest(GATED_CHAT_CONTROL_SELECTOR)
+    if (!control) return
+    event.preventDefault()
+    event.stopPropagation()
+  }, [])
+
+  // 真实浏览器的键盘/焦点阻断由 inert 提供（属性写在门禁面板上）。
+  useEffect(() => {
+    const container = workspaceSurfaceRef.current
+    if (!container) return
+    const activePanel = Array.from(container.querySelectorAll('[role="tabpanel"]')).find(
+      (node) => node.getAttribute('data-state') === 'active',
+    )
+    if (!(activePanel instanceof HTMLElement)) return
+    if (!globalChatGated) return
+    activePanel.setAttribute('inert', '')
+    activePanel.setAttribute('data-session-chat-gated', 'true')
+    activePanel.setAttribute('aria-hidden', 'true')
+    return () => {
+      activePanel.removeAttribute('inert')
+      activePanel.removeAttribute('data-session-chat-gated')
+      activePanel.removeAttribute('aria-hidden')
+    }
+  }, [globalChatGated, activeMainAction, sourceMode])
+
+  // Source 面板包含仍可用的阅读链路（引用跳转、来源正文），不能整块 inert；
+  // 只标记门禁并由 capture 兜底拦截发送/新建/输入控件（R4/R5）。
+  useEffect(() => {
+    const container = sourceSurfaceRef.current
+    if (!(container instanceof HTMLElement)) return
+    if (!sourceChatGated) return
+    container.setAttribute('data-session-chat-gated', 'true')
+    return () => container.removeAttribute('data-session-chat-gated')
+  }, [sourceChatGated, navSelectedSourceId])
 
   return (
     <>
@@ -459,7 +535,7 @@ function ResearchPageContent() {
               {RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.sourceRequired}
             </span>
           )}
-          {sessionContentPending ? (
+          {globalChatGated || sourceChatGated ? (
             <span
               data-testid="session-content-gate"
               className="text-xs text-muted-foreground"
@@ -468,15 +544,7 @@ function ResearchPageContent() {
             </span>
           ) : null}
         </div>
-        <div
-          className="min-h-0 flex-1"
-          data-testid="legacy-session-content"
-          data-session-content-gated={sessionContentPending ? 'true' : undefined}
-          aria-hidden={sessionContentPending || undefined}
-          style={
-            sessionContentPending ? { pointerEvents: 'none', opacity: 0.5 } : undefined
-          }
-        >
+        <div className="min-h-0 flex-1" data-testid="legacy-session-content">
           <ResearchLayout
             layoutId={sourceDesktop ? 'source-desktop' : 'global'}
             axis="horizontal"
@@ -510,7 +578,13 @@ function ResearchPageContent() {
                   paneReveal={paneReveal}
                 />
               </div>,
-              <div key="workspace" className={`h-full min-h-0 ${compact ? '' : 'border-l'}`}>
+              <div
+                key="workspace"
+                className={`h-full min-h-0 ${compact ? '' : 'border-l'}`}
+                ref={workspaceSurfaceRef}
+                onClickCapture={blockGatedChatEvent}
+                onKeyDownCapture={blockGatedChatEvent}
+              >
                 {/* 全局工作区保持挂载（隐藏但保活：Chat 流/Job 轮询/四动作
                     访问状态不丢）；Source Chat 也保持挂载，显隐由
                     sourceFocusActive 决定，Back 不卸载。 */}
@@ -527,7 +601,14 @@ function ResearchPageContent() {
                   />
                 </div>
                 {navSelectedSourceId !== null && (
-                  <div className="h-full" hidden={!sourceMode}>
+                  <div
+                    className="h-full"
+                    data-testid="source-chat-surface"
+                    hidden={!sourceMode}
+                    ref={sourceSurfaceRef}
+                    onClickCapture={blockGatedChatEvent}
+                    onKeyDownCapture={blockGatedChatEvent}
+                  >
                     <ResearchSourceChatPanel
                       key={`${projectId}:${navSelectedSourceId}`}
                       projectId={projectId}

@@ -3,6 +3,13 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 
+const workspaceSpies = vi.hoisted(() => ({
+  chatSend: vi.fn(),
+  chatKeyDown: vi.fn(),
+  readingAction: vi.fn(),
+  sourceSend: vi.fn(),
+}))
+
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace: vi.fn(), push: vi.fn() }),
 }))
@@ -56,29 +63,93 @@ vi.mock('@/components/research/ResearchLayout', () => ({
 vi.mock('@/components/research/ResearchWorkbench', () => ({
   ResearchWorkbench: ({
     focusedSourceId,
+    highlightPageIdx,
     onOpenSource,
     onExitSourceFocus,
   }: {
     focusedSourceId: string | null
+    highlightPageIdx: number | null
     onOpenSource: (sourceId: string, pageIdx?: number | null) => void
     onExitSourceFocus: () => void
   }) => (
-    <div data-testid="workbench" data-focused-source={focusedSourceId ?? ''}>
+    <div
+      data-testid="workbench"
+      data-focused-source={focusedSourceId ?? ''}
+      data-highlight-page-idx={highlightPageIdx ?? ''}
+    >
       <button type="button" data-testid="workbench-open-source" onClick={() => onOpenSource('src-1')} />
+      <button
+        type="button"
+        data-testid="workbench-open-source-2"
+        onClick={() => onOpenSource('src-2')}
+      />
       <button type="button" data-testid="workbench-back" onClick={() => onExitSourceFocus()} />
     </div>
   ),
 }))
 
 vi.mock('@/components/research/ResearchWorkspace', () => ({
-  ResearchWorkspace: ({ surfaceActive }: { surfaceActive: boolean }) => (
-    <div data-testid="workspace" data-surface-active={String(surfaceActive)} />
+  ResearchWorkspace: ({
+    surfaceActive,
+    activeAction,
+    onActiveActionChange,
+  }: {
+    surfaceActive: boolean
+    activeAction: string
+    onActiveActionChange: (action: string) => void
+  }) => (
+    <div
+      data-testid="workspace"
+      data-surface-active={String(surfaceActive)}
+      data-active-action={activeAction}
+    >
+      <div data-testid="workspace-tabs">
+        <button
+          type="button"
+          data-testid="workspace-tab-chat"
+          onClick={() => onActiveActionChange('research-chat')}
+        />
+        <button
+          type="button"
+          data-testid="workspace-tab-evidence"
+          onClick={() => onActiveActionChange('evidence-search')}
+        />
+      </div>
+      {activeAction === 'research-chat' ? (
+        <div role="tabpanel" data-state="active" data-testid="chat-panel">
+          <input
+            data-testid="chat-input"
+            onKeyDown={() => workspaceSpies.chatKeyDown()}
+          />
+          <button type="button" data-testid="chat-send" onClick={() => workspaceSpies.chatSend()} />
+        </div>
+      ) : (
+        <div role="tabpanel" data-state="active" data-testid="reading-panel">
+          <button
+            type="button"
+            data-testid="reading-action"
+            onClick={() => workspaceSpies.readingAction()}
+          />
+        </div>
+      )}
+    </div>
   ),
 }))
 
 vi.mock('@/components/research/ResearchSourceChatPanel', () => ({
-  ResearchSourceChatPanel: ({ projectId, sourceId }: { projectId: string; sourceId: string }) => (
-    <div data-testid="source-chat-panel" data-project={projectId} data-source={sourceId} />
+  ResearchSourceChatPanel: ({
+    projectId,
+    sourceId,
+    onHighlightPage,
+  }: {
+    projectId: string
+    sourceId: string
+    onHighlightPage: (pageIdx: number) => void
+  }) => (
+    <div data-testid="source-chat-panel" data-project={projectId} data-source={sourceId}>
+      <button type="button" data-testid="srcchat-send" onClick={() => workspaceSpies.sourceSend()} />
+      <button type="button" data-testid="panel-cite-page" onClick={() => onHighlightPage(7)} />
+    </div>
   ),
 }))
 
@@ -291,6 +362,10 @@ async function openSwitcher(surface: 'global' | 'source') {
 
 beforeEach(() => {
   cleanup()
+  workspaceSpies.chatSend.mockReset()
+  workspaceSpies.chatKeyDown.mockReset()
+  workspaceSpies.readingAction.mockReset()
+  workspaceSpies.sourceSend.mockReset()
   readDisplayPointer.mockReset().mockReturnValue(null)
   readPointer.mockReset().mockReturnValue(null)
   listChatSessions.mockReset().mockResolvedValue(wireList([]))
@@ -620,18 +695,173 @@ describe('ResearchPage 会话导航：review B6/B7/B8/Major 回归', () => {
     })
   })
 
-  it('半接线隔离（B8）：新导航可用时旧内容区关闭交互并显示可见原因', async () => {
+  it('半接线隔离（B8/R4/R5）：只门禁未接线 Chat 内容，不门禁 tabs 与阅读区', async () => {
     renderPage()
     await waitFor(() => expect(nav()).toBeInTheDocument())
 
+    // 非 Chat 动作（阅读区）不受门禁影响。
+    expect(screen.queryByTestId('session-content-gate')).toBeNull()
+    expect(screen.getByTestId('reading-panel')).not.toHaveAttribute('inert')
+    fireEvent.click(screen.getByTestId('reading-action'))
+    expect(workspaceSpies.readingAction).toHaveBeenCalledTimes(1)
+
+    // 切到 Chat：仅 Chat tabpanel 进入门禁（inert + 可见原因）。
+    fireEvent.click(screen.getByTestId('workspace-tab-chat'))
+    await waitFor(() => expect(screen.getByTestId('chat-panel')).toBeInTheDocument())
     expect(screen.getByTestId('session-content-gate')).toHaveTextContent(
       RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.contentNotReady,
     )
-    expect(screen.getByTestId('legacy-session-content')).toHaveAttribute(
-      'data-session-content-gated',
-      'true',
+    const panel = screen.getByTestId('chat-panel')
+    await waitFor(() => expect(panel).toHaveAttribute('data-session-chat-gated', 'true'))
+    expect(panel).toHaveAttribute('inert')
+    expect(panel).toHaveAttribute('aria-hidden', 'true')
+
+    // 门禁必须阻断点击与键盘（不能只靠 aria-hidden/pointer-events）。
+    fireEvent.click(screen.getByTestId('chat-send'))
+    expect(workspaceSpies.chatSend).not.toHaveBeenCalled()
+    fireEvent.keyDown(screen.getByTestId('chat-input'), { key: 'Enter' })
+    expect(workspaceSpies.chatKeyDown).not.toHaveBeenCalled()
+
+    // tabs 行仍可切回阅读区（不阻断导航）。
+    fireEvent.click(screen.getByTestId('workspace-tab-evidence'))
+    await waitFor(() => expect(screen.getByTestId('reading-panel')).toBeInTheDocument())
+    expect(screen.queryByTestId('session-content-gate')).toBeNull()
+    fireEvent.click(screen.getByTestId('reading-action'))
+    expect(workspaceSpies.readingAction).toHaveBeenCalledTimes(2)
+  })
+
+  it('关闭后重开同一来源：重新同步 display，不沿用旧同步标记（R3）', async () => {
+    renderPage()
+    await waitFor(() => expect(nav()).toBeInTheDocument())
+
+    fireEvent.click(screen.getByTestId('workbench-open-source'))
+    await waitFor(() =>
+      expect(runtimeRef.current?.setDisplayPointer).toHaveBeenCalledWith({
+        version: 1,
+        surface: 'source',
+        sourceId: 'src-1',
+        ref: null,
+      }),
     )
-    expect(screen.getByTestId('legacy-session-content')).toHaveAttribute('aria-hidden', 'true')
+    const firstSourceWrites = runtimeRef.current?.setDisplayPointer.mock.calls.length ?? 0
+
+    fireEvent.click(screen.getByTestId('workbench-back'))
+    await waitFor(() =>
+      expect(runtimeRef.current?.setDisplayPointer).toHaveBeenLastCalledWith({
+        version: 1,
+        surface: 'global',
+        ref: null,
+      }),
+    )
+
+    fireEvent.click(screen.getByTestId('workbench-open-source'))
+    await waitFor(() =>
+      expect(runtimeRef.current?.setDisplayPointer.mock.calls.length).toBeGreaterThan(
+        firstSourceWrites + 1,
+      ),
+    )
+    expect(runtimeRef.current?.setDisplayPointer).toHaveBeenLastCalledWith({
+      version: 1,
+      surface: 'source',
+      sourceId: 'src-1',
+      ref: null,
+    })
+    expect(nav()).toHaveAttribute('data-source-new-session', 'src-1')
+  })
+
+  it('display 恢复 A → 打开 B → 再打开 A：不因残留 guard 跳过同步（R3）', async () => {
+    const sourceRef = {
+      domain: 'research' as const,
+      kind: 'source' as const,
+      projectId: PROJECT_ID,
+      sessionId: 'sess_src_a',
+      sourceId: 'src-1',
+    }
+    readDisplayPointer.mockReturnValue({
+      version: 1,
+      surface: 'source',
+      sourceId: 'src-1',
+      ref: sourceRef,
+    })
+    readPointer.mockImplementation((_scope, _authority, surface: string, sourceId: string | null) =>
+      surface === 'source' && sourceId === 'src-1'
+        ? { version: 1, ref: sourceRef, savedAt: 1 }
+        : null,
+    )
+    renderPage()
+    await waitFor(() => expect(nav()).toHaveAttribute('data-active-source-session', 'sess_src_a'))
+
+    fireEvent.click(screen.getByTestId('workbench-open-source-2'))
+    await waitFor(() =>
+      expect(runtimeRef.current?.setDisplayPointer).toHaveBeenLastCalledWith({
+        version: 1,
+        surface: 'source',
+        sourceId: 'src-2',
+        ref: null,
+      }),
+    )
+
+    fireEvent.click(screen.getByTestId('workbench-open-source'))
+    await waitFor(() =>
+      expect(runtimeRef.current?.setDisplayPointer).toHaveBeenLastCalledWith({
+        version: 1,
+        surface: 'source',
+        sourceId: 'src-1',
+        ref: sourceRef,
+      }),
+    )
+    expect(nav()).toHaveAttribute('data-active-source-session', 'sess_src_a')
+  })
+
+  it('Source Chat 面板同样只门禁自身内容并显示原因（R4）', async () => {
+    renderPage()
+    await waitFor(() => expect(nav()).toBeInTheDocument())
+
+    fireEvent.click(screen.getByTestId('workbench-open-source'))
+    await waitFor(() => expect(screen.getByTestId('source-chat-surface')).toBeInTheDocument())
+
+    const surface = screen.getByTestId('source-chat-surface')
+    await waitFor(() => expect(surface).toHaveAttribute('data-session-chat-gated', 'true'))
+    // Source 面板保留引用跳转等阅读链路，不能整块 inert（R4/R5）。
+    expect(surface).not.toHaveAttribute('inert')
+    expect(screen.getByTestId('session-content-gate')).toHaveTextContent(
+      RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.contentNotReady,
+    )
+    fireEvent.click(screen.getByTestId('srcchat-send'))
+    expect(workspaceSpies.sourceSend).not.toHaveBeenCalled()
+    // 引用跳转不被门禁拦截。
+    fireEvent.click(screen.getByTestId('panel-cite-page'))
+    await waitFor(() =>
+      expect(screen.getByTestId('workbench')).toHaveAttribute('data-highlight-page-idx', '7'),
+    )
+  })
+
+  it('后台 global 404 不覆盖正在显示的 source display（R7）', async () => {
+    renderPage()
+    await waitFor(() => expect(nav()).toBeInTheDocument())
+
+    fireEvent.click(screen.getByTestId('workbench-open-source'))
+    await waitFor(() =>
+      expect(runtimeRef.current?.setDisplayPointer).toHaveBeenCalledWith({
+        version: 1,
+        surface: 'source',
+        sourceId: 'src-1',
+        ref: null,
+      }),
+    )
+
+    listChatSessions.mockRejectedValue(
+      Object.assign(new Error('gone'), {
+        response: { status: 404, data: { detail: { code: 'session_not_found' } } },
+      }),
+    )
+    await openSwitcher('global')
+    await waitFor(() => expect(runtimeRef.current?.activate).toHaveBeenCalledWith('global', null))
+    expect(runtimeRef.current?.setDisplayPointer).not.toHaveBeenCalledWith({
+      version: 1,
+      surface: 'global',
+      ref: null,
+    })
   })
 
   it('列表 404 session_not_found → 清 global 指针与 display，显示空态', async () => {

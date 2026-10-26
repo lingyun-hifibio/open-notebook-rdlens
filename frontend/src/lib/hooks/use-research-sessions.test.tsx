@@ -847,3 +847,153 @@ describe('generateSessionId', () => {
     expect(first).not.toBe(second)
   })
 })
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
+describe('useResearchSessions：聚焦复核回归（R1/R2/R6）', () => {
+  it('旧 viewer 的挂起列表响应不得提交 capabilities 或重开创建门禁（R1）', async () => {
+    const controller = makeRuntime()
+    const stale = deferred<unknown>()
+    vi.mocked(listChatSessions).mockReturnValueOnce(stale.promise as never)
+
+    const { result } = renderSessions({ runtime: controller.runtime })
+    await waitFor(() => expect(listChatSessions).toHaveBeenCalledTimes(1))
+
+    // viewer 8 的当前列表响应是降级能力（capabilities 缺失 → missing）。
+    const current = deferred<unknown>()
+    vi.mocked(listChatSessions).mockReturnValueOnce(current.promise as never)
+    act(() => {
+      controller.set(
+        { viewerUserId: '8' },
+        { role: 'owner', projectId: PROJECT_ID, viewerUserId: '8', authGeneration: 1 },
+      )
+    })
+    await waitFor(() => expect(listChatSessions).toHaveBeenCalledTimes(2))
+    await act(async () => {
+      current.resolve({
+        items: [wireSummary('sess_b')],
+        next_cursor: null,
+        viewer_user_id: 8,
+        capabilities: null,
+      })
+    })
+    await waitFor(() =>
+      expect(result.current.sessions.map((item) => item.ref.sessionId)).toEqual(['sess_b']),
+    )
+    expect(result.current.canCreate).toBe(false)
+
+    // 旧 viewer 的迟到响应：即使能力就绪也不得覆盖当前代际（R1）。
+    await act(async () => {
+      stale.resolve(wireList([wireSummary('sess_a')]))
+    })
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.sessions.map((item) => item.ref.sessionId)).toEqual(['sess_b'])
+    expect(result.current.canCreate).toBe(false)
+    expect(result.current.error).toBeNull()
+  })
+
+  it('旧创建的迟到响应不得污染新作用域或释放新创建的单飞（R2）', async () => {
+    const controller = makeRuntime()
+    vi.mocked(listChatSessions).mockResolvedValue(wireList([]))
+    const first = deferred<unknown>()
+    vi.mocked(createChatSession).mockReturnValueOnce(first.promise as never)
+
+    const { result } = renderSessions({ runtime: controller.runtime })
+    await waitFor(() => expect(result.current.canCreate).toBe(true))
+
+    let firstResult: unknown = 'pending'
+    act(() => {
+      void result.current.create().then((value) => {
+        firstResult = value
+      })
+    })
+    await waitFor(() => expect(createChatSession).toHaveBeenCalledTimes(1))
+
+    act(() => {
+      controller.set(
+        { viewerUserId: '8' },
+        { role: 'owner', projectId: PROJECT_ID, viewerUserId: '8', authGeneration: 1 },
+      )
+    })
+    await waitFor(() => expect(result.current.canCreate).toBe(true))
+
+    const second = deferred<unknown>()
+    vi.mocked(createChatSession).mockReturnValueOnce(second.promise as never)
+    let secondResult: unknown = 'pending'
+    act(() => {
+      void result.current.create().then((value) => {
+        secondResult = value
+      })
+    })
+    await waitFor(() => expect(createChatSession).toHaveBeenCalledTimes(2))
+
+    // 旧尝试失败：不得写 createError，也不得释放 B 的单飞。
+    await act(async () => {
+      first.reject(new Error('stale failure'))
+    })
+    await waitFor(() => expect(result.current.creating).toBe(true))
+    expect(result.current.createError).toBeNull()
+    expect(firstResult).toBeNull()
+
+    // 第三次创建被 B 的单飞拒绝，不产生额外请求。
+    let thirdResult: unknown = 'pending'
+    act(() => {
+      void result.current.create().then((value) => {
+        thirdResult = value
+      })
+    })
+    await waitFor(() => expect(thirdResult).toBeNull())
+    expect(createChatSession).toHaveBeenCalledTimes(2)
+
+    await act(async () => {
+      second.resolve(wireCreateResponse('sess_new'))
+    })
+    await waitFor(() => expect(result.current.created?.ref.sessionId).toBe('sess_new'))
+    expect(secondResult).not.toBeNull()
+  })
+
+  it('身份级 403 终态只随身份变化解除，不因切 surface/source 逃逸（R6）', async () => {
+    const controller = makeRuntime()
+    vi.mocked(listChatSessions).mockRejectedValue(httpError(403, 'chat_owner_required'))
+    vi.mocked(listSourceChatSessions).mockResolvedValue({ items: [], next_cursor: null })
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    })
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    )
+    const initialProps: { surface: 'global' | 'source'; sourceId: string | null } = {
+      surface: 'global',
+      sourceId: null,
+    }
+    const { result, rerender } = renderHook(
+      (props: { surface: 'global' | 'source'; sourceId: string | null }) =>
+        useResearchSessions({ runtime: controller.runtime, ...props }),
+      { wrapper, initialProps },
+    )
+
+    await waitFor(() => expect(result.current.unauthorized).toBe(true))
+
+    rerender({ surface: 'source', sourceId: 'src-1' })
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.unauthorized).toBe(true)
+    expect(listSourceChatSessions).not.toHaveBeenCalled()
+
+    act(() => {
+      controller.set(
+        { viewerUserId: '8' },
+        { role: 'owner', projectId: PROJECT_ID, viewerUserId: '8', authGeneration: 1 },
+      )
+    })
+    await waitFor(() => expect(result.current.unauthorized).toBe(false))
+  })
+})

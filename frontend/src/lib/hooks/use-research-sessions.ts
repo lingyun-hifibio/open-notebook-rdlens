@@ -105,6 +105,8 @@ interface SessionPage {
   readonly items: readonly ResearchSessionSummaryProjection[]
   readonly nextCursor: string | null
   readonly legacySource: boolean
+  /** 与列表页同一响应的能力投影；只在请求代际校验通过后随列表一并提交（R1）。 */
+  readonly capabilities: ResearchSessionCapabilities | null
 }
 
 /** 列表状态归属的身份/作用域键：身份或 surface/source 变化时同帧丢弃旧数据。 */
@@ -392,11 +394,16 @@ export function useResearchSessions(input: UseResearchSessionsInput): UseResearc
   const [error, setError] = useState<ResearchSessionsErrorKind | null>(null)
   const [loadMoreError, setLoadMoreError] = useState<ResearchSessionsErrorKind | null>(null)
   const [terminalUnauthorized, setTerminalUnauthorized] = useState(false)
+  /** 置为终态时的身份键：只有身份变化才解除（R6，切 surface/source 不解锁）。 */
+  const terminalIdentityRef = useRef<string | null>(null)
 
   const requestIdRef = useRef(0)
   const inFlightRef = useRef(false)
   const pagesRef = useRef<readonly SessionPage[]>([])
   pagesRef.current = pages
+  /** state 当前归属作用域（给 reset 比较身份变化用，避免额外 effect 反复重置）。 */
+  const stateScopeRef = useRef<ScopedStateKey>(stateScope)
+  stateScopeRef.current = stateScope
 
   const canListBase = listDisabledReason === null && runtime !== null
   // 403 终态：关闭列表/分页/刷新/创建，直到身份变化才解除（不进入重试循环）。
@@ -462,12 +469,12 @@ export function useResearchSessions(input: UseResearchSessionsInput): UseResearc
           items.push(summary)
         }
         // 旧读路径 API 没有 cursor/offset：只取首页，不伪造“加载更多”。
-        return { items, nextCursor: null, legacySource: true }
+        return { items, nextCursor: null, legacySource: true, capabilities: null }
       }
       const lastPage = mode === 'more' ? pagesRef.current[pagesRef.current.length - 1] : null
       const cursor = lastPage?.nextCursor ?? null
       if (mode === 'more' && cursor === null) {
-        return { items: [], nextCursor: null, legacySource: false }
+        return { items: [], nextCursor: null, legacySource: false, capabilities: null }
       }
       const kind: 'global' | 'all' = projectHistory ? 'all' : 'global'
       const params: ListChatSessionsParams = {
@@ -480,7 +487,6 @@ export function useResearchSessions(input: UseResearchSessionsInput): UseResearc
       if (!parsed.ok) {
         throw invalidResponseError(parsed.error.field ?? 'list_response')
       }
-      setResponseCapabilities(parsed.value.capabilities ?? null)
       const value = validateListPage(parsed.value, {
         ownerViewerId:
           identity && identity.role === 'owner' ? (identity.viewerUserId ?? null) : null,
@@ -491,6 +497,8 @@ export function useResearchSessions(input: UseResearchSessionsInput): UseResearc
         items: value.items,
         nextCursor: value.nextCursor,
         legacySource: false,
+        // R1：能力与列表同属一个响应代际，交给 load 在 requestId 校验后提交。
+        capabilities: parsed.value.capabilities,
       }
     },
     [projectId, surface, sourceId, projectHistory, identity, validateListPage],
@@ -502,6 +510,8 @@ export function useResearchSessions(input: UseResearchSessionsInput): UseResearc
   const [created, setCreated] = useState<ResearchSessionCreateResult | null>(null)
   const createInFlightRef = useRef(false)
   const createRequestIdRef = useRef(0)
+  /** 每次 create 调用的尝试号：旧尝试不得释放新尝试的 single-flight（R2）。 */
+  const createAttemptIdRef = useRef(0)
   const pendingSessionIdRef = useRef<string | null>(null)
 
   /** 身份/作用域变化：同步丢弃列表、创建与队列状态（S1，含 pending client id）。 */
@@ -513,13 +523,18 @@ export function useResearchSessions(input: UseResearchSessionsInput): UseResearc
     setLoadingMore(false)
     setError(null)
     setLoadMoreError(null)
-    setTerminalUnauthorized(false)
+    // R6：403 终态只随身份变化解除；同身份切 surface/source 不得逃逸。
+    if (nextScope.identityKey !== stateScopeRef.current.identityKey) {
+      setTerminalUnauthorized(false)
+      terminalIdentityRef.current = null
+    }
     setResponseCapabilities(null)
     setCreated(null)
     setCreateError(null)
     setCreating(false)
     createInFlightRef.current = false
     createRequestIdRef.current += 1
+    createAttemptIdRef.current += 1
     pendingSessionIdRef.current = null
     setStateScope(nextScope)
   }, [])
@@ -542,11 +557,11 @@ export function useResearchSessions(input: UseResearchSessionsInput): UseResearc
       try {
         const page = await fetchPage(mode)
         if (requestIdRef.current !== requestId) return
+        // R1：列表响应自带的 capabilities 只在身份/请求代际校验通过后提交，
+        // 旧 viewer 的挂起响应不得重开当前身份的创建门禁。
+        setResponseCapabilities(page.capabilities)
         setPages((previous) => (mode === 'initial' ? [page] : [...previous, page]))
-        if (mode === 'initial') {
-          setError(null)
-          setTerminalUnauthorized(false)
-        }
+        if (mode === 'initial') setError(null)
       } catch (caught) {
         if (requestIdRef.current !== requestId) return
         const kind = classifyListError(caught, surface)
@@ -557,6 +572,7 @@ export function useResearchSessions(input: UseResearchSessionsInput): UseResearc
           setError('unauthorized')
           setLoadMoreError(null)
           setTerminalUnauthorized(true)
+          terminalIdentityRef.current = identityKey
           if (queryKey && queryClient) queryClient.removeQueries({ queryKey, exact: true })
         } else if (mode === 'initial') {
           // 404 清列表内容；5xx/网络保留已有列表并允许重试，不自动创建新
@@ -574,7 +590,7 @@ export function useResearchSessions(input: UseResearchSessionsInput): UseResearc
         }
       }
     },
-    [canList, projectId, fetchPage, surface, queryKey, queryClient],
+    [canList, projectId, fetchPage, surface, queryKey, queryClient, identityKey],
   )
 
   const loadRef = useRef(load)
@@ -649,6 +665,8 @@ export function useResearchSessions(input: UseResearchSessionsInput): UseResearc
     // 创建使用独立代际：列表刷新（打开抽屉）推进 requestId 不得作废已发出
     // 的创建响应（否则服务端已建会话但页面不激活且无解释）。
     const requestId = createRequestIdRef.current
+    const attempt = createAttemptIdRef.current + 1
+    createAttemptIdRef.current = attempt
     try {
       const input: CreateChatSessionInput = {
         kind: surface === 'source' ? 'source' : 'global',
@@ -661,13 +679,16 @@ export function useResearchSessions(input: UseResearchSessionsInput): UseResearc
         kind: input.kind,
         sourceId: input.sourceId ?? null,
       })
+      // R2：尝试号/代际校验必须早于一切 state 写入（含错误态）。
+      if (createAttemptIdRef.current !== attempt || createRequestIdRef.current !== requestId) {
+        return null
+      }
       if (!parsed) {
         // 响应形状非法：服务端可能已创建 → 保留 client session_id 供下次
         // 重试命中 `created=false`（不生成新 id、不产生空壳列表项）。
         setCreateError('invalid_response')
         return null
       }
-      if (createRequestIdRef.current !== requestId) return null
       pendingSessionIdRef.current = null
       setCreated(parsed)
       setCreateError(null)
@@ -675,13 +696,18 @@ export function useResearchSessions(input: UseResearchSessionsInput): UseResearc
       if (queryKey && queryClient) void queryClient.invalidateQueries({ queryKey })
       return parsed
     } catch (caught) {
-      if (createRequestIdRef.current !== requestId) return null
+      if (createAttemptIdRef.current !== attempt || createRequestIdRef.current !== requestId) {
+        return null
+      }
       const kind = classifyListError(caught, surface)
       setCreateError(kind === 'unauthorized' ? 'unauthorized' : 'failed')
       return null
     } finally {
-      createInFlightRef.current = false
-      setCreating(false)
+      // R2：旧尝试的 finally 不得释放新作用域/新尝试持有的 single-flight。
+      if (createAttemptIdRef.current === attempt) {
+        createInFlightRef.current = false
+        setCreating(false)
+      }
     }
   }, [canCreate, projectId, surface, sourceId, queryKey, queryClient])
 
