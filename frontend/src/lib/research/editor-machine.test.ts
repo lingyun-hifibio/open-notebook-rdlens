@@ -27,7 +27,7 @@ import {
   transportAttemptMatches,
   type SessionWriteGuard,
 } from './session-runtime'
-import { writeDraft } from './session-cache'
+import { readDraft, writeDraft } from './session-cache'
 import type {
   SessionCacheAuthority,
   SessionCacheScope,
@@ -1091,5 +1091,177 @@ describe('editor review 回归：GET 与本地 dirty 竞态', () => {
     expect(snapshot.conflict).toEqual({ kind: 'revision' })
     expect(snapshot.saveFailure?.code).toBe('editor_revision_conflict')
     expect(harness.puts.length).toBe(0)
+  })
+})
+
+describe('editor 二次 review 回归（P1/N1–N4、N7–N11）', () => {
+  it('N1 排队 submit 用入队时本地版本结算：ACK 不得把可见 T2 标为 clean', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.setDraftText('T1')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    const first = lastPut(harness)
+    harness.controller.hold('submit', 'op1')
+    const queued = harness.controller.flush('submit')
+    harness.controller.setDraftText('T2')
+    first.response.resolve(saveResponse(first.body.mutation_id, { revision: 6 }))
+    await flushMicrotasks()
+    expect(harness.puts.length).toBe(2)
+    const second = lastPut(harness)
+    expect(second.body.editor_state.draft.text).toBe('T1')
+    second.response.resolve(saveResponse(second.body.mutation_id, { revision: 7 }))
+    await flushMicrotasks()
+    expect(await queued).toBe('saved')
+    const snapshot = harness.controller.getSnapshot()
+    expect(snapshot.draftText).toBe('T2')
+    expect(snapshot.dirty).toBe(true)
+    expect(snapshot.confirmedLocalVersion).toBeLessThan(snapshot.localVersion)
+  })
+
+  it('N2 手动 retry 取消退避定时器：不得产生第三个并发 PUT', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.setDraftText('T1')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    lastPut(harness).response.reject(httpError(503))
+    await flushMicrotasks()
+    expect(harness.puts.length).toBe(1)
+    await harness.controller.retrySave()
+    expect(harness.puts.length).toBe(2)
+    await advance(2000)
+    expect(harness.puts.length).toBe(2)
+  })
+
+  it('N3 重放未结束时再次换代：旧尝试结算后继续接管，不丢失 mutation', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.setDraftText('T1')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    const original = lastPut(harness)
+    harness.setRuntime({ authGeneration: 8 })
+    await flushMicrotasks()
+    const replay8 = lastPut(harness)
+    expect(harness.puts.length).toBe(2)
+    harness.setRuntime({ authGeneration: 9 })
+    await flushMicrotasks()
+    replay8.response.resolve(saveResponse(replay8.body.mutation_id, { revision: 6 }))
+    await flushMicrotasks()
+    expect(harness.puts.length).toBe(3)
+    const replay9 = lastPut(harness)
+    expect(replay9.body).toEqual(original.body)
+    replay9.response.resolve(saveResponse(replay9.body.mutation_id, { revision: 6 }))
+    await flushMicrotasks()
+    const snapshot = harness.controller.getSnapshot()
+    expect(snapshot.revision).toBe(6)
+    expect(snapshot.dirty).toBe(false)
+  })
+
+  it('N4 本机 dirty 且 GET 同 revision：loading 收敛，保存成功后可以提交', async () => {
+    const storage = new MapStorage()
+    const scope: SessionCacheScope = { viewerUserId: '1', projectId: 'p1' }
+    writeDraft(scope, REF, 'w-test', draftRecord({ baseRevision: 5 }), { storage })
+    const harness = createHarness({ storage })
+    await loadHarness(harness, editorResponse({ revision: 5 }))
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    const call = lastPut(harness)
+    call.response.resolve(saveResponse(call.body.mutation_id, { revision: 6 }))
+    await flushMicrotasks()
+    const snapshot = harness.controller.getSnapshot()
+    expect(snapshot.loading).toBe(false)
+    expect(snapshot.dirty).toBe(false)
+    expect(harness.controller.canSubmit()).toEqual({ allowed: true, reason: null })
+  })
+
+  it('N7 已排队普通 flush 不得穿透 conflict hold，释放后续跑', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.setDraftText('T1')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    const first = lastPut(harness)
+    void harness.controller.flush('text')
+    harness.controller.hold('conflict', 'c1')
+    first.response.resolve(saveResponse(first.body.mutation_id, { revision: 6 }))
+    await flushMicrotasks()
+    expect(harness.puts.length).toBe(1)
+    harness.controller.setDraftText('T2')
+    harness.controller.release('c1')
+    await flushMicrotasks()
+    expect(harness.puts.length).toBe(2)
+    expect(lastPut(harness).body.editor_state.draft.text).toBe('T2')
+  })
+
+  it('N8 服务端 unreadable 时本机 dirty 不覆盖：只读且不发 PUT', async () => {
+    const storage = new MapStorage()
+    const scope: SessionCacheScope = { viewerUserId: '1', projectId: 'p1' }
+    writeDraft(scope, REF, 'w-test', draftRecord({ baseRevision: 5 }), { storage })
+    const harness = createHarness({ storage })
+    await loadHarness(
+      harness,
+      editorResponse({ revision: 5, state: null, warnings: ['editor_state_unreadable'] }),
+    )
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    const snapshot = harness.controller.getSnapshot()
+    expect(snapshot.phase).toBe('readonly')
+    expect(snapshot.readOnly).toBe(true)
+    expect(harness.puts.length).toBe(0)
+  })
+
+  it('N9 认证未就绪时 canSubmit 返回 not_ready，masked 后不提交', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.setRuntime({ ready: false, phase: 'masked' })
+    await flushMicrotasks()
+    expect(harness.controller.canSubmit()).toEqual({ allowed: false, reason: 'not_ready' })
+  })
+
+  it('N10 本机读回超限文本重算 oversize，停止自动保存', async () => {
+    const storage = new MapStorage()
+    const scope: SessionCacheScope = { viewerUserId: '1', projectId: 'p1' }
+    const huge = 'x'.repeat(EDITOR_TEXT_MAX_BYTES + 1)
+    writeDraft(
+      scope,
+      REF,
+      'w-test',
+      draftRecord({ text: huge, localVersion: 3, baseRevision: 5 }),
+      { storage },
+    )
+    const harness = createHarness({ storage })
+    await loadHarness(harness, editorResponse({ revision: 5 }))
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    const snapshot = harness.controller.getSnapshot()
+    expect(snapshot.draftText).toBe(huge)
+    expect(snapshot.oversize).toBe(true)
+    expect(harness.puts.length).toBe(0)
+  })
+
+  it('N11 清稿 ACK 按派发前旧 token 删除本 writer 分支', async () => {
+    const storage = new MapStorage()
+    const scope: SessionCacheScope = { viewerUserId: '1', projectId: 'p1' }
+    const authority: SessionCacheAuthority = {
+      authenticatedViewerUserId: '1',
+      projectId: 'p1',
+      authGeneration: 7,
+      currentAuthGeneration: 7,
+    }
+    writeDraft(
+      scope,
+      REF,
+      'w-test',
+      draftRecord({ text: 'hello', token: 'tok-server', dirty: false, localVersion: 0, baseRevision: 5 }),
+      { storage },
+    )
+    const harness = createHarness({ storage })
+    await loadHarness(harness)
+    harness.controller.hold('submit', 'op1')
+    const promise = harness.controller.clearAfterSubmission(
+      { sessionRef: REF, draftToken: 'tok-server', text: 'hello' },
+      'op1',
+    )
+    expect(harness.puts.length).toBe(1)
+    const call = lastPut(harness)
+    call.response.resolve(saveResponse(call.body.mutation_id, { revision: 6 }))
+    await flushMicrotasks()
+    expect(await promise).toBe('cleared')
+    expect(readDraft(scope, authority, REF, 'w-test', { storage })).toBeNull()
   })
 })

@@ -104,6 +104,9 @@ export function useResearchEditor(options: UseResearchEditorOptions): UseResearc
   if (options.storage !== undefined) storageRef.current = options.storage
 
   const controllerRef = useRef<EditorController | null>(null)
+  // 同一实例内释放必须幂等：公开 releaseDocument 与 effect cleanup 可能先后触发，
+  // 重复 release 会把共享 controller 的引用计数提前打到 0（二次 review N6）。
+  const releasedRef = useRef(false)
   const [snapshot, setSnapshot] = useState<EditorSnapshot | null>(null)
 
   const transport = useMemo<EditorTransport | null>(() => {
@@ -124,6 +127,7 @@ export function useResearchEditor(options: UseResearchEditorOptions): UseResearc
       storage: storageRef.current,
     })
     controllerRef.current = controller
+    releasedRef.current = false
     const unsubscribe = controller.subscribe(() => {
       setSnapshot(controller.getSnapshot())
     })
@@ -133,6 +137,8 @@ export function useResearchEditor(options: UseResearchEditorOptions): UseResearc
       unsubscribe()
       if (controllerRef.current === controller) controllerRef.current = null
       setSnapshot(null)
+      if (releasedRef.current) return
+      releasedRef.current = true
       // 释放本组件实例的控制器：调用方重挂（StrictMode/面板切换）会重新调用
       // runtime.editor() 并以惰性的 writerId 继续同一条草稿分支。
       runtime.releaseEditor(ref, controller)
@@ -142,14 +148,20 @@ export function useResearchEditor(options: UseResearchEditorOptions): UseResearc
   // 页面隐藏/卸载：尽力写本机草稿（不发服务端 cancel、不阻塞卸载）。
   useEffect(() => {
     if (typeof window === 'undefined') return
-    const handlePageHide = (): void => {
-      const controller = controllerRef.current
-      if (controller === null) return
-      controller.persistLocal()
-      void controller.flush('switch')
+    // pagehide/页面隐藏只同步写本机草稿，不依赖异步服务端请求（DESIGN §5.4；
+    // 二次 review #12：原先 pagehide 里的 flush 与“仅本机”语义不一致，已移除）。
+    const persistOnly = (): void => {
+      controllerRef.current?.persistLocal()
     }
-    window.addEventListener('pagehide', handlePageHide)
-    return () => window.removeEventListener('pagehide', handlePageHide)
+    const handleVisibilityChange = (): void => {
+      if (document.visibilityState === 'hidden') persistOnly()
+    }
+    window.addEventListener('pagehide', persistOnly)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      window.removeEventListener('pagehide', persistOnly)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
   }, [])
 
   const current = useCallback((): EditorController | null => controllerRef.current, [])
@@ -217,6 +229,12 @@ export function useResearchEditor(options: UseResearchEditorOptions): UseResearc
   const releaseDocument = useCallback(() => {
     const controller = controllerRef.current
     if (controller === null) return
+    if (releasedRef.current) {
+      controllerRef.current = null
+      setSnapshot(null)
+      return
+    }
+    releasedRef.current = true
     runtime?.releaseEditor(controller.getSnapshot().ref, controller)
     controllerRef.current = null
     setSnapshot(null)

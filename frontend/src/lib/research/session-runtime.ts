@@ -687,6 +687,7 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
       // 卸载：尽力写本机草稿（此时缓存授权仍有效），但不写服务端、不发 cancel。
       for (const { controller } of editors.values()) controller.releaseDocument()
       editors.clear()
+      releasedEditors.clear()
     }
     const scope = cacheScopeInternal()
     state.disposed = true
@@ -703,7 +704,11 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
       for (const { controller } of editors.values()) {
         controller.invalidate(reason === 'logout' ? 'logout' : 'viewer-change')
       }
+      for (const controller of releasedEditors) {
+        controller.invalidate(reason === 'logout' ? 'logout' : 'viewer-change')
+      }
       editors.clear()
+      releasedEditors.clear()
       // 服务端 viewer 与 claims 不一致且尚未重新确认时，按任一 viewer 清理
       // 都可能误删对方恢复数据（review F9）；旧 viewer 已在 mismatch 时清理。
       if (scope && !viewerMismatch) purgeViewerScope(scope, { storage: storage() })
@@ -845,6 +850,9 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
    * 引用计数归零时释放文档（尽力写本机草稿）。writerId 由首个消费者决定。
    */
   const editors = new Map<string, { controller: EditorController; refs: number }>()
+  // 引用归零后仍保留最近释放的 controller，使 logout/viewer-change 能清理其敏感快照
+  // （二次 review N12）；容量有界，避免长会话无界增长。
+  const releasedEditors = new Set<EditorController>()
   let attemptSequence = 0
 
   function editorRuntimeView(): EditorRuntimeView {
@@ -910,6 +918,11 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
     if (entry.refs > 0) return
     editors.delete(key)
     entry.controller.releaseDocument()
+    releasedEditors.add(entry.controller)
+    if (releasedEditors.size > 8) {
+      const oldest = releasedEditors.values().next()
+      if (!oldest.done) releasedEditors.delete(oldest.value)
+    }
   }
 
   function createWriteGuard(label: string): SessionWriteGuard {

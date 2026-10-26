@@ -543,6 +543,49 @@ describe('多消费者共享编辑器控制器', () => {
   })
 })
 
+describe('二次 review：幂等释放与页面隐藏（N6/N12）', () => {
+  it('同一消费者重复 releaseDocument 幂等，另一消费者编辑仍生效', async () => {
+    getEditorStateMock.mockResolvedValue(editorResponse())
+    putEditorStateMock.mockResolvedValue(undefined)
+    const { result, unmount } = renderHook(
+      () => ({
+        a: useResearchEditor({ kind: 'global', sessionId: 's1', storage }),
+        b: useResearchEditor({ kind: 'global', sessionId: 's1', storage }),
+      }),
+      { wrapper: makeWrapper({}) },
+    )
+    await settle(0)
+    expect(result.current.a.controller).toBe(result.current.b.controller)
+    act(() => result.current.a.releaseDocument())
+    act(() => result.current.a.releaseDocument())
+    await settle(0)
+    act(() => result.current.b.setDraftText('B 仍可编辑'))
+    await settle(0)
+    expect(result.current.b.snapshot?.draftText).toBe('B 仍可编辑')
+    unmount()
+  })
+
+  it('visibilitychange=hidden 时同步写本机草稿（不依赖 pagehide）', async () => {
+    getEditorStateMock.mockResolvedValue(editorResponse())
+    const { result } = renderHook(
+      () => useResearchEditor({ kind: 'global', sessionId: 's1', storage }),
+      { wrapper: makeWrapper({}) },
+    )
+    await settle(0)
+    act(() => result.current.setDraftText('隐藏时未同步稿'))
+    const original = Object.getOwnPropertyDescriptor(document, 'visibilityState')
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    await settle(0)
+    if (original) Object.defineProperty(document, 'visibilityState', original)
+    else Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+    const branches = listDraftBranches(scope(), authority(), ref, { storage })
+    expect(branches.some((branch) => branch.record.text === '隐藏时未同步稿')).toBe(true)
+  })
+})
+
 describe('pagehide 本机草稿持久化', () => {
   it('pagehide 时立即写本机草稿、不发服务端请求', async () => {
     getEditorStateMock.mockResolvedValue(editorResponse())

@@ -478,6 +478,7 @@ export function reduceEditor(state: EditorSnapshot, event: EditorEvent): EditorS
         singleSourceId: event.record.singleSourceId,
         noteIds: event.record.noteIds,
         localVersion,
+        oversize: measureDraftBytes(event.record.text) > EDITOR_TEXT_MAX_BYTES,
       }
       return { ...next, dirty: isDirty(next) }
     }
@@ -876,6 +877,7 @@ export interface SubmissionReadiness {
     | 'invalidated'
     | 'no_transport'
     | 'consumed'
+    | 'not_ready'
     | null
 }
 
@@ -932,6 +934,8 @@ interface QueuedRequest {
   readonly capturedLocalVersion: number
   /** 显式 flush 在入队时捕获的不可变提交快照（review P1 #6）。 */
   readonly frozenEditorState: EditorStateWire | null
+  /** 入队时的本地版本：结算必须用它，不能用结算时的可见版本（二次 review P1）。 */
+  readonly localVersion: number
   readonly resolve: (outcome: AnyOutcome) => void
 }
 
@@ -960,6 +964,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
   let loaded = false
   let released = false
   let replaying = false
+  let replayPending = false
   let lastSeenGeneration = deps.getRuntimeView().authGeneration
   let lastSeenViewer = deps.getRuntimeView().viewerUserId
   let lastSeenProject = deps.getRuntimeView().projectId
@@ -1164,6 +1169,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
       raw = await result.value
     } catch (error) {
       if (active !== current) return
+      if (attempt !== current.attempt) return
       if (!sameGeneration(attempt)) {
         // 旧代/旧 viewer 的迟到失败：不得把旧错误写进新代状态，保留未确认等待重放。
         current.unconfirmed = true
@@ -1173,6 +1179,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
       return
     }
     if (active !== current) return
+    if (attempt !== current.attempt) return
     if (!sameGeneration(attempt)) {
       // 旧代/旧 viewer 的迟到 ACK：丢弃；replay/ready 事件负责用原 mutation 原 body 重放。
       current.unconfirmed = true
@@ -1256,6 +1263,8 @@ export function createEditorController(deps: EditorDeps): EditorController {
     active = null
     loaded = true
     if (stillSameDraft) {
+      const previousToken = state.draftToken
+      const previousLocalVersion = state.localVersion
       reduce({
         type: 'clear/applied',
         revision: projection.editorRevision,
@@ -1263,7 +1272,19 @@ export function createEditorController(deps: EditorDeps): EditorController {
         savedAt: projection.savedAt,
         token: current.clearToken ?? current.body.editor_state.draft.token,
       })
-      removeOwnDraftIfClean()
+      // 清稿 ACK 后按“派发前旧 token + 旧版本”删除本 writer 分支，
+      // 用新 token 条件删除会因磁盘仍是旧 token 而失败（二次 review N11）。
+      const clearScope = deps.getCacheScope()
+      if (clearScope !== null) {
+        removeDraftIfVersion(
+          clearScope,
+          state.ref,
+          writerId,
+          { localVersion: previousLocalVersion, token: previousToken },
+          cacheOptions(),
+        )
+      }
+      if (isDirty(state)) writeLocalDraft()
     } else {
       reduce({
         type: 'save/superseded',
@@ -1286,6 +1307,12 @@ export function createEditorController(deps: EditorDeps): EditorController {
       retryTimer = setTimeout(() => {
         retryTimer = null
         if (active !== current || state.invalidated || released) return
+        const timerRuntime = runtimeView()
+        if (!timerRuntime.ready || timerRuntime.editorReady === false || timerRuntime.disposed || timerRuntime.viewerChanged) {
+          // 退避期间认证/能力已变化：停止自动重试，保留 active 等待代际桥接管（N9）。
+          current.unconfirmed = true
+          return
+        }
         current.attempt = newAttempt(current.record.mutationId)
         void performPut(current, current.attempt)
       }, delay)
@@ -1371,7 +1398,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
       record,
       body,
       attempt: newAttempt(record.mutationId),
-      localVersion: state.localVersion,
+      localVersion: pending.localVersion,
       kind: 'save',
       operationId: pending.operationId,
       clearToken: null,
@@ -1394,6 +1421,21 @@ export function createEditorController(deps: EditorDeps): EditorController {
       return
     }
     if (!canWrite()) {
+      pending.resolve('blocked')
+      if (pending.operationId !== null) releaseHold(pending.operationId)
+      return
+    }
+    if (
+      measureDraftBytes(
+        JSON.stringify({
+          expected_revision: state.revision,
+          mutation_id: nextMutationId(),
+          editor_state: editorStateToWire(state),
+        }),
+      ) > EDITOR_JSON_MAX_BYTES
+    ) {
+      // 清稿 PUT 同样受 512KiB editor_state 上限约束（二次 review N10）。
+      reduce({ type: 'save/blocked', failure: { code: 'editor_state_too_large', retryable: false } })
       pending.resolve('blocked')
       if (pending.operationId !== null) releaseHold(pending.operationId)
       return
@@ -1436,7 +1478,8 @@ export function createEditorController(deps: EditorDeps): EditorController {
       dispatchClear(pending)
       return
     }
-    if (hasSubmitHold() && !pending.explicit) {
+    if ((hasSubmitHold() || hasConflictHold()) && !pending.explicit) {
+      // 普通 flush 的排队请求同样受 hold 约束（二次 review N7）。
       queued = pending
       return
     }
@@ -1455,6 +1498,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
       explicit: false,
       frozenEditorState: null,
       capturedLocalVersion: state.localVersion,
+      localVersion: state.localVersion,
       resolve: () => {},
     })
   }
@@ -1475,12 +1519,24 @@ export function createEditorController(deps: EditorDeps): EditorController {
   }
 
   const replayActive = (current: ActiveMutation): void => {
-    if (replaying || state.invalidated || released || !runtimeView().ready) return
+    const replayRuntime = runtimeView()
+    if (state.invalidated || released || !replayRuntime.ready || replayRuntime.editorReady === false) return
+    if (replaying) {
+      // 重放未结束又换了代际：记下待重放，旧尝试的 stale 结算后再接管（二次 review P1）。
+      replayPending = true
+      return
+    }
     replaying = true
     current.attempt = newAttempt(current.record.mutationId)
     current.unconfirmed = false
     void performPut(current, current.attempt).finally(() => {
       replaying = false
+      if (replayPending) {
+        replayPending = false
+        if (active !== null && active.unconfirmed && !sameGeneration(active.attempt)) {
+          replayActive(active)
+        }
+      }
     })
   }
 
@@ -1621,6 +1677,19 @@ export function createEditorController(deps: EditorDeps): EditorController {
       return false
     }
     loaded = true
+    // 服务端不可读（editor_state_unreadable）优先于本机 dirty：只读展示、不写回
+    // 默认范围/空稿，也不允许 PUT 覆盖服务端状态（二次 review N8）。
+    if (parsed.value.editorState === null) {
+      reduce({
+        type: 'load/unreadable',
+        warnings: parsed.value.stateWarnings,
+        revision: parsed.value.editorRevision,
+      })
+      const unreadableRecord = readOwnDraft()
+      if (unreadableRecord !== null) reduce({ type: 'draft/readback', record: unreadableRecord })
+      refreshDraftCandidates()
+      return false
+    }
     // GET 与本地未同步文本的竞态（review P1 #6）：不用服务端快照覆盖本机 dirty。
     if (isDirty(state)) {
       if (parsed.value.editorRevision !== state.revision) {
@@ -1633,19 +1702,10 @@ export function createEditorController(deps: EditorDeps): EditorController {
         refreshDraftCandidates()
         return false
       }
-      // 同一 revision：保留本机文本，继续 autosave。
+      // 同一 revision：保留本机文本，继续 autosave；仍须归约 load/ready，
+      // 否则 loading 永不清除、canSubmit 永远 not_loaded（二次 review P1）。
+      reduce({ type: 'load/ready', projection: parsed.value })
       if (!state.oversize) scheduleTextSave()
-      refreshDraftCandidates()
-      return false
-    }
-    if (parsed.value.editorState === null) {
-      reduce({
-        type: 'load/unreadable',
-        warnings: parsed.value.stateWarnings,
-        revision: parsed.value.editorRevision,
-      })
-      const record = readOwnDraft()
-      if (record !== null) reduce({ type: 'draft/readback', record })
       refreshDraftCandidates()
       return false
     }
@@ -1821,6 +1881,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
           explicit,
           frozenEditorState: explicit ? editorStateToWire(state) : null,
           capturedLocalVersion: state.localVersion,
+          localVersion: state.localVersion,
           resolve,
         }
         return (await promise) as SaveOutcome
@@ -1832,6 +1893,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
         explicit,
         frozenEditorState: explicit ? editorStateToWire(state) : null,
         capturedLocalVersion: state.localVersion,
+        localVersion: state.localVersion,
         resolve,
       })
       return (await promise) as SaveOutcome
@@ -1844,6 +1906,8 @@ export function createEditorController(deps: EditorDeps): EditorController {
     retrySave: async () => {
       if (state.invalidated || released) return 'skipped'
       if (state.conflict !== null) return 'conflict'
+      // 手动重试必须取消在途退避定时器，否则旧定时器会再发一次 PUT（二次 review P1）。
+      clearRetryTimer()
       if (active !== null) {
         // 在途请求未结算时重试必须复用同一 attempt，禁止并发 PUT（review P1 #2）。
         if (!active.unconfirmed) return 'queued'
@@ -1887,6 +1951,14 @@ export function createEditorController(deps: EditorDeps): EditorController {
         reduce({ type: 'save/unconfirmed', failure: { code: 'invalid_response', retryable: false } })
         return 'invalid'
       }
+      if (parsed.value.editorState === null) {
+        // 服务端不可读状态不可被“采用”，保持冲突/只读（二次 review N8）。
+        reduce({
+          type: 'save/blocked',
+          failure: { code: 'editor_state_unreadable', retryable: false },
+        })
+        return 'blocked'
+      }
       reduce({ type: 'conflict/adoptServer', projection: parsed.value })
       loaded = true
       removeOwnDraftIfClean()
@@ -1925,6 +1997,14 @@ export function createEditorController(deps: EditorDeps): EditorController {
         String(parsed.value.viewerUserId) !== String(currentRuntime.viewerUserId)
       ) {
         return 'invalid'
+      }
+      if (parsed.value.editorState === null) {
+        // 服务端当前不可读：不得用本机 shadow 覆盖（二次 review N8）。
+        reduce({
+          type: 'save/blocked',
+          failure: { code: 'editor_state_unreadable', retryable: false },
+        })
+        return 'blocked'
       }
       // 以服务端最新 revision 作为 expected_revision，再显式保存本机 shadow。
       reduce({
@@ -1965,6 +2045,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
           explicit: true,
           frozenEditorState: null,
           capturedLocalVersion,
+          localVersion: state.localVersion,
           resolve,
         }
         return (await promise) as ClearOutcome
@@ -1975,6 +2056,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
         explicit: true,
         frozenEditorState: null,
         capturedLocalVersion,
+        localVersion: state.localVersion,
         resolve,
       })
       return (await promise) as ClearOutcome
@@ -1985,6 +2067,11 @@ export function createEditorController(deps: EditorDeps): EditorController {
     },
     canSubmit: () => {
       if (state.invalidated) return { allowed: false, reason: 'invalidated' }
+      const submitRuntime = runtimeView()
+      if (!submitRuntime.ready || submitRuntime.editorReady === false || submitRuntime.disposed) {
+        // 认证未就绪/masked/能力关闭时不得提交（N9）。
+        return { allowed: false, reason: 'not_ready' }
+      }
       if (state.readOnly) return { allowed: false, reason: 'readonly' }
       if (state.phase === 'idle' || state.loading) return { allowed: false, reason: 'not_loaded' }
       if (state.conflict !== null) return { allowed: false, reason: 'conflict' }
