@@ -231,6 +231,10 @@ function ResearchPageContent() {
   // 指针存在时恢复它，否则进入“该来源新会话”状态（F-M3，不写 `.source`）。
   useEffect(() => {
     if (!sessionRuntime || !navSelectedSourceId) return
+    // 只有 Source surface 真正显示时才同步该来源的 active/display。否则
+    // `activate('global', …)` 触发的 runtime 通知会让本 effect 在“全局已显示”
+    // 时重新恢复来源并覆盖 display（R3 回归：source→global→source）。
+    if (!navSourceFocusActive) return
     // 离开该来源后遗留的 display 恢复 guard 不得跳过下一次显式打开（R3）。
     if (
       restoredSourceGuardRef.current !== null &&
@@ -278,7 +282,14 @@ function ResearchPageContent() {
       sourceId: navSelectedSourceId,
       ref: null,
     })
-  }, [sessionRuntime, runtimeSnapshot, navSelectedSourceId, navSourceNewSessionFor, sourceOpenRequest])
+  }, [
+    sessionRuntime,
+    runtimeSnapshot,
+    navSelectedSourceId,
+    navSourceNewSessionFor,
+    sourceOpenRequest,
+    navSourceFocusActive,
+  ])
 
   // 列表返回 404 `session_not_found`（§4.1 / §4.7）：清该 surface 指针并显示
   // 空态；本机草稿由 PR-3 的草稿分区各自保留，不在本 PR 注入其他会话。
@@ -459,10 +470,18 @@ function ResearchPageContent() {
   /** 门禁区的合成事件兜底：inert 之外再阻断发送/输入类控件的 click/keydown
    *  冒泡（R4）。只拦“执行/输入”入口：引用跳转、阅读、tabs 等仍可用，避免
    *  把阅读链路也一并冻结（R5）。 */
+  // 点击/键盘分开：点击拦截覆盖所有门禁内容（含仍未接线的发送/新建按钮）；
+  // 键盘只拦截 global Chat tabpanel（inert 在 jsdom/部分浏览器对新焦点链路
+  // 之外仍需兜底）。Source 面板的 composer 用 readOnly 冻结，不再统一拦截
+  // 键盘，否则会造成 Tab 焦点陷阱（R4）。
   const blockGatedChatEvent = useCallback((event: SyntheticEvent) => {
     const target = event.target
     if (!(target instanceof Element)) return
-    if (!target.closest('[data-session-chat-gated="true"]')) return
+    const selector =
+      event.type === 'keydown'
+        ? '[data-session-chat-keyboard="true"]'
+        : '[data-session-chat-gated="true"]'
+    if (!target.closest(selector)) return
     const control = target.closest(GATED_CHAT_CONTROL_SELECTOR)
     if (!control) return
     event.preventDefault()
@@ -480,22 +499,52 @@ function ResearchPageContent() {
     if (!globalChatGated) return
     activePanel.setAttribute('inert', '')
     activePanel.setAttribute('data-session-chat-gated', 'true')
+    activePanel.setAttribute('data-session-chat-keyboard', 'true')
     activePanel.setAttribute('aria-hidden', 'true')
     return () => {
       activePanel.removeAttribute('inert')
       activePanel.removeAttribute('data-session-chat-gated')
+      activePanel.removeAttribute('data-session-chat-keyboard')
       activePanel.removeAttribute('aria-hidden')
     }
   }, [globalChatGated, activeMainAction, sourceMode])
 
   // Source 面板包含仍可用的阅读链路（引用跳转、来源正文），不能整块 inert；
-  // 只标记门禁并由 capture 兜底拦截发送/新建/输入控件（R4/R5）。
+  // 但 composer 必须真正不可编辑（不能只靠 click/keydown 捕获，否则粘贴/焦点
+  // 仍可写入，且全局 keydown 捕获会造成 Tab 焦点陷阱）。因此对门禁区内的
+  // 输入控件设 readOnly/contenteditable=false，键盘事件不再统一拦截（R4）。
   useEffect(() => {
     const container = sourceSurfaceRef.current
     if (!(container instanceof HTMLElement)) return
     if (!sourceChatGated) return
     container.setAttribute('data-session-chat-gated', 'true')
-    return () => container.removeAttribute('data-session-chat-gated')
+    const editable = Array.from(
+      container.querySelectorAll<HTMLElement>('input, textarea, [contenteditable="true"]'),
+    )
+    const previous = editable.map((element) => ({
+      element,
+      readOnly:
+        element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement
+          ? element.readOnly
+          : null,
+      contentEditable: element.getAttribute('contenteditable'),
+    }))
+    editable.forEach((element) => {
+      if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+        element.readOnly = true
+      } else {
+        element.setAttribute('contenteditable', 'false')
+      }
+    })
+    return () => {
+      container.removeAttribute('data-session-chat-gated')
+      previous.forEach(({ element, readOnly, contentEditable }) => {
+        if (readOnly !== null && (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)) {
+          element.readOnly = readOnly
+        }
+        if (contentEditable !== null) element.setAttribute('contenteditable', contentEditable)
+      })
+    }
   }, [sourceChatGated, navSelectedSourceId])
 
   return (
@@ -613,7 +662,6 @@ function ResearchPageContent() {
                     hidden={!sourceMode}
                     ref={sourceSurfaceRef}
                     onClickCapture={blockGatedChatEvent}
-                    onKeyDownCapture={blockGatedChatEvent}
                   >
                     <ResearchSourceChatPanel
                       key={`${projectId}:${navSelectedSourceId}`}

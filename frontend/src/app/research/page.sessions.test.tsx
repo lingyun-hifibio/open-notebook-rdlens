@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 
@@ -147,6 +147,7 @@ vi.mock('@/components/research/ResearchSourceChatPanel', () => ({
     onHighlightPage: (pageIdx: number) => void
   }) => (
     <div data-testid="source-chat-panel" data-project={projectId} data-source={sourceId}>
+      <textarea data-testid="srcchat-input" />
       <button type="button" data-testid="srcchat-send" onClick={() => workspaceSpies.sourceSend()} />
       <button type="button" data-testid="panel-cite-page" onClick={() => onHighlightPage(7)} />
     </div>
@@ -217,7 +218,14 @@ const READY_SNAPSHOT: SessionRuntimeSnapshot = {
 class FakeRuntime {
   snapshot: SessionRuntimeSnapshot
   listeners = new Set<() => void>()
-  activate = vi.fn(() => true)
+  activate = vi.fn((surface: 'global' | 'source', ref: unknown) => {
+    this.snapshot = {
+      ...this.snapshot,
+      active: { ...this.snapshot.active, [surface]: ref },
+    }
+    this.listeners.forEach((listener) => listener())
+    return true
+  })
   setDisplayPointer = vi.fn()
 
   constructor(snapshot: Partial<SessionRuntimeSnapshot> = {}) {
@@ -829,11 +837,49 @@ describe('ResearchPage 会话导航：review B6/B7/B8/Major 回归', () => {
     )
     fireEvent.click(screen.getByTestId('srcchat-send'))
     expect(workspaceSpies.sourceSend).not.toHaveBeenCalled()
+    // composer 必须真正不可编辑（不能只靠事件捕获，否则粘贴/焦点仍可写入）。
+    const input = screen.getByTestId('srcchat-input') as HTMLTextAreaElement
+    expect(input.readOnly).toBe(true)
+    // 键盘不得被统一捕获（否则会造成 Tab 焦点陷阱）；Tab 仍可正常离开。
+    const tabEvent = createEvent.keyDown(input, { key: 'Tab' })
+    fireEvent(input, tabEvent)
+    expect(tabEvent.defaultPrevented).toBe(false)
     // 引用跳转不被门禁拦截。
     fireEvent.click(screen.getByTestId('panel-cite-page'))
     await waitFor(() =>
       expect(screen.getByTestId('workbench')).toHaveAttribute('data-highlight-page-idx', '7'),
     )
+  })
+
+  it('来源→全局历史：切回 global 后 display 不被来源同步 effect 重写（R3 回归）', async () => {
+    const sourceRef = {
+      domain: 'research' as const,
+      kind: 'source' as const,
+      projectId: PROJECT_ID,
+      sessionId: 'sess_source',
+      sourceId: 'src-1',
+    }
+    readPointer.mockImplementation((_scope, _authority, surface: string) =>
+      surface === 'source' ? { version: 1, ref: sourceRef, savedAt: 1 } : null,
+    )
+    listChatSessions.mockResolvedValue(wireList([wireSummary('sess_global', { title: 'Global' })]))
+    renderPage()
+    await waitFor(() => expect(nav()).toBeInTheDocument())
+
+    fireEvent.click(screen.getByTestId('workbench-open-source'))
+    await waitFor(() => expect(nav()).toHaveAttribute('data-active-source-session', 'sess_source'))
+
+    await openSwitcher('global')
+    await waitFor(() => expect(screen.getAllByTestId('session-item')).toHaveLength(1))
+    fireEvent.click(screen.getByTestId('session-item'))
+    await waitFor(() => expect(nav()).toHaveAttribute('data-active-global-session', 'sess_global'))
+
+    // activate('global') 会触发 runtime 通知；不得让来源同步 effect 把 display 再写回 source。
+    expect(runtimeRef.current?.setDisplayPointer).toHaveBeenLastCalledWith({
+      version: 1,
+      surface: 'global',
+      ref: expect.objectContaining({ sessionId: 'sess_global' }),
+    })
   })
 
   it('后台 global 404 不覆盖正在显示的 source display（R7）', async () => {
