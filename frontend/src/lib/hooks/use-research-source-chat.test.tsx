@@ -703,6 +703,7 @@ describe('PR-5a（D2）：显式 session 接线（source）', () => {
     const controller = {
       detach: vi.fn(),
       hasActiveTurn: vi.fn(() => false),
+      load: vi.fn(async () => ({ status: 'blocked' as const })),
     } as unknown as ConversationController
     const conversation = vi.fn((..._args: unknown[]) => controller)
     const releaseConversation = vi.fn()
@@ -727,5 +728,57 @@ describe('PR-5a（D2）：显式 session 接线（source）', () => {
     unmount()
     expect(controller.detach).toHaveBeenCalled()
     expect(releaseConversation).toHaveBeenCalledWith(ref, controller)
+  })
+
+  it('source 新协议请求：携带 source_ids 且不发送 source_scope/note_ids（review-1 P1-#2）', () => {
+    const captures = openCapture()
+    const controller = {
+      detach: vi.fn(),
+      hasActiveTurn: vi.fn(() => false),
+      load: vi.fn(async () => ({ status: 'blocked' as const })),
+    } as unknown as ConversationController
+    let capturedOptions: { transport: { openStream: (input: Record<string, unknown>) => { abort: (reason?: string) => void } } } | null = null
+    const conversation = vi.fn((...args: unknown[]) => {
+      capturedOptions = args[1] as typeof capturedOptions
+      return controller
+    })
+    const runtime = {
+      conversation,
+      releaseConversation: vi.fn(),
+    } as unknown as SessionRuntime
+    const ref: ResearchSessionRef = {
+      domain: 'research',
+      kind: 'source',
+      projectId: 'proj_1',
+      sessionId: 'sess_src_1',
+      sourceId: 'src_1',
+    }
+
+    renderHook(
+      () => useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1', session: { runtime, ref } }),
+      { wrapper: makeHookWrapper() },
+    )
+    expect(capturedOptions).not.toBeNull()
+    act(() => {
+      capturedOptions?.transport.openStream({
+        sessionRef: ref,
+        editorRevision: 0,
+        draftToken: 'draft_src_1',
+        editorIntentHash: 'a'.repeat(64),
+        idempotencyKey: `s1_${'b'.repeat(64)}`,
+        lastEventId: 0,
+        query: 'q-src',
+        modelId: 'm-a',
+        sourceIds: [],
+        noteIds: [],
+        scope: null,
+      })
+    })
+    expect(captures).toHaveLength(1)
+    expect(captures[0].opts.protocol).toBe('research-session-v1')
+    const request = captures[0].opts.request as unknown as Record<string, unknown>
+    expect(request.source_ids).toEqual(['src_1'])
+    expect(request.source_scope).toBeUndefined()
+    expect(request.note_ids).toBeUndefined()
   })
 })

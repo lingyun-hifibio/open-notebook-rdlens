@@ -752,6 +752,7 @@ describe('PR-5a（D2）：显式 session 接线', () => {
     const controller = {
       detach: vi.fn(),
       hasActiveTurn: vi.fn(() => false),
+      load: vi.fn(async () => ({ status: 'blocked' as const })),
     } as unknown as ConversationController
     const conversation = vi.fn((..._args: unknown[]) => controller)
     const releaseConversation = vi.fn()
@@ -775,6 +776,59 @@ describe('PR-5a（D2）：显式 session 接线', () => {
     unmount()
     expect(controller.detach).toHaveBeenCalled()
     expect(releaseConversation).toHaveBeenCalledWith(ref, controller)
+  })
+
+  it('global 新协议请求：携带 source_scope 且不发送顶层 source_ids（review-1 P1-#2）', () => {
+    const captures = openCapture()
+    const controller = {
+      detach: vi.fn(),
+      hasActiveTurn: vi.fn(() => false),
+      load: vi.fn(async () => ({ status: 'blocked' as const })),
+    } as unknown as ConversationController
+    let capturedOptions: { transport: { openStream: (input: Record<string, unknown>) => { abort: (reason?: string) => void } } } | null = null
+    const conversation = vi.fn((...args: unknown[]) => {
+      capturedOptions = args[1] as typeof capturedOptions
+      return controller
+    })
+    const runtime = {
+      conversation,
+      releaseConversation: vi.fn(),
+    } as unknown as SessionRuntime
+    const ref: ResearchSessionRef = {
+      domain: 'research',
+      kind: 'global',
+      projectId: 'proj_1',
+      sessionId: 'sess_1',
+      sourceId: null,
+    }
+
+    renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime, ref } }))
+    expect(capturedOptions).not.toBeNull()
+    act(() => {
+      capturedOptions?.transport.openStream({
+        sessionRef: ref,
+        editorRevision: 4,
+        draftToken: 'draft_1',
+        editorIntentHash: 'a'.repeat(64),
+        idempotencyKey: `s1_${'b'.repeat(64)}`,
+        lastEventId: 0,
+        query: 'q1',
+        modelId: MODEL,
+        sourceIds: ['src_1', 'src_2'],
+        noteIds: ['note_1'],
+        scope: { mode: 'selected', sourceIds: ['src_1', 'src_2'], singleSourceId: null },
+      })
+    })
+    expect(captures).toHaveLength(1)
+    expect(captures[0].opts.protocol).toBe('research-session-v1')
+    const request = captures[0].opts.request as unknown as Record<string, unknown>
+    expect(request.source_ids).toBeUndefined()
+    expect(request.note_ids).toEqual(['note_1'])
+    expect(request.source_scope).toEqual({
+      mode: 'selected',
+      source_ids: ['src_1', 'src_2'],
+      single_source_id: null,
+    })
   })
 })
 

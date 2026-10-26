@@ -56,6 +56,8 @@ export interface ConversationTurnIdentity {
   readonly authGeneration: number
   /** research.v1 规范化会话键（与 session-contract.sessionKey 一致） */
   readonly sessionKey: string
+  /** 服务端 session_id（用于校验 SSE response 头 / 事件 session_id；外部查回可为空） */
+  readonly sessionId?: string
   readonly turnId: string
   readonly draftToken: string
   readonly idempotencyKey: string
@@ -89,6 +91,7 @@ export interface ConversationCallbackGuard {
 export interface ConversationSubmissionView {
   readonly ref: ResearchSessionRef
   readonly token: string
+  readonly idempotencyKey: string
   readonly acceptance: ConversationAcceptanceState
   readonly generationId: string | null
   readonly generationState: string | null
@@ -119,6 +122,12 @@ export interface ConversationTurn {
   /** 是否检测到不可续接的水位缺口（转 durable 后为 true） */
   readonly gapDetected: boolean
   readonly lookup: ConversationLookupState | null
+  /** accepted 已排队清稿（clearAfterSubmission 已派发）→ 终态不得提前 release。 */
+  readonly clearPending: boolean
+  /** 查回/恢复得到的答案是否不完整（缺口后 durable 恢复前为 true）。 */
+  readonly incomplete: boolean
+  /** 冷启动/无 turn 的外部 token 查回（不绑定编辑器快照）。 */
+  readonly external: boolean
 }
 
 /** 对话状态（每 session 一份）。 */
@@ -146,6 +155,7 @@ export type ConversationEffect =
       readonly reason: 'unknown' | 'disconnect' | 'reattach' | 'cold_start' | 'manual'
     }
   | { readonly type: 'abort_stream'; readonly turnId: string }
+  | { readonly type: 'durable_restore'; readonly token: string }
   | {
       readonly type: 'open_stream'
       readonly turnId: string
@@ -163,6 +173,7 @@ export interface ConversationReduction {
 export interface ConversationTurnSeed {
   readonly authGeneration: number
   readonly sessionKey: string
+  readonly sessionId?: string
   readonly turnId: string
   readonly draftToken: string
   readonly idempotencyKey: string
@@ -175,6 +186,7 @@ export function createTurnIdentity(seed: ConversationTurnSeed): ConversationTurn
   return {
     authGeneration: seed.authGeneration,
     sessionKey: seed.sessionKey,
+    sessionId: seed.sessionId,
     turnId: seed.turnId,
     draftToken: seed.draftToken,
     idempotencyKey: seed.idempotencyKey,
@@ -221,6 +233,68 @@ export function turnIdentityMatches(
     return false
   }
   if (guard.detached !== undefined && identity.detached !== guard.detached) {
+    return false
+  }
+  return true
+}
+
+/**
+ * SSE 事件的 session_id 必须与当前 turn 的 session_id 一致；事件缺失该字段
+ * 时视为兼容（旧 batch-2 服务端），但不放松 turn 级守卫。
+ */
+export function eventSessionMatches(
+  identity: ConversationTurnIdentity,
+  event: ResearchSseEvent,
+): boolean {
+  const sessionId = (event as { readonly session_id?: unknown }).session_id
+  if (typeof sessionId !== 'string' || sessionId.length === 0) {
+    return true
+  }
+  if (identity.sessionId === undefined || identity.sessionId.length === 0) {
+    return true
+  }
+  return identity.sessionId === sessionId
+}
+
+/**
+ * 查回结果与 turn 身份的完整匹配（DESIGN §6.7）：session_ref + draft_token +
+ * idempotency_key + editor_intent_hash + 已绑定 generationId。
+ * `external`（冷启动无编辑器快照）只校验 session_ref + token。
+ */
+export function submissionViewMatches(
+  sessionKeyValue: string,
+  identity: ConversationTurnIdentity,
+  view: ConversationSubmissionView,
+  external: boolean,
+): boolean {
+  if (sessionKey(view.ref) !== sessionKeyValue) {
+    return false
+  }
+  if (view.token !== identity.draftToken) {
+    return false
+  }
+  if (external) {
+    return true
+  }
+  if (
+    view.idempotencyKey.length > 0
+    && identity.idempotencyKey.length > 0
+    && view.idempotencyKey !== identity.idempotencyKey
+  ) {
+    return false
+  }
+  if (
+    view.editorIntentHash !== null
+    && view.editorIntentHash.length > 0
+    && view.editorIntentHash !== identity.editorIntentHash
+  ) {
+    return false
+  }
+  if (
+    identity.generationId !== null
+    && view.generationId !== null
+    && view.generationId !== identity.generationId
+  ) {
     return false
   }
   return true
@@ -300,7 +374,23 @@ export interface ConversationFailureInput {
   readonly hadTerminal?: boolean
 }
 
-const DEFINITE_NON_ACCEPTANCE_STATUS = new Set([413, 422, 426, 503, 400, 402])
+const DEFINITE_NON_ACCEPTANCE_STATUS = new Set([413, 422, 426, 400, 402])
+
+/**
+ * 稳定错误码中“一定未受理”的集合（在验收前被拒绝/参数非法/能力未启用）。
+ * 注意：`session_store_unavailable`/`input_snapshot_unavailable` 等无受理知识的
+ * 503 不在此列，必须转查回（review-1 P1-#4）。
+ */
+const DEFINITE_NOT_ACCEPTED_CODES = new Set([
+  'c05_contract_not_enabled',
+  'c05_entry_not_ready',
+  'editor_state_invalid',
+  'session_contract_unsupported',
+  'input_snapshot_invalid',
+  'context_limit_exceeded',
+  'invalid_request',
+  'session_context_changed',
+])
 
 /**
  * 提交失败分类（DESIGN §6.4/§7）：
@@ -316,6 +406,7 @@ export function classifySubmissionFailure(input: ConversationFailureInput): Conv
   if (status === 401) {
     return 'stale'
   }
+  // 优先级（review-1 P1-#4）：受理知识/recovery_action → 稳定码 → 未知传输错误。
   if (code === 'acceptance_outcome_unknown') {
     return 'unknown'
   }
@@ -325,13 +416,32 @@ export function classifySubmissionFailure(input: ConversationFailureInput): Conv
   if (input.acceptance === 'not_accepted') {
     return 'not_accepted'
   }
+  if (code !== null && DEFINITE_NOT_ACCEPTED_CODES.has(code)) {
+    return 'not_accepted'
+  }
   if (status === 409) {
-    return code === 'stream_identity_mismatch' ? 'unknown' : 'terminal'
+    if (
+      code === 'generation_in_progress'
+      || code === 'stream_identity_mismatch'
+      || code === 'session_store_unavailable'
+    ) {
+      // 执行可能仍在运行：不得释放 hold / 另开新意图，转查回保持原身份。
+      return 'unknown'
+    }
+    if (code === 'session_context_changed') {
+      // 会话上下文已变：本次未被受理，保留输入，允许以新快照重发。
+      return 'not_accepted'
+    }
+    if (code === 'submission_intent_conflict' || code === 'session_busy') {
+      return 'terminal'
+    }
+    return 'unknown'
   }
   if (status !== null && DEFINITE_NON_ACCEPTANCE_STATUS.has(status)) {
     return 'not_accepted'
   }
   if (status !== null && status >= 500) {
+    // 无受理知识（如 session_store_unavailable）→ 查回，不能判 not_accepted。
     return 'unknown'
   }
   if (status === null) {
@@ -412,6 +522,16 @@ export type ConversationEvent =
       readonly operationId: string
       readonly outcome: 'cleared' | 'superseded' | 'failed' | 'blocked'
     }
+  | {
+      readonly type: 'external_lookup'
+      readonly token: string
+      readonly sessionId?: string
+    }
+  | {
+      readonly type: 'durable_restored'
+      readonly turnId: string
+      readonly complete: boolean
+    }
 
 function withTurn(state: ConversationState, turn: ConversationTurn): ConversationState {
   return { ...state, turn, sequence: state.sequence + 1 }
@@ -484,9 +604,10 @@ function enterTerminal(
     errorCode,
     errorMessage,
   }
+  // 清稿已租约在途：hold 必须保留到 clear settlement（review-1 P1-#9）。
   return {
     state: withTurn(state, next),
-    effects: [settleRelease(turn)],
+    effects: turn.clearPending ? [] : [settleRelease(turn)],
   }
 }
 
@@ -537,6 +658,9 @@ export function reduceConversation(
         errorMessage: null,
         gapDetected: false,
         lookup: null,
+        clearPending: false,
+        incomplete: false,
+        external: false,
       }
       return {
         state: { ...state, turn: next, history, sequence: state.sequence + 1 },
@@ -612,6 +736,7 @@ export function reduceConversation(
         ...turn,
         state: 'accepted',
         accepted: event.receipt,
+        clearPending: turn.operationId !== null ? true : turn.clearPending,
         identity: {
           ...turn.identity,
           generationId: turn.identity.generationId ?? event.receipt.generationId,
@@ -644,6 +769,10 @@ export function reduceConversation(
       ) {
         return unchanged
       }
+      // SSE 事件的 session_id 必须与当前 turn 一致（review-1 P1-#7）。
+      if (!eventSessionMatches(turn.identity, event.event)) {
+        return unchanged
+      }
       let nextTurn: ConversationTurn = {
         ...turn,
         sse: applySseEvent(turn.sse, event.event),
@@ -657,6 +786,11 @@ export function reduceConversation(
       // usage 事件可能携带受理回执：匹配后进入 accepted（不等待 HTTP 层）。
       if (event.event.accepted && nextTurn.state !== 'accepted') {
         const receiptFromSse = acceptedReceiptFromEvent(event.event.accepted)
+        if (receiptFromSse !== null && !acceptedReceiptMatches(nextTurn.identity, receiptFromSse)) {
+          // 已绑定 generationId 后收到不同执行的回执：整条事件丢弃，不能改写
+          // 既有 accepted（review-1 P1-#7）。
+          return unchanged
+        }
         if (
           receiptFromSse !== null
           && nextTurn.identity.generationId === null
@@ -666,6 +800,7 @@ export function reduceConversation(
             ...nextTurn,
             state: 'accepted',
             accepted: receiptFromSse,
+            clearPending: nextTurn.operationId !== null ? true : nextTurn.clearPending,
             identity: {
               ...nextTurn.identity,
               generationId: receiptFromSse.generationId,
@@ -836,9 +971,31 @@ export function reduceConversation(
         return unchanged
       }
       const view = event.view
-      if (view.token !== turn.identity.draftToken) {
-        // 查回只结算当前 turn 的 token；其他标记由 controller 单独处理。
-        return unchanged
+      // 集中校验完整身份：session_ref + draft_token + idempotency_key +
+      // editor_intent_hash + 已绑定 generationId（review-1 P1-#6）。
+      if (!submissionViewMatches(state.sessionKey, turn.identity, view, turn.external)) {
+        const failures = (turn.lookup?.failures ?? 0) + 1
+        const lookup: ConversationLookupState = {
+          token: view.token,
+          view: turn.lookup?.view ?? null,
+          failures,
+          lastFailure: 'protocol',
+        }
+        if (failures >= BOUNDED_LOOKUP_FAILURES) {
+          const next: ConversationTurn = {
+            ...turn,
+            state: 'unknown',
+            lookup,
+          }
+          return {
+            state: withTurn(state, next),
+            effects: [settleRelease(turn)],
+          }
+        }
+        return {
+          state: withTurn(state, { ...turn, state: 'lookup_pending', lookup }),
+          effects: [],
+        }
       }
       if (view.acceptance === 'not_observed') {
         const next: ConversationTurn = {
@@ -852,16 +1009,19 @@ export function reduceConversation(
         }
       }
       if (view.acceptance === 'accepted') {
-        const matchesIdentity = view.editorIntentHash === turn.identity.editorIntentHash
-          && (view.token === turn.identity.draftToken)
-        const boundGeneration = turn.identity.generationId ?? view.generationId
+        const matchesIdentity = turn.external
+          ? false
+          : submissionViewMatches(state.sessionKey, turn.identity, view, false)
         const next: ConversationTurn = {
           ...turn,
           state: 'accepted',
+          clearPending: matchesIdentity && turn.operationId !== null && view.generationId !== null
+            ? true
+            : turn.clearPending,
           lookup: { token: view.token, view, failures: 0, lastFailure: null },
           identity: {
             ...turn.identity,
-            generationId: boundGeneration,
+            generationId: turn.identity.generationId ?? view.generationId,
             observedRevision: view.acceptedEditorRevision ?? turn.identity.observedRevision,
           },
         }
@@ -879,9 +1039,24 @@ export function reduceConversation(
         const terminal: 'done' | 'error' = view.generationState === 'completed' ? 'done' : 'error'
         const next: ConversationTurn = {
           ...turn,
+          incomplete: turn.gapDetected ? true : turn.incomplete,
           lookup: { token: view.token, view, failures: 0, lastFailure: null },
         }
-        return enterTerminal(state, next, terminal, terminal === 'done' ? null : (view.generationState ?? 'failed'))
+        const reduction = enterTerminal(
+          state,
+          next,
+          terminal,
+          terminal === 'done' ? null : (view.generationState ?? 'failed'),
+        )
+        if (next.gapDetected) {
+          // 缺口后的 completed 不能静默当完整答案：保留 incomplete 并触发
+          // durable 恢复（review-1 P1-#10）。
+          return {
+            state: reduction.state,
+            effects: [...reduction.effects, { type: 'durable_restore', token: view.token }],
+          }
+        }
+        return reduction
       }
       // outcome_unknown：保留未知标记与草稿，settlement 只释放 hold。
       const next: ConversationTurn = {
@@ -954,14 +1129,74 @@ export function reduceConversation(
       if (turn === null || turn.identity.turnId !== event.turnId) {
         return unchanged
       }
+      // 只结算当前 turn 自己的 operationId：旧 turn 的迟到 clear ACK 不得
+      // 释放新 turn 的 hold（review-1 P1-#9）。
+      if (turn.operationId === null || turn.operationId !== event.operationId) {
+        return unchanged
+      }
       const next: ConversationTurn = {
         ...turn,
         operationId: null,
+        clearPending: false,
       }
       return {
         state: withTurn(state, next),
         effects: [{ type: 'release_hold', operationId: event.operationId }],
       }
+    }
+
+    case 'external_lookup': {
+      if (turn !== null && !isTerminalState(turn) && turn.state !== 'idle') {
+        return unchanged
+      }
+      const sequence = state.sequence + 1
+      const identity: ConversationTurnIdentity = {
+        authGeneration: state.authGeneration,
+        sessionKey: state.sessionKey,
+        sessionId: event.sessionId,
+        turnId: `external-${sequence}`,
+        draftToken: event.token,
+        idempotencyKey: '',
+        requestedRevision: 0,
+        editorIntentHash: '',
+        observedRevision: null,
+        generationId: null,
+        attempt: 0,
+        lastEventId: 0,
+        detached: false,
+        terminal: null,
+      }
+      const nextTurn: ConversationTurn = {
+        identity,
+        state: 'lookup_pending',
+        sse: createSseState(),
+        query: '',
+        operationId: null,
+        accepted: null,
+        errorCode: null,
+        errorMessage: null,
+        gapDetected: false,
+        lookup: null,
+        clearPending: false,
+        incomplete: true,
+        external: true,
+      }
+      const history = turn === null ? state.history : pushHistory(state, turn)
+      return {
+        state: { ...state, turn: nextTurn, history, sequence },
+        effects: [{ type: 'lookup_submission', token: event.token, reason: 'cold_start' }],
+      }
+    }
+
+    case 'durable_restored': {
+      if (turn === null || turn.identity.turnId !== event.turnId) {
+        return unchanged
+      }
+      const next: ConversationTurn = {
+        ...turn,
+        incomplete: event.complete ? false : turn.incomplete,
+      }
+      return { state: withTurn(state, next), effects: [] }
     }
   }
 }

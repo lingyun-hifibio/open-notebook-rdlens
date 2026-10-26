@@ -500,6 +500,7 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
   const projectIdRef = useRef(projectId)
   projectIdRef.current = projectId
   const conversationKey = session === undefined ? null : sessionKey(session.ref)
+  const sessionMode = session !== undefined
 
   useEffect(() => {
     const options = sessionOptionsRef.current
@@ -507,30 +508,48 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
       return
     }
     const ref = options.ref
+    const releaseHold = options.onReleaseHold
+    const clearAfterSubmission = options.onClearAfterSubmission
     const transport: ConversationTransport = {
       openStream: (input) => {
-        const abort = openResearchChatStream({
-        protocol: 'research-session-v1',
-        projectId: projectIdRef.current,
-        kind: ref.kind,
-        sessionRef: ref,
-        editorRevision: input.editorRevision,
-        draftToken: input.draftToken,
-        editorIntentHash: input.editorIntentHash,
-        idempotencyKey: input.idempotencyKey,
-        lastEventId: input.lastEventId,
-        // §6.2 wire 请求：session_id/editor 字段由 api 层从 options 补齐。
-        request: {
+        // §6.2 wire 请求：global 必须用冻结的 source_scope，禁止顶层 source_ids；
+        // source kind 以路径 source_id 定位（review-1 P1-#2）。
+        const request: ResearchChatRequest = {
           query: input.query,
           model_id: input.modelId,
-          source_ids: [...input.sourceIds],
-          note_ids: [...input.noteIds],
-        },
-        onEvent: input.onEvent,
-        onEnd: input.onEnd,
-        onHttpError: input.onHttpError,
-        onNetworkError: input.onNetworkError,
-        onProtocolError: input.onProtocolError,
+        }
+        if (ref.kind === 'global') {
+          if (input.scope !== null) {
+            request.source_scope = {
+              mode: input.scope.mode,
+              source_ids: [...input.scope.sourceIds],
+              single_source_id: input.scope.singleSourceId,
+            }
+          }
+          request.note_ids = [...input.noteIds]
+        } else {
+          request.source_ids = ref.sourceId === null ? [] : [ref.sourceId]
+        }
+        const abort = openResearchChatStream({
+          protocol: 'research-session-v1',
+          projectId: projectIdRef.current,
+          kind: ref.kind,
+          sessionRef: ref,
+          editorRevision: input.editorRevision,
+          draftToken: input.draftToken,
+          editorIntentHash: input.editorIntentHash,
+          idempotencyKey: input.idempotencyKey,
+          lastEventId: input.lastEventId,
+          request,
+          onEvent: input.onEvent,
+          onEnd: input.onEnd,
+          onHttpError: input.onHttpError,
+          onNetworkError: input.onNetworkError,
+          onProtocolError: input.onProtocolError,
+          onIdleTimeout: input.onIdleTimeout,
+          onResponseMeta: (headers: Headers) => {
+            input.onResponseMeta?.({ sessionId: headers.get('x-chat-session-id') })
+          },
         })
         return {
           abort: (reason) => {
@@ -545,16 +564,24 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
         ref.sessionId,
         token,
       ),
-      releaseHold: (operationId) => {
-        sessionOptionsRef.current?.onReleaseHold?.(operationId)
-      },
-      clearAfterSubmission: (receipt, operationId) => {
-        sessionOptionsRef.current?.onClearAfterSubmission?.(receipt, operationId)
-      },
+      loadDetail: () => getResearchChatSession(projectIdRef.current, ref.sessionId),
+      releaseHold: (operationId) => releaseHold?.(operationId),
+      clearAfterSubmission: (receipt, operationId) => clearAfterSubmission?.(receipt, operationId),
     }
     const controller = options.runtime.conversation(ref, { transport })
     controllerRef.current = controller
     setConversation(controller)
+    // 冷启动/切换返回：durable detail 恢复完整消息，替换临时轮（§6.5）；
+    // 缺口水位不会据此续接 SSE，只用于渲染（review-1 P1-#10）。
+    void controller.load().then((result) => {
+      if (result.status !== 'ok') return
+      if (interactedRef.current || activeRef.current) return
+      const rows = (result.value?.messages ?? []) as ResearchGlobalChatMessage[]
+      const restored = rows
+        .map((row) => messageRowToTurn(row as DurableMessageRow))
+        .filter((turn): turn is ResearchChatTurn => turn !== null)
+      if (restored.length > 0) setTurns(restored)
+    })
     return () => {
       // 离开会话/卸载：只标记 detach 并中止本地读取（服务端继续执行）。
       controller.detach()
@@ -730,6 +757,9 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
   // 会话（服务端不会因前端未恢复而另开）；恢复结果晚到且用户已交互时
   // 丢弃（interactedRef 闸），不把旧历史灌进已开始的对话。
   useEffect(() => {
+    // 会话控制器模式由 durable controller.load() 负责恢复；旧 localStorage
+    // 恢复只服务无 session 的 legacy 路径（PR-5b 面板接线前的兼容）。
+    if (sessionMode) return
     const restoreState = restoreStateRef.current
     if (restoreState.projectId === projectId && restoreState.done) return
     const storedId = readStoredSessionId(projectId)
@@ -801,7 +831,7 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
         restoreStateRef.current = { projectId: null, done: false }
       }
     }
-  }, [projectId])
+  }, [projectId, sessionMode])
 
   const runTurn = (active: ActiveTurn): void => {
     const { turnId } = active

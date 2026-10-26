@@ -59,6 +59,7 @@ import {
   type ConversationState,
   type ConversationSubmissionView,
   type ConversationTurn,
+  submissionViewMatches,
 } from './conversation-machine'
 import type { ResearchAcceptedReceipt } from './sse'
 import type { ResearchSseEvent } from './types'
@@ -713,6 +714,7 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
 
   function dispose(reason: SessionRuntimeDisposeReason): void {
     if (state.disposed) return
+    disposeConversations()
     if (reason === 'unmount') {
       // 卸载：尽力写本机草稿（此时缓存授权仍有效），但不写服务端、不发 cancel。
       for (const { controller } of editors.values()) controller.releaseDocument()
@@ -761,6 +763,9 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
       next.viewerUserId !== null && next.viewerUserId !== (confirmedViewerUserId ?? previous.viewerUserId)
     const generationChanged = previous.authGeneration !== next.authGeneration
     const projectChanged = previous.projectId !== next.projectId
+    if (viewerChanged || generationChanged || projectChanged) {
+      disposeConversations()
+    }
     const previousProject = previous.projectId
     state.scope = {
       authGeneration: next.authGeneration,
@@ -991,16 +996,35 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
       existing.refs += 1
       return existing.controller
     }
+    // 捕获创建时的认证身份：换 viewer / 代际 / 项目后，旧控制器必须先失效，
+    // 不能继续把答案写进已切换的会话（review-1 P1-#1）。
+    const generation = state.scope.authGeneration
+    const viewerUserId = state.scope.viewerUserId
+    const projectId = state.scope.projectId
     const controller = createConversationController({
       ref,
-      authGeneration: state.scope.authGeneration,
+      authGeneration: generation,
       transport: options.transport,
-      isDisposed: () => state.disposed,
+      isDisposed: () =>
+        state.disposed
+        || state.scope.authGeneration !== generation
+        || state.scope.viewerUserId !== viewerUserId
+        || state.scope.projectId !== projectId,
       now,
     })
     conversations.set(key, { controller, refs: 1 })
     if (state.disposed) controller.invalidate()
     return controller
+  }
+
+  /** 认证切换/注销/卸载：立即失效并清空全部对话控制器。 */
+  function disposeConversations(): void {
+    if (conversations.size === 0) return
+    for (const { controller } of conversations.values()) {
+      controller.invalidate()
+      controller.dispose()
+    }
+    conversations.clear()
   }
 
   function releaseConversation(
@@ -1095,6 +1119,13 @@ export interface ConversationHandleResult<T = undefined> {
   readonly error?: ConversationHandleError
 }
 
+/** 提交时的执行范围快照（global 新协议必须冻结；source 不使用）。 */
+export interface ConversationScopeSnapshot {
+  readonly mode: 'all' | 'selected' | 'single'
+  readonly sourceIds: readonly string[]
+  readonly singleSourceId: string | null
+}
+
 /** 提交 SSE 所需的调用方 wire 字段（transport 由 hook/测试注入）。 */
 export interface ConversationStreamInput {
   readonly sessionRef: ResearchSessionRef
@@ -1107,11 +1138,17 @@ export interface ConversationStreamInput {
   readonly modelId: string
   readonly sourceIds: readonly string[]
   readonly noteIds: readonly string[]
+  /** global 新协议冻结的 source_scope（source kind 为 null）。 */
+  readonly scope: ConversationScopeSnapshot | null
   readonly onEvent: (event: ResearchSseEvent) => void
   readonly onEnd: () => void
   readonly onHttpError: (status: number, body: unknown) => void
   readonly onNetworkError: (error: Error) => void
   readonly onProtocolError: (reason: string) => void
+  /** 空闲看门狗超时：依赖方转查回，不得悬挂 submit hold（review-1 P1-#3）。 */
+  readonly onIdleTimeout?: () => void
+  /** 响应头观察（X-Chat-Session-Id 与请求 session_id 必须一致）。 */
+  readonly onResponseMeta?: (meta: { readonly sessionId: string | null }) => void
 }
 
 export interface ConversationStreamHandle {
@@ -1131,6 +1168,11 @@ export interface ConversationTransport {
     readonly sessionRef: ResearchSessionRef
     readonly token: string
   }) => Promise<unknown> | unknown
+  /** durable detail 读取（冷启动/缺口后恢复完整消息，DESIGN §6.5）。 */
+  readonly loadDetail?: (input: {
+    readonly sessionRef: ResearchSessionRef
+    readonly cursor?: string | null
+  }) => Promise<unknown> | unknown
   readonly releaseHold?: (operationId: string) => void
   readonly clearAfterSubmission?: (
     receipt: ResearchAcceptedReceipt,
@@ -1147,6 +1189,8 @@ export interface ConversationSendInput {
   readonly modelId: string
   readonly sourceIds?: readonly string[]
   readonly noteIds?: readonly string[]
+  /** global 必填：all/selected/single 的冻结范围；source 忽略。 */
+  readonly scope?: ConversationScopeSnapshot | null
   readonly editorRevision: number
   readonly draftToken: string
   readonly editorIntentHash: string
@@ -1165,6 +1209,7 @@ export interface ConversationRetryInput {
   readonly modelId: string
   readonly sourceIds?: readonly string[]
   readonly noteIds?: readonly string[]
+  readonly scope?: ConversationScopeSnapshot | null
 }
 
 export interface ConversationSnapshot {
@@ -1174,13 +1219,16 @@ export interface ConversationSnapshot {
   readonly authGeneration: number
   readonly turn: ConversationTurn | null
   readonly history: readonly ConversationTurn[]
+  /** durable detail 恢复出的原始消息行（hook 负责投影）。 */
+  readonly detailMessages: readonly unknown[]
+  readonly detailCursor: string | null
 }
 
 export interface ConversationController {
   readonly getSnapshot: () => ConversationSnapshot
   readonly subscribe: (listener: () => void) => () => void
-  readonly load: () => Promise<ConversationHandleResult>
-  readonly loadMore: () => Promise<ConversationHandleResult>
+  readonly load: () => Promise<ConversationHandleResult<{ readonly messages: readonly unknown[] }>>
+  readonly loadMore: () => Promise<ConversationHandleResult<{ readonly messages: readonly unknown[] }>>
   readonly send: (input: ConversationSendInput) => Promise<ConversationHandleResult<{ readonly turnId: string }>>
   readonly retryTerminal: (
     input: ConversationRetryInput,
@@ -1209,6 +1257,7 @@ interface ConversationRequestMeta {
   readonly modelId: string
   readonly sourceIds: readonly string[]
   readonly noteIds: readonly string[]
+  readonly scope: ConversationScopeSnapshot | null
 }
 
 function isTerminalTurn(turn: ConversationTurn | null): boolean {
@@ -1256,6 +1305,7 @@ export function createConversationController(input: {
   readonly authGeneration: number
   readonly transport: ConversationTransport
   readonly isDisposed?: () => boolean
+  readonly lookupBackoffMs?: readonly number[]
   readonly now?: () => string
 }): ConversationController {
   const { ref, transport } = input
@@ -1273,6 +1323,11 @@ export function createConversationController(input: {
   let version = 0
   let cached: ConversationSnapshot | null = null
   let disposed = false
+  let detailMessages: readonly unknown[] = []
+  let detailCursor: string | null = null
+  const lookupTasks = new Map<string, { readonly turnId: string; readonly attempt: number }>()
+  const lookupTimers = new Set<ReturnType<typeof setTimeout>>()
+  const lookupBackoff = input.lookupBackoffMs ?? [1000, 2000]
 
   const isDisposed = (): boolean => disposed || (input.isDisposed?.() ?? false)
 
@@ -1290,6 +1345,8 @@ export function createConversationController(input: {
         authGeneration: state.authGeneration,
         turn: state.turn,
         history: state.history,
+        detailMessages,
+        detailCursor,
       })
     }
     return cached
@@ -1305,7 +1362,7 @@ export function createConversationController(input: {
   }
 
   function dispatch(event: ConversationEvent): void {
-    if (disposed) return
+    if (disposed || isDisposed()) return
     const reduction = reduceConversation(state, event)
     if (reduction.state === state && reduction.effects.length === 0) return
     state = reduction.state
@@ -1339,6 +1396,7 @@ export function createConversationController(input: {
       modelId: meta.modelId,
       sourceIds: meta.sourceIds,
       noteIds: meta.noteIds,
+      scope: meta.scope,
       onEvent: (event) => dispatch({ type: 'sse', turnId, attempt: effect.attempt, event }),
       onEnd: () => dispatch({
         type: 'stream_end',
@@ -1369,6 +1427,23 @@ export function createConversationController(input: {
         attempt: effect.attempt,
         hadTerminal: terminalSeen(),
       }),
+      onIdleTimeout: () => dispatch({
+        type: 'network_failure',
+        turnId,
+        attempt: effect.attempt,
+        hadTerminal: terminalSeen(),
+      }),
+      // 响应头 X-Chat-Session-Id 必须等于请求的 session_id（DESIGN §6.4）。
+      onResponseMeta: (meta) => {
+        if (meta.sessionId !== null && meta.sessionId !== ref.sessionId) {
+          dispatch({
+            type: 'network_failure',
+            turnId,
+            attempt: effect.attempt,
+            hadTerminal: terminalSeen(),
+          })
+        }
+      },
     })
   }
 
@@ -1390,14 +1465,36 @@ export function createConversationController(input: {
       case 'lookup_submission':
         scheduleLookup(effect.token ?? currentTurn()?.identity.draftToken ?? null)
         return
+      case 'durable_restore':
+        void load()
+        return
     }
   }
 
   function scheduleLookup(token: string | null): void {
     if (token === null || token.length === 0) return
     if (lookupInFlight.has(token) || lookupQueue.includes(token)) return
+    const turn = currentTurn()
+    if (turn !== null && !turn.identity.detached) {
+      // 记录调度时的 turn/attempt：迟到结果不得写入 detached 或下一轮。
+      lookupTasks.set(token, {
+        turnId: turn.identity.turnId,
+        attempt: turn.identity.attempt,
+      })
+    }
     lookupQueue.push(token)
     drainLookups()
+  }
+
+  function scheduleLookupRetry(token: string, attemptIndex: number): void {
+    if (disposed || isDisposed()) return
+    const delay = lookupBackoff[Math.min(attemptIndex, lookupBackoff.length - 1)] ?? 1000
+    const timer = setTimeout(() => {
+      lookupTimers.delete(timer)
+      if (disposed || isDisposed()) return
+      scheduleLookup(token)
+    }, delay)
+    lookupTimers.add(timer)
   }
 
   /** 查回并发上限（DESIGN §3.5：同一时刻最多 2 个查回）。 */
@@ -1421,6 +1518,7 @@ export function createConversationController(input: {
     return {
       ref: value.ref,
       token: value.draftToken,
+      idempotencyKey: value.idempotencyKey,
       acceptance: value.acceptanceState,
       generationId: value.generationId,
       generationState: value.generationState,
@@ -1432,19 +1530,46 @@ export function createConversationController(input: {
 
   async function performLookup(token: string): Promise<void> {
     if (isDisposed()) return
-    const turnId = currentTurn()?.identity.turnId ?? null
-    if (turnId === null) return
+    const task = lookupTasks.get(token) ?? null
+    const turn = currentTurn()
+    if (
+      task === null
+      || turn === null
+      || turn.identity.turnId !== task.turnId
+      || turn.identity.attempt !== task.attempt
+      || turn.identity.detached
+    ) {
+      // 调度后 turn 已切换/重连/脱离：迟到查回结果一律丢弃（review-1 P1-#8）。
+      lookupTasks.delete(token)
+      return
+    }
     const attempts = lookupAttempts.get(token) ?? 0
     try {
       const raw = await transport.getSubmission({ sessionRef: ref, token })
       if (isDisposed()) return
+      const latest = currentTurn()
+      if (
+        latest === null
+        || latest.identity.turnId !== task.turnId
+        || latest.identity.attempt !== task.attempt
+        || latest.identity.detached
+      ) {
+        lookupTasks.delete(token)
+        return
+      }
       const view = projectView(raw)
       if (view === null) {
         dispatchLookupFailure(token, attempts, 'protocol')
         return
       }
+      if (!submissionViewMatches(state.sessionKey, latest.identity, view, latest.external)) {
+        // 查回身份/回执与当前 turn 不一致：按协议冲突累计有界失败，绝不结算/清稿。
+        dispatchLookupFailure(token, attempts, 'protocol')
+        return
+      }
       lookupAttempts.delete(token)
-      dispatch({ type: 'lookup_result', turnId, view })
+      lookupTasks.delete(token)
+      dispatch({ type: 'lookup_result', turnId: task.turnId, view })
     } catch (error) {
       if (isDisposed()) return
       const { status } = failureFromError(error)
@@ -1457,17 +1582,31 @@ export function createConversationController(input: {
     attempts: number,
     failure: 'network' | 'protocol' | 'not_found',
   ): void {
-    const turnId = currentTurn()?.identity.turnId ?? null
-    if (turnId === null) return
+    const task = lookupTasks.get(token)
+    const turn = currentTurn()
+    if (
+      task === undefined
+      || turn === null
+      || turn.identity.turnId !== task.turnId
+      || turn.identity.attempt !== task.attempt
+      || turn.identity.detached
+    ) {
+      return
+    }
     const nextAttempts = attempts + 1
     lookupAttempts.set(token, nextAttempts)
+    const bounded = nextAttempts >= BOUNDED_LOOKUP_FAILURES
     dispatch({
       type: 'lookup_failure',
-      turnId,
+      turnId: task.turnId,
       token,
       failure,
-      bounded: nextAttempts >= BOUNDED_LOOKUP_FAILURES,
+      bounded,
     })
+    if (!bounded) {
+      // 有界退避：首次失败不结算，重试到上限后由 reducer 进入 unknown + release。
+      scheduleLookupRetry(token, nextAttempts - 1)
+    }
   }
 
   function buildIdentity(seed: {
@@ -1480,6 +1619,7 @@ export function createConversationController(input: {
     return createTurnIdentity({
       authGeneration: input.authGeneration,
       sessionKey: state.sessionKey,
+      sessionId: ref.sessionId,
       turnId: seed.turnId,
       draftToken: seed.draftToken,
       idempotencyKey: seed.idempotencyKey,
@@ -1496,6 +1636,7 @@ export function createConversationController(input: {
     modelId: string
     sourceIds: readonly string[]
     noteIds: readonly string[]
+    scope: ConversationScopeSnapshot | null
   }): void {
     requests.set(turnId, {
       editorRevision: seed.editorRevision,
@@ -1505,12 +1646,18 @@ export function createConversationController(input: {
       modelId: seed.modelId,
       sourceIds: seed.sourceIds,
       noteIds: seed.noteIds,
+      scope: seed.scope,
     })
   }
 
   function send(input: ConversationSendInput): Promise<ConversationHandleResult<{ turnId: string }>> {
     if (isDisposed()) return Promise.resolve({ status: 'stale' })
-    if (!isTerminalTurn(state.turn)) {
+    // reducer 产出的 idle（明确未受理后）同样允许再次发送（review-1 P2-#11）。
+    const turnState = state.turn
+    const sendable = turnState === null
+      || turnState.state === 'idle'
+      || isTerminalTurn(turnState)
+    if (!sendable) {
       return Promise.resolve({
         status: 'blocked',
         error: { code: 'session_busy', message: 'Active turn is not terminal' },
@@ -1520,6 +1667,13 @@ export function createConversationController(input: {
       return Promise.resolve({
         status: 'blocked',
         error: { code: 'query_required', message: 'Empty query' },
+      })
+    }
+    const scope = input.scope ?? null
+    if (ref.kind === 'global' && scope === null) {
+      return Promise.resolve({
+        status: 'blocked',
+        error: { code: 'source_scope_required', message: 'Global send requires frozen source_scope' },
       })
     }
     turnSequence += 1
@@ -1532,6 +1686,7 @@ export function createConversationController(input: {
       modelId: input.modelId,
       sourceIds: input.sourceIds ?? [],
       noteIds: input.noteIds ?? [],
+      scope,
     })
     const identity = buildIdentity({
       turnId,
@@ -1566,6 +1721,7 @@ export function createConversationController(input: {
       modelId: input.modelId,
       sourceIds: input.sourceIds,
       noteIds: input.noteIds,
+      scope: input.scope ?? null,
       editorRevision: input.editorRevision,
       draftToken: input.draftToken,
       editorIntentHash: input.editorIntentHash,
@@ -1577,7 +1733,12 @@ export function createConversationController(input: {
   function lookupSubmission(token?: string): Promise<ConversationHandleResult> {
     if (isDisposed()) return Promise.resolve({ status: 'stale' })
     const turn = state.turn
-    if (turn === null) {
+    if (turn === null || isTerminalTurn(turn)) {
+      if (token !== undefined && token.length > 0) {
+        // 冷启动/无 turn：仍可对持久 draft_token 做一次查回（DESIGN §6.5/§6.7）。
+        dispatch({ type: 'external_lookup', token, sessionId: ref.sessionId })
+        return Promise.resolve({ status: 'ok' })
+      }
       return Promise.resolve({
         status: 'blocked',
         error: { code: 'no_active_turn', message: 'No turn to settle' },
@@ -1626,11 +1787,72 @@ export function createConversationController(input: {
     return !isTerminalTurn(state.turn)
   }
 
+  async function loadDetail(cursor: string | null): Promise<ConversationHandleResult<{ readonly messages: readonly unknown[] }>> {
+    if (isDisposed()) return { status: 'stale' }
+    const loader = transport.loadDetail
+    if (loader === undefined) {
+      return {
+        status: 'blocked',
+        error: { code: 'detail_not_wired', message: 'Transport does not provide durable detail' },
+      }
+    }
+    try {
+      const raw = await loader({ sessionRef: ref, cursor })
+      if (isDisposed()) return { status: 'stale' }
+      const record = raw !== null && typeof raw === 'object'
+        ? (raw as Record<string, unknown>)
+        : null
+      const messages = Array.isArray(record?.messages) ? record.messages : []
+      const nextCursor = typeof record?.next_cursor === 'string' ? record.next_cursor : null
+      if (cursor === null) {
+        detailMessages = messages
+      } else {
+        detailMessages = [...detailMessages, ...messages]
+      }
+      detailCursor = nextCursor
+      commit()
+      const turn = currentTurn()
+      if (turn !== null && turn.incomplete) {
+        // durable detail 已回填完整历史 → 缺口答案不再标记为残缺。
+        dispatch({ type: 'durable_restored', turnId: turn.identity.turnId, complete: true })
+      }
+      return { status: 'ok', value: { messages } }
+    } catch (error) {
+      if (isDisposed()) return { status: 'stale' }
+      return {
+        status: 'error',
+        error: {
+          code: failureFromError(error).code ?? 'detail_load_failed',
+          message: error instanceof Error ? error.message : 'Detail load failed',
+        },
+      }
+    }
+  }
+
+  function load(): Promise<ConversationHandleResult<{ readonly messages: readonly unknown[] }>> {
+    return loadDetail(null)
+  }
+
+  function loadMore(): Promise<ConversationHandleResult<{ readonly messages: readonly unknown[] }>> {
+    if (detailCursor === null) {
+      return Promise.resolve({
+        status: 'blocked',
+        error: { code: 'no_more_detail', message: 'No next cursor' },
+      })
+    }
+    return loadDetail(detailCursor)
+  }
+
   function dispose(): void {
     if (disposed) return
     disposed = true
     currentAbort?.abort('page_change')
     currentAbort = null
+    for (const timer of lookupTimers) clearTimeout(timer)
+    lookupTimers.clear()
+    lookupQueue.length = 0
+    lookupInFlight.clear()
+    lookupTasks.clear()
     listeners.clear()
   }
 
@@ -1642,9 +1864,8 @@ export function createConversationController(input: {
         listeners.delete(listener)
       }
     },
-    // PR-5a 不接线 durable detail 读取（PR-6 真实列表/详情路径）：如实 blocked。
-    load: () => Promise.resolve({ status: 'blocked', error: { code: 'detail_not_wired', message: 'Durable detail load is PR-6 scope' } }),
-    loadMore: () => Promise.resolve({ status: 'blocked', error: { code: 'detail_not_wired', message: 'Durable detail load is PR-6 scope' } }),
+    load,
+    loadMore,
     send,
     retryTerminal,
     lookupSubmission,

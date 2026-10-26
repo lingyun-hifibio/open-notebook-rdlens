@@ -299,8 +299,11 @@ export function useResearchSourceChat({
       return
     }
     const ref = options.ref
+    const releaseHold = options.onReleaseHold
+    const clearAfterSubmission = options.onClearAfterSubmission
     const transport: ConversationTransport = {
       openStream: (input) => {
+        // source 新协议以路径 source_id 定位：不携带 global 的 source_scope/note_ids。
         const abort = openResearchChatStream({
           protocol: 'research-session-v1',
           projectId: projectIdRef.current,
@@ -314,14 +317,17 @@ export function useResearchSourceChat({
           request: {
             query: input.query,
             model_id: input.modelId,
-            source_ids: [...input.sourceIds],
-            note_ids: [...input.noteIds],
+            source_ids: ref.sourceId === null ? [] : [ref.sourceId],
           },
           onEvent: input.onEvent,
           onEnd: input.onEnd,
           onHttpError: input.onHttpError,
           onNetworkError: input.onNetworkError,
           onProtocolError: input.onProtocolError,
+          onIdleTimeout: input.onIdleTimeout,
+          onResponseMeta: (headers: Headers) => {
+            input.onResponseMeta?.({ sessionId: headers.get('x-chat-session-id') })
+          },
         })
         return {
           abort: (reason) => {
@@ -335,15 +341,20 @@ export function useResearchSourceChat({
         ref.sessionId,
         token,
       ),
-      releaseHold: (operationId) => {
-        sessionOptionsRef.current?.onReleaseHold?.(operationId)
-      },
-      clearAfterSubmission: (receipt, operationId) => {
-        sessionOptionsRef.current?.onClearAfterSubmission?.(receipt, operationId)
-      },
+      loadDetail: () =>
+        getSourceChatSession(projectIdRef.current, String(ref.sourceId), ref.sessionId),
+      releaseHold: (operationId) => releaseHold?.(operationId),
+      clearAfterSubmission: (receipt, operationId) => clearAfterSubmission?.(receipt, operationId),
     }
     const controller = options.runtime.conversation(ref, { transport })
     setConversation(controller)
+    // 冷启动/返回：durable detail 回填完整消息（不据持久水位续接 SSE）。
+    void controller.load().then((result) => {
+      if (result.status !== 'ok') return
+      if (activeRef.current !== null) return
+      const rows = (result.value?.messages ?? []) as ResearchSourceChatMessage[]
+      if (rows.length > 0) setTurns(rows.map(mapColdMessage))
+    })
     return () => {
       controller.detach()
       options.runtime.releaseConversation(ref, controller)
