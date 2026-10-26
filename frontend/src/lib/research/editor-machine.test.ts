@@ -2343,8 +2343,7 @@ describe('review10 定向回归：遮蔽 submit 不冻结空正文 / 失败恢�
     await loadPromise
     await advance(600) // 本机 merge 到点，但补读未完成
     expect(harness.controller.getSnapshot().draftText).toBe('')
-    const dbgOutcome = await harness.controller.flush('submit')
-    console.log('DBG outcome', dbgOutcome, 'puts', harness.puts.length, harness.puts.map(p => JSON.stringify((p.body.editor_state as any).draft.text)))
+    await expect(harness.controller.flush('submit')).resolves.toBe('blocked')
     expect(harness.puts).toHaveLength(0)
     // 恢复 ready：先补读本机稿，再允许保存；任何 PUT 都不得是空文本。
     harness.setRuntime({ phase: 'ready', ready: true })
@@ -2357,6 +2356,48 @@ describe('review10 定向回归：遮蔽 submit 不冻结空正文 / 失败恢�
     }
     const stored = readDraft(harness.scope, harness.authority, REF, 'w-test', { storage })
     expect(stored?.text).toBe('PRIVATE-UNSAVED')
+  })
+
+  it('P1 masked 期间 GET 网络失败：flush 必须 blocked，解除后不得经空 PUT+ACK 清空本机稿', async () => {
+    const storage = new MapStorage()
+    seedDraftAtRevision(storage, 0)
+    const harness = createHarness({ storage })
+    const loadPromise = harness.controller.load()
+    await flushMicrotasks()
+    harness.controller.setChatAnchor({ messageId: 'msg1', offsetPx: 12, followTail: false })
+    harness.setRuntime({ phase: 'masked', ready: false })
+    harness.gets[0].reject(new Error('network down'))
+    await loadPromise
+    await flushMicrotasks()
+    expect(harness.controller.getSnapshot().draftText).toBe('')
+    await expect(harness.controller.flush('submit')).resolves.toBe('blocked')
+    expect(harness.puts).toHaveLength(0)
+    harness.setRuntime({ phase: 'ready', ready: true })
+    await flushMicrotasks()
+    expect(harness.controller.getSnapshot().draftText).toBe('PRIVATE-UNSAVED')
+    // 解除遮蔽后重试加载：恢复成功也不得用空 shadow 覆盖已恢复的本机稿。
+    const retry = harness.controller.load()
+    await flushMicrotasks()
+    harness.gets[1].resolve(editorResponse({ revision: 0 }))
+    await retry
+    await flushMicrotasks()
+    await advance(500)
+    expect(harness.puts.length).toBeGreaterThan(0)
+    for (const put of harness.puts) {
+      expect((put.body.editor_state as { draft: { text: string } }).draft.text).toBe('PRIVATE-UNSAVED')
+    }
+    // 结算最后一次 PUT 的 ACK：不得因为 ACK 把空 shadow 标为已确认而清空本机稿。
+    harness.puts[harness.puts.length - 1].response.resolve(
+      saveResponse(lastPut(harness).body.mutation_id, {
+        revision: harness.controller.getSnapshot().revision + 1,
+      }),
+    )
+    await flushMicrotasks()
+    await advance(100)
+    expect(harness.controller.getSnapshot().draftText).toBe('PRIVATE-UNSAVED')
+    const stored = readDraft(harness.scope, harness.authority, REF, 'w-test', { storage })
+    // ACK 结算的是真实正文，允许本机分支被清除；若有残留必须仍是真实正文。
+    if (stored !== null) expect(stored.text).toBe('PRIVATE-UNSAVED')
   })
 
   it('P2 GET 网络失败时读回本机稿必须保留 GET 期间的新范围选择', async () => {

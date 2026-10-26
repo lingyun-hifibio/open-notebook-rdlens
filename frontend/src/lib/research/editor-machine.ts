@@ -1121,7 +1121,12 @@ export function createEditorController(deps: EditorDeps): EditorController {
     if (record !== null) {
       reduce({ type: 'draft/readback', record: preserveLocalScope(record) })
       shadowConfirmed = true
+      refreshDraftCandidates()
+      return
     }
+    // review11 残留 P1：遮蔽/无缓存授权导致读不到本机稿时，必须登记延迟补读；
+    // 否则网络失败分支不会进入只读/blocked，flush 仍可冻结空正文并经 ACK 落盘。
+    if (deps.getCacheAuthority() === null) pendingDraftReadback = true
     refreshDraftCandidates()
   }
 
