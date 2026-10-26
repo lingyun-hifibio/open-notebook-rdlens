@@ -1016,8 +1016,18 @@ export function createEditorController(deps: EditorDeps): EditorController {
   const cacheOptions = (): { storage: SessionCacheStorage | null } | undefined =>
     deps.storage !== undefined ? { storage: deps.storage } : undefined
 
+  /** 用户是否主动改过文本（用于避免未编辑的空 shadow 覆盖已有非空本机稿）。 */
+  let hasLocalTextEdit = false
+
   const writeLocalDraft = (): void => {
     if (state.invalidated || released) return
+    // 防御性保护：加载未完成、用户未改过文本、当前 shadow 为空时，绝不用空文本覆盖
+    // 同一 writer 分支上已有的非空未同步稿（verifier 第二轮 P1：仅锚点变化也会触发
+    // 100ms 本机 merge，若恢复被跳过会清空唯一副本）。
+    if (!loaded && !hasLocalTextEdit && state.draftText === '') {
+      const existing = readOwnDraft()
+      if (existing !== null && existing.text !== '' && existing.dirty) return
+    }
     const scope = deps.getCacheScope()
     const authority = deps.getCacheAuthority()
     if (scope === null || authority === null) return
@@ -1424,6 +1434,14 @@ export function createEditorController(deps: EditorDeps): EditorController {
 
   const dispatchSave = (pending: QueuedRequest): void => {
     if (!canWrite()) {
+      const runtime = runtimeView()
+      if (!runtime.ready || runtime.editorReady === false) {
+        // 瞬时遮蔽：不得消费并丢弃排队请求；保留到 ready（同代）后由 onRuntimeChange
+        // 自动续派发一次，不结算 promise、不释放 hold（verifier 第二轮 P2）。
+        if (queued === null) queued = pending
+        else pending.resolve('blocked')
+        return
+      }
       pending.resolve('blocked')
       return
     }
@@ -1497,6 +1515,13 @@ export function createEditorController(deps: EditorDeps): EditorController {
       return
     }
     if (!canWrite()) {
+      const runtime = runtimeView()
+      if (!runtime.ready || runtime.editorReady === false) {
+        // 瞬时遮蔽：保留排队 clear 与其 hold，ready 后续派发；不得提前释放 hold。
+        if (queued === null) queued = pending
+        else pending.resolve('blocked')
+        return
+      }
       pending.resolve('blocked')
       if (pending.operationId !== null) releaseHold(pending.operationId)
       return
@@ -1692,6 +1717,11 @@ export function createEditorController(deps: EditorDeps): EditorController {
       }
       return
     }
+    if (queued !== null) {
+      // masked 期间被保留的排队 save/clear 在 ready 后自动续派发一次。
+      dispatchQueued()
+      return
+    }
     if (pendingAutoText || pendingAutoPosition) {
       // masked 期间 debounce 到点的自动保存意图必须在解除遮蔽后续跑，否则新文本
       // 会永久滞留 dirty（verifier 复核发现：T1 ACK 后 T2 debounce 于 masked 期间到点）。
@@ -1745,10 +1775,11 @@ export function createEditorController(deps: EditorDeps): EditorController {
     const attemptViewer = runtime.viewerUserId
     const attemptProject = runtime.projectId
     reduce({ type: 'load/start' })
-    // GET 在途编辑基线：失败恢复时若用户已有新输入/新本地版本，不得读回磁盘旧稿覆盖
-    // （verifier 阻塞项 3：GET 在途旧稿落盘→用户输入新文本→GET 失败→保留新文本）。
+    // GET 在途编辑基线：失败恢复时若用户已输入新文本，不得读回磁盘旧稿覆盖
+    // （verifier 阻塞项 3）。注意：基线只看文本内容，不看 localVersion——仅滚动/锚点
+    // 变化也会 +1 localVersion，若把版本纳入守卫会跳过恢复并在 100ms 后把空文本写回
+    // 本机草稿分支，清空唯一非空副本（verifier 第二轮 P1）。
     const loadBaselineText = state.draftText
-    const loadBaselineLocalVersion = state.localVersion
     let raw: unknown
     try {
       const result = await guard.run(() => deps.transport!.getEditorState())
@@ -1768,7 +1799,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
         return true
       }
       const failure = classifySaveFailure(error)
-      if (state.draftText === loadBaselineText && state.localVersion === loadBaselineLocalVersion) {
+      if (state.draftText === loadBaselineText) {
         recoverLocalDraft()
       }
       reduce({ type: 'load/failure', failure })
@@ -1797,8 +1828,9 @@ export function createEditorController(deps: EditorDeps): EditorController {
       sessionKey(parsed.value.ref) !== sessionKey(state.ref) ||
       String(parsed.value.viewerUserId) !== String(currentRuntime.viewerUserId)
     ) {
-      // 非法响应同样不得覆盖 GET 在途期间的新输入：与网络失败分支共用基线保护。
-      if (state.draftText === loadBaselineText && state.localVersion === loadBaselineLocalVersion) {
+      // 非法响应同样不得覆盖 GET 在途期间的新输入：与网络失败分支共用文本基线保护
+      // （仅锚点/localVersion 变化不得绕过恢复，verifier 第二轮 P1）。
+      if (state.draftText === loadBaselineText) {
         recoverLocalDraft()
       }
       reduce({ type: 'load/failure', failure: { code: 'invalid_response', retryable: false } })
@@ -1813,11 +1845,8 @@ export function createEditorController(deps: EditorDeps): EditorController {
         warnings: parsed.value.stateWarnings,
         revision: parsed.value.editorRevision,
       })
-      // 服务端不可读时同样只在加载基线未变时读回磁盘草稿，避免覆盖新输入。
-      const unreadableRecord =
-        state.draftText === loadBaselineText && state.localVersion === loadBaselineLocalVersion
-          ? readOwnDraft()
-          : null
+      // 服务端不可读时同样只在文本基线未变时读回磁盘草稿，避免覆盖新输入。
+      const unreadableRecord = state.draftText === loadBaselineText ? readOwnDraft() : null
       if (unreadableRecord !== null) reduce({ type: 'draft/readback', record: unreadableRecord })
       refreshDraftCandidates()
       return false
@@ -1950,6 +1979,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
       if (text === state.draftText) return
       // 文本必须原样保留（不归一化、不截断 lone surrogate）；超限只禁用保存/提交。
       const oversize = measureDraftBytes(text) > EDITOR_TEXT_MAX_BYTES
+      hasLocalTextEdit = true
       reduce({ type: 'draft/text', text, token: nextDraftToken(), oversize })
       scheduleLocalDraft()
       if (!oversize) scheduleTextSave()

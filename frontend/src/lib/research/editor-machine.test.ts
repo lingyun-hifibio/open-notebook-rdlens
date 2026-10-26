@@ -1310,7 +1310,6 @@ describe('editor review3 回归：并发闸门与结算版本', () => {
     harness.puts[0].response.resolve(saveResponse(harness.puts[0].body.mutation_id, { revision: 6 }))
     await advance(0)
     // eslint-disable-next-line no-console
-    console.log('DBG after ack:', JSON.stringify({ puts: harness.puts.length, phase: harness.controller.getSnapshot().phase, holds: harness.controller.getSnapshot().holds, dirty: harness.controller.getSnapshot().dirty }))
     expect(harness.puts.length).toBe(2)
     expect(lastPut(harness).body.editor_state.draft.text).toBe('T2')
     harness.puts[1].response.resolve(saveResponse(harness.puts[1].body.mutation_id, { revision: 7 }))
@@ -1825,5 +1824,223 @@ describe('verifier observations: clear invalid ACK, 512KiB 口径', () => {
     expect(outcome).toBe('blocked')
     expect(harness.controller.getSnapshot().saveFailure?.code).toBe('editor_state_too_large')
     expect(harness.puts.length).toBe(0)
+  })
+})
+
+describe('verifier 第二轮回归：GET 恢复基线只认文本内容', () => {
+  function seedPrivateDraft(storage: MapStorage): void {
+    writeDraft(
+      { viewerUserId: '1', projectId: 'p1' },
+      REF,
+      'w-test',
+      draftRecord({ text: 'PRIVATE-UNSAVED', token: 'tk-local', localVersion: 3 }),
+      { storage },
+    )
+  }
+
+  it('仅锚点变化 + GET 网络失败：未同步稿保留在 UI 与 storage，不被空写清空', async () => {
+    const storage = new MapStorage()
+    seedPrivateDraft(storage)
+    const harness = createHarness({ storage })
+    const loadPromise = harness.controller.load()
+    await flushMicrotasks()
+    expect(harness.gets.length).toBe(1)
+    // 仅滚动/锚点变化：localVersion 会 +1，但文本基线未变。
+    harness.controller.setChatAnchor({ messageId: 'msg1', offsetPx: 12, followTail: false })
+    harness.gets[0].reject(new Error('network down'))
+    await loadPromise
+    await flushMicrotasks()
+    expect(harness.controller.getSnapshot().draftText).toBe('PRIVATE-UNSAVED')
+    await advance(100) // 本机 merge 定时器到点：不得用空文本覆盖唯一副本
+    const stored = readDraft(harness.scope, harness.authority, REF, 'w-test', { storage })
+    expect(stored?.text).toBe('PRIVATE-UNSAVED')
+    expect(harness.controller.getSnapshot().draftText).toBe('PRIVATE-UNSAVED')
+  })
+
+  it('仅锚点变化 + GET 响应非法：未同步稿仍被读回，不被空写清空', async () => {
+    const storage = new MapStorage()
+    seedPrivateDraft(storage)
+    const harness = createHarness({ storage })
+    const loadPromise = harness.controller.load()
+    await flushMicrotasks()
+    harness.controller.setChatAnchor({ messageId: 'msg1', offsetPx: 40, followTail: true })
+    harness.gets[0].resolve({ nonsense: true })
+    await loadPromise
+    await flushMicrotasks()
+    expect(harness.controller.getSnapshot().draftText).toBe('PRIVATE-UNSAVED')
+    await advance(100)
+    const stored = readDraft(harness.scope, harness.authority, REF, 'w-test', { storage })
+    expect(stored?.text).toBe('PRIVATE-UNSAVED')
+  })
+
+  it('仅锚点变化 + editor_state_unreadable：未同步稿仍被读回，不被空写清空', async () => {
+    const storage = new MapStorage()
+    seedPrivateDraft(storage)
+    const harness = createHarness({ storage })
+    const loadPromise = harness.controller.load()
+    await flushMicrotasks()
+    harness.controller.setChatAnchor({ messageId: 'msg1', offsetPx: 8, followTail: false })
+    harness.gets[0].resolve(editorResponse({ state: null, hash: null, warnings: ['editor_state_unreadable'] }))
+    await loadPromise
+    await flushMicrotasks()
+    expect(harness.controller.getSnapshot().draftText).toBe('PRIVATE-UNSAVED')
+    await advance(100)
+    const stored = readDraft(harness.scope, harness.authority, REF, 'w-test', { storage })
+    expect(stored?.text).toBe('PRIVATE-UNSAVED')
+  })
+
+  it('恢复被跳过（遮蔽中失败）时，本机 merge 也不得用空文本覆盖已有非空稿（防御性守卫）', async () => {
+    const storage = new MapStorage()
+    seedPrivateDraft(storage)
+    const harness = createHarness({ storage })
+    const loadPromise = harness.controller.load()
+    await flushMicrotasks()
+    // 锚点变化安排 100ms 本机 merge；遮蔽中 getCacheAuthority() 为 null → 恢复读不到本机稿。
+    harness.controller.setChatAnchor({ messageId: 'msg1', offsetPx: 12, followTail: false })
+    harness.setRuntime({ phase: 'masked', ready: false })
+    harness.gets[0].reject(new Error('network down'))
+    await loadPromise
+    await flushMicrotasks()
+    expect(harness.controller.getSnapshot().draftText).toBe('')
+    harness.setRuntime({ phase: 'ready', ready: true })
+    await flushMicrotasks()
+    await advance(100)
+    const stored = readDraft(harness.scope, harness.authority, REF, 'w-test', { storage })
+    expect(stored?.text).toBe('PRIVATE-UNSAVED')
+  })
+
+  it('锚点 + 文本都变化 + GET 失败：不恢复，保留用户新输入', async () => {
+    const storage = new MapStorage()
+    seedPrivateDraft(storage)
+    const harness = createHarness({ storage })
+    const loadPromise = harness.controller.load()
+    await flushMicrotasks()
+    harness.controller.setChatAnchor({ messageId: 'msg1', offsetPx: 12, followTail: false })
+    harness.controller.setDraftText('USER-NEW')
+    harness.gets[0].reject(new Error('network down'))
+    await loadPromise
+    await flushMicrotasks()
+    expect(harness.controller.getSnapshot().draftText).toBe('USER-NEW')
+    await advance(100)
+    const stored = readDraft(harness.scope, harness.authority, REF, 'w-test', { storage })
+    expect(stored?.text).toBe('USER-NEW')
+  })
+
+  it('正常无编辑 + GET 失败：恢复本机稿，且本机写与 storage 记录一致', async () => {
+    const storage = new MapStorage()
+    seedPrivateDraft(storage)
+    const harness = createHarness({ storage })
+    const loadPromise = harness.controller.load()
+    await flushMicrotasks()
+    harness.gets[0].reject(new Error('network down'))
+    await loadPromise
+    await flushMicrotasks()
+    await advance(100)
+    const snapshot = harness.controller.getSnapshot()
+    expect(snapshot.draftText).toBe('PRIVATE-UNSAVED')
+    const stored = readDraft(harness.scope, harness.authority, REF, 'w-test', { storage })
+    expect(stored).not.toBeNull()
+    expect(stored?.text).toBe(snapshot.draftText)
+    expect(stored?.localVersion).toBe(snapshot.localVersion)
+    expect(stored?.dirty).toBe(true)
+  })
+})
+
+describe('verifier 第二轮回归：瞬时遮蔽不得丢弃排队 save/clear', () => {
+  it('在途 T1 + 排队 T2：masked 期间 ACK 到达后保留排队项，unmask 后续派发一次', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.setDraftText('T1')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    const t1 = lastPut(harness)
+    harness.controller.setDraftText('T2')
+    const flushPromise = harness.controller.flush('switch')
+    expect(harness.puts.length).toBe(1)
+    harness.setRuntime({ phase: 'masked', ready: false })
+    t1.response.resolve(saveResponse(t1.body.mutation_id, { revision: 6 }))
+    await flushMicrotasks()
+    // 排队项不被消费：仍无第二个 PUT，promise 未结算。
+    expect(harness.puts.length).toBe(1)
+    let settled = false
+    void flushPromise.then(() => {
+      settled = true
+    })
+    await advance(2000)
+    expect(settled).toBe(false)
+    harness.setRuntime({ phase: 'ready', ready: true })
+    await flushMicrotasks()
+    expect(harness.puts.length).toBe(2)
+    const t2 = lastPut(harness)
+    expect(t2.body.editor_state.draft.text).toBe('T2')
+    expect(t2.body.expected_revision).toBe(6)
+    t2.response.resolve(saveResponse(t2.body.mutation_id, { revision: 7 }))
+    await flushMicrotasks()
+    await expect(flushPromise).resolves.toBe('saved')
+    const snapshot = harness.controller.getSnapshot()
+    expect(snapshot.phase).toBe('ready')
+    expect(snapshot.draftText).toBe('T2')
+    expect(snapshot.dirty).toBe(false)
+  })
+
+  it('在途 T1 + 排队 clear：masked 期间 ACK 到达后保留 clear 与 hold，unmask 后续派发并正常结算', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.setDraftText('hello!')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    const t1 = lastPut(harness)
+    const before = harness.controller.getSnapshot()
+    harness.controller.hold('submit', 'op-clear')
+    const clearPromise = harness.controller.clearAfterSubmission(
+      { sessionRef: REF, draftToken: before.draftToken, text: before.draftText },
+      'op-clear',
+    )
+    expect(harness.puts.length).toBe(1)
+    harness.setRuntime({ phase: 'masked', ready: false })
+    t1.response.resolve(saveResponse(t1.body.mutation_id, { revision: 6 }))
+    await flushMicrotasks()
+    // masked：clear 不派发、hold 不释放、promise 未结算。
+    expect(harness.puts.length).toBe(1)
+    expect(harness.controller.getSnapshot().holds).toHaveLength(1)
+    let settled = false
+    void clearPromise.then(() => {
+      settled = true
+    })
+    await advance(2000)
+    expect(settled).toBe(false)
+    harness.setRuntime({ phase: 'ready', ready: true })
+    await flushMicrotasks()
+    expect(harness.puts.length).toBe(2)
+    const clearCall = lastPut(harness)
+    expect(clearCall.body.editor_state.draft.text).toBe('')
+    expect(harness.controller.getSnapshot().holds).toHaveLength(1) // ACK 前不释放 hold
+    clearCall.response.resolve(saveResponse(clearCall.body.mutation_id, { revision: 7 }))
+    await flushMicrotasks()
+    await expect(clearPromise).resolves.toBe('cleared')
+    const snapshot = harness.controller.getSnapshot()
+    expect(snapshot.draftText).toBe('')
+    expect(snapshot.dirty).toBe(false)
+    expect(snapshot.holds).toHaveLength(0)
+  })
+
+  it('排队 clear 期间仅锚点变化仍派发（不因 localVersion 变化取消）', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.setDraftText('hello!')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    const t1 = lastPut(harness)
+    const before = harness.controller.getSnapshot()
+    harness.controller.hold('submit', 'op-clear')
+    const clearPromise = harness.controller.clearAfterSubmission(
+      { sessionRef: REF, draftToken: before.draftToken, text: before.draftText },
+      'op-clear',
+    )
+    harness.controller.setChatAnchor({ messageId: 'msg1', offsetPx: 16, followTail: false })
+    t1.response.resolve(saveResponse(t1.body.mutation_id, { revision: 6 }))
+    await flushMicrotasks()
+    expect(harness.puts.length).toBe(2)
+    expect(lastPut(harness).body.editor_state.draft.text).toBe('')
+    lastPut(harness).response.resolve(saveResponse(lastPut(harness).body.mutation_id, { revision: 7 }))
+    await flushMicrotasks()
+    await expect(clearPromise).resolves.toBe('cleared')
   })
 })
