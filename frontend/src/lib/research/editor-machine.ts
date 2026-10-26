@@ -1119,7 +1119,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
   const recoverLocalDraft = (): void => {
     const record = readOwnDraft()
     if (record !== null) {
-      reduce({ type: 'draft/readback', record })
+      reduce({ type: 'draft/readback', record: preserveLocalScope(record) })
       shadowConfirmed = true
     }
     refreshDraftCandidates()
@@ -2119,6 +2119,14 @@ export function createEditorController(deps: EditorDeps): EditorController {
       if (state.conflict !== null) return 'conflict'
       if (deps.transport === null) return 'blocked'
       const explicit = reason === 'submit'
+      // review10 P1：遮蔽/无缓存授权期间补读未完成时，shadow 可能是空文本；
+      // 此时冻结 submit 快照会用空正文派发并经 ACK 确认、删除唯一本机副本。
+      // 明确返回不可保存结果，待 runtime 恢复、补读完成后再由调用方重试。
+      if (pendingDraftReadback && !resolvePendingDraftReadback()) {
+        pendingAutoText = false
+        pendingAutoPosition = false
+        return 'blocked'
+      }
       if (!isDirty(state) && active === null && queued === null) return 'skipped'
       // 普通 flush（text/position/switch）不得穿透 hold；只有 submit 拥有准备权限。
       // 被 hold 挡下的 dirty 意图必须留给 release 后续跑（Lead 附加要求 4）。

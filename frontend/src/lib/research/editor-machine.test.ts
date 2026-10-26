@@ -2318,3 +2318,85 @@ describe('review9 P1/P2/P3：遮蔽补读、可修正 blocked、范围保留', (
     expect(after.baseScope?.sourceIds).toEqual(['src-new'])
   })
 })
+
+describe('review10 定向回归：遮蔽 submit 不冻结空正文 / 失败恢复保留范围', () => {
+  function seedDraftAtRevision(storage: MapStorage, baseRevision: number): void {
+    writeDraft(
+      { viewerUserId: '1', projectId: 'p1' },
+      REF,
+      'w-test',
+      draftRecord({ text: 'PRIVATE-UNSAVED', token: 'tk-local', localVersion: 3, baseRevision }),
+      { storage },
+    )
+  }
+
+  it('P1 masked 期间 flush(submit) 不得冻结空正文；恢复后必须用本机稿保存', async () => {
+    const storage = new MapStorage()
+    seedDraftAtRevision(storage, 0)
+    const harness = createHarness({ storage })
+    const loadPromise = harness.controller.load()
+    await flushMicrotasks()
+    // 仅锚点变化：空 shadow 的 localVersion 也变成 1；随后遮蔽，GET 返回同 revision。
+    harness.controller.setChatAnchor({ messageId: 'msg1', offsetPx: 12, followTail: false })
+    harness.setRuntime({ phase: 'masked', ready: false })
+    harness.gets[0].resolve(editorResponse({ revision: 0 }))
+    await loadPromise
+    await advance(600) // 本机 merge 到点，但补读未完成
+    expect(harness.controller.getSnapshot().draftText).toBe('')
+    const dbgOutcome = await harness.controller.flush('submit')
+    console.log('DBG outcome', dbgOutcome, 'puts', harness.puts.length, harness.puts.map(p => JSON.stringify((p.body.editor_state as any).draft.text)))
+    expect(harness.puts).toHaveLength(0)
+    // 恢复 ready：先补读本机稿，再允许保存；任何 PUT 都不得是空文本。
+    harness.setRuntime({ phase: 'ready', ready: true })
+    await flushMicrotasks()
+    expect(harness.controller.getSnapshot().draftText).toBe('PRIVATE-UNSAVED')
+    await advance(500)
+    expect(harness.puts.length).toBeGreaterThan(0)
+    for (const put of harness.puts) {
+      expect((put.body.editor_state as { draft: { text: string } }).draft.text).toBe('PRIVATE-UNSAVED')
+    }
+    const stored = readDraft(harness.scope, harness.authority, REF, 'w-test', { storage })
+    expect(stored?.text).toBe('PRIVATE-UNSAVED')
+  })
+
+  it('P2 GET 网络失败时读回本机稿必须保留 GET 期间的新范围选择', async () => {
+    const storage = new MapStorage()
+    seedDraftAtRevision(storage, 0)
+    const harness = createHarness({ storage })
+    const loadPromise = harness.controller.load()
+    await flushMicrotasks()
+    harness.controller.setScope({ mode: 'selected', sourceIds: ['src-new'], noteIds: ['note-9'] })
+    harness.controller.setScope({ mode: 'single', sourceId: 'src-single' })
+    harness.gets[0].reject(new Error('network down'))
+    await loadPromise
+    await flushMicrotasks()
+    const snapshot = harness.controller.getSnapshot()
+    expect(snapshot.draftText).toBe('PRIVATE-UNSAVED')
+    expect(snapshot.baseScope!.mode).toBe('selected')
+    expect(snapshot.baseScope!.sourceIds).toEqual(['src-new'])
+    expect(snapshot.singleSourceId).toBe('src-single')
+    expect(snapshot.noteIds).toEqual(['note-9'])
+    await advance(100)
+    const stored = readDraft(harness.scope, harness.authority, REF, 'w-test', { storage })
+    expect(stored?.baseScope?.mode).toBe('selected')
+    expect(stored?.singleSourceId).toBe('src-single')
+    expect(stored?.text).toBe('PRIVATE-UNSAVED')
+  })
+
+  it('P2 GET 响应非法时读回本机稿必须保留 GET 期间的新范围选择', async () => {
+    const storage = new MapStorage()
+    seedDraftAtRevision(storage, 0)
+    const harness = createHarness({ storage })
+    const loadPromise = harness.controller.load()
+    await flushMicrotasks()
+    harness.controller.setScope({ mode: 'selected', sourceIds: ['src-new'], noteIds: ['note-9'] })
+    harness.gets[0].resolve({ nonsense: true })
+    await loadPromise
+    await flushMicrotasks()
+    const snapshot = harness.controller.getSnapshot()
+    expect(snapshot.draftText).toBe('PRIVATE-UNSAVED')
+    expect(snapshot.baseScope!.mode).toBe('selected')
+    expect(snapshot.baseScope!.sourceIds).toEqual(['src-new'])
+    expect(snapshot.noteIds).toEqual(['note-9'])
+  })
+})
