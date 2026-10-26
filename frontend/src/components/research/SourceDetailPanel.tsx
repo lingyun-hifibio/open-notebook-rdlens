@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
@@ -53,6 +53,7 @@ export function SourceDetailPanel({
   const rootRef = useRef<HTMLDivElement | null>(null)
   const scrollParentRef = useRef<HTMLElement | null>(null)
   const anchorTimerRef = useRef<number | null>(null)
+  const measureFrameRef = useRef<number | null>(null)
   const restoringRef = useRef(false)
   const [positionUnavailable, setPositionUnavailable] = useState(false)
   const sessionRuntime = useResearchSessionRuntimeOptional()
@@ -79,7 +80,9 @@ export function SourceDetailPanel({
           contentHash: data.content_hash ?? null,
         }
       : null
-  readerIdentityRef.current = readerIdentity
+  // 切来源的瞬间 query 数据会短暂为空：保留上一份身份供 layout cleanup 测量旧来源 DOM；
+  // 每次测量都校验身份归属，避免给新来源写入旧身份锚点。
+  if (readerIdentity !== null) readerIdentityRef.current = readerIdentity
   const savedReaderAnchor = sourceEditorEnabled ? sourceEditor.snapshot?.readerAnchor ?? null : null
   // 服务端净化坏锚点后只会置 positionUnavailable；仍要可见说明（§5.7.2/§7.2）。
   const editorPositionUnavailable =
@@ -103,70 +106,99 @@ export function SourceDetailPanel({
     handledFocusRequestIdRef.current = focusRequestId
   }, [data, focusRequestId])
 
+  // 按当前几何测量一次 reader anchor（§5.7.2；定时器/离开前 flush 复用）。
+  const measureReaderAnchorNow = useCallback((expectedSourceId: string = sourceId): void => {
+    const identity = readerIdentityRef.current
+    if (!sourceEditorEnabled || restoringRef.current || identity === null) return
+    if (identity.sourceId !== expectedSourceId) return
+    if (identity.contentHash === null) return
+    const parent = scrollParentRef.current
+    const root = rootRef.current
+    if (parent === null || root === null) return
+    const parentRect = parent.getBoundingClientRect()
+    const chunkNodes = Array.from(
+      root.querySelectorAll<HTMLElement>('[data-chunk-id]'),
+    )
+    if (chunkNodes.length === 0) return
+    let chunk: ReaderChunkGeometry | null = null
+    for (const node of chunkNodes) {
+      const rect = node.getBoundingClientRect()
+      if (rect.top <= parentRect.top) {
+        chunk = {
+          chunkId: node.dataset.chunkId ?? null,
+          chunkOrdinal: Number(node.dataset.chunkOrdinal ?? '0'),
+          top: rect.top,
+          pageIdx: node.dataset.chunkPage !== undefined ? Number(node.dataset.chunkPage) : null,
+        }
+      }
+    }
+    if (chunk === null) {
+      const first = chunkNodes[0]
+      const rect = first.getBoundingClientRect()
+      chunk = {
+        chunkId: first.dataset.chunkId ?? null,
+        chunkOrdinal: Number(first.dataset.chunkOrdinal ?? '0'),
+        top: rect.top,
+        pageIdx: first.dataset.chunkPage !== undefined ? Number(first.dataset.chunkPage) : null,
+      }
+    }
+    const anchor = measureReaderAnchor({
+      identity,
+      container: {
+        containerTop: parentRect.top,
+        scrollTop: parent.scrollTop,
+        clientHeight: parent.clientHeight,
+        scrollHeight: parent.scrollHeight,
+      },
+      chunk,
+    })
+    if (anchor !== null) sourceEditorRef.current.setReaderAnchor(anchor)
+  }, [sourceEditorEnabled, sourceId])
+
   // 滚动空闲 1000ms 记录一次来源正文锚点（§5.7.2）；保存失败只保留本机 pending。
   const scheduleReaderAnchor = useCallback(() => {
     const identity = readerIdentityRef.current
     if (!sourceEditorEnabled || restoringRef.current || identity === null) return
+    // F3：下一帧先测量一次（16ms 节流），保证 <1000ms 切走时最新位置已在 editor 内；
+    // 1000ms 空闲再合并保存，避免每次滚动都触发网络写。
+    if (measureFrameRef.current !== null) window.clearTimeout(measureFrameRef.current)
+    measureFrameRef.current = window.setTimeout(() => {
+      measureFrameRef.current = null
+      if (restoringRef.current) return
+      measureReaderAnchorNow()
+    }, 16)
     if (anchorTimerRef.current !== null) window.clearTimeout(anchorTimerRef.current)
     anchorTimerRef.current = window.setTimeout(() => {
       anchorTimerRef.current = null
       // 恢复期间/之后的新 anchor 尚未稳定：丢弃 pending 保存，避免覆盖恢复结果。
       if (restoringRef.current) return
-      const parent = scrollParentRef.current
-      const root = rootRef.current
-      if (parent === null || root === null || identity.contentHash === null) return
-      const parentRect = parent.getBoundingClientRect()
-      const chunkNodes = Array.from(
-        root.querySelectorAll<HTMLElement>('[data-chunk-id]'),
-      )
-      if (chunkNodes.length === 0) return
-      let chunk: ReaderChunkGeometry | null = null
-      for (const node of chunkNodes) {
-        const rect = node.getBoundingClientRect()
-        if (rect.top <= parentRect.top) {
-          chunk = {
-            chunkId: node.dataset.chunkId ?? null,
-            chunkOrdinal: Number(node.dataset.chunkOrdinal ?? '0'),
-            top: rect.top,
-            pageIdx: node.dataset.chunkPage !== undefined ? Number(node.dataset.chunkPage) : null,
-          }
-        }
-      }
-      if (chunk === null) {
-        const first = chunkNodes[0]
-        const rect = first.getBoundingClientRect()
-        chunk = {
-          chunkId: first.dataset.chunkId ?? null,
-          chunkOrdinal: Number(first.dataset.chunkOrdinal ?? '0'),
-          top: rect.top,
-          pageIdx: first.dataset.chunkPage !== undefined ? Number(first.dataset.chunkPage) : null,
-        }
-      }
-      const anchor = measureReaderAnchor({
-        identity,
-        container: {
-          containerTop: parentRect.top,
-          scrollTop: parent.scrollTop,
-          clientHeight: parent.clientHeight,
-          scrollHeight: parent.scrollHeight,
-        },
-        chunk,
-      })
-      if (anchor !== null) sourceEditorRef.current.setReaderAnchor(anchor)
+      sourceEditorRef.current.flush('position')
     }, 1000)
-  }, [sourceEditorEnabled])
+  }, [measureReaderAnchorNow, sourceEditorEnabled])
 
   // N9/F3：切来源/卸载前尽力写回位置（flush('position')，不阻塞 UI）。
-  useEffect(() => {
+  // 用 layout effect cleanup：它先于 useResearchEditor 的 passive cleanup 执行，
+  // 保证 flush 时 controller 尚未释放；<1000ms 的滚动位置在离开前同步测量一次。
+  useLayoutEffect(() => {
     return () => {
-      if (anchorTimerRef.current !== null) {
-        window.clearTimeout(anchorTimerRef.current)
+      const pendingTimer = anchorTimerRef.current
+      const pendingFrame = measureFrameRef.current
+      const hadPending = pendingTimer !== null || pendingFrame !== null
+      if (pendingTimer !== null) {
+        window.clearTimeout(pendingTimer)
         anchorTimerRef.current = null
       }
-      if (sourceEditorEnabled) sourceEditorRef.current.flush('position')
+      if (pendingFrame !== null) {
+        window.clearTimeout(pendingFrame)
+        measureFrameRef.current = null
+      }
+      if (!sourceEditorEnabled) return
+      // 尽力测量（DOM 已切换时可能拿不到 chunk，改为依赖 rAF 内已写入的位置）。
+      if (hadPending) measureReaderAnchorNow(sourceId)
+      sourceEditorRef.current.flush('position')
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在来源切换/卸载时 flush
-  }, [sourceId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在来源切换/启用状态变化/卸载时结算
+  }, [sourceId, sourceEditorEnabled])
 
   // 找到可滚动祖先（来源面板自身不是滚动容器；不改 Workbench/page）。
   useEffect(() => {

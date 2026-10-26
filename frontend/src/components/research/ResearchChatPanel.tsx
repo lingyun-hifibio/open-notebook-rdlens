@@ -57,6 +57,43 @@ import type { WireChatAnchor } from '@/lib/research/session-contract'
  *   RWV2-42（AC8）：稳定错误码统一走集中表映射（lib/research/errors），
  *   raw code/errorMessage 仅作诊断行，不作主消息（未知码回落通用文案）。
  */
+/** P2-6：Coverage 本地草稿的合成快照基座（不含任何会话 editor 状态）。 */
+const EMPTY_COVERAGE_EDITOR_SNAPSHOT: EditorSnapshot = {
+  ref: { domain: 'research', kind: 'global', projectId: '', sessionId: '', sourceId: null },
+  phase: 'ready',
+  loading: false,
+  revision: 0,
+  intentHash: null,
+  draftText: '',
+  draftToken: '',
+  consumedToken: null,
+  baseScope: null,
+  singleSourceId: null,
+  noteIds: [],
+  chatAnchor: null,
+  readerAnchor: null,
+  dirty: false,
+  saving: false,
+  readOnly: false,
+  blocked: false,
+  unreadable: false,
+  warnings: [],
+  conflict: null,
+  saveFailure: null,
+  unsynced: false,
+  localVersion: 0,
+  confirmedLocalVersion: 0,
+  writerId: '',
+  lastSavedAt: null,
+  pendingMutations: 0,
+  restoreCandidates: [],
+  holds: [],
+  transportAvailable: false,
+  positionUnavailable: false,
+  invalidated: false,
+  oversize: false,
+}
+
 /** Issue #439：后台任务 CTA 的提交结果（区分"未派发"与"失败"，避免误报）。 */
 export type BackgroundJobSubmitResult =
   /** 已受理（jobId 缺失时只提示刷新，不得当失败——否则用户会重复提交） */
@@ -286,6 +323,9 @@ export function ResearchChatPanel({
   // 只受工作区范围合法性（coverageAllowed）与自身文本上限（256KiB）约束。
   const coverageGate: ResearchDraftGate = (() => {
     if (!wired) return { allowed: true, reason: null }
+    // P2-7：全局执行门禁（模型/会话 busy 等）同样约束 Coverage；本项不重新耦合
+    // 会话 editor 的草稿/保存状态（§9.6 只隔离 editor 侧）。
+    if (generationBlocked) return { allowed: false, reason: 'turn_active' }
     if (!coverageAllowed) return { allowed: false, reason: 'scope_invalid' }
     if (new TextEncoder().encode(coverageDraft.text).length > 256 * 1024) {
       return { allowed: false, reason: 'oversize' }
@@ -300,14 +340,15 @@ export function ResearchChatPanel({
   })()
   const activeComposerGate: ResearchDraftGate =
     wired && scope === 'all_selected' ? coverageGate : composerGate
-  const composerGateReasonText: string | null = activeComposerGate.allowed
-    ? null
-    : (generationBlocked && activeComposerGate === composerGate
-        ? blockedHint ?? t('research.errors.generationInProgress')
-        : null) ??
-      (wired && scope === 'all_selected' && !coverageAllowed
-        ? t('research.coverage.capabilityDisabled')
-        : t(researchDraftGateReasonKey(activeComposerGate.reason ?? 'runtime_unavailable')))
+  const composerGateReasonText: string | null = (() => {
+    if (activeComposerGate.allowed) return null
+    // P2-7：全局门禁优先展示外部稳定原因（模型不可用等），Coverage 也适用。
+    if (generationBlocked) return blockedHint ?? t('research.errors.generationInProgress')
+    if (wired && scope === 'all_selected' && !coverageAllowed) {
+      return t('research.coverage.capabilityDisabled')
+    }
+    return t(researchDraftGateReasonKey(activeComposerGate.reason ?? 'runtime_unavailable'))
+  })()
 
   // Issue #439：persistent_job_required 的提交态与结果（一律按 turn 记录，
   // 避免跨 turn 泄漏；成功后按钮常驻禁用 → 重复点击不产生第二个 Job）
@@ -396,9 +437,13 @@ export function ResearchChatPanel({
     return null
   }
 
-  /** P1-2：发送成功后把阅读位置固定到最新（follow_tail=true）并滚到底部。 */
-  const reportFollowTail = (): void => {
-    if (!wired || onChatAnchorChange === undefined) return
+  /** P1-2（§5.7.1）：把阅读位置固定到最新（follow_tail=true）并滚到底部。 */
+  const settleFollowTail = (): void => {
+    // P2-N9：隐藏（keep-alive tab）期间不写位置、不滚隐藏容器；保留意图，回到可见时结算。
+    if (!surfaceActiveRef.current) {
+      followTailPendingRef.current = true
+      return
+    }
     const container = chatScrollRef.current
     if (container !== null) container.scrollTop = container.scrollHeight
     restoringRef.current = false
@@ -406,7 +451,9 @@ export function ResearchChatPanel({
     restoreAttemptRef.current = null
     userScrolledRef.current = false
     setAnchorUnavailable(false)
-    setPositionUnavailableDismissed(true)
+    // P1-3（02 §4 / types.ts:532）：服务端 position_unavailable 会关闭位置保存，
+    // controller 拒绝新锚点——不伪装已恢复、不隐藏提示，只保留 UI 滚底。
+    if (editorSnapshot?.positionUnavailable === true) return
     const messageId = latestStableMessageId()
     if (messageId === null) {
       // 新消息尚未落稳定 ID：先置内存 pending，等 ID 回填后再落盘（不写临时 id）。
@@ -414,7 +461,23 @@ export function ResearchChatPanel({
       return
     }
     followTailPendingRef.current = false
-    onChatAnchorChange({ messageId, offsetPx: 0, followTail: true })
+    onChatAnchorChange?.({ messageId, offsetPx: 0, followTail: true })
+  }
+  // P1-4：发送 Promise 结算必须读“最新”渲染的 turns/editor（发送时旧闭包会把
+  // 已回填的稳定 ID 判成 pending，此后 signature 不再变化而永不落盘）。
+  const settleFollowTailRef = useRef<() => void>(() => {})
+  settleFollowTailRef.current = settleFollowTail
+
+  const reportFollowTail = (): void => {
+    if (!wired) return
+    if (editorSnapshot?.positionUnavailable === true) {
+      const container = chatScrollRef.current
+      if (surfaceActiveRef.current && container !== null) {
+        container.scrollTop = container.scrollHeight
+      }
+      return
+    }
+    settleFollowTail()
   }
 
   // P1-1：Coverage 提交独立于会话 editor——只校验工作区范围与本地草稿上限。
@@ -481,7 +544,38 @@ export function ResearchChatPanel({
     void onSend(wired ? rawText : trimmed, selectionWithScope).then((sent) => {
       if (sent && !wired) setQuery('')
       // P1-2（§5.7.1）：派发成功后阅读位置固定到最新（follow_tail=true）。
-      if (sent && wired) reportFollowTail()
+      if (sent && wired) settleFollowTailRef.current()
+    })
+  }
+
+  // PR-4：按当前几何测量一次消息锚点（§5.7.1；帧内单点读取，定时器/flush 复用）。
+  const measureChatAnchorNow = (): WireChatAnchor | null => {
+    const container = chatScrollRef.current
+    if (container === null) return null
+    const rect = container.getBoundingClientRect()
+    // §5.7.1：live/恢复 user 轮没有稳定 message_id——几何仍参与测量，
+    // 但只把最近的稳定消息写入 chat_anchor（临时 turn id 不持久化）。
+    const messages = Array.from(
+      container.querySelectorAll<HTMLElement>(
+        '[data-message-id], [data-local-message-id]',
+      ),
+    ).map((node) => {
+      const nodeRect = node.getBoundingClientRect()
+      return {
+        messageId: node.dataset.messageId ?? '',
+        stableMessageId: node.dataset.messageId ?? null,
+        top: nodeRect.top,
+        height: nodeRect.height,
+      }
+    })
+    return measureChatAnchorCandidates({
+      messages,
+      container: {
+        containerTop: rect.top,
+        scrollTop: container.scrollTop,
+        clientHeight: container.clientHeight,
+        scrollHeight: container.scrollHeight,
+      },
     })
   }
 
@@ -511,45 +605,23 @@ export function ResearchChatPanel({
       anchorTimerRef.current = null
       // N9：定时器触发时若已切 tab/隐藏，则丢弃本次位置写入。
       if (!surfaceActiveRef.current) return
-      const container = chatScrollRef.current
-      if (container === null) return
-      const rect = container.getBoundingClientRect()
-      // §5.7.1：live/恢复 user 轮没有稳定 message_id——几何仍参与测量，
-      // 但只把最近的稳定消息写入 chat_anchor（临时 turn id 不持久化）。
-      const messages = Array.from(
-        container.querySelectorAll<HTMLElement>(
-          '[data-message-id], [data-local-message-id]',
-        ),
-      ).map((node) => {
-        const nodeRect = node.getBoundingClientRect()
-        return {
-          messageId: node.dataset.messageId ?? '',
-          stableMessageId: node.dataset.messageId ?? null,
-          top: nodeRect.top,
-          height: nodeRect.height,
-        }
-      })
-      const anchor = measureChatAnchorCandidates({
-        messages,
-        container: {
-          containerTop: rect.top,
-          scrollTop: container.scrollTop,
-          clientHeight: container.clientHeight,
-          scrollHeight: container.scrollHeight,
-        },
-      })
-      if (anchor !== null) {
-        onChatAnchorChange(anchor)
-        setAnchorUnavailable(false)
-      }
+      const anchor = measureChatAnchorNow()
+      if (anchor !== null) onChatAnchorChange?.(anchor)
     }, 1000)
   }
 
   const flushPositionRef = useRef<() => void>(() => {})
   flushPositionRef.current = (): void => {
-    if (anchorTimerRef.current !== null) {
-      window.clearTimeout(anchorTimerRef.current)
+    // P1-1：<1000ms 内切走时定时器被取消——离开前先同步测量一次，避免丢新位置。
+    const pendingTimer = anchorTimerRef.current
+    const hadPending = pendingTimer !== null
+    if (pendingTimer !== null) {
+      window.clearTimeout(pendingTimer)
       anchorTimerRef.current = null
+    }
+    if (wired && hadPending && !restoringRef.current) {
+      const anchor = measureChatAnchorNow()
+      if (anchor !== null) onChatAnchorChange?.(anchor)
     }
     onFlushPosition?.()
   }
@@ -564,6 +636,10 @@ export function ResearchChatPanel({
   useEffect(() => {
     // F3：可见 → 隐藏的瞬间 flush 一次，避免 <1000ms 的滚动位置丢失。
     if (surfaceActivePrevRef.current && !surfaceActive) flushPositionRef.current()
+    // N9：隐藏期间成功/回填被延迟的 follow_tail 意图，回到可见时结算。
+    if (!surfaceActivePrevRef.current && surfaceActive && followTailPendingRef.current) {
+      settleFollowTailRef.current()
+    }
     surfaceActivePrevRef.current = surfaceActive
   }, [surfaceActive])
 
@@ -676,11 +752,10 @@ export function ResearchChatPanel({
 
   // P1-1：Coverage 草稿的合成快照——只承载文本投影，保存/门禁状态与
   // 会话 editor 隔离（composer 以 localDraft 模式渲染）。
-  const coverageEditorSnapshot: EditorSnapshot | null =
-    editorSnapshot === null || editorSnapshot === undefined
-      ? null
-      : {
-          ...editorSnapshot,
+  // P2-6：Coverage 输入始终由本地 coverageDraft 直接受控——快照不依赖会话
+  // editor 是否存在（尚无全局会话时 coverage 仍可输入/发送）。
+  const coverageEditorSnapshot: EditorSnapshot = {
+          ...(editorSnapshot ?? EMPTY_COVERAGE_EDITOR_SNAPSHOT),
           phase: 'ready',
           loading: false,
           draftText: coverageDraft.text,
@@ -694,21 +769,15 @@ export function ResearchChatPanel({
           saveFailure: null,
           oversize: false,
           positionUnavailable: false,
-        }
+  }
 
-  // P1-2：发送时还没有稳定 message_id → pending；ID 回填（signature 变化）后落盘。
+  // P1-2/P1-4：发送时还没有稳定 message_id → pending；ID 回填（signature 变化）
+  // 或重新可见时统一走最新闭包结算（隐藏期间只保留意图）。
   useEffect(() => {
     if (!wired || !followTailPendingRef.current) return
-    const messageId = latestStableMessageId()
-    if (messageId === null) return
-    followTailPendingRef.current = false
-    const container = chatScrollRef.current
-    if (container !== null) container.scrollTop = container.scrollHeight
-    onChatAnchorChange?.({ messageId, offsetPx: 0, followTail: true })
-    setAnchorUnavailable(false)
-    setPositionUnavailableDismissed(true)
+    settleFollowTailRef.current()
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在稳定 ID 集变化时结算
-  }, [wired, stableMessageIdSignature])
+  }, [wired, surfaceActive, stableMessageIdSignature])
 
   return (
     <div className="flex h-full min-h-0 flex-col">

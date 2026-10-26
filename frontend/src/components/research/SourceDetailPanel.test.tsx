@@ -243,6 +243,52 @@ describe('SourceDetailPanel · PR-4 来源锚点接线（N3/F3）', () => {
     )
   })
 
+  it('F3 切来源 <1000ms：离开前同步测量新位置，先写锚点再 flush(position)', async () => {
+    sourceAnchorMocks.useRuntimeOptional.mockReturnValue({
+      active: (surface: string) =>
+        surface === 'source' ? { sessionId: 'sess-s', sourceId: 'src_1' } : null,
+    })
+    const { wrapper } = makeWrapper()
+    const { container, rerender } = render(
+      <div className="overflow-y-auto">
+        <SourceDetailPanel sourceId="src_1" />
+      </div>,
+      { wrapper },
+    )
+    await screen.findByRole('heading', { name: 'Paper A' })
+    // 让恢复流程的 restoringRef 归零（restore 用 setTimeout(0) 解除抑制）。
+    await new Promise(resolve => setTimeout(resolve, 10))
+    vi.useFakeTimers()
+    const scrollParent = container.querySelector('.overflow-y-auto') as HTMLElement
+    const rect = (top: number, height = 0) => ({
+      top, bottom: top + height, left: 0, right: 0, width: 0, height,
+      x: 0, y: top, toJSON: () => ({}),
+    }) as DOMRect
+    Object.defineProperty(scrollParent, 'clientHeight', { configurable: true, value: 400 })
+    Object.defineProperty(scrollParent, 'scrollHeight', { configurable: true, value: 1200 })
+    Object.defineProperty(scrollParent, 'scrollTop', { configurable: true, writable: true, value: 0 })
+    scrollParent.getBoundingClientRect = () => rect(0)
+    const chunkNode = container.querySelector('[data-chunk-id]') as HTMLElement
+    chunkNode.getBoundingClientRect = () => rect(80, 40)
+    fireEvent.scroll(scrollParent)
+    // 下一帧（16ms 节流）先测量；用户随后（<1000ms）切来源也不会丢位置。
+    act(() => {
+      vi.advanceTimersByTime(16)
+    })
+    // 不足 1000ms 即切来源：位置已在 editor 内，cleanup 负责 flush 不丢。
+    rerender(
+      <div className="overflow-y-auto">
+        <SourceDetailPanel sourceId="src_2" />
+      </div>,
+    )
+    expect(sourceAnchorMocks.setReaderAnchor).toHaveBeenCalledTimes(1)
+    expect(sourceAnchorMocks.flush).toHaveBeenCalledWith('position')
+    expect(sourceAnchorMocks.setReaderAnchor.mock.invocationCallOrder[0]).toBeLessThan(
+      sourceAnchorMocks.flush.mock.invocationCallOrder[0],
+    )
+    vi.useRealTimers()
+  })
+
   it('active source 身份匹配：滚动空闲后写锚点，卸载前 flush(position)', async () => {
     sourceAnchorMocks.useRuntimeOptional.mockReturnValue({
       active: (surface: string) =>

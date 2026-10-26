@@ -1296,6 +1296,9 @@ describe('ResearchChatPanel · PR-4 修复轮（P1-1/P1-2/F3/F4）', () => {
     anchor,
     turns = [],
     surfaceActive = true,
+    sendDisabled = false,
+    blockedHint,
+    nullSnapshot = false,
   }: {
     onSend?: (query: string) => Promise<boolean>
     onSendCoverage?: (query: string, snapshot: ResearchScopeSnapshot) => Promise<boolean>
@@ -1306,6 +1309,9 @@ describe('ResearchChatPanel · PR-4 修复轮（P1-1/P1-2/F3/F4）', () => {
     anchor?: WireChatAnchor | null
     turns?: ResearchChatTurn[]
     surfaceActive?: boolean
+    sendDisabled?: boolean
+    blockedHint?: string
+    nullSnapshot?: boolean
   }) {
     const [snapshot, setSnapshot] = useState<EditorSnapshot>(() => ({
       ...createEditorState({ ref: REF2, writerId: 'writer-2', transportAvailable: true }),
@@ -1326,7 +1332,15 @@ describe('ResearchChatPanel · PR-4 修复轮（P1-1/P1-2/F3/F4）', () => {
               onSend={onSend}
               onSendCoverage={onSendCoverage}
               coverageEnabled
-              editorSnapshot={anchor === undefined ? snapshot : { ...snapshot, chatAnchor: anchor }}
+              sendDisabled={sendDisabled}
+              blockedHint={blockedHint}
+              editorSnapshot={
+                nullSnapshot
+                  ? null
+                  : anchor === undefined
+                    ? snapshot
+                    : { ...snapshot, chatAnchor: anchor }
+              }
               conversationSnapshot={CONV2}
               scopeSources={[{ sourceId: 'src_1', title: 'Paper One' }]}
               scopeNotes={[]}
@@ -1472,11 +1486,13 @@ describe('ResearchChatPanel · PR-4 修复轮（P1-1/P1-2/F3/F4）', () => {
     )
   })
 
-  it('P1-2 发送成功后清除 position_unavailable 提示', async () => {
+  it('P1-3 发送不伪装恢复：position_unavailable 时保留提示且不写锚点（02 §4 关闭位置保存）', async () => {
     const onSend = vi.fn(async () => true)
+    const onChatAnchorChange = vi.fn()
     render(
       <Harness
         onSend={onSend}
+        onChatAnchorChange={onChatAnchorChange}
         snapshotOverrides={{ draftText: '问题', positionUnavailable: true }}
         anchor={{ messageId: 'm-missing', offsetPx: 0, followTail: false }}
         turns={[turn({ id: 't1', role: 'assistant', content: '历史回答', serverMessageId: 'm1' })]}
@@ -1485,9 +1501,149 @@ describe('ResearchChatPanel · PR-4 修复轮（P1-1/P1-2/F3/F4）', () => {
     expect(screen.getByTestId('chat-position-unavailable')).toBeInTheDocument()
     fireEvent.click(screen.getByTestId('chat-send'))
     await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1))
-    await waitFor(() =>
-      expect(screen.queryByTestId('chat-position-unavailable')).not.toBeInTheDocument(),
+    await waitFor(() => expect(onChatAnchorChange).not.toHaveBeenCalled())
+    expect(screen.getByTestId('chat-position-unavailable')).toBeInTheDocument()
+  })
+
+  it('P1-4 稳定 ID 先回填、发送后 resolve：结算读最新 turns，不永久 pending', async () => {
+    let resolveSend: (value: boolean) => void = () => {}
+    const onSend = vi.fn(() => new Promise<boolean>((resolve) => { resolveSend = resolve }))
+    const onChatAnchorChange = vi.fn()
+    const view = render(
+      <Harness
+        onSend={onSend}
+        onChatAnchorChange={onChatAnchorChange}
+        snapshotOverrides={{ draftText: '问题' }}
+        turns={[]}
+      />,
     )
+    fireEvent.click(screen.getByTestId('chat-send'))
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1))
+    view.rerender(
+      <Harness
+        onSend={onSend}
+        onChatAnchorChange={onChatAnchorChange}
+        snapshotOverrides={{ draftText: '问题' }}
+        turns={[turn({ id: 't-new', role: 'assistant', content: '答', serverMessageId: 'm-new' })]}
+      />,
+    )
+    resolveSend(true)
+    await waitFor(() =>
+      expect(onChatAnchorChange).toHaveBeenCalledWith(
+        expect.objectContaining({ messageId: 'm-new', followTail: true }),
+      ),
+    )
+  })
+
+  it('N9 隐藏期间发送成功不写锚点；回到可见后结算 follow_tail', async () => {
+    let resolveSend: (value: boolean) => void = () => {}
+    const onSend = vi.fn(() => new Promise<boolean>((resolve) => { resolveSend = resolve }))
+    const onChatAnchorChange = vi.fn()
+    const turns = [turn({ id: 't1', role: 'assistant', content: '历史回答', serverMessageId: 'm1' })]
+    const view = render(
+      <Harness
+        onSend={onSend}
+        onChatAnchorChange={onChatAnchorChange}
+        snapshotOverrides={{ draftText: '问题' }}
+        surfaceActive={false}
+        anchor={{ messageId: 'm1', offsetPx: 40, followTail: false }}
+        turns={turns}
+      />,
+    )
+    fireEvent.click(screen.getByTestId('chat-send'))
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1))
+    resolveSend(true)
+    await waitFor(() => expect(onChatAnchorChange).not.toHaveBeenCalled())
+    view.rerender(
+      <Harness
+        onSend={onSend}
+        onChatAnchorChange={onChatAnchorChange}
+        snapshotOverrides={{ draftText: '问题' }}
+        anchor={{ messageId: 'm1', offsetPx: 40, followTail: false }}
+        turns={turns}
+      />,
+    )
+    await waitFor(() =>
+      expect(onChatAnchorChange).toHaveBeenCalledWith(
+        expect.objectContaining({ messageId: 'm1', followTail: true }),
+      ),
+    )
+  })
+
+  it('F3 滚动后 <1000ms 切走：离开前同步测量新位置再 flush', () => {
+    const onChatAnchorChange = vi.fn()
+    const onFlushPosition = vi.fn()
+    const originalRect = HTMLElement.prototype.getBoundingClientRect
+    const turns = [turn({ id: 't1', role: 'assistant', content: '历史回答', serverMessageId: 'm1' })]
+    const view = render(
+      <Harness
+        onChatAnchorChange={onChatAnchorChange}
+        onFlushPosition={onFlushPosition}
+        snapshotOverrides={{ draftText: '问题' }}
+        turns={turns}
+      />,
+    )
+    const chatScroll = screen.getByTestId('chat-messages')
+    HTMLElement.prototype.getBoundingClientRect = function mockRect(this: HTMLElement) {
+      if (this.dataset.messageId !== undefined) {
+        return {
+          top: 100 - chatScroll.scrollTop, bottom: 180, height: 80,
+          left: 0, right: 0, width: 0, x: 0, y: 0, toJSON: () => ({}),
+        } as DOMRect
+      }
+      if (this === chatScroll) {
+        return {
+          top: 0, bottom: 400, height: 400,
+          left: 0, right: 0, width: 0, x: 0, y: 0, toJSON: () => ({}),
+        } as DOMRect
+      }
+      return originalRect.call(this)
+    }
+    try {
+      Object.defineProperty(chatScroll, 'scrollHeight', { value: 2000, configurable: true })
+      Object.defineProperty(chatScroll, 'clientHeight', { value: 400, configurable: true })
+      chatScroll.scrollTop = 150
+      fireEvent.scroll(chatScroll)
+      view.rerender(
+        <Harness
+          onChatAnchorChange={onChatAnchorChange}
+          onFlushPosition={onFlushPosition}
+          snapshotOverrides={{ draftText: '问题' }}
+          surfaceActive={false}
+          turns={turns}
+        />,
+      )
+      expect(onChatAnchorChange).toHaveBeenCalledWith(
+        expect.objectContaining({ messageId: 'm1', offsetPx: -50 }),
+      )
+      expect(onFlushPosition).toHaveBeenCalledTimes(1)
+      expect(onChatAnchorChange.mock.invocationCallOrder[0]).toBeLessThan(
+        onFlushPosition.mock.invocationCallOrder[0],
+      )
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = originalRect
+    }
+  })
+
+  it('P2-6 无会话快照时 Coverage 仍由本地草稿受控（发送成功清空自身文本）', async () => {
+    seedScope(SCOPE_A)
+    const onSendCoverage = vi.fn(async () => true)
+    render(<Harness onSendCoverage={onSendCoverage} nullSnapshot />)
+    enterCoverageMode()
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: 'coverage 问题' } })
+    fireEvent.click(screen.getByTestId('chat-send'))
+    await waitFor(() => expect(onSendCoverage).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(screen.getByTestId('chat-input')).toHaveValue(''))
+    expect(screen.getByTestId('chat-send')).toBeDisabled()
+  })
+
+  it('P2-7 全局执行门禁同样约束 Coverage（禁用并显示外部稳定原因）', () => {
+    seedScope(SCOPE_A)
+    render(<Harness sendDisabled blockedHint="模型不可用" />)
+    enterCoverageMode()
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: 'coverage 问题' } })
+    expect(screen.getByTestId('chat-send')).toBeDisabled()
+    expect(screen.getByTestId('research-draft-gate-hint')).toHaveTextContent('模型不可用')
   })
 
   it('F3 从可见切到隐藏（切 tab）时调用 flush("position")', () => {
