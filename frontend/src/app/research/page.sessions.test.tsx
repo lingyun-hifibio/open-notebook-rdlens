@@ -110,6 +110,7 @@ vi.mock('@/lib/hooks/research-session-runtime', () => ({
 }))
 
 import ResearchPage from './page'
+import { RESEARCH_SESSION_SWITCHER_PLACEHOLDERS } from '@/components/research/ResearchSessionSwitcher'
 import type { SessionRuntimeSnapshot } from '@/lib/research/session-runtime'
 
 const PROJECT_ID = 'proj-1'
@@ -557,5 +558,104 @@ describe('ResearchPage 会话导航：身份切换（S1）', () => {
 
     await waitFor(() => expect(nav()).not.toHaveAttribute('data-active-global-session'))
     expect(nav()).not.toHaveAttribute('data-active-source-session')
+  })
+})
+
+describe('ResearchPage 会话导航：review B6/B7/B8/Major 回归', () => {
+  it('项目级历史使用 kind=all（可列出 source 会话）', async () => {
+    renderPage()
+
+    await waitFor(() => expect(nav()).toBeInTheDocument())
+    await waitFor(() =>
+      expect(listChatSessions).toHaveBeenCalledWith(PROJECT_ID, {
+        kind: 'all',
+        limit: 20,
+      }),
+    )
+  })
+
+  it('普通打开来源：同步该来源 runtime active 与 display（无指针 → source+null）', async () => {
+    renderPage()
+    await waitFor(() => expect(nav()).toBeInTheDocument())
+
+    fireEvent.click(screen.getByTestId('workbench-open-source'))
+
+    await waitFor(() =>
+      expect(runtimeRef.current?.setDisplayPointer).toHaveBeenCalledWith({
+        version: 1,
+        surface: 'source',
+        sourceId: 'src-1',
+        ref: null,
+      }),
+    )
+    expect(nav()).toHaveAttribute('data-source-new-session', 'src-1')
+    expect(nav()).not.toHaveAttribute('data-active-source-session')
+  })
+
+  it('普通打开来源：存在 `.source` 指针 → 恢复并激活该来源会话、display 指向它', async () => {
+    const pointerRef = {
+      domain: 'research' as const,
+      kind: 'source' as const,
+      projectId: PROJECT_ID,
+      sessionId: 'sess_source_pointer',
+      sourceId: 'src-1',
+    }
+    readPointer.mockImplementation((_scope, _authority, surface) =>
+      surface === 'source' ? { version: 1, ref: pointerRef, savedAt: 1 } : null,
+    )
+    renderPage()
+    await waitFor(() => expect(nav()).toBeInTheDocument())
+
+    fireEvent.click(screen.getByTestId('workbench-open-source'))
+
+    await waitFor(() =>
+      expect(nav()).toHaveAttribute('data-active-source-session', 'sess_source_pointer'),
+    )
+    expect(runtimeRef.current?.activate).toHaveBeenCalledWith('source', pointerRef)
+    expect(runtimeRef.current?.setDisplayPointer).toHaveBeenCalledWith({
+      version: 1,
+      surface: 'source',
+      sourceId: 'src-1',
+      ref: pointerRef,
+    })
+  })
+
+  it('半接线隔离（B8）：新导航可用时旧内容区关闭交互并显示可见原因', async () => {
+    renderPage()
+    await waitFor(() => expect(nav()).toBeInTheDocument())
+
+    expect(screen.getByTestId('session-content-gate')).toHaveTextContent(
+      RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.contentNotReady,
+    )
+    expect(screen.getByTestId('legacy-session-content')).toHaveAttribute(
+      'data-session-content-gated',
+      'true',
+    )
+    expect(screen.getByTestId('legacy-session-content')).toHaveAttribute('aria-hidden', 'true')
+  })
+
+  it('列表 404 session_not_found → 清 global 指针与 display，显示空态', async () => {
+    const displayRef = {
+      domain: 'research' as const,
+      kind: 'global' as const,
+      projectId: PROJECT_ID,
+      sessionId: 'sess_gone',
+      sourceId: null,
+    }
+    readDisplayPointer.mockReturnValue({ version: 1, surface: 'global', ref: displayRef })
+    listChatSessions.mockRejectedValue(
+      Object.assign(new Error('gone'), {
+        response: { status: 404, data: { detail: { code: 'session_not_found' } } },
+      }),
+    )
+    renderPage()
+
+    await waitFor(() => expect(nav()).not.toHaveAttribute('data-active-global-session'))
+    expect(runtimeRef.current?.activate).toHaveBeenCalledWith('global', null)
+    expect(runtimeRef.current?.setDisplayPointer).toHaveBeenCalledWith({
+      version: 1,
+      surface: 'global',
+      ref: null,
+    })
   })
 })

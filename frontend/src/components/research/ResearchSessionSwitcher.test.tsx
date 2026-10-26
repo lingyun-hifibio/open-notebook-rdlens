@@ -394,3 +394,51 @@ describe('ResearchSessionSwitcher：抽屉可访问性', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 })
+
+describe('ResearchSessionSwitcher：review Major 回归（§4.6 / §4.1）', () => {
+  it('legacy_context_unverifiable：显示标题并带“旧记录，来源不可验证”徽标', () => {
+    const sessions = makeSessions({
+      sessions: [
+        summary('sess_legacy', {
+          visibility: 'legacy_context_unverifiable',
+          title: 'legacy title',
+        }),
+      ],
+    })
+    renderSwitcher({ sessions })
+    openDrawer()
+
+    expect(screen.getByTestId('session-item-title')).toHaveTextContent('legacy title')
+    expect(screen.getByTestId('session-item-legacy-badge')).toHaveTextContent(
+      RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.legacyContextUnverifiable,
+    )
+    expect(screen.queryByTestId('session-item-restricted')).toBeNull()
+  })
+
+  it('5xx 且已有列表：保留列表并同时显示错误条与重试', () => {
+    const sessions = makeSessions({
+      sessions: [summary('sess_a', { title: 'session a' })],
+      error: 'unavailable',
+    })
+    renderSwitcher({ sessions })
+    openDrawer()
+
+    expect(screen.getByTestId('session-list')).toBeInTheDocument()
+    expect(screen.getByTestId('session-item-title')).toHaveTextContent('session a')
+    expect(screen.getByTestId('session-list-error')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('session-list-retry'))
+    expect(sessions.refresh).toHaveBeenCalledTimes(2)
+  })
+
+  it('404 session_not_found：显示“会话已不存在”空态，不显示重试', () => {
+    const sessions = makeSessions({ error: 'not_found' })
+    renderSwitcher({ sessions })
+    openDrawer()
+
+    expect(screen.getByTestId('session-list-not-found')).toHaveTextContent(
+      RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.notFound,
+    )
+    expect(screen.queryByTestId('session-list-retry')).toBeNull()
+    expect(screen.queryByTestId('session-list-error')).toBeNull()
+  })
+})

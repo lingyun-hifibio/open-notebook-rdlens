@@ -56,6 +56,15 @@ export const RESEARCH_SESSION_SWITCHER_PLACEHOLDERS = {
   createFailed: 'Could not start a new conversation',
   /** 进行中。 */
   creating: 'Starting a conversation…',
+  /** has_draft 徽标（§4.2-1；PR-6 键）。 */
+  draft: 'Draft',
+  /** 旧记录：来源不可验证（§4.6；允许显示标题 + 徽标）。 */
+  legacyContextUnverifiable: 'Legacy record — source cannot be verified',
+  /** 会话已不存在（404 `session_not_found`；§4.1 清指针 + 空态）。 */
+  notFound: 'This conversation no longer exists',
+  /** 新导航可用但会话内容尚未接线（PR-2 半接线隔离；PR-4/5a 后移除）。 */
+  contentNotReady:
+    'Session content is not wired yet (PR-5a). Legacy chat panels are disabled while session navigation is active.',
 } as const
 
 export interface ResearchSessionSwitcherCopy {
@@ -69,6 +78,9 @@ export interface ResearchSessionSwitcherCopy {
   readonly sourceUnavailable: string
   readonly createFailed: string
   readonly creating: string
+  readonly draft: string
+  readonly legacyContextUnverifiable: string
+  readonly notFound: string
 }
 
 export interface ResearchSessionSwitcherProps {
@@ -106,6 +118,10 @@ function itemTitle(
 ): { text: string; restricted: boolean } {
   if (item.visibility === 'restricted') {
     return { text: copy.restrictedSession, restricted: true }
+  }
+  if (item.visibility === 'legacy_context_unverifiable') {
+    // 旧记录：允许显示标题 + “来源不可验证”徽标（§4.6），不得当作受限隐藏。
+    return { text: item.title ?? copy.unnamedSession, restricted: false }
   }
   if (item.visibility !== 'visible') {
     // 旧读路径 / payload 缺失：可见性未知，不渲染 title（§4.6）。
@@ -151,6 +167,11 @@ export function ResearchSessionSwitcher({
       createFailed:
         copyOverride?.createFailed ?? RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.createFailed,
       creating: copyOverride?.creating ?? RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.creating,
+      draft: copyOverride?.draft ?? RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.draft,
+      legacyContextUnverifiable:
+        copyOverride?.legacyContextUnverifiable ??
+        RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.legacyContextUnverifiable,
+      notFound: copyOverride?.notFound ?? RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.notFound,
     }),
     [copyOverride, t],
   )
@@ -248,104 +269,154 @@ export function ResearchSessionSwitcher({
             <p data-testid="session-list-unauthorized" className="text-sm text-muted-foreground">
               {copy.unauthorized}
             </p>
-          ) : sessions.sourceUnavailable ? (
-            <div className="flex flex-col gap-2">
-              <p data-testid="session-list-source-unavailable" className="text-sm text-muted-foreground">
-                {copy.sourceUnavailable}
-              </p>
-              <button
-                type="button"
-                data-testid="session-list-retry"
-                className="self-start rounded-md border px-2 py-1 text-sm hover:bg-accent"
-                onClick={() => sessions.refresh()}
-              >
-                {t('research.retry')}
-              </button>
-            </div>
-          ) : sessions.error ? (
-            <div className="flex flex-col gap-2">
-              <p role="alert" data-testid="session-list-error" className="text-sm text-destructive">
-                {t('research.loadFailed')}
-              </p>
-              <button
-                type="button"
-                data-testid="session-list-retry"
-                className="self-start rounded-md border px-2 py-1 text-sm hover:bg-accent"
-                onClick={() => sessions.refresh()}
-              >
-                {t('research.retry')}
-              </button>
-            </div>
-          ) : sessions.loading ? (
-            <p data-testid="session-list-loading" className="text-sm text-muted-foreground">
-              {t('research.loading')}
-            </p>
-          ) : sessions.sessions.length === 0 ? (
-            <p data-testid="session-list-empty" className="text-sm text-muted-foreground">
-              {t('chat.noSessions')}
-            </p>
           ) : (
-            <ul className="flex flex-col gap-1" data-testid="session-list" role="list">
-              {sessions.sessions.map((item) => {
-                const isActive = currentRef !== null && sessionRefEquals(item.ref, currentRef)
-                const title = itemTitle(item, copy)
-                const updatedAt =
-                  typeof item.updatedAt === 'string' && item.updatedAt.length > 0
-                    ? formatUpdatedAt(item.updatedAt)
-                    : ''
-                return (
-                  <li key={sessionKey(item.ref)}>
+            <>
+              {sessions.sourceUnavailable ? (
+                <div className="mb-2 flex flex-col gap-2">
+                  <p
+                    data-testid="session-list-source-unavailable"
+                    className="text-sm text-muted-foreground"
+                  >
+                    {copy.sourceUnavailable}
+                  </p>
+                  <button
+                    type="button"
+                    data-testid="session-list-retry"
+                    className="self-start rounded-md border px-2 py-1 text-sm hover:bg-accent"
+                    onClick={() => sessions.refresh()}
+                  >
+                    {t('research.retry')}
+                  </button>
+                </div>
+              ) : null}
+
+              {sessions.error === 'not_found' ? (
+                <p data-testid="session-list-not-found" className="text-sm text-muted-foreground">
+                  {copy.notFound}
+                </p>
+              ) : sessions.loading && sessions.sessions.length === 0 ? (
+                <p data-testid="session-list-loading" className="text-sm text-muted-foreground">
+                  {t('research.loading')}
+                </p>
+              ) : sessions.sessions.length === 0 ? (
+                sessions.error && sessions.error !== 'source_unavailable' ? (
+                  <div className="flex flex-col gap-2">
+                    <p
+                      role="alert"
+                      data-testid="session-list-error"
+                      className="text-sm text-destructive"
+                    >
+                      {t('research.loadFailed')}
+                    </p>
                     <button
                       type="button"
-                      data-testid="session-item"
-                      data-session-id={item.ref.sessionId}
-                      data-kind={item.ref.kind}
-                      aria-current={isActive ? 'true' : undefined}
-                      className="flex w-full flex-col items-start gap-1 rounded-md px-2 py-1.5 text-left hover:bg-accent data-[active=true]:bg-accent"
-                      data-active={isActive ? 'true' : undefined}
-                      onClick={() => handleSelect(item.ref)}
+                      data-testid="session-list-retry"
+                      className="self-start rounded-md border px-2 py-1 text-sm hover:bg-accent"
+                      onClick={() => sessions.refresh()}
                     >
-                      <span className="flex w-full min-w-0 items-center gap-2">
-                        <span
-                          data-testid={title.restricted ? 'session-item-restricted' : 'session-item-title'}
-                          className="truncate text-sm"
-                        >
-                          {title.text}
-                        </span>
-                        <span
-                          data-testid={`session-item-badge-${item.ref.kind}`}
-                          className="shrink-0 rounded border px-1 text-[10px] uppercase text-muted-foreground"
-                        >
-                          {item.ref.kind}
-                        </span>
-                        {item.ref.kind === 'source' && item.ref.sourceId ? (
-                          <span
-                            data-testid="session-item-source"
-                            className="shrink-0 truncate text-xs text-muted-foreground"
-                          >
-                            {shortSessionId(item.ref.sourceId)}
-                          </span>
-                        ) : null}
-                        {item.hasDraft === true ? (
-                          <span
-                            data-testid="session-item-draft"
-                            className="shrink-0 rounded border px-1 text-[10px] text-muted-foreground"
-                          >
-                            draft
-                          </span>
-                        ) : null}
-                      </span>
-                      <span className="flex w-full items-center gap-2 text-xs text-muted-foreground">
-                        <span data-testid="session-item-session-id">{shortSessionId(item.ref.sessionId)}</span>
-                        {updatedAt ? (
-                          <span data-testid="session-item-updated-at">{updatedAt}</span>
-                        ) : null}
-                      </span>
+                      {t('research.retry')}
                     </button>
-                  </li>
+                  </div>
+                ) : (
+                  <p data-testid="session-list-empty" className="text-sm text-muted-foreground">
+                    {t('chat.noSessions')}
+                  </p>
                 )
-              })}
-            </ul>
+              ) : (
+                <>
+                  {sessions.error ? (
+                    <div
+                      role="alert"
+                      data-testid="session-list-error"
+                      className="mb-2 flex items-center justify-between gap-2"
+                    >
+                      <span className="text-sm text-destructive">{t('research.loadFailed')}</span>
+                      <button
+                        type="button"
+                        data-testid="session-list-retry"
+                        className="shrink-0 rounded-md border px-2 py-1 text-sm hover:bg-accent"
+                        onClick={() => sessions.refresh()}
+                      >
+                        {t('research.retry')}
+                      </button>
+                    </div>
+                  ) : null}
+                  <ul className="flex flex-col gap-1" data-testid="session-list" role="list">
+                    {sessions.sessions.map((item) => {
+                      const isActive = currentRef !== null && sessionRefEquals(item.ref, currentRef)
+                      const title = itemTitle(item, copy)
+                      const updatedAt =
+                        typeof item.updatedAt === 'string' && item.updatedAt.length > 0
+                          ? formatUpdatedAt(item.updatedAt)
+                          : ''
+                      return (
+                        <li key={sessionKey(item.ref)}>
+                          <button
+                            type="button"
+                            data-testid="session-item"
+                            data-session-id={item.ref.sessionId}
+                            data-kind={item.ref.kind}
+                            aria-current={isActive ? 'true' : undefined}
+                            className="flex w-full flex-col items-start gap-1 rounded-md px-2 py-1.5 text-left hover:bg-accent data-[active=true]:bg-accent"
+                            data-active={isActive ? 'true' : undefined}
+                            onClick={() => handleSelect(item.ref)}
+                          >
+                            <span className="flex w-full min-w-0 items-center gap-2">
+                              <span
+                                data-testid={
+                                  title.restricted ? 'session-item-restricted' : 'session-item-title'
+                                }
+                                className="truncate text-sm"
+                              >
+                                {title.text}
+                              </span>
+                              <span
+                                data-testid={`session-item-badge-${item.ref.kind}`}
+                                className="shrink-0 rounded border px-1 text-[10px] uppercase text-muted-foreground"
+                              >
+                                {item.ref.kind}
+                              </span>
+                              {item.ref.kind === 'source' && item.ref.sourceId ? (
+                                <span
+                                  data-testid="session-item-source"
+                                  className="shrink-0 truncate text-xs text-muted-foreground"
+                                >
+                                  {shortSessionId(item.ref.sourceId)}
+                                </span>
+                              ) : null}
+                              {item.visibility === 'legacy_context_unverifiable' ? (
+                                <span
+                                  data-testid="session-item-legacy-badge"
+                                  className="shrink-0 rounded border px-1 text-[10px] text-muted-foreground"
+                                >
+                                  {copy.legacyContextUnverifiable}
+                                </span>
+                              ) : null}
+                              {item.hasDraft === true ? (
+                                <span
+                                  data-testid="session-item-draft"
+                                  className="shrink-0 rounded border px-1 text-[10px] text-muted-foreground"
+                                >
+                                  {copy.draft}
+                                </span>
+                              ) : null}
+                            </span>
+                            <span className="flex w-full items-center gap-2 text-xs text-muted-foreground">
+                              <span data-testid="session-item-session-id">
+                                {shortSessionId(item.ref.sessionId)}
+                              </span>
+                              {updatedAt ? (
+                                <span data-testid="session-item-updated-at">{updatedAt}</span>
+                              ) : null}
+                            </span>
+                          </button>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </>
+              )}
+            </>
           )}
 
           {!sessions.loading && sessions.hasMore && !sessions.error ? (

@@ -124,11 +124,15 @@ function wireSummary(
   }
 }
 
-function wireList(items: unknown[], nextCursor: string | null = null) {
+function wireList(
+  items: unknown[],
+  nextCursor: string | null = null,
+  viewerId: number = Number(VIEWER_ID),
+) {
   return {
     items,
     next_cursor: nextCursor,
-    viewer_user_id: Number(VIEWER_ID),
+    viewer_user_id: viewerId,
     capabilities: {
       sessions: {
         contract: 'research-session-v1',
@@ -334,7 +338,10 @@ describe('useResearchSessions：错误分类与无权限终态', () => {
     expect(listChatSessions).toHaveBeenCalledTimes(1)
     act(() => result.current.refresh())
     await waitFor(() => expect(result.current.loading).toBe(false))
-    expect(listChatSessions).toHaveBeenCalledTimes(2)
+    // 终态后 refresh/loadMore 均被门禁关闭，不进入重试循环。
+    expect(listChatSessions).toHaveBeenCalledTimes(1)
+    expect(result.current.canList).toBe(false)
+    expect(result.current.canCreate).toBe(false)
   })
 
   it('5xx 保留已有列表并允许重试，不自动创建新会话', async () => {
@@ -467,10 +474,11 @@ describe('useResearchSessions：Source 旧读路径（§4.1 兼容边界）', ()
     const { result } = renderSessions({ runtime: controller.runtime, surface: 'source', sourceId: 'src-1' })
 
     await waitFor(() => expect(result.current.sessions).toHaveLength(20))
-    expect(result.current.hasMore).toBe(true)
-    act(() => result.current.loadMore())
-    await waitFor(() => expect(listSourceChatSessions).toHaveBeenCalledTimes(2))
-    // 旧路径无 cursor：重复结果按 sessionKey 去重，不产生重复条目。
+    // 旧读路径 API 没有 cursor/offset：只取首页，不伪造“加载更多”（第 21 条
+    // 起的续页登记为未完成能力，见 hook 文件头）。
+    expect(result.current.hasMore).toBe(false)
+    // 组件不渲染“加载更多”入口（hasMore=false），因此不会发出续页请求。
+    expect(listSourceChatSessions).toHaveBeenCalledTimes(1)
     expect(result.current.sessions).toHaveLength(20)
   })
 
@@ -654,7 +662,7 @@ describe('useResearchSessions：身份切换（S1）', () => {
     const controller = makeRuntime()
     vi.mocked(listChatSessions)
       .mockResolvedValueOnce(wireList([wireSummary('sess_old_viewer')], null))
-      .mockResolvedValueOnce(wireList([wireSummary('sess_new_viewer')], null))
+      .mockResolvedValueOnce(wireList([wireSummary('sess_new_viewer')], null, 8))
 
     const { result } = renderSessions({ runtime: controller.runtime })
     await waitFor(() => expect(result.current.sessions).toHaveLength(1))
@@ -670,6 +678,163 @@ describe('useResearchSessions：身份切换（S1）', () => {
     await waitFor(() => expect(result.current.sessions).toHaveLength(1))
     expect(result.current.sessions[0].ref.sessionId).toBe('sess_new_viewer')
     expect(listChatSessions).toHaveBeenCalledTimes(2)
+  })
+})
+
+
+describe('useResearchSessions：列表契约绑定与响应能力（review B2）', () => {
+  it('响应 viewer_user_id 与当前身份不符 → invalid_response，不展示他身份数据', async () => {
+    const controller = makeRuntime()
+    vi.mocked(listChatSessions).mockResolvedValueOnce(wireList([wireSummary('sess_other')], null, 99))
+
+    const { result } = renderSessions({ runtime: controller.runtime })
+
+    await waitFor(() => expect(result.current.error).toBe('unavailable'))
+    expect(result.current.sessions).toHaveLength(0)
+  })
+
+  it('拒绝新协议路径的 legacy DTO（无 session_ref）与缺失可见性条目', async () => {
+    const controller = makeRuntime()
+    vi.mocked(listChatSessions)
+      .mockResolvedValueOnce(
+        wireList([
+          {
+            session_id: 'sess_legacy',
+            title: 'legacy title',
+            created_at: CREATED_AT,
+            updated_at: UPDATED_AT,
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        wireList([
+          {
+            session_ref: wireRef('sess_no_visibility'),
+            title: 'no visibility',
+            created_at: CREATED_AT,
+            updated_at: UPDATED_AT,
+          },
+        ]),
+      )
+
+    const { result } = renderSessions({ runtime: controller.runtime })
+    await waitFor(() => expect(result.current.error).toBe('unavailable'))
+    expect(result.current.sessions).toHaveLength(0)
+
+    act(() => result.current.refresh())
+    await waitFor(() => expect(listChatSessions).toHaveBeenCalledTimes(2))
+    expect(result.current.sessions).toHaveLength(0)
+  })
+
+  it('响应 capabilities 降级 → 只收紧创建门禁（阅读入口仍可用）', async () => {
+    const controller = makeRuntime()
+    vi.mocked(listChatSessions).mockResolvedValueOnce({
+      ...wireList([wireSummary('sess_a')]),
+      capabilities: {
+        sessions: {
+          contract: 'research-session-v0',
+          editor_ready: false,
+          submission_ready: { global: false, source: false },
+        },
+      },
+    })
+
+    const { result } = renderSessions({ runtime: controller.runtime })
+
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+    expect(result.current.canList).toBe(true)
+    expect(result.current.canCreate).toBe(false)
+    expect(result.current.createDisabledReason).toBe('capability_unavailable')
+  })
+})
+
+describe('useResearchSessions：403 全页终态（review B3）', () => {
+  it('loadMore 403 也进入终态：清列表、关闭列表/刷新、不重试', async () => {
+    const controller = makeRuntime()
+    vi.mocked(listChatSessions)
+      .mockResolvedValueOnce(
+        wireList([wireSummary('sess_a')], 'cursor_page_2'),
+      )
+      .mockRejectedValueOnce(httpError(403, 'chat_owner_required'))
+
+    const { result } = renderSessions({ runtime: controller.runtime })
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1))
+
+    act(() => result.current.loadMore())
+    await waitFor(() => expect(result.current.unauthorized).toBe(true))
+    expect(result.current.error).toBe('unauthorized')
+    expect(result.current.sessions).toHaveLength(0)
+    expect(result.current.canList).toBe(false)
+    expect(result.current.canCreate).toBe(false)
+
+    act(() => result.current.refresh())
+    expect(listChatSessions).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('useResearchSessions：创建与刷新代际（review B4/B5）', () => {
+  it('创建期间打开抽屉刷新列表不得作废创建响应', async () => {
+    const controller = makeRuntime()
+    vi.mocked(listChatSessions).mockResolvedValue(wireList([]))
+    let resolveCreate: (value: unknown) => void = () => {}
+    vi.mocked(createChatSession).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveCreate = resolve
+        }),
+    )
+
+    const { result } = renderSessions({ runtime: controller.runtime })
+    await waitFor(() => expect(result.current.canCreate).toBe(true))
+
+    let createPromise: Promise<unknown> = Promise.resolve(null)
+    act(() => {
+      createPromise = result.current.create()
+    })
+    act(() => result.current.refresh())
+
+    await act(async () => {
+      resolveCreate(wireCreateResponse('sess_created'))
+      await createPromise
+    })
+
+    expect(result.current.createError).toBeNull()
+    expect(result.current.created?.ref.sessionId).toBe('sess_created')
+  })
+
+  it('身份切换清空创建错误与 pending client session_id（S1）', async () => {
+    const controller = makeRuntime()
+    vi.mocked(listChatSessions)
+      .mockResolvedValueOnce(wireList([]))
+      .mockResolvedValueOnce(wireList([], null, 8))
+    vi.mocked(createChatSession)
+      .mockRejectedValueOnce(httpError(503, 'session_store_unavailable'))
+      .mockResolvedValueOnce(wireCreateResponse('sess_after_switch'))
+
+    const { result } = renderSessions({ runtime: controller.runtime })
+    await waitFor(() => expect(result.current.canCreate).toBe(true))
+
+    await act(async () => {
+      await result.current.create()
+    })
+    expect(result.current.createError).toBe('failed')
+    const firstSessionId = vi.mocked(createChatSession).mock.calls[0][1].sessionId
+
+    act(() => {
+      controller.set(
+        { viewerUserId: '8', authGeneration: 2 },
+        { role: 'owner', projectId: PROJECT_ID, viewerUserId: '8', authGeneration: 2 },
+      )
+    })
+    await waitFor(() => expect(result.current.createError).toBeNull())
+    expect(result.current.created).toBeNull()
+
+    await act(async () => {
+      await result.current.create()
+    })
+    const secondSessionId = vi.mocked(createChatSession).mock.calls[1][1].sessionId
+    expect(secondSessionId).not.toBe(firstSessionId)
+    expect(result.current.created?.ref.sessionId).toBe('sess_after_switch')
   })
 })
 
