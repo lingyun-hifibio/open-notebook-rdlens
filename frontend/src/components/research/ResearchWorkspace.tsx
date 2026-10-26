@@ -17,7 +17,10 @@ import {
   deriveScopeSnapshot,
 } from '@/lib/hooks/use-research-chat'
 import { formatScopeLabel, useResearchScope, type ResearchScopeSnapshot } from '@/lib/research/scope'
-import { useResearchSessionRuntimeOptional } from '@/lib/hooks/research-session-runtime'
+import {
+  useResearchSessionRuntimeOptional,
+  useSessionSnapshot,
+} from '@/lib/hooks/research-session-runtime'
 import { useResearchEditor } from '@/lib/hooks/use-research-editor'
 import { researchModelBlockedHint, useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
 import { useResearchNotes, useResearchSources } from '@/lib/hooks/use-research'
@@ -113,6 +116,9 @@ export function ResearchWorkspace({
   // PR-4：Chat 草稿/范围/锚点的真源＝当前全局会话 editor（DESIGN §5.3/§5.4）。
   // 未装配 session runtime 的宿主保持旧本地输入回退（PR-5a 移除）。
   const sessionRuntime = useResearchSessionRuntimeOptional()
+  // 订阅运行时快照，capabilities 就绪后能重新评估发送门禁（§6.1 条件 2）；
+  // 无 Provider 的宿主返回冻结的 server snapshot（capabilities=null）。
+  const runtimeSnapshot = useSessionSnapshot()
   const activeGlobalRef = sessionRuntime?.active('global') ?? null
   const chatEditor = useResearchEditor({
     kind: 'global',
@@ -120,6 +126,11 @@ export function ResearchWorkspace({
     enabled: sessionRuntime !== null && activeGlobalRef !== null,
   })
   const chatEditorSnapshot = sessionRuntime === null ? undefined : chatEditor.snapshot
+  // §6.1 条件 2：submission capability 未就绪时 composer 必须禁用并给稳定原因。
+  const chatSubmissionReady =
+    sessionRuntime === null
+      ? undefined
+      : runtimeSnapshot.capabilities?.submissionReady.global === true
   // 范围条只读投影：不读写工作区选择器（DESIGN §5.3）。
   const scopeBarSources = useMemo<ResearchScopeBarSourceOption[]>(
     () =>
@@ -542,6 +553,7 @@ export function ResearchWorkspace({
             resolveChatOrigin={resolveChatOrigin}
             prefill={chatPrefill}
             editorSnapshot={chatEditorSnapshot}
+            submissionReady={chatSubmissionReady}
             conversationSnapshot={{
               isBusy: isStreaming,
               isStreaming,

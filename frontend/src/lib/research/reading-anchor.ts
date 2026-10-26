@@ -211,11 +211,33 @@ export function restoreScrollTop(input: {
   }
 
   const clampedTop = Math.min(Math.max(raw, 0), maxScroll)
+  const drift = Math.abs(clampedTop - raw)
+  // 容器滚动范围不足：反算位置不可达（超出 tolerance 的裁剪）→ position_unavailable。
+  if (drift > tolerance) {
+    return { ok: false, reason: 'out_of_range' }
+  }
   return {
     ok: true,
     scrollTop: Math.round(clampedTop),
-    clamped: Math.abs(clampedTop - raw) > tolerance,
+    clamped: drift > 0,
   }
+}
+
+/**
+ * 是否应当恢复来源正文锚点（§8.3：Citation 定位优先于旧阅读位置）。
+ *
+ * - 无已保存锚点 / 服务端已净化（`positionUnavailable`）→ 不恢复；
+ * - 同次打开带 Citation 定位请求（`citationFocusRequestId !== undefined`）→
+ *   跳过旧锚点，避免覆盖引用目标。
+ */
+export function shouldRestoreReaderAnchor(input: {
+  readonly savedAnchor: WireReaderAnchor | null
+  readonly citationFocusRequestId?: number
+  readonly positionUnavailable?: boolean
+}): boolean {
+  if (input.savedAnchor === null) return false
+  if (input.positionUnavailable === true) return false
+  return input.citationFocusRequestId === undefined
 }
 
 /**

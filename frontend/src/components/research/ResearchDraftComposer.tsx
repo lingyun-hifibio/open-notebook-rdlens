@@ -51,7 +51,7 @@ const GATE_REASON_KEYS: Record<ResearchDraftGateReason, string> = {
   runtime_unavailable: 'research.errors.internal',
   editor_not_ready: 'research.loading',
   editor_unreadable: 'research.errors.internal',
-  submission_not_ready: 'research.loading',
+  submission_not_ready: 'research.errors.admissionUnavailable',
   save_failed: 'research.resultActions.saveFailed',
   saving: 'research.resultActions.saving',
   conflict: 'research.errors.revisionChanged',
@@ -90,6 +90,8 @@ export function researchDraftSaveState(snapshot: EditorSnapshot | null): Researc
 export function deriveResearchDraftGate(input: {
   readonly editorSnapshot: EditorSnapshot | null
   readonly conversationSnapshot: ResearchConversationSnapshot
+  /** `false` = 会话 submission capability 未就绪（§6.1 条件 2）；缺省不额外门禁。 */
+  readonly submissionReady?: boolean
 }): ResearchDraftGate {
   const { editorSnapshot, conversationSnapshot } = input
   if (editorSnapshot === null) return { allowed: false, reason: 'runtime_unavailable' }
@@ -119,6 +121,9 @@ export function deriveResearchDraftGate(input: {
   if (!editorSnapshot.transportAvailable) {
     return { allowed: false, reason: 'runtime_unavailable' }
   }
+  if (input.submissionReady === false) {
+    return { allowed: false, reason: 'submission_not_ready' }
+  }
   if (editorSnapshot.draftText.trim().length === 0) {
     return { allowed: false, reason: 'empty_draft' }
   }
@@ -131,6 +136,15 @@ export function deriveResearchDraftGate(input: {
     editorSnapshot.baseScope.sourceIds.length === 0 &&
     editorSnapshot.noteIds.length === 0 &&
     editorSnapshot.singleSourceId === null
+  ) {
+    return { allowed: false, reason: 'scope_invalid' }
+  }
+  // effective all 不得携带非空 Note（§5.3/§6.1）：all 的语义是当前全部可用资料，
+  // 单独 Note 必须显式走 selected（Note-only 合法）。
+  if (
+    editorSnapshot.singleSourceId === null &&
+    editorSnapshot.baseScope?.mode === 'all' &&
+    editorSnapshot.noteIds.length > 0
   ) {
     return { allowed: false, reason: 'scope_invalid' }
   }

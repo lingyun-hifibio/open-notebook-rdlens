@@ -997,22 +997,34 @@ describe('ResearchChatPanel · PR-4 会话 editor 接线', () => {
     phase: 'idle',
   }
 
-  function WiredPanel({ onSend }: { onSend: (query: string) => Promise<boolean> }) {
+  function WiredPanel({
+    onSend,
+    snapshotOverrides,
+    turns = [],
+    submissionReady,
+  }: {
+    onSend: (query: string, selection?: ResearchChatSelection) => Promise<boolean>
+    snapshotOverrides?: Partial<EditorSnapshot>
+    turns?: ResearchChatTurn[]
+    submissionReady?: boolean
+  }) {
     const [snapshot, setSnapshot] = useState<EditorSnapshot>(() => ({
       ...createEditorState({ ref: REF, writerId: 'writer-1', transportAvailable: true }),
       phase: 'ready',
       loading: false,
       baseScope: { mode: 'selected', sourceIds: ['src_1'], singleSourceId: null },
+      ...snapshotOverrides,
     }))
     return (
       <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
         <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
           <ResearchChatPanel
-            turns={[]}
+            turns={turns}
             isStreaming={false}
             onSend={onSend}
             onSendCoverage={vi.fn(async () => true)}
             editorSnapshot={snapshot}
+            submissionReady={submissionReady}
             conversationSnapshot={CONVERSATION}
             scopeSources={[{ sourceId: 'src_1', title: 'Paper One' }]}
             scopeNotes={[]}
@@ -1061,5 +1073,83 @@ describe('ResearchChatPanel · PR-4 会话 editor 接线', () => {
     )
     expect(screen.getByTestId('chat-send')).toBeDisabled()
     expect(screen.getByTestId('research-draft-gate-hint')).toBeInTheDocument()
+  })
+
+  it('single 范围按 mode=single 派发并携带 singleSourceId（执行范围编码 §5.3）', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
+    const onSend = vi.fn<(query: string, selection?: ResearchChatSelection) => Promise<boolean>>(
+      async () => true,
+    )
+    render(
+      <QueryClientProvider client={queryClient}>
+        <WiredPanel onSend={onSend} snapshotOverrides={{ singleSourceId: 'src_1' }} />
+      </QueryClientProvider>,
+    )
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: '仅问此来源的问题' } })
+    fireEvent.click(screen.getByTestId('chat-send'))
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1))
+    expect(onSend.mock.calls[0][1]).toMatchObject({
+      mode: 'single',
+      sourceIds: [],
+      singleSourceId: 'src_1',
+    })
+  })
+
+  it('锚点目标缺失时显示 position_unavailable 稳定原因（§5.7.1）', () => {
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <WiredPanel
+          onSend={vi.fn<(query: string) => Promise<boolean>>(async () => true)}
+          snapshotOverrides={{
+            chatAnchor: { messageId: 'msg-missing', offsetPx: 20, followTail: false },
+          }}
+          turns={[turn({ id: 't1', role: 'user', content: 'hello' })]}
+        />
+      </QueryClientProvider>,
+    )
+    expect(screen.getByTestId('chat-position-unavailable')).toBeInTheDocument()
+  })
+
+  it('submission capability 未就绪时发送被禁用且原因可见（§6.1 条件 2）', () => {
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <WiredPanel
+          onSend={vi.fn<(query: string, selection?: ResearchChatSelection) => Promise<boolean>>(
+            async () => true,
+          )}
+          submissionReady={false}
+        />
+      </QueryClientProvider>,
+    )
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: '问题' } })
+    expect(screen.getByTestId('chat-send')).toBeDisabled()
+    expect(screen.getByTestId('research-draft-gate-hint')).toHaveTextContent(
+      'research.errors.admissionUnavailable',
+    )
+  })
+
+  it('消息锚点使用稳定 message id（serverMessageId），不持久化本地 turn id', () => {
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
+    const { container } = render(
+      <QueryClientProvider client={queryClient}>
+        <WiredPanel
+          onSend={vi.fn<(query: string, selection?: ResearchChatSelection) => Promise<boolean>>(
+            async () => true,
+          )}
+          turns={[
+            turn({
+              id: 'local-turn-1',
+              serverMessageId: 'msg-42',
+              role: 'user',
+              content: 'hello',
+            }),
+          ]}
+        />
+      </QueryClientProvider>,
+    )
+    expect(container.querySelector('[data-message-id="msg-42"]')).not.toBeNull()
+    expect(container.querySelector('[data-message-id="local-turn-1"]')).toBeNull()
   })
 })

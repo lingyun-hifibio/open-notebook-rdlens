@@ -15,6 +15,7 @@ import {
   measureReaderAnchor,
   readerAnchorMatches,
   restoreScrollTop,
+  shouldRestoreReaderAnchor,
   type ReaderChunkGeometry,
   type ReaderAnchorIdentity,
 } from '@/lib/research/reading-anchor'
@@ -64,6 +65,11 @@ export function SourceDetailPanel({
     sourceId,
     enabled: sourceEditorEnabled,
   })
+  // 滚动回调需稳定：用 ref 读取最新 identity/editor，避免每次渲染重新安装监听
+  // 或在安装时意外排定保存（§5.7.2 恢复期间不写回）。
+  const readerIdentityRef = useRef<ReaderAnchorIdentity | null>(null)
+  const sourceEditorRef = useRef(sourceEditor)
+  sourceEditorRef.current = sourceEditor
   const readerIdentity: ReaderAnchorIdentity | null =
     data !== undefined && data.source_id !== null
       ? {
@@ -73,7 +79,11 @@ export function SourceDetailPanel({
           contentHash: data.content_hash ?? null,
         }
       : null
+  readerIdentityRef.current = readerIdentity
   const savedReaderAnchor = sourceEditorEnabled ? sourceEditor.snapshot?.readerAnchor ?? null : null
+  // 服务端净化坏锚点后只会置 positionUnavailable；仍要可见说明（§5.7.2/§7.2）。
+  const editorPositionUnavailable =
+    sourceEditorEnabled && sourceEditor.snapshot?.positionUnavailable === true
 
   useEffect(() => {
     if (
@@ -95,13 +105,16 @@ export function SourceDetailPanel({
 
   // 滚动空闲 1000ms 记录一次来源正文锚点（§5.7.2）；保存失败只保留本机 pending。
   const scheduleReaderAnchor = useCallback(() => {
-    if (!sourceEditorEnabled || restoringRef.current || readerIdentity === null) return
+    const identity = readerIdentityRef.current
+    if (!sourceEditorEnabled || restoringRef.current || identity === null) return
     if (anchorTimerRef.current !== null) window.clearTimeout(anchorTimerRef.current)
     anchorTimerRef.current = window.setTimeout(() => {
       anchorTimerRef.current = null
+      // 恢复期间/之后的新 anchor 尚未稳定：丢弃 pending 保存，避免覆盖恢复结果。
+      if (restoringRef.current) return
       const parent = scrollParentRef.current
       const root = rootRef.current
-      if (parent === null || root === null || readerIdentity.contentHash === null) return
+      if (parent === null || root === null || identity.contentHash === null) return
       const parentRect = parent.getBoundingClientRect()
       const chunkNodes = Array.from(
         root.querySelectorAll<HTMLElement>('[data-chunk-id]'),
@@ -130,7 +143,7 @@ export function SourceDetailPanel({
         }
       }
       const anchor = measureReaderAnchor({
-        identity: readerIdentity,
+        identity,
         container: {
           containerTop: parentRect.top,
           scrollTop: parent.scrollTop,
@@ -139,9 +152,9 @@ export function SourceDetailPanel({
         },
         chunk,
       })
-      if (anchor !== null) sourceEditor.setReaderAnchor(anchor)
+      if (anchor !== null) sourceEditorRef.current.setReaderAnchor(anchor)
     }, 1000)
-  }, [readerIdentity, sourceEditor, sourceEditorEnabled])
+  }, [sourceEditorEnabled])
 
   // 找到可滚动祖先（来源面板自身不是滚动容器；不改 Workbench/page）。
   useEffect(() => {
@@ -154,7 +167,6 @@ export function SourceDetailPanel({
     scrollParentRef.current = parent
     if (parent === null) return
     parent.addEventListener('scroll', scheduleReaderAnchor, { passive: true })
-    scheduleReaderAnchor()
     return () => {
       parent.removeEventListener('scroll', scheduleReaderAnchor)
       if (anchorTimerRef.current !== null) window.clearTimeout(anchorTimerRef.current)
@@ -164,7 +176,20 @@ export function SourceDetailPanel({
   // 恢复来源正文锚点（§5.7.2）：版本/hash 不匹配/chunk 缺失 → position_unavailable。
   useEffect(() => {
     if (!sourceEditorEnabled || readerIdentity === null) return
-    if (savedReaderAnchor === null) return
+    // §8.3：Citation 定位优先于旧阅读位置；已净化/已失效锚点不恢复。
+    if (
+      !shouldRestoreReaderAnchor({
+        savedAnchor: savedReaderAnchor,
+        citationFocusRequestId: focusRequestId,
+        positionUnavailable: editorPositionUnavailable,
+      })
+    ) {
+      return
+    }
+    if (anchorTimerRef.current !== null) {
+      window.clearTimeout(anchorTimerRef.current)
+      anchorTimerRef.current = null
+    }
     const parent = scrollParentRef.current ?? rootRef.current?.closest<HTMLElement>('.overflow-y-auto') ?? null
     const root = rootRef.current
     if (parent === null || root === null) return
@@ -206,7 +231,7 @@ export function SourceDetailPanel({
     }, 0)
     return () => window.clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在身份/锚点变化时恢复
-  }, [sourceEditorEnabled, readerIdentity?.contentHash, savedReaderAnchor?.chunkId, savedReaderAnchor?.offsetPx, data])
+  }, [sourceEditorEnabled, readerIdentity?.contentHash, savedReaderAnchor?.chunkId, savedReaderAnchor?.offsetPx, data, focusRequestId])
 
   if (isLoading) {
     return <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
@@ -235,7 +260,7 @@ export function SourceDetailPanel({
           </Button>
         </div>
       </div>
-      {positionUnavailable && (
+      {(positionUnavailable || editorPositionUnavailable) && (
         <p className="text-sm text-amber-700" role="status" data-testid="source-anchor-unavailable">
           {t('research.editor.positionUnavailable')}
         </p>

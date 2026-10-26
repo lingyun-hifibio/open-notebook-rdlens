@@ -9,7 +9,7 @@ import type {
   ResearchDraftGate,
   ResearchDraftGateReason,
 } from '@/lib/research/types'
-import { ResearchDraftComposer } from './ResearchDraftComposer'
+import { ResearchDraftComposer, deriveResearchDraftGate } from './ResearchDraftComposer'
 
 vi.mock('@/lib/hooks/use-translation', () => ({
   useTranslation: () => ({
@@ -273,5 +273,27 @@ describe('ResearchDraftComposer', () => {
     expect(screen.getByTestId('research-draft-gate-hint')).toHaveTextContent(
       'research.errors.internal',
     )
+  })
+
+  it('C14 submission capability 未就绪 → submission_not_ready（§6.1 条件 2）', () => {
+    const gate = deriveResearchDraftGate({
+      editorSnapshot: makeSnapshot({ draftText: '问题', dirty: true }),
+      conversationSnapshot: IDLE_CONVERSATION,
+      submissionReady: false,
+    })
+    expect(gate).toEqual({ allowed: false, reason: 'submission_not_ready' })
+  })
+
+  it('C15 effective all 携带非空 Note → scope_invalid（§5.3/§6.1）', () => {
+    const gate = deriveResearchDraftGate({
+      editorSnapshot: makeSnapshot({
+        draftText: '问题',
+        dirty: true,
+        baseScope: { mode: 'all', sourceIds: [], singleSourceId: null },
+        noteIds: ['note_1'],
+      }),
+      conversationSnapshot: IDLE_CONVERSATION,
+    })
+    expect(gate).toEqual({ allowed: false, reason: 'scope_invalid' })
   })
 })

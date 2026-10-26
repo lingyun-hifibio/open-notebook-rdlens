@@ -16,6 +16,7 @@ import {
   measureReaderAnchor,
   readerAnchorMatches,
   restoreScrollTop,
+  shouldRestoreReaderAnchor,
   type MessageGeometry,
   type ScrollContainerMetrics,
 } from './reading-anchor'
@@ -200,18 +201,24 @@ describe('restoreScrollTop', () => {
     expect(restored).toEqual({ ok: false, reason: 'out_of_range' })
   })
 
-  it('A3 只在可达边界的少量裁剪内返回 clamped，而不是失败', () => {
+  it('A3 容器滚动范围不足（超出 tolerance 的边界裁剪）→ out_of_range / position_unavailable', () => {
     const restored = restoreScrollTop({
       container: { containerTop: 100, scrollTop: 0, clientHeight: 400, scrollHeight: 900 },
       savedOffsetPx: 10,
       currentTargetTop: -200,
     })
-    // raw = 0 + (-300) - 10 = -310 → 上边界裁剪到 0
-    expect(restored.ok).toBe(true)
-    if (restored.ok) {
-      expect(restored.scrollTop).toBe(0)
-      expect(restored.clamped).toBe(true)
-    }
+    // raw = 0 + (-300) - 10 = -310 → 上边界只能到 0，偏差 310px 不可达（§5.7.1）
+    expect(restored).toEqual({ ok: false, reason: 'out_of_range' })
+  })
+
+  it('A3 亚像素边界裁剪在 tolerance 内仍视为恢复成功', () => {
+    const nearBoundary = restoreScrollTop({
+      container: { containerTop: 100, scrollTop: 0, clientHeight: 400, scrollHeight: 900 },
+      savedOffsetPx: 10,
+      // raw = 0 + (109.5 − 100) − 10 = −0.5 → 裁剪到 0，偏差 0.5px ≤ 1px tolerance
+      currentTargetTop: 109.5,
+    })
+    expect(nearBoundary).toEqual({ ok: true, scrollTop: 0, clamped: true })
   })
 
   it('A4 followTail 恢复到底部', () => {
@@ -324,5 +331,27 @@ describe('chat_anchor wire 形状', () => {
     })
     const wire: WireChatAnchor | null = anchor === null ? null : { ...anchor }
     expect(wire).toEqual({ messageId: 'm1', offsetPx: 20, followTail: false })
+  })
+
+  it('D10 Citation 定位优先：同次打开带 focusRequestId 时不恢复旧锚点', () => {
+    const readerSaved: WireReaderAnchor = {
+      sourceId: 'src-1',
+      documentId: 'doc-1',
+      documentVersion: 'v3',
+      format: 'normalized_markdown' as const,
+      chunkId: 'c1',
+      chunkOrdinal: 0,
+      contentHash: 'h1',
+      pageIdx: null,
+      offsetPx: 12,
+    }
+    expect(shouldRestoreReaderAnchor({ savedAnchor: readerSaved })).toBe(true)
+    expect(
+      shouldRestoreReaderAnchor({ savedAnchor: readerSaved, citationFocusRequestId: 3 }),
+    ).toBe(false)
+    expect(
+      shouldRestoreReaderAnchor({ savedAnchor: readerSaved, positionUnavailable: true }),
+    ).toBe(false)
+    expect(shouldRestoreReaderAnchor({ savedAnchor: null })).toBe(false)
   })
 })

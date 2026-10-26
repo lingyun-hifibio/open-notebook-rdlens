@@ -215,4 +215,61 @@ describe('ResearchSessionScopeBar', () => {
     expect(screen.queryByTestId('research-session-scope-bar')).not.toBeInTheDocument()
     expect(onChangeScope).not.toHaveBeenCalled()
   })
+
+  it('B10 已存但不在目录中的 Source/Note 保留并逐项标注，可取消', () => {
+    const onChangeScope = vi.fn()
+    renderBar({
+      snapshot: {
+        baseScope: {
+          mode: 'selected',
+          sourceIds: ['src_1', 'src_missing'],
+          singleSourceId: null,
+        },
+        noteIds: ['note_missing'],
+      },
+      onChangeScope,
+    })
+    const staleSource = screen.getByTestId('scope-source-src_missing')
+    expect(staleSource).toBeChecked()
+    expect(staleSource).toHaveAttribute('data-unconfirmed', 'true')
+    fireEvent.click(staleSource)
+    expect(onChangeScope).toHaveBeenLastCalledWith({
+      mode: 'selected',
+      sourceIds: ['src_1'],
+    })
+    const staleNote = screen.getByTestId('scope-note-note_missing')
+    expect(staleNote).toBeChecked()
+    expect(staleNote).toHaveAttribute('data-unconfirmed', 'true')
+    fireEvent.click(staleNote)
+    expect(onChangeScope).toHaveBeenLastCalledWith({ mode: 'note', noteIds: [] })
+  })
+
+  it('B11 来源行提供“仅问此来源”入口（single 叠加，不改 base）', () => {
+    const onChangeScope = vi.fn()
+    renderBar({
+      snapshot: {
+        baseScope: { mode: 'selected', sourceIds: ['src_1'], singleSourceId: null },
+      },
+      onChangeScope,
+    })
+    fireEvent.click(screen.getByTestId('scope-single-src_2'))
+    expect(onChangeScope).toHaveBeenCalledTimes(1)
+    expect(onChangeScope).toHaveBeenLastCalledWith({ mode: 'single', sourceId: 'src_2' })
+  })
+
+  it('B12 切到 all 显式清空 Note（effective all 不得携带 Note）', () => {
+    const onChangeScope = vi.fn()
+    renderBar({
+      snapshot: {
+        baseScope: { mode: 'selected', sourceIds: ['src_1'], singleSourceId: null },
+        noteIds: ['note_1'],
+      },
+      onChangeScope,
+    })
+    fireEvent.click(screen.getByTestId('scope-mode-all'))
+    expect(onChangeScope.mock.calls).toEqual([
+      [{ mode: 'all' }],
+      [{ mode: 'note', noteIds: [] }],
+    ])
+  })
 })

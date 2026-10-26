@@ -62,9 +62,16 @@ export function ResearchSessionScopeBar({
   const unconfirmedSourceIds = sources
     .filter(source => source.unavailable === true)
     .map(source => source.sourceId)
-  const hasUnconfirmedSelection = unconfirmedSourceIds.some(sourceId =>
-    selectedSourceIds.includes(sourceId),
-  )
+  // §7.2：已存选择中不在当前目录（失效/未确认）的项必须保留并逐项标注，
+  // 不得静默删除；目录之外的历史项也要可见、可取消。
+  const catalogSourceIds = new Set(sources.map(source => source.sourceId))
+  const staleSourceIds = selectedSourceIds.filter(id => !catalogSourceIds.has(id))
+  const catalogNoteIds = new Set(notes.map(note => note.noteId))
+  const staleNoteIds = noteIds.filter(id => !catalogNoteIds.has(id))
+  const hasUnconfirmedSelection =
+    staleSourceIds.length > 0 ||
+    staleNoteIds.length > 0 ||
+    unconfirmedSourceIds.some(sourceId => selectedSourceIds.includes(sourceId))
 
   const toggleSource = (sourceId: string, nextChecked: boolean): void => {
     const next = nextChecked
@@ -84,6 +91,14 @@ export function ResearchSessionScopeBar({
       return
     }
     onChangeScope({ mode: 'note', noteIds: next })
+  }
+
+  // §5.3：all 语义是“当前全部可用资料”，切到 all 必须显式清空 Note
+  // （editor 归约层会保留 noteIds，不能依赖它隐式归一）。
+  const selectAll = (): void => {
+    if (mode === 'all' && noteIds.length === 0) return
+    onChangeScope({ mode: 'all' })
+    if (noteIds.length > 0) onChangeScope({ mode: 'note', noteIds: [] })
   }
 
   return (
@@ -106,7 +121,7 @@ export function ResearchSessionScopeBar({
           aria-checked={mode === 'all'}
           disabled={disabled}
           className="shrink-0 text-sm disabled:opacity-50"
-          onClick={() => onChangeScope({ mode: 'all' })}
+          onClick={selectAll}
           data-testid="scope-mode-all"
         >
           {t('research.layout.scope.entireProject')}
@@ -164,7 +179,10 @@ export function ResearchSessionScopeBar({
       )}
 
       {showSelectedList && (
-        <div className="min-w-0 space-y-1" data-testid="scope-selected-list">
+        <div
+          className="max-h-40 min-w-0 space-y-1 overflow-y-auto pr-1"
+          data-testid="scope-selected-list"
+        >
           {sources.map(source => (
             <label
               key={source.sourceId}
@@ -179,6 +197,17 @@ export function ResearchSessionScopeBar({
                 data-testid={`scope-source-${source.sourceId}`}
               />
               <span className="min-w-0 truncate">{source.title}</span>
+              <Button
+                type="button"
+                size="sm"
+                variant={singleSourceId === source.sourceId ? 'secondary' : 'ghost'}
+                className="ml-auto h-6 shrink-0 px-2 text-xs"
+                disabled={disabled}
+                onClick={() => onChangeScope({ mode: 'single', sourceId: source.sourceId })}
+                data-testid={`scope-single-${source.sourceId}`}
+              >
+                {t('research.sources.askOnlyThis')}
+              </Button>
               {source.unavailable === true && (
                 <span className="shrink-0 text-xs text-amber-700">
                   {t('research.editor.unconfirmedItems')}
@@ -186,7 +215,38 @@ export function ResearchSessionScopeBar({
               )}
             </label>
           ))}
-          {notes.length > 0 && (
+          {staleSourceIds.map(sourceId => (
+            <label
+              key={`stale-source-${sourceId}`}
+              className="flex min-w-0 items-center gap-2 text-sm"
+            >
+              <input
+                type="checkbox"
+                className="shrink-0"
+                checked
+                disabled={disabled}
+                onChange={() => toggleSource(sourceId, false)}
+                data-testid={`scope-source-${sourceId}`}
+                data-unconfirmed="true"
+              />
+              <span className="min-w-0 truncate">{sourceId}</span>
+              <Button
+                type="button"
+                size="sm"
+                variant={singleSourceId === sourceId ? 'secondary' : 'ghost'}
+                className="ml-auto h-6 shrink-0 px-2 text-xs"
+                disabled={disabled}
+                onClick={() => onChangeScope({ mode: 'single', sourceId })}
+                data-testid={`scope-single-${sourceId}`}
+              >
+                {t('research.sources.askOnlyThis')}
+              </Button>
+              <span className="shrink-0 text-xs text-amber-700">
+                {t('research.editor.unconfirmedItems')}
+              </span>
+            </label>
+          ))}
+          {(notes.length > 0 || staleNoteIds.length > 0) && (
             <p className="pt-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {t('research.layout.scope.selectedSummary', { count: noteIds.length })}
             </p>
@@ -202,6 +262,26 @@ export function ResearchSessionScopeBar({
                 data-testid={`scope-note-${note.noteId}`}
               />
               <span className="min-w-0 truncate">{note.title}</span>
+            </label>
+          ))}
+          {staleNoteIds.map(noteId => (
+            <label
+              key={`stale-note-${noteId}`}
+              className="flex min-w-0 items-center gap-2 text-sm"
+            >
+              <input
+                type="checkbox"
+                className="shrink-0"
+                checked
+                disabled={disabled}
+                onChange={() => toggleNote(noteId, false)}
+                data-testid={`scope-note-${noteId}`}
+                data-unconfirmed="true"
+              />
+              <span className="min-w-0 truncate">{noteId}</span>
+              <span className="shrink-0 text-xs text-amber-700">
+                {t('research.editor.unconfirmedItems')}
+              </span>
             </label>
           ))}
         </div>

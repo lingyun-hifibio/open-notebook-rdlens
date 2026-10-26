@@ -69,8 +69,10 @@ export type BackgroundJobSubmitResult =
 /** PR-4：由会话 editor 快照派生 legacy `ResearchChatSelection`（§5.3 执行范围编码）。 */
 function selectionFromEditorSnapshot(snapshot: EditorSnapshot): ResearchChatSelection {
   if (snapshot.singleSourceId !== null) {
+    // mode 必须是 'single'：legacy deriveScopeSnapshot 仅在 mode==='single' 时
+    // 保留 singleSourceId，否则限定在派发链路被丢弃（§5.3 执行范围编码）。
     return {
-      mode: 'selected',
+      mode: 'single',
       sourceIds: [],
       noteIds: [...snapshot.noteIds],
       singleSourceId: snapshot.singleSourceId,
@@ -104,6 +106,7 @@ export function ResearchChatPanel({
   prefill,
   editorSnapshot,
   conversationSnapshot,
+  submissionReady,
   scopeSources,
   scopeNotes,
   onChangeScope,
@@ -174,6 +177,8 @@ export function ResearchChatPanel({
   editorSnapshot?: EditorSnapshot | null
   /** PR-4：对话快照（isStreaming/busy/activeTurnId）；缺省由 props 推导。 */
   conversationSnapshot?: ResearchConversationSnapshot
+  /** 会话 `submission_ready` capability（§6.1 条件 2）；缺省表示未接入该门禁。 */
+  submissionReady?: boolean
   /** PR-4：范围条投射的工作区资料（不写工作区选择，只读呈现）。 */
   scopeSources?: readonly ResearchScopeBarSourceOption[]
   scopeNotes?: readonly ResearchScopeBarNoteOption[]
@@ -192,6 +197,8 @@ export function ResearchChatPanel({
   const chatScrollRef = useRef<HTMLDivElement | null>(null)
   const anchorTimerRef = useRef<number | null>(null)
   const restoringRef = useRef(false)
+  // §5.7.1：恢复失败（缺目标/越界/非法偏移）→ 稳定原因可见，停在有权版本顶部。
+  const [anchorUnavailable, setAnchorUnavailable] = useState(false)
   const wiredConversation: ResearchConversationSnapshot = conversationSnapshot ?? {
     isBusy: isStreaming,
     isStreaming,
@@ -232,6 +239,7 @@ export function ResearchChatPanel({
     const derived = deriveResearchDraftGate({
       editorSnapshot: editorSnapshot ?? null,
       conversationSnapshot: wiredConversation,
+      submissionReady,
     })
     if (derived.allowed && generationBlocked) {
       return { allowed: false, reason: 'turn_active' }
@@ -397,7 +405,10 @@ export function ResearchChatPanel({
           scrollHeight: container.scrollHeight,
         },
       })
-      if (anchor !== null) onChatAnchorChange(anchor)
+      if (anchor !== null) {
+        onChatAnchorChange(anchor)
+        setAnchorUnavailable(false)
+      }
     }, 1000)
   }
 
@@ -432,10 +443,19 @@ export function ResearchChatPanel({
       targetHeightPx: targetRect !== null ? targetRect.height : undefined,
     })
     if (result.ok) container.scrollTop = result.scrollTop
-    const timer = window.setTimeout(() => {
-      restoringRef.current = false
-    }, 0)
-    return () => window.clearTimeout(timer)
+    setAnchorUnavailable(!result.ok)
+    // 程序化恢复期间忽略滚动上报；用 rAF 释放，确保浏览器补发的 scroll
+    // 事件仍被抑制（不把刚恢复的位置当作新锚点写回）。
+    let secondFrame = 0
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        restoringRef.current = false
+      })
+    })
+    return () => {
+      window.cancelAnimationFrame(firstFrame)
+      if (secondFrame !== 0) window.cancelAnimationFrame(secondFrame)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在锚点/消息集变化时恢复
   }, [wired, savedChatAnchor?.messageId, savedChatAnchor?.offsetPx, savedChatAnchor?.followTail, turns.length])
 
@@ -458,6 +478,15 @@ export function ResearchChatPanel({
         onScroll={scheduleChatAnchor}
         data-testid="chat-messages"
       >
+        {wired && (anchorUnavailable || editorSnapshot?.positionUnavailable === true) && (
+          <p
+            className="text-xs font-medium text-amber-600"
+            role="status"
+            data-testid="chat-position-unavailable"
+          >
+            {t('research.editor.positionUnavailable')}
+          </p>
+        )}
         {turns.length === 0 && (
           <p className="text-sm text-muted-foreground">{t('research.chatEmpty')}</p>
         )}
@@ -479,7 +508,7 @@ export function ResearchChatPanel({
             <div
               key={turn.id}
               className="flex flex-col items-end gap-1"
-              data-message-id={turn.id}
+              data-message-id={turn.serverMessageId ?? undefined}
             >
               <div className="max-w-[80%] rounded-lg bg-primary/10 px-3 py-2 text-sm">
                 {turn.content}
@@ -506,7 +535,7 @@ export function ResearchChatPanel({
               )}
             </div>
           ) : (
-            <div key={turn.id} className="space-y-2" data-message-id={turn.id}>
+            <div key={turn.id} className="space-y-2" data-message-id={turn.serverMessageId ?? undefined}>
               {turn.coverageJobId !== null ? (
                 <CoverageJobDetails
                   job={coverageJobs?.find((j) => j.job_id === turn.coverageJobId)}
