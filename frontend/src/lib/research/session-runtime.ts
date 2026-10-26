@@ -427,7 +427,8 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
         state.masked ||
         state.phase === 'masked' ||
         state.phase === 'bootstrapping' ||
-        state.phase === 'error',
+        state.phase === 'error' ||
+        state.phase === 'unauthorized',
       unauthorized: state.phase === 'unauthorized',
       disposed: state.disposed,
       transportWired: transport !== null,

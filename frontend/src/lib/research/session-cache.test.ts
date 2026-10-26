@@ -592,16 +592,37 @@ describe('session-cache: review 补证（编码分区 / quota 优先级 / 写入
     )
     // 幂等键必须与 project/viewer/kind/source/session/token 一致（不能只信头）
     reject({ ...base, idempotencyKey: `s1_${'e'.repeat(64)}` })
-    // source 请求体带 global 专属字段也不得通过
-    const sourceRequest = sourceMarker.request
-    if (sourceRequest === null) throw new Error('fixture requires source request')
+    // 同时伪造 marker 与请求头仍必须因重算不一致而拒绝（review N1 复核）
+    const forgedKey = `s1_${'f'.repeat(64)}`
     reject({
-      ...sourceMarker,
+      ...base,
+      idempotencyKey: forgedKey,
       request: {
-        ...sourceRequest,
-        body: { ...(sourceRequest.body as Record<string, unknown>), note_ids: [] },
+        ...request,
+        headers: { ...request.headers, 'Idempotency-Key': forgedKey },
       },
     })
+    // source 请求体带 global 专属字段也不得通过（用 sourceRef 写入口，证明 kind 专属键校验）
+    const sourceRequest = sourceMarker.request
+    if (sourceRequest === null) throw new Error('fixture requires source request')
+    expect(
+      writeSubmissionMarker(
+        scope,
+        sourceRef,
+        {
+          ...sourceMarker,
+          request: {
+            ...sourceRequest,
+            body: { ...(sourceRequest.body as Record<string, unknown>), note_ids: [] },
+          },
+        },
+        { storage },
+      ).ok,
+    ).toBe(false)
+    // ref 项目与 scope 项目不一致不得写入错误分区（review N1）
+    const foreignScope = { viewerUserId: scope.viewerUserId, projectId: 'proj_other' }
+    expect(writeSubmissionMarker(foreignScope, globalRef, marker(), { storage }).ok).toBe(false)
+    expect([...storage.map.keys()].some((key) => key.includes('proj_other'))).toBe(false)
   })
 
   it('取消草稿时持久删除失败也不得让旧值复活（review F8）', () => {

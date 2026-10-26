@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
 import { render, screen, cleanup } from '@testing-library/react'
 import { ResearchWorkspaceShell } from './shell'
+import { useResearchWorkspace } from './workspace-context'
 import { clearResearchToken, getResearchToken } from './token-store'
 import { useResearchScope } from '@/lib/research/scope'
 import { useThemeStore } from '@/lib/stores/theme-store'
@@ -222,19 +223,27 @@ describe('ResearchWorkspaceShell', () => {
       savedAt: '2026-10-26T09:00:00.000Z',
       dirty: true,
     }
+    function ProjectProbe() {
+      const workspace = useResearchWorkspace()
+      return <span data-testid="project-probe">{workspace.projectId}</span>
+    }
     writeDraft({ viewerUserId: 'user_1', projectId: 'proj_abc' }, dbRef, 'writer_a', record)
     const captures = stubParentWindow()
-    render(<ResearchWorkspaceShell>workspace-panels</ResearchWorkspaceShell>)
+    render(
+      <ResearchWorkspaceShell>
+        <ProjectProbe />
+      </ResearchWorkspaceShell>,
+    )
     const ready = captures.posted[0].data
     dispatchMessage(validTokenMessage(String(ready.nonce), String(ready.channel)))
-    expect(screen.getByText('workspace-panels')).toBeInTheDocument()
-    // 同一 sub、不同项目：不得按换人清理旧项目的未同步草稿
+    expect(screen.getByTestId('project-probe').textContent).toBe('proj_abc')
+    // 同一 sub、不同项目：不得按换人清理旧项目的未同步草稿；Provider 必须按新项目重建
     dispatchMessage(
       validTokenMessage(String(ready.nonce), String(ready.channel), {
         token: validToken({ project_id: 'proj_def' }),
       }),
     )
-    expect(screen.getByText('workspace-panels')).toBeInTheDocument()
+    expect(screen.getByTestId('project-probe').textContent).toBe('proj_def')
     const keys = localStorageKeys()
     expect(keys.some((key) => key.includes('.draft.user_1.') && key.includes('proj_abc'))).toBe(true)
   })

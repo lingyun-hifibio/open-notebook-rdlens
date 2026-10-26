@@ -1662,4 +1662,88 @@ describe('review 三次复核 R3：error 阶段遮蔽与授权一致性', () => 
       expect(screen.getByTestId('runtime-phase-r3').textContent).toBe('error:true'),
     )
   })
+
+  it('unauthorized 阶段始终遮蔽：外部 masked 来回切换不得解除（review N2）', async () => {
+    const runtime = createSessionRuntime({
+      authGeneration: 1,
+      projectId: P,
+      viewerUserId: VIEWER,
+      role: 'owner',
+      transport: {
+        bootstrap: vi.fn(async (): Promise<SessionRuntimeBootstrapOutcome> => ({
+          status: 'unauthorized',
+          code: 'chat_owner_required',
+        })),
+      },
+    })
+    runtime.start()
+    await waitFor(() => expect(runtime.getSnapshot().phase).toBe('unauthorized'))
+    expect(runtime.getSnapshot().masked).toBe(true)
+    expect(runtime.isMasked()).toBe(true)
+    for (const masked of [true, false, true, false]) {
+      runtime.setMasked(masked)
+      expect(runtime.getSnapshot().phase).toBe('unauthorized')
+      expect(runtime.getSnapshot().masked).toBe(true)
+      expect(runtime.isMasked()).toBe(true)
+    }
+    expect(runtime.retryBootstrap()).toBe(false)
+    expect(runtime.identity()).toBeNull()
+    expect(runtime.cacheAuthority()).toBeNull()
+  })
+
+  it('Provider：error 之后再切换 masked prop，仍保持遮蔽（review N2/测试补强）', async () => {
+    function PhaseProbe() {
+      const snapshot = useSessionSnapshot()
+      return (
+        <span data-testid="runtime-phase-r3b">
+          {snapshot.phase}:{String(snapshot.masked)}
+        </span>
+      )
+    }
+    const { rerender } = render(
+      <ResearchSessionRuntimeProvider
+        authGeneration={1}
+        projectId={P}
+        viewerUserId={VIEWER}
+        role="owner"
+        transport={failingTransport()}
+        masked={false}
+      >
+        <PhaseProbe />
+      </ResearchSessionRuntimeProvider>,
+    )
+    await waitFor(() =>
+      expect(screen.getByTestId('runtime-phase-r3b').textContent).toBe('error:true'),
+    )
+    rerender(
+      <ResearchSessionRuntimeProvider
+        authGeneration={1}
+        projectId={P}
+        viewerUserId={VIEWER}
+        role="owner"
+        transport={failingTransport()}
+        masked
+      >
+        <PhaseProbe />
+      </ResearchSessionRuntimeProvider>,
+    )
+    await waitFor(() =>
+      expect(screen.getByTestId('runtime-phase-r3b').textContent).toBe('error:true'),
+    )
+    rerender(
+      <ResearchSessionRuntimeProvider
+        authGeneration={1}
+        projectId={P}
+        viewerUserId={VIEWER}
+        role="owner"
+        transport={failingTransport()}
+        masked={false}
+      >
+        <PhaseProbe />
+      </ResearchSessionRuntimeProvider>,
+    )
+    await waitFor(() =>
+      expect(screen.getByTestId('runtime-phase-r3b').textContent).toBe('error:true'),
+    )
+  })
 })

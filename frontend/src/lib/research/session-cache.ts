@@ -898,6 +898,9 @@ function sanitizeSubmissionMarker(
   ref: ResearchSessionRef,
   scope: SessionCacheScope,
 ): SessionSubmissionMarker | null {
+  // ref 的完整身份必须与 scope 的项目一致：键与幂等键编码 ref.projectId，
+  // 存储分区编码 scope.projectId，两者不一致会把请求写进错误项目分区（review N1）。
+  if (ref.projectId !== scope.projectId) return null
   if (marker.request === null) {
     return marker.exactRequestAvailable ? null : marker
   }
