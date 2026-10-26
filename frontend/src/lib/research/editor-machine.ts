@@ -926,6 +926,8 @@ interface ActiveMutation {
   retries: number
   /** 已派发但结果未知（保留以便原 body 重放）。 */
   unconfirmed: boolean
+  /** 当前 attempt 已发出 PUT、尚未结算；手动 retry 不得在此时再发一个并发 PUT。 */
+  inFlight: boolean
 }
 
 interface QueuedRequest {
@@ -975,6 +977,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
   let positionTimer: ReturnType<typeof setTimeout> | null = null
   let localTimer: ReturnType<typeof setTimeout> | null = null
   let retryTimer: ReturnType<typeof setTimeout> | null = null
+  let manualReplayRequested = false
   const unsubscribeRuntime = deps.subscribeRuntime(() => onRuntimeChange())
 
   // ── 快照/事件 ──
@@ -1162,41 +1165,66 @@ export function createEditorController(deps: EditorDeps): EditorController {
 
   // ── 派发与结算 ──
 
+  /** 手动 retry 遇到在途 attempt 时先记账，等该 attempt 结算后原样重放，禁止并发 PUT（review3 P1）。 */
+  const maybeManualReplay = (current: ActiveMutation): void => {
+    if (!manualReplayRequested) return
+    if (active === null) {
+      // 已在途请求成功结算：手动重放意图由后续 dirty autosave 承接。
+      manualReplayRequested = false
+      return
+    }
+    if (active !== current || !active.unconfirmed || active.inFlight || replaying) return
+    manualReplayRequested = false
+    clearRetryTimer()
+    replayActive(active)
+  }
+
   const performPut = async (current: ActiveMutation, attempt: TransportAttempt): Promise<void> => {
     if (state.invalidated || released || guard.isInvalidated() || deps.transport === null) return
-    let raw: unknown
+    current.inFlight = true
     try {
-      const result = await guard.run(() => deps.transport!.putEditorState(current.body))
-      if (result.status === 'stale') return
-      raw = await result.value
-    } catch (error) {
+      let raw: unknown
+      try {
+        const result = await guard.run(() => deps.transport!.putEditorState(current.body))
+        if (result.status === 'stale') return
+        raw = await result.value
+      } catch (error) {
+        if (active !== current) return
+        if (attempt !== current.attempt) return
+        if (!sameGeneration(attempt)) {
+          // 旧代/旧 viewer 的迟到失败：不得把旧错误写进新代状态，保留未确认等待重放。
+          current.unconfirmed = true
+          return
+        }
+        handleFailure(current, classifySaveFailure(error))
+        return
+      }
       if (active !== current) return
       if (attempt !== current.attempt) return
       if (!sameGeneration(attempt)) {
-        // 旧代/旧 viewer 的迟到失败：不得把旧错误写进新代状态，保留未确认等待重放。
+        // 旧代/旧 viewer 的迟到 ACK：丢弃；replay/ready 事件负责用原 mutation 原 body 重放。
         current.unconfirmed = true
         return
       }
-      handleFailure(current, classifySaveFailure(error))
-      return
+      const runtime = runtimeView()
+      if (runtime.disposed || runtime.viewerChanged) {
+        invalidateIntent('viewer-change')
+        return
+      }
+      if (current.kind === 'clear') {
+        handleClearResponse(current, raw)
+        return
+      }
+      handleSaveResponse(current, raw)
+    } finally {
+      if (attempt === current.attempt) current.inFlight = false
+      maybeManualReplay(current)
     }
-    if (active !== current) return
-    if (attempt !== current.attempt) return
-    if (!sameGeneration(attempt)) {
-      // 旧代/旧 viewer 的迟到 ACK：丢弃；replay/ready 事件负责用原 mutation 原 body 重放。
-      current.unconfirmed = true
-      return
-    }
-    const runtime = runtimeView()
-    if (runtime.disposed || runtime.viewerChanged) {
-      invalidateIntent('viewer-change')
-      return
-    }
-    if (current.kind === 'clear') {
-      handleClearResponse(current, raw)
-      return
-    }
-    handleSaveResponse(current, raw)
+  }
+
+  const settleInFlight = (current: ActiveMutation, attempt: TransportAttempt): void => {
+    if (current.attempt === attempt) current.inFlight = false
+    maybeManualReplay(current)
   }
 
   const handleSaveResponse = (current: ActiveMutation, raw: unknown): void => {
@@ -1400,7 +1428,9 @@ export function createEditorController(deps: EditorDeps): EditorController {
       record,
       body,
       attempt: newAttempt(record.mutationId),
-      localVersion: pending.localVersion,
+      // 普通排队 flush 的 body 在派发时按最新快照生成，ACK 也必须按最新 localVersion 结算；
+      // 只有显式 submit 使用入队时冻结的版本（N1）。
+      localVersion: pending.frozenEditorState !== null ? pending.localVersion : state.localVersion,
       kind: 'save',
       operationId: pending.operationId,
       clearToken: null,
@@ -1408,6 +1438,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
       resolve: pending.resolve,
       retries: 0,
       unconfirmed: false,
+      inFlight: false,
     }
     active = current
     reduce({ type: 'save/dispatched' })
@@ -1466,6 +1497,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
       resolve: pending.resolve,
       retries: 0,
       unconfirmed: false,
+      inFlight: false,
     }
     active = current
     reduce({ type: 'save/dispatched' })
@@ -1507,6 +1539,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
 
   const afterSettle = (): void => {
     if (state.invalidated || released) return
+    if (active === null && manualReplayRequested) manualReplayRequested = false
     if (active !== null) return
     if (queued !== null) {
       dispatchQueued()
@@ -1774,6 +1807,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
   }
 
   const invalidateIntent = (reason: 'logout' | 'viewer-change'): void => {
+    manualReplayRequested = false
     if (state.invalidated) return
     void reason
     loaded = false
@@ -1913,6 +1947,11 @@ export function createEditorController(deps: EditorDeps): EditorController {
       if (active !== null) {
         // 在途请求未结算时重试必须复用同一 attempt，禁止并发 PUT（review P1 #2）。
         if (!active.unconfirmed) return 'queued'
+        if (active.inFlight || replaying) {
+          // 退避定时器发起的 attempt 仍在途：记下手动重放，结算后再发，保证同刻只有一个 PUT。
+          manualReplayRequested = true
+          return 'queued'
+        }
         replayActive(active)
         return 'queued'
       }

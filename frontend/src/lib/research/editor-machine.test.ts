@@ -1265,3 +1265,48 @@ describe('editor 二次 review 回归（P1/N1–N4、N7–N11）', () => {
     expect(readDraft(scope, authority, REF, 'w-test', { storage })).toBeNull()
   })
 })
+
+// ── review3 P1：手动 retry 并发闸门与排队 flush 结算版本 ──
+
+describe('editor review3 回归：并发闸门与结算版本', () => {
+  it('N2b 退避 attempt 在途时手动 retry 不得并发第三个 PUT', async () => {
+    const harness = createHarness()
+    await loadHarness(harness, editorResponse({ revision: 5 }))
+    harness.controller.setDraftText('A')
+    await advance(500)
+    expect(harness.puts.length).toBe(1)
+    harness.puts[0].response.reject(httpError(503, 'editor_store_unavailable'))
+    await advance(0)
+    // 1s 退避后发出第二个 attempt，并保持在途。
+    await advance(1000)
+    expect(harness.puts.length).toBe(2)
+    const outcome = await harness.controller.retrySave()
+    expect(outcome).toBe('queued')
+    // 关键：在途 attempt 未结算前绝不允许第三个并发 PUT。
+    expect(harness.puts.length).toBe(2)
+    harness.puts[1].response.resolve(saveResponse(harness.puts[1].body.mutation_id, { revision: 6 }))
+    await advance(0)
+    expect(harness.puts.length).toBe(2)
+    expect(harness.controller.getSnapshot().dirty).toBe(false)
+  })
+
+  it('N1b 排队普通 flush 按派发时最新 localVersion 结算，T2 不残留 dirty', async () => {
+    const harness = createHarness()
+    await loadHarness(harness, editorResponse({ revision: 5 }))
+    harness.controller.setDraftText('T1')
+    await advance(500)
+    expect(harness.puts.length).toBe(1)
+    harness.controller.setDraftText('T2')
+    const flushed = harness.controller.flush('text')
+    await advance(0)
+    expect(harness.puts.length).toBe(1)
+    harness.puts[0].response.resolve(saveResponse(harness.puts[0].body.mutation_id, { revision: 6 }))
+    await advance(0)
+    expect(harness.puts.length).toBe(2)
+    expect(lastPut(harness).body.editor_state.draft.text).toBe('T2')
+    harness.puts[1].response.resolve(saveResponse(harness.puts[1].body.mutation_id, { revision: 7 }))
+    await advance(0)
+    expect(await flushed).toBe('saved')
+    expect(harness.controller.getSnapshot().dirty).toBe(false)
+  })
+})
