@@ -23,6 +23,7 @@ import {
   needsDuplicateExecutionConfirmation,
   planSubmissionLookups,
   reduceConversation,
+  submissionViewMatches,
   turnIdentityMatches,
   type ConversationState,
   type ConversationSubmissionView,
@@ -1302,6 +1303,71 @@ describe('conversation-controller：副作用与迟到隔离', () => {
     expect(lookupCalls).toBeGreaterThanOrEqual(1)
     expect(releases).toContain('op-1')
     expect(controller.getSnapshot().turn?.state).toBe('not_observed')
+  })
+
+  it('review-4：rebaseAuth 推进代次；旧代次查回结果必须丢弃，新代次补派发后结算', async () => {
+    let lookupCalls = 0
+    let resolveFirst: (value: unknown) => void = () => {}
+    const submission = () => {
+      lookupCalls += 1
+      if (lookupCalls === 1) {
+        return new Promise<unknown>((resolve) => { resolveFirst = resolve })
+      }
+      return Promise.resolve(submissionResponse())
+    }
+    const { controller, calls, clears, releases } = setup({ submission })
+    await controller.send(sendInput())
+    calls[0].input.onNetworkError?.(new Error('disconnect'))
+    await flush()
+    expect(lookupCalls).toBe(1)
+    controller.rebaseAuth(2)
+    const rebased = controller.getSnapshot().turn
+    expect(rebased?.identity.authGeneration).toBe(2)
+    // 旧代次的 accepted 结果不得清稿/结算新代次 turn。
+    resolveFirst(submissionResponse({
+      acceptance_state: 'accepted',
+      generation_id: 'gen_1',
+      generation_state: 'running',
+      accepted_editor_revision: 3,
+      editor_intent_hash: HASH,
+      submitted_draft_text: 'q1',
+    }))
+    await flush()
+    await flush()
+    expect(clears).toHaveLength(0)
+    expect(lookupCalls).toBe(2)
+    expect(releases).toContain('op-1')
+    expect(controller.getSnapshot().turn?.state).toBe('not_observed')
+  })
+
+  it('review-4：rebaseAuth 后旧代次 detail 结果返回 stale，不得回填', async () => {
+    let resolveDetail: (value: unknown) => void = () => {}
+    const { controller } = setup({
+      loadDetail: () => new Promise<unknown>((resolve) => { resolveDetail = resolve }),
+    })
+    const loading = controller.load()
+    controller.rebaseAuth(2)
+    resolveDetail({
+      messages: [{ message_id: 'msg_1', role: 'assistant', content: 'stale answer' }],
+      next_cursor: null,
+    })
+    const result = await loading
+    expect(result.status).toBe('stale')
+    expect(controller.getSnapshot().detailMessages).toHaveLength(0)
+  })
+
+  it('review-4：submissionViewMatches 逐字段校验 session/token/key/hash/generation', () => {
+    const baseIdentity = identity()
+    const good = view()
+    expect(submissionViewMatches(SESSION_KEY, baseIdentity, good, false)).toBe(true)
+    expect(submissionViewMatches('other', baseIdentity, good, false)).toBe(false)
+    expect(submissionViewMatches(SESSION_KEY, baseIdentity, { ...good, token: 'other' }, false)).toBe(false)
+    expect(submissionViewMatches(SESSION_KEY, baseIdentity, { ...good, idempotencyKey: `s1_${'c'.repeat(64)}` }, false)).toBe(false)
+    expect(submissionViewMatches(SESSION_KEY, baseIdentity, { ...good, editorIntentHash: 'f'.repeat(64) }, false)).toBe(false)
+    const bound = { ...baseIdentity, generationId: 'gen_1' }
+    expect(submissionViewMatches(SESSION_KEY, bound, { ...good, generationId: 'gen_1' }, false)).toBe(true)
+    // 已绑定 generation 后，查回返回 null generation 视为协议冲突（review-2 B2）。
+    expect(submissionViewMatches(SESSION_KEY, bound, good, false)).toBe(false)
   })
 
 })

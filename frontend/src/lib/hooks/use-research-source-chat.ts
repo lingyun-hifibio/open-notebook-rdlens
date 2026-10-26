@@ -376,13 +376,18 @@ export function useResearchSourceChat({
     if (snapshot.turn !== null && snapshot.turn.identity.detached) {
       void controller.reattach()
     }
+    // 详情回填带会话/批次守卫：切换会话或认证刷新后，迟到的旧详情不得
+    // 写入当前 hook 状态（review-4 #2）。
+    let cancelled = false
     void controller.load().then((result) => {
+      if (cancelled) return
       if (result.status !== 'ok') return
       if (activeRef.current !== null) return
       const rows = (result.value?.messages ?? []) as ResearchSourceChatMessage[]
       if (rows.length > 0) setTurns(rows.map(mapColdMessage))
     })
     return () => {
+      cancelled = true
       controller.detach()
       options.runtime.releaseConversation(ref, controller)
       setConversation((current) => (current === controller ? null : current))

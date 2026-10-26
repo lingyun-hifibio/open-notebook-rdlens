@@ -1339,6 +1339,8 @@ export function createConversationController(input: {
   let version = 0
   let cached: ConversationSnapshot | null = null
   let disposed = false
+  // 本 controller 当前承诺的认证代次（rebaseAuth 推进）：传输结果跨代次必须丢弃。
+  let captureGeneration = input.authGeneration
   let detailMessages: readonly unknown[] = []
   let detailCursor: string | null = null
   const lookupTasks = new Map<string, { readonly turnId: string; readonly attempt: number }>()
@@ -1624,6 +1626,7 @@ export function createConversationController(input: {
 
   async function performLookup(token: string): Promise<void> {
     if (isDisposed()) return
+    const lookupGeneration = captureGeneration
     const task = lookupTasks.get(token) ?? null
     const turn = currentTurn()
     if (
@@ -1641,6 +1644,11 @@ export function createConversationController(input: {
     try {
       const raw = await transport.getSubmission({ sessionRef: ref, token })
       if (isDisposed()) return
+      if (captureGeneration !== lookupGeneration) {
+        // 认证刷新后旧代次的查回结果不得写入新代次 turn。
+        lookupTasks.delete(token)
+        return
+      }
       const latest = currentTurn()
       if (
         latest === null
@@ -1666,6 +1674,10 @@ export function createConversationController(input: {
       dispatch({ type: 'lookup_result', turnId: task.turnId, view })
     } catch (error) {
       if (isDisposed()) return
+      if (captureGeneration !== lookupGeneration) {
+        lookupTasks.delete(token)
+        return
+      }
       const { status } = failureFromError(error)
       dispatchLookupFailure(token, attempts, status === 404 ? 'not_found' : 'network')
     }
@@ -1884,6 +1896,8 @@ export function createConversationController(input: {
    */
   function rebaseAuth(authGeneration: number): void {
     if (disposed) return
+    captureGeneration = authGeneration
+    dispatch({ type: 'rebase_auth', authGeneration })
     const turn = currentTurn()
     if (turn === null || isTerminalTurn(turn)) return
     const stream = liveStream
@@ -1930,9 +1944,14 @@ export function createConversationController(input: {
         error: { code: 'detail_not_wired', message: 'Transport does not provide durable detail' },
       }
     }
+    const detailGeneration = captureGeneration
     try {
       const raw = await loader({ sessionRef: ref, cursor })
       if (isDisposed()) return { status: 'stale' }
+      if (captureGeneration !== detailGeneration) {
+        // 认证刷新后旧代次详情不得回填/宣告完整。
+        return { status: 'stale' }
+      }
       const record = raw !== null && typeof raw === 'object'
         ? (raw as Record<string, unknown>)
         : null

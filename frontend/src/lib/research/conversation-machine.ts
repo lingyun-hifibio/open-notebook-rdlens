@@ -472,6 +472,14 @@ export function needsDuplicateExecutionConfirmation(
 /** reducer 事件定义（controller 按回调语义构造）。 */
 export type ConversationEvent =
   | {
+      /**
+       * 同 viewer 认证刷新：把未结算 turn 的身份/状态移交新代次
+       * （attempt 与水位保持不变，旧代次的传输结果由 controller 丢弃）。
+       */
+      readonly type: 'rebase_auth'
+      readonly authGeneration: number
+    }
+  | {
       readonly type: 'prepare'
       readonly identity: ConversationTurnIdentity
       readonly operationId: string
@@ -647,6 +655,27 @@ export function reduceConversation(
   const turn = state.turn
 
   switch (event.type) {
+    case 'rebase_auth': {
+      if (event.authGeneration === state.authGeneration) return unchanged
+      if (turn === null) {
+        return {
+          state: { ...state, authGeneration: event.authGeneration },
+          effects: [],
+        }
+      }
+      const next: ConversationTurn = {
+        ...turn,
+        identity: { ...turn.identity, authGeneration: event.authGeneration },
+      }
+      return {
+        state: withTurn(
+          { ...state, authGeneration: event.authGeneration },
+          next,
+        ),
+        effects: [],
+      }
+    }
+
     case 'prepare': {
       if (turn !== null && !isTerminalState(turn) && turn.state !== 'idle') {
         // 每个 session 同时只允许一个活动 turn；未终结前不得被新 send 改写。

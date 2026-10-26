@@ -784,6 +784,53 @@ describe('PR-5a（D2）：显式 session 接线', () => {
     expect(releaseConversation).toHaveBeenCalledWith(ref, controller)
   })
 
+  it('详情迟到：切换到另一会话后旧详情不得写回 turns（review-4 #2）', async () => {
+    let resolveA: (value: unknown) => void = () => {}
+    const makeController = (load: () => Promise<unknown>) => ({
+      detach: vi.fn(),
+      hasActiveTurn: vi.fn(() => false),
+      load: vi.fn(load),
+      getSnapshot: vi.fn(() => ({ turn: null, authGeneration: 1 })),
+    }) as unknown as ConversationController
+    const controllerA = makeController(() => new Promise<unknown>((resolve) => { resolveA = resolve }))
+    const controllerB = makeController(async () => ({ status: 'ok' as const, value: { messages: [] } }))
+    const conversation = vi.fn((target: ResearchSessionRef) =>
+      target.sessionId === 'sess_a' ? controllerA : controllerB)
+    const runtime = {
+      conversation,
+      releaseConversation: vi.fn(),
+      getSnapshot: () => ({ authGeneration: 1 }),
+      subscribe: () => () => {},
+    } as unknown as SessionRuntime
+    const refA: ResearchSessionRef = {
+      domain: 'research', kind: 'global', projectId: 'proj_1', sessionId: 'sess_a', sourceId: null,
+    }
+    const refB: ResearchSessionRef = { ...refA, sessionId: 'sess_b' }
+    const { result, rerender } = renderHook(
+      ({ ref }: { ref: ResearchSessionRef }) => useResearchChat({ projectId: 'proj_1', session: { runtime, ref } }),
+      { initialProps: { ref: refA } },
+    )
+    rerender({ ref: refB })
+    await act(async () => {
+      resolveA({
+        status: 'ok',
+        value: {
+          messages: [{
+            message_id: 'msg_a',
+            role: 'assistant',
+            content: 'A answer',
+            created_at: '2026-01-01T00:00:00Z',
+          }],
+          next_cursor: null,
+        },
+      })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    // 旧会话 A 的迟到详情不得覆盖当前会话 B 的 turns。
+    expect(result.current.turns).toEqual([])
+  })
+
   it('认证代次切换后重新 acquire controller（review-2 B1）', () => {
     const makeController = () => ({
       detach: vi.fn(),
