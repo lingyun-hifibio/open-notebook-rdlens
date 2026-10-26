@@ -22,7 +22,7 @@
 
 import { SESSION_CONTRACT_VERSION } from './session-contract'
 import type { ResearchAcceptanceState, ResearchSessionRef } from './session-contract'
-import { canonicalJson, type CanonicalJsonValue } from './session-idempotency'
+import { buildSubmissionKey, canonicalJson, type CanonicalJsonValue } from './session-idempotency'
 
 /** 缓存键前缀（02 §6）。 */
 export const SESSION_CACHE_PREFIX = 'rdlens.research.session.v1' as const
@@ -662,7 +662,7 @@ export function writeSubmissionMarker(
   marker: SessionSubmissionMarker,
   options?: CacheOptions,
 ): SessionCacheWriteResult {
-  const sanitized = sanitizeSubmissionMarker(marker, ref)
+  const sanitized = sanitizeSubmissionMarker(marker, ref, scope)
   if (sanitized === null) {
     return { ok: false, persisted: false, degraded: true, reason: null }
   }
@@ -697,17 +697,30 @@ function isPlainJsonObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * 校验请求路径确实指向该会话的提交端点（project/session 身份一致）。
- * 允许原始或百分号编码的段。
+ * 执行端点校验（DESIGN §6.2）：提交请求不是查回端点——
+ * global 为 `/v1/research/projects/{project}/chat`，
+ * source 为 `/v1/research/projects/{project}/sources/{source_id}/chat`。
+ * 允许原始或百分号编码的段；不得余留查询串/额外段。
  */
+function expectedSubmissionPaths(ref: ResearchSessionRef): string[] {
+  const projects = [ref.projectId, encodeURIComponent(ref.projectId)]
+  if (ref.kind === 'global') {
+    return projects.map((project) => `/v1/research/projects/${project}/chat`)
+  }
+  const sourceId = ref.sourceId
+  if (!sourceId) return []
+  const sources = [sourceId, encodeURIComponent(sourceId)]
+  const paths: string[] = []
+  for (const project of projects) {
+    for (const source of sources) {
+      paths.push(`/v1/research/projects/${project}/sources/${source}/chat`)
+    }
+  }
+  return paths
+}
+
 function pathMatchesSessionRef(path: string, ref: ResearchSessionRef): boolean {
-  if (!path.startsWith('/v1/research/projects/')) return false
-  if (!path.endsWith('/submissions')) return false
-  const projectCandidates = [ref.projectId, encodeURIComponent(ref.projectId)]
-  const sessionCandidates = [ref.sessionId, encodeURIComponent(ref.sessionId)]
-  const projectOk = projectCandidates.some((candidate) => path.includes(`/projects/${candidate}/`))
-  const sessionOk = sessionCandidates.some((candidate) => path.includes(`/${candidate}/submissions`))
-  return projectOk && sessionOk
+  return expectedSubmissionPaths(ref).includes(path)
 }
 
 /** 请求体必须是无损可 JSON 往返的普通对象（不接受 undefined/NaN/Map 等）。 */
@@ -727,46 +740,177 @@ function isLosslessJsonBody(value: unknown): value is Record<string, unknown> {
   }
 }
 
-/** 请求体里与身份相关的字段必须与 ref/token 一致（若出现）。 */
-function markerBodyMatches(
-  body: Readonly<Record<string, unknown>>,
-  marker: SessionSubmissionMarker,
-  ref: ResearchSessionRef,
-): boolean {
-  if (body.draft_token !== marker.draftToken) return false
-  const expected: ReadonlyArray<[string, unknown]> = [
-    ['project_id', ref.projectId],
-    ['session_id', ref.sessionId],
-    ['kind', ref.kind],
-    ['source_id', ref.sourceId],
-  ]
-  for (const [field, value] of expected) {
-    if (field in body && body[field] !== value) return false
+const SUBMISSION_SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/
+const SUBMISSION_HASH_PATTERN = /^[a-f0-9]{64}$/
+const CONTEXT_LEVELS = new Set(['focused', 'document', 'workspace'])
+const RESPONSE_LANGUAGES = new Set(['zh', 'en'])
+const SCOPE_MODES = new Set(['all', 'selected', 'single'])
+const SUBMISSION_BASE_KEYS = new Set([
+  'session_id',
+  'editor_revision',
+  'draft_token',
+  'editor_intent_hash',
+  'query',
+  'model_id',
+  'context_level',
+  'response_language',
+])
+const GLOBAL_ONLY_KEYS = new Set(['source_scope', 'note_ids'])
+
+function isBoundedString(value: unknown, min: number, max: number): value is string {
+  return typeof value === 'string' && value.length >= min && value.length <= max
+}
+
+function isStringArray(value: unknown, maxItems: number): value is string[] {
+  if (!Array.isArray(value) || value.length > maxItems) return false
+  const seen = new Set<string>()
+  for (const item of value) {
+    if (!isBoundedString(item, 1, 256)) return false
+    if (seen.has(item)) return false
+    seen.add(item)
   }
   return true
 }
 
+/** §5.3 执行范围：mode 与 source_ids/single_source_id 的互斥约束。 */
+function isExecutionContextScope(value: unknown): boolean {
+  if (!isPlainJsonObject(value)) return false
+  const keys = Object.keys(value)
+  if (keys.some((key) => !['mode', 'source_ids', 'single_source_id'].includes(key))) return false
+  if (typeof value.mode !== 'string' || !SCOPE_MODES.has(value.mode)) return false
+  if (!isStringArray(value.source_ids, 1000)) return false
+  const single = value.single_source_id
+  if (single !== null && !isBoundedString(single, 1, 256)) return false
+  if (value.mode === 'all') return value.source_ids.length === 0 && single === null
+  if (value.mode === 'single') return value.source_ids.length === 0 && isBoundedString(single, 1, 256)
+  return single === null
+}
+
+function allowedSubmissionKeys(kind: ResearchSessionRef['kind']): Set<string> {
+  return kind === 'global'
+    ? new Set([...SUBMISSION_BASE_KEYS, ...GLOBAL_ONLY_KEYS])
+    : new Set(SUBMISSION_BASE_KEYS)
+}
+
 /**
- * 持久化边界校验（review F10）：请求必须可无损重放——
- * 方法/路径/token/幂等键/scope 与 ref 一致，body 无损 JSON，头只留白名单。
- * 不满足时拒绝写入，而不是静默截断或保留 `exactRequestAvailable:true`。
+ * 按第一批冻结 schema 校验原始请求体：必填字段、类型/长度/枚举、kind 专属
+ * 字段与 unknown 字段全部核对（additionalProperties:false）；保留
+ * response_language 的省略/null 语义，不做规范化。
+ */
+function isCompleteSubmissionBody(
+  body: Readonly<Record<string, unknown>>,
+  marker: SessionSubmissionMarker,
+  ref: ResearchSessionRef,
+): boolean {
+  const allowed = allowedSubmissionKeys(ref.kind)
+  for (const key of Object.keys(body)) {
+    if (!allowed.has(key)) return false
+  }
+  if (!isBoundedString(body.session_id, 1, 128) || !SUBMISSION_SESSION_ID_PATTERN.test(body.session_id)) {
+    return false
+  }
+  if (body.session_id !== ref.sessionId) return false
+  if (body.draft_token !== marker.draftToken) return false
+  if (!isBoundedString(body.draft_token, 1, 128) || !SUBMISSION_SESSION_ID_PATTERN.test(body.draft_token)) {
+    return false
+  }
+  if (
+    typeof body.editor_revision !== 'number' ||
+    !Number.isInteger(body.editor_revision) ||
+    body.editor_revision < 0 ||
+    body.editor_revision > 2147483647
+  ) {
+    return false
+  }
+  if (!isBoundedString(body.editor_intent_hash, 64, 64) || !SUBMISSION_HASH_PATTERN.test(body.editor_intent_hash)) {
+    return false
+  }
+  if (!isBoundedString(body.query, 1, Number.MAX_SAFE_INTEGER)) return false
+  if (!isBoundedString(body.model_id, 1, 256)) return false
+  if (typeof body.context_level !== 'string' || !CONTEXT_LEVELS.has(body.context_level)) return false
+  if (
+    'response_language' in body &&
+    body.response_language !== null &&
+    (typeof body.response_language !== 'string' || !RESPONSE_LANGUAGES.has(body.response_language))
+  ) {
+    return false
+  }
+  if (ref.kind === 'global') {
+    if (!isExecutionContextScope(body.source_scope)) return false
+    if (!isStringArray(body.note_ids, 1000)) return false
+  }
+  return true
+}
+
+function isPersistableOwnerUserId(value: string): boolean {
+  return /^[1-9][0-9]*$/.test(value)
+}
+
+/**
+ * 幂等键必须与 scope/ref/token 一致（DESIGN §6.2）：键里编码 project、
+ * owner、kind、source、session、draft_token；不能只信请求头字符串。
+ * owner 非安全正整数时无法建立稳定提交身份 → 拒绝完整快照。
+ */
+function expectedSubmissionKey(
+  scope: SessionCacheScope,
+  ref: ResearchSessionRef,
+  draftToken: string,
+): string | null {
+  if (!isPersistableOwnerUserId(scope.viewerUserId)) return null
+  const ownerUserId = Number(scope.viewerUserId)
+  if (!Number.isSafeInteger(ownerUserId) || ownerUserId < 1) return null
+  try {
+    return buildSubmissionKey({
+      projectId: ref.projectId,
+      ownerUserId,
+      kind: ref.kind,
+      sourceId: ref.sourceId,
+      sessionId: ref.sessionId,
+      draftToken,
+    })
+  } catch {
+    return null
+  }
+}
+
+/** 协议头必须是该 kind 的冻结组合，且幂等键头与标记键一致。 */
+function submissionHeadersMatch(
+  headers: Readonly<Record<string, string>>,
+  marker: SessionSubmissionMarker,
+  ref: ResearchSessionRef,
+): boolean {
+  const contract = ref.kind === 'global' ? 'c05-v1' : 'v1'
+  return (
+    headers['X-Research-Session-Contract'] === SESSION_CONTRACT_VERSION &&
+    headers['X-Research-Contract'] === contract &&
+    headers['Idempotency-Key'] === marker.idempotencyKey
+  )
+}
+
+/**
+ * 持久化边界校验（review F10/R1/R2）：请求必须可无损重放——
+ * 方法/执行端点/token/幂等身份/协议头/完整 wire body 均与 ref 一致，
+ * body 无损 JSON，头只留白名单。不满足时拒绝写入，而不是静默截断或
+ * 保留 `exactRequestAvailable:true`。
  */
 function sanitizeSubmissionMarker(
   marker: SessionSubmissionMarker,
   ref: ResearchSessionRef,
+  scope: SessionCacheScope,
 ): SessionSubmissionMarker | null {
   if (marker.request === null) {
     return marker.exactRequestAvailable ? null : marker
   }
   if (!marker.exactRequestAvailable) return null
+  const expectedKey = expectedSubmissionKey(scope, ref, marker.draftToken)
+  if (expectedKey === null || marker.idempotencyKey !== expectedKey) return null
   const request = marker.request
   if (request.method !== 'POST') return null
   if (typeof request.path !== 'string' || !pathMatchesSessionRef(request.path, ref)) return null
   if (!isLosslessJsonBody(request.body)) return null
-  if (!markerBodyMatches(request.body, marker, ref)) return null
+  if (!isCompleteSubmissionBody(request.body, marker, ref)) return null
   const headers = persistableSubmissionHeaders(request.headers)
-  if (headers['X-Research-Session-Contract'] !== SESSION_CONTRACT_VERSION) return null
-  if (headers['Idempotency-Key'] !== marker.idempotencyKey) return null
+  if (!submissionHeadersMatch(headers, marker, ref)) return null
   return {
     ...marker,
     request: {

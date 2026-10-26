@@ -548,6 +548,10 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
       viewerUserId: state.scope.viewerUserId,
       role: state.scope.role,
     }
+    // 每次尝试在成功前都不得沿用上一代/上一次的 viewer 确认（review R3）：
+    // 否则新代 bootstrap 失败后 setMasked(false) 会带着旧确认回到 ready 并
+    // 重新发放本机分区授权。
+    viewerConfirmed = false
     state.phase = 'bootstrapping'
     state.lastBootstrap = 'pending'
     state.lastErrorCode = null
@@ -749,17 +753,16 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
     if (state.disposed) return
     if (maskedExternally === masked && state.masked === masked) return
     maskedExternally = masked
+    state.masked = masked
     if (masked) {
-      state.masked = true
-      // bootstrap 在途时保持 bootstrapping，成功响应回来后再按外部遮蔽决定
-      // （review F5：bootstrap 成功不得解除外部遮蔽）。
-      if (state.phase !== 'bootstrapping') state.phase = 'masked'
-    } else {
-      state.masked = false
-      if (state.phase === 'masked') {
-        state.phase = viewerConfirmed ? 'ready' : 'bootstrapping'
-        if (state.phase === 'ready') restoreActiveFromCache()
-      }
+      // 只叠加显示门禁，不覆盖已有 bootstrap 结果（error/unauthorized/
+      // bootstrapping 阶段保持原状；review R3）。
+      if (state.phase === 'ready' || state.phase === 'masked') state.phase = 'masked'
+    } else if (state.phase === 'masked') {
+      // 仅“单纯被外部遮蔽”的 masked 阶段可恢复；error 等失败阶段必须等
+      // retryBootstrap 成功才能离开（DESIGN §3.2，review R3）。
+      state.phase = viewerConfirmed ? 'ready' : 'bootstrapping'
+      if (state.phase === 'ready') restoreActiveFromCache()
     }
     commit()
   }
@@ -841,7 +844,7 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
     dispose,
     isDisposed: () => state.disposed,
     isReady: () => state.phase === 'ready',
-    isMasked: () => state.masked || state.phase === 'masked' || state.phase === 'bootstrapping',
+    isMasked: () => snapshot.masked,
     active,
     activate,
     setDisplayPointer,

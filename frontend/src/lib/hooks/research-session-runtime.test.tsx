@@ -1552,3 +1552,114 @@ describe('review 三次复核：bootstrap 错误遮蔽与重试入口（Lead F-M
     expect(runtime.retryBootstrap()).toBe(false)
   })
 })
+
+
+// ── review 三次聚焦复核：R3 遮蔽/重试阶段交错 ──────────────────────────────
+
+describe('review 三次复核 R3：error 阶段遮蔽与授权一致性', () => {
+  function failingTransport(): SessionRuntimeTransport {
+    return {
+      bootstrap: vi.fn(async (): Promise<SessionRuntimeBootstrapOutcome> => ({
+        status: 'error',
+        code: 'session_store_unavailable',
+        retryable: true,
+      })),
+    }
+  }
+
+  it('error 阶段 isMasked 与快照一致，外部解除遮蔽不得离开 error', async () => {
+    const runtime = createSessionRuntime({
+      authGeneration: 1,
+      projectId: P,
+      viewerUserId: VIEWER,
+      role: 'owner',
+      transport: failingTransport(),
+    })
+    runtime.start()
+    await waitFor(() => expect(runtime.getSnapshot().phase).toBe('error'))
+    expect(runtime.getSnapshot().masked).toBe(true)
+    expect(runtime.isMasked()).toBe(true)
+    runtime.setMasked(true)
+    runtime.setMasked(false)
+    expect(runtime.getSnapshot().phase).toBe('error')
+    expect(runtime.getSnapshot().masked).toBe(true)
+    expect(runtime.isMasked()).toBe(true)
+    expect(runtime.retryBootstrap()).toBe(true)
+    expect(runtime.getSnapshot().phase).toBe('bootstrapping')
+  })
+
+  it('新代 bootstrap 失败不得沿用旧代确认重新授权', async () => {
+    let calls = 0
+    const transport: SessionRuntimeTransport = {
+      bootstrap: vi.fn(async (): Promise<SessionRuntimeBootstrapOutcome> => {
+        calls += 1
+        if (calls === 1) {
+          return { status: 'ok', viewerUserId: VIEWER, capabilities: CAPABILITIES }
+        }
+        return { status: 'error', code: 'bootstrap_failed', retryable: true }
+      }),
+    }
+    const runtime = createSessionRuntime({
+      authGeneration: 1,
+      projectId: P,
+      viewerUserId: VIEWER,
+      role: 'owner',
+      transport,
+    })
+    runtime.start()
+    await waitFor(() => expect(runtime.getSnapshot().phase).toBe('ready'))
+    expect(runtime.cacheAuthority()).not.toBeNull()
+    runtime.updateAuth({ authGeneration: 2, projectId: P, viewerUserId: VIEWER, role: 'owner' })
+    await waitFor(() => expect(runtime.getSnapshot().phase).toBe('error'))
+    expect(runtime.cacheAuthority()).toBeNull()
+    runtime.setMasked(true)
+    runtime.setMasked(false)
+    expect(runtime.getSnapshot().phase).toBe('error')
+    expect(runtime.getSnapshot().masked).toBe(true)
+    expect(runtime.isMasked()).toBe(true)
+    expect(runtime.cacheAuthority()).toBeNull()
+    expect(runtime.identity()).toBeNull()
+  })
+
+  it('Provider：error 后外部 masked prop 变化不解除遮蔽', async () => {
+    function PhaseProbe() {
+      const snapshot = useSessionSnapshot()
+      return (
+        <span data-testid="runtime-phase-r3">
+          {snapshot.phase}:{String(snapshot.masked)}
+        </span>
+      )
+    }
+    const transport = failingTransport()
+    const { rerender } = render(
+      <ResearchSessionRuntimeProvider
+        authGeneration={1}
+        projectId={P}
+        viewerUserId={VIEWER}
+        role="owner"
+        transport={transport}
+        masked
+      >
+        <PhaseProbe />
+      </ResearchSessionRuntimeProvider>,
+    )
+    await waitFor(() =>
+      expect(screen.getByTestId('runtime-phase-r3').textContent).toBe('error:true'),
+    )
+    rerender(
+      <ResearchSessionRuntimeProvider
+        authGeneration={1}
+        projectId={P}
+        viewerUserId={VIEWER}
+        role="owner"
+        transport={transport}
+        masked={false}
+      >
+        <PhaseProbe />
+      </ResearchSessionRuntimeProvider>,
+    )
+    await waitFor(() =>
+      expect(screen.getByTestId('runtime-phase-r3').textContent).toBe('error:true'),
+    )
+  })
+})

@@ -200,6 +200,45 @@ describe('ResearchWorkspaceShell', () => {
     expect(keys.some((key) => key.startsWith(`${SESSION_CACHE_PREFIX}.`))).toBe(true)
   })
 
+  it('同一 viewer 切换项目：重建 runtime 但保留旧项目未同步草稿（review R4）', () => {
+    localStorage.clear()
+    clearSessionCacheMemoryFallback()
+    const dbRef: ResearchSessionRef = {
+      domain: 'research',
+      kind: 'global',
+      projectId: 'proj_abc',
+      sessionId: 'sess_1',
+      sourceId: null,
+    }
+    const record: SessionDraftRecord = {
+      version: 1,
+      text: '旧项目未同步稿',
+      token: 'draft_token_a',
+      baseScope: null,
+      singleSourceId: null,
+      noteIds: [],
+      localVersion: 3,
+      baseRevision: 7,
+      savedAt: '2026-10-26T09:00:00.000Z',
+      dirty: true,
+    }
+    writeDraft({ viewerUserId: 'user_1', projectId: 'proj_abc' }, dbRef, 'writer_a', record)
+    const captures = stubParentWindow()
+    render(<ResearchWorkspaceShell>workspace-panels</ResearchWorkspaceShell>)
+    const ready = captures.posted[0].data
+    dispatchMessage(validTokenMessage(String(ready.nonce), String(ready.channel)))
+    expect(screen.getByText('workspace-panels')).toBeInTheDocument()
+    // 同一 sub、不同项目：不得按换人清理旧项目的未同步草稿
+    dispatchMessage(
+      validTokenMessage(String(ready.nonce), String(ready.channel), {
+        token: validToken({ project_id: 'proj_def' }),
+      }),
+    )
+    expect(screen.getByText('workspace-panels')).toBeInTheDocument()
+    const keys = localStorageKeys()
+    expect(keys.some((key) => key.includes('.draft.user_1.') && key.includes('proj_abc'))).toBe(true)
+  })
+
   it('destroy 消息后清空渲染并终止会话（无残留）', () => {
     const captures = stubParentWindow()
     render(<ResearchWorkspaceShell>workspace-panels</ResearchWorkspaceShell>)

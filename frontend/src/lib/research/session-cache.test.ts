@@ -34,6 +34,7 @@ import {
   type SessionSubmissionMarker,
 } from './session-cache'
 import type { ResearchSessionRef } from './session-contract'
+import { buildSubmissionKey } from './session-idempotency'
 
 /**
  * 第三批 PR-1：本机缓存分区（DESIGN §3.5，02 §6）。
@@ -71,8 +72,8 @@ class MapStorage implements SessionCacheStorage {
 }
 
 const P = 'proj_1'
-const VIEWER_A = 'user_101'
-const VIEWER_B = 'user_202'
+const VIEWER_A = '42'
+const VIEWER_B = '43'
 
 const scope: SessionCacheScope = { viewerUserId: VIEWER_A, projectId: P }
 
@@ -118,19 +119,59 @@ function draftRecord(overrides: Partial<SessionDraftRecord> = {}): SessionDraftR
   }
 }
 
-function marker(overrides: Partial<SessionSubmissionMarker> = {}): SessionSubmissionMarker {
+function marker(
+  overrides: Partial<SessionSubmissionMarker> = {},
+  ref: ResearchSessionRef = globalRef,
+): SessionSubmissionMarker {
+  const draftToken = overrides.draftToken ?? 'draft_token_1'
+  const idempotencyKey = buildSubmissionKey({
+    projectId: ref.projectId,
+    ownerUserId: Number(VIEWER_A),
+    kind: ref.kind,
+    sourceId: ref.sourceId,
+    sessionId: ref.sessionId,
+    draftToken,
+  })
+  const body =
+    ref.kind === 'global'
+      ? {
+          session_id: ref.sessionId,
+          editor_revision: 3,
+          draft_token: draftToken,
+          editor_intent_hash: 'a'.repeat(64),
+          query: 'hi',
+          model_id: 'm-local',
+          context_level: 'focused',
+          source_scope: { mode: 'all', source_ids: [], single_source_id: null },
+          note_ids: [],
+        }
+      : {
+          session_id: ref.sessionId,
+          editor_revision: 3,
+          draft_token: draftToken,
+          editor_intent_hash: 'a'.repeat(64),
+          query: 'hi',
+          model_id: 'm-local',
+          context_level: 'focused',
+        }
+  const path =
+    ref.kind === 'global'
+      ? `/v1/research/projects/${ref.projectId}/chat`
+      : `/v1/research/projects/${ref.projectId}/sources/${ref.sourceId ?? ''}/chat`
   const merged: SessionSubmissionMarker = {
     version: 1,
-    draftToken: 'draft_token_1',
-    idempotencyKey: `s1_${'c'.repeat(64)}`,
+    draftToken,
+    idempotencyKey,
     acceptanceState: 'not_observed',
     request: {
       method: 'POST',
-      path: '/v1/research/projects/proj_1/chat/sessions/sess_global/submissions',
+      path,
       headers: persistableSubmissionHeaders({
         'X-Research-Session-Contract': 'research-session-v1',
+        'X-Research-Contract': ref.kind === 'global' ? 'c05-v1' : 'v1',
+        'Idempotency-Key': idempotencyKey,
       }),
-      body: { draft_token: 'draft_token_1', text: 'hello' },
+      body,
     },
     exactRequestAvailable: true,
     generationId: null,
@@ -140,21 +181,7 @@ function marker(overrides: Partial<SessionSubmissionMarker> = {}): SessionSubmis
     terminalAt: null,
     ...overrides,
   }
-  const request = merged.request
-  if (request === null || !merged.exactRequestAvailable) return merged
-  if (!isPlainObjectBody(request.body)) return merged
-  // 让 fixture 与 marker 的 token/幂等键保持一致（生产由调用方构造，测试统一收口）。
-  return {
-    ...merged,
-    request: {
-      ...request,
-      headers: {
-        ...request.headers,
-        'Idempotency-Key': merged.idempotencyKey,
-      },
-      body: { ...request.body, draft_token: merged.draftToken },
-    },
-  }
+  return merged
 }
 
 function isPlainObjectBody(value: unknown): value is Record<string, unknown> {
@@ -340,10 +367,9 @@ describe('session-cache: 提交标记与请求头白名单（§3.5 预算/头白
 
   it('多 token 标记并存，T1 仍可读回；active-submission 指针独立', () => {
     const storage = new MapStorage()
-    const t1 = marker({ draftToken: 'draft_t1', idempotencyKey: `s1_${'a'.repeat(64)}` })
+    const t1 = marker({ draftToken: 'draft_t1' })
     const t2 = marker({
       draftToken: 'draft_t2',
-      idempotencyKey: `s1_${'b'.repeat(64)}`,
       acceptanceState: 'accepted',
       generationId: 'gen_1',
       observedRevision: 7,
@@ -365,7 +391,7 @@ describe('session-cache: 提交标记与请求头白名单（§3.5 预算/头白
       const result = writeSubmissionMarker(
         scope,
         globalRef,
-        marker({ draftToken: `draft_${index}`, idempotencyKey: `s1_${index.toString(16).padStart(64, '0')}` }),
+        marker({ draftToken: `draft_${index}` }),
         { storage },
       )
       expect(result.ok).toBe(true)
@@ -387,7 +413,7 @@ describe('session-cache: 提交标记与请求头白名单（§3.5 预算/头白
       writeSubmissionMarker(
         scope,
         globalRef,
-        marker({ draftToken: 'draft_after_terminal', idempotencyKey: `s1_${'f'.repeat(64)}` }),
+        marker({ draftToken: 'draft_after_terminal' }),
         { storage },
       ).ok,
     ).toBe(true)
@@ -466,68 +492,116 @@ describe('session-cache: review 补证（编码分区 / quota 优先级 / 写入
     expect(readDraft(scope, authorityFor(), globalRef, 'writer_a', { storage })?.text).toBe('第二次')
   })
 
-  it('writeSubmissionMarker 在持久化边界过滤鉴权头并校验完整请求（F10）', () => {
+  it('writeSubmissionMarker：真实执行端点与完整 wire 请求可持久化，鉴权头被过滤（F10/R1/R2）', () => {
     const storage = new MapStorage()
-    const unsafeMarker = marker({
+    const base = marker()
+    const request = base.request
+    if (request === null) throw new Error('fixture requires request')
+    const body = request.body as Record<string, unknown>
+    const withCredentials = {
+      ...base,
       request: {
-        method: 'POST',
-        path: '/v1/research/projects/proj_1/chat/sessions/sess_global/submissions',
+        ...request,
         headers: {
           ...persistableSubmissionHeaders({
             'X-Research-Session-Contract': 'research-session-v1',
-            'Idempotency-Key': `s1_${'c'.repeat(64)}`,
+            'X-Research-Contract': 'c05-v1',
+            'Idempotency-Key': base.idempotencyKey,
           }),
           Authorization: 'Bearer secret-token',
           Cookie: 'session=abc',
         },
-        body: { draft_token: 'draft_token_1', text: 'hello' },
       },
-    })
-    expect(writeSubmissionMarker(scope, globalRef, unsafeMarker, { storage }).ok).toBe(true)
+    }
+    expect(writeSubmissionMarker(scope, globalRef, withCredentials, { storage }).ok).toBe(true)
     const persisted = readSubmissionMarker(scope, authorityFor(), globalRef, 'draft_token_1', { storage })
     expect(persisted?.request?.headers).toEqual({
       'X-Research-Session-Contract': 'research-session-v1',
-      'Idempotency-Key': `s1_${'c'.repeat(64)}`,
+      'X-Research-Contract': 'c05-v1',
+      'Idempotency-Key': base.idempotencyKey,
     })
     expect(JSON.stringify(persisted)).not.toContain('secret-token')
     expect(JSON.stringify(persisted)).not.toContain('session=abc')
 
-    // 以下请求快照不完整/不再指向本会话，均不得声明可重放（review F10）。
-    const request = unsafeMarker.request
-    if (request === null) throw new Error('fixture requires request')
-    const requestBody = request.body as Record<string, unknown>
-    const rejected = [
-      // 错误的项目路径
-      { ...request, path: '/v1/research/projects/proj_other/chat/sessions/sess_global/submissions' },
-      // 错误的会话路径
-      { ...request, path: '/v1/research/projects/proj_1/chat/sessions/sess_other/submissions' },
-      // 非 POST
-      { ...request, method: 'PUT' },
-      // body 不是普通 JSON 对象
-      { ...request, body: new Map([['a', 1]]) },
-      // body 含不可无损往返的 NaN
-      { ...request, body: { ...requestBody, n: Number.NaN } },
-      // body 缺少 draft_token
-      { ...request, body: { text: 'hello' } },
-      // body draft_token 与标记不一致
-      { ...request, body: { ...requestBody, draft_token: 'draft_other' } },
-      // 缺少幂等键头
-      { ...request, headers: { 'X-Research-Session-Contract': 'research-session-v1' } },
-      // 幂等键头与标记不一致
-      {
-        ...request,
-        headers: { ...request.headers, 'Idempotency-Key': `s1_${'d'.repeat(64)}` },
-      },
-      // 契约头不是 research-session-v1
-      {
-        ...request,
-        headers: { ...request.headers, 'X-Research-Session-Contract': 'research-session-v0' },
-      },
-    ] as unknown as SessionSubmissionRequestSnapshot[]
-    for (const invalid of rejected) {
-      const candidate: SessionSubmissionMarker = { ...unsafeMarker, request: invalid }
+    // source 执行端点正例（source_chat_request 无 source_scope/note_ids）
+    const sourceMarker = marker({ draftToken: 'draft_source' }, sourceRef)
+    expect(writeSubmissionMarker(scope, sourceRef, sourceMarker, { storage }).ok).toBe(true)
+    // global ref 配 source 路径不得通过
+    expect(
+      writeSubmissionMarker(
+        scope,
+        globalRef,
+        { ...base, request: { ...request, path: '/v1/research/projects/proj_1/sources/src_a/chat' } },
+        { storage },
+      ).ok,
+    ).toBe(false)
+
+    const reject = (candidate: SessionSubmissionMarker): void => {
       expect(writeSubmissionMarker(scope, globalRef, candidate, { storage }).ok).toBe(false)
     }
+    const withRequest = (
+      overrides: Partial<SessionSubmissionRequestSnapshot>,
+    ): SessionSubmissionMarker => ({ ...base, request: { ...request, ...overrides } })
+    const withBody = (overrides: Record<string, unknown>): SessionSubmissionMarker =>
+      withRequest({ body: { ...body, ...overrides } })
+
+    reject(withRequest({ path: '/v1/research/projects/proj_1/chat/sessions/sess_global/submissions' }))
+    reject(withRequest({ path: '/v1/research/projects/proj_other/chat' }))
+    reject(withRequest({ method: 'PUT' as unknown as 'POST' }))
+    reject(withRequest({ body: new Map([['a', 1]]) as unknown as Record<string, unknown> }))
+    reject(withBody({ n: Number.NaN }))
+    reject(withBody({ session_id: 'sess_other' }))
+    reject(withBody({ draft_token: 'draft_other' }))
+    reject(withBody({ query: '' }))
+    reject(withBody({ model_id: '' }))
+    reject(withBody({ context_level: 'deep' }))
+    reject(withBody({ unknown_field: 1 }))
+    // 不完整的 wire body：缺必填字段即不得声明 exactRequestAvailable
+    reject(
+      withRequest({
+        body: { session_id: 'sess_global', draft_token: 'draft_token_1' },
+      }),
+    )
+    reject(withBody({ source_scope: { mode: 'single', source_ids: [], single_source_id: null } }))
+    reject(withBody({ source_scope: { mode: 'all', source_ids: ['src_a'], single_source_id: null } }))
+    reject(withBody({ note_ids: ['n1', 'n1'] }))
+    reject(
+      withRequest({
+        headers: { 'X-Research-Session-Contract': 'research-session-v1' },
+      }),
+    )
+    reject(
+      withRequest({
+        headers: { ...request.headers, 'Idempotency-Key': `s1_${'d'.repeat(64)}` },
+      }),
+    )
+    reject(
+      withRequest({
+        headers: { ...request.headers, 'X-Research-Contract': 'v1' },
+      }),
+    )
+    reject(
+      withRequest({
+        headers: { ...request.headers, 'X-Research-Session-Contract': 'research-session-v0' },
+      }),
+    )
+    reject(
+      withRequest({
+        headers: { ...request.headers, 'X-Research-Contract': undefined as unknown as string },
+      }),
+    )
+    // 幂等键必须与 project/viewer/kind/source/session/token 一致（不能只信头）
+    reject({ ...base, idempotencyKey: `s1_${'e'.repeat(64)}` })
+    // source 请求体带 global 专属字段也不得通过
+    const sourceRequest = sourceMarker.request
+    if (sourceRequest === null) throw new Error('fixture requires source request')
+    reject({
+      ...sourceMarker,
+      request: {
+        ...sourceRequest,
+        body: { ...(sourceRequest.body as Record<string, unknown>), note_ids: [] },
+      },
+    })
   })
 
   it('取消草稿时持久删除失败也不得让旧值复活（review F8）', () => {

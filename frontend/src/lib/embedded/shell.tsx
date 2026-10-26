@@ -87,13 +87,11 @@ export function ResearchWorkspaceShell({ children }: { children?: React.ReactNod
         } else if (
           previous.userId !== undefined &&
           next.userId !== undefined &&
-          (previous.userId !== next.userId ||
-            (previous.projectId !== undefined &&
-              next.projectId !== undefined &&
-              previous.projectId !== next.projectId))
+          previous.userId !== next.userId
         ) {
-          // viewer 或项目变化：旧实例按 viewer-change 语义失效并清理旧分区；
-          // 新 key 会重建 runtime（review N1）。
+          // viewer 变化：旧实例按 viewer-change 语义失效并清理旧 viewer 分区；
+          // 项目切换由 Provider key 重建 runtime（旧实例走 unmount 语义），
+          // 不得按换人清理同 viewer 的旧项目未同步草稿（review R4）。
           runtime.dispose('viewer-change')
         }
       }
