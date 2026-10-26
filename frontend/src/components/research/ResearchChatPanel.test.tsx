@@ -1164,46 +1164,107 @@ describe('ResearchChatPanel · PR-4 会话 editor 接线', () => {
     expect(container.querySelector('[data-message-id="local-turn-1"]')).toBeNull()
   })
 
-  it('E1（review round 3）：用户接管滚动后，稳定 ID 回填不再把位置打回旧锚点', async () => {
+  it('E1（review round 3/4）：抑制窗口内用户接管后，稳定 ID 回填不把位置打回旧锚点', () => {
     const onSend = vi.fn(async () => true)
     const userTurn = turn({ id: 'local-user-1', role: 'user', content: 'q' })
     const anchor: WireChatAnchor = {
       messageId: 'msg-42',
-      offsetPx: 0,
+      offsetPx: 100,
       followTail: false,
     }
-    const view = render(
-      <WiredPanel
-        onSend={onSend}
-        turns={[userTurn]}
-        anchor={anchor}
-        onChatAnchorChange={vi.fn()}
-      />,
-    )
-    const chatScroll = screen.getByTestId('chat-messages')
-    expect(chatScroll).not.toBeNull()
-    Object.defineProperty(chatScroll, 'clientHeight', { value: 400, configurable: true })
-    Object.defineProperty(chatScroll, 'scrollHeight', { value: 2000, configurable: true })
-    chatScroll.getBoundingClientRect = () => ({ top: 0, height: 400 } as DOMRect)
-    // 首次恢复失败：锚点目标尚未加载 → 提示位置不可用。
-    expect(screen.getByTestId('chat-position-unavailable')).toBeTruthy()
+    const originalRect = HTMLElement.prototype.getBoundingClientRect
+    let chatScroll: HTMLElement | null = null
+    HTMLElement.prototype.getBoundingClientRect = function mockRect(this: HTMLElement) {
+      if (this.dataset?.messageId === 'msg-42') {
+        return { top: 100 - (chatScroll?.scrollTop ?? 0), height: 80 } as DOMRect
+      }
+      if (this.dataset?.testid === 'chat-messages') {
+        return { top: 0, height: 400 } as DOMRect
+      }
+      return { top: 0, height: 0 } as DOMRect
+    }
+    try {
+      const view = render(
+        <WiredPanel
+          onSend={onSend}
+          turns={[userTurn]}
+          anchor={anchor}
+          onChatAnchorChange={vi.fn()}
+        />,
+      )
+      chatScroll = screen.getByTestId('chat-messages')
+      Object.defineProperty(chatScroll, 'clientHeight', { value: 400, configurable: true })
+      Object.defineProperty(chatScroll, 'scrollHeight', { value: 2000, configurable: true })
+      // 首次恢复失败（目标未加载），随后两帧内处于抑制窗口。
+      expect(screen.getByTestId('chat-position-unavailable')).toBeTruthy()
 
-    // 等待程序化恢复的 rAF 释放抑制标记（真实浏览器下一帧 ≈16ms）。
-    await new Promise(resolve => setTimeout(resolve, 40))
-    // 用户手动滚动接管阅读位置。
-    chatScroll.scrollTop = 300
-    fireEvent.scroll(chatScroll)
+      // 抑制窗口内用户滚动到 300 —— 必须被识别为接管，不能被当成程序化滚动。
+      chatScroll.scrollTop = 300
+      fireEvent.scroll(chatScroll)
 
-    // live assistant 回填稳定 ID → 稳定 ID 签名变化，但不得重设 scrollTop。
-    view.rerender(
-      <WiredPanel
-        onSend={onSend}
-        turns={[userTurn, turn({ id: 'a-1', role: 'assistant', serverMessageId: 'msg-42' })]}
-        anchor={anchor}
-        onChatAnchorChange={vi.fn()}
-      />,
-    )
-    expect(chatScroll.scrollTop).toBe(300)
-    expect(screen.queryByTestId('chat-position-unavailable')).toBeNull()
+      // live assistant 回填稳定 ID → 稳定 ID 签名变化；若未识别接管，按
+      // 有符号公式会得到 300 + (100-300) - 100 = 0，把用户打回顶部。
+      view.rerender(
+        <WiredPanel
+          onSend={onSend}
+          turns={[userTurn, turn({ id: 'a-1', role: 'assistant', serverMessageId: 'msg-42' })]}
+          anchor={anchor}
+          onChatAnchorChange={vi.fn()}
+        />,
+      )
+      expect(chatScroll.scrollTop).toBe(300)
+      expect(screen.queryByTestId('chat-position-unavailable')).toBeNull()
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = originalRect
+    }
+  })
+
+  it('E2（review round 4）：用户未接管时，失败恢复可在稳定 ID 回填后重试成功', () => {
+    const onSend = vi.fn(async () => true)
+    const userTurn = turn({ id: 'local-user-1', role: 'user', content: 'q' })
+    const anchor: WireChatAnchor = {
+      messageId: 'msg-42',
+      offsetPx: 50,
+      followTail: false,
+    }
+    const originalRect = HTMLElement.prototype.getBoundingClientRect
+    let chatScroll: HTMLElement | null = null
+    HTMLElement.prototype.getBoundingClientRect = function mockRect(this: HTMLElement) {
+      if (this.dataset?.messageId === 'msg-42') {
+        return { top: 100 - (chatScroll?.scrollTop ?? 0), height: 80 } as DOMRect
+      }
+      if (this.dataset?.testid === 'chat-messages') {
+        return { top: 0, height: 400 } as DOMRect
+      }
+      return { top: 0, height: 0 } as DOMRect
+    }
+    try {
+      const view = render(
+        <WiredPanel
+          onSend={onSend}
+          turns={[userTurn]}
+          anchor={anchor}
+          onChatAnchorChange={vi.fn()}
+        />,
+      )
+      chatScroll = screen.getByTestId('chat-messages')
+      Object.defineProperty(chatScroll, 'clientHeight', { value: 400, configurable: true })
+      Object.defineProperty(chatScroll, 'scrollHeight', { value: 2000, configurable: true })
+      expect(screen.getByTestId('chat-position-unavailable')).toBeTruthy()
+
+      view.rerender(
+        <WiredPanel
+          onSend={onSend}
+          turns={[userTurn, turn({ id: 'a-1', role: 'assistant', serverMessageId: 'msg-42' })]}
+          anchor={anchor}
+          onChatAnchorChange={vi.fn()}
+        />,
+      )
+      // 目标 top=100、savedOffset=50 → newScrollTop = 0 + 100 - 50 = 50。
+      expect(chatScroll.scrollTop).toBe(50)
+      expect(screen.queryByTestId('chat-position-unavailable')).toBeNull()
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = originalRect
+    }
   })
 })

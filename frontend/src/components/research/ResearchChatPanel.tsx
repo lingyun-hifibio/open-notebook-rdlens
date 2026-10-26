@@ -208,6 +208,8 @@ export function ResearchChatPanel({
     succeeded: boolean
   } | null>(null)
   const userScrolledRef = useRef(false)
+  // 恢复抑制窗口内区分“程序化滚动”与“用户接管”：记录恢复写入/保持的 scrollTop。
+  const restoreExpectedScrollTopRef = useRef<number | null>(null)
   // §5.7.1：恢复失败（缺目标/越界/非法偏移）→ 稳定原因可见，停在有权版本顶部。
   const [anchorUnavailable, setAnchorUnavailable] = useState(false)
   const wiredConversation: ResearchConversationSnapshot = conversationSnapshot ?? {
@@ -390,7 +392,22 @@ export function ResearchChatPanel({
 
   // PR-4：锚点上报——滚动空闲 1000ms 计算一次（§5.7.1），恢复期间不写。
   const scheduleChatAnchor = (): void => {
-    if (!wired || restoringRef.current || onChatAnchorChange === undefined) return
+    if (!wired || onChatAnchorChange === undefined) return
+    if (restoringRef.current) {
+      const container = chatScrollRef.current
+      const expected = restoreExpectedScrollTopRef.current
+      // 恢复窗口内 scrollTop 仍等于预期值＝程序化滚动，抑制上报。
+      if (
+        container === null ||
+        expected === null ||
+        Math.abs(container.scrollTop - expected) <= 1
+      ) {
+        return
+      }
+      // 抑制窗口内用户已滚动到别处：立即结束抑制并记录接管（不再回填旧锚点）。
+      restoringRef.current = false
+      restoreExpectedScrollTopRef.current = null
+    }
     // 非程序化滚动＝用户接管阅读位置；此后的 ID 回填不得再触发恢复。
     userScrolledRef.current = true
     if (anchorTimerRef.current !== null) window.clearTimeout(anchorTimerRef.current)
@@ -461,6 +478,8 @@ export function ResearchChatPanel({
       if (attempt.succeeded) return
       if (userScrolledRef.current) {
         // 用户已接管阅读位置：ID 回填不再重试，失败提示也不再成立。
+        restoringRef.current = false
+        restoreExpectedScrollTopRef.current = null
         setAnchorUnavailable(false)
         return
       }
@@ -487,6 +506,7 @@ export function ResearchChatPanel({
       targetHeightPx: targetRect !== null ? targetRect.height : undefined,
     })
     if (result.ok) container.scrollTop = result.scrollTop
+    restoreExpectedScrollTopRef.current = container.scrollTop
     setAnchorUnavailable(!result.ok)
     restoreAttemptRef.current = {
       key: attemptKey,
@@ -506,6 +526,7 @@ export function ResearchChatPanel({
       if (secondFrame !== 0) window.cancelAnimationFrame(secondFrame)
       // 取消恢复帧时必须释放抑制标记，否则后续用户滚动不再保存锚点。
       restoringRef.current = false
+      restoreExpectedScrollTopRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在锚点/消息集变化时恢复
   }, [
