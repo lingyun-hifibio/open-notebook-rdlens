@@ -610,10 +610,13 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
       const restored = rows
         .map((row) => messageRowToTurn(row as DurableMessageRow))
         .filter((turn): turn is ResearchChatTurn => turn !== null)
-      if (restored.length > 0) setTurns(restored)
+      // 当前会话成功返回空详情同样要写入空数组（切换到空会话时不得残留旧消息）。
+      setTurns(restored)
     })
     return () => {
       cancelled = true
+      // 会话切换/卸载：清空当前会话消息，避免下一会话显示上一会话内容。
+      setTurns([])
       // 离开会话/卸载：只标记 detach 并中止本地读取（服务端继续执行）。
       controller.detach()
       options.runtime.releaseConversation(ref, controller)

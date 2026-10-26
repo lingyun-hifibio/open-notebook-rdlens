@@ -30,6 +30,7 @@ import {
   type ConversationTurn,
 } from './conversation-machine'
 import { createConversationController, createSessionRuntime } from './session-runtime'
+import type { ConversationStreamInput, ConversationTransport } from './session-runtime'
 import { sessionKey, type ResearchSessionRef } from './session-contract'
 import type { ResearchAcceptedReceipt } from './sse'
 import type { ResearchAcceptedReceiptWire, ResearchSseEvent } from './types'
@@ -1303,6 +1304,59 @@ describe('conversation-controller：副作用与迟到隔离', () => {
     expect(lookupCalls).toBeGreaterThanOrEqual(1)
     expect(releases).toContain('op-1')
     expect(controller.getSnapshot().turn?.state).toBe('not_observed')
+  })
+
+  it('review-5 B1：rebaseAuth 后新发送必须实际派流（身份绑定当前代次）', async () => {
+    const transport = {
+      openStream: vi.fn(() => ({ abort: () => {} })),
+      getSubmission: () => submissionResponse(),
+    }
+    const runtime = createSessionRuntime({
+      authGeneration: 1,
+      projectId: 'proj_1',
+      viewerUserId: 'user_1',
+      role: 'owner',
+    })
+    const controller = runtime.conversation(REF, { transport })
+    controller.rebaseAuth(2)
+    const sent = await controller.send(sendInput())
+    expect(sent.status).toBe('ok')
+    expect(transport.openStream).toHaveBeenCalledTimes(1)
+    expect(controller.getSnapshot().turn?.identity.authGeneration).toBe(2)
+  })
+
+  it('review-5 B2：clear 租约未结算时 hasActiveTurn 保持 true，runtime 不释放 controller', async () => {
+    const aborts: string[] = []
+    const clears: string[] = []
+    const releases: string[] = []
+    const streams: ConversationStreamInput[] = []
+    const transport = {
+      openStream: (input: ConversationStreamInput) => {
+        streams.push(input)
+        return { abort: (reason?: string) => { aborts.push(reason ?? 'user_cancel') } }
+      },
+      getSubmission: () => submissionResponse(),
+      clearAfterSubmission: (_receipt: unknown, operationId: string) => { clears.push(operationId) },
+      releaseHold: (operationId: string) => { releases.push(operationId) },
+    } as unknown as ConversationTransport
+    const runtime = createSessionRuntime({
+      authGeneration: 1,
+      projectId: 'proj_1',
+      viewerUserId: 'user_1',
+      role: 'owner',
+    })
+    const controller = runtime.conversation(REF, { transport })
+    await controller.send(sendInput())
+    streams[0].onEvent?.(sse(1, 'usage', { accepted: receiptWire({}) }))
+    streams[0].onEvent?.(sse(2, 'done', { completion_status: 'complete' }))
+    expect(clears).toEqual(['op-1'])
+    expect(controller.hasActiveTurn()).toBe(true)
+    // hook cleanup 执行 detach+release 时，clear 租约未结算，controller 必须保留。
+    runtime.releaseConversation(REF, controller)
+    expect(runtime.conversation(REF, { transport })).toBe(controller)
+    controller.notifyClearSettled('op-1', 'cleared')
+    expect(releases).toEqual(['op-1'])
+    expect(controller.hasActiveTurn()).toBe(false)
   })
 
   it('review-4：rebaseAuth 推进代次；旧代次查回结果必须丢弃，新代次补派发后结算', async () => {

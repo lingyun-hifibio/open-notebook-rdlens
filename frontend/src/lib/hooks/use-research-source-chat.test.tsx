@@ -778,6 +778,97 @@ describe('PR-5a（D2）：显式 session 接线（source）', () => {
     expect(result.current.turns).toEqual([])
   })
 
+  it('切换到空 source 会话：上一会话已回填消息不得残留（review-5 B3）', async () => {
+    const msgA = {
+      message_id: 'msg_src_a',
+      role: 'assistant',
+      content: 'A answer',
+      created_at: '2026-01-01T00:00:00Z',
+    }
+    const makeController = (messages: unknown[]) => ({
+      detach: vi.fn(),
+      hasActiveTurn: vi.fn(() => false),
+      load: vi.fn(async () => ({ status: 'ok' as const, value: { messages, next_cursor: null } })),
+      getSnapshot: vi.fn(() => ({ turn: null, authGeneration: 1 })),
+    }) as unknown as ConversationController
+    const controllerA = makeController([msgA])
+    const controllerB = makeController([])
+    const conversation = vi.fn((target: ResearchSessionRef) =>
+      target.sessionId === 'sess_src_a' ? controllerA : controllerB)
+    const runtime = {
+      conversation,
+      releaseConversation: vi.fn(),
+      getSnapshot: () => ({ authGeneration: 1 }),
+      subscribe: () => () => {},
+    } as unknown as SessionRuntime
+    const refA: ResearchSessionRef = {
+      domain: 'research', kind: 'source', projectId: 'proj_1', sessionId: 'sess_src_a', sourceId: 'src_1',
+    }
+    const refB: ResearchSessionRef = { ...refA, sessionId: 'sess_src_b' }
+    const { result, rerender } = renderHook(
+      ({ ref }: { ref: ResearchSessionRef }) =>
+        useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1', session: { runtime, ref } }),
+      { initialProps: { ref: refA }, wrapper: makeHookWrapper() },
+    )
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(result.current.turns).toHaveLength(1)
+    rerender({ ref: refB })
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(result.current.turns).toEqual([])
+  })
+
+  it('切换到加载中的 source 会话：旧会话消息必须立即清空（review-5 B3）', async () => {
+    const msgA = {
+      message_id: 'msg_src_a2',
+      role: 'assistant',
+      content: 'A answer 2',
+      created_at: '2026-01-01T00:00:00Z',
+    }
+    const makeController = (load: () => Promise<unknown>) => ({
+      detach: vi.fn(),
+      hasActiveTurn: vi.fn(() => false),
+      load: vi.fn(load),
+      getSnapshot: vi.fn(() => ({ turn: null, authGeneration: 1 })),
+    }) as unknown as ConversationController
+    const controllerA = makeController(async () => ({
+      status: 'ok' as const, value: { messages: [msgA], next_cursor: null },
+    }))
+    const controllerB = makeController(() => new Promise<unknown>(() => {}))
+    const conversation = vi.fn((target: ResearchSessionRef) =>
+      target.sessionId === 'sess_src_a' ? controllerA : controllerB)
+    const runtime = {
+      conversation,
+      releaseConversation: vi.fn(),
+      getSnapshot: () => ({ authGeneration: 1 }),
+      subscribe: () => () => {},
+    } as unknown as SessionRuntime
+    const refA: ResearchSessionRef = {
+      domain: 'research', kind: 'source', projectId: 'proj_1', sessionId: 'sess_src_a', sourceId: 'src_1',
+    }
+    const refB: ResearchSessionRef = { ...refA, sessionId: 'sess_src_b' }
+    const { result, rerender } = renderHook(
+      ({ ref }: { ref: ResearchSessionRef }) =>
+        useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1', session: { runtime, ref } }),
+      { initialProps: { ref: refA }, wrapper: makeHookWrapper() },
+    )
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(result.current.turns).toHaveLength(1)
+    rerender({ ref: refB })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(result.current.turns).toEqual([])
+  })
+
   it('source 新协议请求：携带 source_ids 且不发送 source_scope/note_ids（review-1 P1-#2）', () => {
     const captures = openCapture()
     const controller = {

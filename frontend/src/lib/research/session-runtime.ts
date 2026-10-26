@@ -1723,7 +1723,9 @@ export function createConversationController(input: {
     idempotencyKey: string
   }) {
     return createTurnIdentity({
-      authGeneration: input.authGeneration,
+      // 认证刷新后 captureGeneration 已推进：新身份必须绑定当前代次，
+      // 否则 reducer 的代次校验会拒绝该 prepare（review-5 B1）。
+      authGeneration: captureGeneration,
       sessionKey: state.sessionKey,
       sessionId: ref.sessionId,
       turnId: seed.turnId,
@@ -1932,7 +1934,11 @@ export function createConversationController(input: {
   }
 
   function hasActiveTurn(): boolean {
-    return !isTerminalTurn(state.turn)
+    const turn = state.turn
+    if (turn === null) return false
+    // clear 租约（clearPending）可能在终态之后仍未结算：此时 hold 的
+    // 结算责任仍属于本 controller，不能因终态被 runtime 释放（review-5 B2）。
+    return !isTerminalTurn(turn) || turn.clearPending
   }
 
   async function loadDetail(cursor: string | null): Promise<ConversationHandleResult<{ readonly messages: readonly unknown[] }>> {

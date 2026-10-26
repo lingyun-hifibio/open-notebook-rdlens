@@ -384,10 +384,13 @@ export function useResearchSourceChat({
       if (result.status !== 'ok') return
       if (activeRef.current !== null) return
       const rows = (result.value?.messages ?? []) as ResearchSourceChatMessage[]
-      if (rows.length > 0) setTurns(rows.map(mapColdMessage))
+      // 当前会话成功返回空详情同样要写入空数组（切换到空会话时不得残留旧消息）。
+      setTurns(rows.map(mapColdMessage))
     })
     return () => {
       cancelled = true
+      // 会话切换/卸载：清空当前会话消息，避免下一会话显示上一会话内容。
+      setTurns([])
       controller.detach()
       options.runtime.releaseConversation(ref, controller)
       setConversation((current) => (current === controller ? null : current))
