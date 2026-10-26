@@ -1462,29 +1462,28 @@ describe('editor review4 回归：重试暂停与队列替换', () => {
 })
 
 describe('editor review5 回归：恢复一次后不再重启重试', () => {
-  it('F1b 暂停重试恢复后再次耗尽（unsynced），无关通知不得重启 PUT', async () => {
+  it('F1b 暂停最后一次重试后恢复，耗尽进入 unsynced 时无关通知不得重启 PUT', async () => {
     const harness = createHarness()
     await loadHarness(harness, editorResponse({ revision: 5 }))
     harness.controller.setDraftText('A')
     await advance(500)
     expect(harness.puts.length).toBe(1)
     lastPut(harness).response.reject(httpError(503, 'editor_store_unavailable'))
-    await advance(1000) // 退避 1 → PUT2
+    await advance(1000) // 重试 1 → PUT2
     expect(harness.puts.length).toBe(2)
     lastPut(harness).response.reject(httpError(503, 'editor_store_unavailable'))
-    await advance(0) // 处理失败、安排退避 2（此时 runtime 仍 ready）
-    harness.setRuntime({ phase: 'masked', ready: false })
-    await advance(3000) // 退避 2 到点但 masked → 暂停（不再派发）
-    expect(harness.puts.length).toBe(2)
-    harness.setRuntime({ phase: 'ready', ready: true }) // 恢复一次 → PUT3
-    await advance(0)
+    await advance(3000) // 重试 2 → PUT3
     expect(harness.puts.length).toBe(3)
     lastPut(harness).response.reject(httpError(503, 'editor_store_unavailable'))
+    await advance(0) // 处理失败、安排最后一次重试（预算内 retries=3）
+    harness.setRuntime({ phase: 'masked', ready: false })
+    await advance(6000) // 最后一次重试到点但 masked → 暂停（不再派发）
+    expect(harness.puts.length).toBe(3)
+    harness.setRuntime({ phase: 'ready', ready: true }) // 恢复一次 → PUT4
     await advance(0)
-    await advance(5000) // 最后一次重试 → PUT4
     expect(harness.puts.length).toBe(4)
     lastPut(harness).response.reject(httpError(503, 'editor_store_unavailable'))
-    await advance(0) // 预算耗尽 → unsynced
+    await advance(0) // 预算耗尽 → unsynced，active 仍保留未确认
     expect(harness.controller.getSnapshot().unsynced).toBe(true)
     harness.setRuntime({ phase: 'ready', ready: true })
     harness.setRuntime({ phase: 'ready', ready: true })
