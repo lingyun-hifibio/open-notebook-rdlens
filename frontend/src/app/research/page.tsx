@@ -1,6 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState, type SyntheticEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type SyntheticEvent,
+} from 'react'
 import { useRouter } from 'next/navigation'
 import { ResearchWorkspaceShell } from '@/lib/embedded/shell'
 import { isEmbeddedMode } from '@/lib/embedded/config'
@@ -474,6 +481,18 @@ function ResearchPageContent() {
   // 键盘只拦截 global Chat tabpanel（inert 在 jsdom/部分浏览器对新焦点链路
   // 之外仍需兜底）。Source 面板的 composer 用 readOnly 冻结，不再统一拦截
   // 键盘，否则会造成 Tab 焦点陷阱（R4）。
+  // Source composer 在门禁下已是 readOnly，但真实面板的 Enter onKeyDown 仍会
+  // 调 submit()（ResearchSourceChatPanel.tsx:231），readOnly 不会阻止该路径。
+  // 只拦截 Enter（发送路径），Tab/方向键保持可离开，避免焦点陷阱（R4）。
+  const blockGatedSubmitKey = useCallback((event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'Enter') return
+    const target = event.target
+    if (!(target instanceof Element)) return
+    if (!target.closest('[data-session-chat-gated="true"]')) return
+    event.preventDefault()
+    event.stopPropagation()
+  }, [])
+
   const blockGatedChatEvent = useCallback((event: SyntheticEvent) => {
     const target = event.target
     if (!(target instanceof Element)) return
@@ -662,6 +681,7 @@ function ResearchPageContent() {
                     hidden={!sourceMode}
                     ref={sourceSurfaceRef}
                     onClickCapture={blockGatedChatEvent}
+                    onKeyDownCapture={blockGatedSubmitKey}
                   >
                     <ResearchSourceChatPanel
                       key={`${projectId}:${navSelectedSourceId}`}

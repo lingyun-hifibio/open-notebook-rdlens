@@ -147,7 +147,12 @@ vi.mock('@/components/research/ResearchSourceChatPanel', () => ({
     onHighlightPage: (pageIdx: number) => void
   }) => (
     <div data-testid="source-chat-panel" data-project={projectId} data-source={sourceId}>
-      <textarea data-testid="srcchat-input" />
+      <textarea
+        data-testid="srcchat-input"
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') workspaceSpies.sourceSend()
+        }}
+      />
       <button type="button" data-testid="srcchat-send" onClick={() => workspaceSpies.sourceSend()} />
       <button type="button" data-testid="panel-cite-page" onClick={() => onHighlightPage(7)} />
     </div>
@@ -844,6 +849,12 @@ describe('ResearchPage 会话导航：review B6/B7/B8/Major 回归', () => {
     const tabEvent = createEvent.keyDown(input, { key: 'Tab' })
     fireEvent(input, tabEvent)
     expect(tabEvent.defaultPrevented).toBe(false)
+    // 真实面板 Enter 仍会 submit（ResearchSourceChatPanel.tsx:231）；readOnly
+    // 不能阻止该路径，必须由 capture 阶段单独封住 Enter。
+    const enterEvent = createEvent.keyDown(input, { key: 'Enter' })
+    fireEvent(input, enterEvent)
+    expect(enterEvent.defaultPrevented).toBe(true)
+    expect(workspaceSpies.sourceSend).not.toHaveBeenCalled()
     // 引用跳转不被门禁拦截。
     fireEvent.click(screen.getByTestId('panel-cite-page'))
     await waitFor(() =>
