@@ -533,6 +533,8 @@ export interface EditorSnapshot {
   readonly positionUnavailable: boolean
   /** 认证代际/viewer 失效后已作废（不写服务端、不 flush）。 */
   readonly invalidated: boolean
+  /** 本机文本超过 TEXT_MAX（保留全文，但禁用保存/提交，不截断）。 */
+  readonly oversize: boolean
 }
 
 /** `editor_state` wire JSON（02 §4；请求体字段，snake_case 原样）。 */
@@ -585,6 +587,8 @@ export interface EditorSaveRequestWire {
 export interface AcceptedReceipt {
   readonly sessionRef: ResearchSessionRef
   readonly draftToken: string
+  /** 提交时的可见文本快照；清稿前必须与当前 shadow 二次核对（DESIGN §5.6/§9.2）。 */
+  readonly text: string
   readonly editorRevision?: number
   readonly idempotencyKey?: string | null
 }

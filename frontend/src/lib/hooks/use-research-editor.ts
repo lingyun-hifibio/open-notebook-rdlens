@@ -139,6 +139,19 @@ export function useResearchEditor(options: UseResearchEditorOptions): UseResearc
     }
   }, [usable, runtime, projectId, kind, sessionId, sourceId, transport])
 
+  // 页面隐藏/卸载：尽力写本机草稿（不发服务端 cancel、不阻塞卸载）。
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const handlePageHide = (): void => {
+      const controller = controllerRef.current
+      if (controller === null) return
+      controller.persistLocal()
+      void controller.flush('switch')
+    }
+    window.addEventListener('pagehide', handlePageHide)
+    return () => window.removeEventListener('pagehide', handlePageHide)
+  }, [])
+
   const current = useCallback((): EditorController | null => controllerRef.current, [])
 
   const setDraftText = useCallback((text: string) => {

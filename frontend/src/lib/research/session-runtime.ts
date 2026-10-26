@@ -685,7 +685,7 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
     if (state.disposed) return
     if (reason === 'unmount') {
       // 卸载：尽力写本机草稿（此时缓存授权仍有效），但不写服务端、不发 cancel。
-      for (const controller of [...editors]) controller.releaseDocument()
+      for (const { controller } of editors.values()) controller.releaseDocument()
       editors.clear()
     }
     const scope = cacheScopeInternal()
@@ -700,7 +700,7 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
     if (reason !== 'unmount') {
       // 先使写入失效，再清理本机分区（清理后不得再由 cleanup flush 旧稿）。
       invalidateGuards()
-      for (const controller of [...editors]) {
+      for (const { controller } of editors.values()) {
         controller.invalidate(reason === 'logout' ? 'logout' : 'viewer-change')
       }
       editors.clear()
@@ -840,22 +840,33 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
 
   // ── 编辑器控制器注册表（PR-3；实现见 editor-machine.ts） ──
 
-  const editors = new Set<EditorController>()
+  /**
+   * 同一会话的多个消费者（面板 + composer，PR-4/PR-5b）共享同一控制器；
+   * 引用计数归零时释放文档（尽力写本机草稿）。writerId 由首个消费者决定。
+   */
+  const editors = new Map<string, { controller: EditorController; refs: number }>()
   let attemptSequence = 0
 
   function editorRuntimeView(): EditorRuntimeView {
     return {
       authGeneration: state.scope.authGeneration,
       projectId: state.scope.projectId,
-      viewerUserId: confirmedViewerUserId ?? state.scope.viewerUserId,
+      viewerUserId: confirmedViewerUserId ?? state.scope.viewerUserId ?? null,
       phase: state.phase,
       ready: state.phase === 'ready',
+      editorReady: state.capabilities === null ? undefined : state.capabilities.editorReady,
       disposed: state.disposed,
       viewerChanged: state.viewerChanged,
     }
   }
 
   function editor(ref: ResearchSessionRef, options: SessionEditorOptions): EditorController {
+    const key = sessionKey(ref)
+    const existing = editors.get(key)
+    if (existing !== undefined) {
+      existing.refs += 1
+      return existing.controller
+    }
     const controller = createEditorController({
       ref,
       writerId: options.writerId,
@@ -886,14 +897,19 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
       getCacheAuthority: cacheAuthorityInternal,
       now,
     })
-    editors.add(controller)
+    editors.set(key, { controller, refs: 1 })
     if (state.disposed) controller.invalidate('logout')
     return controller
   }
 
-  function releaseEditor(_ref: ResearchSessionRef, controller: EditorController): void {
-    if (!editors.delete(controller)) return
-    controller.releaseDocument()
+  function releaseEditor(ref: ResearchSessionRef, controller: EditorController): void {
+    const key = sessionKey(ref)
+    const entry = editors.get(key)
+    if (entry === undefined || entry.controller !== controller) return
+    entry.refs -= 1
+    if (entry.refs > 0) return
+    editors.delete(key)
+    entry.controller.releaseDocument()
   }
 
   function createWriteGuard(label: string): SessionWriteGuard {

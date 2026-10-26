@@ -27,6 +27,7 @@ import { useResearchEditor } from '@/lib/hooks/use-research-editor'
 import {
   SESSION_CACHE_PREFIX,
   clearSessionCacheMemoryFallback,
+  listDraftBranches,
   readDraft,
   writeDisplayPointer,
   writeDraft,
@@ -491,7 +492,11 @@ describe('提交 hold 与清稿接线', () => {
     act(() => {
       void result.current
         .clearAfterSubmission(
-          { sessionRef: ref, draftToken: result.current.snapshot?.draftToken ?? '' },
+          {
+            sessionRef: ref,
+            draftToken: result.current.snapshot?.draftToken ?? '',
+            text: result.current.snapshot?.draftText ?? '',
+          },
           'op1',
         )
         .then((outcome) => {
@@ -511,5 +516,78 @@ describe('提交 hold 与清稿接线', () => {
     expect(clearOutcome).toBe('cleared')
     expect(result.current.snapshot?.revision).toBe(6)
     expect(result.current.snapshot?.draftText).toBe('')
+  })
+})
+
+// ── Codex 二轮 review：多消费者共享与页面隐藏 ──
+
+describe('多消费者共享编辑器控制器', () => {
+  it('同一会话两个消费者共享同一控制器，只发一次 GET 且状态互通', async () => {
+    getEditorStateMock.mockResolvedValue(editorResponse())
+    putEditorStateMock.mockResolvedValue(undefined)
+    const { result } = renderHook(
+      () => ({
+        a: useResearchEditor({ kind: 'global', sessionId: 's1', storage }),
+        b: useResearchEditor({ kind: 'global', sessionId: 's1', storage }),
+      }),
+      { wrapper: makeWrapper({}) },
+    )
+    await settle(0)
+    expect(getEditorStateMock).toHaveBeenCalledTimes(1)
+    expect(result.current.a.controller).not.toBeNull()
+    expect(result.current.a.controller).toBe(result.current.b.controller)
+    act(() => result.current.a.setDraftText('共享文本'))
+    await settle(0)
+    expect(result.current.b.snapshot?.draftText).toBe('共享文本')
+    expect(result.current.a.snapshot?.draftText).toBe('共享文本')
+  })
+})
+
+describe('pagehide 本机草稿持久化', () => {
+  it('pagehide 时立即写本机草稿、不发服务端请求', async () => {
+    getEditorStateMock.mockResolvedValue(editorResponse())
+    const { result } = renderHook(
+      () => useResearchEditor({ kind: 'global', sessionId: 's1', storage }),
+      { wrapper: makeWrapper({}) },
+    )
+    await settle(0)
+    act(() => result.current.setDraftText('未同步稿'))
+    act(() => {
+      window.dispatchEvent(new Event('pagehide'))
+    })
+    await settle(0)
+    // 尽力保存：可以尝试一次服务端保存，但本机草稿必须先落盘。
+    const branches = listDraftBranches(scope(), authority(), ref, { storage })
+    expect(branches.length).toBe(1)
+    expect(branches[0].record.text).toBe('未同步稿')
+  })
+})
+
+describe('editor 能力不可用（editor_ready=false）', () => {
+  it('hook 暴露只读快照并拒绝保存', async () => {
+    getEditorStateMock.mockResolvedValue(editorResponse())
+    putEditorStateMock.mockResolvedValue(undefined)
+    const readonlyTransport: SessionRuntimeTransport = {
+      bootstrap: vi.fn(async (): Promise<SessionRuntimeBootstrapOutcome> => ({
+        status: 'ok',
+        viewerUserId: VIEWER,
+        capabilities: {
+          contract: 'research-session-v1',
+          editorReady: false,
+          submissionReady: { global: false, source: false },
+          degraded: true,
+          reason: 'missing',
+        },
+      })),
+    }
+    const { result } = renderHook(
+      () => useResearchEditor({ kind: 'global', sessionId: 's1', storage }),
+      { wrapper: makeWrapper({ transport: readonlyTransport }) },
+    )
+    await settle(0)
+    expect(result.current.snapshot?.readOnly).toBe(true)
+    act(() => result.current.setDraftText('不应保存'))
+    await settle(500)
+    expect(putEditorStateMock).not.toHaveBeenCalled()
   })
 })

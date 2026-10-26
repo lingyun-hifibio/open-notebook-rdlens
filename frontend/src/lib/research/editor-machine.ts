@@ -145,6 +145,8 @@ export interface EditorRuntimeView {
     | 'unauthorized'
     | 'error'
   readonly ready: boolean
+  /** 服务端 editor 能力（capabilities.editor_ready）；缺省视为可用。 */
+  readonly editorReady?: boolean
   readonly disposed: boolean
   readonly viewerChanged: boolean
 }
@@ -216,7 +218,7 @@ export type EditorEvent =
   | { readonly type: 'load/ready'; readonly projection: ResearchEditorResponseProjection }
   | { readonly type: 'load/unreadable'; readonly warnings: readonly string[]; readonly revision: number }
   | { readonly type: 'load/failure'; readonly failure: EditorSaveFailure }
-  | { readonly type: 'draft/text'; readonly text: string; readonly token: string }
+  | { readonly type: 'draft/text'; readonly text: string; readonly token: string; readonly oversize: boolean }
   | {
       readonly type: 'draft/scope'
       readonly baseScope: WireEditorBaseScope | null
@@ -250,6 +252,12 @@ export type EditorEvent =
   | { readonly type: 'restore/candidates'; readonly candidates: readonly EditorRestoreCandidate[] }
   | { readonly type: 'conflict/adoptServer'; readonly projection: ResearchEditorResponseProjection }
   | { readonly type: 'conflict/clear' }
+  | {
+      readonly type: 'conflict/refreshRevision'
+      readonly revision: number
+      readonly intentHash: string | null
+      readonly warnings: readonly string[]
+    }
   | { readonly type: 'invalidate' }
 
 /** `dirty` 的统一推导：本地版本领先于已确认版本。 */
@@ -291,6 +299,7 @@ export function createEditorState(initial: EditorInitialInput): EditorSnapshot {
     transportAvailable: initial.transportAvailable,
     positionUnavailable: false,
     invalidated: false,
+    oversize: false,
   }
 }
 
@@ -416,6 +425,8 @@ export function reduceEditor(state: EditorSnapshot, event: EditorEvent): EditorS
         draftToken: event.token,
         localVersion: state.localVersion + 1,
         blocked: false,
+        oversize: event.oversize,
+        saveFailure: null,
         positionUnavailable: state.positionUnavailable,
       }
       return { ...next, dirty: isDirty(next), phase: state.saving ? 'saving' : 'ready' }
@@ -575,14 +586,41 @@ export function reduceEditor(state: EditorSnapshot, event: EditorEvent): EditorS
     }
     case 'conflict/clear':
       return { ...state, conflict: null, phase: state.readOnly ? 'readonly' : 'ready' }
+    case 'conflict/refreshRevision':
+      // 冲突恢复前先受守卫读取最新 revision；不覆盖本机 shadow（review P2 #10）。
+      return {
+        ...state,
+        revision: event.revision,
+        intentHash: event.intentHash,
+        warnings: event.warnings,
+      }
     case 'invalidate':
+      // 认证失效后不得继续暴露本机私有草稿（review P1 #11）：清空敏感内存，
+      // 只保留 ref/代际相关元数据供上层判断。
       return {
         ...state,
         invalidated: true,
         phase: 'readonly',
         readOnly: true,
+        blocked: true,
         saving: false,
         loading: false,
+        draftText: '',
+        draftToken: '',
+        consumedToken: null,
+        baseScope: null,
+        singleSourceId: null,
+        noteIds: [],
+        chatAnchor: null,
+        readerAnchor: null,
+        dirty: false,
+        oversize: false,
+        conflict: null,
+        saveFailure: null,
+        unsynced: false,
+        restoreCandidates: [],
+        holds: [],
+        pendingMutations: 0,
       }
     default: {
       const exhaustive: never = event
@@ -618,7 +656,20 @@ function sameReaderAnchor(left: WireReaderAnchor | null, right: WireReaderAnchor
 
 // ── wire 转换 ──
 
-/** 本地快照 → `editor_state` wire JSON（02 §4，snake_case 原样）。 */
+const deepFreeze = <T>(value: T): T => {
+  if (value === null || typeof value !== 'object') return value
+  for (const key of Object.keys(value as Record<string, unknown>)) {
+    deepFreeze((value as Record<string, unknown>)[key])
+  }
+  return Object.freeze(value)
+}
+
+/** 冻结请求体快照：重试只读冻结记录，调用方数组后续变化不得影响重放（review P1 #3）。 */
+export function freezeEditorSaveRequest(body: EditorSaveRequestWire): EditorSaveRequestWire {
+  return deepFreeze(body)
+}
+
+/** 本地快照 → `editor_state` wire JSON（02 §4，snake_case 原样；数组为独立拷贝）。 */
 export function editorStateToWire(state: EditorSnapshot): EditorStateWire {
   return {
     schema_version: 1,
@@ -627,11 +678,11 @@ export function editorStateToWire(state: EditorSnapshot): EditorStateWire {
         ? null
         : {
             mode: state.baseScope.mode,
-            source_ids: state.baseScope.sourceIds,
+            source_ids: [...state.baseScope.sourceIds],
             single_source_id: null,
           },
     single_source_id: state.singleSourceId,
-    note_ids: state.noteIds,
+    note_ids: [...state.noteIds],
     draft: { text: state.draftText, token: state.draftToken },
     chat_anchor:
       state.chatAnchor === null
@@ -660,11 +711,11 @@ export function editorStateToWire(state: EditorSnapshot): EditorStateWire {
 
 /** 构造 `editor_save_request`（expected_revision 只取服务端已确认 revision）。 */
 export function buildSaveRequestWire(state: EditorSnapshot, mutationId: string): EditorSaveRequestWire {
-  return {
+  return freezeEditorSaveRequest({
     expected_revision: state.revision,
     mutation_id: mutationId,
     editor_state: editorStateToWire(state),
-  }
+  })
 }
 
 /** 清稿请求体：新 token 在**首次构造清稿 PUT** 时生成，body 冻结后重试复用。 */
@@ -673,11 +724,11 @@ export function buildClearRequestWire(
   mutationId: string,
   token: string,
 ): EditorSaveRequestWire {
-  return {
+  return freezeEditorSaveRequest({
     expected_revision: state.revision,
     mutation_id: mutationId,
     editor_state: { ...editorStateToWire(state), draft: { text: '', token } },
-  }
+  })
 }
 
 // ── 范围编辑与提交投影（PR-5a 复用） ──
@@ -852,6 +903,8 @@ export interface EditorController {
   invalidate(reason: 'logout' | 'viewer-change'): void
   /** 文档实例卸载/切换：尽力写本机草稿后停止（不写服务端、不发 cancel）。 */
   releaseDocument(): void
+  /** 页面隐藏/离开前同步写本机草稿（不写服务端，review P2 #12）。 */
+  persistLocal(): void
 }
 
 type AnyOutcome = SaveOutcome | ClearOutcome
@@ -877,6 +930,8 @@ interface QueuedRequest {
   readonly explicit: boolean
   /** 清稿取消规则：首次派发前若本机版本前进则取消（从未派发）。 */
   readonly capturedLocalVersion: number
+  /** 显式 flush 在入队时捕获的不可变提交快照（review P1 #6）。 */
+  readonly frozenEditorState: EditorStateWire | null
   readonly resolve: (outcome: AnyOutcome) => void
 }
 
@@ -906,6 +961,9 @@ export function createEditorController(deps: EditorDeps): EditorController {
   let released = false
   let replaying = false
   let lastSeenGeneration = deps.getRuntimeView().authGeneration
+  let lastSeenViewer = deps.getRuntimeView().viewerUserId
+  let lastSeenProject = deps.getRuntimeView().projectId
+  let loadingGeneration: number | null = null
   let textTimer: ReturnType<typeof setTimeout> | null = null
   let positionTimer: ReturnType<typeof setTimeout> | null = null
   let localTimer: ReturnType<typeof setTimeout> | null = null
@@ -1060,19 +1118,26 @@ export function createEditorController(deps: EditorDeps): EditorController {
     }
   }
 
-  const canWrite = (): boolean =>
-    !state.invalidated &&
-    !released &&
-    !guard.isInvalidated() &&
-    deps.transport !== null &&
-    !state.readOnly &&
-    !state.blocked &&
-    state.conflict === null
+  const canWrite = (): boolean => {
+    const runtime = runtimeView()
+    return (
+      !state.invalidated &&
+      !released &&
+      !guard.isInvalidated() &&
+      deps.transport !== null &&
+      runtime.ready &&
+      runtime.editorReady !== false &&
+      !state.readOnly &&
+      !state.blocked &&
+      state.conflict === null
+    )
+  }
 
   const hasSubmitHold = (): boolean => state.holds.some((hold) => hold.reason === 'submit')
+  const hasConflictHold = (): boolean => state.holds.some((hold) => hold.reason === 'conflict')
 
   const autoDispatchAllowed = (): boolean =>
-    canWrite() && loaded && !hasSubmitHold() && !state.saving
+    canWrite() && loaded && !hasSubmitHold() && !hasConflictHold() && !state.saving && !state.oversize
 
   const makeResolver = (): {
     promise: Promise<AnyOutcome>
@@ -1090,7 +1155,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
 
   // ── 派发与结算 ──
 
-  const performPut = async (current: ActiveMutation): Promise<void> => {
+  const performPut = async (current: ActiveMutation, attempt: TransportAttempt): Promise<void> => {
     if (state.invalidated || released || guard.isInvalidated() || deps.transport === null) return
     let raw: unknown
     try {
@@ -1099,10 +1164,20 @@ export function createEditorController(deps: EditorDeps): EditorController {
       raw = await result.value
     } catch (error) {
       if (active !== current) return
+      if (!sameGeneration(attempt)) {
+        // 旧代/旧 viewer 的迟到失败：不得把旧错误写进新代状态，保留未确认等待重放。
+        current.unconfirmed = true
+        return
+      }
       handleFailure(current, classifySaveFailure(error))
       return
     }
     if (active !== current) return
+    if (!sameGeneration(attempt)) {
+      // 旧代/旧 viewer 的迟到 ACK：丢弃；replay/ready 事件负责用原 mutation 原 body 重放。
+      current.unconfirmed = true
+      return
+    }
     const runtime = runtimeView()
     if (runtime.disposed || runtime.viewerChanged) {
       invalidateIntent('viewer-change')
@@ -1126,6 +1201,13 @@ export function createEditorController(deps: EditorDeps): EditorController {
     const parsed = parseSaveResponse(raw)
     if (!parsed.ok || sessionKey(parsed.value.ref) !== sessionKey(state.ref) || parsed.value.mutationId !== current.record.mutationId) {
       // ACK 缺 mutation_id 回声/字段非法：协议错误，必须保留 dirty 与未决 mutation。
+      current.unconfirmed = true
+      reduce({ type: 'save/unconfirmed', failure: { code: 'invalid_response', retryable: false } })
+      current.resolve('invalid')
+      return
+    }
+    if (parsed.value.editorRevision < state.revision) {
+      // ACK 回退 revision：旧/乱序回执，按协议错误保留 dirty 与未决记录（review P2 #13）。
       current.unconfirmed = true
       reduce({ type: 'save/unconfirmed', failure: { code: 'invalid_response', retryable: false } })
       current.resolve('invalid')
@@ -1156,6 +1238,13 @@ export function createEditorController(deps: EditorDeps): EditorController {
     }
     const parsed = parseSaveResponse(raw)
     if (!parsed.ok || sessionKey(parsed.value.ref) !== sessionKey(state.ref) || parsed.value.mutationId !== current.record.mutationId) {
+      current.unconfirmed = true
+      reduce({ type: 'save/unconfirmed', failure: { code: 'invalid_response', retryable: false } })
+      if (current.operationId !== null) releaseHold(current.operationId)
+      current.resolve('invalid')
+      return
+    }
+    if (parsed.value.editorRevision < state.revision) {
       current.unconfirmed = true
       reduce({ type: 'save/unconfirmed', failure: { code: 'invalid_response', retryable: false } })
       if (current.operationId !== null) releaseHold(current.operationId)
@@ -1198,7 +1287,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
         retryTimer = null
         if (active !== current || state.invalidated || released) return
         current.attempt = newAttempt(current.record.mutationId)
-        void performPut(current)
+        void performPut(current, current.attempt)
       }, delay)
       return
     }
@@ -1245,11 +1334,29 @@ export function createEditorController(deps: EditorDeps): EditorController {
       pending.resolve('blocked')
       return
     }
+    if (state.oversize) {
+      // 超限后停止所有保存（含显式 submit/位置保存），但不改写、不截断本机文本。
+      reduce({ type: 'save/blocked', failure: { code: 'editor_state_too_large', retryable: false } })
+      pending.resolve('blocked')
+      return
+    }
     if (!isDirty(state) && active === null) {
       pending.resolve('skipped')
       return
     }
-    const body = buildSaveRequestWire(state, nextMutationId())
+    const editorState =
+      pending.frozenEditorState !== null ? pending.frozenEditorState : editorStateToWire(state)
+    if (measureDraftBytes(JSON.stringify(editorState)) > EDITOR_JSON_MAX_BYTES) {
+      // 512KiB 上限：超限禁用保存但不截断本机输入（review P1 #9）。
+      reduce({ type: 'save/blocked', failure: { code: 'editor_state_too_large', retryable: false } })
+      pending.resolve('blocked')
+      return
+    }
+    const body = freezeEditorSaveRequest({
+      expected_revision: state.revision,
+      mutation_id: nextMutationId(),
+      editor_state: editorState,
+    })
     const record = deps.mutations.createMutationRecord({
       mutationId: body.mutation_id,
       kind: 'save',
@@ -1275,7 +1382,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
     }
     active = current
     reduce({ type: 'save/dispatched' })
-    void performPut(current)
+    void performPut(current, current.attempt)
   }
 
   const dispatchClear = (pending: QueuedRequest): void => {
@@ -1318,7 +1425,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
     }
     active = current
     reduce({ type: 'save/dispatched' })
-    void performPut(current)
+    void performPut(current, current.attempt)
   }
 
   const dispatchQueued = (): void => {
@@ -1342,7 +1449,14 @@ export function createEditorController(deps: EditorDeps): EditorController {
     if (!pendingAutoText && !pendingAutoPosition) return
     pendingAutoText = false
     pendingAutoPosition = false
-    dispatchSave({ kind: 'save', operationId: null, explicit: false, capturedLocalVersion: state.localVersion, resolve: () => {} })
+    dispatchSave({
+      kind: 'save',
+      operationId: null,
+      explicit: false,
+      frozenEditorState: null,
+      capturedLocalVersion: state.localVersion,
+      resolve: () => {},
+    })
   }
 
   const afterSettle = (): void => {
@@ -1365,7 +1479,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
     replaying = true
     current.attempt = newAttempt(current.record.mutationId)
     current.unconfirmed = false
-    void performPut(current).finally(() => {
+    void performPut(current, current.attempt).finally(() => {
       replaying = false
     })
   }
@@ -1379,11 +1493,32 @@ export function createEditorController(deps: EditorDeps): EditorController {
       invalidateIntent('viewer-change')
       return
     }
-    if (runtime.authGeneration !== lastSeenGeneration) {
+    const identityChanged =
+      runtime.authGeneration !== lastSeenGeneration ||
+      runtime.viewerUserId !== lastSeenViewer ||
+      runtime.projectId !== lastSeenProject
+    if (identityChanged) {
       lastSeenGeneration = runtime.authGeneration
+      lastSeenViewer = runtime.viewerUserId
+      lastSeenProject = runtime.projectId
       loaded = false
+      clearRetryTimer()
+      if (active !== null) {
+        // refresh 后已派发但 ACK 未知的 M 立即标记未确认并等待同 viewer 重放
+        // （DESIGN §3.2/§5.5；不再等旧请求失败/返回）。
+        active.unconfirmed = true
+      }
     }
     if (!runtime.ready) return
+    if (runtime.editorReady === false) {
+      if (!state.readOnly) {
+        reduce({
+          type: 'save/readonly',
+          failure: { code: 'editor_capability_unavailable', retryable: false },
+        })
+      }
+      return
+    }
     if (active !== null) {
       if (active.unconfirmed && !sameGeneration(active.attempt)) replayActive(active)
       return
@@ -1392,29 +1527,45 @@ export function createEditorController(deps: EditorDeps): EditorController {
   }
 
   const loadInternal = async (): Promise<void> => {
-    // 单一在途 GET：Provider 就绪事件与 hook 显式 load 可能同时触发，重复 GET 会
-    // 造成 F03 里「旧 GET 晚到覆盖」的自我竞争。加载中一律复用同一在途请求。
-    if (state.invalidated || released || loaded || loading) return
-    loading = true
+    if (state.invalidated || released || loaded) return
+    if (!runtimeView().ready) {
+      pendingLoad = true
+      return
+    }
+    if (loadingGeneration !== null) {
+      // 同代际的重复 load 复用同一在途 GET；旧代际 GET 结束后会续跑本代加载
+      // （review P1 #5：旧 GET 晚到不得永久卡 loading）。
+      return
+    }
+    const generation = runtimeView().authGeneration
+    loadingGeneration = generation
+    let stale = false
     try {
-      await loadInternalUnlocked()
+      stale = await loadInternalUnlocked(generation)
     } finally {
-      loading = false
+      loadingGeneration = null
+    }
+    if (stale && !state.invalidated && !released && !loaded && runtimeView().ready) {
+      void loadInternal()
     }
   }
 
-  const loadInternalUnlocked = async (): Promise<void> => {
-    if (state.invalidated || released || loaded) return
+  const loadInternalUnlocked = async (generation: number): Promise<boolean> => {
+    if (state.invalidated || released || loaded) return false
     if (active !== null) {
       pendingLoad = true
-      return
+      return false
     }
     if (deps.transport === null) {
       recoverLocalDraft()
       reduce({ type: 'load/failure', failure: { code: 'editor_transport_unavailable', retryable: false } })
-      return
+      return false
     }
     const runtime = runtimeView()
+    if (!runtime.ready) {
+      pendingLoad = true
+      return false
+    }
     const attemptGeneration = runtime.authGeneration
     const attemptViewer = runtime.viewerUserId
     const attemptProject = runtime.projectId
@@ -1422,13 +1573,25 @@ export function createEditorController(deps: EditorDeps): EditorController {
     let raw: unknown
     try {
       const result = await guard.run(() => deps.transport!.getEditorState())
-      if (result.status === 'stale') return
+      if (result.status === 'stale') return false
       raw = await result.value
     } catch (error) {
+      const currentRuntime = runtimeView()
+      if (
+        currentRuntime.disposed ||
+        currentRuntime.viewerChanged ||
+        currentRuntime.authGeneration !== attemptGeneration ||
+        currentRuntime.viewerUserId !== attemptViewer ||
+        currentRuntime.projectId !== attemptProject
+      ) {
+        // 旧代际 GET 失败晚到：丢弃，不污染新代状态；由续跑逻辑重新加载。
+        loaded = false
+        return true
+      }
       const failure = classifySaveFailure(error)
       recoverLocalDraft()
       reduce({ type: 'load/failure', failure })
-      return
+      return false
     }
     const currentRuntime = runtimeView()
     if (
@@ -1436,15 +1599,16 @@ export function createEditorController(deps: EditorDeps): EditorController {
       currentRuntime.viewerChanged ||
       currentRuntime.authGeneration !== attemptGeneration ||
       currentRuntime.viewerUserId !== attemptViewer ||
-      currentRuntime.projectId !== attemptProject
+      currentRuntime.projectId !== attemptProject ||
+      generation !== attemptGeneration
     ) {
-      // 旧代际 GET 一律丢弃（F03）：下次 ready 事件重新加载。
+      // 旧代际 GET 一律丢弃（F03）：续跑当前代加载。
       loaded = false
-      return
+      return true
     }
     if (active !== null) {
       pendingLoad = true
-      return
+      return false
     }
     const parsed = parseEditorResponse(raw)
     if (
@@ -1454,23 +1618,83 @@ export function createEditorController(deps: EditorDeps): EditorController {
     ) {
       recoverLocalDraft()
       reduce({ type: 'load/failure', failure: { code: 'invalid_response', retryable: false } })
-      return
+      return false
     }
     loaded = true
+    // GET 与本地未同步文本的竞态（review P1 #6）：不用服务端快照覆盖本机 dirty。
+    if (isDirty(state)) {
+      if (parsed.value.editorRevision !== state.revision) {
+        // revision 已变化：服务端已有新数据，停在本机文本并进入冲突态，不自动覆盖。
+        reduce({
+          type: 'save/conflict',
+          kind: 'revision',
+          failure: { code: 'editor_revision_conflict', retryable: false },
+        })
+        refreshDraftCandidates()
+        return false
+      }
+      // 同一 revision：保留本机文本，继续 autosave。
+      if (!state.oversize) scheduleTextSave()
+      refreshDraftCandidates()
+      return false
+    }
     if (parsed.value.editorState === null) {
       reduce({
         type: 'load/unreadable',
         warnings: parsed.value.stateWarnings,
         revision: parsed.value.editorRevision,
       })
+      const record = readOwnDraft()
+      if (record !== null) reduce({ type: 'draft/readback', record })
       refreshDraftCandidates()
-      return
+      return false
     }
     if (parsed.value.stateWarnings.includes('position_unavailable')) {
       reduce({ type: 'draft/positionUnavailable' })
     }
+    const localRecord = readOwnDraft()
+    if (
+      localRecord !== null &&
+      localRecord.dirty &&
+      localRecord.baseRevision !== parsed.value.editorRevision &&
+      (localRecord.text !== parsed.value.editorState.draft.text ||
+        localRecord.token !== parsed.value.editorState.draft.token)
+    ) {
+      // 本机有未同步稿且服务端 revision 已前进：读回本机文本并进入冲突态，
+      // 不得用服务端快照覆盖（DESIGN §5.5 GET 竞态 / F03）。
+      reduce({ type: 'draft/readback', record: localRecord })
+      reduce({
+        type: 'save/conflict',
+        kind: 'revision',
+        failure: { code: 'editor_revision_conflict', retryable: false },
+      })
+      refreshDraftCandidates()
+      return false
+    }
     reduce({ type: 'load/ready', projection: parsed.value })
+    // 同一 revision 下本机未同步稿优先（F02 切回保留本机文本，§5.5）。
+    const record = readOwnDraft()
+    if (
+      record !== null &&
+      record.dirty &&
+      record.baseRevision === parsed.value.editorRevision &&
+      (record.text !== parsed.value.editorState.draft.text ||
+        record.token !== parsed.value.editorState.draft.token)
+    ) {
+      reduce({ type: 'draft/readback', record })
+      if (!state.oversize) scheduleTextSave()
+    } else {
+      removeOwnDraftIfClean()
+    }
     refreshDraftCandidates()
+    if (runtimeView().editorReady === false) {
+      // editor 能力不可用：即使读回快照也保持只读（不得因 load/ready 清除 readonly）。
+      reduce({
+        type: 'save/readonly',
+        failure: { code: 'editor_capability_unavailable', retryable: false },
+      })
+    }
+    return false
   }
 
   // ── 失效/卸载 ──
@@ -1490,6 +1714,8 @@ export function createEditorController(deps: EditorDeps): EditorController {
   const invalidateIntent = (reason: 'logout' | 'viewer-change'): void => {
     if (state.invalidated) return
     void reason
+    loaded = false
+    pendingLoad = false
     clearSaveTimers()
     clearRetryTimer()
     if (localTimer !== null) clearTimeout(localTimer)
@@ -1517,21 +1743,22 @@ export function createEditorController(deps: EditorDeps): EditorController {
       }
     },
     load: async () => {
-      if (loaded) return
+      if (state.invalidated || released || loaded) return
+      if (!runtimeView().ready) {
+        // bootstrap/遮蔽未完成前不得发 editor GET（review P1 #8）。
+        pendingLoad = true
+        return
+      }
       await loadInternal()
     },
     setDraftText: (text) => {
       if (state.invalidated || released || state.readOnly) return
       if (text === state.draftText) return
-      if (hasUnpairedSurrogate(text)) return
-      if (measureDraftBytes(text) > EDITOR_TEXT_MAX_BYTES) {
-        reduce({ type: 'save/blocked', failure: { code: 'editor_state_too_large', retryable: false } })
-        writeLocalDraft()
-        return
-      }
-      reduce({ type: 'draft/text', text, token: nextDraftToken() })
+      // 文本必须原样保留（不归一化、不截断 lone surrogate）；超限只禁用保存/提交。
+      const oversize = measureDraftBytes(text) > EDITOR_TEXT_MAX_BYTES
+      reduce({ type: 'draft/text', text, token: nextDraftToken(), oversize })
       scheduleLocalDraft()
-      scheduleTextSave()
+      if (!oversize) scheduleTextSave()
     },
     setScope: (edit) => {
       if (state.invalidated || released || state.readOnly) return
@@ -1570,15 +1797,29 @@ export function createEditorController(deps: EditorDeps): EditorController {
       if (state.blocked) return 'blocked'
       if (state.conflict !== null) return 'conflict'
       if (deps.transport === null) return 'blocked'
+      const explicit = reason === 'submit'
       if (!isDirty(state) && active === null && queued === null) return 'skipped'
-      void reason
+      // 普通 flush（text/position/switch）不得穿透 hold；只有 submit 拥有准备权限。
+      // 被 hold 挡下的 dirty 意图必须留给 release 后续跑（Lead 附加要求 4）。
+      if (!explicit && (hasSubmitHold() || hasConflictHold())) {
+        pendingAutoText = isDirty(state)
+        pendingAutoPosition = state.chatAnchor !== null || state.readerAnchor !== null
+        return 'blocked'
+      }
+      if (state.oversize) {
+        reduce({ type: 'save/blocked', failure: { code: 'editor_state_too_large', retryable: false } })
+        return 'blocked'
+      }
+      // 只有 submit 拥有"准备并提交"权限；text/position/switch 属普通 flush，
+      // 不得穿透 submit/conflict hold（review P1 #6 / Lead 附加要求 1）。
       if (active !== null) {
         const { promise, resolve } = makeResolver()
         if (queued !== null) queued.resolve('queued')
         queued = {
           kind: 'save',
           operationId: null,
-          explicit: true,
+          explicit,
+          frozenEditorState: explicit ? editorStateToWire(state) : null,
           capturedLocalVersion: state.localVersion,
           resolve,
         }
@@ -1588,7 +1829,8 @@ export function createEditorController(deps: EditorDeps): EditorController {
       dispatchSave({
         kind: 'save',
         operationId: null,
-        explicit: true,
+        explicit,
+        frozenEditorState: explicit ? editorStateToWire(state) : null,
         capturedLocalVersion: state.localVersion,
         resolve,
       })
@@ -1601,23 +1843,22 @@ export function createEditorController(deps: EditorDeps): EditorController {
     release: (operationId) => releaseHold(operationId),
     retrySave: async () => {
       if (state.invalidated || released) return 'skipped'
+      if (state.conflict !== null) return 'conflict'
       if (active !== null) {
-        if (active.kind === 'clear') {
-          active.attempt = newAttempt(active.record.mutationId)
-          void performPut(active)
-          return 'queued'
-        }
+        // 在途请求未结算时重试必须复用同一 attempt，禁止并发 PUT（review P1 #2）。
+        if (!active.unconfirmed) return 'queued'
         replayActive(active)
         return 'queued'
       }
       if (queued !== null) return 'queued'
-      return controller.flush('text')
+      return controller.flush('submit')
     },
     adoptServerVersion: async () => {
       if (state.invalidated || released) return 'skipped'
       if (state.conflict === null) return 'skipped'
       if (deps.transport === null) return 'blocked'
       const runtime = runtimeView()
+      if (!runtime.ready || runtime.editorReady === false) return 'blocked'
       const attemptGeneration = runtime.authGeneration
       const attemptViewer = runtime.viewerUserId
       let raw: unknown
@@ -1637,7 +1878,12 @@ export function createEditorController(deps: EditorDeps): EditorController {
         return 'skipped'
       }
       const parsed = parseEditorResponse(raw)
-      if (!parsed.ok) {
+      if (
+        !parsed.ok ||
+        sessionKey(parsed.value.ref) !== sessionKey(state.ref) ||
+        String(parsed.value.viewerUserId) !== String(currentRuntime.viewerUserId)
+      ) {
+        // 采用服务端前必须校验响应身份（review P2 #10）。
         reduce({ type: 'save/unconfirmed', failure: { code: 'invalid_response', retryable: false } })
         return 'invalid'
       }
@@ -1649,12 +1895,53 @@ export function createEditorController(deps: EditorDeps): EditorController {
     },
     saveLocalOverServer: async () => {
       if (state.invalidated || released) return 'skipped'
-      if (state.conflict !== null) reduce({ type: 'conflict/clear' })
-      return controller.flush('text')
+      if (state.conflict === null) return controller.flush('submit')
+      if (deps.transport === null) return 'blocked'
+      const runtime = runtimeView()
+      if (!runtime.ready || runtime.editorReady === false) return 'blocked'
+      const attemptGeneration = runtime.authGeneration
+      const attemptViewer = runtime.viewerUserId
+      let raw: unknown
+      try {
+        const result = await guard.run(() => deps.transport!.getEditorState())
+        if (result.status === 'stale') return 'skipped'
+        raw = await result.value
+      } catch {
+        return 'blocked'
+      }
+      const currentRuntime = runtimeView()
+      if (
+        currentRuntime.authGeneration !== attemptGeneration ||
+        currentRuntime.viewerUserId !== attemptViewer ||
+        currentRuntime.disposed ||
+        currentRuntime.viewerChanged
+      ) {
+        return 'skipped'
+      }
+      const parsed = parseEditorResponse(raw)
+      if (
+        !parsed.ok ||
+        sessionKey(parsed.value.ref) !== sessionKey(state.ref) ||
+        String(parsed.value.viewerUserId) !== String(currentRuntime.viewerUserId)
+      ) {
+        return 'invalid'
+      }
+      // 以服务端最新 revision 作为 expected_revision，再显式保存本机 shadow。
+      reduce({
+        type: 'conflict/refreshRevision',
+        revision: parsed.value.editorRevision,
+        intentHash: parsed.value.editorIntentHash,
+        warnings: parsed.value.stateWarnings,
+      })
+      reduce({ type: 'conflict/clear' })
+      return controller.flush('submit')
     },
     clearAfterSubmission: async (receipt, operationId) => {
       if (state.invalidated || released) return 'invalid'
       if (sessionKey(receipt.sessionRef) !== sessionKey(state.ref)) return 'invalid'
+      // 迟到回执不得清掉已存在的新输入：token 与提交文本必须仍与当前 shadow 一致
+      // （DESIGN §5.6 步骤 1 / §9.2；review P1 #7）。
+      if (receipt.draftToken !== state.draftToken || receipt.text !== state.draftText) return 'invalid'
       controller.markTokenConsumed(receipt.draftToken)
       if (!state.holds.some((hold) => hold.operationId === operationId)) {
         controller.hold('submit', operationId)
@@ -1672,10 +1959,24 @@ export function createEditorController(deps: EditorDeps): EditorController {
       if (active !== null) {
         // 已派发但 ACK 未知的 mutation 不取消/不删除；排队，结算后按原 body 重放。
         if (queued !== null) queued.resolve('queued')
-        queued = { kind: 'clear', operationId, explicit: true, capturedLocalVersion, resolve }
+        queued = {
+          kind: 'clear',
+          operationId,
+          explicit: true,
+          frozenEditorState: null,
+          capturedLocalVersion,
+          resolve,
+        }
         return (await promise) as ClearOutcome
       }
-      dispatchClear({ kind: 'clear', operationId, explicit: true, capturedLocalVersion, resolve })
+      dispatchClear({
+        kind: 'clear',
+        operationId,
+        explicit: true,
+        frozenEditorState: null,
+        capturedLocalVersion,
+        resolve,
+      })
       return (await promise) as ClearOutcome
     },
     markTokenConsumed: (token) => {
@@ -1706,6 +2007,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
       const record = readDraft(scope, authority, state.ref, otherWriterId, cacheOptions())
       if (record === null) return
       // 只复制到当前分支，不删除来源分支（DESIGN §3.5）。
+      const oversize = measureDraftBytes(record.text) > EDITOR_TEXT_MAX_BYTES
       state = {
         ...state,
         draftText: record.text,
@@ -1714,12 +2016,13 @@ export function createEditorController(deps: EditorDeps): EditorController {
         singleSourceId: record.singleSourceId,
         noteIds: record.noteIds,
         localVersion: state.localVersion + 1,
+        oversize,
         phase: state.readOnly ? 'readonly' : 'ready',
       }
       state = { ...state, dirty: isDirty(state) }
       emit()
       scheduleLocalDraft()
-      scheduleTextSave()
+      if (!oversize) scheduleTextSave()
     },
     refreshDraftCandidates: () => refreshDraftCandidates(),
     invalidate: (reason) => invalidateIntent(reason),
@@ -1733,11 +2036,24 @@ export function createEditorController(deps: EditorDeps): EditorController {
       unsubscribeRuntime()
       released = true
     },
+    persistLocal: () => {
+      writeLocalDraft()
+    },
   }
 
   if (deps.transport !== null && runtimeView().ready) {
-    lastSeenGeneration = runtimeView().authGeneration
-    void loadInternal()
+    const initialRuntime = runtimeView()
+    lastSeenGeneration = initialRuntime.authGeneration
+    lastSeenViewer = initialRuntime.viewerUserId
+    lastSeenProject = initialRuntime.projectId
+    if (initialRuntime.editorReady === false) {
+      reduce({
+        type: 'save/readonly',
+        failure: { code: 'editor_capability_unavailable', retryable: false },
+      })
+    } else {
+      void loadInternal()
+    }
   }
 
   return controller
