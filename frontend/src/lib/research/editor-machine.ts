@@ -990,8 +990,6 @@ export function createEditorController(deps: EditorDeps): EditorController {
   let lastSeenGeneration = deps.getRuntimeView().authGeneration
   let lastSeenViewer = deps.getRuntimeView().viewerUserId
   let lastSeenProject = deps.getRuntimeView().projectId
-  /** 上一次观察到的 ready 相位：用于识别 masked/unmask 转换（verifier 阻塞项 2）。 */
-  let lastSeenReady = deps.getRuntimeView().ready
   let loadingGeneration: number | null = null
   let textTimer: ReturnType<typeof setTimeout> | null = null
   let positionTimer: ReturnType<typeof setTimeout> | null = null
@@ -1667,8 +1665,6 @@ export function createEditorController(deps: EditorDeps): EditorController {
         active.unconfirmed = true
       }
     }
-    const becameReady = !lastSeenReady && runtime.ready
-    lastSeenReady = runtime.ready
     if (!runtime.ready) return
     if (runtime.editorReady === false) {
       if (!state.readOnly) {
@@ -1680,10 +1676,11 @@ export function createEditorController(deps: EditorDeps): EditorController {
       return
     }
     if (active !== null) {
-      if (active.unconfirmed && (identityChanged || becameReady || !sameGeneration(active.attempt))) {
-        // 只在三种承重场景重放：认证代际变化、未就绪→就绪（masked unmask）、attempt 身份
-        // 已不属当前代。无关 runtime 通知（ready 相位未变）不得重启已耗尽/未确认的 PUT；
-        // masked 期间同代 ACK 已正常应用时 active 已结算，不会重复 PUT（verifier 阻塞项 2）。
+      if (active.unconfirmed && (identityChanged || !sameGeneration(active.attempt))) {
+        // 只认两种承重身份事件：认证代际/viewer 变化、或 attempt 已不属当前代。
+        // 同一代际内的未确认 mutation（masked 期间 ACK 丢失）由下面 retryPaused 分支
+        // 在原退避定时器被遮蔽挡下后恢复一次；无关 runtime 通知不得重启已耗尽/未确认
+        // 的 PUT（review F1），masked 期间同代 ACK 正常应用时 active 已结算，不会重复 PUT。
         replayActive(active)
       } else if (retryPaused && retryTimer === null && !active.inFlight && !replaying) {
         // R6/F1：只恢复“确实因 runtime 不可用而暂停的退避重试”；耗尽/非重试失败不得被
@@ -1693,6 +1690,12 @@ export function createEditorController(deps: EditorDeps): EditorController {
         void performPut(active, active.attempt)
       }
       return
+    }
+    if (pendingAutoText || pendingAutoPosition) {
+      // masked 期间 debounce 到点的自动保存意图必须在解除遮蔽后续跑，否则新文本
+      // 会永久滞留 dirty（verifier 复核发现：T1 ACK 后 T2 debounce 于 masked 期间到点）。
+      dispatchAutoIfPossible()
+      if (active !== null || queued !== null) return
     }
     if (!loaded) void loadInternal()
   }

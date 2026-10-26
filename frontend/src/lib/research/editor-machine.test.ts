@@ -1598,6 +1598,26 @@ describe('verifier regression: masked same-generation ACK', () => {
     expect(snapshot.draftText).toBe('T1')
   })
 
+  it('masked 期间 debounce 到点后 unmask 续跑自动保存，新文本不滞留 dirty', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.setDraftText('T1')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    const first = lastPut(harness)
+    harness.setRuntime({ phase: 'masked', ready: false })
+    first.response.resolve(saveResponse(first.body.mutation_id, { revision: 6 }))
+    await flushMicrotasks()
+    harness.controller.setDraftText('T2')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS) // masked 期间到点：只记 pending，不发 PUT
+    expect(harness.puts.length).toBe(1)
+    harness.setRuntime({ phase: 'ready', ready: true })
+    await flushMicrotasks()
+    expect(harness.puts.length).toBe(2)
+    const t2 = lastPut(harness)
+    expect(t2.body.editor_state.draft.text).toBe('T2')
+    expect(t2.body.expected_revision).toBe(6)
+  })
+
   it('masked 期间 ACK 丢失 → unmask 后用原 mutation/body 重放一次', async () => {
     const harness = createHarness()
     await loadHarness(harness)
