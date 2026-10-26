@@ -630,7 +630,19 @@ export function ResearchChatPanel({
       measureFrameRef.current = null
     }
     if (wired && hadPending && !restoringRef.current) {
-      const anchor = measureChatAnchorNow() ?? latestAnchorRef.current
+      let anchor = measureChatAnchorNow()
+      const cached = latestAnchorRef.current
+      // 会话切换后旧缓存可能指向已不在当前消息列表里的 message_id：只有
+      // 缓存目标仍存在于当前 DOM 才回退写入，避免把上一会话的锚点写进新会话。
+      if (
+        anchor === null &&
+        cached !== null &&
+        chatScrollRef.current?.querySelector(
+          `[data-message-id="${cached.messageId}"]`,
+        ) !== null
+      ) {
+        anchor = cached
+      }
       if (anchor !== null) onChatAnchorChange?.(anchor)
     }
     onFlushPosition?.()
@@ -800,7 +812,6 @@ export function ResearchChatPanel({
   useEffect(() => {
     if (!wired || !followTailPendingRef.current) return
     settleFollowTailRef.current()
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在稳定 ID 集变化时结算
   }, [wired, surfaceActive, stableMessageIdSignature, editorSnapshot?.positionUnavailable])
 
   return (

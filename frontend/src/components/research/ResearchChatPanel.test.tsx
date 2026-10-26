@@ -1632,6 +1632,58 @@ describe('ResearchChatPanel · PR-4 修复轮（P1-1/P1-2/F3/F4）', () => {
     }
   })
 
+  it('F3 缓存不跨会话：切换会话后隐藏不写上一会话的锚点', async () => {
+    const onChatAnchorChange = vi.fn()
+    const originalRect = HTMLElement.prototype.getBoundingClientRect
+    const turns = [turn({ id: 't1', role: 'assistant', content: '历史回答', serverMessageId: 'm1' })]
+    let chatScroll: HTMLElement | null = null
+    HTMLElement.prototype.getBoundingClientRect = function mockRect(this: HTMLElement) {
+      if (this.dataset.messageId !== undefined) {
+        return {
+          top: 100 - (chatScroll?.scrollTop ?? 0), bottom: 180, height: 80,
+          left: 0, right: 0, width: 0, x: 0, y: 0, toJSON: () => ({}),
+        } as DOMRect
+      }
+      if (this.dataset.testid === 'chat-messages') {
+        return {
+          top: 0, bottom: 400, height: 400,
+          left: 0, right: 0, width: 0, x: 0, y: 0, toJSON: () => ({}),
+        } as DOMRect
+      }
+      return originalRect.call(this)
+    }
+    try {
+      const view = render(
+        <Harness
+          onChatAnchorChange={onChatAnchorChange}
+          snapshotOverrides={{ draftText: '问题' }}
+          turns={turns}
+        />,
+      )
+      chatScroll = screen.getByTestId('chat-messages')
+      Object.defineProperty(chatScroll, 'scrollHeight', { value: 2000, configurable: true })
+      Object.defineProperty(chatScroll, 'clientHeight', { value: 400, configurable: true })
+      chatScroll.scrollTop = 150
+      fireEvent.scroll(chatScroll)
+      await act(async () => {
+        await new Promise(resolve => setTimeout(resolve, 25))
+      })
+      // 切到另一个（空）会话：缓存里的 m1 已不在当前 DOM。
+      view.rerender(
+        <Harness
+          onChatAnchorChange={onChatAnchorChange}
+          snapshotOverrides={{ draftText: '问题' }}
+          turns={[]}
+          surfaceActive={false}
+        />,
+      )
+      Object.defineProperty(chatScroll, 'clientHeight', { value: 0, configurable: true })
+      expect(onChatAnchorChange).not.toHaveBeenCalled()
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = originalRect
+    }
+  })
+
   it('P2-6 无会话快照时 Coverage 仍由本地草稿受控（发送成功清空自身文本）', async () => {
     seedScope(SCOPE_A)
     const onSendCoverage = vi.fn(async () => true)
