@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
+import { act, render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   ResearchChatPanel,
@@ -1570,7 +1570,7 @@ describe('ResearchChatPanel · PR-4 修复轮（P1-1/P1-2/F3/F4）', () => {
     )
   })
 
-  it('F3 滚动后 <1000ms 切走：离开前同步测量新位置再 flush', () => {
+  it('F3 滚动后 <1000ms 切走：先缓存新位置，隐藏不可度量时用缓存写锚点再 flush', async () => {
     const onChatAnchorChange = vi.fn()
     const onFlushPosition = vi.fn()
     const originalRect = HTMLElement.prototype.getBoundingClientRect
@@ -1604,6 +1604,13 @@ describe('ResearchChatPanel · PR-4 修复轮（P1-1/P1-2/F3/F4）', () => {
       Object.defineProperty(chatScroll, 'clientHeight', { value: 400, configurable: true })
       chatScroll.scrollTop = 150
       fireEvent.scroll(chatScroll)
+      // F3：可见时下一帧（16ms 节流）先缓存最近锚点。
+      await act(async () => {
+        await new Promise(resolve => setTimeout(resolve, 25))
+      })
+      // 切 tab 后容器 display:none（clientHeight=0），flush 时无法再测量几何，
+      // 必须退回 16ms 缓存的锚点，否则 <1s 的滚动位置会被静默丢弃。
+      Object.defineProperty(chatScroll, 'clientHeight', { value: 0, configurable: true })
       view.rerender(
         <Harness
           onChatAnchorChange={onChatAnchorChange}
@@ -1644,6 +1651,60 @@ describe('ResearchChatPanel · PR-4 修复轮（P1-1/P1-2/F3/F4）', () => {
     fireEvent.change(screen.getByTestId('chat-input'), { target: { value: 'coverage 问题' } })
     expect(screen.getByTestId('chat-send')).toBeDisabled()
     expect(screen.getByTestId('research-draft-gate-hint')).toHaveTextContent('模型不可用')
+  })
+
+  it('P1-3 服务端净化锚点（position_unavailable）不恢复、不伪装，并显示提示', () => {
+    const onChatAnchorChange = vi.fn()
+    const originalRect = HTMLElement.prototype.getBoundingClientRect
+    const turns = [turn({ id: 't1', role: 'assistant', content: '历史回答', serverMessageId: 'm1' })]
+    const turnsAfterBackfill = [
+      ...turns,
+      turn({ id: 't2', role: 'assistant', content: '新回答', serverMessageId: 'm2' }),
+    ]
+    let chatScroll: HTMLElement | null = null
+    HTMLElement.prototype.getBoundingClientRect = function mockRect(this: HTMLElement) {
+      if (this.dataset.messageId !== undefined) {
+        return {
+          top: 100 - (chatScroll?.scrollTop ?? 0), bottom: 180, height: 80,
+          left: 0, right: 0, width: 0, x: 0, y: 0, toJSON: () => ({}),
+        } as DOMRect
+      }
+      if (this.dataset.testid === 'chat-messages') {
+        return {
+          top: 0, bottom: 400, height: 400,
+          left: 0, right: 0, width: 0, x: 0, y: 0, toJSON: () => ({}),
+        } as DOMRect
+      }
+      return originalRect.call(this)
+    }
+    try {
+      const view = render(
+        <Harness
+          onChatAnchorChange={onChatAnchorChange}
+          snapshotOverrides={{ draftText: '问题', positionUnavailable: true }}
+          anchor={{ messageId: 'm1', offsetPx: -50, followTail: false }}
+          turns={turns}
+        />,
+      )
+      chatScroll = screen.getByTestId('chat-messages')
+      Object.defineProperty(chatScroll, 'scrollHeight', { value: 2000, configurable: true })
+      Object.defineProperty(chatScroll, 'clientHeight', { value: 400, configurable: true })
+      chatScroll.scrollTop = 777
+      // 稳定 ID 集变化会触发一次恢复尝试；服务端已净化锚点时不得恢复/写回。
+      view.rerender(
+        <Harness
+          onChatAnchorChange={onChatAnchorChange}
+          snapshotOverrides={{ draftText: '问题', positionUnavailable: true }}
+          anchor={{ messageId: 'm1', offsetPx: -50, followTail: false }}
+          turns={turnsAfterBackfill}
+        />,
+      )
+      expect(chatScroll.scrollTop).toBe(777)
+      expect(screen.getByTestId('chat-position-unavailable')).toBeInTheDocument()
+      expect(onChatAnchorChange).not.toHaveBeenCalled()
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = originalRect
+    }
   })
 
   it('F3 从可见切到隐藏（切 tab）时调用 flush("position")', () => {

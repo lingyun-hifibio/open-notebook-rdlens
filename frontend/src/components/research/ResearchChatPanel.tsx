@@ -243,6 +243,10 @@ export function ResearchChatPanel({
   const wired = editorSnapshot !== undefined
   const chatScrollRef = useRef<HTMLDivElement | null>(null)
   const anchorTimerRef = useRef<number | null>(null)
+  // F3：滚动 16ms 节流缓存最近一次可测量的锚点；隐藏/卸载时容器已不可度量，
+  // flush 用缓存把 <1000ms 内的滚动位置写回，避免丢位置。
+  const measureFrameRef = useRef<number | null>(null)
+  const latestAnchorRef = useRef<WireChatAnchor | null>(null)
   const restoringRef = useRef(false)
   // 恢复只对“当前保存锚点”尝试一次成功；失败后仅在稳定消息 ID 集变化且用户未接管时重试，
   // 避免 live assistant 回填 ID 时把用户手动滚动打回旧位置（review round 3）。
@@ -468,18 +472,6 @@ export function ResearchChatPanel({
   const settleFollowTailRef = useRef<() => void>(() => {})
   settleFollowTailRef.current = settleFollowTail
 
-  const reportFollowTail = (): void => {
-    if (!wired) return
-    if (editorSnapshot?.positionUnavailable === true) {
-      const container = chatScrollRef.current
-      if (surfaceActiveRef.current && container !== null) {
-        container.scrollTop = container.scrollHeight
-      }
-      return
-    }
-    settleFollowTail()
-  }
-
   // P1-1：Coverage 提交独立于会话 editor——只校验工作区范围与本地草稿上限。
   const submitCoverage = (dispatchText: string): void => {
     // #358：能力门禁在提交点再次校验（与 coverageAllowed 同源，且用
@@ -600,27 +592,45 @@ export function ResearchChatPanel({
     }
     // 非程序化滚动＝用户接管阅读位置；此后的 ID 回填不得再触发恢复。
     userScrolledRef.current = true
+    if (measureFrameRef.current !== null) window.clearTimeout(measureFrameRef.current)
+    measureFrameRef.current = window.setTimeout(() => {
+      measureFrameRef.current = null
+      // N9：隐藏时不写位置，只缓存可见时的最近锚点，供隐藏瞬间 flush 使用。
+      if (!surfaceActiveRef.current) return
+      const anchor = measureChatAnchorNow()
+      if (anchor !== null) latestAnchorRef.current = anchor
+    }, 16)
     if (anchorTimerRef.current !== null) window.clearTimeout(anchorTimerRef.current)
     anchorTimerRef.current = window.setTimeout(() => {
       anchorTimerRef.current = null
       // N9：定时器触发时若已切 tab/隐藏，则丢弃本次位置写入。
       if (!surfaceActiveRef.current) return
       const anchor = measureChatAnchorNow()
-      if (anchor !== null) onChatAnchorChange?.(anchor)
+      if (anchor !== null) {
+        latestAnchorRef.current = anchor
+        onChatAnchorChange?.(anchor)
+      }
     }, 1000)
   }
 
   const flushPositionRef = useRef<() => void>(() => {})
   flushPositionRef.current = (): void => {
-    // P1-1：<1000ms 内切走时定时器被取消——离开前先同步测量一次，避免丢新位置。
+    // P1-1：<1000ms 内切走时定时器被取消——离开前先测量；隐藏/卸载时容器
+    // 已不可度量（display:none / ref 置 null），退回 16ms 节流缓存的最近锚点，
+    // 避免把 <1s 的滚动位置静默丢掉（F3）。
     const pendingTimer = anchorTimerRef.current
-    const hadPending = pendingTimer !== null
+    const pendingFrame = measureFrameRef.current
+    const hadPending = pendingTimer !== null || pendingFrame !== null
     if (pendingTimer !== null) {
       window.clearTimeout(pendingTimer)
       anchorTimerRef.current = null
     }
+    if (pendingFrame !== null) {
+      window.clearTimeout(pendingFrame)
+      measureFrameRef.current = null
+    }
     if (wired && hadPending && !restoringRef.current) {
-      const anchor = measureChatAnchorNow()
+      const anchor = measureChatAnchorNow() ?? latestAnchorRef.current
       if (anchor !== null) onChatAnchorChange?.(anchor)
     }
     onFlushPosition?.()
@@ -649,8 +659,22 @@ export function ResearchChatPanel({
   const stableMessageIdSignature = turns
     .map(turn => turn.serverMessageId ?? '')
     .join('|')
+  // P1-3（02_INTERFACE_FREEZE §4）：服务端净化锚点（position_unavailable）后
+  // 关闭位置保存——不尝试恢复，也不再伪装“已恢复”；能力恢复后重置隐藏标记。
   useEffect(() => {
-    if (!wired || !surfaceActive || savedChatAnchor === null) {
+    if (!wired) return
+    if (editorSnapshot?.positionUnavailable === true) {
+      restoringRef.current = false
+      restoreExpectedScrollTopRef.current = null
+      restoreAttemptRef.current = null
+      setAnchorUnavailable(true)
+      return
+    }
+    setPositionUnavailableDismissed(false)
+  }, [wired, editorSnapshot?.positionUnavailable])
+
+  useEffect(() => {
+    if (!wired || !surfaceActive || savedChatAnchor === null || editorSnapshot?.positionUnavailable === true) {
       restoringRef.current = false
       if (!surfaceActive) return
       restoreAttemptRef.current = null
@@ -777,7 +801,7 @@ export function ResearchChatPanel({
     if (!wired || !followTailPendingRef.current) return
     settleFollowTailRef.current()
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在稳定 ID 集变化时结算
-  }, [wired, surfaceActive, stableMessageIdSignature])
+  }, [wired, surfaceActive, stableMessageIdSignature, editorSnapshot?.positionUnavailable])
 
   return (
     <div className="flex h-full min-h-0 flex-col">
