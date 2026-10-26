@@ -200,6 +200,14 @@ export function ResearchChatPanel({
   const chatScrollRef = useRef<HTMLDivElement | null>(null)
   const anchorTimerRef = useRef<number | null>(null)
   const restoringRef = useRef(false)
+  // 恢复只对“当前保存锚点”尝试一次成功；失败后仅在稳定消息 ID 集变化且用户未接管时重试，
+  // 避免 live assistant 回填 ID 时把用户手动滚动打回旧位置（review round 3）。
+  const restoreAttemptRef = useRef<{
+    key: string
+    failed: boolean
+    succeeded: boolean
+  } | null>(null)
+  const userScrolledRef = useRef(false)
   // §5.7.1：恢复失败（缺目标/越界/非法偏移）→ 稳定原因可见，停在有权版本顶部。
   const [anchorUnavailable, setAnchorUnavailable] = useState(false)
   const wiredConversation: ResearchConversationSnapshot = conversationSnapshot ?? {
@@ -383,6 +391,8 @@ export function ResearchChatPanel({
   // PR-4：锚点上报——滚动空闲 1000ms 计算一次（§5.7.1），恢复期间不写。
   const scheduleChatAnchor = (): void => {
     if (!wired || restoringRef.current || onChatAnchorChange === undefined) return
+    // 非程序化滚动＝用户接管阅读位置；此后的 ID 回填不得再触发恢复。
+    userScrolledRef.current = true
     if (anchorTimerRef.current !== null) window.clearTimeout(anchorTimerRef.current)
     anchorTimerRef.current = window.setTimeout(() => {
       anchorTimerRef.current = null
@@ -435,12 +445,28 @@ export function ResearchChatPanel({
   useEffect(() => {
     if (!wired || savedChatAnchor === null) {
       restoringRef.current = false
+      restoreAttemptRef.current = null
+      userScrolledRef.current = false
       return
     }
     const container = chatScrollRef.current
     if (container === null) {
       restoringRef.current = false
       return
+    }
+    const attemptKey = `${savedChatAnchor.messageId}|${savedChatAnchor.offsetPx}|${savedChatAnchor.followTail}`
+    const attempt = restoreAttemptRef.current
+    if (attempt?.key === attemptKey) {
+      // 已成功恢复，或用户已手动接管 → 不再重设 scrollTop。
+      if (attempt.succeeded) return
+      if (userScrolledRef.current) {
+        // 用户已接管阅读位置：ID 回填不再重试，失败提示也不再成立。
+        setAnchorUnavailable(false)
+        return
+      }
+    } else {
+      restoreAttemptRef.current = { key: attemptKey, failed: false, succeeded: false }
+      userScrolledRef.current = false
     }
     const target = Array.from(
       container.querySelectorAll<HTMLElement>('[data-message-id]'),
@@ -462,6 +488,11 @@ export function ResearchChatPanel({
     })
     if (result.ok) container.scrollTop = result.scrollTop
     setAnchorUnavailable(!result.ok)
+    restoreAttemptRef.current = {
+      key: attemptKey,
+      failed: !result.ok,
+      succeeded: result.ok,
+    }
     // 程序化恢复期间忽略滚动上报；用 rAF 释放，确保浏览器补发的 scroll
     // 事件仍被抑制（不把刚恢复的位置当作新锚点写回）。
     let secondFrame = 0

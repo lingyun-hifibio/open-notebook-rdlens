@@ -8,7 +8,11 @@ import {
 import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
 import { ResearchScopeProvider, scopeStorageKey, useResearchScope, type ResearchScopeSnapshot } from '@/lib/research/scope'
 import { createEditorState } from '@/lib/research/editor-machine'
-import type { EditorSnapshot, ResearchConversationSnapshot } from '@/lib/research/types'
+import type { WireChatAnchor } from '@/lib/research/session-contract'
+import type {
+  EditorSnapshot,
+  ResearchConversationSnapshot,
+} from '@/lib/research/types'
 import type { ResearchSessionRef } from '@/lib/research/session-contract'
 import { useState } from 'react'
 import type { ResearchBackgroundNotice, ResearchChatSelection, ResearchChatTurn } from '@/lib/hooks/use-research-chat'
@@ -1002,11 +1006,15 @@ describe('ResearchChatPanel · PR-4 会话 editor 接线', () => {
     snapshotOverrides,
     turns = [],
     submissionReady,
+    anchor,
+    onChatAnchorChange,
   }: {
     onSend: (query: string, selection?: ResearchChatSelection) => Promise<boolean>
     snapshotOverrides?: Partial<EditorSnapshot>
     turns?: ResearchChatTurn[]
     submissionReady?: boolean
+    anchor?: WireChatAnchor | null
+    onChatAnchorChange?: (anchor: WireChatAnchor | null) => void
   }) {
     const [snapshot, setSnapshot] = useState<EditorSnapshot>(() => ({
       ...createEditorState({ ref: REF, writerId: 'writer-1', transportAvailable: true }),
@@ -1023,8 +1031,11 @@ describe('ResearchChatPanel · PR-4 会话 editor 接线', () => {
             isStreaming={false}
             onSend={onSend}
             onSendCoverage={vi.fn(async () => true)}
-            editorSnapshot={snapshot}
+            editorSnapshot={
+              anchor === undefined ? snapshot : { ...snapshot, chatAnchor: anchor }
+            }
             submissionReady={submissionReady}
+            onChatAnchorChange={onChatAnchorChange}
             conversationSnapshot={CONVERSATION}
             scopeSources={[{ sourceId: 'src_1', title: 'Paper One' }]}
             scopeNotes={[]}
@@ -1151,5 +1162,48 @@ describe('ResearchChatPanel · PR-4 会话 editor 接线', () => {
     )
     expect(container.querySelector('[data-message-id="msg-42"]')).not.toBeNull()
     expect(container.querySelector('[data-message-id="local-turn-1"]')).toBeNull()
+  })
+
+  it('E1（review round 3）：用户接管滚动后，稳定 ID 回填不再把位置打回旧锚点', async () => {
+    const onSend = vi.fn(async () => true)
+    const userTurn = turn({ id: 'local-user-1', role: 'user', content: 'q' })
+    const anchor: WireChatAnchor = {
+      messageId: 'msg-42',
+      offsetPx: 0,
+      followTail: false,
+    }
+    const view = render(
+      <WiredPanel
+        onSend={onSend}
+        turns={[userTurn]}
+        anchor={anchor}
+        onChatAnchorChange={vi.fn()}
+      />,
+    )
+    const chatScroll = screen.getByTestId('chat-messages')
+    expect(chatScroll).not.toBeNull()
+    Object.defineProperty(chatScroll, 'clientHeight', { value: 400, configurable: true })
+    Object.defineProperty(chatScroll, 'scrollHeight', { value: 2000, configurable: true })
+    chatScroll.getBoundingClientRect = () => ({ top: 0, height: 400 } as DOMRect)
+    // 首次恢复失败：锚点目标尚未加载 → 提示位置不可用。
+    expect(screen.getByTestId('chat-position-unavailable')).toBeTruthy()
+
+    // 等待程序化恢复的 rAF 释放抑制标记（真实浏览器下一帧 ≈16ms）。
+    await new Promise(resolve => setTimeout(resolve, 40))
+    // 用户手动滚动接管阅读位置。
+    chatScroll.scrollTop = 300
+    fireEvent.scroll(chatScroll)
+
+    // live assistant 回填稳定 ID → 稳定 ID 签名变化，但不得重设 scrollTop。
+    view.rerender(
+      <WiredPanel
+        onSend={onSend}
+        turns={[userTurn, turn({ id: 'a-1', role: 'assistant', serverMessageId: 'msg-42' })]}
+        anchor={anchor}
+        onChatAnchorChange={vi.fn()}
+      />,
+    )
+    expect(chatScroll.scrollTop).toBe(300)
+    expect(screen.queryByTestId('chat-position-unavailable')).toBeNull()
   })
 })
