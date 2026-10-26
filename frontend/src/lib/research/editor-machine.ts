@@ -572,10 +572,10 @@ export function reduceEditor(state: EditorSnapshot, event: EditorEvent): EditorS
     case 'capability/restored':
       // 仅解除“editor 能力不可用”造成的只读；unreadable/服务端权限等其它只读原因不在此列
       // （review 第三轮 P2：能力关闭再恢复后不得永久只读）。
-      if (state.invalidated || !state.readOnly || state.unreadable) {
+      if (state.invalidated || !state.readOnly || state.unreadable || state.blocked) {
         return state
       }
-      return { ...state, phase: 'ready', readOnly: false, blocked: false }
+      return { ...state, phase: 'ready', readOnly: false }
     case 'save/unsynced':
       return {
         ...state,
@@ -1428,12 +1428,18 @@ export function createEditorController(deps: EditorDeps): EditorController {
       })
       current.resolve('conflict')
     } else if (failure.handling === 'readonly') {
+      // 服务端只读（unreadable/revision_exhausted）优先于能力型只读：清除能力起源标记，
+      // 能力恢复时不得误解除服务端限制（review 第三轮 P2）。
+      if (failure.code !== 'editor_capability_unavailable') capabilityReadOnly = false
       reduce({ type: 'save/readonly', failure })
       current.resolve('readonly')
     } else if (failure.handling === 'blocked') {
+      capabilityReadOnly = false
       reduce({ type: 'save/blocked', failure })
       current.resolve('blocked')
     } else {
+      // 服务端拒绝（如 chat_owner_required/403）：同样不得被能力恢复误解除。
+      capabilityReadOnly = false
       reduce({ type: 'save/blocked', failure })
       current.resolve('invalid')
     }
@@ -1730,7 +1736,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
       return
     }
     // 能力恢复（editor_ready=false→true）：先解除能力型只读，再续跑排队项。
-    if (capabilityReadOnly && state.readOnly && !state.unreadable) {
+    if (capabilityReadOnly && state.readOnly && !state.unreadable && !state.blocked) {
       capabilityReadOnly = false
       reduce({ type: 'capability/restored' })
     }
@@ -1902,7 +1908,18 @@ export function createEditorController(deps: EditorDeps): EditorController {
       // 同一 revision：保留本机文本，继续 autosave；仍须归约 load/ready，
       // 否则 loading 永不清除、canSubmit 永远 not_loaded（二次 review P1）。
       reduce({ type: 'load/ready', projection: parsed.value })
-    shadowConfirmed = true
+      // 同 revision 只确认了“服务端版本”，并未确认当前空文本（review 第三轮 P1 残留：
+      // 仅位置变化使空 shadow 成为 dirty，此时若直接置 shadowConfirmed 会让 100ms 本机
+      // merge / persistLocal / releaseDocument 用空文本覆盖唯一的非空本机稿）。
+      // 未输入文本且 shadow 仍为空时先读回本 writer 分支的未同步稿；否则保持
+      // shadowConfirmed=false，交给 writeLocalDraft 的空写防御守卫。
+      if (!hasLocalTextEdit && state.draftText === '') {
+        const existing = readOwnDraft()
+        if (existing !== null && existing.text !== '' && existing.dirty) {
+          reduce({ type: 'draft/readback', record: existing })
+          shadowConfirmed = true
+        }
+      }
       if (!state.oversize) scheduleTextSave()
       refreshDraftCandidates()
       return false

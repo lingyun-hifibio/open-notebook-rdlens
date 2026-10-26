@@ -2135,3 +2135,96 @@ describe('verifier 第三轮回归：恢复/能力边界', () => {
     expect(harness.controller.getSnapshot().holds).toHaveLength(0)
   })
 })
+
+describe('verifier 第三轮复核残留（review8 P1/P2）', () => {
+  function seedDraftAtRevision(storage: MapStorage, baseRevision: number): void {
+    writeDraft(
+      { viewerUserId: '1', projectId: 'p1' },
+      REF,
+      'w-test',
+      draftRecord({ text: 'PRIVATE-UNSAVED', token: 'tk-local', localVersion: 3, baseRevision }),
+      { storage },
+    )
+  }
+
+  it('仅锚点变化 + 同 revision 成功 GET：不得用空 shadow 清空唯一的非空本机稿', async () => {
+    const storage = new MapStorage()
+    seedDraftAtRevision(storage, 0)
+    const harness = createHarness({ storage })
+    const loadPromise = harness.controller.load()
+    await flushMicrotasks()
+    // 仅滚动：空 shadow 变成 dirty（localVersion +1），但文本基线未变。
+    harness.controller.setChatAnchor({ messageId: 'msg1', offsetPx: 12, followTail: false })
+    harness.gets[0].resolve(editorResponse({ revision: 0 }))
+    await loadPromise
+    await flushMicrotasks()
+    // 同 revision 只确认服务端版本，不确认空文本：必须读回本机未同步稿。
+    expect(harness.controller.getSnapshot().draftText).toBe('PRIVATE-UNSAVED')
+    await advance(100)
+    let stored = readDraft(harness.scope, harness.authority, REF, 'w-test', { storage })
+    expect(stored?.text).toBe('PRIVATE-UNSAVED')
+    // 直接落盘入口同样不得把空文本写回。
+    harness.controller.persistLocal()
+    stored = readDraft(harness.scope, harness.authority, REF, 'w-test', { storage })
+    expect(stored?.text).toBe('PRIVATE-UNSAVED')
+    // 释放文档同样走本机写入口，不得清空唯一副本。
+    harness.controller.releaseDocument()
+    stored = readDraft(harness.scope, harness.authority, REF, 'w-test', { storage })
+    expect(stored?.text).toBe('PRIVATE-UNSAVED')
+  })
+
+  it('能力关闭期间 PUT 返回 editor_state_unreadable：能力恢复后不得解除服务端只读', async () => {
+    const harness = createHarness()
+    const loadPromise = harness.controller.load()
+    await flushMicrotasks()
+    harness.gets[0].resolve(editorResponse())
+    await loadPromise
+    await flushMicrotasks()
+    harness.controller.setDraftText('T1')
+    await advance(500)
+    expect(harness.puts).toHaveLength(1)
+    harness.setRuntime({ editorReady: false })
+    await flushMicrotasks()
+    expect(harness.controller.getSnapshot().readOnly).toBe(true)
+    harness.puts[0].response.reject(httpError(422, 'editor_state_unreadable'))
+    await flushMicrotasks()
+    expect(harness.controller.getSnapshot().saveFailure?.code).toBe('editor_state_unreadable')
+    expect(harness.controller.getSnapshot().readOnly).toBe(true)
+    harness.setRuntime({ editorReady: true })
+    await flushMicrotasks()
+    const after = harness.controller.getSnapshot()
+    expect(after.readOnly).toBe(true)
+    expect(after.saveFailure?.code).toBe('editor_state_unreadable')
+    expect(harness.puts).toHaveLength(1)
+  })
+
+  it('能力关闭期间 PUT 返回 chat_owner_required：能力恢复后不得解除 blocked，且不得派发排队 PUT', async () => {
+    const harness = createHarness()
+    const loadPromise = harness.controller.load()
+    await flushMicrotasks()
+    harness.gets[0].resolve(editorResponse())
+    await loadPromise
+    await flushMicrotasks()
+    harness.controller.setDraftText('T1')
+    await advance(500)
+    expect(harness.puts).toHaveLength(1)
+    harness.controller.setDraftText('T2')
+    const queued = harness.controller.flush('switch')
+    await flushMicrotasks()
+    harness.setRuntime({ editorReady: false })
+    await flushMicrotasks()
+    harness.puts[0].response.reject(httpError(403, 'chat_owner_required'))
+    await flushMicrotasks()
+    expect(harness.controller.getSnapshot().blocked).toBe(true)
+    // 能力仍关闭：排队项只是被保留，不得消费掉（不结算、不派发）。
+    expect(harness.puts).toHaveLength(1)
+    harness.setRuntime({ editorReady: true })
+    await flushMicrotasks()
+    // 能力恢复不得解除服务端 blocked：排队项按 blocked 结算，不得派发第二个 PUT。
+    await expect(queued).resolves.toBe('blocked')
+    const after = harness.controller.getSnapshot()
+    expect(after.blocked).toBe(true)
+    expect(after.readOnly).toBe(true)
+    expect(harness.puts).toHaveLength(1)
+  })
+})
