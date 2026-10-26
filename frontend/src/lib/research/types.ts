@@ -385,3 +385,29 @@ export interface ResearchCompareReportResponse {
   citations: ResearchCoverageCitation[]
 }
 
+
+// ── 会话列表 / 创建 wire 形状（#602 第三批 PR-2；02 §3） ──
+
+/** 列表查询 kind（`list_query`）：global/source/all，默认 global。 */
+export type ResearchChatSessionListKind = 'global' | 'source' | 'all'
+
+/**
+ * `create_request` wire 形状：只有 `session_id`（客户端生成，幂等重试复用）。
+ */
+export interface ResearchChatSessionCreateRequest {
+  session_id: string
+}
+
+/**
+ * `create_response` 顶层键（6 键，严格 `additionalProperties:false`）。
+ * 字段值保持 `unknown`：PR-2 由 `use-research-sessions.ts` 按
+ * `session-contract` 的纯函数严格校验后才投影，不在此处放宽。
+ */
+export interface ResearchChatSessionCreateResponseWire {
+  session_ref: unknown
+  editor_revision: unknown
+  editor_state: unknown
+  state_warnings: unknown
+  created: unknown
+  editor_intent_hash: unknown
+}

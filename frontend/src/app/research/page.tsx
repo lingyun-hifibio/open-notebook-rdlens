@@ -1,6 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type SyntheticEvent,
+} from 'react'
 import { useRouter } from 'next/navigation'
 import { ResearchWorkspaceShell } from '@/lib/embedded/shell'
 import { isEmbeddedMode } from '@/lib/embedded/config'
@@ -13,8 +20,17 @@ import { ResearchWorkbench } from '@/components/research/ResearchWorkbench'
 import { ResearchWorkspace } from '@/components/research/ResearchWorkspace'
 import { ResearchSourceChatPanel } from '@/components/research/ResearchSourceChatPanel'
 import { ResearchLayout } from '@/components/research/ResearchLayout'
+import {
+  ResearchSessionSwitcher,
+  RESEARCH_SESSION_SWITCHER_PLACEHOLDERS,
+} from '@/components/research/ResearchSessionSwitcher'
 import { type ResearchMainAction } from '@/components/research/research-main-action'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { useResearchSessionRuntimeOptional } from '@/lib/hooks/research-session-runtime'
+import { useResearchSessions } from '@/lib/hooks/use-research-sessions'
+import { readDisplayPointer, readPointer } from '@/lib/research/session-cache'
+import type { SessionRuntimeSnapshot } from '@/lib/research/session-runtime'
+import type { ResearchSessionRef } from '@/lib/research/session-contract'
 
 /**
  * /research：嵌入式 Research Workspace 入口路由（UI-01，设计 §4.1；RWV2-40 IA）。
@@ -39,9 +55,45 @@ import { useTranslation } from '@/lib/hooks/use-translation'
  *   内部维护并以渲染期并集（visited∪{active}）保证首访动作同帧挂载；
  * - highlightPageIdx/highlightRequestId 线程保留（同页重复 Citation 再次聚焦）；
  * - 根级 handleEditScopeAllStates/onCitationJump 统一链。
+ *
+ * 第三批 PR-2（DESIGN §4.2–§4.5、§9.6）：页面级会话导航只能挂载在
+ * `ResearchWorkspaceShell` 的后代——真实 `ResearchSessionRuntimeProvider`
+ * 位于 Shell 内部（`src/lib/embedded/shell.tsx`），页面自身在其之上。
+ * 因此导航 hooks 全部放进 `ResearchPageContent`（Shell children 内），
+ * 否则 `useResearchSessionRuntimeOptional()` 恒为 null（Codex review B1）。
  */
 export default function ResearchPage() {
   const router = useRouter()
+
+  useEffect(() => {
+    if (!isEmbeddedMode()) {
+      router.replace('/notebooks')
+    }
+  }, [router])
+
+  if (!isEmbeddedMode()) {
+    return null
+  }
+
+  return (
+    // Issue #243 GMOD-FE-01 §6.2：页面根 h-screen flex-col；Header shrink-0，
+    // ResearchLayout min-h-0 flex-1——不产生双滚动。
+    <div className="flex h-screen flex-col">
+      <ResearchWorkspaceShell>
+        {/* Jobs 控制器唯一实例化点：Header Activity + 主区 Chat coverage/
+            Compare 共享同一 3s 轮询与 localStorage 登记 */}
+        <ResearchJobsProvider>
+          <ResearchPageContent />
+        </ResearchJobsProvider>
+      </ResearchWorkspaceShell>
+    </div>
+  )
+}
+
+const GATED_CHAT_CONTROL_SELECTOR =
+  'input, textarea, [contenteditable="true"], [data-testid="chat-input"], [data-testid="chat-send"], [data-testid="srcchat-input"], [data-testid="srcchat-send"], [data-testid="srcchat-new-session"], [data-testid="srcchat-error-retry"], [data-testid^="srcchat-session-"]'
+
+function ResearchPageContent() {
   const { t } = useTranslation()
 
   // 主区当前动作（组合根受控；保活的 visited 集合由 ResearchWorkspace
@@ -67,6 +119,254 @@ export default function ResearchPage() {
   const isDesktop = useIsDesktop()
   const [globalCompactPanel, setGlobalCompactPanel] = useState<'primary' | 'secondary'>('secondary')
   const [sourceCompactPanel, setSourceCompactPanel] = useState<'primary' | 'secondary'>('primary')
+
+  // ── 会话导航（PR-2；DESIGN §4.2–§4.5、§9.6） ──────────────────────────────
+  // 页面级导航是 PR-2 的唯一入口（Lead 裁决 R1(a)：不改两个 Chat 面板）；
+  // 三指针写入通过 PR-1 runtime/cache 完成：active(global)/active(source) 只写
+  // 各自指针，display 指针只由显式导航/返回全局写入。
+  const sessionRuntime = useResearchSessionRuntimeOptional()
+  const [runtimeSnapshot, setRuntimeSnapshot] = useState<SessionRuntimeSnapshot | null>(null)
+  const [activeGlobalRef, setActiveGlobalRef] = useState<ResearchSessionRef | null>(null)
+  const [activeSourceRef, setActiveSourceRef] = useState<ResearchSessionRef | null>(null)
+  // F-M3（Lead 裁决 R3）：页面级独立 state 表达“该来源新会话”（display
+  // `{surface:'source', sourceId, sessionRef:null}`）。该状态下不写 `.source`、
+  // 不清 runtime active，也不把旧 `.source` 指针恢复成活动会话。
+  const [sourceNewSessionFor, setSourceNewSessionFor] = useState<string | null>(null)
+  const restoredIdentityRef = useRef<string | null>(null)
+  // display 指针已恢复过某来源的具体会话：紧接着的“打开来源”effect 不得用
+  // 旧 `.source` 指针覆盖它（display 是刷新显示权威，§4.5）。
+  const restoredSourceGuardRef = useRef<string | null>(null)
+  // 该来源已完成的 runtime/display 同步（避免快照变化反复写指针）。
+  const syncedSourceRef = useRef<string | null>(null)
+  // 显式打开来源（含 Back 后重开同一来源）的请求序号：syncedSourceRef 按
+  // sourceId 短路会让“重开同一来源”不再同步 runtime/display（R3）。
+  const [sourceOpenRequest, setSourceOpenRequest] = useState(0)
+  const workspaceSurfaceRef = useRef<HTMLDivElement | null>(null)
+  const sourceSurfaceRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!sessionRuntime) {
+      setRuntimeSnapshot(null)
+      return
+    }
+    setRuntimeSnapshot(sessionRuntime.getSnapshot())
+    return sessionRuntime.subscribe(() => setRuntimeSnapshot(sessionRuntime.getSnapshot()))
+  }, [sessionRuntime])
+
+  // 项目级“历史”抽屉使用 `kind=all`（DESIGN §4.1：项目级历史聚合 global +
+  // source）；代码级 `kind=global` 仅用于单 surface 列表，页面历史入口必须
+  // 能列出 source 会话（Codex review B6）。
+  const globalSessions = useResearchSessions({
+    runtime: sessionRuntime,
+    surface: 'global',
+    projectHistory: true,
+  })
+  const sourceSessions = useResearchSessions({
+    runtime: sessionRuntime,
+    surface: 'source',
+    sourceId: selectedSourceId,
+  })
+
+  // S1：viewer/authGeneration/project/role 变化 → 同帧隐藏并清空页面导航 state
+  // （列表缓存在 use-research-sessions 内同步清空），绝不沿用上一身份标识。
+  const identityKey = runtimeSnapshot
+    ? `${runtimeSnapshot.role}|${runtimeSnapshot.viewerUserId ?? ''}|${runtimeSnapshot.projectId}|${runtimeSnapshot.authGeneration}`
+    : null
+  // 导航 state 归属的身份键：不一致的那一帧起就用派生空值渲染，effect 再清理。
+  const [navScopeKey, setNavScopeKey] = useState<string | null>(identityKey)
+  const navScopeMatches = navScopeKey === identityKey
+  const navActiveGlobalRef = navScopeMatches ? activeGlobalRef : null
+  const navActiveSourceRef = navScopeMatches ? activeSourceRef : null
+  const navSourceNewSessionFor = navScopeMatches ? sourceNewSessionFor : null
+  const navSelectedSourceId = navScopeMatches ? selectedSourceId : null
+  const navSourceFocusActive = navScopeMatches ? sourceFocusActive : false
+
+  useEffect(() => {
+    if (navScopeMatches) return
+    setActiveGlobalRef(null)
+    setActiveSourceRef(null)
+    setSourceNewSessionFor(null)
+    setSelectedSourceId(null)
+    setSourceFocusActive(false)
+    restoredIdentityRef.current = null
+    restoredSourceGuardRef.current = null
+    syncedSourceRef.current = null
+    setNavScopeKey(identityKey)
+  }, [identityKey, navScopeMatches])
+
+  // 刷新/重开恢复（§4.5）：只有拿到 cacheScope/cacheAuthority（owner + viewer
+  // 已确认）后才读指针。display 有具体 ref 时是显示权威；display
+  // `source + null` 是“该来源新会话”（F-M3），不得回退成 `.source` 旧指针。
+  useEffect(() => {
+    if (!sessionRuntime) return
+    const snapshot = sessionRuntime.getSnapshot()
+    if (snapshot.phase !== 'ready') return
+    const scope = sessionRuntime.cacheScope()
+    const authority = sessionRuntime.cacheAuthority()
+    if (!scope || !authority) return
+    const identity = `${snapshot.role}|${snapshot.viewerUserId ?? ''}|${snapshot.projectId}|${snapshot.authGeneration}`
+    if (restoredIdentityRef.current === identity) return
+    restoredIdentityRef.current = identity
+
+    const display = readDisplayPointer(scope, authority)
+    const globalPointer = readPointer(scope, authority, 'global', null)
+    const displayGlobal = display?.surface === 'global' ? display.ref : undefined
+    setActiveGlobalRef(displayGlobal !== undefined ? displayGlobal : globalPointer?.ref ?? null)
+
+    if (display?.surface === 'source') {
+      setSelectedSourceId(display.sourceId)
+      setSourceFocusActive(true)
+      syncedSourceRef.current = display.sourceId
+      if (display.ref) {
+        restoredSourceGuardRef.current = display.sourceId
+        setActiveSourceRef(display.ref)
+        setSourceNewSessionFor(null)
+        sessionRuntime.activate('source', display.ref)
+      } else {
+        // 该来源新会话：不写 `.source`、不清 runtime active、不激活会话。
+        setActiveSourceRef(null)
+        setSourceNewSessionFor(display.sourceId)
+      }
+      return
+    }
+    setSourceNewSessionFor(null)
+    if (display?.surface === 'global') setSourceFocusActive(false)
+  }, [sessionRuntime, runtimeSnapshot])
+
+  // 打开某个来源（Citation/工作台/抽屉）时同步该来源的 runtime active 与
+  // display 指针（§4.5：打开来源即显示切换；先 focus 后激活）；`.source`
+  // 指针存在时恢复它，否则进入“该来源新会话”状态（F-M3，不写 `.source`）。
+  useEffect(() => {
+    if (!sessionRuntime || !navSelectedSourceId) return
+    // 只有 Source surface 真正显示时才同步该来源的 active/display。否则
+    // `activate('global', …)` 触发的 runtime 通知会让本 effect 在“全局已显示”
+    // 时重新恢复来源并覆盖 display（R3 回归：source→global→source）。
+    if (!navSourceFocusActive) return
+    // 离开该来源后遗留的 display 恢复 guard 不得跳过下一次显式打开（R3）。
+    if (
+      restoredSourceGuardRef.current !== null &&
+      restoredSourceGuardRef.current !== navSelectedSourceId
+    ) {
+      restoredSourceGuardRef.current = null
+    }
+    if (syncedSourceRef.current === navSelectedSourceId) return
+    const snapshot = sessionRuntime.getSnapshot()
+    if (snapshot.phase !== 'ready') return
+    if (navSourceNewSessionFor === navSelectedSourceId) {
+      syncedSourceRef.current = navSelectedSourceId
+      return
+    }
+    const scope = sessionRuntime.cacheScope()
+    const authority = sessionRuntime.cacheAuthority()
+    if (!scope || !authority) return
+    if (restoredSourceGuardRef.current === navSelectedSourceId) {
+      // display 已恢复该来源具体会话：保留 display 的显示权威。
+      restoredSourceGuardRef.current = null
+      syncedSourceRef.current = navSelectedSourceId
+      return
+    }
+    const pointer = readPointer(scope, authority, 'source', navSelectedSourceId)
+    syncedSourceRef.current = navSelectedSourceId
+    if (pointer?.ref) {
+      const accepted = sessionRuntime.activate('source', pointer.ref)
+      if (accepted) {
+        setActiveSourceRef(pointer.ref)
+        setSourceNewSessionFor(null)
+        sessionRuntime.setDisplayPointer({
+          version: 1,
+          surface: 'source',
+          sourceId: navSelectedSourceId,
+          ref: pointer.ref,
+        })
+      }
+      return
+    }
+    setActiveSourceRef(null)
+    setSourceNewSessionFor(navSelectedSourceId)
+    sessionRuntime.setDisplayPointer({
+      version: 1,
+      surface: 'source',
+      sourceId: navSelectedSourceId,
+      ref: null,
+    })
+  }, [
+    sessionRuntime,
+    runtimeSnapshot,
+    navSelectedSourceId,
+    navSourceNewSessionFor,
+    sourceOpenRequest,
+    navSourceFocusActive,
+  ])
+
+  // 列表返回 404 `session_not_found`（§4.1 / §4.7）：清该 surface 指针并显示
+  // 空态；本机草稿由 PR-3 的草稿分区各自保留，不在本 PR 注入其他会话。
+  useEffect(() => {
+    if (!sessionRuntime) return
+    if (globalSessions.error !== 'not_found') return
+    sessionRuntime.activate('global', null)
+    setActiveGlobalRef(null)
+    // R7：global 列表 404 只清 global active/指针；若用户正在看 source，
+    // 不得把 display 改写成 global（刷新位置会被意外改变）。
+    if (!(navSourceFocusActive && navSelectedSourceId !== null)) {
+      sessionRuntime.setDisplayPointer({ version: 1, surface: 'global', ref: null })
+    }
+  }, [globalSessions.error, sessionRuntime, navSourceFocusActive, navSelectedSourceId])
+
+  // 页面级导航（§9.6 / §4.2-1）：source 会话先进入该来源 Source focus，再
+  // 激活该 surface 会话；global 会话返回全局 surface。activate 同时校验
+  // project/kind/sourceId 并写 surface 独立指针；只有校验通过（S4）才写
+  // display 指针。任一 surface 的切换都不动另一 surface 的活动会话。
+  const openSession = useCallback(
+    (ref: ResearchSessionRef) => {
+      if (ref.kind === 'source') {
+        if (!ref.sourceId) return
+        // 先切 Source focus（页面导航顺序），再激活该 surface 会话（§4.2-1）。
+        setSelectedSourceId(ref.sourceId)
+        setSourceFocusActive(true)
+        setSourceNewSessionFor(null)
+        restoredSourceGuardRef.current = null
+        syncedSourceRef.current = ref.sourceId
+        if (sessionRuntime) {
+          const accepted = sessionRuntime.activate('source', ref)
+          if (!accepted) return
+          sessionRuntime.setDisplayPointer({
+            version: 1,
+            surface: 'source',
+            sourceId: ref.sourceId,
+            ref,
+          })
+        }
+        setActiveSourceRef(ref)
+        return
+      }
+      setSourceFocusActive(false)
+      // R3：返回全局后同一来源再次被打开时必须重新同步 runtime/display。
+      syncedSourceRef.current = null
+      restoredSourceGuardRef.current = null
+      if (sessionRuntime) {
+        const accepted = sessionRuntime.activate('global', ref)
+        if (!accepted) return
+        sessionRuntime.setDisplayPointer({ version: 1, surface: 'global', ref })
+      }
+      setActiveGlobalRef(ref)
+    },
+    [sessionRuntime],
+  )
+
+  // 新对话（§4.3）：显式触发、single-flight；成功后激活为当前会话；editor
+  // 初始化留 PR-3（本 PR 不产生消息、不建空壳列表项）。
+  const createGlobalSession = globalSessions.create
+  const createSourceSession = sourceSessions.create
+
+  const handleNewGlobalSession = useCallback(async () => {
+    const created = await createGlobalSession()
+    if (created) openSession(created.ref)
+  }, [createGlobalSession, openSession])
+
+  const handleNewSourceSession = useCallback(async () => {
+    const created = await createSourceSession()
+    if (created) openSession(created.ref)
+  }, [createSourceSession, openSession])
 
   // Edit scope 统一链路（R8-3）：退 Source focus → 退最大化 → 回左栏编辑面 →
   // 递增聚焦请求。Header ScopeSummary / Run Template Dialog 共用本入口。
@@ -105,6 +405,11 @@ export default function ResearchPage() {
   const openSource = useCallback((sourceId: string, pageIdx?: number | null) => {
     setSelectedSourceId(sourceId)
     setSourceFocusActive(true)
+    // 显式打开（含关闭后重开同一来源）：强制重新同步该来源 runtime/display（R3）。
+    syncedSourceRef.current = null
+    restoredSourceGuardRef.current = null
+    setSourceNewSessionFor(null)
+    setSourceOpenRequest((request) => request + 1)
     setSourceCompactPanel('primary')
     const nextHighlight = pageIdx ?? null
     setHighlightPageIdx(nextHighlight)
@@ -113,10 +418,22 @@ export default function ResearchPage() {
     }
   }, [])
 
-  // Back：仅退出 Source focus（Source Chat 保活隐藏，不卸载）。
+  // Back：仅退出 Source focus（Source Chat 保活隐藏，不卸载）。返回全局时
+  // 只把 display 更新为 `{surface:'global', sessionRef:active('global')}`，
+  // 来源指针保留、且不清 active('global')（§4.5 返回全局）。
   const exitSourceFocus = useCallback(() => {
     setSourceFocusActive(false)
-  }, [])
+    // R3：Back 会改 display；下次打开来源必须重新同步，不能沿用旧标记。
+    syncedSourceRef.current = null
+    restoredSourceGuardRef.current = null
+    if (sessionRuntime) {
+      sessionRuntime.setDisplayPointer({
+        version: 1,
+        surface: 'global',
+        ref: navActiveGlobalRef,
+      })
+    }
+  }, [sessionRuntime, navActiveGlobalRef])
 
   // Source Chat 内 Citation → 只需高亮左栏详情（不改变选中/专注状态）。
   const handleHighlightPage = useCallback((pageIdx: number) => {
@@ -137,102 +454,248 @@ export default function ResearchPage() {
     [openSource],
   )
 
-  useEffect(() => {
-    if (!isEmbeddedMode()) {
-      router.replace('/notebooks')
-    }
-  }, [router])
-
-  if (!isEmbeddedMode()) {
-    return null
-  }
-
   const projectId = getResearchProjectId() ?? ''
-  const sourceMode = sourceFocusActive && selectedSourceId !== null
+  const sourceMode = navSourceFocusActive && navSelectedSourceId !== null
   const sourceDesktop = sourceMode && isDesktop
   const compact = !isDesktop
-  const focusedSourceId = sourceFocusActive && selectedSourceId !== null ? selectedSourceId : null
+  const focusedSourceId = sourceMode ? navSelectedSourceId : null
+
+  // 半接线隔离（Codex review B8 / R4 / R5，Lead P2 裁定）：只有**新导航真正
+  // 可用**时才关闭未接线的旧 Chat 内容（避免同时显示两套“当前会话”）。可用
+  // 条件 = 会话契约能力就绪 + 非 403 终态 + runtime/identity 就绪（可列表）：
+  // 能力缺失/降级或 unauthorized 时新导航列表/创建本身不可用，按 DESIGN §3.3
+  // “原兼容阅读入口仍可用”，不得 inert/aria-hidden 旧兼容入口。门禁只覆盖
+  // Chat 内容（global chat tabpanel、Source Chat 面板），不覆盖 Workbench、
+  // tabs、其它动作与阅读区。
+  const globalNavUsable =
+    globalSessions.capabilitiesReady && !globalSessions.unauthorized && globalSessions.canList
+  const sourceNavUsable =
+    sourceSessions.capabilitiesReady && !sourceSessions.unauthorized && sourceSessions.canList
+  const globalChatGated = !sourceMode && activeMainAction === 'research-chat' && globalNavUsable
+  const sourceChatGated = sourceMode && sourceNavUsable
+
+  /** 门禁区的合成事件兜底：inert 之外再阻断发送/输入类控件的 click/keydown
+   *  冒泡（R4）。只拦“执行/输入”入口：引用跳转、阅读、tabs 等仍可用，避免
+   *  把阅读链路也一并冻结（R5）。 */
+  // 点击/键盘分开：点击拦截覆盖所有门禁内容（含仍未接线的发送/新建按钮）；
+  // 键盘只拦截 global Chat tabpanel（inert 在 jsdom/部分浏览器对新焦点链路
+  // 之外仍需兜底）。Source 面板的 composer 用 readOnly 冻结，不再统一拦截
+  // 键盘，否则会造成 Tab 焦点陷阱（R4）。
+  // Source composer 在门禁下已是 readOnly，但真实面板的 Enter onKeyDown 仍会
+  // 调 submit()（ResearchSourceChatPanel.tsx:231），readOnly 不会阻止该路径。
+  // 只拦截 Enter（发送路径），Tab/方向键保持可离开，避免焦点陷阱（R4）。
+  const blockGatedSubmitKey = useCallback((event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'Enter') return
+    const target = event.target
+    if (!(target instanceof Element)) return
+    if (!target.closest('[data-session-chat-gated="true"]')) return
+    event.preventDefault()
+    event.stopPropagation()
+  }, [])
+
+  const blockGatedChatEvent = useCallback((event: SyntheticEvent) => {
+    const target = event.target
+    if (!(target instanceof Element)) return
+    const selector =
+      event.type === 'keydown'
+        ? '[data-session-chat-keyboard="true"]'
+        : '[data-session-chat-gated="true"]'
+    if (!target.closest(selector)) return
+    const control = target.closest(GATED_CHAT_CONTROL_SELECTOR)
+    if (!control) return
+    event.preventDefault()
+    event.stopPropagation()
+  }, [])
+
+  // 真实浏览器的键盘/焦点阻断由 inert 提供（属性写在门禁面板上）。
+  useEffect(() => {
+    const container = workspaceSurfaceRef.current
+    if (!container) return
+    const activePanel = Array.from(container.querySelectorAll('[role="tabpanel"]')).find(
+      (node) => node.getAttribute('data-state') === 'active',
+    )
+    if (!(activePanel instanceof HTMLElement)) return
+    if (!globalChatGated) return
+    activePanel.setAttribute('inert', '')
+    activePanel.setAttribute('data-session-chat-gated', 'true')
+    activePanel.setAttribute('data-session-chat-keyboard', 'true')
+    activePanel.setAttribute('aria-hidden', 'true')
+    return () => {
+      activePanel.removeAttribute('inert')
+      activePanel.removeAttribute('data-session-chat-gated')
+      activePanel.removeAttribute('data-session-chat-keyboard')
+      activePanel.removeAttribute('aria-hidden')
+    }
+  }, [globalChatGated, activeMainAction, sourceMode])
+
+  // Source 面板包含仍可用的阅读链路（引用跳转、来源正文），不能整块 inert；
+  // 但 composer 必须真正不可编辑（不能只靠 click/keydown 捕获，否则粘贴/焦点
+  // 仍可写入，且全局 keydown 捕获会造成 Tab 焦点陷阱）。因此对门禁区内的
+  // 输入控件设 readOnly/contenteditable=false，键盘事件不再统一拦截（R4）。
+  useEffect(() => {
+    const container = sourceSurfaceRef.current
+    if (!(container instanceof HTMLElement)) return
+    if (!sourceChatGated) return
+    container.setAttribute('data-session-chat-gated', 'true')
+    const editable = Array.from(
+      container.querySelectorAll<HTMLElement>('input, textarea, [contenteditable="true"]'),
+    )
+    const previous = editable.map((element) => ({
+      element,
+      readOnly:
+        element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement
+          ? element.readOnly
+          : null,
+      contentEditable: element.getAttribute('contenteditable'),
+    }))
+    editable.forEach((element) => {
+      if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+        element.readOnly = true
+      } else {
+        element.setAttribute('contenteditable', 'false')
+      }
+    })
+    return () => {
+      container.removeAttribute('data-session-chat-gated')
+      previous.forEach(({ element, readOnly, contentEditable }) => {
+        if (readOnly !== null && (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)) {
+          element.readOnly = readOnly
+        }
+        if (contentEditable !== null) element.setAttribute('contenteditable', contentEditable)
+      })
+    }
+  }, [sourceChatGated, navSelectedSourceId])
 
   return (
-    // Issue #243 GMOD-FE-01 §6.2：页面根 h-screen flex-col；Header shrink-0，
-    // ResearchLayout min-h-0 flex-1——不产生双滚动。
-    <div className="flex h-screen flex-col">
-      <ResearchWorkspaceShell>
-        {/* Jobs 控制器唯一实例化点：Header Activity + 主区 Chat coverage/
-            Compare 共享同一 3s 轮询与 localStorage 登记 */}
-        <ResearchJobsProvider>
-          <ResearchHeader
-            onEditScopeAllStates={handleEditScopeAllStates}
-            onCitationJump={handleCitationJump}
+    <>
+      <ResearchHeader
+        onEditScopeAllStates={handleEditScopeAllStates}
+        onCitationJump={handleCitationJump}
+      />
+      {/* 根级统一外发确认（§6.8 single-flight） */}
+      <ResearchEgressConsentDialog />
+      <div className="flex min-h-0 flex-1 flex-col">
+        {/* PR-2 页面级会话导航（Lead 裁决 R1(a)：不改两个 Chat 面板）。
+            global 当前会话 / 历史抽屉 / 新对话；有选中来源时并列 Source
+            会话导航；无来源时明确显示“先打开来源”的可见原因（S2）。 */}
+        <div
+          data-testid="research-session-nav"
+          data-active-global-session={navActiveGlobalRef?.sessionId ?? undefined}
+          data-active-source-session={navActiveSourceRef?.sessionId ?? undefined}
+          data-source-new-session={navSourceNewSessionFor ?? undefined}
+          className="flex flex-wrap items-center gap-3 border-b border-border/60 px-4 py-2"
+        >
+          <ResearchSessionSwitcher
+            surface="global"
+            currentRef={navActiveGlobalRef}
+            sessions={globalSessions}
+            onOpenSession={openSession}
+            onNew={handleNewGlobalSession}
           />
-          {/* 根级统一外发确认（§6.8 single-flight） */}
-          <ResearchEgressConsentDialog />
-          <div className="min-h-0 flex-1">
-            <ResearchLayout
-              layoutId={sourceDesktop ? 'source-desktop' : 'global'}
-              axis="horizontal"
-              compact={compact}
-              defaultRatio={sourceDesktop ? 55 : 35}
-              minPrimary={sourceDesktop ? 360 : 280}
-              minSecondary={sourceDesktop ? 360 : 420}
-              primaryLabel={sourceMode ? t('research.layout.sourceContent') : t('research.layout.artifacts')}
-              secondaryLabel={sourceMode ? t('research.layout.sourceChat') : t('research.layout.workspace')}
-              separatorLabel={sourceMode ? t('research.layout.resizeSource') : t('research.layout.resizeWorkspace')}
-              expandSecondaryLabel={sourceMode ? t('research.layout.expandSourceChat') : t('research.layout.expandWorkspace')}
-              restoreLabel={t('research.layout.restore')}
-              compactPrimaryLabel={sourceMode ? t('research.layout.content') : t('research.layout.artifacts')}
-              compactSecondaryLabel={sourceMode ? t('research.layout.chat') : t('research.layout.workspace')}
-              compactPanel={sourceMode ? sourceCompactPanel : globalCompactPanel}
-              onCompactPanelChange={sourceMode ? setSourceCompactPanel : setGlobalCompactPanel}
-              maximized={sourceDesktop ? undefined : globalMaximized}
-              onMaximizedChange={sourceDesktop ? undefined : setGlobalMaximized}
+          {navSelectedSourceId !== null ? (
+            <ResearchSessionSwitcher
+              surface="source"
+              sourceId={navSelectedSourceId}
+              currentRef={navActiveSourceRef}
+              sessions={sourceSessions}
+              onOpenSession={openSession}
+              onNew={handleNewSourceSession}
+            />
+          ) : (
+            <span
+              data-testid="source-session-unavailable"
+              className="text-xs text-muted-foreground"
             >
-              {[
-                <div key="workbench" className="h-full min-h-0 overflow-hidden">
-                  <ResearchWorkbench
-                    focusedSourceId={focusedSourceId}
-                    highlightPageIdx={highlightPageIdx}
-                    highlightRequestId={highlightRequestId}
-                    onOpenSource={openSource}
-                    onExitSourceFocus={exitSourceFocus}
-                    scopeEditRequest={scopeEditRequest}
-                    onRevealSavedArtifact={revealSavedArtifact}
+              {RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.sourceRequired}
+            </span>
+          )}
+          {globalChatGated || sourceChatGated ? (
+            <span
+              data-testid="session-content-gate"
+              className="text-xs text-muted-foreground"
+            >
+              {RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.contentNotReady}
+            </span>
+          ) : null}
+        </div>
+        <div className="min-h-0 flex-1" data-testid="legacy-session-content">
+          <ResearchLayout
+            layoutId={sourceDesktop ? 'source-desktop' : 'global'}
+            axis="horizontal"
+            compact={compact}
+            defaultRatio={sourceDesktop ? 55 : 35}
+            minPrimary={sourceDesktop ? 360 : 280}
+            minSecondary={sourceDesktop ? 360 : 420}
+            primaryLabel={sourceMode ? t('research.layout.sourceContent') : t('research.layout.artifacts')}
+            secondaryLabel={sourceMode ? t('research.layout.sourceChat') : t('research.layout.workspace')}
+            separatorLabel={sourceMode ? t('research.layout.resizeSource') : t('research.layout.resizeWorkspace')}
+            expandSecondaryLabel={sourceMode ? t('research.layout.expandSourceChat') : t('research.layout.expandWorkspace')}
+            restoreLabel={t('research.layout.restore')}
+            compactPrimaryLabel={sourceMode ? t('research.layout.content') : t('research.layout.artifacts')}
+            compactSecondaryLabel={sourceMode ? t('research.layout.chat') : t('research.layout.workspace')}
+            compactPanel={sourceMode ? sourceCompactPanel : globalCompactPanel}
+            onCompactPanelChange={sourceMode ? setSourceCompactPanel : setGlobalCompactPanel}
+            maximized={sourceDesktop ? undefined : globalMaximized}
+            onMaximizedChange={sourceDesktop ? undefined : setGlobalMaximized}
+          >
+            {[
+              <div key="workbench" className="h-full min-h-0 overflow-hidden">
+                <ResearchWorkbench
+                  focusedSourceId={focusedSourceId}
+                  highlightPageIdx={highlightPageIdx}
+                  highlightRequestId={highlightRequestId}
+                  onOpenSource={openSource}
+                  onExitSourceFocus={exitSourceFocus}
+                  scopeEditRequest={scopeEditRequest}
+                  onRevealSavedArtifact={revealSavedArtifact}
+                  onOpenResearchChatDraft={openResearchChatDraft}
+                  paneReveal={paneReveal}
+                />
+              </div>,
+              <div
+                key="workspace"
+                className={`h-full min-h-0 ${compact ? '' : 'border-l'}`}
+                ref={workspaceSurfaceRef}
+                onClickCapture={blockGatedChatEvent}
+                onKeyDownCapture={blockGatedChatEvent}
+              >
+                {/* 全局工作区保持挂载（隐藏但保活：Chat 流/Job 轮询/四动作
+                    访问状态不丢）；Source Chat 也保持挂载，显隐由
+                    sourceFocusActive 决定，Back 不卸载。 */}
+                <div className="h-full" hidden={sourceMode}>
+                  <ResearchWorkspace
+                    activeAction={activeMainAction}
+                    onActiveActionChange={activateAction}
+                    surfaceActive={!sourceMode}
+                    onCitationJump={handleCitationJump}
+                    onEditScopeAllStates={handleEditScopeAllStates}
                     onOpenResearchChatDraft={openResearchChatDraft}
-                    paneReveal={paneReveal}
+                    onRevealSavedArtifact={revealSavedArtifact}
+                    chatPrefill={chatPrefill}
                   />
-                </div>,
-                <div key="workspace" className={`h-full min-h-0 ${compact ? '' : 'border-l'}`}>
-                  {/* 全局工作区保持挂载（隐藏但保活：Chat 流/Job 轮询/四动作
-                      访问状态不丢）；Source Chat 也保持挂载，显隐由
-                      sourceFocusActive 决定，Back 不卸载。 */}
-                  <div className="h-full" hidden={sourceMode}>
-                    <ResearchWorkspace
-                      activeAction={activeMainAction}
-                      onActiveActionChange={activateAction}
-                      surfaceActive={!sourceMode}
-                      onCitationJump={handleCitationJump}
-                      onEditScopeAllStates={handleEditScopeAllStates}
-                      onOpenResearchChatDraft={openResearchChatDraft}
-                      onRevealSavedArtifact={revealSavedArtifact}
-                      chatPrefill={chatPrefill}
+                </div>
+                {navSelectedSourceId !== null && (
+                  <div
+                    className="h-full"
+                    data-testid="source-chat-surface"
+                    hidden={!sourceMode}
+                    ref={sourceSurfaceRef}
+                    onClickCapture={blockGatedChatEvent}
+                    onKeyDownCapture={blockGatedSubmitKey}
+                  >
+                    <ResearchSourceChatPanel
+                      key={`${projectId}:${navSelectedSourceId}`}
+                      projectId={projectId}
+                      sourceId={navSelectedSourceId}
+                      onHighlightPage={handleHighlightPage}
                     />
                   </div>
-                  {selectedSourceId !== null && (
-                    <div className="h-full" hidden={!sourceMode}>
-                      <ResearchSourceChatPanel
-                        key={`${projectId}:${selectedSourceId}`}
-                        projectId={projectId}
-                        sourceId={selectedSourceId}
-                        onHighlightPage={handleHighlightPage}
-                      />
-                    </div>
-                  )}
-                </div>,
-              ]}
-            </ResearchLayout>
-          </div>
-        </ResearchJobsProvider>
-      </ResearchWorkspaceShell>
-    </div>
+                )}
+              </div>,
+            ]}
+          </ResearchLayout>
+        </div>
+      </div>
+    </>
   )
 }
