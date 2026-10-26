@@ -7,6 +7,10 @@ import {
 } from './ResearchChatPanel'
 import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
 import { ResearchScopeProvider, scopeStorageKey, useResearchScope, type ResearchScopeSnapshot } from '@/lib/research/scope'
+import { createEditorState } from '@/lib/research/editor-machine'
+import type { EditorSnapshot, ResearchConversationSnapshot } from '@/lib/research/types'
+import type { ResearchSessionRef } from '@/lib/research/session-contract'
+import { useState } from 'react'
 import type { ResearchBackgroundNotice, ResearchChatSelection, ResearchChatTurn } from '@/lib/hooks/use-research-chat'
 import type { ResearchCitation, ResearchJob } from '@/lib/research/types'
 
@@ -971,5 +975,91 @@ describe('ResearchChatPanel · 范围呈现与后台 CTA 门禁（T9 / D-26）',
     expect(screen.getByTestId('chat-persistent-job-error')).not.toHaveTextContent(
       'research.errors.persistentJobSubmitFailed',
     )
+  })
+})
+
+
+// PR-4（#602 第三批）：会话 editor 接线的最小集成证据——草稿真源为 editor
+// `draftText`，发送不清稿（清稿归 PR-5a 原子提交协议），运行时缺失时门禁
+// 原因必须出现在输入区（§6.1/§8.2/§9.6）。
+describe('ResearchChatPanel · PR-4 会话 editor 接线', () => {
+  const REF: ResearchSessionRef = {
+    domain: 'research',
+    kind: 'global',
+    projectId: PROJECT_ID,
+    sessionId: 'sess-1',
+    sourceId: null,
+  }
+  const CONVERSATION: ResearchConversationSnapshot = {
+    isBusy: false,
+    isStreaming: false,
+    activeTurnId: null,
+    phase: 'idle',
+  }
+
+  function WiredPanel({ onSend }: { onSend: (query: string) => Promise<boolean> }) {
+    const [snapshot, setSnapshot] = useState<EditorSnapshot>(() => ({
+      ...createEditorState({ ref: REF, writerId: 'writer-1', transportAvailable: true }),
+      phase: 'ready',
+      loading: false,
+      baseScope: { mode: 'selected', sourceIds: ['src_1'], singleSourceId: null },
+    }))
+    return (
+      <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
+        <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+          <ResearchChatPanel
+            turns={[]}
+            isStreaming={false}
+            onSend={onSend}
+            onSendCoverage={vi.fn(async () => true)}
+            editorSnapshot={snapshot}
+            conversationSnapshot={CONVERSATION}
+            scopeSources={[{ sourceId: 'src_1', title: 'Paper One' }]}
+            scopeNotes={[]}
+            onChangeScope={vi.fn()}
+            onDraftChange={(text) => setSnapshot(prev => ({ ...prev, draftText: text, dirty: text.length > 0 }))}
+            onRetrySave={vi.fn()}
+          />
+        </ResearchScopeProvider>
+      </ResearchWorkspaceProvider>
+    )
+  }
+
+  it('接线后以 editor 草稿发送且不清稿；范围条可见', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
+    const onSend = vi.fn<(query: string) => Promise<boolean>>(async () => true)
+    render(
+      <QueryClientProvider client={queryClient}>
+        <WiredPanel onSend={onSend} />
+      </QueryClientProvider>,
+    )
+    expect(screen.getByTestId('research-session-scope-bar')).toBeInTheDocument()
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: '  保留空白的问题  ' } })
+    fireEvent.click(screen.getByTestId('chat-send'))
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1))
+    // 不 trim 覆盖、不在发送后本地清空草稿（§5.4/§5.8）
+    expect(onSend.mock.calls[0][0]).toBe('  保留空白的问题  ')
+    expect(screen.getByTestId('chat-input')).toHaveValue('  保留空白的问题  ')
+  })
+
+  it('运行时缺失：发送按钮禁用且门禁原因可见（不只靠 disabled）', () => {
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
+          <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+            <ResearchChatPanel
+              turns={[]}
+              isStreaming={false}
+              onSend={vi.fn(async () => true)}
+              onSendCoverage={vi.fn(async () => true)}
+              editorSnapshot={null}
+            />
+          </ResearchScopeProvider>
+        </ResearchWorkspaceProvider>
+      </QueryClientProvider>,
+    )
+    expect(screen.getByTestId('chat-send')).toBeDisabled()
+    expect(screen.getByTestId('research-draft-gate-hint')).toBeInTheDocument()
   })
 })

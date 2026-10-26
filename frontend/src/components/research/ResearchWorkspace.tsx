@@ -17,6 +17,8 @@ import {
   deriveScopeSnapshot,
 } from '@/lib/hooks/use-research-chat'
 import { formatScopeLabel, useResearchScope, type ResearchScopeSnapshot } from '@/lib/research/scope'
+import { useResearchSessionRuntimeOptional } from '@/lib/hooks/research-session-runtime'
+import { useResearchEditor } from '@/lib/hooks/use-research-editor'
 import { researchModelBlockedHint, useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
 import { useResearchNotes, useResearchSources } from '@/lib/hooks/use-research'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
@@ -35,7 +37,9 @@ import {
 } from './research-main-action'
 import { canJumpToCitation, resolveCitationCandidate, resolveCitationSource } from './citation-utils'
 import type { ResearchSource } from '@/lib/types/research'
+import type { ResearchScopeBarNoteOption, ResearchScopeBarSourceOption } from '@/lib/research/types'
 import type { ResearchCitationDisplayItem } from '@/lib/research/types'
+import type { ResearchConversationSnapshot } from '@/lib/research/types'
 import type { ResearchCitation } from '@/lib/types/research'
 import type { ResearchChatRequest } from '@/lib/research/types'
 
@@ -105,6 +109,36 @@ export function ResearchWorkspace({
   const notesQuery = useResearchNotes(projectId)
   const sources = useMemo(() => sourcesQuery.data?.items ?? [], [sourcesQuery.data])
   const notes = useMemo(() => notesQuery.data?.items ?? [], [notesQuery.data])
+
+  // PR-4：Chat 草稿/范围/锚点的真源＝当前全局会话 editor（DESIGN §5.3/§5.4）。
+  // 未装配 session runtime 的宿主保持旧本地输入回退（PR-5a 移除）。
+  const sessionRuntime = useResearchSessionRuntimeOptional()
+  const activeGlobalRef = sessionRuntime?.active('global') ?? null
+  const chatEditor = useResearchEditor({
+    kind: 'global',
+    sessionId: activeGlobalRef?.sessionId ?? '',
+    enabled: sessionRuntime !== null && activeGlobalRef !== null,
+  })
+  const chatEditorSnapshot = sessionRuntime === null ? undefined : chatEditor.snapshot
+  // 范围条只读投影：不读写工作区选择器（DESIGN §5.3）。
+  const scopeBarSources = useMemo<ResearchScopeBarSourceOption[]>(
+    () =>
+      sources
+        .filter(
+          (source): source is ResearchSource & { source_id: string } =>
+            source.source_id !== null,
+        )
+        .map((source) => ({
+          sourceId: source.source_id,
+          title: source.document_id,
+          unavailable: source.status !== 'ready',
+        })),
+    [sources],
+  )
+  const scopeBarNotes = useMemo<ResearchScopeBarNoteOption[]>(
+    () => notes.map((note) => ({ noteId: note.note_id, title: note.title })),
+    [notes],
+  )
   const loading = sourcesQuery.isLoading || notesQuery.isLoading
   const loadError = sourcesQuery.error ?? notesQuery.error
   const loadErrorText =
@@ -507,6 +541,20 @@ export function ResearchWorkspace({
             backgroundJobRequiresSelection={!c05.dispatchReady('search')}
             resolveChatOrigin={resolveChatOrigin}
             prefill={chatPrefill}
+            editorSnapshot={chatEditorSnapshot}
+            conversationSnapshot={{
+              isBusy: isStreaming,
+              isStreaming,
+              activeTurnId: null,
+              phase: isStreaming ? 'streaming' : 'idle',
+            }}
+            scopeSources={scopeBarSources}
+            scopeNotes={scopeBarNotes}
+            onChangeScope={chatEditor.setScope}
+            onDraftChange={chatEditor.setDraftText}
+            onRetrySave={chatEditor.retrySave}
+            onRestoreDraft={chatEditor.restoreDraft}
+            onChatAnchorChange={chatEditor.setChatAnchor}
             onViewInsight={
               onRevealSavedArtifact !== undefined
                 ? (insightId) => onRevealSavedArtifact('insight', insightId)

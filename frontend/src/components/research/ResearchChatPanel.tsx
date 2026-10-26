@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -20,6 +20,22 @@ import type {
 } from '@/lib/hooks/use-research-chat'
 import type { ResearchCitationDisplayItem, ResearchJob, ResearchSynthesisScope } from '@/lib/research/types'
 import { formatScopeLabel, useResearchScope, type ResearchScopeSnapshot } from '@/lib/research/scope'
+import { ResearchSessionScopeBar } from './ResearchSessionScopeBar'
+import {
+  ResearchDraftComposer,
+  deriveResearchDraftGate,
+  researchDraftGateReasonKey,
+} from './ResearchDraftComposer'
+import { measureChatAnchor, restoreScrollTop } from '@/lib/research/reading-anchor'
+import type {
+  EditorSnapshot,
+  ResearchConversationSnapshot,
+  ResearchDraftGate,
+  ResearchScopeBarNoteOption,
+  ResearchScopeBarSourceOption,
+  ScopeEdit,
+} from '@/lib/research/types'
+import type { WireChatAnchor } from '@/lib/research/session-contract'
 
 /**
  * Research Chat 面板（UI-03，REQ-ENG-04/REQ-API-02；COV-09 §12.3）。
@@ -50,6 +66,24 @@ export type BackgroundJobSubmitResult =
   | { status: 'blocked_scope' }
   | { status: 'failed' }
 
+/** PR-4：由会话 editor 快照派生 legacy `ResearchChatSelection`（§5.3 执行范围编码）。 */
+function selectionFromEditorSnapshot(snapshot: EditorSnapshot): ResearchChatSelection {
+  if (snapshot.singleSourceId !== null) {
+    return {
+      mode: 'selected',
+      sourceIds: [],
+      noteIds: [...snapshot.noteIds],
+      singleSourceId: snapshot.singleSourceId,
+    }
+  }
+  return {
+    mode: snapshot.baseScope?.mode ?? 'all',
+    sourceIds: snapshot.baseScope !== null ? [...snapshot.baseScope.sourceIds] : [],
+    noteIds: [...snapshot.noteIds],
+    singleSourceId: null,
+  }
+}
+
 export function ResearchChatPanel({
   turns,
   isStreaming,
@@ -68,6 +102,15 @@ export function ResearchChatPanel({
   onViewInsight,
   onViewNote,
   prefill,
+  editorSnapshot,
+  conversationSnapshot,
+  scopeSources,
+  scopeNotes,
+  onChangeScope,
+  onDraftChange,
+  onRetrySave,
+  onRestoreDraft,
+  onChatAnchorChange,
 }: {
   turns: ResearchChatTurn[]
   isStreaming: boolean
@@ -123,16 +166,45 @@ export function ResearchChatPanel({
   onViewNote?: (noteId: string) => void
   /** RWV2-23（AC4）：Continue research 预填草稿（seq 递增触发；挂载时生效） */
   prefill?: { text: string; seq: number } | null
+  /**
+   * PR-4 会话 editor 接线（DESIGN §9.6）：`undefined` = 宿主未装配 session
+   * runtime（保持 PR-2 前的本地输入回退路径，PR-5a 移除）；`null` = runtime
+   * 已装配但当前无可用全局会话（composer 禁用并显示原因）。
+   */
+  editorSnapshot?: EditorSnapshot | null
+  /** PR-4：对话快照（isStreaming/busy/activeTurnId）；缺省由 props 推导。 */
+  conversationSnapshot?: ResearchConversationSnapshot
+  /** PR-4：范围条投射的工作区资料（不写工作区选择，只读呈现）。 */
+  scopeSources?: readonly ResearchScopeBarSourceOption[]
+  scopeNotes?: readonly ResearchScopeBarNoteOption[]
+  onChangeScope?: (edit: ScopeEdit) => void
+  onDraftChange?: (text: string) => void
+  onRetrySave?: () => void
+  onRestoreDraft?: (writerId: string) => void
+  /** PR-4：滚动空闲 1000ms 后上报消息锚点（§5.7.1）。 */
+  onChatAnchorChange?: (anchor: WireChatAnchor | null) => void
 }) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [scope, setScope] = useState<ResearchSynthesisScope>('relevant')
+  // PR-4：editor 接线标记——undefined 表示宿主未装配 runtime（过渡回退）。
+  const wired = editorSnapshot !== undefined
+  const chatScrollRef = useRef<HTMLDivElement | null>(null)
+  const anchorTimerRef = useRef<number | null>(null)
+  const restoringRef = useRef(false)
+  const wiredConversation: ResearchConversationSnapshot = conversationSnapshot ?? {
+    isBusy: isStreaming,
+    isStreaming,
+    activeTurnId: null,
+    phase: isStreaming ? 'streaming' : 'idle',
+  }
 
   // RWV2-23（AC4）：Continue research 预填（跨 keep-alive：首访挂载与后续
   // 递增 seq 都生效）；不自动派发——发送仍需用户点 Send（既有守卫）。
   useEffect(() => {
     if (prefill && prefill.text.trim() !== '') {
-      setQuery(prefill.text)
+      if (wired) onDraftChange?.(prefill.text)
+      else setQuery(prefill.text)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅响应 seq 递增
   }, [prefill?.seq])
@@ -153,6 +225,28 @@ export function ResearchChatPanel({
     dispatchSnapshot.sourceIds.length > 0 &&
     dispatchSnapshot.sourceIds.length <= COVERAGE_SOURCE_HARD_MAX &&
     dispatchSnapshot.noteIds.length === 0
+
+  // PR-4 发送门禁（§6.1）：composer 按钮 disabled 之外必须给出稳定原因。
+  const composerGate: ResearchDraftGate = (() => {
+    if (!wired) return { allowed: true, reason: null }
+    const derived = deriveResearchDraftGate({
+      editorSnapshot: editorSnapshot ?? null,
+      conversationSnapshot: wiredConversation,
+    })
+    if (derived.allowed && generationBlocked) {
+      return { allowed: false, reason: 'turn_active' }
+    }
+    if (derived.allowed && scope === 'all_selected' && !coverageAllowed) {
+      return { allowed: false, reason: 'scope_invalid' }
+    }
+    return derived
+  })()
+  const composerGateReasonText: string | null = composerGate.allowed
+    ? null
+    : (generationBlocked ? blockedHint ?? t('research.errors.generationInProgress') : null) ??
+      (scope === 'all_selected' && !coverageAllowed
+        ? t('research.coverage.capabilityDisabled')
+        : t(researchDraftGateReasonKey(composerGate.reason ?? 'runtime_unavailable')))
 
   // Issue #439：persistent_job_required 的提交态与结果（一律按 turn 记录，
   // 避免跨 turn 泄漏；成功后按钮常驻禁用 → 重复点击不产生第二个 Job）
@@ -233,20 +327,26 @@ export function ResearchChatPanel({
   }
 
   const submit = () => {
-    const trimmed = query.trim()
+    // PR-4：接线后草稿真源在会话 editor；发送不 trim 覆盖正文（§5.4）。
+    const rawText = wired ? editorSnapshot?.draftText ?? '' : query
+    const trimmed = rawText.trim()
     if (!trimmed || generationBlocked) return
+    if (wired && !composerGate.allowed) return
     // RWV2-11（K8/K9）：派发时刻冻结快照——submit 单次读取，提交闸门与载荷
     // 共用同一快照（P2-①，避免渲染期/提交期两次取值）；selection 携带 mode，
     // turn 记录由 hook 推导，consent/幂等/最终请求全部同源（K11）。
     const snapshot = getSnapshot()
     // R2-H4：显式提交路径的 selection 携带完整快照（含 singleSourceId），
     // 否则派发链路 deriveScopeSnapshot 会丢限定字段。
-    const selectionWithScope: ResearchChatSelection = {
-      mode: snapshot.mode,
-      sourceIds: [...snapshot.sourceIds],
-      noteIds: [...snapshot.noteIds],
-      singleSourceId: snapshot.singleSourceId,
-    }
+    const selectionWithScope: ResearchChatSelection =
+      wired && editorSnapshot !== null && editorSnapshot !== undefined
+        ? selectionFromEditorSnapshot(editorSnapshot)
+        : {
+            mode: snapshot.mode,
+            sourceIds: [...snapshot.sourceIds],
+            noteIds: [...snapshot.noteIds],
+            singleSourceId: snapshot.singleSourceId,
+          }
     if (scope === 'all_selected') {
       // #358：能力门禁在提交点再次校验（与 coverageAllowed 同源，且用
       // 派发时刻冻结快照）——能力 false/缺失时不发 Coverage 创建请求。
@@ -257,19 +357,107 @@ export function ResearchChatPanel({
         snapshot.sourceIds.length <= COVERAGE_SOURCE_HARD_MAX &&
         snapshot.noteIds.length === 0
       if (!allowed) return
-      void onSendCoverage(trimmed, snapshot).then((sent) => {
-        if (sent) setQuery('')
+      void onSendCoverage(wired ? rawText : trimmed, snapshot).then((sent) => {
+        // PR-4：接线后清稿由 PR-5a 的原子提交协议承担（§5.8）；未接线保留旧行为。
+        if (sent && !wired) setQuery('')
       })
       return
     }
-    void onSend(trimmed, selectionWithScope).then((sent) => {
-      if (sent) setQuery('')
+    // PR-4：接线后正文原样提交（不 trim 覆盖草稿），空值校验仍用 trimmed。
+    void onSend(wired ? rawText : trimmed, selectionWithScope).then((sent) => {
+      if (sent && !wired) setQuery('')
     })
   }
 
+  // PR-4：锚点上报——滚动空闲 1000ms 计算一次（§5.7.1），恢复期间不写。
+  const scheduleChatAnchor = (): void => {
+    if (!wired || restoringRef.current || onChatAnchorChange === undefined) return
+    if (anchorTimerRef.current !== null) window.clearTimeout(anchorTimerRef.current)
+    anchorTimerRef.current = window.setTimeout(() => {
+      anchorTimerRef.current = null
+      const container = chatScrollRef.current
+      if (container === null) return
+      const rect = container.getBoundingClientRect()
+      const messages = Array.from(
+        container.querySelectorAll<HTMLElement>('[data-message-id]'),
+      ).map((node) => {
+        const nodeRect = node.getBoundingClientRect()
+        return {
+          messageId: node.dataset.messageId ?? '',
+          top: nodeRect.top,
+          height: nodeRect.height,
+        }
+      })
+      const anchor = measureChatAnchor({
+        messages,
+        container: {
+          containerTop: rect.top,
+          scrollTop: container.scrollTop,
+          clientHeight: container.clientHeight,
+          scrollHeight: container.scrollHeight,
+        },
+      })
+      if (anchor !== null) onChatAnchorChange(anchor)
+    }, 1000)
+  }
+
+  useEffect(() => {
+    return () => {
+      if (anchorTimerRef.current !== null) window.clearTimeout(anchorTimerRef.current)
+    }
+  }, [])
+
+  // PR-4：恢复消息锚点（§5.7.1）——只设 scrollTop，不动焦点、不写回锚点。
+  const savedChatAnchor = wired ? editorSnapshot?.chatAnchor ?? null : null
+  useEffect(() => {
+    if (!wired || savedChatAnchor === null) return
+    const container = chatScrollRef.current
+    if (container === null) return
+    const target = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-message-id]'),
+    ).find(node => node.dataset.messageId === savedChatAnchor.messageId) ?? null
+    const rect = container.getBoundingClientRect()
+    const targetRect = target?.getBoundingClientRect() ?? null
+    restoringRef.current = true
+    const result = restoreScrollTop({
+      container: {
+        containerTop: rect.top,
+        scrollTop: container.scrollTop,
+        clientHeight: container.clientHeight,
+        scrollHeight: container.scrollHeight,
+      },
+      savedOffsetPx: savedChatAnchor.offsetPx,
+      followTail: savedChatAnchor.followTail,
+      currentTargetTop: targetRect !== null ? targetRect.top : null,
+      targetHeightPx: targetRect !== null ? targetRect.height : undefined,
+    })
+    if (result.ok) container.scrollTop = result.scrollTop
+    const timer = window.setTimeout(() => {
+      restoringRef.current = false
+    }, 0)
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在锚点/消息集变化时恢复
+  }, [wired, savedChatAnchor?.messageId, savedChatAnchor?.offsetPx, savedChatAnchor?.followTail, turns.length])
+
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex-1 space-y-4 overflow-y-auto p-4">
+      {wired && (
+        <div className="shrink-0 border-b px-3 py-2">
+          <ResearchSessionScopeBar
+            editorSnapshot={editorSnapshot ?? null}
+            sources={scopeSources ?? []}
+            notes={scopeNotes ?? []}
+            disabledReason={null}
+            onChangeScope={onChangeScope ?? (() => {})}
+          />
+        </div>
+      )}
+      <div
+        ref={chatScrollRef}
+        className="flex-1 space-y-4 overflow-y-auto p-4"
+        onScroll={scheduleChatAnchor}
+        data-testid="chat-messages"
+      >
         {turns.length === 0 && (
           <p className="text-sm text-muted-foreground">{t('research.chatEmpty')}</p>
         )}
@@ -288,7 +476,11 @@ export function ResearchChatPanel({
         )}
         {turns.map((turn) =>
           turn.role === 'user' ? (
-            <div key={turn.id} className="flex flex-col items-end gap-1">
+            <div
+              key={turn.id}
+              className="flex flex-col items-end gap-1"
+              data-message-id={turn.id}
+            >
               <div className="max-w-[80%] rounded-lg bg-primary/10 px-3 py-2 text-sm">
                 {turn.content}
               </div>
@@ -314,7 +506,7 @@ export function ResearchChatPanel({
               )}
             </div>
           ) : (
-            <div key={turn.id} className="space-y-2">
+            <div key={turn.id} className="space-y-2" data-message-id={turn.id}>
               {turn.coverageJobId !== null ? (
                 <CoverageJobDetails
                   job={coverageJobs?.find((j) => j.job_id === turn.coverageJobId)}
@@ -533,25 +725,38 @@ export function ResearchChatPanel({
           selectedSourceCount={dispatchSnapshot.sourceIds.length}
           selectedNoteCount={dispatchSnapshot.noteIds.length}
         />
-        <div className="flex gap-2">
-          <Input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') submit()
-            }}
-            disabled={generationBlocked}
-            placeholder={t('research.chatPlaceholder')}
-            data-testid="chat-input"
+        {wired ? (
+          <ResearchDraftComposer
+            editorSnapshot={editorSnapshot ?? null}
+            conversationSnapshot={wiredConversation}
+            gate={composerGate}
+            gateReasonText={composerGateReasonText}
+            onDraftChange={onDraftChange ?? (() => {})}
+            onSend={submit}
+            onRetrySave={onRetrySave ?? (() => {})}
+            onRestoreDraft={onRestoreDraft}
           />
-          <Button
-            onClick={submit}
-            disabled={!query.trim() || isStreaming || generationBlocked || (scope === 'all_selected' && !coverageAllowed)}
-            data-testid="chat-send"
-          >
-            {t('research.chatSend')}
-          </Button>
-        </div>
+        ) : (
+          <div className="flex gap-2">
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') submit()
+              }}
+              disabled={generationBlocked}
+              placeholder={t('research.chatPlaceholder')}
+              data-testid="chat-input"
+            />
+            <Button
+              onClick={submit}
+              disabled={!query.trim() || isStreaming || generationBlocked || (scope === 'all_selected' && !coverageAllowed)}
+              data-testid="chat-send"
+            >
+              {t('research.chatSend')}
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   )
