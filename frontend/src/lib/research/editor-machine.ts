@@ -572,10 +572,11 @@ export function reduceEditor(state: EditorSnapshot, event: EditorEvent): EditorS
     case 'capability/restored':
       // 仅解除“editor 能力不可用”造成的只读；unreadable/服务端权限等其它只读原因不在此列
       // （review 第三轮 P2：能力关闭再恢复后不得永久只读）。
-      if (state.invalidated || !state.readOnly || state.unreadable || state.blocked) {
+      if (state.invalidated || !state.readOnly || state.unreadable) {
         return state
       }
-      return { ...state, phase: 'ready', readOnly: false }
+      // 只解除能力型只读；blocked 等可修正错误保持原状，由用户编辑清除（review9 P2）。
+      return { ...state, phase: state.blocked ? 'blocked' : 'ready', readOnly: false }
     case 'save/unsynced':
       return {
         ...state,
@@ -1034,9 +1035,38 @@ export function createEditorController(deps: EditorDeps): EditorController {
   let shadowConfirmed = false
   /** 只读是否由 editor 能力不可用（editor_ready=false）造成（能力恢复后需解除）。 */
   let capabilityReadOnly = false
+  /** 恢复本机稿被推迟（遮蔽/无缓存授权读不到）；解除后必须补读，期间不得 autosave（review9 P1）。 */
+  let pendingDraftReadback = false
+  /** 加载/恢复后是否已改过范围选择；读回草稿不得覆盖本轮新范围（review9 P3）。 */
+  let hasLocalScopeEdit = false
+
+  const preserveLocalScope = (record: SessionDraftRecord): SessionDraftRecord =>
+    hasLocalScopeEdit
+      ? {
+          ...record,
+          baseScope: state.baseScope,
+          singleSourceId: state.singleSourceId,
+          noteIds: state.noteIds,
+        }
+      : record
+
+  const resolvePendingDraftReadback = (): boolean => {
+    if (!pendingDraftReadback) return true
+    if (deps.getCacheAuthority() === null) return false
+    pendingDraftReadback = false
+    if (!hasLocalTextEdit && state.draftText === '') {
+      const existing = readOwnDraft()
+      if (existing !== null && existing.text !== '' && existing.dirty) {
+        reduce({ type: 'draft/readback', record: preserveLocalScope(existing) })
+      }
+      shadowConfirmed = true
+    }
+    return true
+  }
 
   const writeLocalDraft = (): void => {
     if (state.invalidated || released) return
+    if (!resolvePendingDraftReadback()) return
     // 防御性保护：加载未完成、用户未改过文本、当前 shadow 为空时，绝不用空文本覆盖
     // 同一 writer 分支上已有的非空未同步稿（verifier 第二轮 P1：仅锚点变化也会触发
     // 100ms 本机 merge，若恢复被跳过会清空唯一副本）。
@@ -1434,12 +1464,11 @@ export function createEditorController(deps: EditorDeps): EditorController {
       reduce({ type: 'save/readonly', failure })
       current.resolve('readonly')
     } else if (failure.handling === 'blocked') {
-      capabilityReadOnly = false
       reduce({ type: 'save/blocked', failure })
       current.resolve('blocked')
     } else {
-      // 服务端拒绝（如 chat_owner_required/403）：同样不得被能力恢复误解除。
-      capabilityReadOnly = false
+      // 服务端拒绝（如 chat_owner_required/403）：capability 起源保留，能力恢复只清
+      // 只读、不清 blocked（review9 P2：可修正错误不得永久锁死）。
       reduce({ type: 'save/blocked', failure })
       current.resolve('invalid')
     }
@@ -1631,6 +1660,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
 
   const dispatchAutoIfPossible = (): void => {
     if (active !== null || queued !== null) return
+    if (!resolvePendingDraftReadback()) return
     if (!autoDispatchAllowed()) return
     if (!pendingAutoText && !pendingAutoPosition) return
     pendingAutoText = false
@@ -1736,9 +1766,13 @@ export function createEditorController(deps: EditorDeps): EditorController {
       return
     }
     // 能力恢复（editor_ready=false→true）：先解除能力型只读，再续跑排队项。
-    if (capabilityReadOnly && state.readOnly && !state.unreadable && !state.blocked) {
+    if (capabilityReadOnly && state.readOnly && !state.unreadable) {
       capabilityReadOnly = false
       reduce({ type: 'capability/restored' })
+    }
+    if (pendingDraftReadback) {
+      if (!resolvePendingDraftReadback()) return
+      scheduleTextSave()
     }
     if (active !== null) {
       if (active.unconfirmed && (identityChanged || !sameGeneration(active.attempt))) {
@@ -1887,7 +1921,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
       // 服务端不可读时同样只在文本基线未变时读回磁盘草稿，避免覆盖新输入。
       const unreadableRecord = state.draftText === loadBaselineText ? readOwnDraft() : null
       if (unreadableRecord !== null) {
-        reduce({ type: 'draft/readback', record: unreadableRecord })
+        reduce({ type: 'draft/readback', record: preserveLocalScope(unreadableRecord) })
         shadowConfirmed = true
       }
       refreshDraftCandidates()
@@ -1916,11 +1950,15 @@ export function createEditorController(deps: EditorDeps): EditorController {
       if (!hasLocalTextEdit && state.draftText === '') {
         const existing = readOwnDraft()
         if (existing !== null && existing.text !== '' && existing.dirty) {
-          reduce({ type: 'draft/readback', record: existing })
+          reduce({ type: 'draft/readback', record: preserveLocalScope(existing) })
           shadowConfirmed = true
+        } else if (deps.getCacheAuthority() === null) {
+          // 遮蔽/无缓存授权：读不到本机稿，先不置确认、不安排 autosave；
+          // 解除遮蔽后再补读，避免空 shadow 经 PUT+ACK 被“确认”（review9 P1）。
+          pendingDraftReadback = true
         }
       }
-      if (!state.oversize) scheduleTextSave()
+      if (!pendingDraftReadback && !state.oversize) scheduleTextSave()
       refreshDraftCandidates()
       return false
     }
@@ -2048,6 +2086,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
         { baseScope: state.baseScope, singleSourceId: state.singleSourceId, noteIds: state.noteIds },
         edit,
       )
+      hasLocalScopeEdit = true
       reduce({
         type: 'draft/scope',
         baseScope: next.baseScope,

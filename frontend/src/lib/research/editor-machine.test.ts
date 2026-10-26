@@ -2221,10 +2221,100 @@ describe('verifier 第三轮复核残留（review8 P1/P2）', () => {
     harness.setRuntime({ editorReady: true })
     await flushMicrotasks()
     // 能力恢复不得解除服务端 blocked：排队项按 blocked 结算，不得派发第二个 PUT。
+    // 只解除能力型只读；blocked 保持，等待用户修正后由编辑清除（review9 P2）。
     await expect(queued).resolves.toBe('blocked')
     const after = harness.controller.getSnapshot()
     expect(after.blocked).toBe(true)
-    expect(after.readOnly).toBe(true)
+    expect(after.readOnly).toBe(false)
     expect(harness.puts).toHaveLength(1)
+  })
+})
+
+describe('review9 P1/P2/P3：遮蔽补读、可修正 blocked、范围保留', () => {
+  function seedDraftAtRevision(storage: MapStorage, baseRevision: number): void {
+    writeDraft(
+      { viewerUserId: '1', projectId: 'p1' },
+      REF,
+      'w-test',
+      draftRecord({ text: 'PRIVATE-UNSAVED', token: 'tk-local', localVersion: 3, baseRevision }),
+      { storage },
+    )
+  }
+
+  it('P1 masked 期间同 revision GET 返回：不得用空 shadow 经 PUT+ACK 清空本机稿', async () => {
+    const storage = new MapStorage()
+    seedDraftAtRevision(storage, 0)
+    const harness = createHarness({ storage })
+    const loadPromise = harness.controller.load()
+    await flushMicrotasks()
+    harness.controller.setChatAnchor({ messageId: 'msg1', offsetPx: 12, followTail: false })
+    // GET 在途时进入遮蔽：缓存授权为空，读不到本机稿。
+    harness.setRuntime({ phase: 'masked', ready: false })
+    await flushMicrotasks()
+    harness.gets[0].resolve(editorResponse({ revision: 0 }))
+    await loadPromise
+    await flushMicrotasks()
+    expect(harness.controller.getSnapshot().draftText).toBe('')
+    // 遮蔽期间不得安排 autosave（否则空 shadow 会被 PUT 并由 ACK 确认）。
+    await advance(600)
+    expect(harness.puts).toHaveLength(0)
+    // 解除遮蔽后补读本机未同步稿，且不做空写。
+    harness.setRuntime({ phase: 'ready', ready: true })
+    await flushMicrotasks()
+    expect(harness.controller.getSnapshot().draftText).toBe('PRIVATE-UNSAVED')
+    await advance(100)
+    const stored = readDraft(harness.scope, harness.authority, REF, 'w-test', { storage })
+    expect(stored?.text).toBe('PRIVATE-UNSAVED')
+    await advance(600)
+    for (const put of harness.puts) {
+      const text = (put.body.editor_state as { draft: { text: string } }).draft.text
+      expect(text).not.toBe('')
+    }
+  })
+
+  it('P2 能力恢复后 blocked 可修正：编辑清除 blocked 并正常保存', async () => {
+    const harness = createHarness()
+    const loadPromise = harness.controller.load()
+    await flushMicrotasks()
+    harness.gets[0].resolve(editorResponse())
+    await loadPromise
+    await flushMicrotasks()
+    harness.controller.setDraftText('T1')
+    await advance(500)
+    expect(harness.puts).toHaveLength(1)
+    harness.setRuntime({ editorReady: false })
+    await flushMicrotasks()
+    harness.puts[0].response.reject(httpError(422, 'editor_state_invalid'))
+    await flushMicrotasks()
+    expect(harness.controller.getSnapshot().blocked).toBe(true)
+    harness.setRuntime({ editorReady: true })
+    await flushMicrotasks()
+    // 能力恢复只解除能力型只读，blocked 保持可修正（review9 P2）。
+    expect(harness.controller.getSnapshot().readOnly).toBe(false)
+    expect(harness.controller.getSnapshot().blocked).toBe(true)
+    harness.controller.setDraftText('CORRECTED')
+    await flushMicrotasks()
+    expect(harness.controller.getSnapshot().blocked).toBe(false)
+    expect(harness.controller.getSnapshot().draftText).toBe('CORRECTED')
+    await advance(500)
+    expect(harness.puts).toHaveLength(2)
+    const text = (harness.puts[1].body.editor_state as { draft: { text: string } }).draft.text
+    expect(text).toBe('CORRECTED')
+  })
+
+  it('P3 读回本机稿不得覆盖 GET 期间的新范围选择', async () => {
+    const storage = new MapStorage()
+    seedDraftAtRevision(storage, 0)
+    const harness = createHarness({ storage })
+    const loadPromise = harness.controller.load()
+    await flushMicrotasks()
+    harness.controller.setScope({ mode: 'selected', sourceIds: ['src-new'] })
+    harness.gets[0].resolve(editorResponse({ revision: 0 }))
+    await loadPromise
+    await flushMicrotasks()
+    const after = harness.controller.getSnapshot()
+    expect(after.draftText).toBe('PRIVATE-UNSAVED')
+    expect(after.baseScope?.mode).toBe('selected')
+    expect(after.baseScope?.sourceIds).toEqual(['src-new'])
   })
 })
