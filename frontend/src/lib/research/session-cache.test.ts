@@ -5,6 +5,7 @@ import {
   SESSION_PERSISTABLE_HEADERS,
   SESSION_SUBMISSION_MARKER_BUDGET,
   clearSessionCacheMemoryFallback,
+  createDraftWriterId,
   isViewerScopedCacheReadable,
   listDraftBranches,
   listSubmissionMarkers,
@@ -639,5 +640,54 @@ describe('session-cache: review 补证（编码分区 / quota 优先级 / 写入
     storage.failRemove = null
     // 墓碑生效：不得读回旧持久值 T1
     expect(readDraft(scope, authorityFor(), globalRef, 'writer_a', { storage })).toBeNull()
+  })
+})
+
+describe('PR-3 writer 草稿分支生命周期（DESIGN §3.5，向 PR-1 测试追加）', () => {
+  it('createDraftWriterId 每次生成新的合法 writerId，两个分支互不覆盖', () => {
+    const first = createDraftWriterId()
+    const second = createDraftWriterId()
+    // 刷新/新标签/复制标签必须重新生成且不继承旧 writerId。
+    expect(first).not.toBe(second)
+    expect(first).toMatch(/^w[A-Za-z0-9_-]+$/)
+    expect(second).toMatch(/^w[A-Za-z0-9_-]+$/)
+
+    const storage = new MapStorage()
+    expect(writeDraft(scope, globalRef, first, draftRecord({ text: 'A 未同步' }), { storage }).persisted).toBe(true)
+    expect(writeDraft(scope, globalRef, second, draftRecord({ text: 'B 未同步' }), { storage }).persisted).toBe(true)
+    expect(readDraft(scope, authorityFor(), globalRef, first, { storage })?.text).toBe('A 未同步')
+    expect(readDraft(scope, authorityFor(), globalRef, second, { storage })?.text).toBe('B 未同步')
+    expect(listDraftBranches(scope, authorityFor(), globalRef, { storage })).toHaveLength(2)
+  })
+
+  it('恢复草稿只复制到新 writer 分支，不删除来源分支', () => {
+    const storage = new MapStorage()
+    const sourceWriter = createDraftWriterId()
+    const newWriter = createDraftWriterId()
+    expect(writeDraft(scope, globalRef, sourceWriter, draftRecord({ text: '来源分支稿' }), { storage }).persisted).toBe(true)
+
+    const source = readDraft(scope, authorityFor(), globalRef, sourceWriter, { storage })
+    expect(source).not.toBeNull()
+    // 恢复 = 把来源记录写入当前分支（复制），来源分支保持可读。
+    expect(writeDraft(scope, globalRef, newWriter, source as SessionDraftRecord, { storage }).persisted).toBe(true)
+    expect(readDraft(scope, authorityFor(), globalRef, newWriter, { storage })?.text).toBe('来源分支稿')
+    expect(readDraft(scope, authorityFor(), globalRef, sourceWriter, { storage })?.text).toBe('来源分支稿')
+    expect(listDraftBranches(scope, authorityFor(), globalRef, { storage })).toHaveLength(2)
+  })
+
+  it('A 保存成功的 ACK 条件删除不得清除 B 的未同步稿', () => {
+    const storage = new MapStorage()
+    const writerA = createDraftWriterId()
+    const writerB = createDraftWriterId()
+    const recordA = draftRecord({ text: 'A 稿', localVersion: 4, token: 'tk-a' })
+    const recordB = draftRecord({ text: 'B 稿', localVersion: 7, token: 'tk-b' })
+    writeDraft(scope, globalRef, writerA, recordA, { storage })
+    writeDraft(scope, globalRef, writerB, recordB, { storage })
+    // A 的 ACK：只允许按 A 自己的 localVersion/token 删除 A 分支。
+    expect(
+      removeDraftIfVersion(scope, globalRef, writerA, { localVersion: 4, token: 'tk-a' }, { storage }),
+    ).toBe(true)
+    expect(readDraft(scope, authorityFor(), globalRef, writerA, { storage })).toBeNull()
+    expect(readDraft(scope, authorityFor(), globalRef, writerB, { storage })?.text).toBe('B 稿')
   })
 })

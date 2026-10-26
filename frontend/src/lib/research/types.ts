@@ -6,6 +6,13 @@
  * 每个事件带单调递增 `event_id`（从 1 开始，每事件 +1）。
  */
 
+import type {
+  ResearchSessionRef,
+  WireChatAnchor,
+  WireEditorBaseScope,
+  WireReaderAnchor,
+} from './session-contract'
+
 /** SSE 事件类型（契约 §9.1） */
 export type ResearchSseType = 'thinking' | 'answer' | 'citation' | 'usage' | 'done' | 'error'
 
@@ -410,4 +417,178 @@ export interface ResearchChatSessionCreateResponseWire {
   state_warnings: unknown
   created: unknown
   editor_intent_hash: unknown
+}
+
+// ── 编辑器（#602 第三批 PR-3；DESIGN §5/§9.2，02 §4） ──
+//
+// 只放本 PR 公开 API 的最小类型；`editor_state` wire 契约的严格解析/投影由
+// `session-contract.ts`（PR-1）负责，本段不重复 conversation 契约，PR-5a 可扩展。
+
+/** 编辑器状态机阶段（DESIGN §5.8）。 */
+export type EditorPhase =
+  | 'idle'
+  | 'loading'
+  | 'ready'
+  | 'saving'
+  | 'conflict'
+  | 'blocked'
+  | 'readonly'
+  | 'error'
+
+/** 保存冲突类型（02 §7）：revision=乐观并发，mutation=同 mutation 语义冲突。 */
+export interface EditorConflict {
+  readonly kind: 'revision' | 'mutation'
+}
+
+/** 稳定失败投影（不渲染文案；hook/组件按 code 映射 i18n）。 */
+export interface EditorSaveFailure {
+  readonly code: string
+  readonly retryable: boolean
+}
+
+/** 本机草稿恢复候选（同一会话的其他 writer 分支，DESIGN §3.5/§5.4）。 */
+export interface EditorRestoreCandidate {
+  readonly writerId: string
+  readonly localVersion: number
+  readonly baseRevision: number
+  readonly savedAt: string
+  readonly dirty: boolean
+}
+
+/** 暂停自动保存的持有者；release 只释放本 operationId（DESIGN §5.6）。 */
+export interface EditorHold {
+  readonly reason: 'submit' | 'conflict'
+  readonly operationId: string
+}
+
+/** flush 触发原因；position 变化不得生成新 intent（DESIGN §5.2）。 */
+export type EditorFlushReason = 'text' | 'position' | 'switch' | 'submit'
+
+/** 文本/位置已写本机、flush 未派发（服务端仍滞后）的稳定结果（C6）。 */
+export type SaveOutcome =
+  | 'saved'
+  | 'queued'
+  | 'blocked'
+  | 'conflict'
+  | 'readonly'
+  | 'unsynced'
+  | 'skipped'
+  | 'invalid'
+
+/**
+ * 清稿结果（C9）：
+ * - `cleared`：空稿被服务端采用，shadow 仍为空且未被新输入覆盖；
+ * - `superseded`：ACK 只推进 revision，**不**覆盖 T2 可见 shadow；
+ * - `cancelled`：在首次派发前被新输入取消（未发任何请求）；
+ * - `unsynced`：已派发但结果无法确认（不表示服务端请求未发生）。
+ */
+export type ClearOutcome = 'cleared' | 'superseded' | 'cancelled' | 'unsynced' | 'invalid'
+
+/** 编辑范围语义（本地 UI 类型；wire 编码见 editor-machine.buildSaveRequestWire）。 */
+export type ScopeEdit =
+  | { readonly mode: 'all' }
+  | { readonly mode: 'selected'; readonly sourceIds: readonly string[]; readonly noteIds?: readonly string[] }
+  | { readonly mode: 'single'; readonly sourceId: string | null }
+  | { readonly mode: 'note'; readonly noteIds: readonly string[] }
+
+/** 编辑快照（EditorHandle.getSnapshot / useSyncExternalStore 稳定引用）。 */
+export interface EditorSnapshot {
+  readonly ref: ResearchSessionRef
+  readonly phase: EditorPhase
+  readonly loading: boolean
+  /** 服务端已确认的 revision（仅 ACK 推进；本地绝不自增）。 */
+  readonly revision: number
+  readonly intentHash: string | null
+  /** 当前可见 shadow（T2 可覆盖 T2 之前提交的文本；ACK 不覆盖它）。 */
+  readonly draftText: string
+  /** 当前草稿 token；文本变化生成新 token，ACK 后才采用。 */
+  readonly draftToken: string
+  /** 已被服务端接收（ACK）的文本 token；沿用即"复用已消费 token"。 */
+  readonly consumedToken: string | null
+  readonly baseScope: WireEditorBaseScope | null
+  readonly singleSourceId: string | null
+  readonly noteIds: readonly string[]
+  readonly chatAnchor: WireChatAnchor | null
+  readonly readerAnchor: WireReaderAnchor | null
+  /** shadow 含未服务端确认内容。 */
+  readonly dirty: boolean
+  readonly saving: boolean
+  readonly readOnly: boolean
+  readonly blocked: boolean
+  readonly unreadable: boolean
+  readonly warnings: readonly string[]
+  readonly conflict: EditorConflict | null
+  readonly saveFailure: EditorSaveFailure | null
+  /** 503/网络多次重试仍无法确认，服务端可能滞后（不自动覆盖本机）。 */
+  readonly unsynced: boolean
+  readonly localVersion: number
+  readonly confirmedLocalVersion: number
+  readonly writerId: string
+  readonly lastSavedAt: string | null
+  readonly pendingMutations: number
+  readonly restoreCandidates: readonly EditorRestoreCandidate[]
+  readonly holds: readonly EditorHold[]
+  readonly transportAvailable: boolean
+  /** 服务端报告 position_unavailable：关闭位置保存（不重试）。 */
+  readonly positionUnavailable: boolean
+  /** 认证代际/viewer 失效后已作废（不写服务端、不 flush）。 */
+  readonly invalidated: boolean
+  /** 本机文本超过 TEXT_MAX（保留全文，但禁用保存/提交，不截断）。 */
+  readonly oversize: boolean
+}
+
+/** `editor_state` wire JSON（02 §4；请求体字段，snake_case 原样）。 */
+export interface EditorBaseScopeWire {
+  readonly mode: 'all' | 'selected'
+  readonly source_ids: readonly string[]
+  readonly single_source_id: null
+}
+
+export interface EditorChatAnchorWire {
+  readonly message_id: string
+  readonly offset_px: number
+  readonly follow_tail: boolean
+}
+
+export interface EditorReaderAnchorWire {
+  readonly source_id: string
+  readonly document_id: string
+  readonly document_version: string
+  readonly format: 'normalized_markdown'
+  readonly chunk_id: string | null
+  readonly chunk_ordinal: number
+  readonly content_hash: string
+  readonly page_idx: number | null
+  readonly offset_px: number
+}
+
+export interface EditorStateWire {
+  readonly schema_version: 1
+  readonly base_scope: EditorBaseScopeWire | null
+  readonly single_source_id: string | null
+  readonly note_ids: readonly string[]
+  readonly draft: { readonly text: string; readonly token: string }
+  readonly chat_anchor: EditorChatAnchorWire | null
+  readonly reader_anchor: EditorReaderAnchorWire | null
+}
+
+/** `PUT .../editor-state` 请求体（02 §4 editor_save_request）。 */
+export interface EditorSaveRequestWire {
+  readonly expected_revision: number
+  readonly mutation_id: string
+  readonly editor_state: EditorStateWire
+}
+
+/**
+ * 提交响应（submission accepted）中本 PR 需要的最小稳定字段（明确标注：
+ * 这是本地接收凭据，不是完整 submission_response；不可据此回提交状态）。
+ * `draftToken` 必须是本次提交使用的 token，用于"清稿不得跨提交清稿"保护。
+ */
+export interface AcceptedReceipt {
+  readonly sessionRef: ResearchSessionRef
+  readonly draftToken: string
+  /** 提交时的可见文本快照；清稿前必须与当前 shadow 二次核对（DESIGN §5.6/§9.2）。 */
+  readonly text: string
+  readonly editorRevision?: number
+  readonly idempotencyKey?: string | null
 }

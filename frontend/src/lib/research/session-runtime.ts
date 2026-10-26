@@ -10,7 +10,8 @@
  * - `activate` 不触发任何网络请求（显示切换与任务执行分离，I2）；
  * - `dispose('logout'|'viewer-change')` 先使写入失效再清理，之后不得再由
  *   cleanup flush 旧稿；`dispose('unmount')` 允许尽力写本机缓存；
- * - 不含 editor/conversation 控制器（归 PR-3/PR-4），只提供身份、缓存授权、
+ * - editor 控制器接线自 PR-3 起在此提供（实现见 editor-machine.ts），
+ *   conversation 控制器归 PR-4；本文件只提供身份、缓存授权、
  *   MutationRecord/TransportAttempt 骨架与写入守卫。
  *
  * SSR：`createSessionRuntime` 在 render 阶段不读 `localStorage`/`window`，
@@ -41,6 +42,12 @@ import {
   type SessionCacheStorage,
   type SessionDisplayPointer,
 } from './session-cache'
+import {
+  createEditorController,
+  type EditorController,
+  type EditorRuntimeView,
+  type EditorTransport,
+} from './editor-machine'
 import {
   purgeResearchAuthScope,
   type ResearchQueryIdentity,
@@ -161,7 +168,7 @@ export function getSessionRuntimeServerSnapshot(): SessionRuntimeSnapshot {
 // MutationRecord / TransportAttempt 骨架（不可变记录与传输尝试分开）
 // ---------------------------------------------------------------------------
 
-export type MutationRecordKind = 'save' | 'submission'
+export type MutationRecordKind = 'save' | 'clear' | 'submission'
 
 export type MutationRecordStatus = 'pending' | 'result-unconfirmed' | 'settled' | 'abandoned'
 
@@ -313,6 +320,14 @@ interface WriteGuardState {
 // 运行时
 // ---------------------------------------------------------------------------
 
+/** 编辑器控制器创建参数（PR-3；transport 由 hook 用本代际身份组装）。 */
+export interface SessionEditorOptions {
+  readonly transport: EditorTransport | null
+  /** 文档实例 writerId；刷新/新标签/复制标签必须重新生成，禁止继承。 */
+  readonly writerId?: string
+  readonly storage?: SessionCacheStorage | null
+}
+
 export interface CreateSessionRuntimeOptions {
   readonly authGeneration: number
   readonly projectId: string
@@ -347,6 +362,16 @@ export interface SessionRuntime {
   readonly activate: (surface: SessionSurface, ref: ResearchSessionRef | null) => boolean
   /** 显示模型指针写入（刷新显示权威；PR-2 使用）。 */
   readonly setDisplayPointer: (display: SessionDisplayPointer) => void
+  /**
+   * 取/建某会话的编辑器控制器（PR-3；DESIGN §3.4/§9.2）。
+   *
+   * - 每次调用创建新实例；卸载时必须调用 `releaseEditor` 释放（尽力写本机草稿）；
+   * - 刷新/新标签/复制标签必须由调用方传入新的 `writerId`，禁止继承；
+   * - 控制器订阅运行时变更：代际刷新保留内存态，viewer 变化/dispose 时失效。
+   */
+  readonly editor: (ref: ResearchSessionRef, options: SessionEditorOptions) => EditorController
+  /** 释放编辑器控制器（文档实例卸载/切换）；不发服务端 cancel。 */
+  readonly releaseEditor: (ref: ResearchSessionRef, controller: EditorController) => void
   /** 当前可用于查询键的身份；owner 在 viewer 确认前返回 null（enabled=false）。 */
   readonly identity: () => ResearchQueryIdentity | null
   /** viewer 分区缓存作用域；Admin 只读为 null（不读 owner 分区）。 */
@@ -658,6 +683,12 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
 
   function dispose(reason: SessionRuntimeDisposeReason): void {
     if (state.disposed) return
+    if (reason === 'unmount') {
+      // 卸载：尽力写本机草稿（此时缓存授权仍有效），但不写服务端、不发 cancel。
+      for (const { controller } of editors.values()) controller.releaseDocument()
+      editors.clear()
+      releasedEditors.clear()
+    }
     const scope = cacheScopeInternal()
     state.disposed = true
     state.started = false
@@ -670,6 +701,14 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
     if (reason !== 'unmount') {
       // 先使写入失效，再清理本机分区（清理后不得再由 cleanup flush 旧稿）。
       invalidateGuards()
+      for (const { controller } of editors.values()) {
+        controller.invalidate(reason === 'logout' ? 'logout' : 'viewer-change')
+      }
+      for (const controller of releasedEditors) {
+        controller.invalidate(reason === 'logout' ? 'logout' : 'viewer-change')
+      }
+      editors.clear()
+      releasedEditors.clear()
       // 服务端 viewer 与 claims 不一致且尚未重新确认时，按任一 viewer 清理
       // 都可能误删对方恢复数据（review F9）；旧 viewer 已在 mismatch 时清理。
       if (scope && !viewerMismatch) purgeViewerScope(scope, { storage: storage() })
@@ -714,6 +753,12 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
         previous.projectId && previous.viewerUserId
           ? { viewerUserId: previous.viewerUserId, projectId: previous.projectId }
           : null
+      // 旧 viewer 的编辑器快照（文本/token/锚点）必须立即清除，不能等后续 dispose
+      // 才清理（review3 P1：一次 viewer-change 后旧快照仍可读到敏感文本）。
+      for (const { controller } of editors.values()) controller.invalidate('viewer-change')
+      for (const controller of releasedEditors) controller.invalidate('viewer-change')
+      editors.clear()
+      releasedEditors.clear()
       if (oldScope) purgeViewerScope(oldScope, { storage: storage() })
       // 新 viewer 自己的本机恢复数据不得在确认前被误删。
       purgeQueryCaches(previousProject, null)
@@ -804,6 +849,96 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
     writeDisplayPointer(scope, display, { storage: storage() })
   }
 
+  // ── 编辑器控制器注册表（PR-3；实现见 editor-machine.ts） ──
+
+  /**
+   * 同一会话的多个消费者（面板 + composer，PR-4/PR-5b）共享同一控制器；
+   * 引用计数归零时释放文档（尽力写本机草稿）。writerId 由首个消费者决定。
+   */
+  const editors = new Map<string, { controller: EditorController; refs: number }>()
+  // 引用归零后仍保留最近释放的 controller，使 logout/viewer-change 能清理其敏感快照
+  // （二次 review N12）；容量有界，避免长会话无界增长。
+  const releasedEditors = new Set<EditorController>()
+  let attemptSequence = 0
+
+  function editorRuntimeView(): EditorRuntimeView {
+    return {
+      authGeneration: state.scope.authGeneration,
+      projectId: state.scope.projectId,
+      viewerUserId: confirmedViewerUserId ?? state.scope.viewerUserId ?? null,
+      phase: state.phase,
+      ready: state.phase === 'ready',
+      editorReady: state.capabilities === null ? undefined : state.capabilities.editorReady,
+      disposed: state.disposed,
+      viewerChanged: state.viewerChanged,
+    }
+  }
+
+  function editor(ref: ResearchSessionRef, options: SessionEditorOptions): EditorController {
+    const key = sessionKey(ref)
+    const existing = editors.get(key)
+    if (existing !== undefined) {
+      existing.refs += 1
+      return existing.controller
+    }
+    const controller = createEditorController({
+      ref,
+      writerId: options.writerId,
+      transport: state.disposed ? null : options.transport,
+      storage: options.storage,
+      getRuntimeView: editorRuntimeView,
+      subscribeRuntime: (listener: () => void) => {
+        listeners.add(listener)
+        return () => {
+          listeners.delete(listener)
+        }
+      },
+      createWriteGuard,
+      mutations: {
+        createMutationRecord,
+        createTransportAttempt: (input) => {
+          attemptSequence += 1
+          return createTransportAttempt({
+            ...input,
+            attemptId: `a${attemptSequence}`,
+            scope: { ...input.scope, role: state.scope.role },
+          })
+        },
+        markTransportAttemptDispatched,
+        transportAttemptMatches,
+      },
+      getCacheScope: cacheScopeInternal,
+      getCacheAuthority: cacheAuthorityInternal,
+      now,
+    })
+    editors.set(key, { controller, refs: 1 })
+    if (state.disposed) controller.invalidate('logout')
+    return controller
+  }
+
+  function releaseEditor(ref: ResearchSessionRef, controller: EditorController): void {
+    const key = sessionKey(ref)
+    const entry = editors.get(key)
+    if (entry === undefined || entry.controller !== controller) return
+    entry.refs -= 1
+    if (entry.refs > 0) return
+    // 还有未决 mutation 的控制器不得直接丢弃：保留注册项（refs=0），
+    // 同一会话的新消费者必须复用它，避免为同一会话并发两个不同 mutation（review3 N5）。
+    if (entry.controller.hasPendingWork()) return
+    editors.delete(key)
+    entry.controller.releaseDocument()
+    releasedEditors.add(entry.controller)
+    if (releasedEditors.size > 8) {
+      const oldest = releasedEditors.values().next()
+      if (!oldest.done) {
+        // 被淘汰出清理窗口的控制器必须先作废敏感快照，否则 logout/viewer-change
+        // 再也无法覆盖它（review3 P1）。
+        oldest.value.invalidate('logout')
+        releasedEditors.delete(oldest.value)
+      }
+    }
+  }
+
   function createWriteGuard(label: string): SessionWriteGuard {
     const guard: WriteGuardState = { invalidated: state.disposed, label }
     guards.add(guard)
@@ -849,6 +984,8 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
     active,
     activate,
     setDisplayPointer,
+    editor,
+    releaseEditor,
     identity: () => currentIdentity(),
     cacheScope: () => cacheScopeInternal(),
     cacheAuthority: () => cacheAuthorityInternal(),

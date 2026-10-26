@@ -34,6 +34,7 @@ import {
 import type { C05Budget } from './c05-preview-gate'
 import type { C05ResolvedScope } from './c05-scope-projection'
 import type {
+  EditorSaveRequestWire,
   ResearchChatRequest,
   ResearchCompareCreateRequest,
   ResearchCompareCreateResponse,
@@ -1171,5 +1172,53 @@ export async function createChatSession(
     { session_id: input.sessionId },
     { headers: sessionContractHeaders },
   )
+  return response.data
+}
+
+// ── 编辑器状态（#602 第三批 PR-3；DESIGN §5，02 §4） ──
+
+/** `GET/PUT .../editor-state` 的目标会话（全局或来源绑定）。 */
+export interface EditorStateTarget {
+  kind: 'global' | 'source'
+  sessionId: string
+  /** kind=source 时必填（绑定来源，不可变）。 */
+  sourceId?: string | null
+}
+
+const editorStatePath = (projectId: string, target: EditorStateTarget): string =>
+  target.kind === 'source'
+    ? researchPath(projectId, 'sources', target.sourceId ?? '', 'chat', 'sessions', target.sessionId, 'editor-state')
+    : researchPath(projectId, 'chat', 'sessions', target.sessionId, 'editor-state')
+
+/**
+ * `GET .../editor-state`（editor_response）。
+ *
+ * 返回**原始 JSON**：严格校验由调用方经 `session-contract.parseEditorResponse`
+ * 完成（PR-3 决定 R4：本函数只负责传输与协议头）。
+ */
+export async function getEditorState(
+  projectId: string,
+  target: EditorStateTarget,
+): Promise<unknown> {
+  const response = await apiClient.get<unknown>(editorStatePath(projectId, target), {
+    headers: sessionContractHeaders,
+  })
+  return response.data
+}
+
+/**
+ * `PUT .../editor-state`（editor_save_request → save_response）。
+ *
+ * 返回**原始 JSON**：严格校验由调用方经 `session-contract.parseSaveResponse`
+ * 完成；`mutation_id` 由调用方生成并在重试/跨代际接管时原样复用。
+ */
+export async function putEditorState(
+  projectId: string,
+  target: EditorStateTarget,
+  body: EditorSaveRequestWire,
+): Promise<unknown> {
+  const response = await apiClient.put<unknown>(editorStatePath(projectId, target), body, {
+    headers: sessionContractHeaders,
+  })
   return response.data
 }
