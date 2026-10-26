@@ -172,6 +172,8 @@ interface Harness {
   readonly controller: EditorController
   readonly puts: PutCall[]
   readonly gets: Deferred<unknown>[]
+  /** 每次 createMutationRecord 的 kind（verifier 观察：清稿必须记为 clear）。 */
+  readonly mutationKinds: string[]
   readonly storage: MapStorage
   readonly scope: SessionCacheScope
   readonly authority: SessionCacheAuthority
@@ -208,6 +210,7 @@ function createHarness(options: HarnessOptions = {}): Harness {
   const runtimeListeners = new Set<() => void>()
   const puts: PutCall[] = []
   const gets: Deferred<unknown>[] = []
+  const mutationKinds: string[] = []
   const scope: SessionCacheScope = { viewerUserId: '1', projectId: 'p1' }
   const authority: SessionCacheAuthority = {
     authenticatedViewerUserId: '1',
@@ -251,7 +254,10 @@ function createHarness(options: HarnessOptions = {}): Harness {
           : ({ status: 'ok', value: operation() } as const),
     }),
     mutations: {
-      createMutationRecord,
+      createMutationRecord: (input) => {
+        mutationKinds.push(input.kind)
+        return createMutationRecord(input)
+      },
       createTransportAttempt: (input) => {
         attemptSeq += 1
         return createTransportAttempt({
@@ -288,6 +294,7 @@ function createHarness(options: HarnessOptions = {}): Harness {
     controller,
     puts,
     gets,
+    mutationKinds,
     storage,
     scope,
     authority,
@@ -1515,4 +1522,224 @@ describe('editor review5 回归：恢复一次后不再重启重试', () => {
     expect(harness.puts.length).toBe(2)
   })
 
+})
+
+
+// ── verifier 阻塞项回归（Lead 核对 #74 comment 6421813634） ──
+
+describe('verifier regression: clear settlement decoupled from position', () => {
+  it('清稿在途仅锚点变化 → 仍 cleared，且不把旧稿写回', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.hold('submit', 'op1')
+    const clearPromise = harness.controller.clearAfterSubmission(
+      { sessionRef: REF, draftToken: 'tok-server', text: 'hello' },
+      'op1',
+    )
+    expect(harness.mutationKinds).toEqual(['clear'])
+    const clearCall = lastPut(harness)
+    harness.controller.setChatAnchor({ messageId: 'm2', offsetPx: 24, followTail: true })
+    await advance(EDITOR_POSITION_IDLE_MS) // 清稿在途：位置意图只暂存，不得改变清稿结算
+    clearCall.response.resolve(saveResponse(clearCall.body.mutation_id, { revision: 7 }))
+    await flushMicrotasks()
+    expect(await clearPromise).toBe('cleared')
+    expect(harness.controller.getSnapshot().draftText).toBe('')
+    expect(
+      harness.puts.filter((call) => call.body.editor_state.draft.text === 'hello'),
+    ).toHaveLength(0)
+  })
+
+  it('清稿 + 排队位置保存：清稿 ACK 后无旧稿回写，T2 用新 revision 保存', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.hold('submit', 'op1')
+    const clearPromise = harness.controller.clearAfterSubmission(
+      { sessionRef: REF, draftToken: 'tok-server', text: 'hello' },
+      'op1',
+    )
+    const clearCall = lastPut(harness)
+    harness.controller.setChatAnchor({ messageId: 'm2', offsetPx: 10, followTail: false })
+    await advance(EDITOR_POSITION_IDLE_MS)
+    clearCall.response.resolve(saveResponse(clearCall.body.mutation_id, { revision: 7 }))
+    await flushMicrotasks()
+    expect(await clearPromise).toBe('cleared')
+    // 清稿后允许派发仅锚点保存，但其文本必须是已清空的空稿（不得回写 hello）。
+    expect(
+      harness.puts.filter((call) => call.body.editor_state.draft.text === 'hello'),
+    ).toHaveLength(0)
+    const positionPut = lastPut(harness)
+    expect(positionPut.body.editor_state.draft.text).toBe('')
+    positionPut.response.resolve(saveResponse(positionPut.body.mutation_id, { revision: 8 }))
+    await flushMicrotasks()
+    harness.controller.setDraftText('T2')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    const t2 = lastPut(harness)
+    expect(t2.body.editor_state.draft.text).toBe('T2')
+    expect(t2.body.expected_revision).toBe(8)
+  })
+})
+
+describe('verifier regression: masked same-generation ACK', () => {
+  it('masked 期间同代 ACK 正常到达 → unmask 后 settled，无重复 PUT', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.setDraftText('T1')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    expect(harness.puts.length).toBe(1)
+    harness.setRuntime({ phase: 'masked', ready: false })
+    lastPut(harness).response.resolve(saveResponse(harness.puts[0].body.mutation_id))
+    await flushMicrotasks()
+    harness.setRuntime({ phase: 'ready', ready: true })
+    await flushMicrotasks()
+    expect(harness.puts.length).toBe(1)
+    const snapshot = harness.controller.getSnapshot()
+    expect(snapshot.phase).toBe('ready')
+    expect(snapshot.saving).toBe(false)
+    expect(snapshot.draftText).toBe('T1')
+  })
+
+  it('masked 期间 ACK 丢失 → unmask 后用原 mutation/body 重放一次', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.setDraftText('T1')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    const first = lastPut(harness)
+    const firstBody = first.body
+    harness.setRuntime({ phase: 'masked', ready: false })
+    first.response.reject(new Error('lost ack'))
+    await flushMicrotasks()
+    await advance(1000) // 退避到点但 masked → 暂停，不发 PUT
+    expect(harness.puts.length).toBe(1)
+    harness.setRuntime({ phase: 'ready', ready: true })
+    await flushMicrotasks()
+    expect(harness.puts.length).toBe(2)
+    expect(lastPut(harness).body).toEqual(firstBody)
+  })
+})
+
+describe('verifier regression: GET failure recovery / dirty conflict', () => {
+  it('GET 在途已有新输入：失败恢复不得用磁盘旧稿覆盖新文本', async () => {
+    const storage = new MapStorage()
+    writeDraft(
+      { viewerUserId: '1', projectId: 'p1' },
+      REF,
+      'w-test',
+      {
+        version: 1,
+        text: 'OLD-draft',
+        token: 'tok-old',
+        baseScope: { mode: 'all', sourceIds: [], singleSourceId: null },
+        singleSourceId: null,
+        noteIds: [],
+        localVersion: 0,
+        baseRevision: 5,
+        savedAt: '2026-10-26T00:00:00.000Z',
+        dirty: true,
+      },
+      { storage },
+    )
+    const harness = createHarness({ storage })
+    const loadPromise = harness.controller.load()
+    await flushMicrotasks()
+    expect(harness.gets.length).toBe(1)
+    harness.controller.setDraftText('NEW-text')
+    harness.gets[0].reject(new Error('network down'))
+    await loadPromise
+    await flushMicrotasks()
+    expect(harness.controller.getSnapshot().draftText).toBe('NEW-text')
+    expect(harness.controller.getSnapshot().draftText).not.toBe('OLD-draft')
+  })
+
+  it('dirty GET 冲突后 loading 收敛，canSubmit 返回 conflict', async () => {
+    const harness = createHarness()
+    await loadHarness(harness, editorResponse({ revision: 5 }))
+    harness.controller.setDraftText('LOCAL-dirty')
+    harness.setRuntime({ authGeneration: 8 }) // 代际变化触发重新 GET
+    await flushMicrotasks()
+    expect(harness.gets.length).toBeGreaterThanOrEqual(2)
+    harness.gets[harness.gets.length - 1].resolve(editorResponse({ revision: 9 }))
+    await flushMicrotasks()
+    const snapshot = harness.controller.getSnapshot()
+    expect(snapshot.conflict).not.toBeNull()
+    expect(snapshot.loading).toBe(false)
+    expect(harness.controller.canSubmit()).toEqual({ allowed: false, reason: 'conflict' })
+  })
+})
+
+describe('verifier evidence gap: dispatchAutoIfPossible single-flight guard', () => {
+  it('auto 单飞行守卫：unsynced 未决 mutation 上 debounce 不得自动并发第二个 PUT', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.setDraftText('A')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    expect(harness.puts.length).toBe(1)
+    // 初始 PUT + 3 次自动重试全部 503 → 重试耗尽，保留 active（unsynced），saving=false。
+    for (let i = 0; i < 3; i += 1) {
+      lastPut(harness).response.reject(httpError(503, 'editor_store_unavailable'))
+      await advance(5000)
+      expect(harness.puts.length).toBe(i + 2)
+    }
+    lastPut(harness).response.reject(httpError(503, 'editor_store_unavailable'))
+    await advance(0)
+    expect(harness.controller.getSnapshot().unsynced).toBe(true)
+    const before = harness.puts.length
+    harness.controller.setDraftText('B')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    // 未决 mutation 未结算前，debounce 触发的自动保存必须被单飞行守卫挡下（不并发 PUT）。
+    expect(harness.puts.length).toBe(before)
+  })
+
+  it('在途保存未确认时新文本 debounce 不得再派发第二个 PUT（守卫承重）', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.setDraftText('T1')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    expect(harness.puts.length).toBe(1)
+    lastPut(harness).response.reject(new Error('connection reset'))
+    await flushMicrotasks() // unconfirmed + 退避，saving=false 但 active 仍在
+    harness.controller.setDraftText('T2')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS) // 自动保存意图触发：active 守卫必须拦截
+    expect(harness.puts.length).toBe(1)
+    await advance(1000) // 退避到点：用原 mutation/body 重放一次
+    expect(harness.puts.length).toBe(2)
+    expect(lastPut(harness).body).toEqual(harness.puts[0].body)
+  })
+})
+
+describe('verifier observations: clear invalid ACK, 512KiB 口径', () => {
+  it('清稿非法 ACK 保留 active/hold，retrySave 原样重放并最终 cleared', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.hold('submit', 'op1')
+    const clearPromise = harness.controller.clearAfterSubmission(
+      { sessionRef: REF, draftToken: 'tok-server', text: 'hello' },
+      'op1',
+    )
+    const first = lastPut(harness)
+    first.response.resolve({ ...saveResponse(first.body.mutation_id), mutation_id: 'other-id' })
+    await flushMicrotasks()
+    expect(await clearPromise).toBe('invalid')
+    expect(harness.controller.hasPendingWork()).toBe(true)
+    expect(harness.controller.getSnapshot().holds).toHaveLength(1)
+    expect(await harness.controller.retrySave()).toBe('queued')
+    await flushMicrotasks()
+    expect(harness.puts.length).toBe(2)
+    expect(lastPut(harness).body).toEqual(first.body)
+    lastPut(harness).response.resolve(saveResponse(first.body.mutation_id, { revision: 7 }))
+    await flushMicrotasks()
+    expect(harness.controller.getSnapshot().draftText).toBe('')
+    expect(harness.controller.getSnapshot().holds).toHaveLength(0)
+  })
+
+  it('文本未超 256KiB 但 JSON 转义后超 512KiB → flush blocked 且不发 PUT', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    const text = '"'.repeat(EDITOR_TEXT_MAX_BYTES) // 256KiB 字节：未超 draft.text 上限
+    harness.controller.setDraftText(text)
+    expect(harness.controller.getSnapshot().oversize).toBe(false)
+    const outcome = await harness.controller.flush('text')
+    expect(outcome).toBe('blocked')
+    expect(harness.controller.getSnapshot().saveFailure?.code).toBe('editor_state_too_large')
+    expect(harness.puts.length).toBe(0)
+  })
 })

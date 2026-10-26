@@ -246,7 +246,14 @@ export type EditorEvent =
   | { readonly type: 'save/readonly'; readonly failure: EditorSaveFailure }
   | { readonly type: 'save/unsynced'; readonly failure: EditorSaveFailure }
   | { readonly type: 'save/unconfirmed'; readonly failure: EditorSaveFailure }
-  | { readonly type: 'clear/applied'; readonly revision: number; readonly intentHash: string; readonly savedAt: string; readonly token: string }
+  | {
+      readonly type: 'clear/applied'
+      readonly revision: number
+      readonly intentHash: string
+      readonly savedAt: string
+      readonly token: string
+      readonly confirmedLocalVersion: number
+    }
   | { readonly type: 'token/consumed'; readonly token: string }
   | { readonly type: 'holds/update'; readonly holds: readonly EditorHold[] }
   | { readonly type: 'restore/candidates'; readonly candidates: readonly EditorRestoreCandidate[] }
@@ -512,14 +519,15 @@ export function reduceEditor(state: EditorSnapshot, event: EditorEvent): EditorS
         phase: 'ready',
         dirty: isDirty(state),
       }
-    case 'clear/applied':
-      return {
+    case 'clear/applied': {
+      // 清稿只确认“派发时快照”的本地版本；清稿在途期间的锚点/范围编辑仍属未保存，
+      // 由 afterSettle 续跑的排队位置保存（空稿 + 新锚点）承接（verifier 阻塞项 1）。
+      const next: EditorSnapshot = {
         ...state,
         draftText: '',
         draftToken: event.token,
         localVersion: state.localVersion,
-        confirmedLocalVersion: state.localVersion,
-        dirty: false,
+        confirmedLocalVersion: event.confirmedLocalVersion,
         revision: event.revision,
         intentHash: event.intentHash,
         lastSavedAt: event.savedAt,
@@ -527,11 +535,16 @@ export function reduceEditor(state: EditorSnapshot, event: EditorEvent): EditorS
         pendingMutations: Math.max(0, state.pendingMutations - 1),
         phase: 'ready',
       }
+      return { ...next, dirty: isDirty(next) }
+    }
     case 'save/conflict':
       return {
         ...state,
         phase: 'conflict',
         saving: false,
+        // dirty GET 进入冲突后必须结束 loading，否则 canSubmit 永远 not_loaded
+        // （verifier 阻塞项 4）。
+        loading: false,
         pendingMutations: Math.max(0, state.pendingMutations - 1),
         conflict: { kind: event.kind },
         saveFailure: event.failure,
@@ -918,6 +931,9 @@ interface ActiveMutation {
   readonly body: EditorSaveRequestWire
   attempt: TransportAttempt
   readonly localVersion: number
+  /** 清稿判定快照：只由「提交快照 draft_token+文本」与清稿请求自身结算决定（§5.6-8）。 */
+  readonly capturedDraftToken: string
+  readonly capturedDraftText: string
   readonly kind: 'save' | 'clear'
   readonly operationId: string | null
   readonly clearToken: string | null
@@ -934,8 +950,10 @@ interface QueuedRequest {
   readonly kind: 'save' | 'clear'
   readonly operationId: string | null
   readonly explicit: boolean
-  /** 清稿取消规则：首次派发前若本机版本前进则取消（从未派发）。 */
+  /** 清稿取消规则：首次派发前若本机「文本/token」前进则取消（锚点变化不算，§5.6-8）。 */
   readonly capturedLocalVersion: number
+  readonly capturedDraftToken: string
+  readonly capturedDraftText: string
   /** 显式 flush 在入队时捕获的不可变提交快照（review P1 #6）。 */
   readonly frozenEditorState: EditorStateWire | null
   /** 入队时的本地版本：结算必须用它，不能用结算时的可见版本（二次 review P1）。 */
@@ -972,6 +990,8 @@ export function createEditorController(deps: EditorDeps): EditorController {
   let lastSeenGeneration = deps.getRuntimeView().authGeneration
   let lastSeenViewer = deps.getRuntimeView().viewerUserId
   let lastSeenProject = deps.getRuntimeView().projectId
+  /** 上一次观察到的 ready 相位：用于识别 masked/unmask 转换（verifier 阻塞项 2）。 */
+  let lastSeenReady = deps.getRuntimeView().ready
   let loadingGeneration: number | null = null
   let textTimer: ReturnType<typeof setTimeout> | null = null
   let positionTimer: ReturnType<typeof setTimeout> | null = null
@@ -1162,8 +1182,11 @@ export function createEditorController(deps: EditorDeps): EditorController {
     return { promise, resolve: resolveFn }
   }
 
+  // ACK/mutation 身份只由认证代际/viewer/project 决定，与 UI 相位（ready/masked）无关
+  // （DESIGN §5.5）：masked 期间到达的同代 ACK 必须被识别，不得因 ready=false 误判为
+  // 旧代而永久卡在 unconfirmed（verifier 阻塞项 2）。
   const sameGeneration = (attempt: TransportAttempt): boolean =>
-    runtimeView().ready && deps.mutations.transportAttemptMatches(attempt, transportTarget())
+    deps.mutations.transportAttemptMatches(attempt, transportTarget())
 
   // ── 派发与结算 ──
 
@@ -1277,21 +1300,27 @@ export function createEditorController(deps: EditorDeps): EditorController {
     }
     const parsed = parseSaveResponse(raw)
     if (!parsed.ok || sessionKey(parsed.value.ref) !== sessionKey(state.ref) || parsed.value.mutationId !== current.record.mutationId) {
+      // 非法 ACK 不结算清稿 mutation：保留 active（可 retrySave 原 body 重放）、
+      // 保留清稿 hold（不得静默丢标记），只把失败回报给调用方（verifier 观察 3）。
       current.unconfirmed = true
       reduce({ type: 'save/unconfirmed', failure: { code: 'invalid_response', retryable: false } })
-      if (current.operationId !== null) releaseHold(current.operationId)
       current.resolve('invalid')
       return
     }
     if (parsed.value.editorRevision < state.revision) {
+      // 非法 ACK 不结算清稿 mutation：保留 active（可 retrySave 原 body 重放）、
+      // 保留清稿 hold（不得静默丢标记），只把失败回报给调用方（verifier 观察 3）。
       current.unconfirmed = true
       reduce({ type: 'save/unconfirmed', failure: { code: 'invalid_response', retryable: false } })
-      if (current.operationId !== null) releaseHold(current.operationId)
       current.resolve('invalid')
       return
     }
     const projection = parsed.value
-    const stillSameDraft = state.localVersion === current.localVersion
+    // 清稿结算只由「派发时快照 draft_token+文本」与清稿请求自身决定：清稿期间仅
+    // chat_anchor/reader_anchor 变化（任何滚动 +1 localVersion）不得判 superseded，
+    // 否则后续排队位置 PUT 会把已提交旧稿写回（verifier 阻塞项 1）。
+    const stillSameDraft =
+      state.draftToken === current.capturedDraftToken && state.draftText === current.capturedDraftText
     active = null
     loaded = true
     if (stillSameDraft) {
@@ -1303,6 +1332,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
         intentHash: projection.editorIntentHash,
         savedAt: projection.savedAt,
         token: current.clearToken ?? current.body.editor_state.draft.token,
+        confirmedLocalVersion: current.localVersion,
       })
       // 清稿 ACK 后按“派发前旧 token + 旧版本”删除本 writer 分支，
       // 用新 token 条件删除会因磁盘仍是旧 token 而失败（二次 review N11）。
@@ -1383,12 +1413,16 @@ export function createEditorController(deps: EditorDeps): EditorController {
   }
 
   const newAttempt = (mutationId: string): TransportAttempt =>
-    deps.mutations.createTransportAttempt({
-      mutationId,
-      scope: transportTarget(),
-      sessionKey: sessionKey(state.ref),
-      createdAt: now(),
-    })
+    // 每次派发 PUT 前把 attempt 标记为 dispatched（verifier 观察：此前未调用，
+    // 未决 mutation 的尝试状态无法据 dispatchState 判定）。
+    deps.mutations.markTransportAttemptDispatched(
+      deps.mutations.createTransportAttempt({
+        mutationId,
+        scope: transportTarget(),
+        sessionKey: sessionKey(state.ref),
+        createdAt: now(),
+      }),
+    )
 
   const dispatchSave = (pending: QueuedRequest): void => {
     if (!canWrite()) {
@@ -1408,7 +1442,10 @@ export function createEditorController(deps: EditorDeps): EditorController {
     const editorState =
       pending.frozenEditorState !== null ? pending.frozenEditorState : editorStateToWire(state)
     if (measureDraftBytes(JSON.stringify(editorState)) > EDITOR_JSON_MAX_BYTES) {
-      // 512KiB 上限：超限禁用保存但不截断本机输入（review P1 #9）。
+      // 512KiB 是服务端请求体（JSON 序列化后字节，含转义/结构）上限；256KiB 是
+      // draft.text 的 UTF-8 输入上限——两者口径不同：文本未超 256KiB 时，大量引号/
+      // 反斜杠转义后正文仍可能超 512KiB 而被此处拦截（见回归测试）。
+      // 超限禁用保存但不截断本机输入（review P1 #9）。
       reduce({ type: 'save/blocked', failure: { code: 'editor_state_too_large', retryable: false } })
       pending.resolve('blocked')
       return
@@ -1435,6 +1472,8 @@ export function createEditorController(deps: EditorDeps): EditorController {
       // 普通排队 flush 的 body 在派发时按最新快照生成，ACK 也必须按最新 localVersion 结算；
       // 只有显式 submit 使用入队时冻结的版本（N1）。
       localVersion: pending.frozenEditorState !== null ? pending.localVersion : state.localVersion,
+      capturedDraftToken: editorState.draft.token,
+      capturedDraftText: editorState.draft.text,
       kind: 'save',
       operationId: pending.operationId,
       clearToken: null,
@@ -1450,8 +1489,9 @@ export function createEditorController(deps: EditorDeps): EditorController {
   }
 
   const dispatchClear = (pending: QueuedRequest): void => {
-    if (pending.capturedLocalVersion !== state.localVersion) {
-      // 首次派发前有新输入：取消排队中的清稿（未发任何请求、不删 mutation）。
+    if (pending.capturedDraftToken !== state.draftToken || pending.capturedDraftText !== state.draftText) {
+      // 首次派发前有新输入（文本/token 变化）才取消；锚点/滚动变化不影响清稿意图
+      // （DESIGN §5.6-8：清稿只由提交快照 draft_token+文本结算，verifier 阻塞项 1）。
       pending.resolve('cancelled')
       if (pending.operationId !== null) releaseHold(pending.operationId)
       afterSettle()
@@ -1465,7 +1505,8 @@ export function createEditorController(deps: EditorDeps): EditorController {
     const clearToken = nextDraftToken()
     const body = buildClearRequestWire(state, nextMutationId(), clearToken)
     if (measureDraftBytes(JSON.stringify(body)) > EDITOR_JSON_MAX_BYTES) {
-      // R7：512KiB 上限按实际清稿请求体判定（draft.text 已清空），不能用含全文的旧快照误判。
+      // R7：512KiB 上限按实际清稿请求体判定（draft.text 已清空），不能用含全文的旧快照误判；
+      // 该口径与草稿 256KiB 上限不同：清稿 body 不含全文，正常必小于上限，此处是防御性检查。
       reduce({ type: 'save/blocked', failure: { code: 'editor_state_too_large', retryable: false } })
       pending.resolve('blocked')
       if (pending.operationId !== null) releaseHold(pending.operationId)
@@ -1473,7 +1514,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
     }
     const record = deps.mutations.createMutationRecord({
       mutationId: body.mutation_id,
-      kind: 'save',
+      kind: 'clear',
       ref: state.ref,
       requestBody: body as unknown as Readonly<Record<string, unknown>>,
       baseRevision: state.revision,
@@ -1486,6 +1527,8 @@ export function createEditorController(deps: EditorDeps): EditorController {
       body,
       attempt: newAttempt(record.mutationId),
       localVersion: state.localVersion,
+      capturedDraftToken: state.draftToken,
+      capturedDraftText: state.draftText,
       kind: 'clear',
       operationId: pending.operationId,
       clearToken,
@@ -1541,6 +1584,8 @@ export function createEditorController(deps: EditorDeps): EditorController {
       explicit: false,
       frozenEditorState: null,
       capturedLocalVersion: state.localVersion,
+      capturedDraftToken: state.draftToken,
+      capturedDraftText: state.draftText,
       localVersion: state.localVersion,
       resolve: () => {},
     })
@@ -1580,6 +1625,8 @@ export function createEditorController(deps: EditorDeps): EditorController {
     }
     // R2：即使是新的代际（或旧 replay promise 永不 settle），也立即用新 attempt 派发
     // 原 mutation/原 body；旧 attempt 结算因 attempt 身份不匹配被丢弃，不阻塞新代。
+    // 重放前取消旧退避定时器：否则定时器到点会再发一个并发 PUT。
+    clearRetryTimer()
     replaying = true
     retryPaused = false
     current.attempt = newAttempt(current.record.mutationId)
@@ -1620,6 +1667,8 @@ export function createEditorController(deps: EditorDeps): EditorController {
         active.unconfirmed = true
       }
     }
+    const becameReady = !lastSeenReady && runtime.ready
+    lastSeenReady = runtime.ready
     if (!runtime.ready) return
     if (runtime.editorReady === false) {
       if (!state.readOnly) {
@@ -1631,7 +1680,10 @@ export function createEditorController(deps: EditorDeps): EditorController {
       return
     }
     if (active !== null) {
-      if (active.unconfirmed && !sameGeneration(active.attempt)) {
+      if (active.unconfirmed && (identityChanged || becameReady || !sameGeneration(active.attempt))) {
+        // 只在三种承重场景重放：认证代际变化、未就绪→就绪（masked unmask）、attempt 身份
+        // 已不属当前代。无关 runtime 通知（ready 相位未变）不得重启已耗尽/未确认的 PUT；
+        // masked 期间同代 ACK 已正常应用时 active 已结算，不会重复 PUT（verifier 阻塞项 2）。
         replayActive(active)
       } else if (retryPaused && retryTimer === null && !active.inFlight && !replaying) {
         // R6/F1：只恢复“确实因 runtime 不可用而暂停的退避重试”；耗尽/非重试失败不得被
@@ -1689,6 +1741,10 @@ export function createEditorController(deps: EditorDeps): EditorController {
     const attemptViewer = runtime.viewerUserId
     const attemptProject = runtime.projectId
     reduce({ type: 'load/start' })
+    // GET 在途编辑基线：失败恢复时若用户已有新输入/新本地版本，不得读回磁盘旧稿覆盖
+    // （verifier 阻塞项 3：GET 在途旧稿落盘→用户输入新文本→GET 失败→保留新文本）。
+    const loadBaselineText = state.draftText
+    const loadBaselineLocalVersion = state.localVersion
     let raw: unknown
     try {
       const result = await guard.run(() => deps.transport!.getEditorState())
@@ -1708,7 +1764,9 @@ export function createEditorController(deps: EditorDeps): EditorController {
         return true
       }
       const failure = classifySaveFailure(error)
-      recoverLocalDraft()
+      if (state.draftText === loadBaselineText && state.localVersion === loadBaselineLocalVersion) {
+        recoverLocalDraft()
+      }
       reduce({ type: 'load/failure', failure })
       return false
     }
@@ -1946,6 +2004,8 @@ export function createEditorController(deps: EditorDeps): EditorController {
           explicit,
           frozenEditorState: explicit ? editorStateToWire(state) : null,
           capturedLocalVersion: state.localVersion,
+          capturedDraftToken: state.draftToken,
+          capturedDraftText: state.draftText,
           localVersion: state.localVersion,
           resolve,
         }
@@ -1958,6 +2018,8 @@ export function createEditorController(deps: EditorDeps): EditorController {
         explicit,
         frozenEditorState: explicit ? editorStateToWire(state) : null,
         capturedLocalVersion: state.localVersion,
+        capturedDraftToken: state.draftToken,
+        capturedDraftText: state.draftText,
         localVersion: state.localVersion,
         resolve,
       })
@@ -2115,6 +2177,8 @@ export function createEditorController(deps: EditorDeps): EditorController {
           explicit: true,
           frozenEditorState: null,
           capturedLocalVersion,
+          capturedDraftToken: state.draftToken,
+          capturedDraftText: state.draftText,
           localVersion: state.localVersion,
           resolve,
         }
@@ -2126,6 +2190,8 @@ export function createEditorController(deps: EditorDeps): EditorController {
         explicit: true,
         frozenEditorState: null,
         capturedLocalVersion,
+        capturedDraftToken: state.draftToken,
+        capturedDraftText: state.draftText,
         localVersion: state.localVersion,
         resolve,
       })
@@ -2143,8 +2209,8 @@ export function createEditorController(deps: EditorDeps): EditorController {
         return { allowed: false, reason: 'not_ready' }
       }
       if (state.readOnly) return { allowed: false, reason: 'readonly' }
-      if (state.phase === 'idle' || state.loading) return { allowed: false, reason: 'not_loaded' }
       if (state.conflict !== null) return { allowed: false, reason: 'conflict' }
+      if (state.phase === 'idle' || state.loading) return { allowed: false, reason: 'not_loaded' }
       if (state.blocked) return { allowed: false, reason: 'blocked' }
       if (state.saving || active !== null || state.pendingMutations > 0) {
         return { allowed: false, reason: 'saving' }

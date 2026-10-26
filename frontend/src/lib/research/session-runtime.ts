@@ -168,7 +168,7 @@ export function getSessionRuntimeServerSnapshot(): SessionRuntimeSnapshot {
 // MutationRecord / TransportAttempt 骨架（不可变记录与传输尝试分开）
 // ---------------------------------------------------------------------------
 
-export type MutationRecordKind = 'save' | 'submission'
+export type MutationRecordKind = 'save' | 'clear' | 'submission'
 
 export type MutationRecordStatus = 'pending' | 'result-unconfirmed' | 'settled' | 'abandoned'
 
