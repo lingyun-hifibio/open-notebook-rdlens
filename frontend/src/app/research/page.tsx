@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ResearchWorkspaceShell } from '@/lib/embedded/shell'
 import { isEmbeddedMode } from '@/lib/embedded/config'
@@ -13,8 +13,20 @@ import { ResearchWorkbench } from '@/components/research/ResearchWorkbench'
 import { ResearchWorkspace } from '@/components/research/ResearchWorkspace'
 import { ResearchSourceChatPanel } from '@/components/research/ResearchSourceChatPanel'
 import { ResearchLayout } from '@/components/research/ResearchLayout'
+import {
+  ResearchSessionSwitcher,
+  RESEARCH_SESSION_SWITCHER_PLACEHOLDERS,
+} from '@/components/research/ResearchSessionSwitcher'
 import { type ResearchMainAction } from '@/components/research/research-main-action'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { useResearchSessionRuntimeOptional } from '@/lib/hooks/research-session-runtime'
+import { useResearchSessions } from '@/lib/hooks/use-research-sessions'
+import {
+  readDisplayPointer,
+  readPointer,
+} from '@/lib/research/session-cache'
+import type { SessionRuntimeSnapshot } from '@/lib/research/session-runtime'
+import type { ResearchSessionRef } from '@/lib/research/session-contract'
 
 /**
  * /research：嵌入式 Research Workspace 入口路由（UI-01，设计 §4.1；RWV2-40 IA）。
@@ -68,6 +80,174 @@ export default function ResearchPage() {
   const [globalCompactPanel, setGlobalCompactPanel] = useState<'primary' | 'secondary'>('secondary')
   const [sourceCompactPanel, setSourceCompactPanel] = useState<'primary' | 'secondary'>('primary')
 
+  // ── 会话导航（PR-2；DESIGN §4.2–§4.5、§9.6） ──────────────────────────────
+  // 页面级导航是 PR-2 的唯一入口（Lead 裁决 R1(a)：不改两个 Chat 面板）；
+  // 三指针写入通过 PR-1 runtime/cache 完成：active(global)/active(source) 只写
+  // 各自指针，display 指针只由显式导航/返回全局写入。
+  const sessionRuntime = useResearchSessionRuntimeOptional()
+  const [runtimeSnapshot, setRuntimeSnapshot] = useState<SessionRuntimeSnapshot | null>(null)
+  const [activeGlobalRef, setActiveGlobalRef] = useState<ResearchSessionRef | null>(null)
+  const [activeSourceRef, setActiveSourceRef] = useState<ResearchSessionRef | null>(null)
+  // F-M3（Lead 裁决 R3）：页面级独立 state 表达“该来源新会话”（display
+  // `{surface:'source', sourceId, sessionRef:null}`）。该状态下不写 `.source`、
+  // 不清 runtime active，也不把旧 `.source` 指针恢复成活动会话。
+  const [sourceNewSessionFor, setSourceNewSessionFor] = useState<string | null>(null)
+  const restoredIdentityRef = useRef<string | null>(null)
+  const previousIdentityRef = useRef<string | null>(null)
+  // display 指针已恢复过某来源的具体会话：紧接着的“打开来源”effect 不得用
+  // 旧 `.source` 指针覆盖它（display 是刷新显示权威，§4.5）。
+  const restoredSourceGuardRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    if (!sessionRuntime) {
+      setRuntimeSnapshot(null)
+      return
+    }
+    setRuntimeSnapshot(sessionRuntime.getSnapshot())
+    return sessionRuntime.subscribe(() => setRuntimeSnapshot(sessionRuntime.getSnapshot()))
+  }, [sessionRuntime])
+
+  const globalSessions = useResearchSessions({
+    runtime: sessionRuntime,
+    surface: 'global',
+  })
+  const sourceSessions = useResearchSessions({
+    runtime: sessionRuntime,
+    surface: 'source',
+    sourceId: selectedSourceId,
+  })
+
+  // S1：viewer/authGeneration/project/role 变化 → 清页面导航 state（列表缓存在
+  // use-research-sessions 内同步清空），绝不沿用上一身份的会话标识。
+  const identityKey = runtimeSnapshot
+    ? `${runtimeSnapshot.role}|${runtimeSnapshot.viewerUserId ?? ''}|${runtimeSnapshot.projectId}|${runtimeSnapshot.authGeneration}`
+    : null
+
+  useEffect(() => {
+    if (identityKey === null) return
+    if (previousIdentityRef.current === null) {
+      previousIdentityRef.current = identityKey
+      return
+    }
+    if (previousIdentityRef.current === identityKey) return
+    previousIdentityRef.current = identityKey
+    restoredIdentityRef.current = null
+    setActiveGlobalRef(null)
+    setActiveSourceRef(null)
+    setSourceNewSessionFor(null)
+    setSelectedSourceId(null)
+    setSourceFocusActive(false)
+  }, [identityKey])
+
+  // 刷新/重开恢复（§4.5）：只有拿到 cacheScope/cacheAuthority（owner + viewer
+  // 已确认）后才读指针。display 有具体 ref 时是显示权威；display
+  // `source + null` 是“该来源新会话”（F-M3），不得回退成 `.source` 旧指针。
+  useEffect(() => {
+    if (!sessionRuntime) return
+    const snapshot = sessionRuntime.getSnapshot()
+    if (snapshot.phase !== 'ready') return
+    const scope = sessionRuntime.cacheScope()
+    const authority = sessionRuntime.cacheAuthority()
+    if (!scope || !authority) return
+    const identity = `${snapshot.role}|${snapshot.viewerUserId ?? ''}|${snapshot.projectId}|${snapshot.authGeneration}`
+    if (restoredIdentityRef.current === identity) return
+    restoredIdentityRef.current = identity
+
+    const display = readDisplayPointer(scope, authority)
+    const globalPointer = readPointer(scope, authority, 'global', null)
+    const displayGlobal = display?.surface === 'global' ? display.ref : undefined
+    setActiveGlobalRef(displayGlobal !== undefined ? displayGlobal : globalPointer?.ref ?? null)
+
+    if (display?.surface === 'source') {
+      setSelectedSourceId(display.sourceId)
+      setSourceFocusActive(true)
+      if (display.ref) {
+        restoredSourceGuardRef.current = display.sourceId
+        setActiveSourceRef(display.ref)
+        setSourceNewSessionFor(null)
+        sessionRuntime.activate('source', display.ref)
+      } else {
+        // 该来源新会话：不写 `.source`、不清 runtime active、不激活会话。
+        setActiveSourceRef(null)
+        setSourceNewSessionFor(display.sourceId)
+      }
+      return
+    }
+    setSourceNewSessionFor(null)
+    if (display?.surface === 'global') setSourceFocusActive(false)
+  }, [sessionRuntime, runtimeSnapshot])
+
+  // 打开某个来源（Citation/工作台）时恢复该来源自己的 `.source` 指针；
+  // “该来源新会话”状态下不恢复（F-M3 语义优先）。
+  useEffect(() => {
+    if (!sessionRuntime || !selectedSourceId) return
+    if (sourceNewSessionFor === selectedSourceId) {
+      setActiveSourceRef(null)
+      return
+    }
+    if (restoredSourceGuardRef.current === selectedSourceId) {
+      // display 已恢复该来源具体会话：保留 display 的显示权威。
+      restoredSourceGuardRef.current = null
+      return
+    }
+    const scope = sessionRuntime.cacheScope()
+    const authority = sessionRuntime.cacheAuthority()
+    if (!scope || !authority) return
+    const pointer = readPointer(scope, authority, 'source', selectedSourceId)
+    setActiveSourceRef(pointer?.ref ?? null)
+    setSourceNewSessionFor(null)
+  }, [sessionRuntime, runtimeSnapshot, selectedSourceId, sourceNewSessionFor])
+
+  // 页面级导航（§9.6 / §4.2-1）：source 会话先进入该来源 Source focus，再
+  // 激活该 surface 会话；global 会话返回全局 surface。activate 同时校验
+  // project/kind/sourceId 并写 surface 独立指针；只有校验通过（S4）才写
+  // display 指针。任一 surface 的切换都不动另一 surface 的活动会话。
+  const openSession = useCallback(
+    (ref: ResearchSessionRef) => {
+      if (ref.kind === 'source') {
+        if (!ref.sourceId) return
+        if (sessionRuntime) {
+          const accepted = sessionRuntime.activate('source', ref)
+          if (!accepted) return
+          sessionRuntime.setDisplayPointer({
+            version: 1,
+            surface: 'source',
+            sourceId: ref.sourceId,
+            ref,
+          })
+        }
+        setSelectedSourceId(ref.sourceId)
+        setSourceFocusActive(true)
+        setSourceNewSessionFor(null)
+        setActiveSourceRef(ref)
+        return
+      }
+      if (sessionRuntime) {
+        const accepted = sessionRuntime.activate('global', ref)
+        if (!accepted) return
+        sessionRuntime.setDisplayPointer({ version: 1, surface: 'global', ref })
+      }
+      setSourceFocusActive(false)
+      setActiveGlobalRef(ref)
+    },
+    [sessionRuntime],
+  )
+
+  // 新对话（§4.3）：显式触发、single-flight；成功后激活为当前会话；editor
+  // 初始化留 PR-3（本 PR 不产生消息、不建空壳列表项）。
+  const createGlobalSession = globalSessions.create
+  const createSourceSession = sourceSessions.create
+
+  const handleNewGlobalSession = useCallback(async () => {
+    const created = await createGlobalSession()
+    if (created) openSession(created.ref)
+  }, [createGlobalSession, openSession])
+
+  const handleNewSourceSession = useCallback(async () => {
+    const created = await createSourceSession()
+    if (created) openSession(created.ref)
+  }, [createSourceSession, openSession])
+
   // Edit scope 统一链路（R8-3）：退 Source focus → 退最大化 → 回左栏编辑面 →
   // 递增聚焦请求。Header ScopeSummary / Run Template Dialog 共用本入口。
   const handleEditScopeAllStates = useCallback(() => {
@@ -113,10 +293,19 @@ export default function ResearchPage() {
     }
   }, [])
 
-  // Back：仅退出 Source focus（Source Chat 保活隐藏，不卸载）。
+  // Back：仅退出 Source focus（Source Chat 保活隐藏，不卸载）。返回全局时
+  // 只把 display 更新为 `{surface:'global', sessionRef:active('global')}`，
+  // 来源指针保留、且不清 active('global')（§4.5 返回全局）。
   const exitSourceFocus = useCallback(() => {
     setSourceFocusActive(false)
-  }, [])
+    if (sessionRuntime) {
+      sessionRuntime.setDisplayPointer({
+        version: 1,
+        surface: 'global',
+        ref: activeGlobalRef,
+      })
+    }
+  }, [sessionRuntime, activeGlobalRef])
 
   // Source Chat 内 Citation → 只需高亮左栏详情（不改变选中/专注状态）。
   const handleHighlightPage = useCallback((pageIdx: number) => {
@@ -167,8 +356,44 @@ export default function ResearchPage() {
           />
           {/* 根级统一外发确认（§6.8 single-flight） */}
           <ResearchEgressConsentDialog />
-          <div className="min-h-0 flex-1">
-            <ResearchLayout
+          <div className="flex min-h-0 flex-1 flex-col">
+            {/* PR-2 页面级会话导航（Lead 裁决 R1(a)：不改两个 Chat 面板）。
+                global 当前会话 / 历史抽屉 / 新对话；有选中来源时并列 Source
+                会话导航；无来源时明确显示“先打开来源”的可见原因（S2）。 */}
+            <div
+              data-testid="research-session-nav"
+              data-active-global-session={activeGlobalRef?.sessionId ?? undefined}
+              data-active-source-session={activeSourceRef?.sessionId ?? undefined}
+              data-source-new-session={sourceNewSessionFor ?? undefined}
+              className="flex flex-wrap items-center gap-3 border-b border-border/60 px-4 py-2"
+            >
+              <ResearchSessionSwitcher
+                surface="global"
+                currentRef={activeGlobalRef}
+                sessions={globalSessions}
+                onOpenSession={openSession}
+                onNew={handleNewGlobalSession}
+              />
+              {selectedSourceId !== null ? (
+                <ResearchSessionSwitcher
+                  surface="source"
+                  sourceId={selectedSourceId}
+                  currentRef={activeSourceRef}
+                  sessions={sourceSessions}
+                  onOpenSession={openSession}
+                  onNew={handleNewSourceSession}
+                />
+              ) : (
+                <span
+                  data-testid="source-session-unavailable"
+                  className="text-xs text-muted-foreground"
+                >
+                  {RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.sourceRequired}
+                </span>
+              )}
+            </div>
+            <div className="min-h-0 flex-1">
+              <ResearchLayout
               layoutId={sourceDesktop ? 'source-desktop' : 'global'}
               axis="horizontal"
               compact={compact}
@@ -230,6 +455,7 @@ export default function ResearchPage() {
                 </div>,
               ]}
             </ResearchLayout>
+            </div>
           </div>
         </ResearchJobsProvider>
       </ResearchWorkspaceShell>

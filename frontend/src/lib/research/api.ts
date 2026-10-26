@@ -68,6 +68,7 @@ import type {
   TransformationRunResult,
 } from '@/lib/types/research'
 import { saveIdempotencyKey } from './save-idempotency'
+import { SESSION_CONTRACT_HEADER, SESSION_CONTRACT_VERSION } from './session-contract'
 
 const researchPath = (projectId: string, ...segments: string[]): string =>
   `/v1/research/projects/${projectId}${segments.length > 0 ? `/${segments.join('/')}` : ''}`
@@ -1102,4 +1103,73 @@ export function openResearchChatStream(
     clearWatchdog()
     controller.abort()
   }
+}
+
+// ── 会话列表 / 创建（#602 第三批 PR-2；契约 research-session-v1） ──
+
+/**
+ * `GET /chat/sessions` 查询参数（02 §3 `list_query`）：
+ * 只允许 cursor/limit/kind，**没有 source_id**（已知契约缺口，见 DESIGN §4.1）。
+ */
+export interface ListChatSessionsParams {
+  kind: 'global' | 'source' | 'all'
+  cursor?: string | null
+  limit?: number
+}
+
+/** 新协议请求头（所有会话列表/创建请求必带，02 §2）。 */
+const sessionContractHeaders = {
+  [SESSION_CONTRACT_HEADER]: SESSION_CONTRACT_VERSION,
+} as const
+
+/**
+ * `GET /v1/research/projects/{project_id}/chat/sessions`（list_query → list_response）。
+ *
+ * 返回**原始 JSON**：`list_response` 的严格校验由调用方经
+ * `session-contract.parseListResponse` 完成（本函数只负责传输与协议头）。
+ */
+export async function listChatSessions(
+  projectId: string,
+  params: ListChatSessionsParams,
+): Promise<unknown> {
+  const query: Record<string, string | number> = { kind: params.kind }
+  if (params.cursor !== undefined && params.cursor !== null) query.cursor = params.cursor
+  if (params.limit !== undefined) query.limit = params.limit
+  const response = await apiClient.get<unknown>(
+    researchPath(projectId, 'chat', 'sessions'),
+    { params: query, headers: sessionContractHeaders },
+  )
+  return response.data
+}
+
+/** `create_request`（02 §3）：body 只有 `{session_id}`。 */
+export interface CreateChatSessionInput {
+  kind: 'global' | 'source'
+  /** kind=source 时必填（绑定当前来源，不可变）。 */
+  sourceId?: string | null
+  /** 客户端生成，`^[A-Za-z0-9_-]{1,128}$`；网络重试必须复用同一值（§4.3）。 */
+  sessionId: string
+}
+
+/**
+ * `POST /v1/research/projects/{project_id}/chat/sessions`
+ * 或 `POST .../sources/{source_id}/chat/sessions`（create_request → create_response）。
+ *
+ * 返回**原始 JSON**：`create_response` 6 键严格校验由调用方完成
+ * （PR-2 决定 R5：解析放 `use-research-sessions.ts`，本函数只做传输）。
+ */
+export async function createChatSession(
+  projectId: string,
+  input: CreateChatSessionInput,
+): Promise<unknown> {
+  const path =
+    input.kind === 'source'
+      ? researchPath(projectId, 'sources', input.sourceId ?? '', 'chat', 'sessions')
+      : researchPath(projectId, 'chat', 'sessions')
+  const response = await apiClient.post<unknown>(
+    path,
+    { session_id: input.sessionId },
+    { headers: sessionContractHeaders },
+  )
+  return response.data
 }
