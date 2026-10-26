@@ -26,7 +26,10 @@ import {
   deriveResearchDraftGate,
   researchDraftGateReasonKey,
 } from './ResearchDraftComposer'
-import { measureChatAnchor, restoreScrollTop } from '@/lib/research/reading-anchor'
+import {
+  measureChatAnchorCandidates,
+  restoreScrollTop,
+} from '@/lib/research/reading-anchor'
 import type {
   EditorSnapshot,
   ResearchConversationSnapshot,
@@ -386,17 +389,22 @@ export function ResearchChatPanel({
       const container = chatScrollRef.current
       if (container === null) return
       const rect = container.getBoundingClientRect()
+      // §5.7.1：live/恢复 user 轮没有稳定 message_id——几何仍参与测量，
+      // 但只把最近的稳定消息写入 chat_anchor（临时 turn id 不持久化）。
       const messages = Array.from(
-        container.querySelectorAll<HTMLElement>('[data-message-id]'),
+        container.querySelectorAll<HTMLElement>(
+          '[data-message-id], [data-local-message-id]',
+        ),
       ).map((node) => {
         const nodeRect = node.getBoundingClientRect()
         return {
           messageId: node.dataset.messageId ?? '',
+          stableMessageId: node.dataset.messageId ?? null,
           top: nodeRect.top,
           height: nodeRect.height,
         }
       })
-      const anchor = measureChatAnchor({
+      const anchor = measureChatAnchorCandidates({
         messages,
         container: {
           containerTop: rect.top,
@@ -420,10 +428,20 @@ export function ResearchChatPanel({
 
   // PR-4：恢复消息锚点（§5.7.1）——只设 scrollTop，不动焦点、不写回锚点。
   const savedChatAnchor = wired ? editorSnapshot?.chatAnchor ?? null : null
+  // live 轮解析出稳定 message_id 后要重新尝试恢复（turns.length 不变但 ID 集变了）。
+  const stableMessageIdSignature = turns
+    .map(turn => turn.serverMessageId ?? '')
+    .join('|')
   useEffect(() => {
-    if (!wired || savedChatAnchor === null) return
+    if (!wired || savedChatAnchor === null) {
+      restoringRef.current = false
+      return
+    }
     const container = chatScrollRef.current
-    if (container === null) return
+    if (container === null) {
+      restoringRef.current = false
+      return
+    }
     const target = Array.from(
       container.querySelectorAll<HTMLElement>('[data-message-id]'),
     ).find(node => node.dataset.messageId === savedChatAnchor.messageId) ?? null
@@ -455,9 +473,17 @@ export function ResearchChatPanel({
     return () => {
       window.cancelAnimationFrame(firstFrame)
       if (secondFrame !== 0) window.cancelAnimationFrame(secondFrame)
+      // 取消恢复帧时必须释放抑制标记，否则后续用户滚动不再保存锚点。
+      restoringRef.current = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在锚点/消息集变化时恢复
-  }, [wired, savedChatAnchor?.messageId, savedChatAnchor?.offsetPx, savedChatAnchor?.followTail, turns.length])
+  }, [
+    wired,
+    savedChatAnchor?.messageId,
+    savedChatAnchor?.offsetPx,
+    savedChatAnchor?.followTail,
+    stableMessageIdSignature,
+  ])
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -509,6 +535,9 @@ export function ResearchChatPanel({
               key={turn.id}
               className="flex flex-col items-end gap-1"
               data-message-id={turn.serverMessageId ?? undefined}
+              data-local-message-id={
+                turn.serverMessageId === null ? turn.id : undefined
+              }
             >
               <div className="max-w-[80%] rounded-lg bg-primary/10 px-3 py-2 text-sm">
                 {turn.content}

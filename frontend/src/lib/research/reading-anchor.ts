@@ -154,6 +154,65 @@ export function measureChatAnchor(input: {
   }
 }
 
+/** 一键会话消息候选：稳定 ID 缺失时只能用于几何，不可持久化（§5.7.1）。 */
+export interface ChatAnchorCandidate extends MessageGeometry {
+  /** 服务端消息 ID；`null`＝本地临时轮（live 未解析），不得写入 chat_anchor。 */
+  readonly stableMessageId: string | null
+}
+
+/**
+ * 从“含本地临时轮”的完整消息列表测量锚点（§5.7.1）。
+ *
+ * 真实 live 对话中 user 轮/未解析 assistant 轮没有稳定 `message_id`；此时
+ * 向上回退到最近的稳定消息作为锚点目标（负偏移表达“目标在上方”），
+ * 避免把临时 turn id 持久化。若视口内及其上方都没有稳定消息 → 返回 null，
+ * 调用方保留内存位置。
+ */
+export function measureChatAnchorCandidates(input: {
+  readonly messages: readonly ChatAnchorCandidate[]
+  readonly container: ScrollContainerMetrics
+  readonly tailThresholdPx?: number
+}): WireChatAnchor | null {
+  const container = input.container
+  if (!isMeasurableContainer(container)) return null
+  const ordered = input.messages
+    .filter(message =>
+      isFiniteNumber(message.top) &&
+      isFiniteNumber(message.height) &&
+      message.height > 0,
+    )
+    .slice()
+    .sort((a, b) => a.top - b.top)
+  if (ordered.length === 0) return null
+
+  let targetIndex = 0
+  for (let index = 0; index < ordered.length; index += 1) {
+    if (ordered[index].top <= container.containerTop) {
+      targetIndex = index
+    } else {
+      break
+    }
+  }
+
+  let target: ChatAnchorCandidate | null = null
+  for (let index = targetIndex; index >= 0; index -= 1) {
+    if (ordered[index].stableMessageId !== null) {
+      target = ordered[index]
+      break
+    }
+  }
+  if (target === null) return null
+
+  const offsetPx = Math.round(target.top - container.containerTop)
+  if (!isValidAnchorOffsetPx(offsetPx)) return null
+
+  return {
+    messageId: target.stableMessageId ?? '',
+    offsetPx,
+    followTail: isNearScrollTail(container, input.tailThresholdPx),
+  }
+}
+
 /**
  * 按有符号偏移恢复 scrollTop（§5.7.1）。
  *

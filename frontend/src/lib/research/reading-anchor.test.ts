@@ -13,6 +13,7 @@ import {
   ANCHOR_OFFSET_LIMIT,
   isValidAnchorOffsetPx,
   measureChatAnchor,
+  measureChatAnchorCandidates,
   measureReaderAnchor,
   readerAnchorMatches,
   restoreScrollTop,
@@ -353,5 +354,34 @@ describe('chat_anchor wire 形状', () => {
       shouldRestoreReaderAnchor({ savedAnchor: readerSaved, positionUnavailable: true }),
     ).toBe(false)
     expect(shouldRestoreReaderAnchor({ savedAnchor: null })).toBe(false)
+  })
+
+  it('D11 live 轮无稳定 ID 时回退到最近的稳定消息（负偏移，不持久化临时 ID）', () => {
+    const container: ScrollContainerMetrics = {
+      containerTop: 100,
+      scrollTop: 0,
+      clientHeight: 400,
+      scrollHeight: 2000,
+    }
+    const anchor = measureChatAnchorCandidates({
+      container,
+      messages: [
+        { messageId: 'msg-a', stableMessageId: 'msg-a', top: -50, height: 80 },
+        { messageId: '', stableMessageId: null, top: 30, height: 60 },
+      ],
+    })
+    // 视口顶沿落在本地临时 user 轮上 → 锚点回退到其上方稳定消息，offset 为负
+    expect(anchor).toEqual({ messageId: 'msg-a', offsetPx: -150, followTail: false })
+  })
+
+  it('D12 视口内及上方都没有稳定消息时不写入锚点（保留内存位置）', () => {
+    const anchor = measureChatAnchorCandidates({
+      container: { containerTop: 100, scrollTop: 0, clientHeight: 400, scrollHeight: 2000 },
+      messages: [
+        { messageId: '', stableMessageId: null, top: 120, height: 60 },
+        { messageId: '', stableMessageId: null, top: 200, height: 60 },
+      ],
+    })
+    expect(anchor).toBeNull()
   })
 })
