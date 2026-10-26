@@ -1407,12 +1407,17 @@ describe('conversation-controller：副作用与迟到隔离', () => {
 
   it('review-6 B2b：clear ACK 结算后外部 token 查回恢复', async () => {
     const streams: ConversationStreamInput[] = []
+    const lookupTokens: string[] = []
     const transport = {
       openStream: (input: ConversationStreamInput) => {
         streams.push(input)
         return { abort: () => {} }
       },
-      getSubmission: () => submissionResponse(),
+      getSubmission: (input: { token: string }) => {
+        lookupTokens.push(input.token)
+        // 目标 token 的合法响应：外部查回必须按请求 token 匹配并真正结算。
+        return submissionResponse({ draft_token: input.token })
+      },
       clearAfterSubmission: () => {},
       releaseHold: () => {},
     } as unknown as ConversationTransport
@@ -1433,6 +1438,10 @@ describe('conversation-controller：副作用与迟到隔离', () => {
     controller.notifyClearSettled('op-1', 'cleared')
     const restored = await controller.lookupSubmission('other_draft')
     expect(restored.status).toBe('ok')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    // 真正的派发/结算断言：请求 token 为查询 token，且落地为 not_observed。
+    expect(lookupTokens).toEqual(['other_draft'])
+    expect(controller.getSnapshot().turn?.state).toBe('not_observed')
   })
 
   it('review-7 B2：idle + clear 租约同样不得被新 send 替换，ACK 后才能继续', async () => {
