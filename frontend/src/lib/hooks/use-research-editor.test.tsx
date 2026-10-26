@@ -651,7 +651,7 @@ describe('review3 P1：释放/换人后的敏感清理与未决 mutation 接管'
       role: 'owner',
       storage,
       transport: okTransport(),
-      now: () => new Date(NOW),
+      now: () => NOW,
     })
   }
 
