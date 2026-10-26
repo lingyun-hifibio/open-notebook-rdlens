@@ -1771,9 +1771,9 @@ export function createConversationController(input: {
         error: { code: 'session_busy', message: 'Active turn is not terminal' },
       })
     }
-    // 终态仍有未结算清稿租约时不得替换该 turn：否则迟到 ACK 无人承接
-    // （review-6 B2）。等 clear_settled 后再允许新发送。
-    if (turnState !== null && isTerminalTurn(turnState) && turnState.clearPending) {
+    // 仍有未结算清稿租约时不得替换该 turn（终态与 idle 均适用）：否则迟到
+    // ACK 随旧 turn 归档而无人承接（review-6/7 B2）。等 clear_settled 后再发送。
+    if (turnState !== null && turnState.clearPending) {
       return Promise.resolve({
         status: 'blocked',
         error: {

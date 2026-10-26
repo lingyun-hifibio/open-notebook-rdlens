@@ -1405,6 +1405,76 @@ describe('conversation-controller：副作用与迟到隔离', () => {
     expect(streams).toHaveLength(2)
   })
 
+  it('review-6 B2b：clear ACK 结算后外部 token 查回恢复', async () => {
+    const streams: ConversationStreamInput[] = []
+    const transport = {
+      openStream: (input: ConversationStreamInput) => {
+        streams.push(input)
+        return { abort: () => {} }
+      },
+      getSubmission: () => submissionResponse(),
+      clearAfterSubmission: () => {},
+      releaseHold: () => {},
+    } as unknown as ConversationTransport
+    const runtime = createSessionRuntime({
+      authGeneration: 1,
+      projectId: 'proj_1',
+      viewerUserId: 'user_1',
+      role: 'owner',
+    })
+    const controller = runtime.conversation(REF, { transport })
+    await controller.send(sendInput())
+    streams[0].onEvent?.(sse(1, 'usage', { accepted: receiptWire({}) }))
+    streams[0].onEvent?.(sse(2, 'done', { completion_status: 'complete' }))
+    const pending = await controller.lookupSubmission('other_draft')
+    expect(pending.status).toBe('blocked')
+    expect(pending.status === 'blocked' ? (pending.error?.code ?? null) : null)
+      .toBe('clear_settlement_pending')
+    controller.notifyClearSettled('op-1', 'cleared')
+    const restored = await controller.lookupSubmission('other_draft')
+    expect(restored.status).toBe('ok')
+  })
+
+  it('review-7 B2：idle + clear 租约同样不得被新 send 替换，ACK 后才能继续', async () => {
+    const clears: string[] = []
+    const releases: string[] = []
+    const streams: ConversationStreamInput[] = []
+    const transport = {
+      openStream: (input: ConversationStreamInput) => {
+        streams.push(input)
+        return { abort: () => {} }
+      },
+      getSubmission: () => submissionResponse(),
+      clearAfterSubmission: (_receipt: unknown, operationId: string) => { clears.push(operationId) },
+      releaseHold: (operationId: string) => { releases.push(operationId) },
+    } as unknown as ConversationTransport
+    const runtime = createSessionRuntime({
+      authGeneration: 1,
+      projectId: 'proj_1',
+      viewerUserId: 'user_1',
+      role: 'owner',
+    })
+    const controller = runtime.conversation(REF, { transport })
+    await controller.send(sendInput())
+    streams[0].onEvent?.(sse(1, 'usage', { accepted: receiptWire({}) }))
+    expect(clears).toEqual(['op-1'])
+    // 明确未受理：accepted 后收到 426 → reducer 回到 idle，但 clear 租约仍保留。
+    streams[0].onHttpError?.(426, { detail: { code: 'c05_contract_not_enabled' } })
+    expect(controller.getSnapshot().turn?.state).toBe('idle')
+    expect(controller.getSnapshot().turn?.clearPending).toBe(true)
+    const blocked = await controller.send(sendInput({ operationId: 'op-2', turnId: 'turn-2' }))
+    expect(blocked.status).toBe('blocked')
+    expect(blocked.status === 'blocked' ? (blocked.error?.code ?? null) : null)
+      .toBe('clear_settlement_pending')
+    expect(streams).toHaveLength(1)
+    controller.notifyClearSettled('op-1', 'cleared')
+    expect(releases).toEqual(['op-1'])
+    expect(controller.getSnapshot().turn?.clearPending).toBe(false)
+    const retried = await controller.send(sendInput({ operationId: 'op-2', turnId: 'turn-2' }))
+    expect(retried.status).toBe('ok')
+    expect(streams).toHaveLength(2)
+  })
+
   it('review-4：rebaseAuth 推进代次；旧代次查回结果必须丢弃，新代次补派发后结算', async () => {
     let lookupCalls = 0
     let resolveFirst: (value: unknown) => void = () => {}
