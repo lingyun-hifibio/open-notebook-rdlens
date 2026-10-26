@@ -977,6 +977,17 @@ export const esES = {
     viewDocs: "Ver documentación",
   },
   research: {
+    editor: {
+      unsavedDraft: 'Draft not saved yet',
+      saved: 'All changes saved',
+      blocked: 'Saving is blocked — retry before sending',
+      positionUnavailable: 'The previous reading position is not available',
+      legacyScopeReselection: 'The previous scope could not be restored — choose sources again',
+      unconfirmedItems: 'Some selected items are not in the current authorized list — review them',
+      restoreDraft: 'Restore draft',
+      composerLabel: 'Message input',
+      invalidDraft: 'Draft contains characters that cannot be sent — remove or replace them before sending',
+    },
     errors: {
       acceptanceRetryExhausted: 'Your submission is pending confirmation — its result could not be verified automatically. Retry with the original attempt or review it before sending again.',
       generic: "Something went wrong. Check the message below and try again, or contact an administrator.",

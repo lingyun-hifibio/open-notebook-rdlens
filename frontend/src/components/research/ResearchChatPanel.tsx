@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -20,6 +20,26 @@ import type {
 } from '@/lib/hooks/use-research-chat'
 import type { ResearchCitationDisplayItem, ResearchJob, ResearchSynthesisScope } from '@/lib/research/types'
 import { formatScopeLabel, useResearchScope, type ResearchScopeSnapshot } from '@/lib/research/scope'
+import { ResearchSessionScopeBar } from './ResearchSessionScopeBar'
+import { hasUnpairedSurrogate } from '@/lib/research/editor-machine'
+import {
+  ResearchDraftComposer,
+  deriveResearchDraftGate,
+  researchDraftGateReasonKey,
+} from './ResearchDraftComposer'
+import {
+  measureChatAnchorCandidates,
+  restoreScrollTop,
+} from '@/lib/research/reading-anchor'
+import type {
+  EditorSnapshot,
+  ResearchConversationSnapshot,
+  ResearchDraftGate,
+  ResearchScopeBarNoteOption,
+  ResearchScopeBarSourceOption,
+  ScopeEdit,
+} from '@/lib/research/types'
+import type { WireChatAnchor } from '@/lib/research/session-contract'
 
 /**
  * Research Chat 面板（UI-03，REQ-ENG-04/REQ-API-02；COV-09 §12.3）。
@@ -37,6 +57,43 @@ import { formatScopeLabel, useResearchScope, type ResearchScopeSnapshot } from '
  *   RWV2-42（AC8）：稳定错误码统一走集中表映射（lib/research/errors），
  *   raw code/errorMessage 仅作诊断行，不作主消息（未知码回落通用文案）。
  */
+/** P2-6：Coverage 本地草稿的合成快照基座（不含任何会话 editor 状态）。 */
+const EMPTY_COVERAGE_EDITOR_SNAPSHOT: EditorSnapshot = {
+  ref: { domain: 'research', kind: 'global', projectId: '', sessionId: '', sourceId: null },
+  phase: 'ready',
+  loading: false,
+  revision: 0,
+  intentHash: null,
+  draftText: '',
+  draftToken: '',
+  consumedToken: null,
+  baseScope: null,
+  singleSourceId: null,
+  noteIds: [],
+  chatAnchor: null,
+  readerAnchor: null,
+  dirty: false,
+  saving: false,
+  readOnly: false,
+  blocked: false,
+  unreadable: false,
+  warnings: [],
+  conflict: null,
+  saveFailure: null,
+  unsynced: false,
+  localVersion: 0,
+  confirmedLocalVersion: 0,
+  writerId: '',
+  lastSavedAt: null,
+  pendingMutations: 0,
+  restoreCandidates: [],
+  holds: [],
+  transportAvailable: false,
+  positionUnavailable: false,
+  invalidated: false,
+  oversize: false,
+}
+
 /** Issue #439：后台任务 CTA 的提交结果（区分"未派发"与"失败"，避免误报）。 */
 export type BackgroundJobSubmitResult =
   /** 已受理（jobId 缺失时只提示刷新，不得当失败——否则用户会重复提交） */
@@ -49,6 +106,26 @@ export type BackgroundJobSubmitResult =
    */
   | { status: 'blocked_scope' }
   | { status: 'failed' }
+
+/** PR-4：由会话 editor 快照派生 legacy `ResearchChatSelection`（§5.3 执行范围编码）。 */
+function selectionFromEditorSnapshot(snapshot: EditorSnapshot): ResearchChatSelection {
+  if (snapshot.singleSourceId !== null) {
+    // mode 必须是 'single'：legacy deriveScopeSnapshot 仅在 mode==='single' 时
+    // 保留 singleSourceId，否则限定在派发链路被丢弃（§5.3 执行范围编码）。
+    return {
+      mode: 'single',
+      sourceIds: [],
+      noteIds: [...snapshot.noteIds],
+      singleSourceId: snapshot.singleSourceId,
+    }
+  }
+  return {
+    mode: snapshot.baseScope?.mode ?? 'all',
+    sourceIds: snapshot.baseScope !== null ? [...snapshot.baseScope.sourceIds] : [],
+    noteIds: [...snapshot.noteIds],
+    singleSourceId: null,
+  }
+}
 
 export function ResearchChatPanel({
   turns,
@@ -68,6 +145,18 @@ export function ResearchChatPanel({
   onViewInsight,
   onViewNote,
   prefill,
+  editorSnapshot,
+  conversationSnapshot,
+  submissionReady,
+  scopeSources,
+  scopeNotes,
+  onChangeScope,
+  onDraftChange,
+  onRetrySave,
+  onRestoreDraft,
+  onChatAnchorChange,
+  onFlushPosition,
+  surfaceActive = true,
 }: {
   turns: ResearchChatTurn[]
   isStreaming: boolean
@@ -123,16 +212,79 @@ export function ResearchChatPanel({
   onViewNote?: (noteId: string) => void
   /** RWV2-23（AC4）：Continue research 预填草稿（seq 递增触发；挂载时生效） */
   prefill?: { text: string; seq: number } | null
+  /**
+   * PR-4 会话 editor 接线（DESIGN §9.6）：`undefined` = 宿主未装配 session
+   * runtime（保持 PR-2 前的本地输入回退路径，PR-5a 移除）；`null` = runtime
+   * 已装配但当前无可用全局会话（composer 禁用并显示原因）。
+   */
+  editorSnapshot?: EditorSnapshot | null
+  /** PR-4：对话快照（isStreaming/busy/activeTurnId）；缺省由 props 推导。 */
+  conversationSnapshot?: ResearchConversationSnapshot
+  /** 会话 `submission_ready` capability（§6.1 条件 2）；缺省表示未接入该门禁。 */
+  submissionReady?: boolean
+  /** PR-4：范围条投射的工作区资料（不写工作区选择，只读呈现）。 */
+  scopeSources?: readonly ResearchScopeBarSourceOption[]
+  scopeNotes?: readonly ResearchScopeBarNoteOption[]
+  onChangeScope?: (edit: ScopeEdit) => void
+  onDraftChange?: (text: string) => void
+  onRetrySave?: () => void
+  onRestoreDraft?: (writerId: string) => void
+  /** PR-4：滚动空闲 1000ms 后上报消息锚点（§5.7.1）。 */
+  onChatAnchorChange?: (anchor: WireChatAnchor | null) => void
+  /** 切 tab/隐藏前尽力写回位置（§5.7.1 flush('position')）；不阻塞 UI。 */
+  onFlushPosition?: () => void
+  /** 当前 Chat 面板是否可见（keep-alive 隐藏时不保存/不恢复锚点，§8.3/N9）。 */
+  surfaceActive?: boolean
 }) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const [scope, setScope] = useState<ResearchSynthesisScope>('relevant')
+  // PR-4：editor 接线标记——undefined 表示宿主未装配 runtime（过渡回退）。
+  const wired = editorSnapshot !== undefined
+  const chatScrollRef = useRef<HTMLDivElement | null>(null)
+  const anchorTimerRef = useRef<number | null>(null)
+  // F3：滚动 16ms 节流缓存最近一次可测量的锚点；隐藏/卸载时容器已不可度量，
+  // flush 用缓存把 <1000ms 内的滚动位置写回，避免丢位置。
+  const measureFrameRef = useRef<number | null>(null)
+  const latestAnchorRef = useRef<WireChatAnchor | null>(null)
+  const restoringRef = useRef(false)
+  // 恢复只对“当前保存锚点”尝试一次成功；失败后仅在稳定消息 ID 集变化且用户未接管时重试，
+  // 避免 live assistant 回填 ID 时把用户手动滚动打回旧位置（review round 3）。
+  const restoreAttemptRef = useRef<{
+    key: string
+    failed: boolean
+    succeeded: boolean
+  } | null>(null)
+  const userScrolledRef = useRef(false)
+  // 恢复抑制窗口内区分“程序化滚动”与“用户接管”：记录恢复写入/保持的 scrollTop。
+  const restoreExpectedScrollTopRef = useRef<number | null>(null)
+  // §5.7.1：恢复失败（缺目标/越界/非法偏移）→ 稳定原因可见，停在有权版本顶部。
+  const [anchorUnavailable, setAnchorUnavailable] = useState(false)
+  // 发送/成功恢复后清除服务端 position_unavailable 的可见性（§5.7.1/Lead F5）。
+  const [positionUnavailableDismissed, setPositionUnavailableDismissed] = useState(false)
+  // P1-2：发送成功后写 follow_tail；无稳定 message_id 时先置 pending。
+  const followTailPendingRef = useRef(false)
+  // P1-1：Coverage 使用独立本地草稿（不读/写会话 editor 草稿，不触发会话保存）。
+  const [coverageDraft, setCoverageDraft] = useState<{ text: string; version: number }>({
+    text: '',
+    version: 0,
+  })
+  const coverageDraftVersionRef = useRef(0)
+  const surfaceActiveRef = useRef(surfaceActive)
+  surfaceActiveRef.current = surfaceActive
+  const wiredConversation: ResearchConversationSnapshot = conversationSnapshot ?? {
+    isBusy: isStreaming,
+    isStreaming,
+    activeTurnId: null,
+    phase: isStreaming ? 'streaming' : 'idle',
+  }
 
   // RWV2-23（AC4）：Continue research 预填（跨 keep-alive：首访挂载与后续
   // 递增 seq 都生效）；不自动派发——发送仍需用户点 Send（既有守卫）。
   useEffect(() => {
     if (prefill && prefill.text.trim() !== '') {
-      setQuery(prefill.text)
+      if (wired) onDraftChange?.(prefill.text)
+      else setQuery(prefill.text)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅响应 seq 递增
   }, [prefill?.seq])
@@ -153,6 +305,54 @@ export function ResearchChatPanel({
     dispatchSnapshot.sourceIds.length > 0 &&
     dispatchSnapshot.sourceIds.length <= COVERAGE_SOURCE_HARD_MAX &&
     dispatchSnapshot.noteIds.length === 0
+
+  // PR-4 发送门禁（§6.1）：composer 按钮 disabled 之外必须给出稳定原因。
+  const composerGate: ResearchDraftGate = (() => {
+    if (!wired) return { allowed: true, reason: null }
+    const derived = deriveResearchDraftGate({
+      editorSnapshot: editorSnapshot ?? null,
+      conversationSnapshot: wiredConversation,
+      submissionReady,
+    })
+    if (derived.allowed && generationBlocked) {
+      return { allowed: false, reason: 'turn_active' }
+    }
+    if (derived.allowed && scope === 'all_selected' && !coverageAllowed) {
+      return { allowed: false, reason: 'scope_invalid' }
+    }
+    return derived
+  })()
+  // P1-1（§9.6）：Coverage 草稿与门禁完全独立于会话 editor——不复用会话草稿、
+  // 不触发会话保存，也不被 legacy/saving/blocked/conflict/readonly 误禁用；
+  // 只受工作区范围合法性（coverageAllowed）与自身文本上限（256KiB）约束。
+  const coverageGate: ResearchDraftGate = (() => {
+    if (!wired) return { allowed: true, reason: null }
+    // P2-7：全局执行门禁（模型/会话 busy 等）同样约束 Coverage；本项不重新耦合
+    // 会话 editor 的草稿/保存状态（§9.6 只隔离 editor 侧）。
+    if (generationBlocked) return { allowed: false, reason: 'turn_active' }
+    if (!coverageAllowed) return { allowed: false, reason: 'scope_invalid' }
+    if (new TextEncoder().encode(coverageDraft.text).length > 256 * 1024) {
+      return { allowed: false, reason: 'oversize' }
+    }
+    if (hasUnpairedSurrogate(coverageDraft.text)) {
+      return { allowed: false, reason: 'invalid_text' }
+    }
+    if (coverageDraft.text.trim().length === 0) {
+      return { allowed: false, reason: 'empty_draft' }
+    }
+    return { allowed: true, reason: null }
+  })()
+  const activeComposerGate: ResearchDraftGate =
+    wired && scope === 'all_selected' ? coverageGate : composerGate
+  const composerGateReasonText: string | null = (() => {
+    if (activeComposerGate.allowed) return null
+    // P2-7：全局门禁优先展示外部稳定原因（模型不可用等），Coverage 也适用。
+    if (generationBlocked) return blockedHint ?? t('research.errors.generationInProgress')
+    if (wired && scope === 'all_selected' && !coverageAllowed) {
+      return t('research.coverage.capabilityDisabled')
+    }
+    return t(researchDraftGateReasonKey(activeComposerGate.reason ?? 'runtime_unavailable'))
+  })()
 
   // Issue #439：persistent_job_required 的提交态与结果（一律按 turn 记录，
   // 避免跨 turn 泄漏；成功后按钮常驻禁用 → 重复点击不产生第二个 Job）
@@ -232,44 +432,419 @@ export function ResearchChatPanel({
     }
   }
 
+  /** 最近一条具备稳定服务端 message_id 的 turn（live 轮可能尚无）。 */
+  const latestStableMessageId = (): string | null => {
+    for (let index = turns.length - 1; index >= 0; index -= 1) {
+      const id = turns[index].serverMessageId
+      if (id !== null) return id
+    }
+    return null
+  }
+
+  /** P1-2（§5.7.1）：把阅读位置固定到最新（follow_tail=true）并滚到底部。 */
+  const settleFollowTail = (): void => {
+    // P2-N9：隐藏（keep-alive tab）期间不写位置、不滚隐藏容器；保留意图，回到可见时结算。
+    if (!surfaceActiveRef.current) {
+      followTailPendingRef.current = true
+      return
+    }
+    const container = chatScrollRef.current
+    if (container !== null) container.scrollTop = container.scrollHeight
+    restoringRef.current = false
+    restoreExpectedScrollTopRef.current = null
+    restoreAttemptRef.current = null
+    userScrolledRef.current = false
+    setAnchorUnavailable(false)
+    // P1-3（02 §4 / types.ts:532）：服务端 position_unavailable 会关闭位置保存，
+    // controller 拒绝新锚点——不伪装已恢复、不隐藏提示，只保留 UI 滚底。
+    if (editorSnapshot?.positionUnavailable === true) return
+    const messageId = latestStableMessageId()
+    if (messageId === null) {
+      // 新消息尚未落稳定 ID：先置内存 pending，等 ID 回填后再落盘（不写临时 id）。
+      followTailPendingRef.current = true
+      return
+    }
+    followTailPendingRef.current = false
+    onChatAnchorChange?.({ messageId, offsetPx: 0, followTail: true })
+  }
+  // P1-4：发送 Promise 结算必须读“最新”渲染的 turns/editor（发送时旧闭包会把
+  // 已回填的稳定 ID 判成 pending，此后 signature 不再变化而永不落盘）。
+  const settleFollowTailRef = useRef<() => void>(() => {})
+  settleFollowTailRef.current = settleFollowTail
+
+  // P1-1：Coverage 提交独立于会话 editor——只校验工作区范围与本地草稿上限。
+  const submitCoverage = (dispatchText: string): void => {
+    // #358：能力门禁在提交点再次校验（与 coverageAllowed 同源，且用
+    // 派发时刻冻结快照）——能力 false/缺失时不发 Coverage 创建请求。
+    const snapshot = getSnapshot()
+    const allowed =
+      coverageEnabled &&
+      mode === 'selected' &&
+      snapshot.sourceIds.length > 0 &&
+      snapshot.sourceIds.length <= COVERAGE_SOURCE_HARD_MAX &&
+      snapshot.noteIds.length === 0
+    if (!allowed) return
+    const sentVersion = coverageDraftVersionRef.current
+    void onSendCoverage(dispatchText, snapshot).then((sent) => {
+      if (!sent) return
+      if (!wired) {
+        // 未接线保留旧行为（清本地单行输入）。
+        setQuery('')
+        return
+      }
+      // 发送成功后只清“同一版本”的 Coverage 文本，绝不触碰会话草稿。
+      if (coverageDraftVersionRef.current === sentVersion) {
+        coverageDraftVersionRef.current += 1
+        setCoverageDraft({ text: '', version: coverageDraftVersionRef.current })
+      }
+    })
+  }
+
   const submit = () => {
-    const trimmed = query.trim()
-    if (!trimmed || generationBlocked) return
+    if (generationBlocked) return
+    // P1-1：Coverage 与 Chat 草稿完全隔离——coverage 路径只读/只写本地
+    // coverage 文本与范围合法性，不读取会话 editor 草稿，也不被会话
+    // editor 的 saving/blocked/conflict/readonly/legacy 门禁误禁用。
+    if (scope === 'all_selected') {
+      const dispatchText = wired ? coverageDraft.text.trim() : query.trim()
+      if (!dispatchText) return
+      if (wired && !coverageGate.allowed) return
+      submitCoverage(dispatchText)
+      return
+    }
+    // PR-4：接线后草稿真源在会话 editor；发送不 trim 覆盖正文（§5.4）。
+    const rawText = wired ? editorSnapshot?.draftText ?? '' : query
+    const trimmed = rawText.trim()
+    if (!trimmed) return
+    if (wired && !composerGate.allowed) return
     // RWV2-11（K8/K9）：派发时刻冻结快照——submit 单次读取，提交闸门与载荷
     // 共用同一快照（P2-①，避免渲染期/提交期两次取值）；selection 携带 mode，
     // turn 记录由 hook 推导，consent/幂等/最终请求全部同源（K11）。
     const snapshot = getSnapshot()
     // R2-H4：显式提交路径的 selection 携带完整快照（含 singleSourceId），
     // 否则派发链路 deriveScopeSnapshot 会丢限定字段。
-    const selectionWithScope: ResearchChatSelection = {
-      mode: snapshot.mode,
-      sourceIds: [...snapshot.sourceIds],
-      noteIds: [...snapshot.noteIds],
-      singleSourceId: snapshot.singleSourceId,
-    }
-    if (scope === 'all_selected') {
-      // #358：能力门禁在提交点再次校验（与 coverageAllowed 同源，且用
-      // 派发时刻冻结快照）——能力 false/缺失时不发 Coverage 创建请求。
-      const allowed =
-        coverageEnabled &&
-        mode === 'selected' &&
-        snapshot.sourceIds.length > 0 &&
-        snapshot.sourceIds.length <= COVERAGE_SOURCE_HARD_MAX &&
-        snapshot.noteIds.length === 0
-      if (!allowed) return
-      void onSendCoverage(trimmed, snapshot).then((sent) => {
-        if (sent) setQuery('')
-      })
-      return
-    }
-    void onSend(trimmed, selectionWithScope).then((sent) => {
-      if (sent) setQuery('')
+    const selectionWithScope: ResearchChatSelection =
+      wired && editorSnapshot !== null && editorSnapshot !== undefined
+        ? selectionFromEditorSnapshot(editorSnapshot)
+        : {
+            mode: snapshot.mode,
+            sourceIds: [...snapshot.sourceIds],
+            noteIds: [...snapshot.noteIds],
+            singleSourceId: snapshot.singleSourceId,
+          }
+    // PR-4：接线后正文原样提交（不 trim 覆盖草稿），空值校验仍用 trimmed。
+    void onSend(wired ? rawText : trimmed, selectionWithScope).then((sent) => {
+      if (sent && !wired) setQuery('')
+      // P1-2（§5.7.1）：派发成功后阅读位置固定到最新（follow_tail=true）。
+      if (sent && wired) settleFollowTailRef.current()
     })
   }
 
+  // PR-4：按当前几何测量一次消息锚点（§5.7.1；帧内单点读取，定时器/flush 复用）。
+  const measureChatAnchorNow = (): WireChatAnchor | null => {
+    const container = chatScrollRef.current
+    if (container === null) return null
+    const rect = container.getBoundingClientRect()
+    // §5.7.1：live/恢复 user 轮没有稳定 message_id——几何仍参与测量，
+    // 但只把最近的稳定消息写入 chat_anchor（临时 turn id 不持久化）。
+    const messages = Array.from(
+      container.querySelectorAll<HTMLElement>(
+        '[data-message-id], [data-local-message-id]',
+      ),
+    ).map((node) => {
+      const nodeRect = node.getBoundingClientRect()
+      return {
+        messageId: node.dataset.messageId ?? '',
+        stableMessageId: node.dataset.messageId ?? null,
+        top: nodeRect.top,
+        height: nodeRect.height,
+      }
+    })
+    return measureChatAnchorCandidates({
+      messages,
+      container: {
+        containerTop: rect.top,
+        scrollTop: container.scrollTop,
+        clientHeight: container.clientHeight,
+        scrollHeight: container.scrollHeight,
+      },
+    })
+  }
+
+  // PR-4：锚点上报——滚动空闲 1000ms 计算一次（§5.7.1），恢复期间不写。
+  const scheduleChatAnchor = (): void => {
+    // N9：隐藏（keep-alive tab）时不计划保存——避免切走后仍写位置。
+    if (!wired || !surfaceActiveRef.current || onChatAnchorChange === undefined) return
+    if (restoringRef.current) {
+      const container = chatScrollRef.current
+      const expected = restoreExpectedScrollTopRef.current
+      // 恢复窗口内 scrollTop 仍等于预期值＝程序化滚动，抑制上报。
+      if (
+        container === null ||
+        expected === null ||
+        Math.abs(container.scrollTop - expected) <= 1
+      ) {
+        return
+      }
+      // 抑制窗口内用户已滚动到别处：立即结束抑制并记录接管（不再回填旧锚点）。
+      restoringRef.current = false
+      restoreExpectedScrollTopRef.current = null
+    }
+    // 非程序化滚动＝用户接管阅读位置；此后的 ID 回填不得再触发恢复。
+    userScrolledRef.current = true
+    if (measureFrameRef.current !== null) window.clearTimeout(measureFrameRef.current)
+    measureFrameRef.current = window.setTimeout(() => {
+      measureFrameRef.current = null
+      // N9：隐藏时不写位置，只缓存可见时的最近锚点，供隐藏瞬间 flush 使用。
+      if (!surfaceActiveRef.current) return
+      const anchor = measureChatAnchorNow()
+      if (anchor !== null) latestAnchorRef.current = anchor
+    }, 16)
+    if (anchorTimerRef.current !== null) window.clearTimeout(anchorTimerRef.current)
+    anchorTimerRef.current = window.setTimeout(() => {
+      anchorTimerRef.current = null
+      // N9：定时器触发时若已切 tab/隐藏，则丢弃本次位置写入。
+      if (!surfaceActiveRef.current) return
+      const anchor = measureChatAnchorNow()
+      if (anchor !== null) {
+        latestAnchorRef.current = anchor
+        onChatAnchorChange?.(anchor)
+      }
+    }, 1000)
+  }
+
+  const flushPositionRef = useRef<() => void>(() => {})
+  flushPositionRef.current = (): void => {
+    // P1-1：<1000ms 内切走时定时器被取消——离开前先测量；隐藏/卸载时容器
+    // 已不可度量（display:none / ref 置 null），退回 16ms 节流缓存的最近锚点，
+    // 避免把 <1s 的滚动位置静默丢掉（F3）。
+    const pendingTimer = anchorTimerRef.current
+    const pendingFrame = measureFrameRef.current
+    const hadPending = pendingTimer !== null || pendingFrame !== null
+    if (pendingTimer !== null) {
+      window.clearTimeout(pendingTimer)
+      anchorTimerRef.current = null
+    }
+    if (pendingFrame !== null) {
+      window.clearTimeout(pendingFrame)
+      measureFrameRef.current = null
+    }
+    if (wired && hadPending && !restoringRef.current) {
+      let anchor = measureChatAnchorNow()
+      const cached = latestAnchorRef.current
+      // 会话切换后旧缓存可能指向已不在当前消息列表里的 message_id：只有
+      // 缓存目标仍存在于当前 DOM 才回退写入，避免把上一会话的锚点写进新会话。
+      if (
+        anchor === null &&
+        cached !== null &&
+        chatScrollRef.current?.querySelector(
+          `[data-message-id="${cached.messageId}"]`,
+        ) !== null
+      ) {
+        anchor = cached
+      }
+      if (anchor !== null) onChatAnchorChange?.(anchor)
+    }
+    onFlushPosition?.()
+  }
+  useEffect(() => {
+    return () => {
+      // F3：切 tab/隐藏或卸载前尽力 flush('position')（不阻塞 UI）。
+      flushPositionRef.current()
+    }
+  }, [])
+
+  const surfaceActivePrevRef = useRef(surfaceActive)
+  useEffect(() => {
+    // F3：可见 → 隐藏的瞬间 flush 一次，避免 <1000ms 的滚动位置丢失。
+    if (surfaceActivePrevRef.current && !surfaceActive) flushPositionRef.current()
+    // N9：隐藏期间成功/回填被延迟的 follow_tail 意图，回到可见时结算。
+    if (!surfaceActivePrevRef.current && surfaceActive && followTailPendingRef.current) {
+      settleFollowTailRef.current()
+    }
+    surfaceActivePrevRef.current = surfaceActive
+  }, [surfaceActive])
+
+  // PR-4：恢复消息锚点（§5.7.1）——只设 scrollTop，不动焦点、不写回锚点。
+  const savedChatAnchor = wired ? editorSnapshot?.chatAnchor ?? null : null
+  // live 轮解析出稳定 message_id 后要重新尝试恢复（turns.length 不变但 ID 集变了）。
+  const stableMessageIdSignature = turns
+    .map(turn => turn.serverMessageId ?? '')
+    .join('|')
+  // P1-3（02_INTERFACE_FREEZE §4）：服务端净化锚点（position_unavailable）后
+  // 关闭位置保存——不尝试恢复，也不再伪装“已恢复”；能力恢复后重置隐藏标记。
+  useEffect(() => {
+    if (!wired) return
+    if (editorSnapshot?.positionUnavailable === true) {
+      restoringRef.current = false
+      restoreExpectedScrollTopRef.current = null
+      restoreAttemptRef.current = null
+      setAnchorUnavailable(true)
+      return
+    }
+    setPositionUnavailableDismissed(false)
+  }, [wired, editorSnapshot?.positionUnavailable])
+
+  useEffect(() => {
+    if (!wired || !surfaceActive || savedChatAnchor === null || editorSnapshot?.positionUnavailable === true) {
+      restoringRef.current = false
+      if (!surfaceActive) return
+      restoreAttemptRef.current = null
+      userScrolledRef.current = false
+      return
+    }
+    const container = chatScrollRef.current
+    if (container === null) {
+      restoringRef.current = false
+      return
+    }
+    const attemptKey = `${savedChatAnchor.messageId}|${savedChatAnchor.offsetPx}|${savedChatAnchor.followTail}`
+    const attempt = restoreAttemptRef.current
+    if (attempt?.key === attemptKey) {
+      // 已成功恢复，或用户已手动接管 → 不再重设 scrollTop。
+      if (attempt.succeeded) return
+      if (userScrolledRef.current) {
+        // 用户已接管阅读位置：ID 回填不再重试，失败提示也不再成立。
+        restoringRef.current = false
+        restoreExpectedScrollTopRef.current = null
+        setAnchorUnavailable(false)
+        return
+      }
+    } else {
+      restoreAttemptRef.current = { key: attemptKey, failed: false, succeeded: false }
+      userScrolledRef.current = false
+    }
+    const target = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-message-id]'),
+    ).find(node => node.dataset.messageId === savedChatAnchor.messageId) ?? null
+    const rect = container.getBoundingClientRect()
+    const targetRect = target?.getBoundingClientRect() ?? null
+    restoringRef.current = true
+    const result = restoreScrollTop({
+      container: {
+        containerTop: rect.top,
+        scrollTop: container.scrollTop,
+        clientHeight: container.clientHeight,
+        scrollHeight: container.scrollHeight,
+      },
+      savedOffsetPx: savedChatAnchor.offsetPx,
+      followTail: savedChatAnchor.followTail,
+      currentTargetTop: targetRect !== null ? targetRect.top : null,
+      targetHeightPx: targetRect !== null ? targetRect.height : undefined,
+    })
+    if (result.ok) container.scrollTop = result.scrollTop
+    restoreExpectedScrollTopRef.current = container.scrollTop
+    setAnchorUnavailable(!result.ok)
+    if (result.ok) setPositionUnavailableDismissed(true)
+    restoreAttemptRef.current = {
+      key: attemptKey,
+      failed: !result.ok,
+      succeeded: result.ok,
+    }
+    // 程序化恢复期间忽略滚动上报；用 rAF 释放，确保浏览器补发的 scroll
+    // 事件仍被抑制（不把刚恢复的位置当作新锚点写回）。
+    let secondFrame = 0
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        restoringRef.current = false
+      })
+    })
+    return () => {
+      window.cancelAnimationFrame(firstFrame)
+      if (secondFrame !== 0) window.cancelAnimationFrame(secondFrame)
+      // 取消恢复帧时必须释放抑制标记，否则后续用户滚动不再保存锚点。
+      restoringRef.current = false
+      restoreExpectedScrollTopRef.current = null
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在锚点/消息集变化时恢复
+  }, [
+    wired,
+    surfaceActive,
+    savedChatAnchor?.messageId,
+    savedChatAnchor?.offsetPx,
+    savedChatAnchor?.followTail,
+    stableMessageIdSignature,
+  ])
+
+  // F4：范围条稳定禁用原因（只读/受阻/冲突/不可读）——不能用 null 静默禁用。
+  // legacy（base_scope=null）保持可交互：§7.2 要求用户显式重选才能修复。
+  const scopeBarDisabledReason: string | null = (() => {
+    if (editorSnapshot === null || editorSnapshot === undefined) return t('research.loading')
+    if (editorSnapshot.readOnly || editorSnapshot.phase === 'readonly') {
+      return t('research.workbench.adminWriteDenied')
+    }
+    if (editorSnapshot.blocked || editorSnapshot.phase === 'blocked') {
+      return t('research.editor.blocked')
+    }
+    if (editorSnapshot.conflict !== null || editorSnapshot.phase === 'conflict') {
+      return t('research.errors.revisionChanged')
+    }
+    if (editorSnapshot.invalidated || editorSnapshot.unreadable) {
+      return t('research.errors.internal')
+    }
+    if (!editorSnapshot.transportAvailable) return t('research.errors.internal')
+    return null
+  })()
+
+  // P1-1：Coverage 草稿的合成快照——只承载文本投影，保存/门禁状态与
+  // 会话 editor 隔离（composer 以 localDraft 模式渲染）。
+  // P2-6：Coverage 输入始终由本地 coverageDraft 直接受控——快照不依赖会话
+  // editor 是否存在（尚无全局会话时 coverage 仍可输入/发送）。
+  const coverageEditorSnapshot: EditorSnapshot = {
+          ...(editorSnapshot ?? EMPTY_COVERAGE_EDITOR_SNAPSHOT),
+          phase: 'ready',
+          loading: false,
+          draftText: coverageDraft.text,
+          dirty: false,
+          saving: false,
+          readOnly: false,
+          blocked: false,
+          unreadable: false,
+          invalidated: false,
+          conflict: null,
+          saveFailure: null,
+          oversize: false,
+          positionUnavailable: false,
+  }
+
+  // P1-2/P1-4：发送时还没有稳定 message_id → pending；ID 回填（signature 变化）
+  // 或重新可见时统一走最新闭包结算（隐藏期间只保留意图）。
+  useEffect(() => {
+    if (!wired || !followTailPendingRef.current) return
+    settleFollowTailRef.current()
+  }, [wired, surfaceActive, stableMessageIdSignature, editorSnapshot?.positionUnavailable])
+
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex-1 space-y-4 overflow-y-auto p-4">
+      {wired && (
+        <div className="shrink-0 border-b px-3 py-2">
+          <ResearchSessionScopeBar
+            editorSnapshot={editorSnapshot ?? null}
+            sources={scopeSources ?? []}
+            notes={scopeNotes ?? []}
+            disabledReason={scopeBarDisabledReason}
+            onChangeScope={onChangeScope ?? (() => {})}
+          />
+        </div>
+      )}
+      <div
+        ref={chatScrollRef}
+        className="flex-1 space-y-4 overflow-y-auto p-4"
+        onScroll={scheduleChatAnchor}
+        data-testid="chat-messages"
+      >
+        {wired &&
+          (anchorUnavailable ||
+            (positionUnavailableDismissed !== true &&
+              editorSnapshot?.positionUnavailable === true)) && (
+          <p
+            className="text-xs font-medium text-amber-600"
+            role="status"
+            data-testid="chat-position-unavailable"
+          >
+            {t('research.editor.positionUnavailable')}
+          </p>
+        )}
         {turns.length === 0 && (
           <p className="text-sm text-muted-foreground">{t('research.chatEmpty')}</p>
         )}
@@ -288,7 +863,14 @@ export function ResearchChatPanel({
         )}
         {turns.map((turn) =>
           turn.role === 'user' ? (
-            <div key={turn.id} className="flex flex-col items-end gap-1">
+            <div
+              key={turn.id}
+              className="flex flex-col items-end gap-1"
+              data-message-id={turn.serverMessageId ?? undefined}
+              data-local-message-id={
+                turn.serverMessageId === null ? turn.id : undefined
+              }
+            >
               <div className="max-w-[80%] rounded-lg bg-primary/10 px-3 py-2 text-sm">
                 {turn.content}
               </div>
@@ -314,7 +896,7 @@ export function ResearchChatPanel({
               )}
             </div>
           ) : (
-            <div key={turn.id} className="space-y-2">
+            <div key={turn.id} className="space-y-2" data-message-id={turn.serverMessageId ?? undefined}>
               {turn.coverageJobId !== null ? (
                 <CoverageJobDetails
                   job={coverageJobs?.find((j) => j.job_id === turn.coverageJobId)}
@@ -533,25 +1115,55 @@ export function ResearchChatPanel({
           selectedSourceCount={dispatchSnapshot.sourceIds.length}
           selectedNoteCount={dispatchSnapshot.noteIds.length}
         />
-        <div className="flex gap-2">
-          <Input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') submit()
-            }}
-            disabled={generationBlocked}
-            placeholder={t('research.chatPlaceholder')}
-            data-testid="chat-input"
-          />
-          <Button
-            onClick={submit}
-            disabled={!query.trim() || isStreaming || generationBlocked || (scope === 'all_selected' && !coverageAllowed)}
-            data-testid="chat-send"
-          >
-            {t('research.chatSend')}
-          </Button>
-        </div>
+        {wired ? (
+          scope === 'all_selected' ? (
+            <ResearchDraftComposer
+              editorSnapshot={coverageEditorSnapshot}
+              conversationSnapshot={wiredConversation}
+              gate={coverageGate}
+              gateReasonText={composerGateReasonText}
+              onDraftChange={(text) => {
+                // Coverage 独立草稿：只更新本地状态与版本，不触发会话保存。
+                coverageDraftVersionRef.current += 1
+                setCoverageDraft({ text, version: coverageDraftVersionRef.current })
+              }}
+              onSend={submit}
+              onRetrySave={() => {}}
+              localDraftMode
+            />
+          ) : (
+            <ResearchDraftComposer
+              editorSnapshot={editorSnapshot ?? null}
+              conversationSnapshot={wiredConversation}
+              gate={composerGate}
+              gateReasonText={composerGateReasonText}
+              onDraftChange={onDraftChange ?? (() => {})}
+              onSend={submit}
+              onRetrySave={onRetrySave ?? (() => {})}
+              onRestoreDraft={onRestoreDraft}
+            />
+          )
+        ) : (
+          <div className="flex gap-2">
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') submit()
+              }}
+              disabled={generationBlocked}
+              placeholder={t('research.chatPlaceholder')}
+              data-testid="chat-input"
+            />
+            <Button
+              onClick={submit}
+              disabled={!query.trim() || isStreaming || generationBlocked || (scope === 'all_selected' && !coverageAllowed)}
+              data-testid="chat-send"
+            >
+              {t('research.chatSend')}
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   )

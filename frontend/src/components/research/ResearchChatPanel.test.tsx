@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
+import { act, render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   ResearchChatPanel,
@@ -7,6 +7,14 @@ import {
 } from './ResearchChatPanel'
 import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
 import { ResearchScopeProvider, scopeStorageKey, useResearchScope, type ResearchScopeSnapshot } from '@/lib/research/scope'
+import { createEditorState } from '@/lib/research/editor-machine'
+import type { WireChatAnchor } from '@/lib/research/session-contract'
+import type {
+  EditorSnapshot,
+  ResearchConversationSnapshot,
+} from '@/lib/research/types'
+import type { ResearchSessionRef } from '@/lib/research/session-contract'
+import { useState } from 'react'
 import type { ResearchBackgroundNotice, ResearchChatSelection, ResearchChatTurn } from '@/lib/hooks/use-research-chat'
 import type { ResearchCitation, ResearchJob } from '@/lib/research/types'
 
@@ -971,5 +979,798 @@ describe('ResearchChatPanel · 范围呈现与后台 CTA 门禁（T9 / D-26）',
     expect(screen.getByTestId('chat-persistent-job-error')).not.toHaveTextContent(
       'research.errors.persistentJobSubmitFailed',
     )
+  })
+})
+
+
+// PR-4（#602 第三批）：会话 editor 接线的最小集成证据——草稿真源为 editor
+// `draftText`，发送不清稿（清稿归 PR-5a 原子提交协议），运行时缺失时门禁
+// 原因必须出现在输入区（§6.1/§8.2/§9.6）。
+describe('ResearchChatPanel · PR-4 会话 editor 接线', () => {
+  const REF: ResearchSessionRef = {
+    domain: 'research',
+    kind: 'global',
+    projectId: PROJECT_ID,
+    sessionId: 'sess-1',
+    sourceId: null,
+  }
+  const CONVERSATION: ResearchConversationSnapshot = {
+    isBusy: false,
+    isStreaming: false,
+    activeTurnId: null,
+    phase: 'idle',
+  }
+
+  function WiredPanel({
+    onSend,
+    snapshotOverrides,
+    turns = [],
+    submissionReady,
+    anchor,
+    onChatAnchorChange,
+  }: {
+    onSend: (query: string, selection?: ResearchChatSelection) => Promise<boolean>
+    snapshotOverrides?: Partial<EditorSnapshot>
+    turns?: ResearchChatTurn[]
+    submissionReady?: boolean
+    anchor?: WireChatAnchor | null
+    onChatAnchorChange?: (anchor: WireChatAnchor | null) => void
+  }) {
+    const [snapshot, setSnapshot] = useState<EditorSnapshot>(() => ({
+      ...createEditorState({ ref: REF, writerId: 'writer-1', transportAvailable: true }),
+      phase: 'ready',
+      loading: false,
+      baseScope: { mode: 'selected', sourceIds: ['src_1'], singleSourceId: null },
+      ...snapshotOverrides,
+    }))
+    return (
+      <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
+        <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+          <ResearchChatPanel
+            turns={turns}
+            isStreaming={false}
+            onSend={onSend}
+            onSendCoverage={vi.fn(async () => true)}
+            editorSnapshot={
+              anchor === undefined ? snapshot : { ...snapshot, chatAnchor: anchor }
+            }
+            submissionReady={submissionReady}
+            onChatAnchorChange={onChatAnchorChange}
+            conversationSnapshot={CONVERSATION}
+            scopeSources={[{ sourceId: 'src_1', title: 'Paper One' }]}
+            scopeNotes={[]}
+            onChangeScope={vi.fn()}
+            onDraftChange={(text) => setSnapshot(prev => ({ ...prev, draftText: text, dirty: text.length > 0 }))}
+            onRetrySave={vi.fn()}
+          />
+        </ResearchScopeProvider>
+      </ResearchWorkspaceProvider>
+    )
+  }
+
+  it('接线后以 editor 草稿发送且不清稿；范围条可见', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
+    const onSend = vi.fn<(query: string) => Promise<boolean>>(async () => true)
+    render(
+      <QueryClientProvider client={queryClient}>
+        <WiredPanel onSend={onSend} />
+      </QueryClientProvider>,
+    )
+    expect(screen.getByTestId('research-session-scope-bar')).toBeInTheDocument()
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: '  保留空白的问题  ' } })
+    fireEvent.click(screen.getByTestId('chat-send'))
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1))
+    // 不 trim 覆盖、不在发送后本地清空草稿（§5.4/§5.8）
+    expect(onSend.mock.calls[0][0]).toBe('  保留空白的问题  ')
+    expect(screen.getByTestId('chat-input')).toHaveValue('  保留空白的问题  ')
+  })
+
+  it('运行时缺失：发送按钮禁用且门禁原因可见（不只靠 disabled）', () => {
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
+          <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+            <ResearchChatPanel
+              turns={[]}
+              isStreaming={false}
+              onSend={vi.fn(async () => true)}
+              onSendCoverage={vi.fn(async () => true)}
+              editorSnapshot={null}
+            />
+          </ResearchScopeProvider>
+        </ResearchWorkspaceProvider>
+      </QueryClientProvider>,
+    )
+    expect(screen.getByTestId('chat-send')).toBeDisabled()
+    expect(screen.getByTestId('research-draft-gate-hint')).toBeInTheDocument()
+  })
+
+  it('single 范围按 mode=single 派发并携带 singleSourceId（执行范围编码 §5.3）', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
+    const onSend = vi.fn<(query: string, selection?: ResearchChatSelection) => Promise<boolean>>(
+      async () => true,
+    )
+    render(
+      <QueryClientProvider client={queryClient}>
+        <WiredPanel onSend={onSend} snapshotOverrides={{ singleSourceId: 'src_1' }} />
+      </QueryClientProvider>,
+    )
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: '仅问此来源的问题' } })
+    fireEvent.click(screen.getByTestId('chat-send'))
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1))
+    expect(onSend.mock.calls[0][1]).toMatchObject({
+      mode: 'single',
+      sourceIds: [],
+      singleSourceId: 'src_1',
+    })
+  })
+
+  it('锚点目标缺失时显示 position_unavailable 稳定原因（§5.7.1）', () => {
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <WiredPanel
+          onSend={vi.fn<(query: string) => Promise<boolean>>(async () => true)}
+          snapshotOverrides={{
+            chatAnchor: { messageId: 'msg-missing', offsetPx: 20, followTail: false },
+          }}
+          turns={[turn({ id: 't1', role: 'user', content: 'hello' })]}
+        />
+      </QueryClientProvider>,
+    )
+    expect(screen.getByTestId('chat-position-unavailable')).toBeInTheDocument()
+  })
+
+  it('submission capability 未就绪时发送被禁用且原因可见（§6.1 条件 2）', () => {
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <WiredPanel
+          onSend={vi.fn<(query: string, selection?: ResearchChatSelection) => Promise<boolean>>(
+            async () => true,
+          )}
+          submissionReady={false}
+        />
+      </QueryClientProvider>,
+    )
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: '问题' } })
+    expect(screen.getByTestId('chat-send')).toBeDisabled()
+    expect(screen.getByTestId('research-draft-gate-hint')).toHaveTextContent(
+      'research.errors.admissionUnavailable',
+    )
+  })
+
+  it('消息锚点使用稳定 message id（serverMessageId），不持久化本地 turn id', () => {
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
+    const { container } = render(
+      <QueryClientProvider client={queryClient}>
+        <WiredPanel
+          onSend={vi.fn<(query: string, selection?: ResearchChatSelection) => Promise<boolean>>(
+            async () => true,
+          )}
+          turns={[
+            turn({
+              id: 'local-turn-1',
+              serverMessageId: 'msg-42',
+              role: 'user',
+              content: 'hello',
+            }),
+          ]}
+        />
+      </QueryClientProvider>,
+    )
+    expect(container.querySelector('[data-message-id="msg-42"]')).not.toBeNull()
+    expect(container.querySelector('[data-message-id="local-turn-1"]')).toBeNull()
+  })
+
+  it('E1（review round 3/4）：抑制窗口内用户接管后，稳定 ID 回填不把位置打回旧锚点', () => {
+    const onSend = vi.fn(async () => true)
+    const userTurn = turn({ id: 'local-user-1', role: 'user', content: 'q' })
+    const anchor: WireChatAnchor = {
+      messageId: 'msg-42',
+      offsetPx: 100,
+      followTail: false,
+    }
+    const originalRect = HTMLElement.prototype.getBoundingClientRect
+    let chatScroll: HTMLElement | null = null
+    HTMLElement.prototype.getBoundingClientRect = function mockRect(this: HTMLElement) {
+      if (this.dataset?.messageId === 'msg-42') {
+        return { top: 100 - (chatScroll?.scrollTop ?? 0), height: 80 } as DOMRect
+      }
+      if (this.dataset?.testid === 'chat-messages') {
+        return { top: 0, height: 400 } as DOMRect
+      }
+      return { top: 0, height: 0 } as DOMRect
+    }
+    try {
+      const view = render(
+        <WiredPanel
+          onSend={onSend}
+          turns={[userTurn]}
+          anchor={anchor}
+          onChatAnchorChange={vi.fn()}
+        />,
+      )
+      chatScroll = screen.getByTestId('chat-messages')
+      Object.defineProperty(chatScroll, 'clientHeight', { value: 400, configurable: true })
+      Object.defineProperty(chatScroll, 'scrollHeight', { value: 2000, configurable: true })
+      // 首次恢复失败（目标未加载），随后两帧内处于抑制窗口。
+      expect(screen.getByTestId('chat-position-unavailable')).toBeTruthy()
+
+      // 抑制窗口内用户滚动到 300 —— 必须被识别为接管，不能被当成程序化滚动。
+      chatScroll.scrollTop = 300
+      fireEvent.scroll(chatScroll)
+
+      // live assistant 回填稳定 ID → 稳定 ID 签名变化；若未识别接管，按
+      // 有符号公式会得到 300 + (100-300) - 100 = 0，把用户打回顶部。
+      view.rerender(
+        <WiredPanel
+          onSend={onSend}
+          turns={[userTurn, turn({ id: 'a-1', role: 'assistant', serverMessageId: 'msg-42' })]}
+          anchor={anchor}
+          onChatAnchorChange={vi.fn()}
+        />,
+      )
+      expect(chatScroll.scrollTop).toBe(300)
+      expect(screen.queryByTestId('chat-position-unavailable')).toBeNull()
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = originalRect
+    }
+  })
+
+  it('E2（review round 4）：用户未接管时，失败恢复可在稳定 ID 回填后重试成功', () => {
+    const onSend = vi.fn(async () => true)
+    const userTurn = turn({ id: 'local-user-1', role: 'user', content: 'q' })
+    const anchor: WireChatAnchor = {
+      messageId: 'msg-42',
+      offsetPx: 50,
+      followTail: false,
+    }
+    const originalRect = HTMLElement.prototype.getBoundingClientRect
+    let chatScroll: HTMLElement | null = null
+    HTMLElement.prototype.getBoundingClientRect = function mockRect(this: HTMLElement) {
+      if (this.dataset?.messageId === 'msg-42') {
+        return { top: 100 - (chatScroll?.scrollTop ?? 0), height: 80 } as DOMRect
+      }
+      if (this.dataset?.testid === 'chat-messages') {
+        return { top: 0, height: 400 } as DOMRect
+      }
+      return { top: 0, height: 0 } as DOMRect
+    }
+    try {
+      const view = render(
+        <WiredPanel
+          onSend={onSend}
+          turns={[userTurn]}
+          anchor={anchor}
+          onChatAnchorChange={vi.fn()}
+        />,
+      )
+      chatScroll = screen.getByTestId('chat-messages')
+      Object.defineProperty(chatScroll, 'clientHeight', { value: 400, configurable: true })
+      Object.defineProperty(chatScroll, 'scrollHeight', { value: 2000, configurable: true })
+      expect(screen.getByTestId('chat-position-unavailable')).toBeTruthy()
+
+      view.rerender(
+        <WiredPanel
+          onSend={onSend}
+          turns={[userTurn, turn({ id: 'a-1', role: 'assistant', serverMessageId: 'msg-42' })]}
+          anchor={anchor}
+          onChatAnchorChange={vi.fn()}
+        />,
+      )
+      // 目标 top=100、savedOffset=50 → newScrollTop = 0 + 100 - 50 = 50。
+      expect(chatScroll.scrollTop).toBe(50)
+      expect(screen.queryByTestId('chat-position-unavailable')).toBeNull()
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = originalRect
+    }
+  })
+})
+// PR-4 修复轮（Lead 独立核对 P1-1/P1-2/F3/F4）：Coverage 草稿与门禁完全独立
+// 于会话 editor；发送成功写 follow_tail 并滚底；切 tab/隐藏前 flush 位置；
+// 范围条禁用原因由 editor 门禁派生。
+describe('ResearchChatPanel · PR-4 修复轮（P1-1/P1-2/F3/F4）', () => {
+  const REF2: ResearchSessionRef = {
+    domain: 'research',
+    kind: 'global',
+    projectId: PROJECT_ID,
+    sessionId: 'sess-2',
+    sourceId: null,
+  }
+  const CONV2: ResearchConversationSnapshot = {
+    isBusy: false,
+    isStreaming: false,
+    activeTurnId: null,
+    phase: 'idle',
+  }
+
+  function Harness({
+    onSend = vi.fn(async () => true),
+    onSendCoverage = vi.fn(async () => true),
+    onSessionDraftChange = vi.fn(),
+    onChatAnchorChange = vi.fn(),
+    onFlushPosition = vi.fn(),
+    snapshotOverrides,
+    anchor,
+    turns = [],
+    surfaceActive = true,
+    sendDisabled = false,
+    blockedHint,
+    nullSnapshot = false,
+  }: {
+    onSend?: (query: string) => Promise<boolean>
+    onSendCoverage?: (query: string, snapshot: ResearchScopeSnapshot) => Promise<boolean>
+    onSessionDraftChange?: (text: string) => void
+    onChatAnchorChange?: (anchor: WireChatAnchor | null) => void
+    onFlushPosition?: () => void
+    snapshotOverrides?: Partial<EditorSnapshot>
+    anchor?: WireChatAnchor | null
+    turns?: ResearchChatTurn[]
+    surfaceActive?: boolean
+    sendDisabled?: boolean
+    blockedHint?: string
+    nullSnapshot?: boolean
+  }) {
+    const [snapshot, setSnapshot] = useState<EditorSnapshot>(() => ({
+      ...createEditorState({ ref: REF2, writerId: 'writer-2', transportAvailable: true }),
+      phase: 'ready',
+      loading: false,
+      baseScope: { mode: 'selected', sourceIds: ['src_1'], singleSourceId: null },
+      ...snapshotOverrides,
+    }))
+    return (
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })}
+      >
+        <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
+          <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+            <ResearchChatPanel
+              turns={turns}
+              isStreaming={false}
+              onSend={onSend}
+              onSendCoverage={onSendCoverage}
+              coverageEnabled
+              sendDisabled={sendDisabled}
+              blockedHint={blockedHint}
+              editorSnapshot={
+                nullSnapshot
+                  ? null
+                  : anchor === undefined
+                    ? snapshot
+                    : { ...snapshot, chatAnchor: anchor }
+              }
+              conversationSnapshot={CONV2}
+              scopeSources={[{ sourceId: 'src_1', title: 'Paper One' }]}
+              scopeNotes={[]}
+              onChangeScope={vi.fn()}
+              onDraftChange={(text) => {
+                onSessionDraftChange(text)
+                setSnapshot(prev => ({ ...prev, draftText: text, dirty: text.length > 0 }))
+              }}
+              onRetrySave={vi.fn()}
+              onChatAnchorChange={onChatAnchorChange}
+              onFlushPosition={onFlushPosition}
+              surfaceActive={surfaceActive}
+            />
+          </ResearchScopeProvider>
+        </ResearchWorkspaceProvider>
+      </QueryClientProvider>
+    )
+  }
+
+  function enterCoverageMode(): void {
+    fireEvent.click(screen.getByTestId('scope-all-selected-option'))
+  }
+
+  it('P1-1 Coverage 使用独立本地草稿：不写会话 editor 草稿、切回 relevant 不互串', () => {
+    seedScope(SCOPE_A)
+    const onSessionDraftChange = vi.fn()
+    render(
+      <Harness onSessionDraftChange={onSessionDraftChange} snapshotOverrides={{ draftText: '会话草稿' }} />,
+    )
+    expect(screen.getByTestId('chat-input')).toHaveValue('会话草稿')
+    enterCoverageMode()
+    expect(screen.getByTestId('chat-input')).toHaveValue('')
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: 'coverage 问题' } })
+    expect(screen.getByTestId('chat-input')).toHaveValue('coverage 问题')
+    // 不触发会话草稿写入（不写 editor、不触发保存）
+    expect(onSessionDraftChange).not.toHaveBeenCalled()
+    // 切回 relevant：会话草稿原样，coverage 文本不串入
+    fireEvent.click(screen.getByLabelText('research.coverage.scopeRelevant'))
+    expect(screen.getByTestId('chat-input')).toHaveValue('会话草稿')
+    // 再切回 all_selected：coverage 本地文本保留
+    enterCoverageMode()
+    expect(screen.getByTestId('chat-input')).toHaveValue('coverage 问题')
+  })
+
+  it('P1-1 Coverage 发送只清同版本 Coverage 文本，会话草稿与会话派发不受影响', async () => {
+    seedScope(SCOPE_A)
+    const onSend = vi.fn(async () => true)
+    const onSendCoverage = vi.fn(async (_query: string, _snapshot: ResearchScopeSnapshot) => true)
+    const onSessionDraftChange = vi.fn()
+    render(
+      <Harness
+        onSend={onSend}
+        onSendCoverage={onSendCoverage}
+        onSessionDraftChange={onSessionDraftChange}
+        snapshotOverrides={{ draftText: '会话草稿' }}
+      />,
+    )
+    enterCoverageMode()
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: 'coverage 问题' } })
+    fireEvent.click(screen.getByTestId('chat-send'))
+    await waitFor(() => expect(onSendCoverage).toHaveBeenCalledTimes(1))
+    expect(onSendCoverage.mock.calls[0][0]).toBe('coverage 问题')
+    expect(onSend).not.toHaveBeenCalled()
+    expect(onSessionDraftChange).not.toHaveBeenCalled()
+    await waitFor(() => expect(screen.getByTestId('chat-input')).toHaveValue(''))
+    fireEvent.click(screen.getByLabelText('research.coverage.scopeRelevant'))
+    expect(screen.getByTestId('chat-input')).toHaveValue('会话草稿')
+  })
+
+  it('P1-1 Coverage 发送期间文本已变（版本不匹配）→ 不清新文本', async () => {
+    seedScope(SCOPE_A)
+    let resolveSend: (value: boolean) => void = () => {}
+    const onSendCoverage = vi.fn(
+      () => new Promise<boolean>((resolve) => { resolveSend = resolve }),
+    )
+    render(<Harness onSendCoverage={onSendCoverage} />)
+    enterCoverageMode()
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: '第一版' } })
+    fireEvent.click(screen.getByTestId('chat-send'))
+    await waitFor(() => expect(onSendCoverage).toHaveBeenCalledTimes(1))
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: '第二版' } })
+    resolveSend(true)
+    await waitFor(() => expect(screen.getByTestId('chat-input')).toHaveValue('第二版'))
+  })
+
+  it('P1-1 会话 editor blocked/readonly 时 Coverage 仍可用（范围合法）', () => {
+    seedScope(SCOPE_A)
+    render(<Harness snapshotOverrides={{ blocked: true, phase: 'blocked' }} />)
+    enterCoverageMode()
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: 'coverage 问题' } })
+    expect(screen.getByTestId('chat-send')).not.toBeDisabled()
+    expect(screen.queryByTestId('research-draft-gate-hint')).not.toBeInTheDocument()
+  })
+
+  it('P1-2 发送成功后写 follow_tail=true 并把消息容器滚到底部', async () => {
+    const onChatAnchorChange = vi.fn()
+    const onSend = vi.fn(async () => true)
+    render(
+      <Harness
+        onSend={onSend}
+        onChatAnchorChange={onChatAnchorChange}
+        anchor={{ messageId: 'm1', offsetPx: 40, followTail: false }}
+        snapshotOverrides={{ draftText: '问题' }}
+        turns={[turn({ id: 't1', role: 'assistant', content: '历史回答', serverMessageId: 'm1' })]}
+      />,
+    )
+    fireEvent.click(screen.getByTestId('chat-send'))
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1))
+    await waitFor(() =>
+      expect(onChatAnchorChange).toHaveBeenCalledWith(
+        expect.objectContaining({ messageId: 'm1', followTail: true }),
+      ),
+    )
+  })
+
+  it('P1-2 无稳定 message_id 时先 pending，ID 回填后落盘 follow_tail', async () => {
+    const onChatAnchorChange = vi.fn()
+    const onSend = vi.fn(async () => true)
+    const view = render(
+      <Harness
+        onSend={onSend}
+        onChatAnchorChange={onChatAnchorChange}
+        snapshotOverrides={{ draftText: '问题' }}
+        turns={[]}
+      />,
+    )
+    fireEvent.click(screen.getByTestId('chat-send'))
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1))
+    expect(onChatAnchorChange).not.toHaveBeenCalled()
+    // 新回答落稳定 ID（rerender 模拟 ack/新消息 ID 回填）
+    view.rerender(
+      <Harness
+        onSend={onSend}
+        onChatAnchorChange={onChatAnchorChange}
+        snapshotOverrides={{ draftText: '问题' }}
+        turns={[turn({ id: 't-new', role: 'assistant', content: '答', serverMessageId: 'm-new' })]}
+      />,
+    )
+    await waitFor(() =>
+      expect(onChatAnchorChange).toHaveBeenCalledWith(
+        expect.objectContaining({ messageId: 'm-new', followTail: true }),
+      ),
+    )
+  })
+
+  it('P1-3 发送不伪装恢复：position_unavailable 时保留提示且不写锚点（02 §4 关闭位置保存）', async () => {
+    const onSend = vi.fn(async () => true)
+    const onChatAnchorChange = vi.fn()
+    render(
+      <Harness
+        onSend={onSend}
+        onChatAnchorChange={onChatAnchorChange}
+        snapshotOverrides={{ draftText: '问题', positionUnavailable: true }}
+        anchor={{ messageId: 'm-missing', offsetPx: 0, followTail: false }}
+        turns={[turn({ id: 't1', role: 'assistant', content: '历史回答', serverMessageId: 'm1' })]}
+      />,
+    )
+    expect(screen.getByTestId('chat-position-unavailable')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('chat-send'))
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(onChatAnchorChange).not.toHaveBeenCalled())
+    expect(screen.getByTestId('chat-position-unavailable')).toBeInTheDocument()
+  })
+
+  it('P1-4 稳定 ID 先回填、发送后 resolve：结算读最新 turns，不永久 pending', async () => {
+    let resolveSend: (value: boolean) => void = () => {}
+    const onSend = vi.fn(() => new Promise<boolean>((resolve) => { resolveSend = resolve }))
+    const onChatAnchorChange = vi.fn()
+    const view = render(
+      <Harness
+        onSend={onSend}
+        onChatAnchorChange={onChatAnchorChange}
+        snapshotOverrides={{ draftText: '问题' }}
+        turns={[]}
+      />,
+    )
+    fireEvent.click(screen.getByTestId('chat-send'))
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1))
+    view.rerender(
+      <Harness
+        onSend={onSend}
+        onChatAnchorChange={onChatAnchorChange}
+        snapshotOverrides={{ draftText: '问题' }}
+        turns={[turn({ id: 't-new', role: 'assistant', content: '答', serverMessageId: 'm-new' })]}
+      />,
+    )
+    resolveSend(true)
+    await waitFor(() =>
+      expect(onChatAnchorChange).toHaveBeenCalledWith(
+        expect.objectContaining({ messageId: 'm-new', followTail: true }),
+      ),
+    )
+  })
+
+  it('N9 隐藏期间发送成功不写锚点；回到可见后结算 follow_tail', async () => {
+    let resolveSend: (value: boolean) => void = () => {}
+    const onSend = vi.fn(() => new Promise<boolean>((resolve) => { resolveSend = resolve }))
+    const onChatAnchorChange = vi.fn()
+    const turns = [turn({ id: 't1', role: 'assistant', content: '历史回答', serverMessageId: 'm1' })]
+    const view = render(
+      <Harness
+        onSend={onSend}
+        onChatAnchorChange={onChatAnchorChange}
+        snapshotOverrides={{ draftText: '问题' }}
+        surfaceActive={false}
+        anchor={{ messageId: 'm1', offsetPx: 40, followTail: false }}
+        turns={turns}
+      />,
+    )
+    fireEvent.click(screen.getByTestId('chat-send'))
+    await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1))
+    resolveSend(true)
+    await waitFor(() => expect(onChatAnchorChange).not.toHaveBeenCalled())
+    view.rerender(
+      <Harness
+        onSend={onSend}
+        onChatAnchorChange={onChatAnchorChange}
+        snapshotOverrides={{ draftText: '问题' }}
+        anchor={{ messageId: 'm1', offsetPx: 40, followTail: false }}
+        turns={turns}
+      />,
+    )
+    await waitFor(() =>
+      expect(onChatAnchorChange).toHaveBeenCalledWith(
+        expect.objectContaining({ messageId: 'm1', followTail: true }),
+      ),
+    )
+  })
+
+  it('F3 滚动后 <1000ms 切走：先缓存新位置，隐藏不可度量时用缓存写锚点再 flush', async () => {
+    const onChatAnchorChange = vi.fn()
+    const onFlushPosition = vi.fn()
+    const originalRect = HTMLElement.prototype.getBoundingClientRect
+    const turns = [turn({ id: 't1', role: 'assistant', content: '历史回答', serverMessageId: 'm1' })]
+    const view = render(
+      <Harness
+        onChatAnchorChange={onChatAnchorChange}
+        onFlushPosition={onFlushPosition}
+        snapshotOverrides={{ draftText: '问题' }}
+        turns={turns}
+      />,
+    )
+    const chatScroll = screen.getByTestId('chat-messages')
+    HTMLElement.prototype.getBoundingClientRect = function mockRect(this: HTMLElement) {
+      if (this.dataset.messageId !== undefined) {
+        return {
+          top: 100 - chatScroll.scrollTop, bottom: 180, height: 80,
+          left: 0, right: 0, width: 0, x: 0, y: 0, toJSON: () => ({}),
+        } as DOMRect
+      }
+      if (this === chatScroll) {
+        return {
+          top: 0, bottom: 400, height: 400,
+          left: 0, right: 0, width: 0, x: 0, y: 0, toJSON: () => ({}),
+        } as DOMRect
+      }
+      return originalRect.call(this)
+    }
+    try {
+      Object.defineProperty(chatScroll, 'scrollHeight', { value: 2000, configurable: true })
+      Object.defineProperty(chatScroll, 'clientHeight', { value: 400, configurable: true })
+      chatScroll.scrollTop = 150
+      fireEvent.scroll(chatScroll)
+      // F3：可见时下一帧（16ms 节流）先缓存最近锚点。
+      await act(async () => {
+        await new Promise(resolve => setTimeout(resolve, 25))
+      })
+      // 切 tab 后容器 display:none（clientHeight=0），flush 时无法再测量几何，
+      // 必须退回 16ms 缓存的锚点，否则 <1s 的滚动位置会被静默丢弃。
+      Object.defineProperty(chatScroll, 'clientHeight', { value: 0, configurable: true })
+      view.rerender(
+        <Harness
+          onChatAnchorChange={onChatAnchorChange}
+          onFlushPosition={onFlushPosition}
+          snapshotOverrides={{ draftText: '问题' }}
+          surfaceActive={false}
+          turns={turns}
+        />,
+      )
+      expect(onChatAnchorChange).toHaveBeenCalledWith(
+        expect.objectContaining({ messageId: 'm1', offsetPx: -50 }),
+      )
+      expect(onFlushPosition).toHaveBeenCalledTimes(1)
+      expect(onChatAnchorChange.mock.invocationCallOrder[0]).toBeLessThan(
+        onFlushPosition.mock.invocationCallOrder[0],
+      )
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = originalRect
+    }
+  })
+
+  it('F3 缓存不跨会话：切换会话后隐藏不写上一会话的锚点', async () => {
+    const onChatAnchorChange = vi.fn()
+    const originalRect = HTMLElement.prototype.getBoundingClientRect
+    const turns = [turn({ id: 't1', role: 'assistant', content: '历史回答', serverMessageId: 'm1' })]
+    let chatScroll: HTMLElement | null = null
+    HTMLElement.prototype.getBoundingClientRect = function mockRect(this: HTMLElement) {
+      if (this.dataset.messageId !== undefined) {
+        return {
+          top: 100 - (chatScroll?.scrollTop ?? 0), bottom: 180, height: 80,
+          left: 0, right: 0, width: 0, x: 0, y: 0, toJSON: () => ({}),
+        } as DOMRect
+      }
+      if (this.dataset.testid === 'chat-messages') {
+        return {
+          top: 0, bottom: 400, height: 400,
+          left: 0, right: 0, width: 0, x: 0, y: 0, toJSON: () => ({}),
+        } as DOMRect
+      }
+      return originalRect.call(this)
+    }
+    try {
+      const view = render(
+        <Harness
+          onChatAnchorChange={onChatAnchorChange}
+          snapshotOverrides={{ draftText: '问题' }}
+          turns={turns}
+        />,
+      )
+      chatScroll = screen.getByTestId('chat-messages')
+      Object.defineProperty(chatScroll, 'scrollHeight', { value: 2000, configurable: true })
+      Object.defineProperty(chatScroll, 'clientHeight', { value: 400, configurable: true })
+      chatScroll.scrollTop = 150
+      fireEvent.scroll(chatScroll)
+      await act(async () => {
+        await new Promise(resolve => setTimeout(resolve, 25))
+      })
+      // 切到另一个（空）会话：缓存里的 m1 已不在当前 DOM。
+      view.rerender(
+        <Harness
+          onChatAnchorChange={onChatAnchorChange}
+          snapshotOverrides={{ draftText: '问题' }}
+          turns={[]}
+          surfaceActive={false}
+        />,
+      )
+      Object.defineProperty(chatScroll, 'clientHeight', { value: 0, configurable: true })
+      expect(onChatAnchorChange).not.toHaveBeenCalled()
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = originalRect
+    }
+  })
+
+  it('P2-6 无会话快照时 Coverage 仍由本地草稿受控（发送成功清空自身文本）', async () => {
+    seedScope(SCOPE_A)
+    const onSendCoverage = vi.fn(async () => true)
+    render(<Harness onSendCoverage={onSendCoverage} nullSnapshot />)
+    enterCoverageMode()
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: 'coverage 问题' } })
+    fireEvent.click(screen.getByTestId('chat-send'))
+    await waitFor(() => expect(onSendCoverage).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(screen.getByTestId('chat-input')).toHaveValue(''))
+    expect(screen.getByTestId('chat-send')).toBeDisabled()
+  })
+
+  it('P2-7 全局执行门禁同样约束 Coverage（禁用并显示外部稳定原因）', () => {
+    seedScope(SCOPE_A)
+    render(<Harness sendDisabled blockedHint="模型不可用" />)
+    enterCoverageMode()
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: 'coverage 问题' } })
+    expect(screen.getByTestId('chat-send')).toBeDisabled()
+    expect(screen.getByTestId('research-draft-gate-hint')).toHaveTextContent('模型不可用')
+  })
+
+  it('P1-3 服务端净化锚点（position_unavailable）不恢复、不伪装，并显示提示', () => {
+    const onChatAnchorChange = vi.fn()
+    const originalRect = HTMLElement.prototype.getBoundingClientRect
+    const turns = [turn({ id: 't1', role: 'assistant', content: '历史回答', serverMessageId: 'm1' })]
+    const turnsAfterBackfill = [
+      ...turns,
+      turn({ id: 't2', role: 'assistant', content: '新回答', serverMessageId: 'm2' }),
+    ]
+    let chatScroll: HTMLElement | null = null
+    HTMLElement.prototype.getBoundingClientRect = function mockRect(this: HTMLElement) {
+      if (this.dataset.messageId !== undefined) {
+        return {
+          top: 100 - (chatScroll?.scrollTop ?? 0), bottom: 180, height: 80,
+          left: 0, right: 0, width: 0, x: 0, y: 0, toJSON: () => ({}),
+        } as DOMRect
+      }
+      if (this.dataset.testid === 'chat-messages') {
+        return {
+          top: 0, bottom: 400, height: 400,
+          left: 0, right: 0, width: 0, x: 0, y: 0, toJSON: () => ({}),
+        } as DOMRect
+      }
+      return originalRect.call(this)
+    }
+    try {
+      const view = render(
+        <Harness
+          onChatAnchorChange={onChatAnchorChange}
+          snapshotOverrides={{ draftText: '问题', positionUnavailable: true }}
+          anchor={{ messageId: 'm1', offsetPx: -50, followTail: false }}
+          turns={turns}
+        />,
+      )
+      chatScroll = screen.getByTestId('chat-messages')
+      Object.defineProperty(chatScroll, 'scrollHeight', { value: 2000, configurable: true })
+      Object.defineProperty(chatScroll, 'clientHeight', { value: 400, configurable: true })
+      chatScroll.scrollTop = 777
+      // 稳定 ID 集变化会触发一次恢复尝试；服务端已净化锚点时不得恢复/写回。
+      view.rerender(
+        <Harness
+          onChatAnchorChange={onChatAnchorChange}
+          snapshotOverrides={{ draftText: '问题', positionUnavailable: true }}
+          anchor={{ messageId: 'm1', offsetPx: -50, followTail: false }}
+          turns={turnsAfterBackfill}
+        />,
+      )
+      expect(chatScroll.scrollTop).toBe(777)
+      expect(screen.getByTestId('chat-position-unavailable')).toBeInTheDocument()
+      expect(onChatAnchorChange).not.toHaveBeenCalled()
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = originalRect
+    }
+  })
+
+  it('F3 从可见切到隐藏（切 tab）时调用 flush("position")', () => {
+    const onFlushPosition = vi.fn()
+    const view = render(<Harness onFlushPosition={onFlushPosition} />)
+    view.rerender(<Harness onFlushPosition={onFlushPosition} surfaceActive={false} />)
+    expect(onFlushPosition).toHaveBeenCalledTimes(1)
+  })
+
+  it('F4 会话只读时范围条禁用并显示稳定原因（不是 null 静默禁用）', () => {
+    render(<Harness snapshotOverrides={{ readOnly: true, phase: 'readonly' }} />)
+    expect(screen.getByTestId('scope-disabled-reason')).toHaveTextContent(
+      'research.workbench.adminWriteDenied',
+    )
+    expect(screen.getByTestId('scope-mode-all')).toBeDisabled()
   })
 })

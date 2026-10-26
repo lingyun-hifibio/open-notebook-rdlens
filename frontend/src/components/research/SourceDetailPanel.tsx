@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Badge } from '@/components/ui/badge'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
@@ -9,6 +9,16 @@ import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
 import { Button } from '@/components/ui/button'
 import { displayPage } from './citation-utils'
 import { useResearchScope } from '@/lib/research/scope'
+import { useResearchSessionRuntimeOptional } from '@/lib/hooks/research-session-runtime'
+import { useResearchEditor } from '@/lib/hooks/use-research-editor'
+import {
+  measureReaderAnchor,
+  readerAnchorMatches,
+  restoreScrollTop,
+  shouldRestoreReaderAnchor,
+  type ReaderChunkGeometry,
+  type ReaderAnchorIdentity,
+} from '@/lib/research/reading-anchor'
 import { cn } from '@/lib/utils'
 
 /**
@@ -38,6 +48,45 @@ export function SourceDetailPanel({
   const pinnedHere = mode === 'single' && singlePin?.sourceId === sourceId
   const headingRef = useRef<HTMLHeadingElement>(null)
   const handledFocusRequestIdRef = useRef<number | null>(null)
+  // PR-4：来源正文锚点（DESIGN §5.7.2）——只在 active('source') 且 sourceId
+  // 精确匹配的会话 editor 上读写；归属不确定时绝不写任何会话（Lead E3）。
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const scrollParentRef = useRef<HTMLElement | null>(null)
+  const anchorTimerRef = useRef<number | null>(null)
+  const measureFrameRef = useRef<number | null>(null)
+  const restoringRef = useRef(false)
+  const [positionUnavailable, setPositionUnavailable] = useState(false)
+  const sessionRuntime = useResearchSessionRuntimeOptional()
+  const activeSourceRef = sessionRuntime?.active('source') ?? null
+  const sourceEditorEnabled =
+    sessionRuntime !== null && activeSourceRef !== null && activeSourceRef.sourceId === sourceId
+  const sourceEditor = useResearchEditor({
+    kind: 'source',
+    sessionId: activeSourceRef?.sessionId ?? '',
+    sourceId,
+    enabled: sourceEditorEnabled,
+  })
+  // 滚动回调需稳定：用 ref 读取最新 identity/editor，避免每次渲染重新安装监听
+  // 或在安装时意外排定保存（§5.7.2 恢复期间不写回）。
+  const readerIdentityRef = useRef<ReaderAnchorIdentity | null>(null)
+  const sourceEditorRef = useRef(sourceEditor)
+  sourceEditorRef.current = sourceEditor
+  const readerIdentity: ReaderAnchorIdentity | null =
+    data !== undefined && data.source_id !== null
+      ? {
+          sourceId: data.source_id,
+          documentId: data.document_id,
+          documentVersion: data.document_version,
+          contentHash: data.content_hash ?? null,
+        }
+      : null
+  // 切来源的瞬间 query 数据会短暂为空：保留上一份身份供 layout cleanup 测量旧来源 DOM；
+  // 每次测量都校验身份归属，避免给新来源写入旧身份锚点。
+  if (readerIdentity !== null) readerIdentityRef.current = readerIdentity
+  const savedReaderAnchor = sourceEditorEnabled ? sourceEditor.snapshot?.readerAnchor ?? null : null
+  // 服务端净化坏锚点后只会置 positionUnavailable；仍要可见说明（§5.7.2/§7.2）。
+  const editorPositionUnavailable =
+    sourceEditorEnabled && sourceEditor.snapshot?.positionUnavailable === true
 
   useEffect(() => {
     if (
@@ -57,6 +106,177 @@ export function SourceDetailPanel({
     handledFocusRequestIdRef.current = focusRequestId
   }, [data, focusRequestId])
 
+  // 按当前几何测量一次 reader anchor（§5.7.2；定时器/离开前 flush 复用）。
+  const measureReaderAnchorNow = useCallback((expectedSourceId: string = sourceId): void => {
+    const identity = readerIdentityRef.current
+    if (!sourceEditorEnabled || restoringRef.current || identity === null) return
+    if (identity.sourceId !== expectedSourceId) return
+    if (identity.contentHash === null) return
+    const parent = scrollParentRef.current
+    const root = rootRef.current
+    if (parent === null || root === null) return
+    const parentRect = parent.getBoundingClientRect()
+    const chunkNodes = Array.from(
+      root.querySelectorAll<HTMLElement>('[data-chunk-id]'),
+    )
+    if (chunkNodes.length === 0) return
+    let chunk: ReaderChunkGeometry | null = null
+    for (const node of chunkNodes) {
+      const rect = node.getBoundingClientRect()
+      if (rect.top <= parentRect.top) {
+        chunk = {
+          chunkId: node.dataset.chunkId ?? null,
+          chunkOrdinal: Number(node.dataset.chunkOrdinal ?? '0'),
+          top: rect.top,
+          pageIdx: node.dataset.chunkPage !== undefined ? Number(node.dataset.chunkPage) : null,
+        }
+      }
+    }
+    if (chunk === null) {
+      const first = chunkNodes[0]
+      const rect = first.getBoundingClientRect()
+      chunk = {
+        chunkId: first.dataset.chunkId ?? null,
+        chunkOrdinal: Number(first.dataset.chunkOrdinal ?? '0'),
+        top: rect.top,
+        pageIdx: first.dataset.chunkPage !== undefined ? Number(first.dataset.chunkPage) : null,
+      }
+    }
+    const anchor = measureReaderAnchor({
+      identity,
+      container: {
+        containerTop: parentRect.top,
+        scrollTop: parent.scrollTop,
+        clientHeight: parent.clientHeight,
+        scrollHeight: parent.scrollHeight,
+      },
+      chunk,
+    })
+    if (anchor !== null) sourceEditorRef.current.setReaderAnchor(anchor)
+  }, [sourceEditorEnabled, sourceId])
+
+  // 滚动空闲 1000ms 记录一次来源正文锚点（§5.7.2）；保存失败只保留本机 pending。
+  const scheduleReaderAnchor = useCallback(() => {
+    const identity = readerIdentityRef.current
+    if (!sourceEditorEnabled || restoringRef.current || identity === null) return
+    // F3：下一帧先测量一次（16ms 节流），保证 <1000ms 切走时最新位置已在 editor 内；
+    // 1000ms 空闲再合并保存，避免每次滚动都触发网络写。
+    if (measureFrameRef.current !== null) window.clearTimeout(measureFrameRef.current)
+    measureFrameRef.current = window.setTimeout(() => {
+      measureFrameRef.current = null
+      if (restoringRef.current) return
+      measureReaderAnchorNow()
+    }, 16)
+    if (anchorTimerRef.current !== null) window.clearTimeout(anchorTimerRef.current)
+    anchorTimerRef.current = window.setTimeout(() => {
+      anchorTimerRef.current = null
+      // 恢复期间/之后的新 anchor 尚未稳定：丢弃 pending 保存，避免覆盖恢复结果。
+      if (restoringRef.current) return
+      sourceEditorRef.current.flush('position')
+    }, 1000)
+  }, [measureReaderAnchorNow, sourceEditorEnabled])
+
+  // N9/F3：切来源/卸载前尽力写回位置（flush('position')，不阻塞 UI）。
+  // 用 layout effect cleanup：它先于 useResearchEditor 的 passive cleanup 执行，
+  // 保证 flush 时 controller 尚未释放；<1000ms 的滚动位置在离开前同步测量一次。
+  useLayoutEffect(() => {
+    return () => {
+      const pendingTimer = anchorTimerRef.current
+      const pendingFrame = measureFrameRef.current
+      const hadPending = pendingTimer !== null || pendingFrame !== null
+      if (pendingTimer !== null) {
+        window.clearTimeout(pendingTimer)
+        anchorTimerRef.current = null
+      }
+      if (pendingFrame !== null) {
+        window.clearTimeout(pendingFrame)
+        measureFrameRef.current = null
+      }
+      if (!sourceEditorEnabled) return
+      // 尽力测量（DOM 已切换时可能拿不到 chunk，改为依赖 rAF 内已写入的位置）。
+      if (hadPending) measureReaderAnchorNow(sourceId)
+      sourceEditorRef.current.flush('position')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在来源切换/启用状态变化/卸载时结算
+  }, [sourceId, sourceEditorEnabled])
+
+  // 找到可滚动祖先（来源面板自身不是滚动容器；不改 Workbench/page）。
+  useEffect(() => {
+    const root = rootRef.current
+    if (root === null) {
+      scrollParentRef.current = null
+      return
+    }
+    const parent = root.closest<HTMLElement>('.overflow-y-auto')
+    scrollParentRef.current = parent
+    if (parent === null) return
+    parent.addEventListener('scroll', scheduleReaderAnchor, { passive: true })
+    return () => {
+      parent.removeEventListener('scroll', scheduleReaderAnchor)
+      if (anchorTimerRef.current !== null) window.clearTimeout(anchorTimerRef.current)
+    }
+  }, [scheduleReaderAnchor, data])
+
+  // 恢复来源正文锚点（§5.7.2）：版本/hash 不匹配/chunk 缺失 → position_unavailable。
+  useEffect(() => {
+    if (!sourceEditorEnabled || readerIdentity === null) return
+    // §8.3：Citation 定位优先于旧阅读位置；已净化/已失效锚点不恢复。
+    if (
+      !shouldRestoreReaderAnchor({
+        savedAnchor: savedReaderAnchor,
+        citationFocusRequestId: focusRequestId,
+        positionUnavailable: editorPositionUnavailable,
+      })
+    ) {
+      return
+    }
+    if (anchorTimerRef.current !== null) {
+      window.clearTimeout(anchorTimerRef.current)
+      anchorTimerRef.current = null
+    }
+    const parent = scrollParentRef.current ?? rootRef.current?.closest<HTMLElement>('.overflow-y-auto') ?? null
+    const root = rootRef.current
+    if (parent === null || root === null) return
+    restoringRef.current = true
+    const restore = (): void => {
+      const parentRect = parent.getBoundingClientRect()
+      const container = {
+        containerTop: parentRect.top,
+        scrollTop: parent.scrollTop,
+        clientHeight: parent.clientHeight,
+        scrollHeight: parent.scrollHeight,
+      }
+      if (!readerAnchorMatches(readerIdentity, savedReaderAnchor)) {
+        setPositionUnavailable(true)
+        return
+      }
+      const nodes = Array.from(root.querySelectorAll<HTMLElement>('[data-chunk-id]'))
+      const target =
+        nodes.find(node => savedReaderAnchor.chunkId !== null && node.dataset.chunkId === savedReaderAnchor.chunkId)
+        ?? nodes.find(node => Number(node.dataset.chunkOrdinal ?? '-1') === savedReaderAnchor.chunkOrdinal)
+        ?? null
+      const targetRect = target?.getBoundingClientRect() ?? null
+      const result = restoreScrollTop({
+        container,
+        savedOffsetPx: savedReaderAnchor.offsetPx,
+        currentTargetTop: targetRect !== null ? targetRect.top : null,
+        targetHeightPx: targetRect !== null ? targetRect.height : undefined,
+      })
+      if (result.ok) {
+        parent.scrollTop = result.scrollTop
+        setPositionUnavailable(false)
+      } else {
+        setPositionUnavailable(true)
+      }
+    }
+    restore()
+    const timer = window.setTimeout(() => {
+      restoringRef.current = false
+    }, 0)
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在身份/锚点变化时恢复
+  }, [sourceEditorEnabled, readerIdentity?.contentHash, savedReaderAnchor?.chunkId, savedReaderAnchor?.offsetPx, data, focusRequestId])
+
   if (isLoading) {
     return <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
   }
@@ -65,7 +285,7 @@ export function SourceDetailPanel({
   }
 
   return (
-    <div className="space-y-4">
+    <div ref={rootRef} className="space-y-4">
       <div className="flex items-center justify-between gap-2">
         <h2 ref={headingRef} tabIndex={-1} className="text-base font-semibold">
           {data.title || data.document_id}
@@ -84,10 +304,15 @@ export function SourceDetailPanel({
           </Button>
         </div>
       </div>
+      {(positionUnavailable || editorPositionUnavailable) && (
+        <p className="text-sm text-amber-700" role="status" data-testid="source-anchor-unavailable">
+          {t('research.editor.positionUnavailable')}
+        </p>
+      )}
       {data.markdown_chunks.length === 0 && (
         <p className="text-sm text-muted-foreground">{t('research.sources.empty')}</p>
       )}
-      {data.markdown_chunks.map((chunk) => {
+      {data.markdown_chunks.map((chunk, chunkIndex) => {
         const page = displayPage(chunk.page_idx)
         const highlighted = highlightPageIdx !== undefined && highlightPageIdx !== null
           && chunk.page_idx === highlightPageIdx
@@ -95,6 +320,9 @@ export function SourceDetailPanel({
           <section
             key={chunk.chunk_id}
             data-testid={highlighted ? 'chunk-highlight' : undefined}
+            data-chunk-id={chunk.chunk_id}
+            data-chunk-ordinal={chunkIndex}
+            data-chunk-page={chunk.page_idx}
             className={cn(
               'rounded-md border p-3',
               highlighted && 'border-primary ring-1 ring-primary',

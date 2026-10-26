@@ -592,3 +592,78 @@ export interface AcceptedReceipt {
   readonly editorRevision?: number
   readonly idempotencyKey?: string | null
 }
+
+// ── 草稿范围条与 composer（#602 第三批 PR-4；DESIGN §3.3/§6.1/§5.8，§9.2） ──
+//
+// 本段只放 PR-4 组件接线所需的最小类型。`conversation` 的完整契约由 PR-5a
+// （conversation-machine）扩展；本 PR 仅消费最小只读投影用于发送门禁。
+
+/** 当前会话对话阶段（PR-4 只读投影；PR-5a 扩展为完整状态机）。 */
+export type ResearchConversationPhase =
+  | 'idle'
+  | 'streaming'
+  | 'awaiting'
+  | 'busy'
+  | 'unknown'
+
+/** 当前会话的最小只读对话投影（PR-4 仅用于发送门禁与清稿前提示）。 */
+export interface ResearchConversationSnapshot {
+  readonly activeTurnId: string | null
+  readonly phase: ResearchConversationPhase
+  readonly isStreaming: boolean
+  /** 服务端 busy / 本地提交准备等不可派发状态。 */
+  readonly isBusy: boolean
+}
+
+/**
+ * 发送门禁稳定原因（DESIGN §6.1 七条前置条件）。
+ *
+ * 只作为文案映射键，不在本模块渲染；组件必须把非空原因展示在输入区，
+ * 不能只靠按钮 `disabled`。
+ */
+export type ResearchDraftGateReason =
+  | 'runtime_unavailable'
+  | 'editor_not_ready'
+  | 'editor_unreadable'
+  | 'submission_not_ready'
+  | 'save_failed'
+  | 'saving'
+  | 'conflict'
+  | 'blocked'
+  | 'readonly'
+  | 'invalidated'
+  | 'oversize'
+  | 'empty_draft'
+  | 'invalid_text'
+  | 'scope_invalid'
+  | 'turn_active'
+
+/** 发送门禁结果；`allowed=false` 时 `reason` 必须非空并可映射文案。 */
+export interface ResearchDraftGate {
+  readonly allowed: boolean
+  readonly reason: ResearchDraftGateReason | null
+}
+
+/** 草稿保存状态投影（DESIGN §5.8 用户可见状态）。 */
+export type ResearchDraftSaveState =
+  | 'clean'
+  | 'dirty'
+  | 'saving'
+  | 'conflict'
+  | 'blocked'
+  | 'readonly'
+  | 'unavailable'
+
+/** 会话范围条的可选来源项（工作区资料查询投影；不复制查询逻辑）。 */
+export interface ResearchScopeBarSourceOption {
+  readonly sourceId: string
+  readonly title: string
+  /** 资源已失效/不在当前授权列表（DESIGN §7.2：保留选择并标注）。 */
+  readonly unavailable?: boolean
+}
+
+/** 会话范围条的可选 Note 项。 */
+export interface ResearchScopeBarNoteOption {
+  readonly noteId: string
+  readonly title: string
+}
