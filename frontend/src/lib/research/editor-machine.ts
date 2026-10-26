@@ -1440,9 +1440,10 @@ export function createEditorController(deps: EditorDeps): EditorController {
     const editorState =
       pending.frozenEditorState !== null ? pending.frozenEditorState : editorStateToWire(state)
     if (measureDraftBytes(JSON.stringify(editorState)) > EDITOR_JSON_MAX_BYTES) {
-      // 512KiB 是服务端请求体（JSON 序列化后字节，含转义/结构）上限；256KiB 是
-      // draft.text 的 UTF-8 输入上限——两者口径不同：文本未超 256KiB 时，大量引号/
-      // 反斜杠转义后正文仍可能超 512KiB 而被此处拦截（见回归测试）。
+      // 512KiB 上限按 512KiB 服务端 body 预算近似：普通保存度量 `editor_state` 的
+      // JSON 序列化字节（不含 expected_revision/mutation_id 外壳），清稿度量整体
+      // 清稿请求体；256KiB 是 draft.text 的 UTF-8 输入上限。两者口径不同：文本未超
+      // 256KiB 时，大量引号/反斜杠转义后正文仍可能超 512KiB 而被此处拦截（见回归测试）。
       // 超限禁用保存但不截断本机输入（review P1 #9）。
       reduce({ type: 'save/blocked', failure: { code: 'editor_state_too_large', retryable: false } })
       pending.resolve('blocked')
@@ -1796,7 +1797,10 @@ export function createEditorController(deps: EditorDeps): EditorController {
       sessionKey(parsed.value.ref) !== sessionKey(state.ref) ||
       String(parsed.value.viewerUserId) !== String(currentRuntime.viewerUserId)
     ) {
-      recoverLocalDraft()
+      // 非法响应同样不得覆盖 GET 在途期间的新输入：与网络失败分支共用基线保护。
+      if (state.draftText === loadBaselineText && state.localVersion === loadBaselineLocalVersion) {
+        recoverLocalDraft()
+      }
       reduce({ type: 'load/failure', failure: { code: 'invalid_response', retryable: false } })
       return false
     }
@@ -1809,7 +1813,11 @@ export function createEditorController(deps: EditorDeps): EditorController {
         warnings: parsed.value.stateWarnings,
         revision: parsed.value.editorRevision,
       })
-      const unreadableRecord = readOwnDraft()
+      // 服务端不可读时同样只在加载基线未变时读回磁盘草稿，避免覆盖新输入。
+      const unreadableRecord =
+        state.draftText === loadBaselineText && state.localVersion === loadBaselineLocalVersion
+          ? readOwnDraft()
+          : null
       if (unreadableRecord !== null) reduce({ type: 'draft/readback', record: unreadableRecord })
       refreshDraftCandidates()
       return false

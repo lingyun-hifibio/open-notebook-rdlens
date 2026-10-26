@@ -1670,6 +1670,70 @@ describe('verifier regression: GET failure recovery / dirty conflict', () => {
     expect(harness.controller.getSnapshot().draftText).not.toBe('OLD-draft')
   })
 
+  it('GET 成功但响应非法：加载期间的新输入不被磁盘旧稿覆盖', async () => {
+    const storage = new MapStorage()
+    writeDraft(
+      { viewerUserId: '1', projectId: 'p1' },
+      REF,
+      'w-test',
+      {
+        version: 1,
+        text: 'OLD-draft',
+        token: 'tok-old',
+        baseScope: { mode: 'all', sourceIds: [], singleSourceId: null },
+        singleSourceId: null,
+        noteIds: [],
+        localVersion: 0,
+        baseRevision: 5,
+        savedAt: '2026-10-26T00:00:00.000Z',
+        dirty: true,
+      },
+      { storage },
+    )
+    const harness = createHarness({ storage })
+    const loadPromise = harness.controller.load()
+    await flushMicrotasks()
+    expect(harness.gets.length).toBe(1)
+    harness.controller.setDraftText('NEW-text')
+    harness.gets[0].resolve({ nonsense: true })
+    await loadPromise
+    await flushMicrotasks()
+    expect(harness.controller.getSnapshot().draftText).toBe('NEW-text')
+    expect(harness.controller.getSnapshot().draftText).not.toBe('OLD-draft')
+  })
+
+  it('GET 成功但 editor_state_unreadable：加载期间的新输入不被磁盘旧稿覆盖', async () => {
+    const storage = new MapStorage()
+    writeDraft(
+      { viewerUserId: '1', projectId: 'p1' },
+      REF,
+      'w-test',
+      {
+        version: 1,
+        text: 'OLD-draft',
+        token: 'tok-old',
+        baseScope: { mode: 'all', sourceIds: [], singleSourceId: null },
+        singleSourceId: null,
+        noteIds: [],
+        localVersion: 0,
+        baseRevision: 5,
+        savedAt: '2026-10-26T00:00:00.000Z',
+        dirty: true,
+      },
+      { storage },
+    )
+    const harness = createHarness({ storage })
+    const loadPromise = harness.controller.load()
+    await flushMicrotasks()
+    expect(harness.gets.length).toBe(1)
+    harness.controller.setDraftText('NEW-text')
+    harness.gets[0].resolve(editorResponse({ state: null, hash: null, warnings: ['editor_state_unreadable'] }))
+    await loadPromise
+    await flushMicrotasks()
+    expect(harness.controller.getSnapshot().draftText).toBe('NEW-text')
+    expect(harness.controller.getSnapshot().draftText).not.toBe('OLD-draft')
+  })
+
   it('dirty GET 冲突后 loading 收敛，canSubmit 返回 conflict', async () => {
     const harness = createHarness()
     await loadHarness(harness, editorResponse({ revision: 5 }))
