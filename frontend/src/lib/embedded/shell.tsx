@@ -13,6 +13,7 @@ export function useRequestIngest(): (() => void) | null {
 }
 import { getEmbeddedParentOrigins } from './config'
 import { ResearchWorkspaceProvider } from './workspace-context'
+import { ResearchSessionRuntimeProvider } from '@/lib/hooks/research-session-runtime'
 import { ResearchGlobalModelProvider } from '@/lib/hooks/use-research-global-model'
 import { ResearchScopeProvider } from '@/lib/research/scope'
 import { useThemeStore } from '@/lib/stores/theme-store'
@@ -49,6 +50,7 @@ export function ResearchWorkspaceShell({ children }: { children?: React.ReactNod
       // 不接受任何消息（部署配置错误，见 PR 说明）
       setState({
         status: 'error',
+        authEpoch: 0,
         errorCode: 'session_invalid',
         errorMessage: 'parent origin is not configured',
       })
@@ -79,8 +81,20 @@ export function ResearchWorkspaceShell({ children }: { children?: React.ReactNod
     )
   }
 
-  if (state.status === 'error') {
-    return (
+  if (state.status === 'destroyed') {
+    return null
+  }
+
+  // 认证后的身份元组（claims 注入）。第三批 PR-1：`error` 时若此前已认证
+  // 成功，session.ts 会保留最后身份；此时保持 Provider 挂载并遮蔽
+  // （DESIGN §3.2 / L1121），未认证过的 error 仍走纯错误页。
+  const identity =
+    state.userId !== undefined && state.projectId !== undefined && state.role !== undefined
+      ? { userId: state.userId, projectId: state.projectId, role: state.role }
+      : null
+
+  const errorPanel =
+    state.status === 'error' ? (
       <div
         role="alert"
         className="flex min-h-screen flex-col items-center justify-center gap-3 px-8 text-center"
@@ -91,31 +105,46 @@ export function ResearchWorkspaceShell({ children }: { children?: React.ReactNod
           {t('research.errorMessage')}
         </p>
       </div>
-    )
+    ) : null
+
+  if (identity === null) {
+    return errorPanel
   }
 
-  if (state.status === 'destroyed') {
-    return null
-  }
+  const masked = errorPanel !== null
+  const authGeneration = state.authEpoch
 
   // UI-02：认证后把 Token claims 中的 projectId/role 注入工作台上下文
   // （Gateway 路径与 Owner 写/Admin 只读矩阵数据源）。
   // Issue #243 GMOD-FE-01：全局模型 provider 挂在已认证根节点，向下统一
   // 提供 confirmed 模型、Search 上下文默认值与外发 consent single-flight
   // guard（计划 §6.1/§6.8）；未认证时不挂载，避免空 projectId 查询。
-  if (state.userId !== undefined && state.projectId !== undefined && state.role !== undefined) {
-    // R2-H8 修复：IngestRequestContext.Provider 必须真实包裹——否则
-    // useRequestIngest 恒 null，「添加资料」按钮永远隐藏。
-    return (
-      <IngestRequestContext.Provider value={() => sessionRef.current?.requestIngest()}>
-        <ResearchWorkspaceProvider userId={state.userId} projectId={state.projectId} role={state.role}>
-          <ResearchScopeProvider userId={state.userId} projectId={state.projectId}>
-            <ResearchGlobalModelProvider>{children}</ResearchGlobalModelProvider>
+  // R2-H8 修复：IngestRequestContext.Provider 必须真实包裹——否则
+  // useRequestIngest 恒 null，「添加资料」按钮永远隐藏。
+  // 第三批 PR-1：新增 authGeneration 透传（DESIGN §3.2）与会话运行时
+  // Provider（§3.4：挂在已认证根节点、存活于项目工作区生命周期）。
+  return (
+    <IngestRequestContext.Provider value={() => sessionRef.current?.requestIngest()}>
+      <ResearchWorkspaceProvider
+        userId={identity.userId}
+        projectId={identity.projectId}
+        role={identity.role}
+        authGeneration={authGeneration}
+      >
+        <ResearchSessionRuntimeProvider
+          authGeneration={authGeneration}
+          projectId={identity.projectId}
+          viewerUserId={identity.userId}
+          role={identity.role}
+          masked={masked}
+        >
+          <ResearchScopeProvider userId={identity.userId} projectId={identity.projectId}>
+            <ResearchGlobalModelProvider>
+              {errorPanel ?? children}
+            </ResearchGlobalModelProvider>
           </ResearchScopeProvider>
-        </ResearchWorkspaceProvider>
-      </IngestRequestContext.Provider>
-    )
-  }
-
-  return <>{children}</>
+        </ResearchSessionRuntimeProvider>
+      </ResearchWorkspaceProvider>
+    </IngestRequestContext.Provider>
+  )
 }

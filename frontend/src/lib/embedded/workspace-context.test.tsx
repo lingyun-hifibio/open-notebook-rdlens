@@ -6,13 +6,13 @@ import { useResearchWorkspace, ResearchWorkspaceProvider } from './workspace-con
 // 交给工作台面板；未认证/缺 claims 时上下文缺失，面板 fail-closed。
 
 const wrapperOwner = ({ children }: { children: React.ReactNode }) => (
-  <ResearchWorkspaceProvider projectId="proj_1" role="owner">
+  <ResearchWorkspaceProvider projectId="proj_1" role="owner" authGeneration={1}>
     {children}
   </ResearchWorkspaceProvider>
 )
 
 const wrapperAdmin = ({ children }: { children: React.ReactNode }) => (
-  <ResearchWorkspaceProvider projectId="proj_1" role="admin_readonly">
+  <ResearchWorkspaceProvider projectId="proj_1" role="admin_readonly" authGeneration={1}>
     {children}
   </ResearchWorkspaceProvider>
 )
