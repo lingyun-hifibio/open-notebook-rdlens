@@ -634,6 +634,7 @@ export type ResearchDraftGateReason =
   | 'invalidated'
   | 'oversize'
   | 'empty_draft'
+  | 'invalid_text'
   | 'scope_invalid'
   | 'turn_active'
 

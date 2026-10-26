@@ -156,6 +156,18 @@ export function SourceDetailPanel({
     }, 1000)
   }, [sourceEditorEnabled])
 
+  // N9/F3：切来源/卸载前尽力写回位置（flush('position')，不阻塞 UI）。
+  useEffect(() => {
+    return () => {
+      if (anchorTimerRef.current !== null) {
+        window.clearTimeout(anchorTimerRef.current)
+        anchorTimerRef.current = null
+      }
+      if (sourceEditorEnabled) sourceEditorRef.current.flush('position')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在来源切换/卸载时 flush
+  }, [sourceId])
+
   // 找到可滚动祖先（来源面板自身不是滚动容器；不改 Workbench/page）。
   useEffect(() => {
     const root = rootRef.current

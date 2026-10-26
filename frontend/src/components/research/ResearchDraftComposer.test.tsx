@@ -9,7 +9,11 @@ import type {
   ResearchDraftGate,
   ResearchDraftGateReason,
 } from '@/lib/research/types'
-import { ResearchDraftComposer, deriveResearchDraftGate } from './ResearchDraftComposer'
+import {
+  ResearchDraftComposer,
+  deriveResearchDraftGate,
+  researchDraftGateReasonKey,
+} from './ResearchDraftComposer'
 
 vi.mock('@/lib/hooks/use-translation', () => ({
   useTranslation: () => ({
@@ -295,5 +299,93 @@ describe('ResearchDraftComposer', () => {
       conversationSnapshot: IDLE_CONVERSATION,
     })
     expect(gate).toEqual({ allowed: false, reason: 'scope_invalid' })
+  })
+})
+
+describe('ResearchDraftComposer · PR-4 修复轮（F5/N2/N4）', () => {
+  function derive(text: string, overrides: Partial<EditorSnapshot> = {}) {
+    return deriveResearchDraftGate({
+      editorSnapshot: makeSnapshot({ draftText: text, dirty: true, ...overrides }),
+      conversationSnapshot: IDLE_CONVERSATION,
+    })
+  }
+
+  it('F5：未配对代理项禁发（高/低位），合法 emoji 不误判', () => {
+    expect(derive('\uD800')).toEqual({ allowed: false, reason: 'invalid_text' })
+    expect(derive('abc\uDC00')).toEqual({ allowed: false, reason: 'invalid_text' })
+    expect(derive('合法 😀 emoji')).toEqual({ allowed: true, reason: null })
+  })
+
+  it('F5：派生文案使用 research.editor.invalidDraft 且发送禁用', () => {
+    const snapshot = makeSnapshot({ draftText: '\uD800', dirty: true })
+    const gate = deriveResearchDraftGate({
+      editorSnapshot: snapshot,
+      conversationSnapshot: IDLE_CONVERSATION,
+    })
+    expect(researchDraftGateReasonKey('invalid_text')).toBe('research.editor.invalidDraft')
+    renderComposer({
+      snapshot,
+      gate,
+      gateReasonText: researchDraftGateReasonKey(gate.reason ?? 'runtime_unavailable'),
+    })
+    expect(screen.getByTestId('research-draft-gate-hint')).toHaveTextContent(
+      'research.editor.invalidDraft',
+    )
+    expect(screen.getByTestId('chat-send')).toBeDisabled()
+  })
+
+  it('N2：gate 分支——runtime_unavailable/invalidated/readonly/blocked/conflict/saveFailed/saving/oversize/editor_not_ready/submission_not_ready/empty/scope_invalid/turn_active', () => {
+    expect(deriveResearchDraftGate({ editorSnapshot: null, conversationSnapshot: IDLE_CONVERSATION }))
+      .toEqual({ allowed: false, reason: 'runtime_unavailable' })
+    expect(derive('问题', { invalidated: true })).toEqual({ allowed: false, reason: 'invalidated' })
+    expect(derive('问题', { readOnly: true })).toEqual({ allowed: false, reason: 'readonly' })
+    expect(derive('问题', { blocked: true })).toEqual({ allowed: false, reason: 'blocked' })
+    expect(derive('问题', { conflict: { kind: 'revision' } })).toEqual({
+      allowed: false,
+      reason: 'conflict',
+    })
+    expect(derive('问题', { saveFailure: { code: 'editor_revision_conflict', retryable: true } }))
+      .toEqual({ allowed: false, reason: 'save_failed' })
+    expect(derive('问题', { saving: true })).toEqual({ allowed: false, reason: 'saving' })
+    expect(derive('问题', { oversize: true })).toEqual({ allowed: false, reason: 'oversize' })
+    expect(derive('问题', { phase: 'idle', loading: false })).toEqual({
+      allowed: false,
+      reason: 'editor_not_ready',
+    })
+    expect(derive('问题', { baseScope: null, singleSourceId: null })).toEqual({
+      allowed: false,
+      reason: 'scope_invalid',
+    })
+    expect(
+      deriveResearchDraftGate({
+        editorSnapshot: makeSnapshot({ draftText: '问题', dirty: true }),
+        conversationSnapshot: { ...IDLE_CONVERSATION, isBusy: true, phase: 'busy' },
+      }),
+    ).toEqual({ allowed: false, reason: 'turn_active' })
+    expect(
+      deriveResearchDraftGate({
+        editorSnapshot: makeSnapshot({ draftText: '问题', dirty: true }),
+        conversationSnapshot: IDLE_CONVERSATION,
+        submissionReady: false,
+      }),
+    ).toEqual({ allowed: false, reason: 'submission_not_ready' })
+    expect(derive('   ')).toEqual({ allowed: false, reason: 'empty_draft' })
+    expect(derive('问题', { transportAvailable: false })).toEqual({
+      allowed: false,
+      reason: 'runtime_unavailable',
+    })
+    expect(derive('问题', { unreadable: true })).toEqual({
+      allowed: false,
+      reason: 'editor_unreadable',
+    })
+  })
+
+  it('N4：textarea 与发送按钮使用不同 aria-label（composerLabel / chatSend）', () => {
+    renderComposer()
+    expect(screen.getByTestId('chat-input')).toHaveAttribute(
+      'aria-label',
+      'research.editor.composerLabel',
+    )
+    expect(screen.getByTestId('chat-send')).toHaveAttribute('aria-label', 'research.chatSend')
   })
 })

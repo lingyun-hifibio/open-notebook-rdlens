@@ -567,6 +567,8 @@ export function ResearchWorkspace({
             onRetrySave={chatEditor.retrySave}
             onRestoreDraft={chatEditor.restoreDraft}
             onChatAnchorChange={chatEditor.setChatAnchor}
+            onFlushPosition={() => chatEditor.flush('position')}
+            surfaceActive={surfaceActive && activeAction === 'research-chat'}
             onViewInsight={
               onRevealSavedArtifact !== undefined
                 ? (insightId) => onRevealSavedArtifact('insight', insightId)

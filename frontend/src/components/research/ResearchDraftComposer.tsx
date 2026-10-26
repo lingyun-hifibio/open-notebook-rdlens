@@ -19,6 +19,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { hasUnpairedSurrogate } from '@/lib/research/editor-machine'
 import type {
   EditorSnapshot,
   ResearchConversationSnapshot,
@@ -44,6 +45,11 @@ export interface ResearchDraftComposerProps {
   readonly onSaveLocalOverServer?: () => void
   /** 仅暴露给后续 PR（本 PR 不渲染按钮）：提交结果查回/结算。 */
   readonly onReconcileSubmission?: () => void
+  /**
+   * Coverage 本地草稿模式（PR-4 修复：all_selected 使用独立本地草稿）：
+   * 不渲染会话保存状态/重试/恢复入口，也不受会话 editor 保存状态影响。
+   */
+  readonly localDraftMode?: boolean
 }
 
 /** 门禁原因 → 既有 i18n 键（不使用 `defaultValue` 兜底）。 */
@@ -60,6 +66,7 @@ const GATE_REASON_KEYS: Record<ResearchDraftGateReason, string> = {
   invalidated: 'research.errors.internal',
   oversize: 'research.editor.blocked',
   empty_draft: 'research.chatPlaceholder',
+  invalid_text: 'research.editor.invalidDraft',
   scope_invalid: 'research.layout.scope.selectItemRequired',
   turn_active: 'research.errors.generationInProgress',
 }
@@ -110,6 +117,10 @@ export function deriveResearchDraftGate(input: {
     return { allowed: false, reason: 'saving' }
   }
   if (editorSnapshot.oversize) return { allowed: false, reason: 'oversize' }
+  // §5.4：未配对 surrogate 无法编码为 wire 草稿，禁止派发（不允许静默替换）。
+  if (hasUnpairedSurrogate(editorSnapshot.draftText)) {
+    return { allowed: false, reason: 'invalid_text' }
+  }
   if (editorSnapshot.unreadable) return { allowed: false, reason: 'editor_unreadable' }
   if (
     editorSnapshot.loading ||
@@ -170,6 +181,7 @@ export function ResearchDraftComposer({
   onSend,
   onRetrySave,
   onRestoreDraft,
+  localDraftMode = false,
 }: ResearchDraftComposerProps) {
   const { t } = useTranslation()
   const [localDraft, setLocalDraft] = useState('')
@@ -177,7 +189,7 @@ export function ResearchDraftComposer({
   const composingRef = useRef(false)
 
   const value = editorSnapshot === null ? localDraft : editorSnapshot.draftText
-  const saveState = researchDraftSaveState(editorSnapshot)
+  const saveState = localDraftMode ? 'clean' : researchDraftSaveState(editorSnapshot)
   const connectionBusy = conversationSnapshot.isStreaming || conversationSnapshot.isBusy
 
   // 自动增高：先重置为 auto 再按 scrollHeight 截断；不改变文本内容。
@@ -229,22 +241,26 @@ export function ResearchDraftComposer({
   }
 
   const showRetry =
+    !localDraftMode &&
     editorSnapshot !== null &&
     (editorSnapshot.saveFailure !== null || editorSnapshot.phase === 'blocked')
   const restoreCandidate = editorSnapshot?.restoreCandidates?.[0] ?? null
-  const showRestore = restoreCandidate !== null && onRestoreDraft !== undefined
+  const showRestore =
+    !localDraftMode && restoreCandidate !== null && onRestoreDraft !== undefined
 
   return (
     <div className="shrink-0 space-y-1.5 border-t px-4 py-2" data-testid="research-draft-composer">
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <p
-          className="min-w-0 text-xs text-muted-foreground"
-          role="status"
-          aria-live="polite"
-          data-testid="research-draft-save-state"
-        >
-          {saveStateText}
-        </p>
+        {!localDraftMode && (
+          <p
+            className="min-w-0 text-xs text-muted-foreground"
+            role="status"
+            aria-live="polite"
+            data-testid="research-draft-save-state"
+          >
+            {saveStateText}
+          </p>
+        )}
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           {showRetry && (
             <Button
@@ -280,7 +296,7 @@ export function ResearchDraftComposer({
           rows={1}
           className="min-h-[36px] w-full min-w-0 resize-none rounded-md border bg-background px-3 py-2 text-sm"
           placeholder={t('research.chatPlaceholder')}
-          aria-label={t('research.chatSend')}
+          aria-label={t('research.editor.composerLabel')}
           aria-describedby={gateReasonText !== null ? 'research-draft-gate-hint' : undefined}
           onChange={event => handleChange(event.target.value)}
           onKeyDown={handleKeyDown}

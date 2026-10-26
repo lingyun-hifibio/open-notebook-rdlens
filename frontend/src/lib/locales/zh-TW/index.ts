@@ -984,6 +984,8 @@ export const zhTW = {
       legacyScopeReselection: 'The previous scope could not be restored — choose sources again',
       unconfirmedItems: 'Some selected items are not in the current authorized list — review them',
       restoreDraft: 'Restore draft',
+      composerLabel: 'Message input',
+      invalidDraft: 'Draft contains characters that cannot be sent — remove or replace them before sending',
     },
     errors: {
       acceptanceRetryExhausted: 'Your submission is pending confirmation — its result could not be verified automatically. Retry with the original attempt or review it before sending again.',
