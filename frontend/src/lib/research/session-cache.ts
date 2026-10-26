@@ -20,7 +20,9 @@
  *   且本地版本对应的记录；旧分支作恢复候选，不自动删除。
  */
 
+import { SESSION_CONTRACT_VERSION } from './session-contract'
 import type { ResearchAcceptanceState, ResearchSessionRef } from './session-contract'
+import { canonicalJson, type CanonicalJsonValue } from './session-idempotency'
 
 /** 缓存键前缀（02 §6）。 */
 export const SESSION_CACHE_PREFIX = 'rdlens.research.session.v1' as const
@@ -166,6 +168,12 @@ interface CacheEntry {
 const memoryFallback = new Map<string, string>()
 
 /**
+ * 删除持久值失败时的墓碑：后续读取返回 null，防止旧的持久值“复活”
+ * （review F8：T2 降级覆盖后删除失败，不得再读回 T1）。
+ */
+const removedKeys = new Set<string>()
+
+/**
  * 解析默认 Storage：只在浏览器且 `localStorage` 可访问时返回；
  * SSR / 隐私模式抛错时返回 null（调用方退回内存）。
  */
@@ -197,6 +205,8 @@ function classifyStorageError(error: unknown): SessionCacheWriteReason {
 }
 
 function readRaw(entry: CacheEntry, key: string): { value: string | null; reason: SessionCacheWriteReason } {
+  // 删除失败的墓碑优先：旧持久值不得复活。
+  if (removedKeys.has(key)) return { value: null, reason: null }
   // 内存兜底代表“本进程最近一次成功写入”（持久化失败时的降级副本），
   // 必须优先于可能已过期的持久值返回（DESIGN §3.5 durable 不是权威）。
   const fallbackValue = entry.fallback.get(key)
@@ -214,6 +224,7 @@ function writeRaw(
   key: string,
   value: string,
 ): { persisted: boolean; reason: SessionCacheWriteReason } {
+  removedKeys.delete(key)
   if (entry.storage) {
     try {
       entry.storage.setItem(key, value)
@@ -230,11 +241,16 @@ function writeRaw(
 
 function removeRaw(entry: CacheEntry, key: string): void {
   entry.fallback.delete(key)
-  if (!entry.storage) return
+  if (!entry.storage) {
+    removedKeys.add(key)
+    return
+  }
   try {
     entry.storage.removeItem(key)
   } catch {
-    // 删除失败不阻断清理流程；内存兜底已删除
+    // 删除失败不阻断清理流程，但必须留墓碑：内存兜底已删除、旧持久值
+    // 不得在后续读取中复活（review F8）。
+    removedKeys.add(key)
   }
 }
 
@@ -646,7 +662,7 @@ export function writeSubmissionMarker(
   marker: SessionSubmissionMarker,
   options?: CacheOptions,
 ): SessionCacheWriteResult {
-  const sanitized = sanitizeSubmissionMarker(marker)
+  const sanitized = sanitizeSubmissionMarker(marker, ref)
   if (sanitized === null) {
     return { ok: false, persisted: false, degraded: true, reason: null }
   }
@@ -680,27 +696,84 @@ function isPlainJsonObject(value: unknown): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null
 }
 
-function sanitizeSubmissionMarker(marker: SessionSubmissionMarker): SessionSubmissionMarker | null {
+/**
+ * 校验请求路径确实指向该会话的提交端点（project/session 身份一致）。
+ * 允许原始或百分号编码的段。
+ */
+function pathMatchesSessionRef(path: string, ref: ResearchSessionRef): boolean {
+  if (!path.startsWith('/v1/research/projects/')) return false
+  if (!path.endsWith('/submissions')) return false
+  const projectCandidates = [ref.projectId, encodeURIComponent(ref.projectId)]
+  const sessionCandidates = [ref.sessionId, encodeURIComponent(ref.sessionId)]
+  const projectOk = projectCandidates.some((candidate) => path.includes(`/projects/${candidate}/`))
+  const sessionOk = sessionCandidates.some((candidate) => path.includes(`/${candidate}/submissions`))
+  return projectOk && sessionOk
+}
+
+/** 请求体必须是无损可 JSON 往返的普通对象（不接受 undefined/NaN/Map 等）。 */
+function isLosslessJsonBody(value: unknown): value is Record<string, unknown> {
+  if (!isPlainJsonObject(value)) return false
+  let serialized: string
+  try {
+    serialized = canonicalJson(value as CanonicalJsonValue)
+  } catch {
+    return false
+  }
+  try {
+    const roundTrip: unknown = JSON.parse(serialized)
+    return JSON.stringify(roundTrip) === serialized
+  } catch {
+    return false
+  }
+}
+
+/** 请求体里与身份相关的字段必须与 ref/token 一致（若出现）。 */
+function markerBodyMatches(
+  body: Readonly<Record<string, unknown>>,
+  marker: SessionSubmissionMarker,
+  ref: ResearchSessionRef,
+): boolean {
+  if (body.draft_token !== marker.draftToken) return false
+  const expected: ReadonlyArray<[string, unknown]> = [
+    ['project_id', ref.projectId],
+    ['session_id', ref.sessionId],
+    ['kind', ref.kind],
+    ['source_id', ref.sourceId],
+  ]
+  for (const [field, value] of expected) {
+    if (field in body && body[field] !== value) return false
+  }
+  return true
+}
+
+/**
+ * 持久化边界校验（review F10）：请求必须可无损重放——
+ * 方法/路径/token/幂等键/scope 与 ref 一致，body 无损 JSON，头只留白名单。
+ * 不满足时拒绝写入，而不是静默截断或保留 `exactRequestAvailable:true`。
+ */
+function sanitizeSubmissionMarker(
+  marker: SessionSubmissionMarker,
+  ref: ResearchSessionRef,
+): SessionSubmissionMarker | null {
   if (marker.request === null) {
     return marker.exactRequestAvailable ? null : marker
   }
   if (!marker.exactRequestAvailable) return null
-  if (!isPlainJsonObject(marker.request.body)) return null
-  let roundTrip: unknown
-  try {
-    roundTrip = JSON.parse(JSON.stringify(marker.request.body))
-  } catch {
-    return null
-  }
-  if (!isRecord(roundTrip)) return null
-  const headers = persistableSubmissionHeaders(marker.request.headers)
+  const request = marker.request
+  if (request.method !== 'POST') return null
+  if (typeof request.path !== 'string' || !pathMatchesSessionRef(request.path, ref)) return null
+  if (!isLosslessJsonBody(request.body)) return null
+  if (!markerBodyMatches(request.body, marker, ref)) return null
+  const headers = persistableSubmissionHeaders(request.headers)
+  if (headers['X-Research-Session-Contract'] !== SESSION_CONTRACT_VERSION) return null
+  if (headers['Idempotency-Key'] !== marker.idempotencyKey) return null
   return {
     ...marker,
     request: {
-      method: marker.request.method,
-      path: marker.request.path,
+      method: 'POST',
+      path: request.path,
       headers,
-      body: roundTrip,
+      body: request.body,
     },
   }
 }
@@ -884,4 +957,5 @@ export function purgeViewerScope(
 /** 测试用：清空内存兜底（不接触真实 localStorage）。 */
 export function clearSessionCacheMemoryFallback(): void {
   memoryFallback.clear()
+  removedKeys.clear()
 }

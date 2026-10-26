@@ -30,6 +30,7 @@ import {
   type SessionCacheScope,
   type SessionCacheStorage,
   type SessionDraftRecord,
+  type SessionSubmissionRequestSnapshot,
   type SessionSubmissionMarker,
 } from './session-cache'
 import type { ResearchSessionRef } from './session-contract'
@@ -44,6 +45,7 @@ import type { ResearchSessionRef } from './session-contract'
 class MapStorage implements SessionCacheStorage {
   readonly map = new Map<string, string>()
   failWith: Error | null = null
+  failRemove: Error | null = null
 
   get length(): number {
     return this.map.size
@@ -63,6 +65,7 @@ class MapStorage implements SessionCacheStorage {
   }
 
   removeItem(key: string): void {
+    if (this.failRemove) throw this.failRemove
     this.map.delete(key)
   }
 }
@@ -116,7 +119,7 @@ function draftRecord(overrides: Partial<SessionDraftRecord> = {}): SessionDraftR
 }
 
 function marker(overrides: Partial<SessionSubmissionMarker> = {}): SessionSubmissionMarker {
-  return {
+  const merged: SessionSubmissionMarker = {
     version: 1,
     draftToken: 'draft_token_1',
     idempotencyKey: `s1_${'c'.repeat(64)}`,
@@ -126,7 +129,6 @@ function marker(overrides: Partial<SessionSubmissionMarker> = {}): SessionSubmis
       path: '/v1/research/projects/proj_1/chat/sessions/sess_global/submissions',
       headers: persistableSubmissionHeaders({
         'X-Research-Session-Contract': 'research-session-v1',
-        'Idempotency-Key': `s1_${'c'.repeat(64)}`,
       }),
       body: { draft_token: 'draft_token_1', text: 'hello' },
     },
@@ -138,6 +140,25 @@ function marker(overrides: Partial<SessionSubmissionMarker> = {}): SessionSubmis
     terminalAt: null,
     ...overrides,
   }
+  const request = merged.request
+  if (request === null || !merged.exactRequestAvailable) return merged
+  if (!isPlainObjectBody(request.body)) return merged
+  // 让 fixture 与 marker 的 token/幂等键保持一致（生产由调用方构造，测试统一收口）。
+  return {
+    ...merged,
+    request: {
+      ...request,
+      headers: {
+        ...request.headers,
+        'Idempotency-Key': merged.idempotencyKey,
+      },
+      body: { ...request.body, draft_token: merged.draftToken },
+    },
+  }
+}
+
+function isPlainObjectBody(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && Object.getPrototypeOf(value) === Object.prototype
 }
 
 beforeEach(() => {
@@ -452,8 +473,10 @@ describe('session-cache: review 补证（编码分区 / quota 优先级 / 写入
         method: 'POST',
         path: '/v1/research/projects/proj_1/chat/sessions/sess_global/submissions',
         headers: {
-          'X-Research-Session-Contract': 'research-session-v1',
-          'X-Research-Contract': 'c05-v1',
+          ...persistableSubmissionHeaders({
+            'X-Research-Session-Contract': 'research-session-v1',
+            'Idempotency-Key': `s1_${'c'.repeat(64)}`,
+          }),
           Authorization: 'Bearer secret-token',
           Cookie: 'session=abc',
         },
@@ -464,14 +487,62 @@ describe('session-cache: review 补证（编码分区 / quota 优先级 / 写入
     const persisted = readSubmissionMarker(scope, authorityFor(), globalRef, 'draft_token_1', { storage })
     expect(persisted?.request?.headers).toEqual({
       'X-Research-Session-Contract': 'research-session-v1',
-      'X-Research-Contract': 'c05-v1',
+      'Idempotency-Key': `s1_${'c'.repeat(64)}`,
     })
     expect(JSON.stringify(persisted)).not.toContain('secret-token')
     expect(JSON.stringify(persisted)).not.toContain('session=abc')
-    // body 不是可 JSON 往返的普通对象时不得声明可重放
-    const invalidBody = marker({
-      request: { method: 'POST', path: '/p', headers: {}, body: new Map([['a', 1]]) },
-    } as Partial<SessionSubmissionMarker>)
-    expect(writeSubmissionMarker(scope, globalRef, invalidBody, { storage }).ok).toBe(false)
+
+    // 以下请求快照不完整/不再指向本会话，均不得声明可重放（review F10）。
+    const request = unsafeMarker.request
+    if (request === null) throw new Error('fixture requires request')
+    const requestBody = request.body as Record<string, unknown>
+    const rejected = [
+      // 错误的项目路径
+      { ...request, path: '/v1/research/projects/proj_other/chat/sessions/sess_global/submissions' },
+      // 错误的会话路径
+      { ...request, path: '/v1/research/projects/proj_1/chat/sessions/sess_other/submissions' },
+      // 非 POST
+      { ...request, method: 'PUT' },
+      // body 不是普通 JSON 对象
+      { ...request, body: new Map([['a', 1]]) },
+      // body 含不可无损往返的 NaN
+      { ...request, body: { ...requestBody, n: Number.NaN } },
+      // body 缺少 draft_token
+      { ...request, body: { text: 'hello' } },
+      // body draft_token 与标记不一致
+      { ...request, body: { ...requestBody, draft_token: 'draft_other' } },
+      // 缺少幂等键头
+      { ...request, headers: { 'X-Research-Session-Contract': 'research-session-v1' } },
+      // 幂等键头与标记不一致
+      {
+        ...request,
+        headers: { ...request.headers, 'Idempotency-Key': `s1_${'d'.repeat(64)}` },
+      },
+      // 契约头不是 research-session-v1
+      {
+        ...request,
+        headers: { ...request.headers, 'X-Research-Session-Contract': 'research-session-v0' },
+      },
+    ] as unknown as SessionSubmissionRequestSnapshot[]
+    for (const invalid of rejected) {
+      const candidate: SessionSubmissionMarker = { ...unsafeMarker, request: invalid }
+      expect(writeSubmissionMarker(scope, globalRef, candidate, { storage }).ok).toBe(false)
+    }
+  })
+
+  it('取消草稿时持久删除失败也不得让旧值复活（review F8）', () => {
+    const storage = new MapStorage()
+    // T1 成功持久化
+    expect(writeDraft(scope, globalRef, 'writer_a', draftRecord({ text: 'T1' }), { storage }).persisted).toBe(true)
+    // T2 降级写内存兜底
+    storage.failWith = new Error('quota')
+    expect(writeDraft(scope, globalRef, 'writer_a', draftRecord({ text: 'T2' }), { storage }).persisted).toBe(false)
+    storage.failWith = null
+    // 删除持久值失败（例如隐私模式/配额清理异常）
+    storage.failRemove = new Error('remove failed')
+    expect(removeDraft(scope, globalRef, 'writer_a', { storage })).toBe(true)
+    storage.failRemove = null
+    // 墓碑生效：不得读回旧持久值 T1
+    expect(readDraft(scope, authorityFor(), globalRef, 'writer_a', { storage })).toBeNull()
   })
 })

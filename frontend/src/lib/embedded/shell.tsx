@@ -87,8 +87,13 @@ export function ResearchWorkspaceShell({ children }: { children?: React.ReactNod
         } else if (
           previous.userId !== undefined &&
           next.userId !== undefined &&
-          previous.userId !== next.userId
+          (previous.userId !== next.userId ||
+            (previous.projectId !== undefined &&
+              next.projectId !== undefined &&
+              previous.projectId !== next.projectId))
         ) {
+          // viewer 或项目变化：旧实例按 viewer-change 语义失效并清理旧分区；
+          // 新 key 会重建 runtime（review N1）。
           runtime.dispose('viewer-change')
         }
       }
@@ -163,6 +168,10 @@ export function ResearchWorkspaceShell({ children }: { children?: React.ReactNod
         authGeneration={authGeneration}
       >
         <ResearchSessionRuntimeProvider
+          // viewer/project 变化必须重建 runtime 实例：旧实例已 dispose，
+          // 复用会被拒绝 updateAuth/start（review N1）；authGeneration
+          // 刷新同一 viewer 不换 key（保留 editor store/内存脏稿）。
+          key={`${identity.userId}:${identity.projectId}`}
           authGeneration={authGeneration}
           projectId={identity.projectId}
           viewerUserId={identity.userId}

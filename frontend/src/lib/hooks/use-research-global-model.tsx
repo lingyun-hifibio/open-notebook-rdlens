@@ -205,6 +205,9 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
   }, [authGeneration, projectId, role, userId])
   const identityRef = useRef<ResearchQueryIdentity | null>(researchIdentity)
   identityRef.current = researchIdentity
+  // runGuarded 必须绑定“调用时闭包携带的身份”，而不是执行时再读 ref：
+  // 旧闭包在身份变化后不得用新身份重新通过校验（review F4）。
+  const identityAtRender = researchIdentity
 
   const modelCatalogKey = researchIdentity
     ? researchModelCatalogIdentityKey(researchIdentity)
@@ -398,6 +401,8 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
     setSaveModelError(null)
     try {
       await modelPatch.mutateAsync({ input: { preferred_model_id: null }, identity: dispatchIdentity })
+      // 旧代 clear 的迟到成功不得覆盖新代本地选择（review F3）。
+      if (!isIdentityCurrent(dispatchIdentity)) return
       setDraftModelId(null)
       setDraftTouched(false)
     } catch (err) {
@@ -575,7 +580,9 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
       },
     ): Promise<T | undefined> => {
       const snapshot = confirmedModelId
-      const dispatchIdentity = identityRef.current
+      // 绑定本次渲染时的身份：旧闭包调用时既有权限/consent 判断与身份一致，
+      // 身份变化后 isIdentityCurrent 必然判旧（review F4）。
+      const dispatchIdentity = identityAtRender
       if (!mountedRef.current) {
         options?.onCompletion?.({
           dispatched: false,
@@ -603,15 +610,22 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
           return undefined
         }
         // 直发也必须显式 completion（释放 hold 不依赖 Promise finally）；
-        // 执行体抛错时同样结算一次。
+        // 执行体抛错时同样结算一次。completion 放在 try 之外，避免回调自身
+        // 抛错导致二次结算或遮蔽执行体异常（review N2）。
+        let result: T
         try {
-          const result = await operation(snapshot)
-          options?.onCompletion?.({ dispatched: true, modelId: snapshot })
-          return result
+          result = await operation(snapshot)
         } catch (error) {
-          options?.onCompletion?.({ dispatched: true, modelId: snapshot })
+          // completion 回调自身异常不得遮蔽执行体原异常（review N2）。
+          try {
+            options?.onCompletion?.({ dispatched: true, modelId: snapshot })
+          } catch {
+            // 释放 hold 的通知失败不改变执行结果语义
+          }
           throw error
         }
+        options?.onCompletion?.({ dispatched: true, modelId: snapshot })
+        return result
       }
       // 外部模型且 consent 未生效：single-flight，只登记不执行。
       // pendingRegistrationRef（同步 ref）同时检查：同 tick 内第二次调用时
@@ -643,7 +657,7 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
       setIsConsentPromptOpen(true)
       return undefined
     },
-    [canExecute, confirmedModelId, isConsentPromptOpen, isIdentityCurrent, needsConsent],
+    [canExecute, confirmedModelId, identityAtRender, isConsentPromptOpen, isIdentityCurrent, needsConsent],
   )
 
   // K10：弹窗仅在打开且本次派发登记了 Scope 摘要时展示（K5）；未登记派发

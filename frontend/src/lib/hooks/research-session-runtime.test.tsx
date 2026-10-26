@@ -78,6 +78,7 @@ import {
   type SessionDraftRecord,
 } from '@/lib/research/session-cache'
 import { useResearchNotes, useResearchSources } from '@/lib/hooks/use-research'
+import { sessionKey } from '@/lib/research/session-contract'
 import {
   ResearchGlobalModelProvider,
   useResearchGlobalModel,
@@ -163,7 +164,7 @@ function okTransport(viewerUserId: string | number = VIEWER): SessionRuntimeTran
   return transport as SessionRuntimeTransport & { calls: number }
 }
 
-function draftRecord(): SessionDraftRecord {
+function draftRecord(overrides: Partial<SessionDraftRecord> = {}): SessionDraftRecord {
   return {
     version: 1,
     text: '内存 dirty 稿',
@@ -175,6 +176,7 @@ function draftRecord(): SessionDraftRecord {
     baseRevision: 3,
     savedAt: NOW,
     dirty: true,
+    ...overrides,
   }
 }
 
@@ -1248,5 +1250,305 @@ describe('review 补证：直发 completion / 执行失败 / ACK 在途身份与
     await waitFor(() => expect(capture.signal?.aborted).toBe(true))
     expect(client.getQueryData(['research', P, 'notes', '', 'research-identity', { role: 'owner', projectId: P, viewerUserId: VIEWER, authGeneration: 1 }])).toBeUndefined()
     await waitFor(() => expect(vi.mocked(listNotes)).toHaveBeenCalledTimes(2))
+  })
+})
+
+// ── review 二次聚焦复核补证：F5 / F9 / N3 / F11 / F3 / F4 / N2 ─────────────
+
+describe('review 二次复核：遮蔽竞态、清理归属、跨 source、身份绑定', () => {
+  it('bootstrap 在途时外部 masked 保持：成功响应不得解除遮蔽或发放授权（review F5）', async () => {
+    const storage = new MapStorage()
+    let resolveBootstrap!: (outcome: SessionRuntimeBootstrapOutcome) => void
+    const transport: SessionRuntimeTransport = {
+      bootstrap: vi.fn(
+        () =>
+          new Promise<SessionRuntimeBootstrapOutcome>((resolve) => {
+            resolveBootstrap = resolve
+          }),
+      ),
+    }
+    const runtime = createSessionRuntime({
+      authGeneration: 1,
+      projectId: P,
+      viewerUserId: VIEWER,
+      role: 'owner',
+      storage,
+      transport,
+    })
+    runtime.setMasked(true)
+    runtime.start()
+    expect(runtime.getSnapshot().masked).toBe(true)
+    resolveBootstrap({ status: 'ok', viewerUserId: VIEWER, capabilities: CAPABILITIES })
+    await waitFor(() => expect(runtime.getSnapshot().lastBootstrap).toBe('ok'))
+    // 外部仍要求遮蔽：不得 ready / 不得发放本机分区授权
+    expect(runtime.getSnapshot().masked).toBe(true)
+    expect(runtime.getSnapshot().phase).toBe('masked')
+    expect(runtime.cacheAuthority()).toBeNull()
+    expect(runtime.identity()).toBeNull()
+    // 解除遮蔽后才 ready 并恢复授权
+    runtime.setMasked(false)
+    await waitFor(() => expect(runtime.getSnapshot().phase).toBe('ready'))
+    expect(runtime.cacheAuthority()).not.toBeNull()
+  })
+
+  it('viewer 不一致时只清旧 viewer 分区；随后 dispose 不得误清服务端新 viewer（review F9）', async () => {
+    const storage = new MapStorage()
+    const otherViewer = '999'
+    const ownerAuth: SessionCacheAuthority = {
+      authenticatedViewerUserId: VIEWER,
+      projectId: P,
+      authGeneration: 1,
+      currentAuthGeneration: 1,
+    }
+    const otherAuth: SessionCacheAuthority = {
+      authenticatedViewerUserId: otherViewer,
+      projectId: P,
+      authGeneration: 1,
+      currentAuthGeneration: 1,
+    }
+    writeDraft({ viewerUserId: VIEWER, projectId: P }, globalRef, 'writer_a', draftRecord(), { storage })
+    writeDraft(
+      { viewerUserId: otherViewer, projectId: P },
+      globalRef,
+      'writer_b',
+      draftRecord({ text: '新 viewer 稿' }),
+      { storage },
+    )
+    const runtime = createSessionRuntime({
+      authGeneration: 1,
+      projectId: P,
+      viewerUserId: VIEWER,
+      role: 'owner',
+      storage,
+      transport: okTransport(otherViewer),
+    })
+    runtime.start()
+    await waitFor(() => expect(runtime.getSnapshot().phase).toBe('viewer_changed'))
+    // 旧 viewer 分区清理
+    expect(
+      readDraft({ viewerUserId: VIEWER, projectId: P }, ownerAuth, globalRef, 'writer_a', { storage }),
+    ).toBeNull()
+    // 未重新确认前 dispose 不得按新旧任一未确认 viewer 清理
+    runtime.dispose('logout')
+    expect(
+      readDraft({ viewerUserId: otherViewer, projectId: P }, otherAuth, globalRef, 'writer_b', {
+        storage,
+      })?.text,
+    ).toBe('新 viewer 稿')
+  })
+
+  it('display 钉住 source 且 ref=null 时不得跨 source 恢复（review N3）', async () => {
+    const storage = new MapStorage()
+    const scope = { viewerUserId: VIEWER, projectId: P }
+    writePointer(scope, 'source', 'src_a', sourceRef, NOW, { storage })
+    writeDisplayPointer(scope, { version: 1, surface: 'source', sourceId: 'src_b', ref: null }, { storage })
+    const runtime = createSessionRuntime({
+      authGeneration: 1,
+      projectId: P,
+      viewerUserId: VIEWER,
+      role: 'owner',
+      storage,
+      transport: okTransport(),
+    })
+    runtime.start()
+    await waitFor(() => expect(runtime.getSnapshot().phase).toBe('ready'))
+    expect(runtime.active('source')).toBeNull()
+  })
+
+  it('MutationRecord 复制并冻结身份引用：改写原 ref/请求体不影响记录（review F11）', () => {
+    const ref = { ...globalRef }
+    const body = { note_ids: ['a'] as string[], nested: { text: 'x' } }
+    const record = createMutationRecord({
+      mutationId: 'mut_ref',
+      kind: 'save',
+      ref: ref as ResearchSessionRef,
+      requestBody: body,
+      baseRevision: 1,
+      createdAt: NOW,
+    })
+    ref.sessionId = 'sess_hacked'
+    body.note_ids.push('b')
+    body.nested.text = 'y'
+    expect(record.ref.sessionId).toBe('sess_global')
+    expect(record.sessionKey).toBe(sessionKey(globalRef))
+    expect(Object.isFrozen(record.ref)).toBe(true)
+    expect(record.requestBody.note_ids).toEqual(['a'])
+    expect((record.requestBody.nested as { text: string }).text).toBe('x')
+  })
+
+  it('clearModel 迟到成功不得覆盖新代本地选择（review F3）', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    vi.mocked(listModels).mockResolvedValue({ models: MODELS })
+    vi.mocked(getExecutionPreferences).mockResolvedValue(PREFS_LOCAL)
+    vi.mocked(getExternalEgressConsent).mockResolvedValue(CONSENT_MISSING)
+    let resolvePatch!: (value: typeof PREFS_NULL) => void
+    vi.mocked(patchExecutionPreferences).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvePatch = resolve
+        }),
+    )
+    const { rerender } = render(<GlobalModelApp client={client} authGeneration={1} />)
+    await waitFor(() => expect(latestGlobalModel?.confirmedModelId).toBe('m-local'))
+    let clearPromise: Promise<void> | undefined
+    act(() => {
+      clearPromise = latestGlobalModel?.clearModel()
+    })
+    // 等 mutationFn 真正派出（此时 PATCH 挂起）
+    await waitFor(() => expect(vi.mocked(patchExecutionPreferences)).toHaveBeenCalledTimes(1))
+    // 切换新代后服务端偏好变为 m-ext（旧代 clear 仍在途）
+    vi.mocked(getExecutionPreferences).mockResolvedValue(PREFS_EXT)
+    rerender(<GlobalModelApp client={client} authGeneration={2} />)
+    await waitFor(() => expect(latestGlobalModel?.confirmedModelId).toBe('m-ext'))
+    await act(async () => {
+      resolvePatch(PREFS_NULL)
+      await clearPromise?.catch(() => undefined)
+    })
+    // 旧代 clear 的本地 setDraftModelId(null) 必须被身份守卫拦下
+    expect(latestGlobalModel?.draftModelId).toBe('m-ext')
+  })
+
+  it('旧闭包 runGuarded 在身份变化后不执行，completion identity-changed（review F4）', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    vi.mocked(listModels).mockResolvedValue({ models: MODELS })
+    vi.mocked(getExecutionPreferences).mockResolvedValue(PREFS_LOCAL)
+    vi.mocked(getExternalEgressConsent).mockResolvedValue(CONSENT_MISSING)
+    const { rerender } = render(<GlobalModelApp client={client} authGeneration={1} role="owner" />)
+    await waitFor(() => expect(latestGlobalModel?.canExecute).toBe(true))
+    // 旧闭包（owner/gen1）持有当时的权限/模型判断
+    const staleRunGuarded = latestGlobalModel!.runGuarded
+    rerender(<GlobalModelApp client={client} authGeneration={2} role="admin_readonly" />)
+    await waitFor(() => expect(latestGlobalModel?.canExecute).toBe(false))
+    const operation = vi.fn(() => 'ok')
+    const completions: GuardedOperationCompletion[] = []
+    await act(async () => {
+      const result = await staleRunGuarded(operation, {
+        onCompletion: (completion) => completions.push(completion),
+      })
+      expect(result).toBeUndefined()
+    })
+    expect(operation).not.toHaveBeenCalled()
+    expect(completions).toEqual([
+      { dispatched: false, reason: 'identity-changed', modelId: 'm-local' },
+    ])
+  })
+
+  it('执行体抛错且 completion 也抛错：保留执行体原异常且只结算一次（review N2）', async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    vi.mocked(listModels).mockResolvedValue({ models: MODELS })
+    vi.mocked(getExecutionPreferences).mockResolvedValue(PREFS_LOCAL)
+    vi.mocked(getExternalEgressConsent).mockResolvedValue(CONSENT_MISSING)
+    render(<GlobalModelApp client={client} authGeneration={1} />)
+    await waitFor(() => expect(latestGlobalModel?.canExecute).toBe(true))
+    const operation = vi.fn(() => {
+      throw new Error('exec boom')
+    })
+    const completions: GuardedOperationCompletion[] = []
+    await act(async () => {
+      await expect(
+        latestGlobalModel!.runGuarded(operation, {
+          onCompletion: (completion) => {
+            completions.push(completion)
+            throw new Error('callback boom')
+          },
+        }),
+      ).rejects.toThrow('exec boom')
+    })
+    expect(completions).toHaveLength(1)
+  })
+})
+
+describe('review 三次复核：bootstrap 错误遮蔽与重试入口（Lead F-M1 / F-M2）', () => {
+  function errorTransport(): SessionRuntimeTransport & { calls: number } {
+    const transport = {
+      calls: 0,
+      bootstrap: vi.fn(async (): Promise<SessionRuntimeBootstrapOutcome> => {
+        transport.calls += 1
+        return { status: 'error', code: 'session_store_unavailable', retryable: true }
+      }),
+    }
+    return transport as SessionRuntimeTransport & { calls: number }
+  }
+
+  it('bootstrap 5xx 保持遮蔽：error 阶段 setMasked(false) 不得显示未遮蔽（F-M1）', async () => {
+    const runtime = createSessionRuntime({
+      authGeneration: 1,
+      projectId: P,
+      viewerUserId: VIEWER,
+      role: 'owner',
+      transport: errorTransport(),
+    })
+    runtime.start()
+    await waitFor(() => expect(runtime.getSnapshot().phase).toBe('error'))
+    expect(runtime.getSnapshot().masked).toBe(true)
+    expect(runtime.identity()).toBeNull()
+    expect(runtime.cacheAuthority()).toBeNull()
+    // shell 在 error→authenticated 过渡会以 masked=false 重渲染；不得解除遮蔽
+    runtime.setMasked(false)
+    expect(runtime.getSnapshot().masked).toBe(true)
+    expect(runtime.getSnapshot().lastBootstrap).toBe('error')
+  })
+
+  it('Provider：bootstrap 5xx 后已渲染内容仍处于遮蔽（F-M1）', async () => {
+    function PhaseProbe() {
+      const snapshot = useSessionSnapshot()
+      return (
+        <span data-testid="runtime-phase">
+          {snapshot.phase}:{String(snapshot.masked)}
+        </span>
+      )
+    }
+    render(
+      <ResearchSessionRuntimeProvider
+        authGeneration={1}
+        projectId={P}
+        viewerUserId={VIEWER}
+        role="owner"
+        transport={errorTransport()}
+      >
+        <PhaseProbe />
+      </ResearchSessionRuntimeProvider>,
+    )
+    await waitFor(() =>
+      expect(screen.getByTestId('runtime-phase').textContent).toBe('error:true'),
+    )
+  })
+
+  it('error 后 retryBootstrap：bootstrapping→ready；重复/非 error 调用被拒绝（F-M2）', async () => {
+    let calls = 0
+    let resolveRetry!: (outcome: SessionRuntimeBootstrapOutcome) => void
+    const transport: SessionRuntimeTransport = {
+      bootstrap: vi.fn(() => {
+        calls += 1
+        if (calls === 1) {
+          return Promise.resolve<SessionRuntimeBootstrapOutcome>({
+            status: 'error',
+            code: 'bootstrap_failed',
+            retryable: true,
+          })
+        }
+        return new Promise<SessionRuntimeBootstrapOutcome>((resolve) => {
+          resolveRetry = resolve
+        })
+      }),
+    }
+    const runtime = createSessionRuntime({
+      authGeneration: 1,
+      projectId: P,
+      viewerUserId: VIEWER,
+      role: 'owner',
+      transport,
+    })
+    runtime.start()
+    await waitFor(() => expect(runtime.getSnapshot().phase).toBe('error'))
+    expect(runtime.retryBootstrap()).toBe(true)
+    expect(runtime.getSnapshot().phase).toBe('bootstrapping')
+    expect(runtime.getSnapshot().lastBootstrap).toBe('pending')
+    // 在途期间重复调用不得产生第二次 bootstrap
+    expect(runtime.retryBootstrap()).toBe(false)
+    expect(transport.bootstrap).toHaveBeenCalledTimes(2)
+    resolveRetry({ status: 'ok', viewerUserId: VIEWER, capabilities: CAPABILITIES })
+    await waitFor(() => expect(runtime.getSnapshot().phase).toBe('ready'))
+    expect(runtime.retryBootstrap()).toBe(false)
   })
 })

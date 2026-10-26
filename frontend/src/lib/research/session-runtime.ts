@@ -200,7 +200,8 @@ export function createMutationRecord(input: CreateMutationRecordInput): Mutation
     mutationId: input.mutationId,
     kind: input.kind,
     sessionKey: sessionKey(input.ref),
-    ref: input.ref,
+    // 身份引用与本记录一起冻结/复制：调用方改写原 ref 不得改变记录身份（review F11）。
+    ref: Object.freeze({ ...input.ref }),
     requestBody,
     baseRevision: input.baseRevision ?? null,
     draftToken: input.draftToken ?? null,
@@ -329,6 +330,11 @@ export interface SessionRuntime {
   readonly subscribe: (listener: () => void) => () => void
   /** 启动 bootstrap（按 `{authGeneration, projectId, viewer}` 去重，StrictMode 安全）。 */
   readonly start: () => void
+  /**
+   * 重试 bootstrap：仅 error 态可用（DESIGN §3.2「5xx/网络错误可重试」）；
+   * 递增尝试代际、不产生重复 bootstrap；其他阶段返回 false。
+   */
+  readonly retryBootstrap: () => boolean
   /** 认证代际/项目/viewer 变化；同 viewer refresh 保留内存态与活动会话。 */
   readonly updateAuth: (scope: SessionRuntimeScope) => void
   readonly setMasked: (masked: boolean) => void
@@ -377,6 +383,12 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
   // 只有 bootstrap 成功（服务端 list 确认 viewer）后才允许读 viewer 分区；
   // 未接线/遮蔽/旧代时不得把 claims 当成确认结果（DESIGN §3.2/§3.5）。
   let viewerConfirmed = false
+  // 外部遮蔽（shell error 态等）与运行时内部遮蔽分开记录：bootstrap 成功
+  // 不得吞掉外部遮蔽要求（review F5）。
+  let maskedExternally = false
+  // 服务端 viewer 与 claims viewer 不一致后、重新确认前，不得按任一 viewer
+  // 清理本机分区（review F9）。
+  let viewerMismatch = false
 
   const state: MutableState = {
     scope: {
@@ -409,7 +421,13 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
       role: state.scope.role,
       capabilities: state.capabilities,
       ready: state.phase === 'ready',
-      masked: state.masked || state.phase === 'masked' || state.phase === 'bootstrapping',
+      // DESIGN §3.2：bootstrap 5xx/网络错误保持遮蔽；error 阶段即使外部
+      // 已经解除 masked prop，也不得显示为未遮蔽（Lead F-M1）。
+      masked:
+        state.masked ||
+        state.phase === 'masked' ||
+        state.phase === 'bootstrapping' ||
+        state.phase === 'error',
       unauthorized: state.phase === 'unauthorized',
       disposed: state.disposed,
       transportWired: transport !== null,
@@ -477,12 +495,13 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
     const global = displayGlobal ?? globalPointer?.ref ?? null
     // 两个 surface 各自从自己的指针恢复；display 只决定显示哪个 surface，
     // 不得让另一 surface 丢失（DESIGN §4.5）。
+    // display 已钉住具体 source 时不得跨 source 回退（review N3：显示 source 与
+    // 活动会话身份必须一致）。仅在 display 未指向 source 时才用最近 source 指针。
     const source = display?.surface === 'source'
-      ? display.ref ??
+      ? (display.ref ??
         readPointer(scope, authority, 'source', display.sourceId, { storage: storage() })?.ref ??
-        readLatestSourcePointer(scope, authority, { storage: storage() })?.ref ??
-        null
-      : readLatestSourcePointer(scope, authority, { storage: storage() })?.ref ?? null
+        null)
+      : (readLatestSourcePointer(scope, authority, { storage: storage() })?.ref ?? null)
     if (global !== null && global.kind !== 'global') return
     if (source !== null && source.kind !== 'source') return
     state.active = { global, source }
@@ -498,7 +517,7 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
   function start(): void {
     if (state.disposed || state.started) return
     state.started = true
-    state.masked = true
+    state.masked = maskedExternally
     if (transport === null) {
       // 未接线（PR-1）：不伪装真实接入。Admin artifacts 只读不依赖 Chat
       // bootstrap，可保持 ready；owner 在服务端确认 viewer 前必须保持遮蔽，
@@ -507,15 +526,21 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
       state.capabilities = degradedCapabilities('missing')
       state.viewerChanged = false
       if (state.scope.role === 'admin_readonly') {
-        state.masked = false
-        state.phase = 'ready'
+        state.masked = maskedExternally
+        state.phase = maskedExternally ? 'masked' : 'ready'
       } else {
-        state.masked = true
+        state.masked = maskedExternally
         state.phase = 'masked'
       }
       commit()
       return
     }
+    runBootstrapAttempt()
+  }
+
+  /** 发起一次 bootstrap 尝试；调用方负责 started/遮蔽等前置状态。 */
+  function runBootstrapAttempt(): void {
+    if (transport === null) return
     const attemptId = ++state.bootstrapAttemptId
     const captured = {
       authGeneration: state.scope.authGeneration,
@@ -527,6 +552,19 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
     state.lastBootstrap = 'pending'
     state.lastErrorCode = null
     commit()
+    runBootstrapOutcome(attemptId, captured)
+  }
+
+  function runBootstrapOutcome(
+    attemptId: number,
+    captured: {
+      readonly authGeneration: number
+      readonly projectId: string
+      readonly viewerUserId: string | null
+      readonly role: SessionRuntimeRole
+    },
+  ): void {
+    if (transport === null) return
     let outcome: Promise<SessionRuntimeBootstrapOutcome>
     try {
       outcome = transport.bootstrap(captured)
@@ -569,6 +607,7 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
           const staleScope = cacheScopeInternal()
           confirmedViewerUserId = serverViewer
           viewerConfirmed = false
+          viewerMismatch = true
           state.phase = 'viewer_changed'
           state.masked = true
           state.viewerChanged = true
@@ -582,13 +621,15 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
         }
         confirmedViewerUserId = serverViewer
         viewerConfirmed = true
+        viewerMismatch = false
         state.capabilities = result.capabilities
-        state.phase = 'ready'
-        state.masked = false
+        // 外部遮蔽（shell error 态）仍在时不得因 bootstrap 成功解除遮蔽（review F5）。
+        state.masked = maskedExternally
+        state.phase = maskedExternally ? 'masked' : 'ready'
         state.lastBootstrap = result.capabilities.degraded ? 'degraded' : 'ok'
         state.lastErrorCode = null
         state.viewerChanged = false
-        restoreActiveFromCache()
+        if (!maskedExternally) restoreActiveFromCache()
         commit()
       },
       (error: unknown) => {
@@ -599,6 +640,15 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
         commit()
       },
     )
+  }
+
+  function retryBootstrap(): boolean {
+    if (state.disposed || transport === null) return false
+    if (state.phase !== 'error') return false
+    state.started = true
+    state.masked = maskedExternally
+    runBootstrapAttempt()
+    return true
   }
 
   function dispose(reason: SessionRuntimeDisposeReason): void {
@@ -615,9 +665,12 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
     if (reason !== 'unmount') {
       // 先使写入失效，再清理本机分区（清理后不得再由 cleanup flush 旧稿）。
       invalidateGuards()
-      if (scope) purgeViewerScope(scope, { storage: storage() })
+      // 服务端 viewer 与 claims 不一致且尚未重新确认时，按任一 viewer 清理
+      // 都可能误删对方恢复数据（review F9）；旧 viewer 已在 mismatch 时清理。
+      if (scope && !viewerMismatch) purgeViewerScope(scope, { storage: storage() })
       purgeQueryCaches(state.scope.projectId, null)
     }
+    maskedExternally = false
     commit()
   }
 
@@ -694,12 +747,19 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
 
   function setMasked(masked: boolean): void {
     if (state.disposed) return
-    if (state.masked === masked) return
-    state.masked = masked
+    if (maskedExternally === masked && state.masked === masked) return
+    maskedExternally = masked
     if (masked) {
-      state.phase = 'masked'
-    } else if (state.phase === 'masked') {
-      state.phase = viewerConfirmed ? 'ready' : 'bootstrapping'
+      state.masked = true
+      // bootstrap 在途时保持 bootstrapping，成功响应回来后再按外部遮蔽决定
+      // （review F5：bootstrap 成功不得解除外部遮蔽）。
+      if (state.phase !== 'bootstrapping') state.phase = 'masked'
+    } else {
+      state.masked = false
+      if (state.phase === 'masked') {
+        state.phase = viewerConfirmed ? 'ready' : 'bootstrapping'
+        if (state.phase === 'ready') restoreActiveFromCache()
+      }
     }
     commit()
   }
@@ -775,6 +835,7 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
       }
     },
     start,
+    retryBootstrap,
     updateAuth,
     setMasked,
     dispose,
