@@ -1458,23 +1458,15 @@ export function createEditorController(deps: EditorDeps): EditorController {
       if (pending.operationId !== null) releaseHold(pending.operationId)
       return
     }
-    if (
-      measureDraftBytes(
-        JSON.stringify({
-          expected_revision: state.revision,
-          mutation_id: nextMutationId(),
-          editor_state: editorStateToWire(state),
-        }),
-      ) > EDITOR_JSON_MAX_BYTES
-    ) {
-      // 清稿 PUT 同样受 512KiB editor_state 上限约束（二次 review N10）。
+    const clearToken = nextDraftToken()
+    const body = buildClearRequestWire(state, nextMutationId(), clearToken)
+    if (measureDraftBytes(JSON.stringify(body)) > EDITOR_JSON_MAX_BYTES) {
+      // R7：512KiB 上限按实际清稿请求体判定（draft.text 已清空），不能用含全文的旧快照误判。
       reduce({ type: 'save/blocked', failure: { code: 'editor_state_too_large', retryable: false } })
       pending.resolve('blocked')
       if (pending.operationId !== null) releaseHold(pending.operationId)
       return
     }
-    const clearToken = nextDraftToken()
-    const body = buildClearRequestWire(state, nextMutationId(), clearToken)
     const record = deps.mutations.createMutationRecord({
       mutationId: body.mutation_id,
       kind: 'save',
@@ -1556,11 +1548,18 @@ export function createEditorController(deps: EditorDeps): EditorController {
   const replayActive = (current: ActiveMutation): void => {
     const replayRuntime = runtimeView()
     if (state.invalidated || released || !replayRuntime.ready || replayRuntime.editorReady === false) return
-    if (replaying) {
-      // 重放未结束又换了代际：记下待重放，旧尝试的 stale 结算后再接管（二次 review P1）。
+    const sameAttemptGeneration =
+      replaying &&
+      current.attempt.authGeneration === replayRuntime.authGeneration &&
+      current.attempt.viewerUserId === replayRuntime.viewerUserId &&
+      current.attempt.projectId === replayRuntime.projectId
+    if (sameAttemptGeneration) {
+      // 同代 replay 仍在途：只记待重放，避免同代重复派发。
       replayPending = true
       return
     }
+    // R2：即使是新的代际（或旧 replay promise 永不 settle），也立即用新 attempt 派发
+    // 原 mutation/原 body；旧 attempt 结算因 attempt 身份不匹配被丢弃，不阻塞新代。
     replaying = true
     current.attempt = newAttempt(current.record.mutationId)
     current.unconfirmed = false
@@ -1568,7 +1567,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
       replaying = false
       if (replayPending) {
         replayPending = false
-        if (active !== null && active.unconfirmed && !sameGeneration(active.attempt)) {
+        if (active !== null && active.unconfirmed && !active.inFlight) {
           replayActive(active)
         }
       }
@@ -1611,7 +1610,18 @@ export function createEditorController(deps: EditorDeps): EditorController {
       return
     }
     if (active !== null) {
-      if (active.unconfirmed && !sameGeneration(active.attempt)) replayActive(active)
+      if (active.unconfirmed && !sameGeneration(active.attempt)) {
+        replayActive(active)
+      } else if (
+        active.unconfirmed &&
+        retryTimer === null &&
+        !active.inFlight &&
+        !replaying
+      ) {
+        // R6：退避期间被 masked 暂停（timer 已空转返回），遮蔽解除后同代续跑一次重试。
+        active.attempt = newAttempt(active.record.mutationId)
+        void performPut(active, active.attempt)
+      }
       return
     }
     if (!loaded) void loadInternal()

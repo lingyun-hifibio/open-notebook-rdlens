@@ -1310,3 +1310,98 @@ describe('editor review3 回归：并发闸门与结算版本', () => {
     expect(harness.controller.getSnapshot().dirty).toBe(false)
   })
 })
+
+// ── review3 P1：跨代接管不依赖旧 promise / masked 恢复 / 清稿尺寸 ──
+
+describe('editor review3 回归：跨代桥与清稿边界', () => {
+  it('R2 旧 replay promise 永不 settle 时新代仍立即派发原 mutation/body，旧 attempt 被丢弃', async () => {
+    const harness = createHarness()
+    await loadHarness(harness, editorResponse({ revision: 5 }))
+    harness.controller.setDraftText('A')
+    await advance(500)
+    expect(harness.puts.length).toBe(1)
+    const firstMutation = harness.puts[0].body.mutation_id
+    const firstBody = JSON.stringify(harness.puts[0].body)
+    // 同 viewer refresh：代际 7→8，旧 PUT promise 保持 pending 永不 settle。
+    harness.setRuntime({ authGeneration: 8 })
+    await advance(0)
+    expect(harness.puts.length).toBe(2)
+    expect(harness.puts[1].body.mutation_id).toBe(firstMutation)
+    expect(JSON.stringify(harness.puts[1].body)).toBe(firstBody)
+    // 旧 replay（gen8 的 PUT2）也未 settle 时再换 gen9：新代码必须立刻再派发 PUT3，
+    // 不能因为 replaying 仍在途而只排队等待（R2 核心：不等旧 promise）。
+    harness.setRuntime({ authGeneration: 9 })
+    await advance(0)
+    expect(harness.puts.length).toBe(3)
+    expect(harness.puts[2].body.mutation_id).toBe(firstMutation)
+    expect(JSON.stringify(harness.puts[2].body)).toBe(firstBody)
+    // 旧两代迟到 ACK：全部丢弃，不推进 revision。
+    harness.puts[0].response.resolve(saveResponse(firstMutation, { revision: 6 }))
+    harness.puts[1].response.resolve(saveResponse(firstMutation, { revision: 6 }))
+    await advance(0)
+    expect(harness.controller.getSnapshot().revision).toBe(5)
+    // 当前代 ACK 正常结算。
+    harness.puts[2].response.resolve(saveResponse(firstMutation, { revision: 6 }))
+    await advance(0)
+    expect(harness.controller.getSnapshot().revision).toBe(6)
+    expect(harness.controller.getSnapshot().dirty).toBe(false)
+  })
+
+  it('R6 masked 解除后同代续跑被暂停的退避重试，且不重复/不并发', async () => {
+    const harness = createHarness()
+    await loadHarness(harness, editorResponse({ revision: 5 }))
+    harness.controller.setDraftText('A')
+    await advance(500)
+    expect(harness.puts.length).toBe(1)
+    harness.puts[0].response.reject(httpError(503, 'editor_store_unavailable'))
+    await advance(0)
+    // 退避期间被 masked：timer 空转返回，不再发 PUT。
+    harness.setRuntime({ ready: false, phase: 'masked' })
+    await advance(1000)
+    expect(harness.puts.length).toBe(1)
+    // 遮蔽解除（同代）：恢复一次重试，不并发第二个。
+    harness.setRuntime({ ready: true, phase: 'ready' })
+    await advance(0)
+    expect(harness.puts.length).toBe(2)
+    harness.puts[1].response.resolve(
+      saveResponse(harness.puts[1].body.mutation_id, { revision: 6 }),
+    )
+    await advance(0)
+    expect(harness.controller.getSnapshot().dirty).toBe(false)
+    expect(harness.puts.length).toBe(2)
+  })
+
+  it('R7 清稿 512KiB 上限按实际清稿请求体判定，不因旧快照含全文而误判 blocked', async () => {
+    const pad = (prefix: string, index: number): string =>
+      `${prefix}${String(index).padStart(4, '0')}`.padEnd(256, prefix === 'n' ? 'n' : 's')
+    const harness = createHarness()
+    await loadHarness(
+      harness,
+      editorResponse({
+        revision: 5,
+        state: editorStateWire({
+          base_scope: {
+            mode: 'selected',
+            source_ids: Array.from({ length: 1000 }, (_, index) => pad('s', index)),
+            single_source_id: null,
+          },
+          note_ids: Array.from({ length: 1000 }, (_, index) => pad('n', index)),
+          draft: { text: 'x'.repeat(250 * 1024), token: 'tok-server' },
+        }),
+      }),
+    )
+    const snapshot = harness.controller.getSnapshot()
+    // 旧检查把 250KiB 全文算进 body 会 >512KiB；实际清稿 body 已将 text 清空，必须允许派发。
+    const pending = harness.controller.clearAfterSubmission(
+      { sessionRef: snapshot.ref, draftToken: snapshot.draftToken, text: snapshot.draftText },
+      'op-clear-boundary',
+    )
+    await advance(0)
+    expect(harness.puts.length).toBe(1)
+    expect(harness.puts[0].body.editor_state.draft.text).toBe('')
+    harness.puts[0].response.resolve(
+      saveResponse(harness.puts[0].body.mutation_id, { revision: 6 }),
+    )
+    expect(await pending).toBe('cleared')
+  })
+})
