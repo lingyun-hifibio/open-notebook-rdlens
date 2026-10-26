@@ -1106,3 +1106,28 @@ export function clearSessionCacheMemoryFallback(): void {
   memoryFallback.clear()
   removedKeys.clear()
 }
+
+/**
+ * 生成新的草稿 writer 分支标识（DESIGN §3.5/§5.4）。
+ *
+ * 每个文档实例（页面刷新/新标签/复制标签）必须重新生成，**不继承**旧实例的
+ * writerId；只有同一实例内的 ACK 才允许按 writerId+localVersion+token 条件清分支。
+ */
+export function createDraftWriterId(): string {
+  const globalCrypto = typeof globalThis === 'object'
+    ? (globalThis as { crypto?: Crypto }).crypto
+    : undefined
+  if (globalCrypto && typeof globalCrypto.randomUUID === 'function') {
+    return `w${globalCrypto.randomUUID().replace(/-/g, '')}`
+  }
+  const bytes = new Uint8Array(16)
+  if (globalCrypto && typeof globalCrypto.getRandomValues === 'function') {
+    globalCrypto.getRandomValues(bytes)
+  } else {
+    // 兜底：测试/极旧环境无 Web Crypto 时仍保证格式合法且不共享
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256)
+    }
+  }
+  return `w${Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('')}`
+}

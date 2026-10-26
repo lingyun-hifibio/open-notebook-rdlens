@@ -1,0 +1,865 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import {
+  EDITOR_POSITION_IDLE_MS,
+  EDITOR_TEXT_DEBOUNCE_MS,
+  EDITOR_TEXT_MAX_BYTES,
+  buildSaveRequestWire,
+  classifySaveFailure,
+  createDraftToken,
+  createEditorController,
+  createEditorState,
+  editorStateToWire,
+  isMutationIdShaped,
+  type EditorController,
+  type EditorDeps,
+  type EditorRuntimeView,
+} from './editor-machine'
+import {
+  SESSION_CONTRACT_VERSION,
+  sessionKey,
+  type ResearchSessionRef,
+} from './session-contract'
+import {
+  createMutationRecord,
+  createTransportAttempt,
+  markTransportAttemptDispatched,
+  transportAttemptMatches,
+  type SessionWriteGuard,
+} from './session-runtime'
+import type {
+  SessionCacheAuthority,
+  SessionCacheScope,
+  SessionCacheStorage,
+} from './session-cache'
+import type { EditorSaveRequestWire } from './types'
+
+// ── 测试夹具 ──
+
+const REF: ResearchSessionRef = {
+  domain: 'research',
+  kind: 'global',
+  projectId: 'p1',
+  sessionId: 's1',
+  sourceId: null,
+}
+const HASH = 'a'.repeat(64)
+
+interface Deferred<T> {
+  readonly promise: Promise<T>
+  resolve: (value: T) => void
+  reject: (error: unknown) => void
+}
+
+function deferred<T = unknown>(): Deferred<T> {
+  let resolveFn: (value: T) => void = () => {}
+  let rejectFn: (error: unknown) => void = () => {}
+  const promise = new Promise<T>((resolve, reject) => {
+    resolveFn = resolve
+    rejectFn = reject
+  })
+  return { promise, resolve: resolveFn, reject: rejectFn }
+}
+
+class MapStorage implements SessionCacheStorage {
+  readonly map = new Map<string, string>()
+
+  get length(): number {
+    return this.map.size
+  }
+
+  key(index: number): string | null {
+    return [...this.map.keys()][index] ?? null
+  }
+
+  getItem(key: string): string | null {
+    return this.map.get(key) ?? null
+  }
+
+  setItem(key: string, value: string): void {
+    this.map.set(key, value)
+  }
+
+  removeItem(key: string): void {
+    this.map.delete(key)
+  }
+}
+
+function capabilitiesWire() {
+  return {
+    sessions: {
+      contract: SESSION_CONTRACT_VERSION,
+      editor_ready: true,
+      submission_ready: { global: true, source: true },
+    },
+  }
+}
+
+function editorResponse(options: {
+  revision?: number
+  state?: unknown
+  hash?: string | null
+  warnings?: readonly string[]
+} = {}): Record<string, unknown> {
+  const state = options.state === undefined ? editorStateWire() : options.state
+  const hash = options.hash !== undefined ? options.hash : state === null ? null : HASH
+  return {
+    session_ref: {
+      domain: 'research',
+      kind: 'global',
+      project_id: 'p1',
+      session_id: 's1',
+      source_id: null,
+    },
+    editor_revision: options.revision ?? 5,
+    editor_state: state,
+    state_warnings: options.warnings ?? [],
+    editor_intent_hash: hash,
+    viewer_user_id: 1,
+    capabilities: capabilitiesWire(),
+  }
+}
+
+function editorStateWire(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    schema_version: 1,
+    base_scope: { mode: 'all', source_ids: [], single_source_id: null },
+    single_source_id: null,
+    note_ids: [],
+    draft: { text: 'hello', token: 'tok-server' },
+    chat_anchor: null,
+    reader_anchor: null,
+    ...overrides,
+  }
+}
+
+function saveResponse(
+  mutationId: string,
+  options: { revision?: number; hash?: string } = {},
+): Record<string, unknown> {
+  return {
+    session_ref: {
+      domain: 'research',
+      kind: 'global',
+      project_id: 'p1',
+      session_id: 's1',
+      source_id: null,
+    },
+    editor_revision: options.revision ?? 6,
+    editor_state: null,
+    mutation_id: mutationId,
+    saved_at: '2026-10-26T00:00:01.000Z',
+    editor_intent_hash: options.hash ?? HASH,
+  }
+}
+
+function httpError(status: number, code?: string): unknown {
+  return {
+    response: {
+      status,
+      data: code === undefined ? { detail: { message: 'boom' } } : { detail: { code, message: 'boom' } },
+    },
+  }
+}
+
+interface PutCall {
+  readonly body: EditorSaveRequestWire
+  readonly response: Deferred<unknown>
+}
+
+interface Harness {
+  readonly controller: EditorController
+  readonly puts: PutCall[]
+  readonly gets: Deferred<unknown>[]
+  readonly storage: MapStorage
+  readonly scope: SessionCacheScope
+  readonly authority: SessionCacheAuthority
+  setRuntime(patch: Partial<EditorRuntimeView>): void
+  runtime(): EditorRuntimeView
+}
+
+interface HarnessOptions {
+  writerId?: string
+  storage?: MapStorage
+  runtime?: Partial<EditorRuntimeView>
+  invalidateGuards?: boolean
+}
+
+let mutationSeq = 0
+let tokenSeq = 0
+let attemptSeq = 0
+
+function createHarness(options: HarnessOptions = {}): Harness {
+  mutationSeq = 0
+  tokenSeq = 0
+  attemptSeq = 0
+  const storage = options.storage ?? new MapStorage()
+  let runtimeView: EditorRuntimeView = {
+    authGeneration: 7,
+    projectId: 'p1',
+    viewerUserId: '1',
+    phase: 'ready',
+    ready: true,
+    disposed: false,
+    viewerChanged: false,
+    ...options.runtime,
+  }
+  const runtimeListeners = new Set<() => void>()
+  const puts: PutCall[] = []
+  const gets: Deferred<unknown>[] = []
+  const scope: SessionCacheScope = { viewerUserId: '1', projectId: 'p1' }
+  const authority: SessionCacheAuthority = {
+    authenticatedViewerUserId: '1',
+    projectId: 'p1',
+    authGeneration: 7,
+    currentAuthGeneration: 7,
+  }
+  const guardFlags = { invalidated: options.invalidateGuards ?? false }
+
+  const deps: EditorDeps = {
+    ref: REF,
+    writerId: options.writerId ?? 'w-test',
+    transport: {
+      getEditorState: () => {
+        const pending = deferred<unknown>()
+        gets.push(pending)
+        return pending.promise
+      },
+      putEditorState: (body) => {
+        const pending = deferred<unknown>()
+        puts.push({ body, response: pending })
+        return pending.promise
+      },
+    },
+    getRuntimeView: () => runtimeView,
+    subscribeRuntime: (listener) => {
+      runtimeListeners.add(listener)
+      return () => {
+        runtimeListeners.delete(listener)
+      }
+    },
+    createWriteGuard: (label): SessionWriteGuard => ({
+      label,
+      isInvalidated: () => guardFlags.invalidated,
+      invalidate: () => {
+        guardFlags.invalidated = true
+      },
+      run: <T>(operation: () => T) =>
+        guardFlags.invalidated
+          ? ({ status: 'stale' } as const)
+          : ({ status: 'ok', value: operation() } as const),
+    }),
+    mutations: {
+      createMutationRecord,
+      createTransportAttempt: (input) => {
+        attemptSeq += 1
+        return createTransportAttempt({
+          ...input,
+          attemptId: `a${attemptSeq}`,
+          scope: { ...input.scope, role: 'owner' },
+        })
+      },
+      markTransportAttemptDispatched,
+      transportAttemptMatches,
+    },
+    getCacheScope: () => scope,
+    getCacheAuthority: () =>
+      runtimeView.ready
+        ? {
+            ...authority,
+            authGeneration: runtimeView.authGeneration,
+            currentAuthGeneration: runtimeView.authGeneration,
+          }
+        : null,
+    storage,
+    now: () => '2026-10-26T00:00:00.000Z',
+    nextMutationId: () => {
+      mutationSeq += 1
+      return `m${mutationSeq}`
+    },
+    nextDraftToken: () => {
+      tokenSeq += 1
+      return `tk${tokenSeq}`
+    },
+  }
+  const controller = createEditorController(deps)
+  return {
+    controller,
+    puts,
+    gets,
+    storage,
+    scope,
+    authority,
+    setRuntime: (patch) => {
+      runtimeView = { ...runtimeView, ...patch }
+      for (const listener of [...runtimeListeners]) listener()
+    },
+    runtime: () => runtimeView,
+  }
+}
+
+async function flushMicrotasks(times = 6): Promise<void> {
+  for (let index = 0; index < times; index += 1) {
+    await Promise.resolve()
+  }
+}
+
+async function advance(ms: number): Promise<void> {
+  await vi.advanceTimersByTimeAsync(ms)
+  await flushMicrotasks()
+}
+
+async function loadHarness(
+  harness: Harness,
+  response: Record<string, unknown> = editorResponse(),
+): Promise<void> {
+  expect(harness.gets.length).toBeGreaterThanOrEqual(1)
+  harness.gets[harness.gets.length - 1].resolve(response)
+  await flushMicrotasks()
+}
+
+function lastPut(harness: Harness): PutCall {
+  const call = harness.puts[harness.puts.length - 1]
+  expect(call).toBeDefined()
+  return call
+}
+
+beforeEach(() => {
+  vi.useFakeTimers()
+})
+
+afterEach(() => {
+  vi.useRealTimers()
+})
+
+// ── 状态构造/纯函数 ──
+
+describe('editor state machine primitives', () => {
+  it('createEditorState 使用 wire 的 camelCase 形状并生成 token', () => {
+    const token = createDraftToken()
+    const state = createEditorState({ ref: REF, writerId: 'w1', transportAvailable: true })
+    expect(state.phase).toBe('idle')
+    expect(state.revision).toBe(0)
+    expect(state.draftToken).toMatch(/^t[A-Za-z0-9]+$/)
+    expect(isMutationIdShaped(token)).toBe(true)
+    expect(editorStateToWire(state)).toMatchObject({
+      schema_version: 1,
+      base_scope: { mode: 'all', source_ids: [], single_source_id: null },
+      draft: { text: '', token: state.draftToken },
+    })
+  })
+
+  it('buildSaveRequestWire 不接受外部 revision 猜测，expected_revision 只取快照', () => {
+    const state = createEditorState({ ref: REF, writerId: 'w1', transportAvailable: true })
+    const body = buildSaveRequestWire(state, 'm42')
+    expect(body.expected_revision).toBe(state.revision)
+    expect(body.mutation_id).toBe('m42')
+    expect(sessionKey(REF)).toBe('research.v1|p1|global||s1')
+  })
+
+  it('classifySaveFailure 覆盖 409/413/422/5xx/网络错误分类', () => {
+    expect(classifySaveFailure(httpError(409, 'editor_revision_conflict'))).toMatchObject({
+      code: 'editor_revision_conflict',
+      handling: 'conflict',
+      retryable: false,
+    })
+    expect(classifySaveFailure(httpError(409, 'editor_mutation_conflict'))).toMatchObject({
+      code: 'editor_mutation_conflict',
+      handling: 'conflict',
+    })
+    expect(classifySaveFailure(httpError(413))).toMatchObject({
+      code: 'editor_state_too_large',
+      handling: 'blocked',
+    })
+    expect(classifySaveFailure(httpError(422, 'editor_state_invalid'))).toMatchObject({
+      code: 'editor_state_invalid',
+      handling: 'blocked',
+    })
+    expect(classifySaveFailure(httpError(503))).toMatchObject({ retryable: true, handling: 'retry' })
+    expect(classifySaveFailure(new Error('network down'))).toMatchObject({ handling: 'retry' })
+    expect(classifySaveFailure(httpError(403))).toMatchObject({ handling: 'error' })
+  })
+})
+
+// ── 初始加载（F02/F17 基线） ──
+
+describe('editor initial load', () => {
+  it('构造后自动 GET 并采用服务端 revision/intent_hash', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    const snapshot = harness.controller.getSnapshot()
+    expect(snapshot.phase).toBe('ready')
+    expect(snapshot.revision).toBe(5)
+    expect(snapshot.intentHash).toBe(HASH)
+    expect(snapshot.draftText).toBe('hello')
+    expect(snapshot.dirty).toBe(false)
+    expect(snapshot.transportAvailable).toBe(true)
+  })
+
+  it('editor_state=null + editor_state_unreadable 时只读且不写默认范围（F17）', async () => {
+    const harness = createHarness()
+    await loadHarness(
+      harness,
+      editorResponse({ state: null, hash: null, warnings: ['editor_state_unreadable'] }),
+    )
+    const snapshot = harness.controller.getSnapshot()
+    expect(snapshot.phase).toBe('readonly')
+    expect(snapshot.readOnly).toBe(true)
+    expect(snapshot.unreadable).toBe(true)
+    expect(snapshot.revision).toBe(5)
+    harness.controller.setDraftText('should not apply')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    expect(harness.puts.length).toBe(0)
+    expect(harness.controller.getSnapshot().draftText).toBe('')
+  })
+
+  it('load 5xx 只进入可重试 error，不覆盖本机稿', async () => {
+    const harness = createHarness()
+    harness.gets[0].reject(httpError(503))
+    await flushMicrotasks()
+    expect(harness.controller.getSnapshot().phase).toBe('error')
+    expect(harness.controller.getSnapshot().saveFailure?.retryable).toBe(true)
+  })
+})
+
+// ── 文本保存 / ACK ──
+
+describe('editor text save', () => {
+  it('文本变化 500ms 后单飞 PUT，ACK 推进 revision 并清 dirty', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.setDraftText('T1')
+    expect(harness.controller.getSnapshot().saving).toBe(false)
+    await advance(EDITOR_TEXT_DEBOUNCE_MS - 1)
+    expect(harness.puts.length).toBe(0)
+    await advance(1)
+    expect(harness.puts.length).toBe(1)
+    const call = lastPut(harness)
+    expect(call.body.expected_revision).toBe(5)
+    expect(call.body.editor_state.draft.text).toBe('T1')
+    expect(harness.controller.getSnapshot().saving).toBe(true)
+    call.response.resolve(saveResponse(call.body.mutation_id))
+    await flushMicrotasks()
+    const snapshot = harness.controller.getSnapshot()
+    expect(snapshot.revision).toBe(6)
+    expect(snapshot.dirty).toBe(false)
+    expect(snapshot.saving).toBe(false)
+    expect(snapshot.lastSavedAt).toBe('2026-10-26T00:00:01.000Z')
+    // ACK 后 clean：本 writer 草稿分支被条件删除。
+    expect([...harness.storage.map.keys()].some((key) => key.includes('.draft.'))).toBe(false)
+  })
+
+  it('位置变化 1000ms 后保存且不生成新 draft token', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    const beforeToken = harness.controller.getSnapshot().draftToken
+    harness.controller.setChatAnchor({ messageId: 'msg1', offsetPx: 12, followTail: false })
+    await advance(EDITOR_POSITION_IDLE_MS)
+    expect(harness.puts.length).toBe(1)
+    const call = lastPut(harness)
+    expect(call.body.editor_state.draft.token).toBe(beforeToken)
+    expect(call.body.editor_state.chat_anchor).toMatchObject({ message_id: 'msg1', offset_px: 12 })
+    call.response.resolve(saveResponse(call.body.mutation_id, { revision: 5 }))
+    await flushMicrotasks()
+    expect(harness.controller.getSnapshot().revision).toBe(5)
+    expect(harness.controller.getSnapshot().intentHash).toBe(HASH)
+  })
+
+  it('ACK 丢失后自动重试用同一 mutation_id 与同一请求体重放', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.setDraftText('T1')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    const first = lastPut(harness)
+    first.response.reject(new Error('connection reset'))
+    await flushMicrotasks()
+    await advance(1000)
+    expect(harness.puts.length).toBe(2)
+    const second = lastPut(harness)
+    expect(second.body.mutation_id).toBe(first.body.mutation_id)
+    expect(second.body).toEqual(first.body)
+    second.response.resolve(saveResponse(second.body.mutation_id))
+    await flushMicrotasks()
+    expect(harness.controller.getSnapshot().revision).toBe(6)
+    expect(harness.controller.getSnapshot().dirty).toBe(false)
+  })
+
+  it('ACK 缺 mutation_id 回声按协议错误处理并保留 dirty', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.setDraftText('T1')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    const call = lastPut(harness)
+    call.response.resolve(saveResponse('m-other'))
+    await flushMicrotasks()
+    const snapshot = harness.controller.getSnapshot()
+    expect(snapshot.dirty).toBe(true)
+    expect(snapshot.saveFailure?.code).toBe('invalid_response')
+    expect(snapshot.revision).toBe(5)
+  })
+
+  it('ACK 返回 session_ref 不匹配时同样拒绝', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.setDraftText('T1')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    const call = lastPut(harness)
+    // 篡改 session_ref 的 session_id，ACK 必须被拒绝。
+    call.response.resolve({
+      ...saveResponse(call.body.mutation_id),
+      session_ref: {
+        domain: 'research',
+        kind: 'global',
+        project_id: 'p1',
+        session_id: 's2',
+        source_id: null,
+      },
+    })
+    await flushMicrotasks()
+    expect(harness.controller.getSnapshot().dirty).toBe(true)
+    expect(harness.controller.getSnapshot().saveFailure?.code).toBe('invalid_response')
+  })
+
+  it('409 revision_conflict 保留 dirty 并给出 conflict（不自动覆盖）', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.setDraftText('T1')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    const call = lastPut(harness)
+    call.response.reject(httpError(409, 'editor_revision_conflict'))
+    await flushMicrotasks()
+    const snapshot = harness.controller.getSnapshot()
+    expect(snapshot.phase).toBe('conflict')
+    expect(snapshot.conflict).toEqual({ kind: 'revision' })
+    expect(snapshot.dirty).toBe(true)
+    expect(snapshot.draftText).toBe('T1')
+  })
+
+  it('409 mutation_conflict 记录 mutation 冲突类型', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.setDraftText('T1')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    lastPut(harness).response.reject(httpError(409, 'editor_mutation_conflict'))
+    await flushMicrotasks()
+    expect(harness.controller.getSnapshot().conflict).toEqual({ kind: 'mutation' })
+    expect(harness.controller.getSnapshot().dirty).toBe(true)
+  })
+
+  it('413/422 进入 blocked 且保留本机稿；503 重试耗尽标记 unsynced', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.setDraftText('T1')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    lastPut(harness).response.reject(httpError(413))
+    await flushMicrotasks()
+    expect(harness.controller.getSnapshot().blocked).toBe(true)
+    expect(harness.controller.getSnapshot().draftText).toBe('T1')
+
+    const harness2 = createHarness()
+    await loadHarness(harness2)
+    harness2.controller.setDraftText('T1')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      lastPut(harness2).response.reject(httpError(503))
+      await flushMicrotasks()
+      await advance(2000)
+    }
+    expect(harness2.controller.getSnapshot().unsynced).toBe(true)
+    expect(harness2.controller.getSnapshot().dirty).toBe(true)
+  })
+
+  it('文本超过 256KiB 时阻断并保留原文（不截断、不派发）', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.setDraftText('a'.repeat(EDITOR_TEXT_MAX_BYTES + 1))
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    expect(harness.puts.length).toBe(0)
+    const snapshot = harness.controller.getSnapshot()
+    expect(snapshot.saveFailure?.code).toBe('editor_state_too_large')
+    expect(snapshot.draftText).toBe('hello')
+  })
+
+  it('含未配对 UTF-16 代理项的文本不进入状态机', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.setDraftText('x\uD800y')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    expect(harness.controller.getSnapshot().draftText).toBe('hello')
+    expect(harness.puts.length).toBe(0)
+  })
+})
+
+// ── 跨认证代际接管（F03/F04） ──
+
+describe('editor cross-generation takeover', () => {
+  it('旧代 ACK 丢弃，下一代用原 mutation/原 body 重放成功且不误报 conflict', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.setDraftText('T1')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    const first = lastPut(harness)
+    // 同 viewer token refresh：旧代 ACK 到达之前代际已前进。
+    const proxy = harness
+    harness.setRuntime({ authGeneration: 8 })
+    await flushMicrotasks()
+    first.response.resolve(saveResponse(first.body.mutation_id, { revision: 6 }))
+    await flushMicrotasks()
+    expect(harness.controller.getSnapshot().revision).toBe(5)
+    expect(harness.controller.getSnapshot().dirty).toBe(true)
+    // ready 事件触发重放：同一 mutation_id 与同一 body，换新 attempt。
+    harness.setRuntime({})
+    await flushMicrotasks()
+    expect(proxy.puts.length).toBe(2)
+    const replay = lastPut(harness)
+    expect(replay.body).toEqual(first.body)
+    replay.response.resolve(saveResponse(replay.body.mutation_id, { revision: 6 }))
+    await flushMicrotasks()
+    const snapshot = harness.controller.getSnapshot()
+    expect(snapshot.revision).toBe(6)
+    expect(snapshot.conflict).toBeNull()
+    expect(snapshot.dirty).toBe(false)
+  })
+
+  it('保存未结算前 GET 不得覆盖 shadow（dirty 竞态：同 revision 保留本机）', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.setDraftText('local')
+    harness.setRuntime({ authGeneration: 8 })
+    await flushMicrotasks()
+    expect(harness.gets.length).toBe(2)
+    harness.gets[1].resolve(editorResponse({ revision: 5 }))
+    await flushMicrotasks()
+    const snapshot = harness.controller.getSnapshot()
+    expect(snapshot.draftText).toBe('local')
+    expect(snapshot.dirty).toBe(true)
+    expect(snapshot.conflict).toBeNull()
+  })
+
+  it('GET 返回不同 revision 且本机 dirty 时不自动覆盖，进入 revision 冲突', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.setDraftText('local')
+    harness.setRuntime({ authGeneration: 8 })
+    await flushMicrotasks()
+    harness.gets[1].resolve(editorResponse({ revision: 9 }))
+    await flushMicrotasks()
+    const snapshot = harness.controller.getSnapshot()
+    expect(snapshot.conflict).toEqual({ kind: 'revision' })
+    expect(snapshot.draftText).toBe('local')
+  })
+
+  it('viewer 变化使控制器失效，停止一切写入', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.setDraftText('T1')
+    harness.setRuntime({ viewerChanged: true, phase: 'viewer_changed', ready: false })
+    await flushMicrotasks()
+    const snapshot = harness.controller.getSnapshot()
+    expect(snapshot.invalidated).toBe(true)
+    harness.controller.setDraftText('T2')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    expect(harness.puts.length).toBe(0)
+    expect(harness.controller.canSubmit()).toEqual({ allowed: false, reason: 'invalidated' })
+  })
+})
+
+// ── hold / 单飞闸门 ──
+
+describe('editor hold and single-flight gate', () => {
+  it('T1 保存期间输入 T2 且 hold 时 T2 不抢跑，ACK+release 后才续跑', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.setDraftText('T1')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    expect(harness.puts.length).toBe(1)
+    harness.controller.hold('submit', 'op1')
+    harness.controller.setDraftText('T2')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    expect(harness.puts.length).toBe(1)
+    lastPut(harness).response.resolve(saveResponse(harness.puts[0].body.mutation_id))
+    await flushMicrotasks()
+    expect(harness.puts.length).toBe(1)
+    harness.controller.release('op1')
+    await flushMicrotasks()
+    expect(harness.puts.length).toBe(2)
+    expect(lastPut(harness).body.editor_state.draft.text).toBe('T2')
+  })
+
+  it('清稿已派发但 ACK 未知时 T2 不能取消 mutation；ACK 只推进 revision，T2 用新 revision 保存', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.hold('submit', 'op1')
+    const clearPromise = harness.controller.clearAfterSubmission(
+      { sessionRef: REF, draftToken: 'tok-server' },
+      'op1',
+    )
+    expect(harness.puts.length).toBe(1)
+    const clearCall = lastPut(harness)
+    expect(clearCall.body.editor_state.draft.text).toBe('')
+    const clearToken = clearCall.body.editor_state.draft.token
+    harness.controller.setDraftText('T2')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    expect(harness.puts.length).toBe(1)
+    clearCall.response.resolve(saveResponse(clearCall.body.mutation_id, { revision: 7 }))
+    await flushMicrotasks()
+    expect(await clearPromise).toBe('superseded')
+    const snapshot = harness.controller.getSnapshot()
+    expect(snapshot.draftText).toBe('T2')
+    expect(snapshot.revision).toBe(7)
+    expect(snapshot.draftToken).not.toBe(clearToken)
+    expect(harness.puts.length).toBe(2)
+    const next = lastPut(harness)
+    expect(next.body.expected_revision).toBe(7)
+    expect(next.body.editor_state.draft.text).toBe('T2')
+  })
+
+  it('清稿在排队未派发时被新输入取消（未发任何请求）', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.setDraftText('T1')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    const saveCall = lastPut(harness)
+    harness.controller.hold('submit', 'op1')
+    const clearPromise = harness.controller.clearAfterSubmission(
+      { sessionRef: REF, draftToken: 'tok-server' },
+      'op1',
+    )
+    harness.controller.setDraftText('T2')
+    saveCall.response.resolve(saveResponse(saveCall.body.mutation_id))
+    await flushMicrotasks()
+    expect(await clearPromise).toBe('cancelled')
+    expect(harness.puts.length).toBe(1)
+    expect(harness.puts.some((call) => call.body.editor_state.draft.text === '')).toBe(false)
+    expect(harness.controller.getSnapshot().draftText).toBe('T2')
+  })
+
+  it('清稿 ACK 丢失后重试复用首次生成的 token 与请求体', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.hold('submit', 'op1')
+    void harness.controller.clearAfterSubmission({ sessionRef: REF, draftToken: 'tok-server' }, 'op1')
+    const first = lastPut(harness)
+    first.response.reject(new Error('connection reset'))
+    await flushMicrotasks()
+    await advance(1000)
+    expect(harness.puts.length).toBe(2)
+    const replay = lastPut(harness)
+    expect(replay.body).toEqual(first.body)
+    expect(replay.body.editor_state.draft.token).toBe(first.body.editor_state.draft.token)
+  })
+
+  it('flush 在非 dirty 状态返回 skipped；hold 期间显式 flush 仍可派发', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    expect(await harness.controller.flush('switch')).toBe('skipped')
+    harness.controller.setDraftText('T1')
+    harness.controller.hold('submit', 'op1')
+    const flushPromise = harness.controller.flush('submit')
+    expect(harness.puts.length).toBe(1)
+    const call = lastPut(harness)
+    call.response.resolve(saveResponse(call.body.mutation_id))
+    expect(await flushPromise).toBe('saved')
+  })
+})
+
+// ── 提交闸门与 token 消费 ──
+
+describe('editor submission readiness', () => {
+  it('canSubmit 覆盖 dirty/saving/consumed 闸门', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    expect(harness.controller.canSubmit()).toEqual({ allowed: true, reason: null })
+    harness.controller.setDraftText('T1')
+    expect(harness.controller.canSubmit()).toEqual({ allowed: false, reason: 'dirty' })
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    expect(harness.controller.canSubmit()).toEqual({ allowed: false, reason: 'saving' })
+    lastPut(harness).response.resolve(saveResponse(harness.puts[0].body.mutation_id))
+    await flushMicrotasks()
+    expect(harness.controller.canSubmit()).toEqual({ allowed: true, reason: null })
+    harness.controller.markTokenConsumed(harness.controller.getSnapshot().draftToken)
+    expect(harness.controller.canSubmit()).toEqual({ allowed: false, reason: 'consumed' })
+  })
+
+  it('已消费 token 再次用于清稿仍可 markTokenConsumed 幂等', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    const token = harness.controller.getSnapshot().draftToken
+    harness.controller.markTokenConsumed(token)
+    harness.controller.markTokenConsumed(token)
+    expect(harness.controller.getSnapshot().consumedToken).toBe(token)
+  })
+})
+
+// ── 本机草稿与 writer 分支 ──
+
+describe('editor local draft branches', () => {
+  it('releaseDocument 写本机草稿、不发服务端请求', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    harness.controller.setDraftText('local-draft')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    const before = harness.puts.length
+    harness.controller.releaseDocument()
+    expect(harness.puts.length).toBe(before)
+    const draftKeys = [...harness.storage.map.keys()].filter((key) => key.includes('.draft.'))
+    expect(draftKeys.length).toBe(1)
+    const raw = harness.storage.map.get(draftKeys[0]) ?? ''
+    expect(raw).toContain('local-draft')
+  })
+
+  it('restoreDraft 只复制到当前分支，不删除来源 writer 分支', async () => {
+    const storage = new MapStorage()
+    const harness = createHarness({ storage, writerId: 'w-current' })
+    await loadHarness(harness)
+    harness.controller.setDraftText('other-branch-text')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    // 用另一 writer 读取同会话草稿（模拟来源分支）。
+    const other = createHarness({ storage, writerId: 'w-other' })
+    await loadHarness(other, editorResponse())
+    other.controller.setDraftText('source-branch-text')
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    const keysBefore = new Set(storage.map.keys())
+    const sourceKeys = [...keysBefore].filter((key) => key.includes('.draft.') && key.includes('w-other'))
+    expect(sourceKeys.length).toBe(1)
+
+    harness.controller.refreshDraftCandidates()
+    const candidates = harness.controller.getSnapshot().restoreCandidates
+    expect(candidates.some((candidate) => candidate.writerId === 'w-other')).toBe(true)
+    harness.controller.restoreDraft('w-other')
+    expect(harness.controller.getSnapshot().draftText).toBe('source-branch-text')
+    // 来源分支仍在（不删除、不迁移）。
+    expect(storage.map.has(sourceKeys[0])).toBe(true)
+  })
+})
+
+// ── 范围与位置语义 ──
+
+describe('editor scope edits', () => {
+  it('scope 变化生成新 token 并保存 wire 范围', async () => {
+    const harness = createHarness()
+    await loadHarness(harness)
+    const beforeToken = harness.controller.getSnapshot().draftToken
+    harness.controller.setScope({ mode: 'selected', sourceIds: ['src1'], noteIds: ['n1'] })
+    await advance(EDITOR_TEXT_DEBOUNCE_MS)
+    expect(harness.puts.length).toBe(1)
+    const call = lastPut(harness)
+    expect(call.body.editor_state.base_scope).toEqual({
+      mode: 'selected',
+      source_ids: ['src1'],
+      single_source_id: null,
+    })
+    expect(call.body.editor_state.note_ids).toEqual(['n1'])
+    // DESIGN §5.4：本地 token 只在文本变化时换新；范围改变影响的是提交意图。
+    expect(call.body.editor_state.draft.token).toBe(beforeToken)
+  })
+
+  it('service 端 position_unavailable 后关闭位置保存', async () => {
+    const harness = createHarness()
+    await loadHarness(harness, editorResponse({ warnings: ['position_unavailable'] }))
+    expect(harness.controller.getSnapshot().positionUnavailable).toBe(true)
+    harness.controller.setChatAnchor({ messageId: 'msg1', offsetPx: 3, followTail: true })
+    await advance(EDITOR_POSITION_IDLE_MS)
+    expect(harness.puts.length).toBe(0)
+  })
+})
