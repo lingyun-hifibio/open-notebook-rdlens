@@ -977,6 +977,8 @@ export function createEditorController(deps: EditorDeps): EditorController {
   let positionTimer: ReturnType<typeof setTimeout> | null = null
   let localTimer: ReturnType<typeof setTimeout> | null = null
   let retryTimer: ReturnType<typeof setTimeout> | null = null
+  /** 退避定时器已到点、但因 runtime 暂不可用（masked/未 ready）而暂停的自动重试（review4 F1）。 */
+  let retryPaused = false
   let manualReplayRequested = false
   const unsubscribeRuntime = deps.subscribeRuntime(() => onRuntimeChange())
 
@@ -1334,13 +1336,15 @@ export function createEditorController(deps: EditorDeps): EditorController {
       current.unconfirmed = true
       const delay = EDITOR_RETRY_DELAYS_MS[Math.min(current.retries - 1, EDITOR_RETRY_DELAYS_MS.length - 1)]
       clearRetryTimer()
+      retryPaused = false
       retryTimer = setTimeout(() => {
         retryTimer = null
         if (active !== current || state.invalidated || released) return
         const timerRuntime = runtimeView()
         if (!timerRuntime.ready || timerRuntime.editorReady === false || timerRuntime.disposed || timerRuntime.viewerChanged) {
-          // 退避期间认证/能力已变化：停止自动重试，保留 active 等待代际桥接管（N9）。
+          // 退避期间认证/能力已变化：暂停自动重试，等待 runtime 恢复后续跑一次（N9/R6/F1）。
           current.unconfirmed = true
+          retryPaused = true
           return
         }
         current.attempt = newAttempt(current.record.mutationId)
@@ -1496,6 +1500,19 @@ export function createEditorController(deps: EditorDeps): EditorController {
     void performPut(current, current.attempt)
   }
 
+  /** 队列替换统一入口（review4 F2）：未派发的 clear 被新请求替换时按取消结算并释放自身 hold。 */
+  const replaceQueued = (): void => {
+    if (queued === null) return
+    const previous = queued
+    queued = null
+    if (previous.kind === 'clear') {
+      if (previous.operationId !== null) releaseHold(previous.operationId)
+      previous.resolve('cancelled')
+      return
+    }
+    previous.resolve('queued')
+  }
+
   const dispatchQueued = (): void => {
     if (queued === null || active !== null || state.invalidated) return
     const pending = queued
@@ -1531,7 +1548,10 @@ export function createEditorController(deps: EditorDeps): EditorController {
 
   const afterSettle = (): void => {
     if (state.invalidated || released) return
-    if (active === null && manualReplayRequested) manualReplayRequested = false
+    if (active === null) {
+      retryPaused = false
+      if (manualReplayRequested) manualReplayRequested = false
+    }
     if (active !== null) return
     if (queued !== null) {
       dispatchQueued()
@@ -1561,6 +1581,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
     // R2：即使是新的代际（或旧 replay promise 永不 settle），也立即用新 attempt 派发
     // 原 mutation/原 body；旧 attempt 结算因 attempt 身份不匹配被丢弃，不阻塞新代。
     replaying = true
+    retryPaused = false
     current.attempt = newAttempt(current.record.mutationId)
     current.unconfirmed = false
     void performPut(current, current.attempt).finally(() => {
@@ -1612,13 +1633,9 @@ export function createEditorController(deps: EditorDeps): EditorController {
     if (active !== null) {
       if (active.unconfirmed && !sameGeneration(active.attempt)) {
         replayActive(active)
-      } else if (
-        active.unconfirmed &&
-        retryTimer === null &&
-        !active.inFlight &&
-        !replaying
-      ) {
-        // R6：退避期间被 masked 暂停（timer 已空转返回），遮蔽解除后同代续跑一次重试。
+      } else if (retryPaused && retryTimer === null && !active.inFlight && !replaying) {
+        // R6/F1：只恢复“确实因 runtime 不可用而暂停的退避重试”；耗尽/非重试失败不得被
+        // 无关 runtime 通知重启，且恢复一次后清标记、保持原重试预算。
         active.attempt = newAttempt(active.record.mutationId)
         void performPut(active, active.attempt)
       }
@@ -1818,6 +1835,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
 
   const invalidateIntent = (reason: 'logout' | 'viewer-change'): void => {
     manualReplayRequested = false
+    retryPaused = false
     if (state.invalidated) return
     void reason
     loaded = false
@@ -1920,7 +1938,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
       // 不得穿透 submit/conflict hold（review P1 #6 / Lead 附加要求 1）。
       if (active !== null) {
         const { promise, resolve } = makeResolver()
-        if (queued !== null) queued.resolve('queued')
+        replaceQueued()
         queued = {
           kind: 'save',
           operationId: null,
@@ -2089,7 +2107,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
       const { promise, resolve } = makeResolver()
       if (active !== null) {
         // 已派发但 ACK 未知的 mutation 不取消/不删除；排队，结算后按原 body 重放。
-        if (queued !== null) queued.resolve('queued')
+        replaceQueued()
         queued = {
           kind: 'clear',
           operationId,

@@ -1302,6 +1302,8 @@ describe('editor review3 回归：并发闸门与结算版本', () => {
     expect(harness.puts.length).toBe(1)
     harness.puts[0].response.resolve(saveResponse(harness.puts[0].body.mutation_id, { revision: 6 }))
     await advance(0)
+    // eslint-disable-next-line no-console
+    console.log('DBG after ack:', JSON.stringify({ puts: harness.puts.length, phase: harness.controller.getSnapshot().phase, holds: harness.controller.getSnapshot().holds, dirty: harness.controller.getSnapshot().dirty }))
     expect(harness.puts.length).toBe(2)
     expect(lastPut(harness).body.editor_state.draft.text).toBe('T2')
     harness.puts[1].response.resolve(saveResponse(harness.puts[1].body.mutation_id, { revision: 7 }))
@@ -1403,5 +1405,58 @@ describe('editor review3 回归：跨代桥与清稿边界', () => {
       saveResponse(harness.puts[0].body.mutation_id, { revision: 6 }),
     )
     expect(await pending).toBe('cleared')
+  })
+})
+
+// ── review4 P2：暂停重试状态与队列替换 hold 释放 ──
+
+describe('editor review4 回归：重试暂停与队列替换', () => {
+  it('F1 自动重试耗尽进入 unsynced 后，无关 runtime 通知不得重启 PUT', async () => {
+    const harness = createHarness()
+    await loadHarness(harness, editorResponse({ revision: 5 }))
+    harness.controller.setDraftText('A')
+    await advance(500)
+    expect(harness.puts.length).toBe(1)
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const call = lastPut(harness)
+      call.response.reject(httpError(503, 'editor_store_unavailable'))
+      await advance(5000)
+    }
+    expect(harness.puts.length).toBe(4)
+    expect(harness.controller.getSnapshot().unsynced).toBe(true)
+    // 仅 runtime 通知（如 activate/pointer 变化）不得绕过重试上限再发 PUT。
+    harness.setRuntime({ phase: 'ready' })
+    harness.setRuntime({ phase: 'ready' })
+    await advance(0)
+    expect(harness.puts.length).toBe(4)
+  })
+
+  it('F2 排队清稿被 submit flush 替换时按 cancelled 结算并释放自身 hold，不阻塞后续保存', async () => {
+    const harness = createHarness()
+    await loadHarness(harness, editorResponse({ revision: 5 }))
+    harness.controller.setDraftText('T1')
+    await advance(500)
+    expect(harness.puts.length).toBe(1)
+    const snapshot = harness.controller.getSnapshot()
+    const clearPromise = harness.controller.clearAfterSubmission(
+      { sessionRef: snapshot.ref, draftToken: snapshot.draftToken, text: snapshot.draftText },
+      'op-replaced',
+    )
+    await advance(0)
+    expect(harness.controller.getSnapshot().holds.some((hold) => hold.operationId === 'op-replaced')).toBe(true)
+    harness.controller.setDraftText('T2')
+    // 保存请求替换排队清稿：清稿取消、其 hold 必须释放，且 T2 必须能继续保存。
+    const savePromise = harness.controller.flush('submit')
+    expect(await clearPromise).toBe('cancelled')
+    expect(harness.controller.getSnapshot().holds).toEqual([])
+    harness.puts[0].response.resolve(saveResponse(harness.puts[0].body.mutation_id, { revision: 6 }))
+    await advance(0)
+    expect(harness.puts.length).toBe(2)
+    expect(lastPut(harness).body.editor_state.draft.text).toBe('T2')
+    harness.puts[1].response.resolve(saveResponse(harness.puts[1].body.mutation_id, { revision: 7 }))
+    expect(await savePromise).toBe('saved')
+    await advance(0)
+    expect(harness.controller.getSnapshot().dirty).toBe(false)
+    expect(harness.controller.getSnapshot().holds).toEqual([])
   })
 })
