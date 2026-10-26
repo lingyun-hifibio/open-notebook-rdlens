@@ -1771,6 +1771,17 @@ export function createConversationController(input: {
         error: { code: 'session_busy', message: 'Active turn is not terminal' },
       })
     }
+    // 终态仍有未结算清稿租约时不得替换该 turn：否则迟到 ACK 无人承接
+    // （review-6 B2）。等 clear_settled 后再允许新发送。
+    if (turnState !== null && isTerminalTurn(turnState) && turnState.clearPending) {
+      return Promise.resolve({
+        status: 'blocked',
+        error: {
+          code: 'clear_settlement_pending',
+          message: 'Clear lease must settle before a new send',
+        },
+      })
+    }
     if (input.query.trim().length === 0) {
       return Promise.resolve({
         status: 'blocked',
@@ -1842,6 +1853,16 @@ export function createConversationController(input: {
     if (isDisposed()) return Promise.resolve({ status: 'stale' })
     const turn = state.turn
     if (turn === null || isTerminalTurn(turn)) {
+      // 终态 clear 租约未结算时不得用外部查回替换 turn（迟到 ACK 会丢失）。
+      if (turn !== null && turn.clearPending) {
+        return Promise.resolve({
+          status: 'blocked',
+          error: {
+            code: 'clear_settlement_pending',
+            message: 'Clear lease must settle before a new lookup',
+          },
+        })
+      }
       if (token !== undefined && token.length > 0) {
         // 冷启动/无 turn：仍可对持久 draft_token 做一次查回（DESIGN §6.5/§6.7）。
         dispatch({ type: 'external_lookup', token, sessionId: ref.sessionId })

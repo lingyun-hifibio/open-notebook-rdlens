@@ -1359,6 +1359,52 @@ describe('conversation-controller：副作用与迟到隔离', () => {
     expect(controller.hasActiveTurn()).toBe(false)
   })
 
+  it('review-6 B2：终态 clear 租约未结算时不得被新 send/外部查回替换', async () => {
+    const aborts: string[] = []
+    const clears: string[] = []
+    const releases: string[] = []
+    const streams: ConversationStreamInput[] = []
+    const transport = {
+      openStream: (input: ConversationStreamInput) => {
+        streams.push(input)
+        return { abort: (reason?: string) => { aborts.push(reason ?? 'user_cancel') } }
+      },
+      getSubmission: () => submissionResponse(),
+      clearAfterSubmission: (_receipt: unknown, operationId: string) => { clears.push(operationId) },
+      releaseHold: (operationId: string) => { releases.push(operationId) },
+    } as unknown as ConversationTransport
+    const runtime = createSessionRuntime({
+      authGeneration: 1,
+      projectId: 'proj_1',
+      viewerUserId: 'user_1',
+      role: 'owner',
+    })
+    const controller = runtime.conversation(REF, { transport })
+    await controller.send(sendInput())
+    streams[0].onEvent?.(sse(1, 'usage', { accepted: receiptWire({}) }))
+    streams[0].onEvent?.(sse(2, 'done', { completion_status: 'complete' }))
+    expect(clears).toEqual(['op-1'])
+    expect(controller.hasActiveTurn()).toBe(true)
+
+    // clear 未 ACK 前，新 send 必须 blocked，且不得打开第二条流。
+    const second = await controller.send(sendInput({ operationId: 'op-2', turnId: 'turn-2' }))
+    expect(second.status).toBe('blocked')
+    expect(second.status === 'blocked' ? (second.error?.code ?? null) : null).toBe('clear_settlement_pending')
+    expect(streams).toHaveLength(1)
+    // 外部查回同样不得替换未结算租约的 turn。
+    const lookup = await controller.lookupSubmission('other_draft')
+    expect(lookup.status).toBe('blocked')
+    expect(lookup.status === 'blocked' ? (lookup.error?.code ?? null) : null).toBe('clear_settlement_pending')
+
+    // ACK 后旧 hold 必须结算，且允许下一次发送。
+    controller.notifyClearSettled('op-1', 'cleared')
+    expect(releases).toEqual(['op-1'])
+    expect(controller.hasActiveTurn()).toBe(false)
+    const third = await controller.send(sendInput({ operationId: 'op-2', turnId: 'turn-2' }))
+    expect(third.status).toBe('ok')
+    expect(streams).toHaveLength(2)
+  })
+
   it('review-4：rebaseAuth 推进代次；旧代次查回结果必须丢弃，新代次补派发后结算', async () => {
     let lookupCalls = 0
     let resolveFirst: (value: unknown) => void = () => {}
