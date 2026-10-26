@@ -1425,8 +1425,8 @@ describe('editor review4 回归：重试暂停与队列替换', () => {
     expect(harness.puts.length).toBe(4)
     expect(harness.controller.getSnapshot().unsynced).toBe(true)
     // 仅 runtime 通知（如 activate/pointer 变化）不得绕过重试上限再发 PUT。
-    harness.setRuntime({ phase: 'ready' })
-    harness.setRuntime({ phase: 'ready' })
+    harness.setRuntime({ phase: 'ready', ready: true })
+    harness.setRuntime({ phase: 'ready', ready: true })
     await advance(0)
     expect(harness.puts.length).toBe(4)
   })
@@ -1459,4 +1459,61 @@ describe('editor review4 回归：重试暂停与队列替换', () => {
     expect(harness.controller.getSnapshot().dirty).toBe(false)
     expect(harness.controller.getSnapshot().holds).toEqual([])
   })
+})
+
+describe('editor review5 回归：恢复一次后不再重启重试', () => {
+  it('F1b 暂停重试恢复后再次耗尽（unsynced），无关通知不得重启 PUT', async () => {
+    const harness = createHarness()
+    await loadHarness(harness, editorResponse({ revision: 5 }))
+    harness.controller.setDraftText('A')
+    await advance(500)
+    expect(harness.puts.length).toBe(1)
+    lastPut(harness).response.reject(httpError(503, 'editor_store_unavailable'))
+    await advance(1000) // 退避 1 → PUT2
+    expect(harness.puts.length).toBe(2)
+    lastPut(harness).response.reject(httpError(503, 'editor_store_unavailable'))
+    await advance(0) // 处理失败、安排退避 2（此时 runtime 仍 ready）
+    harness.setRuntime({ phase: 'masked', ready: false })
+    await advance(3000) // 退避 2 到点但 masked → 暂停（不再派发）
+    expect(harness.puts.length).toBe(2)
+    harness.setRuntime({ phase: 'ready', ready: true }) // 恢复一次 → PUT3
+    await advance(0)
+    expect(harness.puts.length).toBe(3)
+    lastPut(harness).response.reject(httpError(503, 'editor_store_unavailable'))
+    await advance(0)
+    await advance(5000) // 最后一次重试 → PUT4
+    expect(harness.puts.length).toBe(4)
+    lastPut(harness).response.reject(httpError(503, 'editor_store_unavailable'))
+    await advance(0) // 预算耗尽 → unsynced
+    expect(harness.controller.getSnapshot().unsynced).toBe(true)
+    harness.setRuntime({ phase: 'ready', ready: true })
+    harness.setRuntime({ phase: 'ready', ready: true })
+    await advance(0)
+    expect(harness.puts.length).toBe(4)
+  })
+
+  it('F1c 暂停恢复的一次 PUT 收到非法 ACK（invalid_response）后，无关通知不得重启 PUT', async () => {
+    const harness = createHarness()
+    await loadHarness(harness, editorResponse({ revision: 5 }))
+    harness.controller.setDraftText('A')
+    await advance(500)
+    expect(harness.puts.length).toBe(1)
+    lastPut(harness).response.reject(httpError(503, 'editor_store_unavailable'))
+    await advance(0) // 处理失败、安排退避（ready）
+    harness.setRuntime({ phase: 'masked', ready: false })
+    await advance(3000) // 到点但 masked → 暂停
+    expect(harness.puts.length).toBe(1)
+    harness.setRuntime({ phase: 'ready', ready: true }) // 恢复一次 → PUT2
+    await advance(0)
+    expect(harness.puts.length).toBe(2)
+    const illegal = { ...saveResponse(lastPut(harness).body.mutation_id, { revision: 6 }) }
+    delete (illegal as Record<string, unknown>).mutation_id // 缺 mutation_id 回声
+    lastPut(harness).response.resolve(illegal)
+    await advance(0)
+    expect(harness.controller.getSnapshot().saveFailure?.code).toBe('invalid_response')
+    harness.setRuntime({ phase: 'ready', ready: true })
+    await advance(0)
+    expect(harness.puts.length).toBe(2)
+  })
+
 })

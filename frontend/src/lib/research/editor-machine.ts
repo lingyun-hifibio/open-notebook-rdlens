@@ -1636,6 +1636,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
       } else if (retryPaused && retryTimer === null && !active.inFlight && !replaying) {
         // R6/F1：只恢复“确实因 runtime 不可用而暂停的退避重试”；耗尽/非重试失败不得被
         // 无关 runtime 通知重启，且恢复一次后清标记、保持原重试预算。
+        retryPaused = false
         active.attempt = newAttempt(active.record.mutationId)
         void performPut(active, active.attempt)
       }
