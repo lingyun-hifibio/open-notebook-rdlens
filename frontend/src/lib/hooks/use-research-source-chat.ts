@@ -27,6 +27,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
+  getChatSubmission,
   getSourceChatSession,
   listSourceChatSessions,
   newIdempotencyKey,
@@ -34,7 +35,18 @@ import {
   type ResearchSourceChatMessage,
   type ResearchSourceChatSessionSummary,
 } from '@/lib/research/api'
-import { applySseEvent, createSseState, type ResearchSseState } from '@/lib/research/sse'
+import {
+  applySseEvent,
+  createSseState,
+  type ResearchAcceptedReceipt,
+  type ResearchSseState,
+} from '@/lib/research/sse'
+import { sessionKey, type ResearchSessionRef } from '@/lib/research/session-contract'
+import type {
+  ConversationController,
+  ConversationTransport,
+  SessionRuntime,
+} from '@/lib/research/session-runtime'
 import type {
   ResearchCitationDisplayItem,
   ResearchSseEvent,
@@ -93,6 +105,22 @@ export interface UseResearchSourceChatResult {
   /** 最近一次终态失败的 query（供 UI 重放入口）；成功发送后清空 */
   retryableQuery: string | null
   retry: () => void
+  /**
+   * PR-5a（D2）：显式传入 `session` 时由该会话对话控制器提供
+   * `research-session-v1` 协议；未传时为 `null`，legacy 行为完全不变。
+   */
+  readonly conversation?: ConversationController | null
+}
+
+/** PR-5a：Source 会话控制器接线参数（面板 PR-5b 注入；本 PR 不接线 UI）。 */
+export interface UseResearchSourceChatSessionOptions {
+  readonly runtime: SessionRuntime
+  readonly ref: ResearchSessionRef
+  readonly onReleaseHold?: (operationId: string) => void
+  readonly onClearAfterSubmission?: (
+    receipt: ResearchAcceptedReceipt,
+    operationId: string,
+  ) => void
 }
 
 interface ActiveTurn {
@@ -240,9 +268,12 @@ function mapColdMessage(message: ResearchSourceChatMessage): ResearchSourceChatT
 export function useResearchSourceChat({
   projectId,
   sourceId,
+  session,
 }: {
   projectId: string
   sourceId: string
+  /** PR-5a：显式会话控制器接线（省略 = legacy 行为完全不变） */
+  session?: UseResearchSourceChatSessionOptions
 }): UseResearchSourceChatResult {
   const [turns, setTurns] = useState<ResearchSourceChatTurn[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
@@ -253,6 +284,72 @@ export function useResearchSourceChat({
   const sessionIdRef = useRef<string | null>(null)
   /** 终态失败 turn 的模型快照：重放沿用同一快照，不随后续切换漂移（不变量 4） */
   const retryModelRef = useRef<string | null>(null)
+
+  // PR-5a（D2）：会话控制器（显式 session 才创建；卸载只 detach，不取消服务端）。
+  const [conversation, setConversation] = useState<ConversationController | null>(null)
+  const sessionOptionsRef = useRef<UseResearchSourceChatSessionOptions | undefined>(session)
+  sessionOptionsRef.current = session
+  const projectIdRef = useRef(projectId)
+  projectIdRef.current = projectId
+  const conversationKey = session === undefined ? null : sessionKey(session.ref)
+
+  useEffect(() => {
+    const options = sessionOptionsRef.current
+    if (options === undefined || conversationKey === null) {
+      return
+    }
+    const ref = options.ref
+    const transport: ConversationTransport = {
+      openStream: (input) => {
+        const abort = openResearchChatStream({
+          protocol: 'research-session-v1',
+          projectId: projectIdRef.current,
+          kind: ref.kind,
+          sessionRef: ref,
+          editorRevision: input.editorRevision,
+          draftToken: input.draftToken,
+          editorIntentHash: input.editorIntentHash,
+          idempotencyKey: input.idempotencyKey,
+          lastEventId: input.lastEventId,
+          request: {
+            query: input.query,
+            model_id: input.modelId,
+            source_ids: [...input.sourceIds],
+            note_ids: [...input.noteIds],
+          },
+          onEvent: input.onEvent,
+          onEnd: input.onEnd,
+          onHttpError: input.onHttpError,
+          onNetworkError: input.onNetworkError,
+          onProtocolError: input.onProtocolError,
+        })
+        return {
+          abort: (reason) => {
+            abort(reason === 'superseded' ? 'page_change' : reason)
+          },
+        }
+      },
+      getSubmission: ({ token }) => getChatSubmission(
+        projectIdRef.current,
+        { kind: ref.kind, sourceId: ref.sourceId },
+        ref.sessionId,
+        token,
+      ),
+      releaseHold: (operationId) => {
+        sessionOptionsRef.current?.onReleaseHold?.(operationId)
+      },
+      clearAfterSubmission: (receipt, operationId) => {
+        sessionOptionsRef.current?.onClearAfterSubmission?.(receipt, operationId)
+      },
+    }
+    const controller = options.runtime.conversation(ref, { transport })
+    setConversation(controller)
+    return () => {
+      controller.detach()
+      options.runtime.releaseConversation(ref, controller)
+      setConversation((current) => (current === controller ? null : current))
+    }
+  }, [conversationKey])
 
   const patchAssistant = useCallback((turnId: string, patch: Partial<ResearchSourceChatTurn>) => {
     setTurns((prev) => {
@@ -570,5 +667,6 @@ export function useResearchSourceChat({
     loadDetailError,
     retryableQuery,
     retry,
+    conversation,
   }
 }

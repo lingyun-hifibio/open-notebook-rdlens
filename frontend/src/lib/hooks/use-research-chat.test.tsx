@@ -3,6 +3,8 @@ import { renderHook, act } from '@testing-library/react'
 import { useResearchChat, deriveScopeSnapshot, MAX_STREAM_ATTEMPTS } from './use-research-chat'
 import { newIdempotencyKey, openResearchChatStream } from '@/lib/research/api'
 import type { ResearchSseEvent } from '@/lib/research/types'
+import type { ResearchSessionRef } from '@/lib/research/session-contract'
+import type { ConversationController, SessionRuntime } from '@/lib/research/session-runtime'
 
 // UI-03 Red：Chat SSE 流状态机（契约 v0 §9）——乱序/重复事件经由 reducer
 // 去重排序、断线自动按 event_id 重连（Last-Event-ID）、终态恰好一次、
@@ -742,5 +744,36 @@ describe('deriveScopeSnapshot（RWV2-11 K8）', () => {
       noteIds: [],
       singleSourceId: null,
     })
+  })
+})
+
+describe('PR-5a（D2）：显式 session 接线', () => {
+  it('经 runtime 创建对话控制器；卸载 detach + releaseConversation（引用计数归 runtime）', () => {
+    const controller = {
+      detach: vi.fn(),
+      hasActiveTurn: vi.fn(() => false),
+    } as unknown as ConversationController
+    const conversation = vi.fn((..._args: unknown[]) => controller)
+    const releaseConversation = vi.fn()
+    const runtime = { conversation, releaseConversation } as unknown as SessionRuntime
+    const ref: ResearchSessionRef = {
+      domain: 'research',
+      kind: 'global',
+      projectId: 'proj_1',
+      sessionId: 'sess_1',
+      sourceId: null,
+    }
+
+    const { result, unmount } = renderHook(() =>
+      useResearchChat({ projectId: 'proj_1', session: { runtime, ref } }),
+    )
+
+    expect(conversation).toHaveBeenCalledTimes(1)
+    expect(conversation.mock.calls[0]?.[0]).toEqual(ref)
+    expect(result.current.conversation).toBe(controller)
+
+    unmount()
+    expect(controller.detach).toHaveBeenCalled()
+    expect(releaseConversation).toHaveBeenCalledWith(ref, controller)
   })
 })

@@ -10,6 +10,8 @@ import {
   listSourceChatSessions,
   openResearchChatStream,
 } from '@/lib/research/api'
+import type { ResearchSessionRef } from '@/lib/research/session-contract'
+import type { ConversationController, SessionRuntime } from '@/lib/research/session-runtime'
 
 /** #243 §6.4：调用方传入的 confirmed 全局模型快照 */
 const MODEL = 'm-local'
@@ -29,8 +31,13 @@ vi.mock('@/lib/research/api', () => ({
   newIdempotencyKey: vi.fn(() => 'ik-src'),
 }))
 
+type LegacyStreamOptions = Extract<
+  Parameters<typeof openResearchChatStream>[0],
+  { protocol?: 'legacy' }
+>
+
 interface StreamCapture {
-  opts: Parameters<typeof openResearchChatStream>[0]
+  opts: LegacyStreamOptions
   emit: (event: Parameters<Parameters<typeof openResearchChatStream>[0]['onEvent']>[0]) => void
   fail: (error: Error) => void
   httpFail: (status: number, body?: unknown) => void
@@ -41,7 +48,7 @@ function openCapture(): StreamCapture[] {
   const streams: StreamCapture[] = []
   vi.mocked(openResearchChatStream).mockImplementation((opts) => {
     streams.push({
-      opts,
+      opts: opts as LegacyStreamOptions,
       emit: (event) => opts.onEvent(event),
       fail: (error) => opts.onNetworkError?.(error),
       httpFail: (status, body) => opts.onHttpError?.(status, body),
@@ -449,7 +456,7 @@ describe('useResearchSourceChat', () => {
     let aborted = 0
     vi.mocked(openResearchChatStream).mockImplementation((opts) => {
       streams.push({
-        opts,
+        opts: opts as LegacyStreamOptions,
         emit: (event) => opts.onEvent(event),
         fail: (error) => opts.onNetworkError?.(error),
         httpFail: (status, body) => opts.onHttpError?.(status, body),
@@ -688,5 +695,37 @@ describe('useResearchSourceChat', () => {
 
     expect(streams).toHaveLength(2)
     expect(streams[1].opts.request).toMatchObject({ model_id: 'm-a' })
+  })
+})
+
+describe('PR-5a（D2）：显式 session 接线（source）', () => {
+  it('经 runtime 创建对话控制器；卸载 detach + releaseConversation', () => {
+    const controller = {
+      detach: vi.fn(),
+      hasActiveTurn: vi.fn(() => false),
+    } as unknown as ConversationController
+    const conversation = vi.fn((..._args: unknown[]) => controller)
+    const releaseConversation = vi.fn()
+    const runtime = { conversation, releaseConversation } as unknown as SessionRuntime
+    const ref: ResearchSessionRef = {
+      domain: 'research',
+      kind: 'source',
+      projectId: 'proj_1',
+      sessionId: 'sess_src_1',
+      sourceId: 'src_1',
+    }
+
+    const { result, unmount } = renderHook(
+      () => useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1', session: { runtime, ref } }),
+      { wrapper: makeHookWrapper() },
+    )
+
+    expect(conversation).toHaveBeenCalledTimes(1)
+    expect(conversation.mock.calls[0]?.[0]).toEqual(ref)
+    expect(result.current.conversation).toBe(controller)
+
+    unmount()
+    expect(controller.detach).toHaveBeenCalled()
+    expect(releaseConversation).toHaveBeenCalledWith(ref, controller)
   })
 })

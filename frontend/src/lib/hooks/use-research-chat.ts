@@ -18,6 +18,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
+  getChatSubmission,
   getResearchChatSession,
   newIdempotencyKey,
   openResearchChatStream,
@@ -25,7 +26,19 @@ import {
   type ResearchGlobalChatCard,
   type ResearchGlobalChatMessage,
 } from '@/lib/research/api'
-import { applySseEvent, createSseState, type ResearchSseState } from '@/lib/research/sse'
+import {
+  applySseEvent,
+  createSseState,
+  type ResearchAcceptedReceipt,
+  type ResearchSseState,
+} from '@/lib/research/sse'
+import { sessionKey, type ResearchSessionRef } from '@/lib/research/session-contract'
+import type {
+  ConversationController,
+  ConversationSendInput,
+  ConversationTransport,
+  SessionRuntime,
+} from '@/lib/research/session-runtime'
 import { buildSourceScope } from '@/lib/research/c05-request'
 import type { ResearchChatRequest } from '@/lib/research/types'
 import { classifyC05Error } from '@/lib/research/c05-error-actions'
@@ -306,6 +319,27 @@ export interface UseResearchChatResult {
    * - 无法唯一绑定/会话不可达 → null（UI 如实显示不可存，不猜测）。
    */
   resolveChatOrigin: (turnId: string) => Promise<ResearchChatSaveOrigin | null>
+  /**
+   * PR-5a（D2 裁决）：显式传入 `session` 时由该会话对话控制器提供
+   * `research-session-v1` 协议（查回/受理/热恢复/迟到隔离）。
+   * 未传 `session` 时为 `null`，legacy 行为与返回形状不变（面板接线归 PR-5b）。
+   */
+  readonly conversation?: ConversationController | null
+}
+
+/**
+ * PR-5a：会话控制器接线参数（面板 PR-5b 注入；本 PR 不接线 UI）。
+ * 控制器是热恢复唯一权威：hook 卸载只 detach（浏览器断开 ≠ 取消），
+ * 提交 hold/清稿副作用经回调交还 editor-machine 的持有者。
+ */
+export interface UseResearchChatSessionOptions {
+  readonly runtime: SessionRuntime
+  readonly ref: ResearchSessionRef
+  readonly onReleaseHold?: (operationId: string) => void
+  readonly onClearAfterSubmission?: (
+    receipt: ResearchAcceptedReceipt,
+    operationId: string,
+  ) => void
 }
 
 /** COV-09：all_selected 提交请求载荷（note_ids 恒空数组——Notes 不支持） */
@@ -384,12 +418,14 @@ function httpErrorMessage(status: number, body: unknown): string {
   return `Research stream HTTP ${status}`
 }
 
-export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: {
+export function useResearchChat({ projectId, c05DispatchReady, onBindSession, session }: {
   projectId: string
   /** PR5（C6/C7）：C-05 契约判定（能力就绪回调；undefined = 旧 v1 全量） */
   c05DispatchReady?: () => boolean
   /** PR5（D-04）：会话身份确认时回调（绑定/清除 single 限定） */
   onBindSession?: (sessionId: string) => void
+  /** PR-5a：显式会话控制器接线（省略 = legacy 行为完全不变） */
+  session?: UseResearchChatSessionOptions
 }): UseResearchChatResult {
   const [turns, setTurns] = useState<ResearchChatTurn[]>([])
   const [backgroundNotice, setBackgroundNotice] = useState<ResearchBackgroundNotice | null>(null)
@@ -414,6 +450,83 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
     projectId: null,
     done: false,
   })
+
+  /**
+   * PR-5a（D2）：会话控制器。仅在显式传入 `session` 时创建；生命周期与
+   * `sessionKey` 绑定（StrictMode 双挂载由 runtime 引用计数吸收）。
+   */
+  const [conversation, setConversation] = useState<ConversationController | null>(null)
+  const sessionOptionsRef = useRef<UseResearchChatSessionOptions | undefined>(session)
+  sessionOptionsRef.current = session
+  const controllerRef = useRef<ConversationController | null>(null)
+  const projectIdRef = useRef(projectId)
+  projectIdRef.current = projectId
+  const conversationKey = session === undefined ? null : sessionKey(session.ref)
+
+  useEffect(() => {
+    const options = sessionOptionsRef.current
+    if (options === undefined || conversationKey === null) {
+      return
+    }
+    const ref = options.ref
+    const transport: ConversationTransport = {
+      openStream: (input) => {
+        const abort = openResearchChatStream({
+        protocol: 'research-session-v1',
+        projectId: projectIdRef.current,
+        kind: ref.kind,
+        sessionRef: ref,
+        editorRevision: input.editorRevision,
+        draftToken: input.draftToken,
+        editorIntentHash: input.editorIntentHash,
+        idempotencyKey: input.idempotencyKey,
+        lastEventId: input.lastEventId,
+        // §6.2 wire 请求：session_id/editor 字段由 api 层从 options 补齐。
+        request: {
+          query: input.query,
+          model_id: input.modelId,
+          source_ids: [...input.sourceIds],
+          note_ids: [...input.noteIds],
+        },
+        onEvent: input.onEvent,
+        onEnd: input.onEnd,
+        onHttpError: input.onHttpError,
+        onNetworkError: input.onNetworkError,
+        onProtocolError: input.onProtocolError,
+        })
+        return {
+          abort: (reason) => {
+            // `superseded` 仅停止本地读取；服务端继续执行（§6.5 浏览器断开≠取消）。
+            abort(reason === 'superseded' ? 'page_change' : reason)
+          },
+        }
+      },
+      getSubmission: ({ token }) => getChatSubmission(
+        projectIdRef.current,
+        { kind: ref.kind, sourceId: ref.sourceId },
+        ref.sessionId,
+        token,
+      ),
+      releaseHold: (operationId) => {
+        sessionOptionsRef.current?.onReleaseHold?.(operationId)
+      },
+      clearAfterSubmission: (receipt, operationId) => {
+        sessionOptionsRef.current?.onClearAfterSubmission?.(receipt, operationId)
+      },
+    }
+    const controller = options.runtime.conversation(ref, { transport })
+    controllerRef.current = controller
+    setConversation(controller)
+    return () => {
+      // 离开会话/卸载：只标记 detach 并中止本地读取（服务端继续执行）。
+      controller.detach()
+      options.runtime.releaseConversation(ref, controller)
+      if (controllerRef.current === controller) {
+        controllerRef.current = null
+        setConversation(null)
+      }
+    }
+  }, [conversationKey])
 
   /**
    * RWV2-23（D2）：会话 origin 解析缓存——按阅读顺序累积的行、已见
@@ -1158,5 +1271,6 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
     send,
     sendCoverage,
     resolveChatOrigin,
+    conversation,
   }
 }
