@@ -634,3 +634,68 @@ describe('editor 能力不可用（editor_ready=false）', () => {
     expect(putEditorStateMock).not.toHaveBeenCalled()
   })
 })
+
+// ── review3 P1：敏感清理与未决 mutation 移交 ──
+
+describe('review3 P1：释放/换人后的敏感清理与未决 mutation 接管', () => {
+  const editorTransport = () => ({
+    getEditorState: () => getEditorStateMock() as Promise<unknown>,
+    putEditorState: (body: unknown) => putEditorStateMock(body) as Promise<unknown>,
+  })
+
+  function runtimeWithBootstrap() {
+    return createSessionRuntime({
+      authGeneration: 1,
+      projectId: P,
+      viewerUserId: VIEWER,
+      role: 'owner',
+      storage,
+      transport: okTransport(),
+      now: () => new Date(NOW),
+    })
+  }
+
+  it('最后消费者释放时仍有在途保存：同一会话新消费者复用控制器，不重复 GET/PUT', async () => {
+    getEditorStateMock.mockResolvedValue(editorResponse())
+    const pending = deferred<unknown>()
+    putEditorStateMock.mockImplementation(() => pending.promise)
+    const runtime = runtimeWithBootstrap()
+    runtime.start()
+    await settle(0)
+    const transport = editorTransport()
+    const first = runtime.editor(ref, { writerId: 'w-review3-a', transport, storage })
+    await first.load()
+    act(() => first.setDraftText('未决稿'))
+    await settle(500)
+    expect(putEditorStateMock).toHaveBeenCalledTimes(1)
+    runtime.releaseEditor(ref, first)
+    // 未决 mutation 仍在：新消费者必须接管同一控制器，不得为同一会话再发 GET/PUT。
+    const second = runtime.editor(ref, { writerId: 'w-review3-b', transport, storage })
+    expect(second).toBe(first)
+    expect(getEditorStateMock).toHaveBeenCalledTimes(1)
+    const firstBody = putEditorStateMock.mock.calls[0][0] as EditorSaveRequestWire
+    pending.resolve(saveResponse(firstBody))
+    await settle(0)
+    expect(second.getSnapshot().draftText).toBe('未决稿')
+    expect(second.getSnapshot().dirty).toBe(false)
+    runtime.releaseEditor(ref, second)
+    runtime.dispose('unmount')
+  })
+
+  it('viewer-change 立即清除已释放控制器的敏感快照（不依赖 dispose）', async () => {
+    getEditorStateMock.mockResolvedValue(editorResponse())
+    putEditorStateMock.mockResolvedValue(undefined)
+    const runtime = runtimeWithBootstrap()
+    runtime.start()
+    await settle(0)
+    const controller = runtime.editor(ref, { writerId: 'w-viewer', transport: editorTransport(), storage })
+    await controller.load()
+    act(() => controller.setDraftText('旧 viewer 敏感文本'))
+    runtime.releaseEditor(ref, controller)
+    expect(controller.getSnapshot().draftText).toBe('旧 viewer 敏感文本')
+    runtime.updateAuth({ authGeneration: 2, projectId: P, viewerUserId: '9', role: 'owner' })
+    expect(controller.getSnapshot().draftText).toBe('')
+    expect(controller.getSnapshot().draftToken).toBe('')
+    runtime.dispose('unmount')
+  })
+})

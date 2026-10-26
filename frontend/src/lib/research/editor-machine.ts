@@ -903,6 +903,8 @@ export interface EditorController {
   refreshDraftCandidates(): void
   /** 认证代际/viewer 失效：停止一切写入并作废本地状态。 */
   invalidate(reason: 'logout' | 'viewer-change'): void
+  /** 是否仍有未结算的 mutation（在途保存/排队保存）；供 runtime 决定是否移交新消费者（review3 N5）。 */
+  hasPendingWork(): boolean
   /** 文档实例卸载/切换：尽力写本机草稿后停止（不写服务端、不发 cancel）。 */
   releaseDocument(): void
   /** 页面隐藏/离开前同步写本机草稿（不写服务端，review P2 #12）。 */
@@ -2113,6 +2115,7 @@ export function createEditorController(deps: EditorDeps): EditorController {
     },
     refreshDraftCandidates: () => refreshDraftCandidates(),
     invalidate: (reason) => invalidateIntent(reason),
+    hasPendingWork: () => active !== null || queued !== null,
     releaseDocument: () => {
       if (released) return
       clearSaveTimers()

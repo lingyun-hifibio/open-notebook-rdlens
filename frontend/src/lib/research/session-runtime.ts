@@ -753,6 +753,12 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
         previous.projectId && previous.viewerUserId
           ? { viewerUserId: previous.viewerUserId, projectId: previous.projectId }
           : null
+      // 旧 viewer 的编辑器快照（文本/token/锚点）必须立即清除，不能等后续 dispose
+      // 才清理（review3 P1：一次 viewer-change 后旧快照仍可读到敏感文本）。
+      for (const { controller } of editors.values()) controller.invalidate('viewer-change')
+      for (const controller of releasedEditors) controller.invalidate('viewer-change')
+      editors.clear()
+      releasedEditors.clear()
       if (oldScope) purgeViewerScope(oldScope, { storage: storage() })
       // 新 viewer 自己的本机恢复数据不得在确认前被误删。
       purgeQueryCaches(previousProject, null)
@@ -916,12 +922,20 @@ export function createSessionRuntime(options: CreateSessionRuntimeOptions): Sess
     if (entry === undefined || entry.controller !== controller) return
     entry.refs -= 1
     if (entry.refs > 0) return
+    // 还有未决 mutation 的控制器不得直接丢弃：保留注册项（refs=0），
+    // 同一会话的新消费者必须复用它，避免为同一会话并发两个不同 mutation（review3 N5）。
+    if (entry.controller.hasPendingWork()) return
     editors.delete(key)
     entry.controller.releaseDocument()
     releasedEditors.add(entry.controller)
     if (releasedEditors.size > 8) {
       const oldest = releasedEditors.values().next()
-      if (!oldest.done) releasedEditors.delete(oldest.value)
+      if (!oldest.done) {
+        // 被淘汰出清理窗口的控制器必须先作废敏感快照，否则 logout/viewer-change
+        // 再也无法覆盖它（review3 P1）。
+        oldest.value.invalidate('logout')
+        releasedEditors.delete(oldest.value)
+      }
     }
   }
 
