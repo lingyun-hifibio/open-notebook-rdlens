@@ -1076,6 +1076,61 @@ describe('PR-5a（D2）：显式 session 接线', () => {
       single_source_id: null,
     })
   })
+
+  // PR-7 P0-2（6b 真实接入）：服务端 `SourceSessionSubmission` 是
+  // `extra="forbid"`——source session 请求体带顶层 `source_ids` 会 422
+  // `extra_forbidden`。source 以路径 source_id 定位，wire 只写 query/model_id。
+  it('source 新协议请求：只含 query/model_id，不发送 source_ids/note_ids/source_scope（PR-7 P0-2）', () => {
+    const captures = openCapture()
+    const controller = {
+      detach: vi.fn(),
+      hasActiveTurn: vi.fn(() => false),
+      load: vi.fn(async () => ({ status: 'blocked' as const })),
+      getSnapshot: vi.fn(() => ({ turn: null, authGeneration: 1 })),
+    } as unknown as ConversationController
+    let capturedOptions: { transport: { openStream: (input: Record<string, unknown>) => { abort: (reason?: string) => void } } } | null = null
+    const conversation = vi.fn((...args: unknown[]) => {
+      capturedOptions = args[1] as typeof capturedOptions
+      return controller
+    })
+    const runtime = {
+      conversation,
+      releaseConversation: vi.fn(),
+      getSnapshot: () => ({ authGeneration: 1 }),
+      subscribe: () => () => {},
+    } as unknown as SessionRuntime
+    const ref: ResearchSessionRef = {
+      domain: 'research',
+      kind: 'source',
+      projectId: 'proj_1',
+      sessionId: 'sess_src_1',
+      sourceId: 'src_1',
+    }
+
+    renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime, ref } }))
+    expect(capturedOptions).not.toBeNull()
+    act(() => {
+      capturedOptions?.transport.openStream({
+        sessionRef: ref,
+        editorRevision: 0,
+        draftToken: 'draft_src_1',
+        editorIntentHash: 'a'.repeat(64),
+        idempotencyKey: `s1_${'b'.repeat(64)}`,
+        lastEventId: 0,
+        query: 'q-src',
+        modelId: MODEL,
+        sourceIds: ['src_1'],
+        noteIds: [],
+        scope: null,
+      })
+    })
+    expect(captures).toHaveLength(1)
+    const request = captures[0].opts.request as unknown as Record<string, unknown>
+    expect(Object.keys(request).sort()).toEqual(['model_id', 'query'])
+    expect(request.source_ids).toBeUndefined()
+    expect(request.note_ids).toBeUndefined()
+    expect(request.source_scope).toBeUndefined()
+  })
 })
 
 describe('PR-5a F13：持久化恢复路径保留扩展字段', () => {

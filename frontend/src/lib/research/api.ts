@@ -72,6 +72,7 @@ import { saveIdempotencyKey } from './save-idempotency'
 import {
   SESSION_CONTRACT_HEADER,
   SESSION_CONTRACT_VERSION,
+  parseSessionRef,
   type ResearchSessionRef,
 } from './session-contract'
 
@@ -915,6 +916,12 @@ export async function getResearchChatSession(
   return response.data
 }
 
+/** `application/json`（允许 `; charset=utf-8` 参数）。 */
+const isJsonContentType = (value: string | null | undefined): boolean => {
+  if (typeof value !== 'string') return false
+  return value.split(';')[0].trim().toLowerCase() === 'application/json'
+}
+
 /** SSE 流 HTTP 错误分类（含 409 resume_after） */
 export class ResearchStreamHttpError extends Error {
   status: number
@@ -1005,12 +1012,117 @@ export interface ResearchChatSessionStreamOptions extends ResearchChatStreamCall
   idempotencyKey: string
   /** 断线重连的 Last-Event-ID（0 = 从头开始） */
   lastEventId?: number
+  /**
+   * PR-7 内部选项（可省略）：202 受理回执后 attach 阶段仍收到 202
+   * （服务端缓冲未就绪/无活租约，走 resume 分派）时的**有界退避**毫秒序列。
+   * 数组长度即最大重试次数；缺省 `DEFAULT_ATTACH_RETRY_DELAYS_MS`。
+   * 仅供测试注入更短预算，不改变任何事件契约。
+   */
+  attachRetryDelaysMs?: readonly number[]
 }
 
 /** 判别联合：legacy 变体与 `research-session-v1` 变体。 */
 export type ResearchChatStreamOptions =
   | ResearchChatStreamLegacyOptions
   | ResearchChatSessionStreamOptions
+
+/** attach 阶段 202 的有界退避缺省值（毫秒）：最多 3 次重试、共 4 次 attach POST。 */
+export const DEFAULT_ATTACH_RETRY_DELAYS_MS: readonly number[] = [300, 600, 1000]
+
+/** 202 受理回执的传输层投影（只用于「同一提交」校验与记录）。 */
+export interface ResearchSessionAcceptReceipt {
+  readonly generationId: string
+  /**
+   * 服务端回执的提交键：**只记录**。DESIGN §6.3 明确 `idempotency_key`
+   * 由活动 turn 的流上下文绑定，不参与受理等值匹配；attach 复用请求头里
+   * 的同一个 `s1_` 键，不据回执改写。
+   */
+  readonly idempotencyKey: string | null
+  /**
+   * 回执里的 `accepted_editor_revision`：**只记录**（DESIGN §6.3 R7：revision
+   * 只记录不参与等值匹配，清稿用当前 revision 而非该值）。
+   */
+  readonly editorRevision: number | null
+  readonly sessionRef: ResearchSessionRef
+}
+
+/** `parseSessionAcceptReceipt` 结果：失败时 `reason` 直接作为协议错误理由。 */
+export type ResearchSessionAcceptReceiptResult =
+  | { readonly ok: true; readonly receipt: ResearchSessionAcceptReceipt }
+  | { readonly ok: false; readonly reason: string }
+
+const invalidAcceptReceipt = (field: string): ResearchSessionAcceptReceiptResult => ({
+  ok: false,
+  reason: `invalid_accept_receipt:${field}`,
+})
+
+/**
+ * 校验 202 受理回执（DESIGN §6.3/§6.7；wire 形状与 `submission_response` 同形）。
+ *
+ * 只有能证明「与本次提交同一身份」的回执才允许进入 attach：
+ * - `acceptance_state === "accepted"`；
+ * - `session_ref` 与请求全等（kind/project/session/source）；
+ * - `draft_token`／`editor_intent_hash` 与请求相等；
+ * - `generation_id` 非空（没有 generation 的回执无法 attach，也无法查回）。
+ *
+ * `idempotency_key` 与 `accepted_editor_revision` **只记录不参与等值匹配**
+ * （§6.3 R7：revision 会因位置自动保存变化；服务端回执键由冻结身份重算）。
+ */
+export function parseSessionAcceptReceipt(
+  value: unknown,
+  expected: {
+    readonly sessionRef: ResearchSessionRef
+    readonly draftToken: string
+    readonly editorIntentHash: string
+  },
+): ResearchSessionAcceptReceiptResult {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return invalidAcceptReceipt('body')
+  }
+  const record = value as Record<string, unknown>
+  if (record.acceptance_state !== 'accepted') return invalidAcceptReceipt('acceptance_state')
+  const refResult = parseSessionRef(record.session_ref)
+  if (!refResult.ok) return invalidAcceptReceipt('session_ref')
+  const ref = refResult.value
+  const expectedRef = expected.sessionRef
+  if (
+    ref.kind !== expectedRef.kind
+    || ref.projectId !== expectedRef.projectId
+    || ref.sessionId !== expectedRef.sessionId
+    || ref.sourceId !== expectedRef.sourceId
+  ) {
+    return invalidAcceptReceipt('session_ref')
+  }
+  if (record.draft_token !== expected.draftToken) return invalidAcceptReceipt('draft_token')
+  if (record.editor_intent_hash !== expected.editorIntentHash) {
+    return invalidAcceptReceipt('editor_intent_hash')
+  }
+  const generationId = record.generation_id
+  if (
+    typeof generationId !== 'string'
+    || generationId.trim().length === 0
+    || generationId.length > 256
+  ) {
+    return invalidAcceptReceipt('generation_id')
+  }
+  const rawKey = record.idempotency_key
+  const rawRevision = record.accepted_editor_revision
+  return {
+    ok: true,
+    receipt: {
+      generationId,
+      idempotencyKey: typeof rawKey === 'string' && rawKey.length > 0 ? rawKey : null,
+      editorRevision:
+        typeof rawRevision === 'number'
+        && Number.isInteger(rawRevision)
+        && rawRevision >= 0
+        && rawRevision <= 2_147_483_647
+          ? rawRevision
+          : null,
+      sessionRef: ref,
+    },
+  }
+}
 
 /**
  * 调用方中止流的原因（D-24/§5.3 第 3 行）；缺省视为用户取消。
@@ -1094,6 +1206,9 @@ export function openResearchChatStream(
     }
     contractHeader = session.kind === 'global' ? 'c05-v1' : 'v1'
   }
+  // PR-7：session 两步传输的两次 POST 必须是**逐字节相同**的提交体
+  // （同一幂等键、同一冻结意图；attach 只改变 `Last-Event-ID`）。
+  const requestBodyJson = JSON.stringify(requestBody)
   const controller = new AbortController()
   const url = `${requireResearchGateway()}${buildResearchUrl(options.projectId, streamPath)}`
   const token = researchBearerToken()
@@ -1115,11 +1230,30 @@ export function openResearchChatStream(
    * 传输超时（对 401/403/422 重试是徒劳的），真实状态码也丢了。
    */
   let httpStatusAwaitingBody: number | null = null
+  /**
+   * PR-7：attach 阶段 202 的有界退避定时器。abort 必须清掉它，否则会悬挂
+   * 一次"定时器到期后的第三次 POST"（用户已离开却继续发请求）。
+   */
+  let attachRetryTimer: ReturnType<typeof setTimeout> | null = null
+  /**
+   * PR-7（审查 HIGH-1 / DESIGN §6.4 首次绑定）：202 受理回执已给出本次执行的
+   * `generation_id`，attach 后 SSE `usage.accepted` 首次绑定的 generation 必须
+   * 与之严格相等。不相等说明服务端把这次提交接到了另一次执行——在传输层
+   * fail-closed（不把错误 generation 的 accepted 交给状态机去"首次绑定"）。
+   */
+  let receiptGenerationId: string | null = null
 
   const clearWatchdog = (): void => {
     if (watchdog !== null) {
       clearTimeout(watchdog)
       watchdog = null
+    }
+  }
+
+  const clearAttachRetry = (): void => {
+    if (attachRetryTimer !== null) {
+      clearTimeout(attachRetryTimer)
+      attachRetryTimer = null
     }
   }
 
@@ -1131,6 +1265,7 @@ export function openResearchChatStream(
       watchdog = null
       if (abortReason !== null) return // 调用方已中止：不重复上报
       abortReason = 'timeout'
+      clearAttachRetry()
       controller.abort()
       if (!settlement.settle()) return
       if (httpStatusAwaitingBody !== null) {
@@ -1164,102 +1299,321 @@ export function openResearchChatStream(
   if (token) {
     headers.Authorization = `Bearer ${token}`
   }
-  if (options.lastEventId && options.lastEventId > 0) {
-    // §5.3 第 4 行：Last-Event-ID 语义保持（重连从服务端缓冲游标续读）
-    headers['Last-Event-ID'] = String(options.lastEventId)
+
+  /**
+   * 单次 POST 的请求头：`lastEventId === null` 表示**不携带**该头。
+   * - legacy 分支与 session 第一步：只有正水位才携带（逐字节保持旧行为）；
+   * - session attach：恒携带（首值 `0` = 从头回放缓冲；重连用
+   *   `options.lastEventId`）——0 也是合法游标，不能按 falsy 丢掉。
+   */
+  const headersFor = (lastEventId: number | null): Record<string, string> => {
+    const attemptHeaders: Record<string, string> = { ...headers }
+    if (lastEventId !== null) {
+      // §5.3 第 4 行：Last-Event-ID 语义保持（重连从服务端缓冲游标续读）
+      attemptHeaders['Last-Event-ID'] = String(lastEventId)
+    }
+    return attemptHeaders
   }
 
   // §5.3 第 1 行：等待响应头也必须在预算内（此前只有流内空闲计时，
   // 代理吞掉响应头会让请求永久悬挂）
-  armWatchdog('response')
-
-  fetch(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(requestBody),
-    signal: controller.signal,
-    cache: 'no-store',
-  })
-    .then(async (response) => {
-      if (!response.ok) {
-        // 先记录状态码：体读取期间若看门狗到期，按该状态码上报（B2）
-        httpStatusAwaitingBody = response.status
-        let body: unknown = null
-        try {
-          body = await response.json()
-        } catch {
-          // 非 JSON 错误体：保留 null
-        }
-        clearWatchdog()
-        httpStatusAwaitingBody = null
-        if (settlement.settle()) options.onHttpError?.(response.status, body)
-        return
-      }
-      // D-24（§5.3 第 2 行）：状态通过后**先**校验 Content-Type，
-      // 不是 SSE 就在消费流之前 fail-closed（不武装空闲计时、不读 body）
-      const contentType = response.headers?.get?.('content-type') ?? null
-      if (!isSseContentType(contentType)) {
-        clearWatchdog()
-        if (settlement.settle()) options.onProtocolError?.(`unexpected_content_type:${contentType ?? 'none'}`)
-        return
-      }
-      if (!response.body) {
-        clearWatchdog()
-        if (settlement.settle()) options.onNetworkError?.(new Error('no response body'))
-        return
-      }
-      // Issue #182：响应头只读一次透传（X-Chat-Session-Id 回显），不作行为依赖
-      options.onResponseMeta?.(response.headers)
-      // 校验通过 → 切换为流空闲计时（每收到一批字节即重置）
-      armWatchdog('idle')
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      try {
-        for (;;) {
-          const { done, value } = await reader.read()
-          if (done) break
-          // 收到字节（含 heartbeat 注释帧）→ 重置传输空闲；**不**当作模型进度
-          armWatchdog('idle')
-          buffer += decoder.decode(value, { stream: true })
-          const frames = buffer.split('\n\n')
-          buffer = frames.pop() ?? ''
-          for (const frame of frames) {
-            // §5.3 第 2 行：heartbeat/注释帧只是传输活跃信号，**不是**模型进度
-            // ——不解析、不产生事件（它已在上面重置过空闲计时）
-            if (isHeartbeatComment(frame)) continue
-            const event = parseSseFrame(frame)
-            if (event) {
-              options.onEvent(event)
-            }
-          }
-        }
-        // 正常读尽（EOF）：终态与否由调用方依 sse 状态判定；
-        // 调用方 abort 的收尾不算 EOF（不触发 onEnd）
-        clearWatchdog()
-        if (abortReason === null && !controller.signal.aborted && settlement.settle()) {
-          abortReason = 'normal_end'
-          options.onEnd?.()
-        }
-      } catch (error) {
-        clearWatchdog()
-        if ((error as Error).name !== 'AbortError' && settlement.settle()) {
-          options.onNetworkError?.(error as Error)
-        }
-      }
+  const postOnce = (lastEventId: number | null): Promise<Response> => {
+    armWatchdog('response')
+    return fetch(url, {
+      method: 'POST',
+      headers: headersFor(lastEventId),
+      body: requestBodyJson,
+      signal: controller.signal,
+      cache: 'no-store',
     })
-    .catch((error) => {
+  }
+
+  const contentTypeOf = (response: Response): string | null =>
+    response.headers?.get?.('content-type') ?? null
+
+  /** 非 2xx：读错误体后按既有 `onHttpError` 语义上报（B2：保状态码）。 */
+  const reportHttpError = async (response: Response): Promise<void> => {
+    // 先记录状态码：体读取期间若看门狗到期，按该状态码上报（B2）
+    httpStatusAwaitingBody = response.status
+    let body: unknown = null
+    try {
+      body = await response.json()
+    } catch {
+      // 非 JSON 错误体：保留 null
+    }
+    clearWatchdog()
+    httpStatusAwaitingBody = null
+    if (settlement.settle()) options.onHttpError?.(response.status, body)
+  }
+
+  /**
+   * 2xx + `text/event-stream`：按既有规则消费（去重/终态一次/EOF）。
+   *
+   * `expectedGenerationId` 非 null 时（PR-7 两步传输：已有 202 受理回执），
+   * 任一携带 `accepted` 扩展的事件其 `generation_id` 必须严格等于回执值
+   * （DESIGN §6.4 首次绑定），否则停止应用并按协议错误结算一次。
+   */
+  const consumeEventStream = async (
+    response: Response,
+    expectedGenerationId: string | null = null,
+  ): Promise<void> => {
+    if (!response.body) {
+      clearWatchdog()
+      if (settlement.settle()) options.onNetworkError?.(new Error('no response body'))
+      return
+    }
+    // Issue #182：响应头只读一次透传（X-Chat-Session-Id 回显），不作行为依赖
+    options.onResponseMeta?.(response.headers)
+    // 校验通过 → 切换为流空闲计时（每收到一批字节即重置）
+    armWatchdog('idle')
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let protocolViolation: string | null = null
+    try {
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        // 收到字节（含 heartbeat 注释帧）→ 重置传输空闲；**不**当作模型进度
+        armWatchdog('idle')
+        buffer += decoder.decode(value, { stream: true })
+        const frames = buffer.split('\n\n')
+        buffer = frames.pop() ?? ''
+        for (const frame of frames) {
+          // §5.3 第 2 行：heartbeat/注释帧只是传输活跃信号，**不是**模型进度
+          // ——不解析、不产生事件（它已在上面重置过空闲计时）
+          if (isHeartbeatComment(frame)) continue
+          const event = parseSseFrame(frame)
+          if (!event) continue
+          if (
+            expectedGenerationId !== null
+            && event.accepted !== undefined
+            && event.accepted.generation_id !== expectedGenerationId
+          ) {
+            // §6.4：回执已绑定 generation 后必须严格相等；不等 = 本次提交被
+            // 接到了另一次执行，绝不把错误 generation 交给状态机首次绑定。
+            protocolViolation =
+              `accept_generation_mismatch:receipt=${expectedGenerationId}:event=${event.accepted.generation_id}`
+            break
+          }
+          options.onEvent(event)
+        }
+        if (protocolViolation !== null) break
+      }
+      if (protocolViolation !== null) {
+        // 审查轮 2 MEDIUM-2：**先同步结算再清理**——`reader.cancel()` 可能永远
+        // pending，协议错误的上报不得依赖它完成。
+        const violation = protocolViolation
+        clearWatchdog()
+        // 审查轮 2 MEDIUM-1：清理前后都要重新检查中止状态（abort 后不得迟报）。
+        if (
+          abortReason === null
+          && !controller.signal.aborted
+          && settlement.settle()
+        ) {
+          options.onProtocolError?.(violation)
+        }
+        // 释放读取器（不留下悬挂的 read()）；不等待、失败不影响判定。
+        void reader.cancel().catch(() => {})
+        return
+      }
+      // 正常读尽（EOF）：终态与否由调用方依 sse 状态判定；
+      // 调用方 abort 的收尾不算 EOF（不触发 onEnd）
+      clearWatchdog()
+      if (abortReason === null && !controller.signal.aborted && settlement.settle()) {
+        abortReason = 'normal_end'
+        options.onEnd?.()
+      }
+    } catch (error) {
       clearWatchdog()
       if ((error as Error).name !== 'AbortError' && settlement.settle()) {
         options.onNetworkError?.(error as Error)
       }
+    }
+  }
+
+  /**
+   * PR-7：attach 阶段的有界退避等待。
+   *
+   * 返回 `true` 表示可以发起下一次 attach；`false` 表示调用方已 abort
+   * （定时器已清理，调用方不得再发请求、不得回调）。
+   */
+  const waitBeforeAttachRetry = (delayMs: number): Promise<boolean> =>
+    new Promise((resolve) => {
+      if (abortReason !== null || controller.signal.aborted) {
+        resolve(false)
+        return
+      }
+      const onAbort = (): void => {
+        clearAttachRetry()
+        resolve(false)
+      }
+      attachRetryTimer = setTimeout(() => {
+        attachRetryTimer = null
+        controller.signal.removeEventListener('abort', onAbort)
+        resolve(true)
+      }, Math.max(0, delayMs))
+      controller.signal.addEventListener('abort', onAbort, { once: true })
     })
+
+  /**
+   * 释放一个**不参与判定**的响应体（attach 202 / attach 2xx 非流）。
+   * 未读 body 会占住连接；释放失败不影响协议判定。
+   */
+  const releaseBody = async (response: Response): Promise<void> => {
+    try {
+      await response.body?.cancel()
+    } catch {
+      // 忽略：释放失败不影响判定
+    }
+  }
+
+  /** PR-7：读 202 受理回执并按 §6.3 身份匹配集校验（非法不得 attach）。 */
+  const readAcceptReceipt = async (
+    session: ResearchChatSessionStreamOptions,
+    response: Response,
+  ): Promise<ResearchSessionAcceptReceiptResult> => {
+    let body: unknown = null
+    try {
+      body = await response.json()
+    } catch {
+      return { ok: false, reason: 'invalid_accept_receipt:body' }
+    }
+    return parseSessionAcceptReceipt(body, {
+      sessionRef: session.sessionRef,
+      draftToken: session.draftToken,
+      editorIntentHash: session.editorIntentHash,
+    })
+  }
+
+  /**
+   * PR-7 第二步：同一 body/头 + `Last-Event-ID` attach 订阅。
+   *
+   * - 首值恒 `0`（服务端会重放缓冲，含带 `accepted` 的 `usage` 事件）；
+   * - 重连沿用 `options.lastEventId`（热恢复水位，DESIGN §6.5）；
+   * - 仍收到 202 = 服务端 resume 分派（缓冲未就绪/无活租约）→ 有界退避重试；
+   * - 重试耗尽仍 202 → 交回既有**可重试传输超时**语义（`onIdleTimeout('response')`），
+   *   由调用方转提交查回/unknown：既不伪成功，也不判"未受理"，更不换键重发。
+   */
+  const attachEventStream = async (
+    session: ResearchChatSessionStreamOptions,
+    expectedGenerationId: string | null,
+  ): Promise<void> => {
+    const delays = session.attachRetryDelaysMs ?? DEFAULT_ATTACH_RETRY_DELAYS_MS
+    const attachLastEventId =
+      options.lastEventId !== undefined && options.lastEventId > 0 ? options.lastEventId : 0
+    for (let attempt = 0; ; attempt += 1) {
+      if (abortReason !== null || controller.signal.aborted) return
+      const response = await postOnce(attachLastEventId)
+      if (!response.ok) {
+        await reportHttpError(response)
+        return
+      }
+      const contentType = contentTypeOf(response)
+      if (isSseContentType(contentType)) {
+        await consumeEventStream(response, expectedGenerationId)
+        return
+      }
+      // 202（resume 分派）或其它 2xx 非流：body 不参与判定。
+      clearWatchdog()
+      if (response.status !== 202) {
+        // 2xx 非流、且不是受理回执：协议违反，fail-closed（重试只会拿到同样响应）。
+        // 审查轮 2 MEDIUM-1/2：**同步结算**（不等待 body 释放）；abort 后不迟报。
+        if (
+          abortReason === null
+          && !controller.signal.aborted
+          && settlement.settle()
+        ) {
+          options.onProtocolError?.(`unexpected_content_type:${contentType ?? 'none'}`)
+        }
+        void releaseBody(response)
+        controller.abort()
+        return
+      }
+      if (attempt >= delays.length) {
+        // 重试耗尽仍在 202：按既有可重试传输超时语义结算一次（调用方转查回），
+        // 并终止本地请求，避免继续持有连接。
+        if (
+          abortReason === null
+          && !controller.signal.aborted
+          && settlement.settle()
+        ) {
+          options.onIdleTimeout?.('response')
+        }
+        void releaseBody(response)
+        controller.abort()
+        return
+      }
+      // 重试前释放该响应体；同样不等待（releaseBody 内部已吞掉失败）。
+      void releaseBody(response)
+      const elapsed = await waitBeforeAttachRetry(delays[attempt])
+      if (!elapsed) return
+    }
+  }
+
+  void (async () => {
+    try {
+      // 第一步：session 提交（不带 `Last-Event-ID`，新建时）／legacy 单次 POST。
+      // 服务端对 session 提交先回 202 受理回执；若直接回 200 SSE 仍按原路径消费
+      // （向后兼容，legacy 也只有这条路径）。
+      const first = await postOnce(
+        options.lastEventId !== undefined && options.lastEventId > 0 ? options.lastEventId : null,
+      )
+      if (!first.ok) {
+        await reportHttpError(first)
+        return
+      }
+      const firstContentType = contentTypeOf(first)
+      if (isSseContentType(firstContentType)) {
+        await consumeEventStream(first)
+        return
+      }
+      if (sessionOptions !== null && first.status === 202) {
+        // PR-7（DESIGN §6.2/§6.3）：受理回执必须与本次提交同一身份，
+        // 否则视为协议违反、**不**attach（不猜、不重发、不换键）。
+        if (!isJsonContentType(firstContentType)) {
+          clearWatchdog()
+          if (settlement.settle()) {
+            options.onProtocolError?.(`unexpected_content_type:${firstContentType ?? 'none'}`)
+          }
+          return
+        }
+        const receipt = await readAcceptReceipt(sessionOptions, first)
+        if (!receipt.ok) {
+          clearWatchdog()
+          // 审查 MEDIUM-2：回执体读取期间调用方可能已 abort——不得把 abort
+          // 导致的读失败升级成迟到的协议错误回调。
+          if (abortReason !== null || controller.signal.aborted) return
+          if (settlement.settle()) options.onProtocolError?.(receipt.reason)
+          return
+        }
+        clearWatchdog()
+        // §6.4 首次绑定：把回执 generation 交给 attach 的 accepted 守卫。
+        receiptGenerationId = receipt.receipt.generationId
+        await attachEventStream(sessionOptions, receiptGenerationId)
+        return
+      }
+      // D-24（§5.3 第 2 行）：状态通过但 Content-Type 不是 SSE 就在消费流之前
+      // fail-closed（不武装空闲计时、不读 body）；legacy 收到 202 也走这里。
+      clearWatchdog()
+      if (settlement.settle()) {
+        options.onProtocolError?.(`unexpected_content_type:${firstContentType ?? 'none'}`)
+      }
+    } catch (error) {
+      clearWatchdog()
+      if ((error as Error).name !== 'AbortError' && settlement.settle()) {
+        options.onNetworkError?.(error as Error)
+      }
+    }
+  })()
 
   return (reason: ResearchStreamAbortReason = 'user_cancel') => {
     // 调用方主动中止：区分原因（仅 timeout 可重试——此处必非 timeout），
     // 并让终止路径保持"只结算一次"。timeout 由空闲看门狗自行 abort。
+    // PR-7：同时中止两阶段与 attach 退避定时器（不再发下一次 POST）。
     if (abortReason === null) abortReason = reason
     clearWatchdog()
+    clearAttachRetry()
     controller.abort()
   }
 }
