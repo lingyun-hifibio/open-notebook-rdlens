@@ -56,13 +56,27 @@ const BOOTSTRAP_FAILED = 'bootstrap_failed'
 
 const INVALID_RESPONSE = 'invalid_response'
 
-/** 读 HTTP 状态（无响应/形状不符一律 null）。 */
+/**
+ * 读 HTTP 状态（无响应/形状不符/非法数值一律 null）。
+ *
+ * `never throws`：恶意或被破坏的错误对象可能用 getter 抛错（`response` 是
+ * 访问器属性），本函数吞掉读取异常并按“无响应”处理——分类退化为保守的
+ * 可重试传输失败，绝不冒泡成未处理拒绝。
+ */
 function readStatus(error: unknown): number | null {
-  if (error === null || typeof error !== 'object') return null
-  const response = (error as { response?: unknown }).response
-  if (response === null || response === undefined || typeof response !== 'object') return null
-  const status = (response as { status?: unknown }).status
-  return typeof status === 'number' ? status : null
+  try {
+    if (error === null || typeof error !== 'object') return null
+    const response = (error as { response?: unknown }).response
+    if (response === null || response === undefined || typeof response !== 'object') return null
+    const status = (response as { status?: unknown }).status
+    if (typeof status !== 'number' || !Number.isInteger(status)) return null
+    // 只接受真实 HTTP 状态区间：越界值（0/负数/999999）不是可分类的响应，
+    // 否则会被误当成 5xx 并保留稳定码。
+    if (status < 100 || status > 599) return null
+    return status
+  } catch {
+    return null
+  }
 }
 
 /** 读传输层错误码（axios 与 fetch 包装的码都挂在 `code` 上）。 */
@@ -105,8 +119,10 @@ function mapHttpFailure(error: unknown, status: number): SessionRuntimeBootstrap
   const envelopeCode = researchApiErrorDetail(error).code
 
   if (status === 401) {
-    // 会话过期/需重新认证：交父页面刷新，客户端不重试、不跳登录页。
-    return { status: 'error', code: envelopeCode ?? 'unauthenticated', retryable: false }
+    // 认证失效：FREEZE §7「401 无专用 code，按状态」——固定归一到 `unauthenticated`，
+    // 不把 envelope 里可能出现的其它码（token_expired 等）当成本会话稳定码；
+    // 交父页面刷新，客户端不重试、不跳登录页（DESIGN §7.1）。
+    return { status: 'error', code: 'unauthenticated', retryable: false }
   }
   if (status === 403) {
     // 403 一律终态 unauthorized（`chat_owner_required` 只是其中的具体原因）。
