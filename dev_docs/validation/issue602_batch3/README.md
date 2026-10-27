@@ -33,4 +33,4 @@
 4. source 新会话仍走 legacy 创建、历史 marker 批量查回、`sendSessionChat` consent 延迟统一 completion、真实 bootstrap transport 依赖 `hooks/`+`api.ts`+第二批可用 → 不在本 PR（`card D3`）。
 5. K1 使用 `translateOrFallback` 兜底以保持 PR-2/PR-4 既有断言口径不变；未初始化 i18n 时回退英文常量（生产 i18n 正常初始化时返回译文）。占位符替换用 `split/join`，标题含 `$&`/`$1` 不被当作替换语法。
 6. 证据纪律：`raw/` 原始日志已脱敏（不记录部署凭证/密钥；环境取证只输出白名单字段）；原始日志以 `.txt` 提交（`.log` 被 .gitignore 忽略）。
-7. 安全事件（评审 P0，已处置）：首版提交曾把部署容器 env 中的两项凭证写入 `raw/`。已在修复轮脱敏并 amend + force-push 重写分支 head（`cfa7fe2 → 1d7c593 →` 当前 head）；**旧提交对象仍可能被 GitHub 保留**，需由 Lead 立即轮换 `RD_INTERNAL_SOURCE_ADAPTER_TOKEN` 与 `RD_AI_GATEWAY_API_KEY`（PR 评论已登记，报告不复述值）。
+7. 安全事件（评审 P0，已处置）：首版提交曾把部署容器环境中的敏感值写入 `raw/`。已在修复轮脱敏并重写分支 head；旧提交对象仍可能被 GitHub 保留，需由 Lead/用户完成凭据轮换与对象清理。为避免扩大暴露面，本公开文件不复述旧 SHA、环境键名或任何值；详细记录仅在内部处理。
