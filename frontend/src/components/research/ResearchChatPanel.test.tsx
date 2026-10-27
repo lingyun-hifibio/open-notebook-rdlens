@@ -1788,6 +1788,7 @@ describe('ResearchChatPanel · PR-4 修复轮（P1-1/P1-2/F3/F4）', () => {
 
 import type { ConversationController } from '@/lib/research/session-runtime'
 import type { ConversationTurn } from '@/lib/research/conversation-machine'
+import { messageRowToTurn } from '@/lib/hooks/use-research-chat'
 import type {
   ResearchChatSessionMeta,
   ResearchSubmissionLookupSnapshot,
@@ -2281,5 +2282,65 @@ describe('ResearchChatPanel PR-5b：会话接线与解释 UI', () => {
     // 第二轮独立呈现（空 assistant 不投影空占位）
     expect(screen.getAllByText('第二轮问题')).toHaveLength(1)
     expect(screen.queryByText('research.chatNoAnswer')).not.toBeInTheDocument()
+  })
+
+  it('PR-5b（Codex 复核覆盖缺口）：真实 mapper 的 msg_<gen> 身份也能驱动热恢复去重', () => {
+    const generationId = 'gen_a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6'
+    const durableUser = messageRowToTurn({
+      message_id: 'msg_u_real',
+      role: 'user',
+      content: '第一轮问题',
+    } as never)
+    const durableAssistant = messageRowToTurn({
+      message_id: `msg_${generationId}_assistant`,
+      role: 'assistant',
+      content: '第一轮答案',
+    } as never)
+    expect(durableUser?.serverMessageId).toBe('msg_u_real')
+    expect(durableAssistant?.generationId).toBe(generationId)
+    const historyTurn = {
+      identity: {
+        authGeneration: 1,
+        sessionKey: 'global:p1:sess-1',
+        sessionId: 'sess-1',
+        turnId: 'turn-real',
+        draftToken: 'draft_real',
+        attempt: 1,
+        detached: false,
+        terminal: 'done',
+        generationId,
+        observedRevision: null,
+      },
+      state: 'terminal',
+      sse: {
+        answer: '第一轮答案',
+        thinking: '',
+        citations: [],
+        usage: null,
+        resolvedMode: null,
+        terminal: 'done',
+        errorCode: null,
+        errorMessage: null,
+        contextReport: null,
+        contextCoverage: null,
+      },
+      query: '第一轮问题',
+      operationId: null,
+      accepted: null,
+      errorCode: null,
+      errorMessage: null,
+      gapDetected: false,
+      lookup: null,
+      clearPending: false,
+      incomplete: false,
+      external: false,
+    } as unknown as ConversationTurn
+    renderSessionPanel({
+      turns: [durableUser!, durableAssistant!],
+      conversation: conversationStub(null, [historyTurn]),
+    })
+    expect(screen.getAllByText('第一轮问题')).toHaveLength(1)
+    expect(screen.getAllByText('第一轮答案')).toHaveLength(1)
+    expect(document.querySelector('[data-message-id="msg_u_real"]')).not.toBeNull()
   })
 })
