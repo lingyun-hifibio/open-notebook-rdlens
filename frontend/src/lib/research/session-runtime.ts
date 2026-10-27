@@ -1842,11 +1842,15 @@ export function createConversationController(input: {
       // 持久草稿后，UI 用同一 token/key 首次发送应视为幂等重试而非“改意图”：
       // 该 token 从未由本 runtime 派发，服务端幂等键可安全去重；仅放行完全
       // 相同的 token/key，改 token/key 仍需显式确认。
+      // external_lookup 的 identity key 恒为空串；用查回 view 带回的 key 作严格
+      // 判据（真实 7896 已对拍：not_observed 的 idempotency_key 与前端
+      // buildSubmissionKey 逐字节相等）。仅同 token+同 key 放行；改 key 仍拦。
+      const lookupKey = turnState.lookup?.view?.idempotencyKey ?? ''
       const externalSameIdentity = meta === undefined
         && input.draftToken === turnState.identity.draftToken
         && (
-          turnState.identity.idempotencyKey === ''
-          || input.idempotencyKey === turnState.identity.idempotencyKey
+          input.idempotencyKey === lookupKey
+          || (lookupKey === '' && input.idempotencyKey === turnState.identity.idempotencyKey)
         )
       if (!replay && !externalSameIdentity && input.confirmDuplicateExecution !== true) {
         return Promise.resolve({
