@@ -1,7 +1,7 @@
 # PR-6 键盘 / IME / 焦点 / 布局检查（DESIGN §8.1–§8.6、§10.3）
 
 - **级别**：结构断言与真实事件断言 = `simulated`（jsdom/组件测试，**pass**）；视觉/布局人工检查 = **`limited`**（未执行浏览器截图/Playwright，jsdom 不能计算布局；不写“布局验收通过”）。
-- **执行**：2026-10-27，`frontend`（head 见 PR）。
+- **执行**：2026-10-27，`frontend`（代码/测试 head `2cd727c64a61e437dfd38c504d1c3bc8e78bfa01`）。
 
 ## 1. 会话抽屉键盘与焦点（§8.1）— pass（simulated）
 

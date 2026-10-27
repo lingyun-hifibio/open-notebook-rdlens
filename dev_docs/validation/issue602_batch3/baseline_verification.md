@@ -47,7 +47,7 @@ $ npx vitest run src/components/research/NotesPanel.test.tsx src/components/rese
 
 干净基线与本 PR 的宽范围结果：`25 failed | 1510 passed (1535)` vs `25 failed | 1547 passed (1572)`；失败文件与条数一致（**非本 PR 回归**），新增 37 条通过用例来自本 PR 键盘/焦点/i18n/动画时序测试。
 
-## 4. 本 PR 定向套件（最终 head 见 PR）
+## 4. 本 PR 定向套件（代码/测试 head `2cd727c64a61e437dfd38c504d1c3bc8e78bfa01`）
 
 ```text
 $ npx vitest run src/lib/locales/index.test.ts src/lib/locales/interpolation.test.ts \

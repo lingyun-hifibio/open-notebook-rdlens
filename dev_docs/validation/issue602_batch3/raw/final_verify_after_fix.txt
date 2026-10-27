@@ -1,7 +1,7 @@
-# PR-6 最终验证（B1/B2 修复后；verified head 见下）
+# PR-6 最终验证（B1/B2 修复后；verified_code_head 见下）
 date: 2026-10-27T16:29:32+08:00
-verified_head: b1bd43ace0925448375c3b9bc19e683ce6a7cec3
-note: B1/B2 测试与文档修正 commit 追加于该 head 之后，最终 head 见 PR
+verified_code_head: 2cd727c64a61e437dfd38c504d1c3bc8e78bfa01
+note: 该 SHA 为实际跑出本文件数字（27/226/1547 等）的代码/测试 head；本 commit 仅修证据元数据，不改代码/测试
 cwd: /home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr6
 
 ## 0) Source 面板定向（B1）

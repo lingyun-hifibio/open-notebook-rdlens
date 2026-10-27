@@ -1,6 +1,6 @@
 # PR-6 验证命令与原始输出摘要（2026-10-27，恢复轮 fix commit）
 
-本文件验证于 head `b1bd43ace0925448375c3b9bc19e683ce6a7cec3`；B1/B2 的测试/文档修正 commit 追加于其后，最终 head 见 PR。原始输出同时见 PR 评论。
+本文件验证于代码/测试 head `2cd727c64a61e437dfd38c504d1c3bc8e78bfa01`（该 SHA 实际跑出本文件的 27/226/1547 等数字）；后续 commit 仅修证据元数据，不改代码/测试。原始输出另见 PR 评论。
 所有命令在 `frontend/` 下执行，secret-scan 在仓库根执行（`origin/main` = `404c0e2`）。
 
 ## 0. 证据 secret-scan 门禁（仓库根）
@@ -61,7 +61,7 @@ cd frontend
 npx vitest run src/lib/locales src/components/research src/lib/research src/lib/hooks src/app/research
 ```
 
-- 本 PR 最终 head：`Test Files 2 failed | 99 passed (101)`；`Tests 25 failed | 1547 passed (1572)`，EXIT:1；
+- 本 PR（代码/测试 head `2cd727c64a61e437dfd38c504d1c3bc8e78bfa01`）：`Test Files 2 failed | 99 passed (101)`；`Tests 25 failed | 1547 passed (1572)`，EXIT:1；
   失败仅 `NotesPanel.test.tsx`(11) + `SourceListPanel.test.tsx`(14)。
 - 干净 `origin/main`（`.worktrees/pr6-baseline`）：`2 failed | 98 passed (100)`；`25 failed | 1510 passed (1535)`，EXIT:1；
   同文件同条数 → **预存在失败，非本 PR 回归**；新增 37 条通过用例来自本 PR。
@@ -92,7 +92,7 @@ npx vitest run src/lib/locales src/components/research src/lib/research src/lib/
 ## 5. 其他检查
 
 ```bash
-git diff --check origin/main...HEAD   # 无输出（head 见 PR）
+git diff --check origin/main...2cd727c64a61e437dfd38c504d1c3bc8e78bfa01   # 无输出（代码/测试 head）
 python3 scripts/validation/scan_evidence_secrets.py   # SECRET-SCAN OK
 ```
 
