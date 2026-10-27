@@ -2723,3 +2723,516 @@ describe('ResearchChatPanel · PR-6 布局与切换焦点（§8.2/§8.3/§8.4）
     }
   })
 })
+
+// ── PR-10（#602 6b 真实接入 P0）：冷启动草稿查回只对“加载时的持久非空草稿” ──
+//
+// 根因：此前的查回 effect 以“草稿非空”为唯一条件。新建会话里用户新输入的
+// 草稿也满足该条件 → `refreshMarkerLookups(newToken)` 对一个从未提交过的
+// token 查回 → `not_observed` → 控制器产出一个 `external` turn → 随后首次
+// 真实发送被 `replay_snapshot_unavailable` 阻断（点 Send 无 POST /chat）。
+// 本组用例钉死：①新建空会话后用户输入不查回；②加载时已存在的持久非空
+// 草稿仍查回一次（F10 不回退）；③结束后控制器无 not_observed turn。
+import { createConversationController } from '@/lib/research/session-runtime'
+
+describe('ResearchChatPanel PR-10：冷启动草稿查回守卫（新建会话不查回）', () => {
+  const REF: ResearchSessionRef = {
+    domain: 'research',
+    kind: 'global',
+    projectId: PROJECT_ID,
+    sessionId: 'sess-pr10',
+    sourceId: null,
+  }
+
+  /**
+   * 真实 controller + 可控 transport：查回返回 `not_observed`（新 token 在服务端
+   * 没有任何提交，这正是线上触发路径），并记录是否发生过查回。
+   */
+  function mountCase(options: {
+    /** 首次挂载时的 editor 草稿（模拟“加载时已存在的持久草稿”）。 */
+    initialDraftText?: string
+    initialDraftToken?: string
+    /** 面板是否提供 refreshMarkerLookups（sessionMode 才提供）。 */
+    withLookup?: boolean
+  } = {}) {
+    const submissionCalls: string[] = []
+    const controller = createConversationController({
+      ref: REF,
+      authGeneration: 1,
+      transport: {
+        openStream: () => ({ abort: () => {} }),
+        getSubmission: (input) => {
+          submissionCalls.push(input.token)
+          // 冷启动查回：该 token 无提交记录 → not_observed（与后端一致）。
+          return {
+            session_ref: {
+              domain: 'research',
+              kind: 'global',
+              project_id: PROJECT_ID,
+              session_id: 'sess-pr10',
+              source_id: null,
+            },
+            draft_token: input.token,
+            idempotency_key: `s1_${'b'.repeat(64)}`,
+            acceptance_state: 'not_observed',
+            generation_id: null,
+            generation_state: null,
+            accepted_editor_revision: null,
+            editor_intent_hash: null,
+            submitted_draft_text: null,
+            context_report: null,
+          }
+        },
+        releaseHold: () => {},
+      },
+    })
+    const refreshMarkerLookups = vi.fn(async (token?: string | null) => {
+      const result = await controller.lookupSubmission(token ?? undefined)
+      return result.status === 'ok' ? 1 : 0
+    })
+    const onSendSession = vi.fn(async () => true)
+
+    function Case(): React.ReactElement {
+      const [snapshot, setSnapshot] = useState<EditorSnapshot>(() => ({
+        ...createEditorState({
+          ref: REF,
+          writerId: 'writer-pr10',
+          transportAvailable: true,
+          draftToken: options.initialDraftToken ?? 'draft_initial',
+        }),
+        phase: 'ready',
+        loading: false,
+        draftText: options.initialDraftText ?? '',
+        baseScope: { mode: 'selected' as const, sourceIds: ['src_1'], singleSourceId: null },
+      }))
+      return (
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })}>
+          <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
+            <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+              <ResearchChatPanel
+                turns={[]}
+                isStreaming={false}
+                onSend={vi.fn(async () => true)}
+                onSendCoverage={vi.fn(async () => ACCEPTED_OUTCOME)}
+                editorSnapshot={snapshot}
+                conversation={controller}
+                sessionRef={REF}
+                onSendSession={onSendSession}
+                refreshMarkerLookups={options.withLookup === false ? undefined : refreshMarkerLookups}
+                scopeSources={[{ sourceId: 'src_1', title: 'Paper One' }]}
+                scopeNotes={[]}
+                onChangeScope={vi.fn()}
+                // 模拟真实接线：输入经 editor 生成新 token（文本变化即换 token）。
+                onDraftChange={(text) => setSnapshot((prev) => ({
+                  ...prev,
+                  draftText: text,
+                  draftToken: `${'draft_input'}_${text.length}`,
+                  dirty: text.length > 0,
+                }))}
+                onRetrySave={vi.fn()}
+              />
+            </ResearchScopeProvider>
+          </ResearchWorkspaceProvider>
+        </QueryClientProvider>
+      )
+    }
+
+    render(<Case />)
+    return { controller, refreshMarkerLookups, submissionCalls, onSendSession }
+  }
+
+  /** 控制器当前是否有 not_observed turn（= 会把首次发送挡在 replay 校验上）。 */
+  function hasNotObservedTurn(controller: ReturnType<typeof createConversationController>): boolean {
+    const snapshot = controller.getSnapshot()
+    const turns = [snapshot.turn, ...snapshot.history].filter(
+      (entry): entry is NonNullable<typeof entry> => entry !== null,
+    )
+    return turns.some((entry) => entry.state === 'not_observed')
+  }
+
+  it('①新建空会话初次 ready 为空 → 用户输入 → 不调用 refreshMarkerLookups', async () => {
+    const { refreshMarkerLookups } = mountCase()
+    // 初始空稿：不查回。
+    expect(refreshMarkerLookups).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: '新会话第一问' } })
+    // 用户输入后即使换 token、草稿非空，也不得查回。
+    await waitFor(() => expect(screen.getByTestId('chat-input')).toHaveValue('新会话第一问'))
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(refreshMarkerLookups).not.toHaveBeenCalled()
+  })
+
+  it('②加载时已存在的非空持久草稿 → 仍查回一次（F10 不回退）', async () => {
+    const { refreshMarkerLookups } = mountCase({
+      initialDraftText: '持久草稿',
+      initialDraftToken: 'draft_persisted',
+    })
+    await waitFor(() => expect(refreshMarkerLookups).toHaveBeenCalledTimes(1))
+    expect(refreshMarkerLookups).toHaveBeenCalledWith('draft_persisted')
+  })
+
+  it('③新建会话输入并挂载后：控制器无 not_observed turn（首次发送不会被 replay 校验阻断）', async () => {
+    const { controller, submissionCalls } = mountCase()
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: '新会话第一问' } })
+    await waitFor(() => expect(screen.getByTestId('chat-input')).toHaveValue('新会话第一问'))
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(submissionCalls).toEqual([])
+    expect(hasNotObservedTurn(controller)).toBe(false)
+    expect(controller.getSnapshot().turn).toBeNull()
+  })
+
+  it('对照：持久草稿查回后控制器确有 not_observed turn（说明 ③ 的断言可证伪）', async () => {
+    const { controller } = mountCase({
+      initialDraftText: '持久草稿',
+      initialDraftToken: 'draft_persisted',
+    })
+    await waitFor(() => expect(hasNotObservedTurn(controller)).toBe(true))
+    // 该 turn 是 external（不绑定编辑器快照），与 §6.7 冷启动语义一致。
+    expect(controller.getSnapshot().turn?.external).toBe(true)
+  })
+
+  it('无 refreshMarkerLookups（未接线查回）时不产生 turn', async () => {
+    const { controller } = mountCase({
+      initialDraftText: '持久草稿',
+      initialDraftToken: 'draft_persisted',
+      withLookup: false,
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(controller.getSnapshot().turn).toBeNull()
+  })
+})
+
+// PR-10 补：恢复“他人本机草稿”按钮同样产出从未提交过的新 token，也必须
+// 归入用户/宿主写入（否则同样会生成 not_observed external turn 并阻断发送）。
+describe('ResearchChatPanel PR-10：恢复他人草稿不触发冷启动查回', () => {
+  it('点击恢复草稿 → 新 token 的非空文本不查回，且控制器无 not_observed turn', async () => {
+    const REF_RESTORE: ResearchSessionRef = {
+      domain: 'research',
+      kind: 'global',
+      projectId: PROJECT_ID,
+      sessionId: 'sess-pr10-restore',
+      sourceId: null,
+    }
+    // 真实 controller：查回走 getSubmission 并返回 not_observed（新 token 无提交）。
+    const submissionCalls: string[] = []
+    const controller = createConversationController({
+      ref: REF_RESTORE,
+      authGeneration: 1,
+      transport: {
+        openStream: () => ({ abort: () => {} }),
+        getSubmission: (input) => {
+          submissionCalls.push(input.token)
+          return {
+            session_ref: {
+              domain: 'research',
+              kind: 'global',
+              project_id: PROJECT_ID,
+              session_id: 'sess-pr10-restore',
+              source_id: null,
+            },
+            draft_token: input.token,
+            idempotency_key: `s1_${'b'.repeat(64)}`,
+            acceptance_state: 'not_observed',
+            generation_id: null,
+            generation_state: null,
+            accepted_editor_revision: null,
+            editor_intent_hash: null,
+            submitted_draft_text: null,
+            context_report: null,
+          }
+        },
+        releaseHold: () => {},
+      },
+    })
+    const refreshMarkerLookups = vi.fn(async (token?: string | null) => {
+      const result = await controller.lookupSubmission(token ?? undefined)
+      return result.status === 'ok' ? 1 : 0
+    })
+    const onRestoreDraft = vi.fn()
+
+    function Case(): React.ReactElement {
+      const [snapshot, setSnapshot] = useState<EditorSnapshot>(() => ({
+        ...createEditorState({
+          ref: REF_RESTORE,
+          writerId: 'writer-pr10-restore',
+          transportAvailable: true,
+          draftToken: 'draft_initial',
+        }),
+        phase: 'ready',
+        loading: false,
+        draftText: '',
+        baseScope: { mode: 'selected' as const, sourceIds: ['src_1'], singleSourceId: null },
+        restoreCandidates: [
+          {
+            writerId: 'w-other',
+            text: '他人草稿',
+            savedAt: '2026-10-27T00:00:00.000Z',
+            localVersion: 1,
+            baseRevision: 0,
+            dirty: true,
+          },
+        ],
+      }))
+      return (
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })}>
+          <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
+            <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+              <ResearchChatPanel
+                turns={[]}
+                isStreaming={false}
+                onSend={vi.fn(async () => true)}
+                onSendCoverage={vi.fn(async () => ACCEPTED_OUTCOME)}
+                editorSnapshot={snapshot}
+                conversation={controller}
+                sessionRef={REF_RESTORE}
+                onSendSession={vi.fn(async () => true)}
+                refreshMarkerLookups={refreshMarkerLookups}
+                scopeSources={[{ sourceId: 'src_1', title: 'Paper One' }]}
+                scopeNotes={[]}
+                onChangeScope={vi.fn()}
+                onDraftChange={vi.fn()}
+                onRetrySave={vi.fn()}
+                onRestoreDraft={(writerId) => {
+                  onRestoreDraft(writerId)
+                  // 模拟 editor.restoreDraft：非空文本 + 全新 token。
+                  setSnapshot((prev) => ({
+                    ...prev,
+                    draftText: '他人草稿',
+                    draftToken: 'draft_restored',
+                    dirty: true,
+                  }))
+                }}
+              />
+            </ResearchScopeProvider>
+          </ResearchWorkspaceProvider>
+        </QueryClientProvider>
+      )
+    }
+
+    render(<Case />)
+    // 初始空稿：不查回。
+    expect(refreshMarkerLookups).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByTestId('research-draft-restore'))
+    expect(onRestoreDraft).toHaveBeenCalledWith('w-other')
+    await waitFor(() => expect(screen.getByTestId('chat-input')).toHaveValue('他人草稿'))
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(refreshMarkerLookups).not.toHaveBeenCalled()
+    expect(submissionCalls).toEqual([])
+    expect(controller.getSnapshot().turn).toBeNull()
+  })
+})
+
+// PR-10 补（Codex MEDIUM）：会话切走再回来时，用户本机写过的草稿**不得**
+// 因重新加载而被当成“持久草稿”查回——否则 P0 会以更窄路径复现
+// （输入→等保存→切走→回来→点 Send 又被 replay 校验阻断）。
+// 同时：切回来重新加载出的**另一段**持久草稿仍按 F10 查回一次。
+describe('ResearchChatPanel PR-10：会话切走再回来', () => {
+  const REF_A: ResearchSessionRef = {
+    domain: 'research',
+    kind: 'global',
+    projectId: PROJECT_ID,
+    sessionId: 'sess-pr10-a',
+    sourceId: null,
+  }
+  const REF_B: ResearchSessionRef = {
+    domain: 'research',
+    kind: 'global',
+    projectId: PROJECT_ID,
+    sessionId: 'sess-pr10-b',
+    sourceId: null,
+  }
+
+  function editorReady(
+    ref: ResearchSessionRef,
+    draftText: string,
+    draftToken: string,
+    phase: 'ready' | 'loading' = 'ready',
+  ): EditorSnapshot {
+    return {
+      ...createEditorState({ ref, writerId: 'w-pr10', transportAvailable: true, draftToken }),
+      phase,
+      loading: phase === 'loading',
+      draftText,
+      baseScope: { mode: 'all' as const, sourceIds: [], singleSourceId: null },
+    }
+  }
+
+  const refreshMarkerLookups = vi.fn(async () => 1)
+
+  /** 最小 controller 替身：只为满足 `sessionWired`（此刻不产生任何 turn）。 */
+  const idleConversation = {
+    getSnapshot: () => ({
+      version: 1,
+      sessionKey: 'global:p1:sess-pr10',
+      authGeneration: 1,
+      turn: null,
+      history: [],
+      detailMessages: [],
+      detailCursor: null,
+    }),
+    subscribe: () => () => {},
+    load: vi.fn(async () => ({ status: 'ok' })),
+    lookupSubmission: vi.fn(async () => ({ status: 'ok' })),
+    refreshStatus: vi.fn(async () => ({ status: 'ok' })),
+  } as unknown as ConversationController
+
+  /**
+   * 受控双会话外壳：`initial` 是每个会话首次加载出的快照；用户输入会写回该
+   * 会话快照（模拟 editor 的 draft/text + 新 token），`reloadA` 用于模拟
+   * “切回来重新加载”（先 loading 再 ready，换 token）。
+   */
+  function SwitchCase({
+    initial,
+  }: {
+    initial: { a: EditorSnapshot; b: EditorSnapshot }
+  }): React.ReactElement {
+    const [active, setActive] = useState<'a' | 'b'>('a')
+    const [snaps, setSnaps] = useState(initial)
+    const ref = active === 'a' ? REF_A : REF_B
+    return (
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })}>
+        <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
+          <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+            <button type="button" data-testid="goto-b" onClick={() => setActive('b')}>
+              goto b
+            </button>
+            <button type="button" data-testid="goto-a" onClick={() => setActive('a')}>
+              goto a
+            </button>
+            <button
+              type="button"
+              data-testid="reload-a"
+              onClick={() =>
+                setSnaps((prev) => ({
+                  ...prev,
+                  a: { ...prev.a, phase: 'loading', loading: true },
+                }))
+              }
+            >
+              reload a
+            </button>
+            <button
+              type="button"
+              data-testid="reload-a-done"
+              onClick={() =>
+                setSnaps((prev) => ({
+                  ...prev,
+                  // 重新加载完成：服务端持久草稿换了新 token。
+                  a: {
+                    ...prev.a,
+                    phase: 'ready',
+                    loading: false,
+                    draftToken: `${prev.a.draftToken}_reloaded`,
+                  },
+                }))
+              }
+            >
+              reload a done
+            </button>
+            <ResearchChatPanel
+              turns={[]}
+              isStreaming={false}
+              onSend={vi.fn(async () => true)}
+              onSendCoverage={vi.fn(async () => ACCEPTED_OUTCOME)}
+              editorSnapshot={snaps[active]}
+              conversation={idleConversation}
+              sessionRef={ref}
+              onSendSession={vi.fn(async () => true)}
+              refreshMarkerLookups={refreshMarkerLookups}
+              scopeSources={[]}
+              scopeNotes={[]}
+              onChangeScope={vi.fn()}
+              onDraftChange={(text) =>
+                setSnaps((prev) => ({
+                  ...prev,
+                  [active]: {
+                    ...prev[active],
+                    draftText: text,
+                    draftToken: `draft_${active}_typed_${text.length}`,
+                    dirty: text.length > 0,
+                  },
+                }))
+              }
+              onRetrySave={vi.fn()}
+            />
+          </ResearchScopeProvider>
+        </ResearchWorkspaceProvider>
+      </QueryClientProvider>
+    )
+  }
+
+  beforeEach(() => {
+    localStorage.clear()
+    refreshMarkerLookups.mockClear()
+  })
+
+  afterEach(() => {
+    cleanup()
+    localStorage.clear()
+  })
+
+  it('A 输入过 → 切 B → 回 A（重新加载出同一段文本）→ 不查回', async () => {
+    render(
+      <SwitchCase
+        initial={{
+          a: editorReady(REF_A, '', 'draft_a_empty'),
+          b: editorReady(REF_B, '', 'draft_b_empty'),
+        }}
+      />,
+    )
+    expect(refreshMarkerLookups).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: '我在 A 输入的问题' } })
+    await waitFor(() => expect(screen.getByTestId('chat-input')).toHaveValue('我在 A 输入的问题'))
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(refreshMarkerLookups).not.toHaveBeenCalled()
+    // 切到 B，再回到 A：A 重新加载出同一段（用户写过的）文本。
+    fireEvent.click(screen.getByTestId('goto-b'))
+    await act(async () => {
+      await Promise.resolve()
+    })
+    fireEvent.click(screen.getByTestId('reload-a'))
+    fireEvent.click(screen.getByTestId('goto-a'))
+    await act(async () => {
+      await Promise.resolve()
+    })
+    fireEvent.click(screen.getByTestId('reload-a-done'))
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(refreshMarkerLookups).not.toHaveBeenCalled()
+  })
+
+  it('F10 不回退：A 首次加载即有持久草稿 → 查回一次；切走回来重新加载 → 仍可查回', async () => {
+    render(
+      <SwitchCase
+        initial={{
+          a: editorReady(REF_A, '持久草稿 A', 'draft_a_persisted'),
+          b: editorReady(REF_B, '', 'draft_b_empty'),
+        }}
+      />,
+    )
+    await waitFor(() => expect(refreshMarkerLookups).toHaveBeenCalledTimes(1))
+    expect(refreshMarkerLookups).toHaveBeenCalledWith('draft_a_persisted')
+    // 切到 B，再回到 A：重新进入加载后再次 ready，换 token。
+    fireEvent.click(screen.getByTestId('goto-b'))
+    await act(async () => {
+      await Promise.resolve()
+    })
+    fireEvent.click(screen.getByTestId('reload-a'))
+    fireEvent.click(screen.getByTestId('goto-a'))
+    await act(async () => {
+      await Promise.resolve()
+    })
+    fireEvent.click(screen.getByTestId('reload-a-done'))
+    await waitFor(() => expect(refreshMarkerLookups).toHaveBeenCalledTimes(2))
+    expect(refreshMarkerLookups).toHaveBeenLastCalledWith('draft_a_persisted_reloaded')
+  })
+})

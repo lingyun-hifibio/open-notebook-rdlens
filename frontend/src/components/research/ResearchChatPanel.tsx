@@ -551,30 +551,98 @@ export function ResearchChatPanel({
   const liveTurn = liveSnapshot?.turn ?? null
   // PR-5b（Codex P2-#9）：冷启动恢复出的非空持久草稿也必须先查回一次当前
   // draft token（marker 写失败/被清除且 cards 为空时 F10 的兜底路径）。
-  // 每个会话只对该会话的首个 editor token 触发一次，避免每次保存换 token 都查回。
-  const draftLookupSessionRef = useRef<string | null>(null)
+  //
+  // PR-10（#602 6b 真实接入 P0）：查回**只允许**针对“加载时已存在的持久非空
+  // 草稿”。此前按“非空即查回”会让新建会话里用户新输入的草稿也触发查回：
+  // 该 token 尚无任何提交，查回必然 not_observed，控制器由此产出一个
+  // `external` turn，使随后首次真实发送被 `replay_snapshot_unavailable`
+  // 阻断（用户点 Send 无 POST /chat）。
+  //
+  // 判定按会话维护：
+  // - `userTexts`：本面板生命周期内由用户/宿主写入过的草稿文本（trim 后）。
+  //   命中即视为“本机输入”，永不查回——包括切走再回来、editor 控制器被
+  //   重建后重新加载出同一段文本的情形（否则 P0 会以更窄的路径复现：
+  //   输入→等保存→切走→回来→直接点 Send 又被阻断）。
+  // - `lookedUpToken`：本会话已发起过查回的 token，避免同一 token 重复查回；
+  //   editor 重新进入加载（非 ready/loading）时清空，使重新加载出的**另一段**
+  //   持久草稿仍能按 F10 查回一次。
+  type ColdStartEntry = { lookedUpToken: string | null; userTexts: Set<string> }
+  const coldStartLookupRef = useRef<Map<string, ColdStartEntry>>(new Map())
+  /**
+   * 手动恢复本机草稿后的抑制：恢复会生成「全新 token + 从未提交过的文本」，
+   * 而恢复文本只有 editor 知道（候选记录不含文本），故发起恢复时记下当时的
+   * token，等观察到 token 变化后把新文本登记为用户写入、不查回。
+   */
+  const restoreSuppressRef = useRef<{ fromToken: string } | null>(null)
+  const coldStartEntry = (key: string): ColdStartEntry => {
+    const existing = coldStartLookupRef.current.get(key)
+    if (existing !== undefined) return existing
+    const created: ColdStartEntry = { lookedUpToken: null, userTexts: new Set() }
+    coldStartLookupRef.current.set(key, created)
+    return created
+  }
+  /**
+   * 把某会话标记为“当前草稿来自用户/宿主写入，无需冷启动查回”。
+   * `text` 是写入后的草稿文本（trim 后非空才记录）；未知时可省略，此时仅
+   * 放弃当前 token 的查回资格。
+   */
+  const markDraftUserAuthored = (text?: string | null): void => {
+    if (currentSessionIdentity === null) return
+    const entry = coldStartEntry(currentSessionIdentity)
+    const trimmed = typeof text === 'string' ? text.trim() : ''
+    if (trimmed !== '') entry.userTexts.add(trimmed)
+    const token = editorSnapshot?.draftToken ?? ''
+    if (token !== '') entry.lookedUpToken = token
+  }
   useEffect(() => {
     if (!sessionWired || refreshMarkerLookups === undefined) return
-    // PR-5b（Codex 第 2 轮 P2-#9）：必须等 editor 真正加载完成且草稿非空，
-    // 否则初始本地 token 会占用“本会话已查回”标记，持久草稿随后不再查回。
+    const key = currentSessionIdentity
+    if (key === null) return
+    // 只处理“当前会话自己的” editor 快照：切换瞬间可能仍拿到上一会话的快照，
+    // 用它判定会污染新会话的冷启动结论。
+    if (editorSnapshot === null || editorSnapshot === undefined) return
+    if (editorSnapshotIdentity !== key) return
+    const entry = coldStartEntry(key)
+    // 手动恢复草稿后的首个新 token：登记其文本为用户写入，不做冷启动查回。
+    const suppressed = restoreSuppressRef.current
     if (
-      editorSnapshot === null ||
-      editorSnapshot === undefined ||
-      editorSnapshot.phase !== 'ready' ||
-      editorSnapshot.loading ||
-      editorSnapshot.draftText.trim() === ''
+      suppressed !== null &&
+      editorSnapshot.phase === 'ready' &&
+      !editorSnapshot.loading &&
+      editorSnapshot.draftToken !== suppressed.fromToken
     ) {
+      restoreSuppressRef.current = null
+      const restoredText = editorSnapshot.draftText.trim()
+      if (restoredText !== '') entry.userTexts.add(restoredText)
+      if (editorSnapshot.draftToken !== '') entry.lookedUpToken = editorSnapshot.draftToken
       return
     }
-    const token = editorSnapshot.draftToken ?? null
-    if (token === null || token === '') return
-    const key = sessionRef === null || sessionRef === undefined
-      ? null
-      : `${sessionRef.kind}:${sessionRef.sessionId}`
-    if (key === null || draftLookupSessionRef.current === key) return
-    draftLookupSessionRef.current = key
+    // 必须等 editor 真正加载完成，否则初始本地 token 会占用“本会话已判定”。
+    if (editorSnapshot.phase !== 'ready' || editorSnapshot.loading) {
+      // 重新进入加载：让本轮加载出的草稿重新获得一次查回资格（F10）。
+      // 用户本机写过的文本仍由 userTexts 拦住，不会退回 P0。
+      entry.lookedUpToken = null
+      return
+    }
+    const text = editorSnapshot.draftText.trim()
+    // 空草稿无需查回（新建空会话即停在此处；此后用户输入走 userTexts 拦截）。
+    if (text === '') return
+    if (entry.userTexts.has(text)) return
+    const token = editorSnapshot.draftToken ?? ''
+    if (token === '') return
+    if (entry.lookedUpToken === token) return
+    entry.lookedUpToken = token
     void refreshMarkerLookups(token)
-  }, [sessionWired, refreshMarkerLookups, editorSnapshot?.draftToken, sessionRef])
+  }, [
+    sessionWired,
+    refreshMarkerLookups,
+    editorSnapshot?.draftToken,
+    editorSnapshot?.draftText,
+    editorSnapshot?.phase,
+    editorSnapshot?.loading,
+    editorSnapshotIdentity,
+    currentSessionIdentity,
+  ])
   const surfaceActiveRef = useRef(surfaceActive)
   surfaceActiveRef.current = surfaceActive
   const wiredConversation: ResearchConversationSnapshot = conversationSnapshot ?? {
@@ -789,6 +857,8 @@ export function ResearchChatPanel({
   // 递增 seq 都生效）；不自动派发——发送仍需用户点 Send（既有守卫）。
   useEffect(() => {
     if (prefill && prefill.text.trim() !== '') {
+      // PR-10：宿主写入的预填文本不是“加载时已存在的持久草稿”，不得触发冷启动查回。
+      markDraftUserAuthored(prefill.text)
       if (wired) onDraftChange?.(prefill.text)
       else setQuery(prefill.text)
     }
@@ -1866,10 +1936,30 @@ export function ResearchChatPanel({
               conversationSnapshot={wiredConversation}
               gate={composerGate}
               gateReasonText={composerGateReasonText}
-              onDraftChange={onDraftChange ?? (() => {})}
+              onDraftChange={(text) => {
+                // PR-10：用户在会话里输入＝当前 token 与“加载时的持久草稿”无关，
+                // 不得触发冷启动查回（否则会产出 not_observed 的 external turn
+                // 并阻断随后首次真实发送）。
+                markDraftUserAuthored(text)
+                ;(onDraftChange ?? (() => {}))(text)
+              }}
               onSend={submit}
               onRetrySave={onRetrySave ?? (() => {})}
-              onRestoreDraft={onRestoreDraft}
+              onRestoreDraft={
+                onRestoreDraft === undefined
+                  ? undefined
+                  : (writerId) => {
+                      // PR-10：恢复他人草稿同样产出“从未提交过的新 token”，归入
+                      // 用户/宿主写入，不得触发冷启动查回（否则同样会生成
+                      // not_observed external turn 并阻断首次真实发送）。
+                      // 恢复文本只有 editor 知道（候选记录不含文本）：记下当前
+                      // token，等观察到 token 变化后把恢复出的文本登记为用户写入。
+                      restoreSuppressRef.current = {
+                        fromToken: editorSnapshot?.draftToken ?? '',
+                      }
+                      onRestoreDraft(writerId)
+                    }
+              }
               focusRequestToken={composerFocusToken}
             />
           )
