@@ -84,6 +84,8 @@ export interface ResearchSourceChatTurn {
   reconnectCount: number
   errorCode: string | null
   errorMessage: string | null
+  /** PR-5b：投影自 controller 的行标记是否冷启动 external 查回（去重证据）。 */
+  readonly external?: boolean
 }
 
 export interface UseResearchSourceChatResult {

@@ -721,6 +721,8 @@ describe('ResearchSourceChatPanel', () => {
     )
     renderPanel()
     expect(screen.getAllByText('旧答案')).toHaveLength(1)
+    // 历史问句必须保留（不能只凭同 query 删除 durable user，破坏旧问答配对）
+    expect(screen.getAllByText('重复问题')).toHaveLength(2)
     // 新轮空 answer 保持空占位（没有吞掉旧答案）
     expect(screen.getByText('research.chatNoAnswer')).toBeInTheDocument()
     // durable 行保留自身元数据（usage 徽标），且不伪造成新轮

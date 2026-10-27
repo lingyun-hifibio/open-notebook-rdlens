@@ -192,6 +192,7 @@ export function ResearchSourceChatPanel({
           reconnectCount: 0,
           errorCode: null,
           errorMessage: null,
+          external: turn.external,
         },
         {
           id: turn.identity.turnId,
@@ -207,6 +208,7 @@ export function ResearchSourceChatPanel({
           reconnectCount: 0,
           errorCode: turn.sse.errorCode ?? turn.errorCode,
           errorMessage: turn.sse.errorMessage ?? turn.errorMessage,
+          external: turn.external,
         },
       )
     }
@@ -215,11 +217,12 @@ export function ResearchSourceChatPanel({
     return rows
   })()
   const renderedSourceTurns: ResearchSourceChatTurn[] = (() => {
-    // Codex 聚焦复核（4e9451f..1248827 P1/P2）：source 的 durable 行没有
-    // generation 身份，**禁止**仅凭“同 query/唯一匹配”把旧答案合并进新轮
-    // （重复提问会串旧答案），也不做只复制 content 的合并（会丢 citations/
-    // usage/resolvedMode/sourceRef）。空 external assistant 保持为空占位，
-    // 完整历史答案以 durable 行原样保留。
+    // Codex 聚焦复核（1248827..63fd600 P2）：不能凭“同 query”删除 durable user
+    // （会破坏旧问答配对），也不能在没有执行身份证据时删除 durable assistant
+    // （会丢 citations/usage/meta）。只处理**可证明是同一次执行**的冷启动
+    // external 查回：controller external assistant 与 durable 成对内容唯一
+    // 相同 → 丢弃 durable 副本；其它情况一律原样保留（宁可多一条历史，
+    // 不猜测归属）。
     const durable = [...chat.turns]
     const pairKey = (user: string, assistant: string): string =>
       `${user}\u0000${assistant}`
@@ -232,30 +235,28 @@ export function ResearchSourceChatPanel({
       const key = pairKey(previous.content, turn.content)
       durablePairCounts.set(key, (durablePairCounts.get(key) ?? 0) + 1)
     }
-    const controllerPairKeys = new Set<string>()
+    const externalPairKeys = new Set<string>()
     for (let index = 0; index < controllerTurns.length; index += 1) {
       const turn = controllerTurns[index]
-      if (turn.role !== 'user') continue
-      const next = controllerTurns[index + 1]
-      if (next !== undefined && next.role === 'assistant' && next.content.trim() !== '') {
-        controllerPairKeys.add(pairKey(turn.content, next.content))
-      }
+      if (turn.role !== 'assistant' || turn.content.trim() === '') continue
+      if (turn.external !== true) continue
+      const previous = index > 0 ? controllerTurns[index - 1] : null
+      if (previous === null || previous.role !== 'user') continue
+      externalPairKeys.add(pairKey(previous.content, turn.content))
     }
-    const controllerUserContents = new Set(
-      controllerTurns.filter((turn) => turn.role === 'user').map((turn) => turn.content),
-    )
-    const remaining = durable.filter((turn, index) => {
+    const dropped = new Set<number>()
+    for (let index = 0; index < durable.length; index += 1) {
+      const turn = durable[index]
+      if (turn.role !== 'assistant') continue
       const previous = index > 0 ? durable[index - 1] : null
-      if (turn.role === 'user' && controllerUserContents.has(turn.content)) return false
-      if (turn.role === 'assistant' && previous !== null && previous.role === 'user') {
-        const key = pairKey(previous.content, turn.content)
-        // 仅当 durable 中该成对内容唯一且被 controller 成对覆盖时才去重。
-        if ((durablePairCounts.get(key) ?? 0) === 1 && controllerPairKeys.has(key)) {
-          return false
-        }
-      }
-      return true
-    })
+      if (previous === null || previous.role !== 'user') continue
+      const key = pairKey(previous.content, turn.content)
+      if ((durablePairCounts.get(key) ?? 0) !== 1) continue
+      if (!externalPairKeys.has(key)) continue
+      dropped.add(index)
+      dropped.add(index - 1)
+    }
+    const remaining = durable.filter((_, index) => !dropped.has(index))
     return [...remaining, ...controllerTurns]
   })()
 
