@@ -1,13 +1,6 @@
 'use client'
 
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type KeyboardEvent as ReactKeyboardEvent,
-  type SyntheticEvent,
-} from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ResearchWorkspaceShell } from '@/lib/embedded/shell'
 import { isEmbeddedMode } from '@/lib/embedded/config'
@@ -91,9 +84,6 @@ export default function ResearchPage() {
   )
 }
 
-const GATED_CHAT_CONTROL_SELECTOR =
-  'input, textarea, [contenteditable="true"], [data-testid="chat-input"], [data-testid="chat-send"], [data-testid="srcchat-input"], [data-testid="srcchat-send"], [data-testid="srcchat-new-session"], [data-testid="srcchat-error-retry"], [data-testid^="srcchat-session-"]'
-
 function ResearchPageContent() {
   const { t } = useTranslation()
 
@@ -142,8 +132,6 @@ function ResearchPageContent() {
   // 显式打开来源（含 Back 后重开同一来源）的请求序号：syncedSourceRef 按
   // sourceId 短路会让“重开同一来源”不再同步 runtime/display（R3）。
   const [sourceOpenRequest, setSourceOpenRequest] = useState(0)
-  const workspaceSurfaceRef = useRef<HTMLDivElement | null>(null)
-  const sourceSurfaceRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (!sessionRuntime) {
@@ -461,112 +449,6 @@ function ResearchPageContent() {
   const compact = !isDesktop
   const focusedSourceId = sourceMode ? navSelectedSourceId : null
 
-  // 半接线隔离（Codex review B8 / R4 / R5，Lead P2 裁定）：只有**新导航真正
-  // 可用**时才关闭未接线的旧 Chat 内容（避免同时显示两套“当前会话”）。可用
-  // 条件 = 会话契约能力就绪 + 非 403 终态 + runtime/identity 就绪（可列表）：
-  // 能力缺失/降级或 unauthorized 时新导航列表/创建本身不可用，按 DESIGN §3.3
-  // “原兼容阅读入口仍可用”，不得 inert/aria-hidden 旧兼容入口。门禁只覆盖
-  // Chat 内容（global chat tabpanel、Source Chat 面板），不覆盖 Workbench、
-  // tabs、其它动作与阅读区。
-  const globalNavUsable =
-    globalSessions.capabilitiesReady && !globalSessions.unauthorized && globalSessions.canList
-  const sourceNavUsable =
-    sourceSessions.capabilitiesReady && !sourceSessions.unauthorized && sourceSessions.canList
-  const globalChatGated = !sourceMode && activeMainAction === 'research-chat' && globalNavUsable
-  const sourceChatGated = sourceMode && sourceNavUsable
-
-  /** 门禁区的合成事件兜底：inert 之外再阻断发送/输入类控件的 click/keydown
-   *  冒泡（R4）。只拦“执行/输入”入口：引用跳转、阅读、tabs 等仍可用，避免
-   *  把阅读链路也一并冻结（R5）。 */
-  // 点击/键盘分开：点击拦截覆盖所有门禁内容（含仍未接线的发送/新建按钮）；
-  // 键盘只拦截 global Chat tabpanel（inert 在 jsdom/部分浏览器对新焦点链路
-  // 之外仍需兜底）。Source 面板的 composer 用 readOnly 冻结，不再统一拦截
-  // 键盘，否则会造成 Tab 焦点陷阱（R4）。
-  // Source composer 在门禁下已是 readOnly，但真实面板的 Enter onKeyDown 仍会
-  // 调 submit()（ResearchSourceChatPanel.tsx:231），readOnly 不会阻止该路径。
-  // 只拦截 Enter（发送路径），Tab/方向键保持可离开，避免焦点陷阱（R4）。
-  const blockGatedSubmitKey = useCallback((event: ReactKeyboardEvent<HTMLElement>) => {
-    if (event.key !== 'Enter') return
-    const target = event.target
-    if (!(target instanceof Element)) return
-    if (!target.closest('[data-session-chat-gated="true"]')) return
-    event.preventDefault()
-    event.stopPropagation()
-  }, [])
-
-  const blockGatedChatEvent = useCallback((event: SyntheticEvent) => {
-    const target = event.target
-    if (!(target instanceof Element)) return
-    const selector =
-      event.type === 'keydown'
-        ? '[data-session-chat-keyboard="true"]'
-        : '[data-session-chat-gated="true"]'
-    if (!target.closest(selector)) return
-    const control = target.closest(GATED_CHAT_CONTROL_SELECTOR)
-    if (!control) return
-    event.preventDefault()
-    event.stopPropagation()
-  }, [])
-
-  // 真实浏览器的键盘/焦点阻断由 inert 提供（属性写在门禁面板上）。
-  useEffect(() => {
-    const container = workspaceSurfaceRef.current
-    if (!container) return
-    const activePanel = Array.from(container.querySelectorAll('[role="tabpanel"]')).find(
-      (node) => node.getAttribute('data-state') === 'active',
-    )
-    if (!(activePanel instanceof HTMLElement)) return
-    if (!globalChatGated) return
-    activePanel.setAttribute('inert', '')
-    activePanel.setAttribute('data-session-chat-gated', 'true')
-    activePanel.setAttribute('data-session-chat-keyboard', 'true')
-    activePanel.setAttribute('aria-hidden', 'true')
-    return () => {
-      activePanel.removeAttribute('inert')
-      activePanel.removeAttribute('data-session-chat-gated')
-      activePanel.removeAttribute('data-session-chat-keyboard')
-      activePanel.removeAttribute('aria-hidden')
-    }
-  }, [globalChatGated, activeMainAction, sourceMode])
-
-  // Source 面板包含仍可用的阅读链路（引用跳转、来源正文），不能整块 inert；
-  // 但 composer 必须真正不可编辑（不能只靠 click/keydown 捕获，否则粘贴/焦点
-  // 仍可写入，且全局 keydown 捕获会造成 Tab 焦点陷阱）。因此对门禁区内的
-  // 输入控件设 readOnly/contenteditable=false，键盘事件不再统一拦截（R4）。
-  useEffect(() => {
-    const container = sourceSurfaceRef.current
-    if (!(container instanceof HTMLElement)) return
-    if (!sourceChatGated) return
-    container.setAttribute('data-session-chat-gated', 'true')
-    const editable = Array.from(
-      container.querySelectorAll<HTMLElement>('input, textarea, [contenteditable="true"]'),
-    )
-    const previous = editable.map((element) => ({
-      element,
-      readOnly:
-        element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement
-          ? element.readOnly
-          : null,
-      contentEditable: element.getAttribute('contenteditable'),
-    }))
-    editable.forEach((element) => {
-      if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-        element.readOnly = true
-      } else {
-        element.setAttribute('contenteditable', 'false')
-      }
-    })
-    return () => {
-      container.removeAttribute('data-session-chat-gated')
-      previous.forEach(({ element, readOnly, contentEditable }) => {
-        if (readOnly !== null && (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)) {
-          element.readOnly = readOnly
-        }
-        if (contentEditable !== null) element.setAttribute('contenteditable', contentEditable)
-      })
-    }
-  }, [sourceChatGated, navSelectedSourceId])
-
   return (
     <>
       <ResearchHeader
@@ -614,18 +496,6 @@ function ResearchPageContent() {
               )}
             </span>
           )}
-          {globalChatGated || sourceChatGated ? (
-            <span
-              data-testid="session-content-gate"
-              className="text-xs text-muted-foreground"
-            >
-              {translateOrFallback(
-                t,
-                'research.session.contentNotReady',
-                RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.contentNotReady,
-              )}
-            </span>
-          ) : null}
         </div>
         <div className="min-h-0 flex-1" data-testid="legacy-session-content">
           <ResearchLayout
@@ -664,9 +534,6 @@ function ResearchPageContent() {
               <div
                 key="workspace"
                 className={`h-full min-h-0 ${compact ? '' : 'border-l'}`}
-                ref={workspaceSurfaceRef}
-                onClickCapture={blockGatedChatEvent}
-                onKeyDownCapture={blockGatedChatEvent}
               >
                 {/* 全局工作区保持挂载（隐藏但保活：Chat 流/Job 轮询/四动作
                     访问状态不丢）；Source Chat 也保持挂载，显隐由
@@ -688,9 +555,6 @@ function ResearchPageContent() {
                     className="h-full"
                     data-testid="source-chat-surface"
                     hidden={!sourceMode}
-                    ref={sourceSurfaceRef}
-                    onClickCapture={blockGatedChatEvent}
-                    onKeyDownCapture={blockGatedSubmitKey}
                   >
                     <ResearchSourceChatPanel
                       key={`${projectId}:${navSelectedSourceId}`}

@@ -187,7 +187,6 @@ vi.mock('@/lib/hooks/research-session-runtime', () => ({
 }))
 
 import ResearchPage from './page'
-import { RESEARCH_SESSION_SWITCHER_PLACEHOLDERS } from '@/components/research/ResearchSessionSwitcher'
 import type { SessionRuntimeSnapshot } from '@/lib/research/session-runtime'
 
 const PROJECT_ID = 'proj-1'
@@ -360,6 +359,26 @@ function renderPage() {
 
 function nav() {
   return screen.getByTestId('research-session-nav')
+}
+
+/**
+ * 页面层冻结探针：PR-2 门禁通过给 tabpanel / Source surface 直接写
+ * `inert`、`aria-hidden` 与 `data-session-chat-*` 来关闭内容。断言时同时
+ * 检查自身属性与**祖先链**——回归可能把属性写到父容器上。
+ */
+function frozenAttrs(element: Element): string[] {
+  const found: string[] = []
+  let node: Element | null = element
+  while (node !== null) {
+    for (const name of ['inert', 'aria-hidden', 'data-session-chat-gated', 'data-session-chat-keyboard']) {
+      if (node.hasAttribute(name)) {
+        const value = node.getAttribute(name)
+        found.push(value === null || value === '' ? name : `${name}=${value}`)
+      }
+    }
+    node = node.parentElement
+  }
+  return found
 }
 
 function switcherTrigger(surface: 'global' | 'source') {
@@ -708,39 +727,49 @@ describe('ResearchPage 会话导航：review B6/B7/B8/Major 回归', () => {
     })
   })
 
-  it('半接线隔离（B8/R4/R5）：只门禁未接线 Chat 内容，不门禁 tabs 与阅读区', async () => {
+  it('页面层不再冻结 Chat（PR-9）：tabpanel 及其祖先无 inert/aria-hidden/门禁标记，composer 可聚焦可输入、事件不被页面捕获', async () => {
     renderPage()
     await waitFor(() => expect(nav()).toBeInTheDocument())
 
-    // 非 Chat 动作（阅读区）不受门禁影响。
+    // 导航可用（bootstrap ready + canList）时不得再出现任何“内容未接线”门禁。
     expect(screen.queryByTestId('session-content-gate')).toBeNull()
     expect(screen.getByTestId('reading-panel')).not.toHaveAttribute('inert')
-    fireEvent.click(screen.getByTestId('reading-action'))
-    expect(workspaceSpies.readingAction).toHaveBeenCalledTimes(1)
 
-    // 切到 Chat：仅 Chat tabpanel 进入门禁（inert + 可见原因）。
     fireEvent.click(screen.getByTestId('workspace-tab-chat'))
     await waitFor(() => expect(screen.getByTestId('chat-panel')).toBeInTheDocument())
-    expect(screen.getByTestId('session-content-gate')).toHaveTextContent(
-      RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.contentNotReady,
-    )
+
     const panel = screen.getByTestId('chat-panel')
-    await waitFor(() => expect(panel).toHaveAttribute('data-session-chat-gated', 'true'))
-    expect(panel).toHaveAttribute('inert')
-    expect(panel).toHaveAttribute('aria-hidden', 'true')
+    // PR-5b 已把 controller/editor/composer 接进面板，PR-2 的半接线门禁必须已移除。
+    expect(screen.queryByTestId('session-content-gate')).toBeNull()
+    expect(panel).not.toHaveAttribute('inert')
+    expect(panel).not.toHaveAttribute('aria-hidden')
+    expect(panel).not.toHaveAttribute('data-session-chat-gated')
+    expect(panel).not.toHaveAttribute('data-session-chat-keyboard')
 
-    // 门禁必须阻断点击与键盘（不能只靠 aria-hidden/pointer-events）。
+    // tabpanel 自身与祖先链都不得带门禁属性（属性写在父容器上同样会冻结）。
+    expect(frozenAttrs(panel)).toEqual([])
+
+    // composer：可聚焦、可输入、Enter/点击不被页面 capture 阶段吞掉。
+    // 注意：面板在本文件是替身，这里只证明**页面层**不再冻结/拦截。
+    const input = screen.getByTestId('chat-input')
+    expect(input).not.toHaveAttribute('readonly')
+    input.focus()
+    expect(document.activeElement).toBe(input)
+    fireEvent.change(input, { target: { value: 'hello' } })
+    expect((input as HTMLInputElement).value).toBe('hello')
+    const enterEvent = createEvent.keyDown(input, { key: 'Enter' })
+    fireEvent(input, enterEvent)
+    expect(enterEvent.defaultPrevented).toBe(false)
+    expect(workspaceSpies.chatKeyDown).toHaveBeenCalledTimes(1)
     fireEvent.click(screen.getByTestId('chat-send'))
-    expect(workspaceSpies.chatSend).not.toHaveBeenCalled()
-    fireEvent.keyDown(screen.getByTestId('chat-input'), { key: 'Enter' })
-    expect(workspaceSpies.chatKeyDown).not.toHaveBeenCalled()
+    expect(workspaceSpies.chatSend).toHaveBeenCalledTimes(1)
 
-    // tabs 行仍可切回阅读区（不阻断导航）。
+    // tabs 与阅读区仍可切换/使用（不阻断导航与阅读链路）。
     fireEvent.click(screen.getByTestId('workspace-tab-evidence'))
     await waitFor(() => expect(screen.getByTestId('reading-panel')).toBeInTheDocument())
     expect(screen.queryByTestId('session-content-gate')).toBeNull()
     fireEvent.click(screen.getByTestId('reading-action'))
-    expect(workspaceSpies.readingAction).toHaveBeenCalledTimes(2)
+    expect(workspaceSpies.readingAction).toHaveBeenCalledTimes(1)
   })
 
   it('关闭后重开同一来源：重新同步 display，不沿用旧同步标记（R3）', async () => {
@@ -826,7 +855,7 @@ describe('ResearchPage 会话导航：review B6/B7/B8/Major 回归', () => {
     expect(nav()).toHaveAttribute('data-active-source-session', 'sess_src_a')
   })
 
-  it('Source Chat 面板同样只门禁自身内容并显示原因（R4）', async () => {
+  it('页面层不再冻结 Source Chat（PR-9）：surface 及祖先无 inert/门禁标记、composer 可输入、Enter/点击不被页面捕获', async () => {
     renderPage()
     await waitFor(() => expect(nav()).toBeInTheDocument())
 
@@ -834,28 +863,30 @@ describe('ResearchPage 会话导航：review B6/B7/B8/Major 回归', () => {
     await waitFor(() => expect(screen.getByTestId('source-chat-surface')).toBeInTheDocument())
 
     const surface = screen.getByTestId('source-chat-surface')
-    await waitFor(() => expect(surface).toHaveAttribute('data-session-chat-gated', 'true'))
-    // Source 面板保留引用跳转等阅读链路，不能整块 inert（R4/R5）。
     expect(surface).not.toHaveAttribute('inert')
-    expect(screen.getByTestId('session-content-gate')).toHaveTextContent(
-      RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.contentNotReady,
-    )
-    fireEvent.click(screen.getByTestId('srcchat-send'))
-    expect(workspaceSpies.sourceSend).not.toHaveBeenCalled()
-    // composer 必须真正不可编辑（不能只靠事件捕获，否则粘贴/焦点仍可写入）。
+    expect(surface).not.toHaveAttribute('data-session-chat-gated')
+    expect(screen.queryByTestId('session-content-gate')).toBeNull()
+
+    // surface 自身与祖先链都不得带门禁属性（PR-2 曾在此写 data-session-chat-gated）。
+    expect(frozenAttrs(surface)).toEqual([])
+
+    // composer 不再被 readOnly/contenteditable=false 冻结，可聚焦可输入。
     const input = screen.getByTestId('srcchat-input') as HTMLTextAreaElement
-    expect(input.readOnly).toBe(true)
-    // 键盘不得被统一捕获（否则会造成 Tab 焦点陷阱）；Tab 仍可正常离开。
-    const tabEvent = createEvent.keyDown(input, { key: 'Tab' })
-    fireEvent(input, tabEvent)
-    expect(tabEvent.defaultPrevented).toBe(false)
-    // 真实面板 Enter 仍会 submit（ResearchSourceChatPanel.tsx:231）；readOnly
-    // 不能阻止该路径，必须由 capture 阶段单独封住 Enter。
+    expect(input.readOnly).toBe(false)
+    input.focus()
+    expect(document.activeElement).toBe(input)
+    fireEvent.change(input, { target: { value: 'hello source' } })
+    expect(input.value).toBe('hello source')
+
+    // 点击与 Enter 都到达面板替身（页面不再 capture 阶段阻断）。
+    fireEvent.click(screen.getByTestId('srcchat-send'))
+    expect(workspaceSpies.sourceSend).toHaveBeenCalledTimes(1)
     const enterEvent = createEvent.keyDown(input, { key: 'Enter' })
     fireEvent(input, enterEvent)
-    expect(enterEvent.defaultPrevented).toBe(true)
-    expect(workspaceSpies.sourceSend).not.toHaveBeenCalled()
-    // 引用跳转不被门禁拦截。
+    expect(enterEvent.defaultPrevented).toBe(false)
+    expect(workspaceSpies.sourceSend).toHaveBeenCalledTimes(2)
+
+    // 引用跳转仍可用。
     fireEvent.click(screen.getByTestId('panel-cite-page'))
     await waitFor(() =>
       expect(screen.getByTestId('workbench')).toHaveAttribute('data-highlight-page-idx', '7'),
