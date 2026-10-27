@@ -155,6 +155,10 @@ function selectionFromEditorSnapshot(snapshot: EditorSnapshot): ResearchChatSele
  * 开始后上一轮问答不会从界面消失。
  */
 function conversationTurnToTurns(turn: ConversationTurn): ResearchChatTurn[] {
+  // Lead 定向复核 P1：external（冷启动查回）turn 不在消息流投影——历史问答
+  // 由 durable detail 行原样呈现（保留 message_id 与旧问答配对）；外部 turn
+  // 只用于提交状态卡/查回，不得生成空 assistant 占位。
+  if (turn.external) return []
   const terminalStatus: ResearchChatTurn['status'] =
     turn.sse.terminal === 'error' ? 'error' : 'done'
   const status: ResearchChatTurn['status'] =
@@ -182,6 +186,11 @@ function conversationTurnToTurns(turn: ConversationTurn): ResearchChatTurn[] {
     scopeSnapshot: null,
     serverMessageId: null,
     generationId,
+  }
+  // 空 answer 的非 error turn 不投影 assistant 行（避免“暂无答案”空占位；
+  // 流式进度由面板 streaming 指示器承担）。终态 error 保留行以渲染错误卡。
+  if (turn.sse.answer === '' && turn.sse.terminal !== 'error') {
+    return [userTurn]
   }
   const assistantTurn: ResearchChatTurn = {
     id: turn.identity.turnId,
@@ -512,70 +521,19 @@ export function ResearchChatPanel({
   })()
   const renderedTurns: ResearchChatTurn[] = (() => {
     if (!sessionWired) return turns
-    // PR-5b（Lead 合并前核对 P1-1 / F10）：durable 行与 controller 行 id 命名
-    // 空间不同，去重必须同时考虑 generationId/message_id/是否有正文：
-    // 冷启动 terminal 查回生成的是 **external turn**（`sse.answer` 为空，
-    // durable_restore 不回填答案）——此时不得丢弃 durable 的完整 assistant 行，
-    // 应把 durable 正文/message_id 合并进 controller 行，保证完整答案只渲染一次。
-    const consumed = new Set<string>()
-    const durable = [...turns]
-    const durableAssistants = durable.filter(
-      (turn) => turn.role === 'assistant' && turn.content.trim() !== '',
-    )
-    const findDurableAssistant = (row: ResearchChatTurn): ResearchChatTurn | null => {
-      // Lead 核对（Codex 复核对新增 P1）：**只能**按 generationId 证明同一次
-      // 执行；已知 generation 不匹配时绝不回退到“同问题正文”（否则重复提问
-      // 的新轮会消费旧轮答案，甚至把旧 message_id 绑到新 generation 上）。
-      if (row.generationId === null || row.generationId === '') return null
-      return (
-        durableAssistants.find(
-          (turn) => !consumed.has(turn.id) && turn.generationId === row.generationId,
-        ) ?? null
-      )
-    }
-    const mergedController = controllerTurns.map((row) => {
-      if (row.role !== 'assistant' || row.content.trim() !== '') return row
-      const match = findDurableAssistant(row)
-      if (match === null) return row
-      consumed.add(match.id)
-      return {
-        ...row,
-        content: match.content,
-        thinking: row.thinking !== '' ? row.thinking : match.thinking,
-        citations: row.citations.length > 0 ? row.citations : match.citations,
-        usage: row.usage ?? match.usage,
-        resolvedMode: row.resolvedMode ?? match.resolvedMode,
-        serverMessageId: row.serverMessageId ?? match.serverMessageId,
-        generationId: row.generationId ?? match.generationId,
-      }
-    })
-    const controllerUserContents = new Set(
-      mergedController.filter((turn) => turn.role === 'user').map((turn) => turn.content),
-    )
-    const controllerGenerationIds = new Set(
-      mergedController
-        .map((turn) => turn.generationId)
+    // Lead 定向复核 P1：**durable user 行永不得按正文删除**。
+    // 只有可证明身份匹配才去重：durable 与 controller 行 serverMessageId 相等
+    // （controller 投影仅在 external 场景可带 message_id，而 external 已不投影）。
+    // 不能确定时保留两行（宁可多一条历史，不猜配对）。
+    const durableMessageIds = new Set(
+      turns
+        .map((turn) => turn.serverMessageId)
         .filter((id): id is string => id !== null && id !== ''),
     )
-    const remaining = durable.filter((turn) => {
-      if (consumed.has(turn.id)) return false
-      if (turn.role === 'user' && controllerUserContents.has(turn.content)) return false
-      if (
-        turn.role === 'assistant' &&
-        turn.generationId !== null &&
-        controllerGenerationIds.has(turn.generationId) &&
-        mergedController.some(
-          (row) =>
-            row.role === 'assistant' &&
-            row.generationId === turn.generationId &&
-            row.content.trim() !== '',
-        )
-      ) {
-        return false
-      }
-      return true
-    })
-    return [...remaining, ...mergedController]
+    const controllerRows = controllerTurns.filter(
+      (turn) => turn.serverMessageId === null || !durableMessageIds.has(turn.serverMessageId),
+    )
+    return [...turns, ...controllerRows]
   })()
 
   // PR-5b（§4.2-4/§4.6）：详情侧可见性投影。当前批次 detail 恒可读 title+

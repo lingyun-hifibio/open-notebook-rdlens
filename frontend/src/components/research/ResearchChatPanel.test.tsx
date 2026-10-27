@@ -2055,7 +2055,12 @@ describe('ResearchChatPanel PR-5b：会话接线与解释 UI', () => {
   })
 
   it('PR-5b（Lead 核对 P1-1 / F10）：冷启动 terminal 查回不得把 durable 完整答案去重成空 assistant', () => {
-    const durableUser = turn({ id: 'msg_u1', role: 'user', content: '冷启动问题' })
+    const durableUser = turn({
+      id: 'msg_u1',
+      role: 'user',
+      content: '冷启动问题',
+      serverMessageId: 'msg_u1',
+    })
     const durableAssistant = turn({
       id: 'msg_gen_1_assistant',
       role: 'assistant',
@@ -2104,6 +2109,8 @@ describe('ResearchChatPanel PR-5b：会话接线与解释 UI', () => {
       turns: [durableUser, durableAssistant],
       conversation: conversationStub(externalTerminal),
     })
+    // durable user 行必须保留其 message_id（身份不丢）
+    expect(document.querySelector('[data-message-id="msg_u1"]')).not.toBeNull()
     // 完整答案只渲染一次（不出现空 assistant / “暂无答案”占位）
     expect(screen.getAllByText('完整答案（来自 durable 行）')).toHaveLength(1)
     expect(screen.queryByText('research.chatNoAnswer')).not.toBeInTheDocument()
@@ -2115,7 +2122,12 @@ describe('ResearchChatPanel PR-5b：会话接线与解释 UI', () => {
   })
 
   it('PR-5b（Lead 复核新增 P1）：generation 不一致时不得用同 query 旧答案兜底', () => {
-    const durableUser = turn({ id: 'msg_u_old', role: 'user', content: '重复问题' })
+    const durableUser = turn({
+      id: 'msg_u_old',
+      role: 'user',
+      content: '重复问题',
+      serverMessageId: 'msg_u_old',
+    })
     const durableAssistant = turn({
       id: 'msg_old_assistant',
       role: 'assistant',
@@ -2164,12 +2176,14 @@ describe('ResearchChatPanel PR-5b：会话接线与解释 UI', () => {
       turns: [durableUser, durableAssistant],
       conversation: conversationStub(liveTurn),
     })
-    // 旧答案仍属于旧 generation（独立 durable 行，message_id 不变）；
+    // 旧 user/assistant 必须保留 message_id 且相邻（旧问答配对不被破坏）
+    const oldUserEl = document.querySelector('[data-message-id="msg_u_old"]')
+    expect(oldUserEl).not.toBeNull()
+    const oldAssistantEl = document.querySelector('[data-message-id="msg_old_assistant"]')
+    expect(oldAssistantEl).toHaveTextContent('旧答案')
+    expect(oldUserEl?.nextElementSibling).toBe(oldAssistantEl)
     expect(screen.getAllByText('旧答案')).toHaveLength(1)
-    expect(
-      document.querySelector('[data-message-id="msg_old_assistant"]'),
-    ).toHaveTextContent('旧答案')
-    // 新 generation 的空 assistant 不得吞掉旧答案（仍显示空答案占位）。
-    expect(screen.getAllByText('research.chatNoAnswer').length).toBeGreaterThan(0)
+    // 新 generation 的空 assistant 不插入空占位（新问题独立呈现）
+    expect(screen.queryByText('research.chatNoAnswer')).not.toBeInTheDocument()
   })
 })

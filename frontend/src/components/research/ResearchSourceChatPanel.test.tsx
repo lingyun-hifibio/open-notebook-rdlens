@@ -729,4 +729,58 @@ describe('ResearchSourceChatPanel', () => {
     expect(screen.getByTestId('srcchat-turn-meta-old-assistant')).toBeInTheDocument()
     expect(screen.queryByTestId('srcchat-turn-meta-turn-new')).not.toBeInTheDocument()
   })
+
+  it('PR-5b（Lead 复核 P2）：source ref→ref / ref→null 会话切换均同步 runtime 身份', () => {
+    const refA = {
+      domain: 'research' as const,
+      kind: 'source' as const,
+      projectId: 'proj_1',
+      sessionId: 'sess_a',
+      sourceId: 'src_1',
+    }
+    let activeRef: typeof refA | null = refA
+    const activate = vi.fn((_surface: string, next: typeof refA | null) => {
+      activeRef = next
+      return true
+    })
+    vi.mocked(useResearchSessionRuntimeOptional).mockReturnValue({
+      active: () => activeRef,
+      activate,
+    } as never)
+    const snapshot = {
+      ...createEditorState({ ref: refA, writerId: 'w-1', transportAvailable: true }),
+      phase: 'ready' as const,
+      loading: false,
+      draftText: '草稿',
+      dirty: true,
+    }
+    vi.mocked(useResearchEditor).mockReturnValue({
+      snapshot,
+      controller: { getSnapshot: () => snapshot },
+      setDraftText: vi.fn(),
+      flush: vi.fn(async () => 'saved'),
+      hold: vi.fn(),
+      release: vi.fn(),
+      clearAfterSubmission: vi.fn(async () => 'cleared'),
+    } as never)
+    vi.mocked(useResearchSourceChat).mockReturnValue(
+      makeChatResult({
+        sessions: [
+          { session_id: 'sess_b', title: '会话 B', updated_at: '2026-01-01T00:00:00Z' } as never,
+        ],
+      }),
+    )
+    renderPanel()
+    activate.mockClear()
+    // ref→ref：切到另一个历史会话
+    fireEvent.click(screen.getByTestId('srcchat-session-sess_b'))
+    expect(activate).toHaveBeenCalledWith(
+      'source',
+      expect.objectContaining({ sessionId: 'sess_b' }),
+    )
+    // ref→null：回到新会话
+    activate.mockClear()
+    fireEvent.click(screen.getByTestId('srcchat-new-session'))
+    expect(activate).toHaveBeenCalledWith('source', null)
+  })
 })
