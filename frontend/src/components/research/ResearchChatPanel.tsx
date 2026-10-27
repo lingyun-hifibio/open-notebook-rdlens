@@ -551,30 +551,51 @@ export function ResearchChatPanel({
   const liveTurn = liveSnapshot?.turn ?? null
   // PR-5b（Codex P2-#9）：冷启动恢复出的非空持久草稿也必须先查回一次当前
   // draft token（marker 写失败/被清除且 cards 为空时 F10 的兜底路径）。
-  // 每个会话只对该会话的首个 editor token 触发一次，避免每次保存换 token 都查回。
-  const draftLookupSessionRef = useRef<string | null>(null)
+  //
+  // PR-10（#602 6b 真实接入 P0）：查回**只允许**针对“加载时已存在的持久非空
+  // 草稿”。此前按“非空即查回”会让新建会话里用户新输入的草稿也触发查回：
+  // 该 token 尚无任何提交，查回必然 not_observed，控制器由此产出一个
+  // `external` turn，使随后首次真实发送被 `replay_snapshot_unavailable`
+  // 阻断（用户点 Send 无 POST /chat）。判定按会话记录：
+  // - `pending`：本会话尚未判定（新建空会话首次 ready 为空即停在此态）；
+  // - `done`：已查回，或已确认当前文本是用户/宿主写入而非持久草稿（不查回）。
+  // 用户在本会话输入过（含 Continue research 预填、恢复本机草稿）→ 直接
+  // `done`，其 token 与持久草稿无关，不得查回。
+  const coldStartLookupRef = useRef<Map<string, 'pending' | 'done'>>(new Map())
+  /** 把某会话标记为“当前草稿来自用户/宿主写入，无需冷启动查回”。 */
+  const markDraftUserAuthored = (): void => {
+    if (currentSessionIdentity === null) return
+    coldStartLookupRef.current.set(currentSessionIdentity, 'done')
+  }
   useEffect(() => {
     if (!sessionWired || refreshMarkerLookups === undefined) return
-    // PR-5b（Codex 第 2 轮 P2-#9）：必须等 editor 真正加载完成且草稿非空，
-    // 否则初始本地 token 会占用“本会话已查回”标记，持久草稿随后不再查回。
-    if (
-      editorSnapshot === null ||
-      editorSnapshot === undefined ||
-      editorSnapshot.phase !== 'ready' ||
-      editorSnapshot.loading ||
-      editorSnapshot.draftText.trim() === ''
-    ) {
-      return
-    }
-    const token = editorSnapshot.draftToken ?? null
-    if (token === null || token === '') return
-    const key = sessionRef === null || sessionRef === undefined
-      ? null
-      : `${sessionRef.kind}:${sessionRef.sessionId}`
-    if (key === null || draftLookupSessionRef.current === key) return
-    draftLookupSessionRef.current = key
+    const key = currentSessionIdentity
+    if (key === null) return
+    // 只处理“当前会话自己的” editor 快照：切换瞬间可能仍拿到上一会话的快照，
+    // 用它判定会污染新会话的冷启动结论。
+    if (editorSnapshot === null || editorSnapshot === undefined) return
+    if (editorSnapshotIdentity !== key) return
+    // 必须等 editor 真正加载完成，否则初始本地 token 会占用“本会话已判定”。
+    if (editorSnapshot.phase !== 'ready' || editorSnapshot.loading) return
+    if (coldStartLookupRef.current.get(key) === 'done') return
+    // 首次 ready 为空：保持待定——新建空会话的后续用户输入会经
+    // markDraftUserAuthored 落为 done；若稍后才恢复出持久非空草稿
+    // （本机 readback / 服务端竞态），仍可按 F10 查回一次。
+    if (editorSnapshot.draftText.trim() === '') return
+    const token = editorSnapshot.draftToken ?? ''
+    if (token === '') return
+    coldStartLookupRef.current.set(key, 'done')
     void refreshMarkerLookups(token)
-  }, [sessionWired, refreshMarkerLookups, editorSnapshot?.draftToken, sessionRef])
+  }, [
+    sessionWired,
+    refreshMarkerLookups,
+    editorSnapshot?.draftToken,
+    editorSnapshot?.draftText,
+    editorSnapshot?.phase,
+    editorSnapshot?.loading,
+    editorSnapshotIdentity,
+    currentSessionIdentity,
+  ])
   const surfaceActiveRef = useRef(surfaceActive)
   surfaceActiveRef.current = surfaceActive
   const wiredConversation: ResearchConversationSnapshot = conversationSnapshot ?? {
@@ -789,6 +810,8 @@ export function ResearchChatPanel({
   // 递增 seq 都生效）；不自动派发——发送仍需用户点 Send（既有守卫）。
   useEffect(() => {
     if (prefill && prefill.text.trim() !== '') {
+      // PR-10：宿主写入的预填文本不是“加载时已存在的持久草稿”，不得触发冷启动查回。
+      markDraftUserAuthored()
       if (wired) onDraftChange?.(prefill.text)
       else setQuery(prefill.text)
     }
@@ -1866,7 +1889,13 @@ export function ResearchChatPanel({
               conversationSnapshot={wiredConversation}
               gate={composerGate}
               gateReasonText={composerGateReasonText}
-              onDraftChange={onDraftChange ?? (() => {})}
+              onDraftChange={(text) => {
+                // PR-10：用户在会话里输入＝当前 token 与“加载时的持久草稿”无关，
+                // 不得触发冷启动查回（否则会产出 not_observed 的 external turn
+                // 并阻断随后首次真实发送）。
+                markDraftUserAuthored()
+                ;(onDraftChange ?? (() => {}))(text)
+              }}
               onSend={submit}
               onRetrySave={onRetrySave ?? (() => {})}
               onRestoreDraft={onRestoreDraft}
