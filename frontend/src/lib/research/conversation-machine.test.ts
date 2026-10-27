@@ -1549,6 +1549,117 @@ describe('conversation-controller：副作用与迟到隔离', () => {
     expect(submissionViewMatches(SESSION_KEY, bound, good, false)).toBe(false)
   })
 
+  it('review-audit B1：not_observed 后同 token/key/原请求快照可显式重放，不生成新 token', async () => {
+    const { controller, calls, releases } = setup({
+      submission: () => submissionResponse({ acceptance_state: 'not_observed' }),
+    })
+    await controller.send(sendInput())
+    await controller.lookupSubmission()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(releases).toContain('op-1')
+    expect(controller.getSnapshot().turn?.state).toBe('not_observed')
+
+    // retryTerminal 只服务终态失败；not_observed 必须指向显式重发入口。
+    const misleading = await controller.retryTerminal(sendInput({ operationId: 'op-2' }))
+    expect(misleading.status).toBe('blocked')
+    expect(misleading.error?.code).toBe('use_retry_submission')
+
+    // 同一文本/范围/模型 + 原 token/key/revision/hash：按原 body 幂等重放。
+    const replay = await controller.retrySubmission(sendInput({ operationId: 'op-2' }))
+    expect(replay.status).toBe('ok')
+    expect(calls).toHaveLength(2)
+    const [first, second] = calls
+    expect(second.input.draftToken).toBe(first.input.draftToken)
+    expect(second.input.idempotencyKey).toBe(first.input.idempotencyKey)
+    expect(second.input.editorRevision).toBe(first.input.editorRevision)
+    expect(second.input.editorIntentHash).toBe(first.input.editorIntentHash)
+    expect(second.input.query).toBe('q1')
+    expect(controller.getSnapshot().turn?.state).toBe('submitting')
+  })
+
+  it('review-audit B1：not_observed 后改稿未确认 → blocked 不派发；确认后新 token/key 派发', async () => {
+    const { controller, calls, releases } = setup({
+      submission: () => submissionResponse({ acceptance_state: 'not_observed' }),
+    })
+    await controller.send(sendInput())
+    await controller.lookupSubmission()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(releases).toContain('op-1')
+
+    const newKey = `s1_${'c'.repeat(64)}`
+    const changed = sendInput({
+      draftToken: 'draft_2',
+      editorIntentHash: 'b'.repeat(64),
+      idempotencyKey: newKey,
+      operationId: 'op-2',
+    })
+    const blocked = await controller.retrySubmission(changed)
+    expect(blocked.status).toBe('blocked')
+    expect(blocked.error?.code).toBe('duplicate_execution_confirmation_required')
+    expect(calls).toHaveLength(1)
+
+    const confirmed = await controller.retrySubmission({
+      ...changed,
+      confirmDuplicateExecution: true,
+    })
+    expect(confirmed.status).toBe('ok')
+    expect(calls).toHaveLength(2)
+    expect(calls[1].input.draftToken).toBe('draft_2')
+    expect(calls[1].input.idempotencyKey).toBe(newKey)
+    expect(calls[1].input.editorIntentHash).toBe('b'.repeat(64))
+  })
+
+  it('review-audit B1：有界查回失败进入 unknown，hold 释放且不无限查回，草稿身份保留', async () => {
+    let lookups = 0
+    const { controller, releases } = setup({
+      submission: () => {
+        lookups += 1
+        throw Object.assign(new Error('session_store_unavailable'), { status: 500 })
+      },
+      lookupBackoffMs: [1],
+    })
+    await controller.send(sendInput())
+    await controller.lookupSubmission()
+    await new Promise((resolve) => setTimeout(resolve, 120))
+    expect(controller.getSnapshot().turn?.state).toBe('unknown')
+    expect(releases).toEqual(['op-1'])
+    // 有界查回：最多 BOUNDED_LOOKUP_FAILURES 次，不进入无限查回。
+    expect(lookups).toBe(BOUNDED_LOOKUP_FAILURES)
+    // 草稿身份/marker 保留：turn 仍持有原 token/key，供用户显式重发。
+    expect(controller.getSnapshot().turn?.identity.draftToken).toBe(TOKEN)
+    expect(controller.getSnapshot().turn?.identity.idempotencyKey).toBe(KEY)
+  })
+
+  it('review-audit B2：updateAuth 跨 viewer 销毁旧 controller；旧实例 stale、新实例不相等', async () => {
+    const openStream = vi.fn(() => ({ abort: () => {} }))
+    const transport = {
+      openStream,
+      getSubmission: () => submissionResponse(),
+    }
+    const runtime = createSessionRuntime({
+      authGeneration: 1,
+      projectId: 'proj_1',
+      viewerUserId: 'user_a',
+      role: 'owner',
+    })
+    const first = runtime.conversation(REF, { transport })
+    runtime.updateAuth({
+      authGeneration: 2,
+      projectId: 'proj_1',
+      viewerUserId: 'user_b',
+      role: 'owner',
+    })
+    const sent = await first.send(sendInput())
+    expect(sent.status).toBe('stale')
+    expect(openStream).not.toHaveBeenCalled()
+    expect(first.getSnapshot().turn).toBeNull()
+
+    const second = runtime.conversation(REF, { transport })
+    expect(second).not.toBe(first)
+    expect((await second.send(sendInput())).status).toBe('ok')
+    expect(openStream).toHaveBeenCalledTimes(1)
+  })
+
 })
 
 describe('review-2：认证代次切换使 controller 失效（B1）', () => {

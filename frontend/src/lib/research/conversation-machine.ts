@@ -484,6 +484,11 @@ export type ConversationEvent =
       readonly identity: ConversationTurnIdentity
       readonly operationId: string
       readonly query: string
+      /**
+       * not_observed 的显式重发入口：'replay' 复用原 token/key/原请求快照
+       * （同一意图幂等重放），'new' 表示用户已确认重复执行并使用新身份。
+       */
+      readonly fromNotObserved?: 'replay' | 'new'
     }
   | { readonly type: 'prepare_succeeded'; readonly turnId: string }
   | { readonly type: 'prepare_failed'; readonly turnId: string; readonly reason: string }
@@ -677,7 +682,14 @@ export function reduceConversation(
     }
 
     case 'prepare': {
-      if (turn !== null && !isTerminalState(turn) && turn.state !== 'idle') {
+      const replacingNotObserved =
+        event.fromNotObserved !== undefined && turn !== null && turn.state === 'not_observed'
+      if (
+        !replacingNotObserved
+        && turn !== null
+        && !isTerminalState(turn)
+        && turn.state !== 'idle'
+      ) {
         // 每个 session 同时只允许一个活动 turn；未终结前不得被新 send 改写。
         return unchanged
       }

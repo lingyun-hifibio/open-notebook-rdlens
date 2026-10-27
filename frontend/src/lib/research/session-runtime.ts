@@ -1205,6 +1205,12 @@ export interface ConversationSendInput {
   readonly idempotencyKey: string
   readonly operationId: string
   readonly turnId?: string
+  /**
+   * not_observed 后改稿/改范围/改模型再发送的显式重复执行确认（§6.3/§6.7）。
+   * 未确认返回 blocked，不派发；确认为 true 时必须携带新的 draft_token 与
+   * idempotency_key（同一意图重放不需要该字段）。
+   */
+  readonly confirmDuplicateExecution?: boolean
 }
 
 export interface ConversationRetryInput {
@@ -1243,6 +1249,10 @@ export interface ConversationController {
   ) => Promise<ConversationHandleResult<{ readonly turnId: string }>>
   readonly lookupSubmission: (token?: string) => Promise<ConversationHandleResult>
   readonly refreshStatus: () => Promise<ConversationHandleResult>
+  /** not_observed 后的显式重发入口（同 send；改意图需 confirmDuplicateExecution）。 */
+  readonly retrySubmission: (
+    input: ConversationSendInput,
+  ) => Promise<ConversationHandleResult<{ readonly turnId: string }>>
   readonly detach: () => void
   readonly reattach: () => Promise<ConversationHandleResult>
   /** editor 清稿结算回调（hook 在 clearAfterSubmission 落定后调用）。 */
@@ -1260,6 +1270,7 @@ export interface ConversationController {
 }
 
 interface ConversationRequestMeta {
+  readonly query: string
   readonly editorRevision: number
   readonly draftToken: string
   readonly editorIntentHash: string
@@ -1272,6 +1283,37 @@ interface ConversationRequestMeta {
 
 function isTerminalTurn(turn: ConversationTurn | null): boolean {
   return turn === null || turn.state === 'terminal' || turn.identity.terminal !== null
+}
+
+function sameStringArray(left: readonly string[], right: readonly string[]): boolean {
+  if (left.length !== right.length) return false
+  return left.every((value, index) => value === right[index])
+}
+
+function sameScope(
+  left: ConversationScopeSnapshot | null,
+  right: ConversationScopeSnapshot | null,
+): boolean {
+  if (left === null || right === null) return left === right
+  return left.mode === right.mode
+    && left.singleSourceId === right.singleSourceId
+    && sameStringArray(left.sourceIds, right.sourceIds)
+}
+
+function sameSubmissionIntent(
+  turn: ConversationTurn,
+  meta: ConversationRequestMeta,
+  input: ConversationSendInput,
+): boolean {
+  return meta.query === input.query
+    && meta.modelId === input.modelId
+    && sameStringArray(meta.sourceIds, input.sourceIds ?? [])
+    && sameStringArray(meta.noteIds, input.noteIds ?? [])
+    && sameScope(meta.scope, input.scope ?? null)
+    && meta.editorRevision === input.editorRevision
+    && turn.identity.draftToken === input.draftToken
+    && turn.identity.idempotencyKey === input.idempotencyKey
+    && turn.identity.editorIntentHash === input.editorIntentHash
 }
 
 function extractHttpFields(body: unknown): {
@@ -1737,6 +1779,7 @@ export function createConversationController(input: {
   }
 
   function registerRequest(turnId: string, seed: {
+    query: string
     editorRevision: number
     draftToken: string
     editorIntentHash: string
@@ -1747,6 +1790,7 @@ export function createConversationController(input: {
     scope: ConversationScopeSnapshot | null
   }): void {
     requests.set(turnId, {
+      query: seed.query,
       editorRevision: seed.editorRevision,
       draftToken: seed.draftToken,
       editorIntentHash: seed.editorIntentHash,
@@ -1760,8 +1804,98 @@ export function createConversationController(input: {
 
   function send(input: ConversationSendInput): Promise<ConversationHandleResult<{ turnId: string }>> {
     if (isDisposed()) return Promise.resolve({ status: 'stale' })
-    // reducer 产出的 idle（明确未受理后）同样允许再次发送（review-1 P2-#11）。
+    if (input.query.trim().length === 0) {
+      return Promise.resolve({
+        status: 'blocked',
+        error: { code: 'query_required', message: 'Empty query' },
+      })
+    }
+    const scope = input.scope ?? null
+    if (ref.kind === 'global' && scope === null) {
+      return Promise.resolve({
+        status: 'blocked',
+        error: { code: 'source_scope_required', message: 'Global send requires frozen source_scope' },
+      })
+    }
     const turnState = state.turn
+    // not_observed：保留原草稿与 marker；同 token/key/原请求快照重放按原 body
+    // 幂等重发，改意图必须先显式确认并使用新 token/key（§6.3/§6.7）。
+    if (turnState !== null && turnState.state === 'not_observed') {
+      if (turnState.clearPending) {
+        return Promise.resolve({
+          status: 'blocked',
+          error: {
+            code: 'clear_settlement_pending',
+            message: 'Clear lease must settle before a new send',
+          },
+        })
+      }
+      const meta = requests.get(turnState.identity.turnId)
+      if (meta === undefined) {
+        return Promise.resolve({
+          status: 'blocked',
+          error: {
+            code: 'replay_snapshot_unavailable',
+            message: 'Original submission snapshot is no longer available',
+          },
+        })
+      }
+      const replay = sameSubmissionIntent(turnState, meta, input)
+      if (!replay && input.confirmDuplicateExecution !== true) {
+        return Promise.resolve({
+          status: 'blocked',
+          error: {
+            code: 'duplicate_execution_confirmation_required',
+            message: 'Changed submission requires explicit duplicate-execution confirmation',
+          },
+        })
+      }
+      if (
+        !replay
+        && (input.draftToken === meta.draftToken || input.idempotencyKey === meta.idempotencyKey)
+      ) {
+        return Promise.resolve({
+          status: 'blocked',
+          error: {
+            code: 'new_submission_identity_required',
+            message: 'Confirmed new intent requires a new draft token and idempotency key',
+          },
+        })
+      }
+      const seed = replay
+        ? meta
+        : {
+            query: input.query,
+            editorRevision: input.editorRevision,
+            draftToken: input.draftToken,
+            editorIntentHash: input.editorIntentHash,
+            idempotencyKey: input.idempotencyKey,
+            modelId: input.modelId,
+            sourceIds: input.sourceIds ?? [],
+            noteIds: input.noteIds ?? [],
+            scope,
+          }
+      turnSequence += 1
+      const turnId = input.turnId ?? `turn-${turnSequence}`
+      registerRequest(turnId, seed)
+      const identity = buildIdentity({
+        turnId,
+        editorRevision: seed.editorRevision,
+        draftToken: seed.draftToken,
+        editorIntentHash: seed.editorIntentHash,
+        idempotencyKey: seed.idempotencyKey,
+      })
+      dispatch({
+        type: 'prepare',
+        identity,
+        operationId: input.operationId,
+        query: seed.query,
+        fromNotObserved: replay ? 'replay' : 'new',
+      })
+      dispatch({ type: 'prepare_succeeded', turnId })
+      return Promise.resolve({ status: 'ok', value: { turnId } })
+    }
+    // reducer 产出的 idle（明确未受理后）同样允许再次发送（review-1 P2-#11）。
     const sendable = turnState === null
       || turnState.state === 'idle'
       || isTerminalTurn(turnState)
@@ -1782,22 +1916,10 @@ export function createConversationController(input: {
         },
       })
     }
-    if (input.query.trim().length === 0) {
-      return Promise.resolve({
-        status: 'blocked',
-        error: { code: 'query_required', message: 'Empty query' },
-      })
-    }
-    const scope = input.scope ?? null
-    if (ref.kind === 'global' && scope === null) {
-      return Promise.resolve({
-        status: 'blocked',
-        error: { code: 'source_scope_required', message: 'Global send requires frozen source_scope' },
-      })
-    }
     turnSequence += 1
     const turnId = input.turnId ?? `turn-${turnSequence}`
     registerRequest(turnId, {
+      query: input.query,
       editorRevision: input.editorRevision,
       draftToken: input.draftToken,
       editorIntentHash: input.editorIntentHash,
@@ -1829,6 +1951,15 @@ export function createConversationController(input: {
   ): Promise<ConversationHandleResult<{ turnId: string }>> {
     const turn = state.turn
     if (isDisposed()) return Promise.resolve({ status: 'stale' })
+    if (turn !== null && turn.state === 'not_observed') {
+      return Promise.resolve({
+        status: 'blocked',
+        error: {
+          code: 'use_retry_submission',
+          message: 'not_observed turns must use retrySubmission (explicit replay/confirm)',
+        },
+      })
+    }
     if (!isTerminalTurn(turn)) {
       return Promise.resolve({
         status: 'blocked',
@@ -1847,6 +1978,12 @@ export function createConversationController(input: {
       idempotencyKey: input.idempotencyKey,
       operationId: input.operationId,
     })
+  }
+
+  function retrySubmission(
+    input: ConversationSendInput,
+  ): Promise<ConversationHandleResult<{ turnId: string }>> {
+    return send(input)
   }
 
   function lookupSubmission(token?: string): Promise<ConversationHandleResult> {
@@ -2072,6 +2209,7 @@ export function createConversationController(input: {
     retryTerminal,
     lookupSubmission,
     refreshStatus,
+    retrySubmission,
     detach,
     reattach,
     notifyClearSettled,
