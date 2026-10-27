@@ -361,6 +361,26 @@ function nav() {
   return screen.getByTestId('research-session-nav')
 }
 
+/**
+ * 页面层冻结探针：PR-2 门禁通过给 tabpanel / Source surface 直接写
+ * `inert`、`aria-hidden` 与 `data-session-chat-*` 来关闭内容。断言时同时
+ * 检查自身属性与**祖先链**——回归可能把属性写到父容器上。
+ */
+function frozenAttrs(element: Element): string[] {
+  const found: string[] = []
+  let node: Element | null = element
+  while (node !== null) {
+    for (const name of ['inert', 'aria-hidden', 'data-session-chat-gated', 'data-session-chat-keyboard']) {
+      if (node.hasAttribute(name)) {
+        const value = node.getAttribute(name)
+        found.push(value === null || value === '' ? name : `${name}=${value}`)
+      }
+    }
+    node = node.parentElement
+  }
+  return found
+}
+
 function switcherTrigger(surface: 'global' | 'source') {
   return within(screen.getByTestId(`session-switcher-${surface}`)).getByTestId(
     'session-switcher-trigger',
@@ -707,7 +727,7 @@ describe('ResearchPage 会话导航：review B6/B7/B8/Major 回归', () => {
     })
   })
 
-  it('会话内容已接线（PR-9）：Chat tabpanel 无门禁属性、composer 可见可聚焦可输入可发送', async () => {
+  it('页面层不再冻结 Chat（PR-9）：tabpanel 及其祖先无 inert/aria-hidden/门禁标记，composer 可聚焦可输入、事件不被页面捕获', async () => {
     renderPage()
     await waitFor(() => expect(nav()).toBeInTheDocument())
 
@@ -726,7 +746,11 @@ describe('ResearchPage 会话导航：review B6/B7/B8/Major 回归', () => {
     expect(panel).not.toHaveAttribute('data-session-chat-gated')
     expect(panel).not.toHaveAttribute('data-session-chat-keyboard')
 
-    // composer：可聚焦、可输入、键盘与点击均可发送（页面不再捕获/冻结）。
+    // tabpanel 自身与祖先链都不得带门禁属性（属性写在父容器上同样会冻结）。
+    expect(frozenAttrs(panel)).toEqual([])
+
+    // composer：可聚焦、可输入、Enter/点击不被页面 capture 阶段吞掉。
+    // 注意：面板在本文件是替身，这里只证明**页面层**不再冻结/拦截。
     const input = screen.getByTestId('chat-input')
     expect(input).not.toHaveAttribute('readonly')
     input.focus()
@@ -831,7 +855,7 @@ describe('ResearchPage 会话导航：review B6/B7/B8/Major 回归', () => {
     expect(nav()).toHaveAttribute('data-active-source-session', 'sess_src_a')
   })
 
-  it('Source Chat 面板同样已接线（PR-9）：不被冻结、composer 可输入可发送、引用跳转可用', async () => {
+  it('页面层不再冻结 Source Chat（PR-9）：surface 及祖先无 inert/门禁标记、composer 可输入、Enter/点击不被页面捕获', async () => {
     renderPage()
     await waitFor(() => expect(nav()).toBeInTheDocument())
 
@@ -843,6 +867,9 @@ describe('ResearchPage 会话导航：review B6/B7/B8/Major 回归', () => {
     expect(surface).not.toHaveAttribute('data-session-chat-gated')
     expect(screen.queryByTestId('session-content-gate')).toBeNull()
 
+    // surface 自身与祖先链都不得带门禁属性（PR-2 曾在此写 data-session-chat-gated）。
+    expect(frozenAttrs(surface)).toEqual([])
+
     // composer 不再被 readOnly/contenteditable=false 冻结，可聚焦可输入。
     const input = screen.getByTestId('srcchat-input') as HTMLTextAreaElement
     expect(input.readOnly).toBe(false)
@@ -851,7 +878,7 @@ describe('ResearchPage 会话导航：review B6/B7/B8/Major 回归', () => {
     fireEvent.change(input, { target: { value: 'hello source' } })
     expect(input.value).toBe('hello source')
 
-    // 点击与 Enter 均走到真实面板发送（页面不再 capture 阻断）。
+    // 点击与 Enter 都到达面板替身（页面不再 capture 阶段阻断）。
     fireEvent.click(screen.getByTestId('srcchat-send'))
     expect(workspaceSpies.sourceSend).toHaveBeenCalledTimes(1)
     const enterEvent = createEvent.keyDown(input, { key: 'Enter' })
