@@ -257,6 +257,85 @@ describe('createSessionRuntimeTransport.bootstrap', () => {
     })
   })
 
+  it('有效 401 但 data 读取抛错 → 仍归一 unauthenticated（状态优先于 envelope）', async () => {
+    // 交叉场景（复核 F1）：状态可靠可读、envelope 读取失败时，401 语义不得
+    // 退化成“可重试的未知失败”——否则把认证失效误报为可重试。
+    const hostile = new Error('hostile 401')
+    Object.defineProperty(hostile, 'response', {
+      get() {
+        return {
+          status: 401,
+          get data() {
+            throw new Error('data getter exploded')
+          },
+        }
+      },
+    })
+    listChatSessionsMock.mockRejectedValue(hostile)
+
+    const outcome = await createSessionRuntimeTransport().bootstrap(SCOPE)
+
+    expect(outcome).toEqual({ status: 'error', code: 'unauthenticated', retryable: false })
+  })
+
+  it('有效 403 但 data 读取抛错 → 仍 unauthorized（不伪造 code）', async () => {
+    const hostile = new Error('hostile 403')
+    Object.defineProperty(hostile, 'response', {
+      get() {
+        return {
+          status: 403,
+          get data() {
+            throw new Error('data getter exploded')
+          },
+        }
+      },
+    })
+    listChatSessionsMock.mockRejectedValue(hostile)
+
+    const outcome = await createSessionRuntimeTransport().bootstrap(SCOPE)
+
+    expect(outcome).toEqual({ status: 'unauthorized' })
+  })
+
+  it('3xx（拦截器转成错误）→ 确定性失败非重试', async () => {
+    listChatSessionsMock.mockRejectedValue(httpError(302, { code: 'unknown_redirect' }))
+    const outcome = await createSessionRuntimeTransport().bootstrap(SCOPE)
+
+    expect(outcome).toEqual({
+      status: 'error',
+      code: 'unknown_redirect',
+      retryable: false,
+    })
+  })
+
+  it('429 → 保留 envelope 码且可重试', async () => {
+    listChatSessionsMock.mockRejectedValue(
+      httpError(429, { code: 'rate_limiter_unavailable', retryable: true }),
+    )
+    const outcome = await createSessionRuntimeTransport().bootstrap(SCOPE)
+
+    expect(outcome).toEqual({
+      status: 'error',
+      code: 'rate_limiter_unavailable',
+      retryable: true,
+    })
+  })
+
+  it('非整数状态（500.5）→ 不当作 5xx 分类', async () => {
+    listChatSessionsMock.mockRejectedValue(
+      Object.assign(new Error('fractional status'), {
+        response: { status: 500.5, data: { detail: { code: 'session_store_unavailable' } } },
+      }),
+    )
+    const outcome = await createSessionRuntimeTransport().bootstrap(SCOPE)
+
+    expect(outcome).toEqual({
+      status: 'error',
+      code: 'bootstrap_failed',
+      retryable: true,
+    })
+  })
+
   it('malformed 错误对象（response getter 抛错）→ 不 reject，退回可重试失败', async () => {
     const hostile = new Error('hostile')
     Object.defineProperty(hostile, 'response', {

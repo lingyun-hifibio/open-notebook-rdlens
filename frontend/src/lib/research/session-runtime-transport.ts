@@ -113,17 +113,30 @@ function mapTransportFailure(error: unknown): SessionRuntimeBootstrapOutcome {
 
 /** HTTP 错误 → 判别结果（401/403/5xx/其余 4xx；DESIGN §7.1）。 */
 function mapHttpFailure(error: unknown, status: number): SessionRuntimeBootstrapOutcome {
-  const data = (error as { response?: { data?: unknown } } | null)?.response?.data
-  const projection = parseSessionError(status, data)
-  // 只有真实存在 detail.code 时才保留：缺失时不得用 fallback 码冒充稳定码。
-  const envelopeCode = researchApiErrorDetail(error).code
-
   if (status === 401) {
     // 认证失效：FREEZE §7「401 无专用 code，按状态」——固定归一到 `unauthenticated`，
     // 不把 envelope 里可能出现的其它码（token_expired 等）当成本会话稳定码；
     // 交父页面刷新，客户端不重试、不跳登录页（DESIGN §7.1）。
+    //
+    // 必须先于任何 envelope 读取判定：401 的分类只依赖状态，若先解 envelope
+    // 而 `response.data` 是抛错的访问器，异常会退化成“可重试的未知失败”，
+    // 把认证失效误报为可重试（复核 F1）。
     return { status: 'error', code: 'unauthenticated', retryable: false }
   }
+  // 401 之后才需要 envelope：读失败按“无结构化 detail”处理（不伪造稳定码）。
+  let envelopeCode: string | null = null
+  let recognized = false
+  try {
+    const data = (error as { response?: { data?: unknown } } | null)?.response?.data
+    const projection = parseSessionError(status, data)
+    // 只有真实存在 detail.code 时才保留：缺失时不得用 fallback 码冒充稳定码。
+    envelopeCode = researchApiErrorDetail(error).code
+    recognized = envelopeCode !== null && projection.recognized
+  } catch {
+    envelopeCode = null
+    recognized = false
+  }
+
   if (status === 403) {
     // 403 一律终态 unauthorized（`chat_owner_required` 只是其中的具体原因）。
     return envelopeCode === null
@@ -133,7 +146,7 @@ function mapHttpFailure(error: unknown, status: number): SessionRuntimeBootstrap
   if (status >= 500) {
     return {
       status: 'error',
-      code: projection.recognized && envelopeCode !== null ? envelopeCode : BOOTSTRAP_FAILED,
+      code: recognized && envelopeCode !== null ? envelopeCode : BOOTSTRAP_FAILED,
       retryable: true,
     }
   }
