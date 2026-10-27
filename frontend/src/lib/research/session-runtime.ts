@@ -1859,7 +1859,17 @@ export function createConversationController(input: {
       const previousKey = meta?.idempotencyKey
         ?? turnState.lookup?.view?.idempotencyKey
         ?? turnState.identity.idempotencyKey
-      if (!replay && (input.draftToken === previousToken || input.idempotencyKey === previousKey)) {
+      // 同一 API 的历史 turn 身份也必须隔离：确认后的新提交不得复用任何已注册
+      // 历史 token/key，否则旧请求可能被误配到新 intent（定向复核 BLOCKING）。
+      const historicalTokens = new Set<string>()
+      const historicalKeys = new Set<string>()
+      for (const entry of requests.values()) {
+        historicalTokens.add(entry.draftToken)
+        historicalKeys.add(entry.idempotencyKey)
+      }
+      historicalTokens.add(previousToken)
+      historicalKeys.add(previousKey)
+      if (!replay && (historicalTokens.has(input.draftToken) || historicalKeys.has(input.idempotencyKey))) {
         return Promise.resolve({
           status: 'blocked',
           error: {

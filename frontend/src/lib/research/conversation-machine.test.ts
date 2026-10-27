@@ -1631,13 +1631,17 @@ describe('conversation-controller：副作用与迟到隔离', () => {
   })
 
   it('review-audit B2：updateAuth 跨 viewer 销毁旧 controller；旧快照/详情不可读、新实例不相等', async () => {
-    const openStream = vi.fn(() => ({ abort: () => {} }))
+    const streams: ConversationStreamInput[] = []
+    const openStream = vi.fn((input: ConversationStreamInput) => {
+      streams.push(input)
+      return { abort: () => {} }
+    })
     const transport = {
       openStream,
       getSubmission: () => submissionResponse(),
       loadDetail: () => ({
         messages: [{ message_id: 'msg_a', role: 'assistant', content: 'viewer-a-content' }],
-        next_cursor: null,
+        next_cursor: 'c1',
       }),
     }
     const runtime = createSessionRuntime({
@@ -1647,11 +1651,20 @@ describe('conversation-controller：副作用与迟到隔离', () => {
       role: 'owner',
     })
     const first = runtime.conversation(REF, { transport })
-    // 先填充内容，再切换 viewer：dispose 后旧快照必须不可读，而不是仅断言空 turn。
+    // 先填充内容（历史 turn + 详情 + 非空 cursor），再切换 viewer：
+    // dispose 后旧快照必须不可读，而不是仅断言空 turn。
     expect((await first.send(sendInput())).status).toBe('ok')
+    streams[0]?.onEvent?.(sse(1, 'usage', { accepted: receiptWire({}) }))
+    streams[0]?.onEvent?.(sse(2, 'answer', { delta: 'stale-answer' }))
+    streams[0]?.onEvent?.(sse(3, 'done'))
+    // clear 租约结算后，下一 turn 的 prepare 会把已终态的前一 turn 归档进 history。
+    first.notifyClearSettled('op-1', 'cleared')
+    expect((await first.send(sendInput({ operationId: 'op-2' }))).status).toBe('ok')
+    expect(first.getSnapshot().history).toHaveLength(1)
     expect((await first.load()).status).toBe('ok')
     expect(first.getSnapshot().turn).not.toBeNull()
     expect(first.getSnapshot().detailMessages).toHaveLength(1)
+    expect(first.getSnapshot().detailCursor).toBe('c1')
     runtime.updateAuth({
       authGeneration: 2,
       projectId: 'proj_1',
@@ -1660,14 +1673,17 @@ describe('conversation-controller：副作用与迟到隔离', () => {
     })
     const sent = await first.send(sendInput())
     expect(sent.status).toBe('stale')
-    expect(openStream).toHaveBeenCalledTimes(1)
+    // stale 发送不得新增派流（此前已发生两次：op-1 与 op-2）。
+    expect(openStream).toHaveBeenCalledTimes(2)
     expect(first.getSnapshot().turn).toBeNull()
+    expect(first.getSnapshot().history).toHaveLength(0)
     expect(first.getSnapshot().detailMessages).toHaveLength(0)
+    expect(first.getSnapshot().detailCursor).toBeNull()
 
     const second = runtime.conversation(REF, { transport })
     expect(second).not.toBe(first)
     expect((await second.send(sendInput())).status).toBe('ok')
-    expect(openStream).toHaveBeenCalledTimes(2)
+    expect(openStream).toHaveBeenCalledTimes(3)
   })
 
   it('review-audit B2b：调用方修改原数组/scope 后不得被误判为同意图重放（快照必须深拷贝）', async () => {
@@ -1715,6 +1731,38 @@ describe('conversation-controller：副作用与迟到隔离', () => {
     expect(sent.status).toBe('ok')
     expect(calls).toHaveLength(1)
     expect(calls[0].input).toMatchObject({ draftToken: 'draft_2', lastEventId: 0 })
+  })
+
+  it('review-audit-2 B1：确认后的新身份不得复用任何历史 turn 的 token/key', async () => {
+    const { controller, calls } = setup({
+      submission: (input) => submissionResponse({
+        draft_token: input.token,
+        idempotency_key: input.token === TOKEN ? KEY : `s1_${'e'.repeat(64)}`,
+      }),
+    })
+    // t1/k1 首发 → not_observed
+    expect((await controller.send(sendInput())).status).toBe('ok')
+    await controller.lookupSubmission()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(controller.getSnapshot().turn?.state).toBe('not_observed')
+    // 确认 t2/k2 → 派流
+    const nextKey = `s1_${'e'.repeat(64)}`
+    const confirmed = await controller.retrySubmission(
+      sendInput({ query: 'q2', draftToken: 'draft_2', idempotencyKey: nextKey, confirmDuplicateExecution: true, operationId: 'op-2' }),
+    )
+    expect(confirmed.status).toBe('ok')
+    expect(calls).toHaveLength(2)
+    // 第二 turn 再次 not_observed
+    await controller.lookupSubmission()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(controller.getSnapshot().turn?.state).toBe('not_observed')
+    // q3 + 复用历史 t1/k1：必须拒绝且零派流。
+    const reused = await controller.retrySubmission(
+      sendInput({ query: 'q3', draftToken: TOKEN, idempotencyKey: KEY, confirmDuplicateExecution: true, operationId: 'op-3' }),
+    )
+    expect(reused.status).toBe('blocked')
+    expect(reused.error?.code).toBe('new_submission_identity_required')
+    expect(calls).toHaveLength(2)
   })
 
   it('review-audit Low：dispose 后 loadMore 优先返回 stale，不泄露分页状态', async () => {
