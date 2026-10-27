@@ -1837,7 +1837,22 @@ export function createConversationController(input: {
       }
       const meta = requests.get(turnState.identity.turnId)
       const replay = meta !== undefined && sameSubmissionIntent(turnState, meta, input)
-      if (!replay && input.confirmDuplicateExecution !== true) {
+      // PR-12（6b 刷新恢复 P0）：冷启动 external not_observed 的 turn 没有
+      // requests meta（external_lookup 不 registerRequest）。整页刷新恢复出
+      // 持久草稿后，UI 用同一 token/key 首次发送应视为幂等重试而非“改意图”：
+      // 该 token 从未由本 runtime 派发，服务端幂等键可安全去重；仅放行完全
+      // 相同的 token/key，改 token/key 仍需显式确认。
+      // external_lookup 的 identity key 恒为空串；用查回 view 带回的 key 作严格
+      // 判据（真实 7896 已对拍：not_observed 的 idempotency_key 与前端
+      // buildSubmissionKey 逐字节相等）。仅同 token+同 key 放行；改 key 仍拦。
+      const lookupKey = turnState.lookup?.view?.idempotencyKey ?? ''
+      const externalSameIdentity = meta === undefined
+        && input.draftToken === turnState.identity.draftToken
+        && (
+          input.idempotencyKey === lookupKey
+          || (lookupKey === '' && input.idempotencyKey === turnState.identity.idempotencyKey)
+        )
+      if (!replay && !externalSameIdentity && input.confirmDuplicateExecution !== true) {
         return Promise.resolve({
           status: 'blocked',
           error: meta === undefined
@@ -1869,7 +1884,7 @@ export function createConversationController(input: {
       }
       historicalTokens.add(previousToken)
       historicalKeys.add(previousKey)
-      if (!replay && (historicalTokens.has(input.draftToken) || historicalKeys.has(input.idempotencyKey))) {
+      if (!replay && !externalSameIdentity && (historicalTokens.has(input.draftToken) || historicalKeys.has(input.idempotencyKey))) {
         return Promise.resolve({
           status: 'blocked',
           error: {
@@ -1906,7 +1921,7 @@ export function createConversationController(input: {
         identity,
         operationId: input.operationId,
         query: seed.query,
-        fromNotObserved: replay ? 'replay' : 'new',
+        fromNotObserved: replay || externalSameIdentity ? 'replay' : 'new',
       })
       dispatch({ type: 'prepare_succeeded', turnId })
       return Promise.resolve({ status: 'ok', value: { turnId } })
