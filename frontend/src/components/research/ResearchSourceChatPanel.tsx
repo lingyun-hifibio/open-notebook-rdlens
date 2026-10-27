@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -12,9 +12,17 @@ import {
   deriveResearchDraftGate,
   researchDraftGateReasonKey,
 } from './ResearchDraftComposer'
-import { useResearchSessionRuntimeOptional } from '@/lib/hooks/research-session-runtime'
+import {
+  useResearchSessionRuntimeOptional,
+  useSessionSnapshot,
+} from '@/lib/hooks/research-session-runtime'
 import { useResearchEditor } from '@/lib/hooks/use-research-editor'
-import { useResearchSourceChat, type ResearchSourceChatTurn } from '@/lib/hooks/use-research-source-chat'
+import {
+  useResearchSourceChat,
+  type ResearchSourceChatTurn,
+  type UseResearchSourceChatSessionOptions,
+} from '@/lib/hooks/use-research-source-chat'
+import { buildSubmissionKey } from '@/lib/research/session-idempotency'
 import type { ResearchConversationSnapshot } from '@/lib/research/types'
 import { useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
 import { formatScopeLabel } from '@/lib/research/scope'
@@ -43,31 +51,80 @@ export function ResearchSourceChatPanel({
 }) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
-  const chat = useResearchSourceChat({ projectId, sourceId })
   // #243 §6.4：模型来自顶层全局设置；外部模型需确认时由守卫登记并弹窗，
   // 未确认不发请求（不变量 9）。
   const { canExecute, runGuarded } = useResearchGlobalModel()
-  // composer 门禁需要模型可用性；在 hook 之后再做组合（避免闭包顺序问题）。
   const canExecuteModel = canExecute
-  // PR-5b（D5）：Source 面板补编辑器草稿 + composer。运行时存在时草稿以
-  // editor 为唯一权威（服务端保存 + 会话草稿），否则保留 legacy 单行入口。
+  // PR-5b（D5 / Codex P1-#3）：Source 面板补编辑器草稿 + composer。运行时
+  // 存在时草稿、发送与提交身份统一由该 source 会话 controller 承担；否则
+  // 保留 legacy 单行入口（未接线宿主）。
   const sessionRuntime = useResearchSessionRuntimeOptional()
+  const runtimeSnapshot = useSessionSnapshot()
   const sourceRef = sessionRuntime?.active('source') ?? null
+  const sourceSessionId = sourceRef?.sessionId ?? ''
   const editorEnabled =
     sessionRuntime !== null && sourceRef !== null && sourceRef.sourceId === sourceId
   const editor = useResearchEditor({
     kind: 'source',
-    sessionId: sourceRef?.sessionId ?? '',
+    sessionId: sourceSessionId,
     sourceId,
     enabled: editorEnabled,
   })
+  // 提交时的草稿文本快照（ResearchAcceptedReceipt 不含正文，清稿核对需要）。
+  const pendingSubmitTextRef = useRef<string | null>(null)
+  // 仅有可绑定的持久 session_id 时才启用 controller：新会话仍由 legacy
+  // 路径创建（PR-6 负责新会话与新协议的统一创建）。
+  const chatSession = useMemo<UseResearchSourceChatSessionOptions | undefined>(() => {
+    if (sessionRuntime === null || sourceRef === null || sourceSessionId === '') {
+      return undefined
+    }
+    return {
+      runtime: sessionRuntime,
+      ref: sourceRef,
+      onReleaseHold: (operationId: string) => editor.release(operationId),
+      onClearAfterSubmission: (receipt, operationId) => {
+        void editor
+          .clearAfterSubmission(
+            {
+              sessionRef: receipt.ref,
+              draftToken: receipt.draftToken,
+              editorRevision: receipt.editorRevision,
+              text: pendingSubmitTextRef.current ?? '',
+            },
+            operationId,
+          )
+          .then(() => {
+            pendingSubmitTextRef.current = null
+          })
+      },
+    }
+  }, [sessionRuntime, sourceRef, sourceSessionId, editor])
+  const chat = useResearchSourceChat({ projectId, sourceId, session: chatSession })
   const editorSnapshot = editorEnabled ? editor.snapshot : null
   const wired = editorSnapshot !== null
+  // Codex P1-#3（围绕同一身份）：session 模式下 busy/streaming 以 controller
+  // 快照为权威，legacy isStreaming 在 controller 执行时为 idle 会误开放发送。
+  const [sessionBusy, setSessionBusy] = useState(false)
+  const sessionConversation = chat.conversation ?? null
+  useEffect(() => {
+    if (sessionConversation === null) {
+      setSessionBusy(false)
+      return
+    }
+    const sync = (): void => {
+      const turn = sessionConversation.getSnapshot().turn
+      setSessionBusy(turn !== null && (turn.state !== 'terminal' || turn.clearPending))
+    }
+    sync()
+    return sessionConversation.subscribe(sync)
+  }, [sessionConversation])
   const conversationSnapshot: ResearchConversationSnapshot = {
-    isBusy: chat.isStreaming,
-    isStreaming: chat.isStreaming,
+    isBusy: sessionConversation !== null ? sessionBusy : chat.isStreaming,
+    isStreaming: sessionConversation !== null ? sessionBusy : chat.isStreaming,
     activeTurnId: null,
-    phase: chat.isStreaming ? 'streaming' : 'idle',
+    phase: (sessionConversation !== null ? sessionBusy : chat.isStreaming)
+      ? 'streaming'
+      : 'idle',
   }
   const baseGate = deriveResearchDraftGate({ editorSnapshot, conversationSnapshot })
   const draftGate =
@@ -79,15 +136,73 @@ export function ResearchSourceChatPanel({
       ? null
       : t(researchDraftGateReasonKey(draftGate.reason))
 
-  /** PR-5b（D5）：session 模式发送——正文来自 editor 草稿，发送后清稿。 */
+  /**
+   * PR-5b（D5 / Codex P1-#3）：session 模式发送——正文来自 editor 草稿，
+   * 且必须 hold→flush（确认保存结果）→用保存后快照发送；清稿由提交回执
+   * 核对后触发，保存失败/用户在途中改动时**绝不清空**草稿。
+   */
   const submitEditorDraft = () => {
     if (!wired || editorSnapshot === null || !draftGate.allowed) return
     const text = editorSnapshot.draftText
     if (text.trim().length === 0) return
+    const conversation = chat.conversation ?? null
     void runGuarded(
-      (modelId) => {
-        chat.send(text, modelId)
-        void editor.flush('submit').then(() => editor.setDraftText(''))
+      async (modelId) => {
+        if (conversation === null) {
+          // 新 source 会话：controller 尚无持久 session（PR-6 统一创建）。
+          chat.send(text, modelId)
+          const after = editor.controller?.getSnapshot() ?? null
+          if (after !== null && after.draftText === text) editor.setDraftText('')
+          return true
+        }
+        const operationId =
+          typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+            ? crypto.randomUUID()
+            : `op_${Date.now()}_${Math.random().toString(36).slice(2)}`
+        editor.hold('submit', operationId)
+        const flushed = await editor.flush('submit')
+        if (flushed !== 'saved' && flushed !== 'skipped') {
+          editor.release(operationId)
+          return false
+        }
+        const current = editor.controller?.getSnapshot() ?? null
+        if (current === null || current.draftText !== text) {
+          editor.release(operationId)
+          return false
+        }
+        let idempotencyKey: string
+        try {
+          idempotencyKey = buildSubmissionKey({
+            projectId,
+            ownerUserId: Number(runtimeSnapshot.viewerUserId),
+            kind: 'source',
+            sourceId,
+            sessionId: sourceSessionId,
+            draftToken: current.draftToken,
+          })
+        } catch {
+          editor.release(operationId)
+          return false
+        }
+        pendingSubmitTextRef.current = text
+        const result = await conversation.send({
+          query: text,
+          modelId,
+          sourceIds: [sourceId],
+          noteIds: [],
+          scope: { mode: 'selected', sourceIds: [sourceId], singleSourceId: null },
+          editorRevision: current.revision,
+          draftToken: current.draftToken,
+          editorIntentHash: current.intentHash ?? '',
+          idempotencyKey,
+          operationId,
+        })
+        if (result.status !== 'ok') {
+          pendingSubmitTextRef.current = null
+          editor.release(operationId)
+          return false
+        }
+        return true
       },
       {
         scopeLabel: formatScopeLabel(

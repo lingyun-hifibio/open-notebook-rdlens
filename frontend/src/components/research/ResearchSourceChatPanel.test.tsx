@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { act, render, screen, fireEvent } from '@testing-library/react'
 import { ResearchSourceChatPanel } from './ResearchSourceChatPanel'
 import { useResearchSourceChat } from '@/lib/hooks/use-research-source-chat'
 import {
@@ -21,12 +21,17 @@ vi.mock('@/lib/hooks/use-research-global-model')
 // PR-5b（D5）：source 面板直接消费 session runtime 的 source editor。
 vi.mock('@/lib/hooks/research-session-runtime', () => ({
   useResearchSessionRuntimeOptional: vi.fn(() => null),
+  useSessionSnapshot: vi.fn(() => ({ viewerUserId: '1' })),
 }))
 vi.mock('@/lib/hooks/use-research-editor', () => ({
   useResearchEditor: vi.fn(() => ({
     snapshot: null,
+    controller: null,
     setDraftText: vi.fn(),
-    flush: vi.fn(async () => true),
+    flush: vi.fn(async () => 'saved'),
+    hold: vi.fn(),
+    release: vi.fn(),
+    clearAfterSubmission: vi.fn(async () => 'cleared'),
   })),
 }))
 
@@ -71,8 +76,12 @@ describe('ResearchSourceChatPanel', () => {
     vi.mocked(useResearchSessionRuntimeOptional).mockReturnValue(null)
     vi.mocked(useResearchEditor).mockReturnValue({
       snapshot: null,
+      controller: null,
       setDraftText: vi.fn(),
-      flush: vi.fn(async () => true),
+      flush: vi.fn(async () => 'saved'),
+      hold: vi.fn(),
+      release: vi.fn(),
+      clearAfterSubmission: vi.fn(async () => 'cleared'),
     } as never)
   })
 
@@ -415,5 +424,63 @@ describe('ResearchSourceChatPanel', () => {
     renderPanel()
     expect(screen.getByTestId('srcchat-input')).toBeDisabled()
     expect(screen.getByTestId('srcchat-send')).toBeDisabled()
+  })
+
+  it('PR-5b（Codex P1-#3）：保存未确认（conflict）时不派发且不清会话草稿', async () => {
+    const ref = {
+      domain: 'research' as const,
+      kind: 'source' as const,
+      projectId: 'proj_1',
+      sessionId: 'sess_src',
+      sourceId: 'src_1',
+    }
+    vi.mocked(useResearchSessionRuntimeOptional).mockReturnValue({
+      active: () => ref,
+    } as never)
+    const base = createEditorState({ ref, writerId: 'w-1', transportAvailable: true })
+    const snapshot = {
+      ...base,
+      phase: 'ready' as const,
+      loading: false,
+      revision: 3,
+      intentHash: 'hash-3',
+      draftToken: 'draft_3',
+      baseScope: { mode: 'selected' as const, sourceIds: ['src_1'], singleSourceId: 'src_1' },
+      draftText: '未保存的问题',
+      dirty: true,
+    }
+    const setDraftText = vi.fn()
+    const release = vi.fn()
+    const hold = vi.fn()
+    vi.mocked(useResearchEditor).mockReturnValue({
+      snapshot,
+      controller: { getSnapshot: () => snapshot },
+      setDraftText,
+      flush: vi.fn(async () => 'conflict'),
+      hold,
+      release,
+      clearAfterSubmission: vi.fn(async () => 'cleared'),
+    } as never)
+    const conversationSend = vi.fn(async () => ({ status: 'ok' }))
+    const chat = makeChatResult({
+      conversation: {
+        send: conversationSend,
+        getSnapshot: () => ({ turn: null, history: [] }),
+        subscribe: () => () => {},
+        notifyClearSettled: vi.fn(),
+      } as never,
+    })
+    vi.mocked(useResearchSourceChat).mockReturnValue(chat)
+    renderPanel()
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('chat-send'))
+    })
+
+    expect(hold).toHaveBeenCalledWith('submit', expect.any(String))
+    expect(conversationSend).not.toHaveBeenCalled()
+    expect(chat.send).not.toHaveBeenCalled()
+    expect(setDraftText).not.toHaveBeenCalled()
+    expect(release).toHaveBeenCalled()
   })
 })

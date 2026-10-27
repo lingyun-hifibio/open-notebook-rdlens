@@ -22,7 +22,10 @@ import type {
   ResearchSubmissionLookupSnapshot,
 } from '@/lib/hooks/use-research-chat'
 import type { UseResearchEditorResult } from '@/lib/hooks/use-research-editor'
-import type { ConversationController } from '@/lib/research/session-runtime'
+import type {
+  ConversationController,
+  ConversationSnapshot,
+} from '@/lib/research/session-runtime'
 import type { ConversationTurn } from '@/lib/research/conversation-machine'
 import type { ResearchCitation } from '@/lib/research/types'
 import {
@@ -51,6 +54,7 @@ import {
 } from '@/lib/research/reading-anchor'
 import type {
   EditorSnapshot,
+  ResearchConversationPhase,
   ResearchConversationSnapshot,
   ResearchDraftGate,
   ResearchScopeBarNoteOption,
@@ -143,6 +147,69 @@ function selectionFromEditorSnapshot(snapshot: EditorSnapshot): ResearchChatSele
     noteIds: [...snapshot.noteIds],
     singleSourceId: null,
   }
+}
+
+/**
+ * PR-5b（Codex P1-#6）：controller 的 turn → 面板可渲染的 user/assistant 两行。
+ * 同一个投影同时用于 `history`（已被新轮归档的旧轮）与 live turn，保证新一轮
+ * 开始后上一轮问答不会从界面消失。
+ */
+function conversationTurnToTurns(turn: ConversationTurn): ResearchChatTurn[] {
+  const terminalStatus: ResearchChatTurn['status'] =
+    turn.sse.terminal === 'error' ? 'error' : 'done'
+  const status: ResearchChatTurn['status'] =
+    turn.state === 'terminal'
+      ? terminalStatus
+      : turn.state === 'unknown' || turn.state === 'lookup_pending'
+        ? terminalStatus === 'error'
+          ? 'error'
+          : 'streaming'
+        : 'streaming'
+  const generationId = turn.identity.generationId
+  const userTurn: ResearchChatTurn = {
+    id: `user_${turn.identity.turnId}`,
+    role: 'user',
+    content: turn.query,
+    thinking: '',
+    citations: [],
+    usage: null,
+    resolvedMode: null,
+    status: 'done',
+    reconnectCount: 0,
+    errorCode: null,
+    errorMessage: null,
+    coverageJobId: null,
+    scopeSnapshot: null,
+    serverMessageId: null,
+    generationId,
+  }
+  const assistantTurn: ResearchChatTurn = {
+    id: turn.identity.turnId,
+    role: 'assistant',
+    content: turn.sse.answer,
+    thinking: turn.sse.thinking,
+    citations: (turn.sse.citations as readonly ResearchCitation[]).map((citation) => ({
+      citation_id: citation.citation_id,
+      claim: citation.claim,
+      doc_id: citation.doc_id,
+      page_idx: citation.page_idx,
+      confidence: citation.confidence,
+    })),
+    usage: turn.sse.usage,
+    resolvedMode: turn.sse.resolvedMode,
+    status,
+    reconnectCount: 0,
+    errorCode: turn.sse.errorCode ?? turn.errorCode,
+    errorMessage: turn.sse.errorMessage ?? turn.errorMessage,
+    coverageJobId: null,
+    scopeSnapshot: null,
+    serverMessageId: null,
+    generationId,
+    contextReport: turn.sse.contextReport,
+    contextCoverage: turn.sse.contextCoverage,
+    recordVisibility: null,
+  }
+  return [userTurn, assistantTurn]
 }
 
 export function ResearchChatPanel({
@@ -333,16 +400,32 @@ export function ResearchChatPanel({
   // 面板订阅其快照渲染 live turn（hook 的 turns 只承载 durable 历史）。
   const sessionConversation = conversation ?? null
   const sessionWired = sessionConversation !== null && onSendSession !== undefined
-  const [liveTurn, setLiveTurn] = useState<ConversationTurn | null>(null)
+  const [liveSnapshot, setLiveSnapshot] = useState<ConversationSnapshot | null>(null)
   useEffect(() => {
     if (sessionConversation === null) {
-      setLiveTurn(null)
+      setLiveSnapshot(null)
       return
     }
-    const sync = (): void => setLiveTurn(sessionConversation.getSnapshot().turn)
+    const sync = (): void => setLiveSnapshot(sessionConversation.getSnapshot())
     sync()
     return sessionConversation.subscribe(sync)
   }, [sessionConversation])
+  const liveTurn = liveSnapshot?.turn ?? null
+  // PR-5b（Codex P2-#9）：冷启动恢复出的非空持久草稿也必须先查回一次当前
+  // draft token（marker 写失败/被清除且 cards 为空时 F10 的兜底路径）。
+  // 每个会话只对该会话的首个 editor token 触发一次，避免每次保存换 token 都查回。
+  const draftLookupSessionRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!sessionWired || refreshMarkerLookups === undefined) return
+    const token = editorSnapshot?.draftToken ?? null
+    if (token === null || token === '') return
+    const key = sessionRef === null || sessionRef === undefined
+      ? null
+      : `${sessionRef.kind}:${sessionRef.sessionId}`
+    if (key === null || draftLookupSessionRef.current === key) return
+    draftLookupSessionRef.current = key
+    void refreshMarkerLookups(token)
+  }, [sessionWired, refreshMarkerLookups, editorSnapshot?.draftToken, sessionRef])
   const surfaceActiveRef = useRef(surfaceActive)
   surfaceActiveRef.current = surfaceActive
   const wiredConversation: ResearchConversationSnapshot = conversationSnapshot ?? {
@@ -351,6 +434,32 @@ export function ResearchChatPanel({
     activeTurnId: null,
     phase: isStreaming ? 'streaming' : 'idle',
   }
+  // PR-5b（Codex P2-#7）：session 模式的 busy/streaming 必须以 controller 快照
+  // 为权威；legacy `isStreaming` 在 controller 执行时通常仍是 idle，会让发送
+  // 按钮误开放、点击后才被 controller 拒绝。
+  const sessionConversationSnapshot: ResearchConversationSnapshot | null = (() => {
+    if (!sessionWired || liveSnapshot === null) return null
+    const turn = liveSnapshot.turn
+    const active = turn !== null && (turn.state !== 'terminal' || turn.clearPending)
+    const streaming = turn !== null && turn.state === 'streaming'
+    const phase: ResearchConversationPhase = !active
+      ? 'idle'
+      : turn.state === 'preparing' || turn.state === 'submitting'
+        ? 'busy'
+        : turn.state === 'unknown' || turn.state === 'not_observed'
+          ? 'unknown'
+          : streaming
+            ? 'streaming'
+            : 'awaiting'
+    return {
+      activeTurnId: active ? turn.identity.turnId : null,
+      phase,
+      isStreaming: streaming,
+      isBusy: active,
+    }
+  })()
+  const effectiveConversation: ResearchConversationSnapshot =
+    sessionConversationSnapshot ?? wiredConversation
   // PR-5b：Coverage 是独立工作流——composer 不得共享 Chat 的 isStreaming。
   const coverageConversation: ResearchConversationSnapshot = {
     isBusy: false,
@@ -358,66 +467,31 @@ export function ResearchChatPanel({
     activeTurnId: null,
     phase: 'idle',
   }
-  /** PR-5b：controller 的 live turn → 面板可渲染的 turn（不写入 hook 状态）。 */
-  const sessionLiveTurns: ResearchChatTurn[] = (() => {
-    if (liveTurn === null) return []
-    const terminalStatus = liveTurn.sse.terminal === 'error' ? 'error' : 'done'
-    const status: ResearchChatTurn['status'] =
-      liveTurn.state === 'terminal'
-        ? terminalStatus
-        : liveTurn.state === 'unknown' || liveTurn.state === 'lookup_pending'
-          ? terminalStatus === 'error'
-            ? 'error'
-            : 'streaming'
-          : 'streaming'
-    const generationId = liveTurn.identity.generationId
-    const userTurn: ResearchChatTurn = {
-      id: `user_${liveTurn.identity.turnId}`,
-      role: 'user',
-      content: liveTurn.query,
-      thinking: '',
-      citations: [],
-      usage: null,
-      resolvedMode: null,
-      status: 'done',
-      reconnectCount: 0,
-      errorCode: null,
-      errorMessage: null,
-      coverageJobId: null,
-      scopeSnapshot: null,
-      serverMessageId: null,
-      generationId,
+  /** PR-5b（Codex P1-#6）：controller 快照 = history（已归档旧轮）+ 当前轮。 */
+  const controllerTurns: ResearchChatTurn[] = (() => {
+    if (!sessionWired || liveSnapshot === null) return []
+    const rows: ResearchChatTurn[] = []
+    const seen = new Set<string>()
+    for (const turn of liveSnapshot.history) {
+      for (const row of conversationTurnToTurns(turn)) {
+        if (seen.has(row.id)) continue
+        seen.add(row.id)
+        rows.push(row)
+      }
     }
-    const assistantTurn: ResearchChatTurn = {
-      id: liveTurn.identity.turnId,
-      role: 'assistant',
-      content: liveTurn.sse.answer,
-      thinking: liveTurn.sse.thinking,
-      citations: (liveTurn.sse.citations as readonly ResearchCitation[]).map((citation) => ({
-        citation_id: citation.citation_id,
-        claim: citation.claim,
-        doc_id: citation.doc_id,
-        page_idx: citation.page_idx,
-        confidence: citation.confidence,
-      })),
-      usage: liveTurn.sse.usage,
-      resolvedMode: liveTurn.sse.resolvedMode,
-      status,
-      reconnectCount: 0,
-      errorCode: liveTurn.sse.errorCode ?? liveTurn.errorCode,
-      errorMessage: liveTurn.sse.errorMessage ?? liveTurn.errorMessage,
-      coverageJobId: null,
-      scopeSnapshot: null,
-      serverMessageId: null,
-      generationId,
-      contextReport: liveTurn.sse.contextReport,
-      contextCoverage: liveTurn.sse.contextCoverage,
-      recordVisibility: null,
+    if (liveSnapshot.turn !== null) {
+      for (const row of conversationTurnToTurns(liveSnapshot.turn)) {
+        if (seen.has(row.id)) continue
+        seen.add(row.id)
+        rows.push(row)
+      }
     }
-    return [userTurn, assistantTurn]
+    return rows
   })()
-  const renderedTurns: ResearchChatTurn[] =
-    sessionLiveTurns.length === 0 ? turns : [...turns, ...sessionLiveTurns]
+  const durableTurnIds = new Set(turns.map((turn) => turn.id))
+  const renderedTurns: ResearchChatTurn[] = sessionWired
+    ? [...turns, ...controllerTurns.filter((turn) => !durableTurnIds.has(turn.id))]
+    : turns
 
   // PR-5b（§4.2-4/§4.6）：详情侧可见性投影。当前批次 detail 恒可读 title+
   // record_visibility；不先占位等确认（有 detail 就立即按响应渲染）。
@@ -428,8 +502,10 @@ export function ResearchChatPanel({
   const restrictedSession = sessionVisibility.visibility === 'restricted'
   const legacySession = sessionVisibility.visibility === 'legacy_context_unverifiable'
   const sessionMetaValue = sessionMeta ?? null
+  // PR-5b（Codex P1-#4 / §4.2-4）：detail 的 title 只在可见性已知时渲染；
+  // visibility 缺失（旧 DTO/字段缺失）→ 只显示 degraded 占位，绝不先展示标题。
   const sessionHeaderTitle =
-    sessionMetaValue === null
+    sessionMetaValue === null || sessionVisibility.visibility === null
       ? null
       : sessionMetaValue.title ?? t('research.session.untitled')
   const sessionShortId = sessionRef !== null && sessionRef !== undefined
@@ -536,7 +612,7 @@ export function ResearchChatPanel({
     if (!wired) return { allowed: true, reason: null }
     const derived = deriveResearchDraftGate({
       editorSnapshot: editorSnapshot ?? null,
-      conversationSnapshot: wiredConversation,
+      conversationSnapshot: effectiveConversation,
       submissionReady,
     })
     if (derived.allowed && generationBlocked) {
@@ -1074,9 +1150,15 @@ export function ResearchChatPanel({
             ) : sessionHeaderTitle === null ? (
               <span
                 className="text-sm text-muted-foreground"
-                data-testid="chat-session-title-loading"
+                data-testid={
+                  sessionVisibility.visibility === null
+                    ? 'chat-session-title-unknown'
+                    : 'chat-session-title-loading'
+                }
               >
-                {t('research.loading')}
+                {sessionVisibility.visibility === null
+                  ? t('research.session.visibility.unknownBadge')
+                  : t('research.loading')}
               </span>
             ) : (
               <span className="text-sm font-medium" data-testid="chat-session-title">
@@ -1109,7 +1191,12 @@ export function ResearchChatPanel({
           <ResearchSubmissionStatus
             submissionView={submissionView}
             currentDraft={editorSnapshot?.draftText ?? null}
-            contextReport={submissionLookup?.contextReport ?? null}
+            contextReport={
+              submissionLookup?.contextReport !== null &&
+              submissionLookup?.contextReport !== undefined
+                ? submissionLookup.contextReport
+                : null
+            }
             visibility={sessionVisibility.visibility ?? undefined}
             onLookup={() => {
               void sessionConversation?.lookupSubmission(submissionLookup?.token)
@@ -1254,15 +1341,16 @@ export function ResearchChatPanel({
                     </div>
                   )}
 
-                  {/* PR-5b（§7.3）：assistant 消息下方固定“上下文说明”折叠区；
-                      null/缺失 = unknown（不填零、不显示“完整”）。 */}
-                  {turn.contextReport !== undefined && turn.contextReport !== null && (
-                    <ResearchContextReport
-                      report={turn.contextReport as ResearchContextReportProjection}
-                      onAdjustScope={onChangeScope === undefined ? undefined : undefined}
-                      onNewSession={onNewSession}
-                    />
-                  )}
+                  {/* PR-5b（§7.3 / Codex P2-#11）：assistant 消息下方固定
+                      “上下文说明”折叠区；缺失/null = unknown（不填零、
+                      不显示“完整”），不得隐藏入口。 */}
+                  <ResearchContextReport
+                    report={
+                      (turn.contextReport as ResearchContextReportProjection | undefined) ??
+                      null
+                    }
+                    onNewSession={onNewSession}
+                  />
 
                   {(turn.usage || turn.resolvedMode) && (
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -1447,18 +1535,36 @@ export function ResearchChatPanel({
                     </span>
                   )}
                 </div>
-                {card.status === 'failed' &&
-                  submissionLookup?.contextReport !== null &&
-                  submissionLookup?.contextReport !== undefined && (
-                    <div className="mt-2">
-                      <ResearchContextReport
-                        report={submissionLookup.contextReport}
-                        variant="failed-card"
-                        defaultOpen
-                        onNewSession={onNewSession}
-                      />
-                    </div>
-                  )}
+                {card.status === 'failed' && (
+                  <div className="mt-2">
+                    <ResearchContextReport
+                      report={(() => {
+                        // PR-5b（§7.3 / Codex P2-#10）：card 自身报告优先；
+                        // 仅当查回报告属于**同一 Generation**才回退，
+                        // 避免多张卡共享另一轮的计数。
+                        const cardReport = card.context_report as
+                          | ResearchContextReportProjection
+                          | null
+                          | undefined
+                        if (cardReport !== null && cardReport !== undefined) {
+                          return cardReport
+                        }
+                        const lookup = submissionLookup ?? null
+                        if (
+                          lookup !== null &&
+                          lookup.generationId !== null &&
+                          lookup.generationId === card.generation_id
+                        ) {
+                          return lookup.contextReport
+                        }
+                        return null
+                      })()}
+                      variant="failed-card"
+                      defaultOpen
+                      onNewSession={onNewSession}
+                    />
+                  </div>
+                )}
               </div>
             ))}
         {isStreaming && (

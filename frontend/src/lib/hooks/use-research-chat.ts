@@ -46,6 +46,7 @@ import {
   type ResearchSessionVisibility,
 } from '@/lib/research/session-contract'
 import {
+  clearActiveSubmission,
   listSubmissionMarkers,
   persistableSubmissionHeaders,
   readActiveSubmission,
@@ -692,6 +693,34 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
   const sessionOptionsRef = useRef<UseResearchChatSessionOptions | undefined>(session)
   sessionOptionsRef.current = session
   const controllerRef = useRef<ConversationController | null>(null)
+  /**
+   * PR-5b（Codex P2-#8）：runtime 按 sessionKey 复用 controller 但**不替换**
+   * 其 transport；离开会话时旧闭包 `cancelled=true`。稳定代理把调用转发到
+   * 当前挂载绑定的 transport，返回会话后详情/查回不再永久跳过捕获。
+   */
+  const boundTransportRef = useRef<ConversationTransport | null>(null)
+  const stableTransportRef = useRef<ConversationTransport | null>(null)
+  if (stableTransportRef.current === null) {
+    stableTransportRef.current = {
+      openStream: (input) =>
+        boundTransportRef.current?.openStream(input) ?? { abort: () => {} },
+      getSubmission: (input) => {
+        const target = boundTransportRef.current
+        if (target === null) return Promise.reject(new Error('transport_unbound'))
+        return target.getSubmission(input)
+      },
+      loadDetail: (input) => {
+        const target = boundTransportRef.current
+        if (target === null || target.loadDetail === undefined) {
+          return Promise.reject(new Error('transport_unbound'))
+        }
+        return target.loadDetail(input)
+      },
+      releaseHold: (operationId) => boundTransportRef.current?.releaseHold?.(operationId),
+      clearAfterSubmission: (receipt, operationId) =>
+        boundTransportRef.current?.clearAfterSubmission?.(receipt, operationId),
+    }
+  }
   const projectIdRef = useRef(projectId)
   projectIdRef.current = projectId
   const conversationKey = session === undefined ? null : sessionKey(session.ref)
@@ -752,7 +781,22 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
         title: typeof sessionRecord?.title === 'string' ? sessionRecord.title : null,
         recordVisibility: parseRecordVisibilityValue(sessionRecord?.record_visibility),
       })
-      setSessionCards(Array.isArray(record?.cards) ? (record.cards as ResearchGlobalChatCard[]) : [])
+      const cards = Array.isArray(record?.cards)
+        ? (record.cards as ResearchGlobalChatCard[])
+        : []
+      // PR-5b（Codex P2-#10）：失败卡自身的容量报告随同一次详情响应解析；
+      // 缺失 = unknown（不得回退到其它 Generation 的报告）。
+      setSessionCards(
+        cards.map((card) => {
+          const reportWire = parseContextReportWire(
+            (card as { context_report?: unknown }).context_report,
+          )
+          return {
+            ...card,
+            context_report: reportWire === null ? null : projectContextReport(reportWire),
+          }
+        }),
+      )
     }
     /** PR-5b（D3）：开流前写入 submission marker（失败不阻断发送）。 */
     const persistMarker = (marker: SessionSubmissionMarker): void => {
@@ -892,7 +936,12 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
       loadDetail: ({ cursor }) => getResearchChatSession(
         projectIdRef.current,
         ref.sessionId,
-        cursor === null || cursor === undefined ? {} : { cursor },
+        {
+          ...(cursor === null || cursor === undefined ? {} : { cursor }),
+          // PR-5b（Codex P1-#4 / §6.7）：新会话协议显式请求 session DTO 扩展
+          // （record_visibility/扩展消息/失败卡报告）——仍是同一次响应。
+          sessionContract: true,
+        },
       ).then((detail) => {
         // PR-5b（D2）：同一次响应捕获 header 元数据/卡——不得再发第二次详情。
         captureDetail(detail)
@@ -901,7 +950,10 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
       releaseHold: (operationId) => releaseHold?.(operationId),
       clearAfterSubmission: (receipt, operationId) => clearAfterSubmission?.(receipt, operationId),
     }
-    const controller = options.runtime.conversation(ref, { transport })
+    boundTransportRef.current = transport
+    const controller = options.runtime.conversation(ref, {
+      transport: stableTransportRef.current ?? transport,
+    })
     controllerRef.current = controller
     setConversation(controller)
     // 冷启动/切换返回：durable detail 恢复完整消息，替换临时轮（§6.5）；
@@ -940,6 +992,38 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
         })
       })
     /**
+     * PR-5b（Codex P2-#12）：可信终态后结算持久 marker（terminalAt + 结算
+     * active 指针），否则正常完成的提交永久占用未结算预算（20 条后拒写）。
+     */
+    const settleMarkerForToken = (token: string): void => {
+      const current = markerRef.current
+      if (current === null || current.draftToken !== token) return
+      const turn = controller.getSnapshot().turn
+      if (turn === null || turn.identity.draftToken !== token) return
+      const terminal = turn.state === 'terminal'
+      if (!terminal && turn.state !== 'accepted') return
+      const scope = readCacheScope(runtime)
+      if (scope === null) return
+      const now = new Date().toISOString()
+      const next: SessionSubmissionMarker = {
+        ...current,
+        acceptanceState: terminal ? 'terminal' : 'accepted',
+        generationId: current.generationId ?? turn.identity.generationId,
+        updatedAt: now,
+        ...(terminal ? { terminalAt: now } : {}),
+      }
+      markerRef.current = next
+      const written = writeSubmissionMarker(scope, ref, next)
+      if (terminal) {
+        const authority = readCacheAuthority(runtime)
+        if (authority !== null) {
+          const active = readActiveSubmission(scope, authority, ref)
+          if (active === token) clearActiveSubmission(scope, ref)
+        }
+      }
+      if (!cancelled && !written.ok) setMarkerWriteFailed(true)
+    }
+    /**
      * PR-5b（D3）：未结算标记查回。顺序 active→当前 draft token→其余；
      * 逐条串行（并发 1 ≤ 契约上限 2）；活动 turn 占用时**不**处理历史
      * 标记（历史批量查回归 PR-6）。返回派发数。
@@ -971,6 +1055,7 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
         const result = await controller.lookupSubmission(activeToken)
         if (result.status !== 'ok') return 0
         await waitForLookup(activeToken)
+        settleMarkerForToken(activeToken)
         return 1
       }
       let dispatched = 0
@@ -981,6 +1066,7 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
         if (result.status !== 'ok') continue
         dispatched += 1
         await waitForLookup(token)
+        settleMarkerForToken(token)
       }
       return dispatched
     }
@@ -1008,6 +1094,7 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
       setSubmissionLookup(null)
       setMarkerWriteFailed(false)
       markerReconcileRef.current = null
+      if (boundTransportRef.current === transport) boundTransportRef.current = null
       // 离开会话/卸载：只标记 detach 并中止本地读取（服务端继续执行）。
       controller.detach()
       options.runtime.releaseConversation(ref, controller)

@@ -46,6 +46,7 @@ import { canJumpToCitation, resolveCitationCandidate, resolveCitationSource } fr
 import type { ResearchSource } from '@/lib/types/research'
 import type { ResearchScopeBarNoteOption, ResearchScopeBarSourceOption } from '@/lib/research/types'
 import type { ResearchCitationDisplayItem } from '@/lib/research/types'
+import type { ConversationController } from '@/lib/research/session-runtime'
 import type { ResearchConversationSnapshot } from '@/lib/research/types'
 import type { ResearchCitation } from '@/lib/types/research'
 import type { ResearchChatRequest } from '@/lib/research/types'
@@ -136,6 +137,9 @@ export function ResearchWorkspace({
       ? undefined
       : runtimeSnapshot.capabilities?.submissionReady.global === true
   const pendingSubmitTextRef = useRef<string | null>(null)
+  // PR-5b（Codex P1-#1）：清稿 ACK 必须回报 controller（`clear_settled`），
+  // 否则 `clearPending` 永挂、下一次发送被 `clear_settlement_pending` 拒绝。
+  const chatControllerRef = useRef<ConversationController | null>(null)
   // PR-5b（D1，第 1 处）：把运行时 + 当前会话 ref + editor 持有者回调传给
   // useResearchChat——controller 是 trace 新协议的唯一权威（不再依赖 legacy）。
   const chatSession = useMemo<UseResearchChatSessionOptions | undefined>(() => {
@@ -147,15 +151,28 @@ export function ResearchWorkspace({
       // §9.2/§5.6：editor 的清稿核对需要“提交时的文本快照”（ResearchAcceptedReceipt
       // 不含正文），由发送派发处冻结；文本已被改动时 editor 会判定 invalid 不清稿。
       onClearAfterSubmission: (receipt, operationId) => {
-        void chatEditor.clearAfterSubmission(
-          {
-            sessionRef: receipt.ref,
-            draftToken: receipt.draftToken,
-            editorRevision: receipt.editorRevision,
-            text: pendingSubmitTextRef.current ?? '',
-          },
-          operationId,
-        )
+        void chatEditor
+          .clearAfterSubmission(
+            {
+              sessionRef: receipt.ref,
+              draftToken: receipt.draftToken,
+              editorRevision: receipt.editorRevision,
+              text: pendingSubmitTextRef.current ?? '',
+            },
+            operationId,
+          )
+          .then((outcome) => {
+            // 清稿失败/被覆盖也必须结算，否则 hold 与后续发送永久阻塞。
+            const settled =
+              outcome === 'cleared'
+                ? 'cleared'
+                : outcome === 'superseded' || outcome === 'cancelled'
+                  ? 'superseded'
+                  : outcome === 'unsynced'
+                    ? 'failed'
+                    : 'blocked'
+            chatControllerRef.current?.notifyClearSettled(operationId, settled)
+          })
       },
     }
   }, [sessionRuntime, activeGlobalRef, chatEditor])
@@ -243,6 +260,7 @@ export function ResearchWorkspace({
     // PR-5b（D1）：显式会话时启用 session-v1 controller（新协议唯一发送路径）
     session: chatSession,
   })
+  chatControllerRef.current = chatConversation ?? null
 
   // #243 §6.4：Chat/Compare 统一走顶层执行守卫（invariant 9）
   // #358：models 响应顶层能力——覆盖全部所选来源只在后端
@@ -480,20 +498,44 @@ export function ResearchWorkspace({
   )
 
   const sendCoverageChat = useCallback(
-    async (query: string, snapshot: ResearchScopeSnapshot): Promise<CoverageSubmitOutcome> => {
+    (query: string, snapshot: ResearchScopeSnapshot): Promise<CoverageSubmitOutcome> => {
       const scopeLabel = formatScopeLabel(snapshot, t)
-      const outcome = await runGuarded(
-        (modelId) =>
-          sendCoverage(
-            query,
-            { mode: snapshot.mode, sourceIds: [...snapshot.sourceIds], noteIds: [], singleSourceId: snapshot.singleSourceId },
-            modelId,
-            submitCoverage,
-          ),
-        { scopeLabel },
-      )
-      // consent 取消/身份失效/被禁用：未派发（零副作用），绝不伪装成已受理。
-      return outcome ?? { status: 'not_dispatched' }
+      // PR-5b（Codex P1-#5）：需要用户 confirmation 时 `runGuarded` 会先返回
+      // undefined，真正派发发生在确认之后——必须用 onCompletion 把延迟执行的
+      // 真实 outcome（accepted / 登记失败 / 失败）回传给面板，否则面板会把
+      // “已受理”误当成未派发（不清稿、不显示可查回标识）。
+      return new Promise<CoverageSubmitOutcome>((resolve) => {
+        let settled = false
+        const finish = (outcome: CoverageSubmitOutcome): void => {
+          if (settled) return
+          settled = true
+          resolve(outcome)
+        }
+        void runGuarded(
+          async (modelId) => {
+            const outcome = await sendCoverage(
+              query,
+              {
+                mode: snapshot.mode,
+                sourceIds: [...snapshot.sourceIds],
+                noteIds: [],
+                singleSourceId: snapshot.singleSourceId,
+              },
+              modelId,
+              submitCoverage,
+            )
+            finish(outcome)
+            return outcome
+          },
+          {
+            scopeLabel,
+            onCompletion: (completion) => {
+              // consent 取消/身份失效/被禁用：未派发（零副作用），绝不伪装已受理。
+              if (!completion.dispatched) finish({ status: 'not_dispatched' })
+            },
+          },
+        ).then((outcome) => finish(outcome ?? { status: 'not_dispatched' }))
+      })
     },
     [runGuarded, sendCoverage, submitCoverage, t],
   )
@@ -518,17 +560,42 @@ export function ResearchWorkspace({
               : `op_${Date.now()}_${Math.random().toString(36).slice(2)}`
           chatEditor.hold('submit', operationId)
           const flushed = await chatEditor.flush('submit')
-          if (!flushed) {
+          // §9.3/I4：只有“已保存/无需保存”才允许发送；queued（未确认）、
+          // conflict/blocked/readonly/unsynced/invalid 一律不得带旧版本发送。
+          if (flushed !== 'saved' && flushed !== 'skipped') {
             chatEditor.release(operationId)
             return false
           }
-          pendingSubmitTextRef.current = query
-          const editor = chatEditor.snapshot
-          if (editor === null) {
+          // 用绑定 editor controller 的**保存后**快照（不是发送前的 React
+          // 快照）：保存期间用户可能又输入/改范围，旧快照会让 wire revision
+          // 落后一版（Codex P1-#2）。
+          const editorController = chatEditor.controller
+          const editor = editorController?.getSnapshot() ?? null
+          if (editor === null || editor.draftText !== query) {
             pendingSubmitTextRef.current = null
             chatEditor.release(operationId)
             return false
           }
+          const freshScope =
+            editor.singleSourceId !== null
+              ? {
+                  mode: 'single' as const,
+                  sourceIds: [] as string[],
+                  noteIds: [...editor.noteIds],
+                  singleSourceId: editor.singleSourceId,
+                }
+              : {
+                  mode: (editor.baseScope?.mode ?? 'all') as ResearchScopeSnapshot['mode'],
+                  sourceIds: editor.baseScope !== null ? [...editor.baseScope.sourceIds] : [],
+                  noteIds: [...editor.noteIds],
+                  singleSourceId: null,
+                }
+          if (JSON.stringify(freshScope) !== JSON.stringify(scopeSnapshot)) {
+            pendingSubmitTextRef.current = null
+            chatEditor.release(operationId)
+            return false
+          }
+          pendingSubmitTextRef.current = query
           // D3：幂等键必须是可复算的 submission key（marker 校验要求），
           // 随机键会让 session-cache 拒绝落盘 → 查回能力静默丢失。
           let idempotencyKey: string

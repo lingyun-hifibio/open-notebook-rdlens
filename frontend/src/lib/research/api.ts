@@ -835,9 +835,11 @@ export async function getSourceChatSession(
   projectId: string,
   sourceId: string,
   sessionId: string,
+  options: { sessionContract?: boolean } = {},
 ): Promise<ResearchSourceChatSessionDetail> {
   const response = await apiClient.get<ResearchSourceChatSessionDetail>(
     researchPath(projectId, 'sources', sourceId, 'chat', 'sessions', sessionId),
+    options.sessionContract === true ? { headers: sessionContractHeaders } : undefined,
   )
   return response.data
 }
@@ -868,6 +870,11 @@ export interface ResearchGlobalChatCard {
   status: string
   failure_code: string | null
   created_at?: string | null
+  /**
+   * PR-5b（§7.3）：失败卡自身携带的容量报告（后端加性字段；缺失 =
+   * unknown，不得回退到其它 Generation 的报告）。
+   */
+  context_report?: unknown
 }
 
 /** GET 全局会话详情响应（消息按阅读顺序返回；next_cursor 分页游标） */
@@ -878,6 +885,8 @@ export interface ResearchGlobalChatSessionDetail {
     owner_user_id?: number | null
     created_at?: string | null
     updated_at?: string | null
+    /** PR-5b（§4.6）：列表/详情同语义的会话可见性（第三批加性字段）。 */
+    record_visibility?: string | null
   }
   messages: ResearchGlobalChatMessage[]
   cards: ResearchGlobalChatCard[]
@@ -891,11 +900,17 @@ export interface ResearchGlobalChatSessionDetail {
 export async function getResearchChatSession(
   projectId: string,
   sessionId: string,
-  params: { cursor?: string } = {},
+  params: { cursor?: string; sessionContract?: boolean } = {},
 ): Promise<ResearchGlobalChatSessionDetail> {
+  const { cursor, sessionContract } = params
   const response = await apiClient.get<ResearchGlobalChatSessionDetail>(
     researchPath(projectId, 'chat', 'sessions', sessionId),
-    { params },
+    {
+      ...(cursor === undefined ? {} : { params: { cursor } }),
+      // PR-5b（§6.7/§9.5）：只有新会话协议路径显式请求 session DTO 扩展；
+      // legacy 调用不携带该头，返回形状/行为保持不变（Lead 裁决 D2）。
+      ...(sessionContract === true ? { headers: sessionContractHeaders } : {}),
+    },
   )
   return response.data
 }

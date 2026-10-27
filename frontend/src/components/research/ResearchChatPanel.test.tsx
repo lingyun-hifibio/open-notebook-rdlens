@@ -1802,14 +1802,17 @@ describe('ResearchChatPanel PR-5b：会话接线与解释 UI', () => {
     sourceId: null,
   }
 
-  function conversationStub(turn: ConversationTurn | null = null): ConversationController {
+  function conversationStub(
+    turn: ConversationTurn | null = null,
+    history: ConversationTurn[] = [],
+  ): ConversationController {
     return {
       getSnapshot: () => ({
         version: 1,
         sessionKey: 'global:p1:sess-1',
         authGeneration: 1,
         turn,
-        history: [],
+        history,
         detailMessages: [],
         detailCursor: null,
       }),
@@ -1826,12 +1829,14 @@ describe('ResearchChatPanel PR-5b：会话接线与解释 UI', () => {
     turns = [],
     markerWriteFailed = false,
     onSendCoverage = vi.fn(async () => ACCEPTED_OUTCOME),
+    conversation = conversationStub(),
   }: {
     sessionMeta?: ResearchChatSessionMeta | null
     submissionLookup?: ResearchSubmissionLookupSnapshot | null
     turns?: ResearchChatTurn[]
     markerWriteFailed?: boolean
     onSendCoverage?: (q: string, snapshot: ResearchScopeSnapshot) => Promise<CoverageSubmitOutcome>
+    conversation?: ConversationController
   }) {
     const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
     return render(
@@ -1850,7 +1855,7 @@ describe('ResearchChatPanel PR-5b：会话接线与解释 UI', () => {
                 loading: false,
                 baseScope: { mode: 'selected', sourceIds: ['src_1'], singleSourceId: null },
               }}
-              conversation={conversationStub()}
+              conversation={conversation}
               sessionRef={REF}
               sessionMeta={sessionMeta}
               submissionLookup={submissionLookup}
@@ -1979,5 +1984,46 @@ describe('ResearchChatPanel PR-5b：会话接线与解释 UI', () => {
     expect(screen.getByTestId('coverage-registration-pending')).toHaveTextContent(
       'research.coverage.registrationPending',
     )
+  })
+
+  it('PR-5b（Codex P1-#6）：controller 归档到 history 的上一轮不会消失', () => {
+    const archived = {
+      identity: {
+        authGeneration: 1,
+        sessionKey: 'global:p1:sess-1',
+        sessionId: 'sess-1',
+        turnId: 'turn-old',
+        draftToken: 'draft_old',
+        attempt: 1,
+        detached: false,
+        terminal: 'done',
+      },
+      state: 'terminal',
+      sse: {
+        answer: '上一轮回答',
+        thinking: '',
+        citations: [],
+        usage: null,
+        resolvedMode: null,
+        terminal: 'done',
+        errorCode: null,
+        errorMessage: null,
+        contextReport: null,
+        contextCoverage: null,
+      },
+      query: '上一轮问题',
+      operationId: null,
+      accepted: null,
+      errorCode: null,
+      errorMessage: null,
+      gapDetected: false,
+      lookup: null,
+      clearPending: false,
+      incomplete: false,
+      external: false,
+    } as unknown as ConversationTurn
+    renderSessionPanel({ conversation: conversationStub(null, [archived]) })
+    expect(screen.getByText('上一轮问题')).toBeInTheDocument()
+    expect(screen.getByText('上一轮回答')).toBeInTheDocument()
   })
 })
