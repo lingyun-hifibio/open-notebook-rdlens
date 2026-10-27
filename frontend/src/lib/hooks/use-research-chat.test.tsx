@@ -1116,6 +1116,13 @@ describe('PR-5a F13：持久化恢复路径保留扩展字段', () => {
     expect(unknown?.contextReport).not.toEqual(expect.objectContaining({ status: 'complete' }))
   })
 
+  it('user 行保留持久 message_id（面板 data-message-id 与身份去重依赖）', () => {
+    const user = messageRowToTurn({ message_id: 'msg_u1', role: 'user', content: '问题' } as never)
+    expect(user?.serverMessageId).toBe('msg_u1')
+    const assistant = messageRowToTurn(baseRow)
+    expect(assistant?.serverMessageId).toBe('msg_gen_abc123')
+  })
+
   it('受限消息强制安全投影：正文/思考/引用不渲染', () => {
     const turn = messageRowToTurn({
       ...baseRow,

@@ -259,7 +259,9 @@ export function messageRowToTurn(row: DurableMessageRow): ResearchChatTurn | nul
     extensions.recordVisibility = row.record_visibility
   }
   if (row.role === 'user') {
-    return { ...base, ...extensions }
+    // PR-5b（Lead 定向复核）：真实 mapper 的 user 行也必须保留持久 message_id
+    // （面板依赖它做 durable 身份/定位；此前恒为 null 使真实冷启动缺 data-message-id）。
+    return { ...base, ...extensions, serverMessageId: row.message_id ?? null }
   }
   const generationId = parseGenerationIdFromMessageId(row.message_id)
   return {

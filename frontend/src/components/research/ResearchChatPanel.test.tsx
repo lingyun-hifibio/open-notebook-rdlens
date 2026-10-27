@@ -2186,4 +2186,100 @@ describe('ResearchChatPanel PR-5b：会话接线与解释 UI', () => {
     // 新 generation 的空 assistant 不插入空占位（新问题独立呈现）
     expect(screen.queryByText('research.chatNoAnswer')).not.toBeInTheDocument()
   })
+
+  it('PR-5b（Codex 复核 P1）：热恢复时 durable 与 controller history 同轮不得重复', () => {
+    const durableUser = turn({
+      id: 'msg_u1',
+      role: 'user',
+      content: '第一轮问题',
+      serverMessageId: 'msg_u1',
+    })
+    const durableAssistant = turn({
+      id: 'msg_gen_1_assistant',
+      role: 'assistant',
+      content: '第一轮答案',
+      generationId: 'gen_1',
+      serverMessageId: 'msg_gen_1_assistant',
+    })
+    const roundOne = {
+      identity: {
+        authGeneration: 1,
+        sessionKey: 'global:p1:sess-1',
+        sessionId: 'sess-1',
+        turnId: 'turn-old',
+        draftToken: 'draft_old',
+        attempt: 1,
+        detached: false,
+        terminal: 'done',
+        generationId: 'gen_1',
+        observedRevision: null,
+      },
+      state: 'terminal',
+      sse: {
+        answer: '第一轮答案',
+        thinking: '',
+        citations: [],
+        usage: null,
+        resolvedMode: null,
+        terminal: 'done',
+        errorCode: null,
+        errorMessage: null,
+        contextReport: null,
+        contextCoverage: null,
+      },
+      query: '第一轮问题',
+      operationId: null,
+      accepted: null,
+      errorCode: null,
+      errorMessage: null,
+      gapDetected: false,
+      lookup: null,
+      clearPending: false,
+      incomplete: false,
+      external: false,
+    } as unknown as ConversationTurn
+    const liveTurn = {
+      ...roundOne,
+      identity: {
+        authGeneration: 1,
+        sessionKey: 'global:p1:sess-1',
+        sessionId: 'sess-1',
+        turnId: 'turn-new',
+        draftToken: 'draft_new',
+        attempt: 1,
+        detached: false,
+        terminal: null,
+        generationId: 'gen_2',
+        observedRevision: null,
+      },
+      state: 'streaming',
+      sse: { ...roundOne.sse, answer: '', terminal: null },
+      query: '第二轮问题',
+      operationId: 'op-2',
+    } as unknown as ConversationTurn
+    renderSessionPanel({
+      turns: [durableUser, durableAssistant],
+      conversation: {
+        getSnapshot: () => ({
+          version: 2,
+          sessionKey: 'global:p1:sess-1',
+          authGeneration: 1,
+          turn: liveTurn,
+          history: [roundOne],
+          detailMessages: [],
+          detailCursor: null,
+        }),
+        subscribe: () => () => {},
+        load: vi.fn(async () => ({ status: 'ok' })),
+        lookupSubmission: vi.fn(async () => ({ status: 'ok' })),
+        refreshStatus: vi.fn(async () => ({ status: 'ok' })),
+      } as unknown as ConversationController,
+    })
+    // durable 第一轮保留一次；controller 同 generation 轮被跳过
+    expect(screen.getAllByText('第一轮问题')).toHaveLength(1)
+    expect(screen.getAllByText('第一轮答案')).toHaveLength(1)
+    // 第二轮独立呈现（空 assistant 不投影空占位）
+    expect(screen.getAllByText('第二轮问题')).toHaveLength(1)
+    expect(screen.queryByText('research.chatNoAnswer')).not.toBeInTheDocument()
+  })
 })

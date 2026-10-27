@@ -501,22 +501,29 @@ export function ResearchChatPanel({
   /** PR-5b（Codex P1-#6）：controller 快照 = history（已归档旧轮）+ 当前轮。 */
   const controllerTurns: ResearchChatTurn[] = (() => {
     if (!sessionWired || liveSnapshot === null) return []
+    // Lead 定向复核 / Codex 复核 P1：热恢复时 durable detail 行与 controller
+    // history 可能指向**同一轮**（切走再返回，runtime 保留 controller）。用
+    // generationId（durable assistant 由 msg_<gen>_assistant 解析）作为可证明
+    // 身份：durable 已有该 generation 时跳过 controller 重复轮（durable 行
+    // 原样保留；只跳过 controller 副本，不删 durable user）。
+    const durableGenerations = new Set(
+      turns
+        .map((row) => row.generationId)
+        .filter((id): id is string => id !== null && id !== ''),
+    )
     const rows: ResearchChatTurn[] = []
     const seen = new Set<string>()
-    for (const turn of liveSnapshot.history) {
+    const appendTurn = (turn: ConversationTurn): void => {
+      const generationId = turn.identity.generationId
+      if (generationId !== null && durableGenerations.has(generationId)) return
       for (const row of conversationTurnToTurns(turn)) {
         if (seen.has(row.id)) continue
         seen.add(row.id)
         rows.push(row)
       }
     }
-    if (liveSnapshot.turn !== null) {
-      for (const row of conversationTurnToTurns(liveSnapshot.turn)) {
-        if (seen.has(row.id)) continue
-        seen.add(row.id)
-        rows.push(row)
-      }
-    }
+    for (const turn of liveSnapshot.history) appendTurn(turn)
+    if (liveSnapshot.turn !== null) appendTurn(liveSnapshot.turn)
     return rows
   })()
   const renderedTurns: ResearchChatTurn[] = (() => {
