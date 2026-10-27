@@ -483,4 +483,54 @@ describe('ResearchSourceChatPanel', () => {
     expect(setDraftText).not.toHaveBeenCalled()
     expect(release).toHaveBeenCalled()
   })
+
+  it('PR-5b（Codex 第 2 轮 P1-#3）：controller history 轮次必须渲染进消息区', () => {
+    const archived = {
+      identity: {
+        authGeneration: 1,
+        sessionKey: 'source:proj_1:src_1:sess_src',
+        sessionId: 'sess_src',
+        turnId: 'turn-old',
+        draftToken: 'draft_old',
+        attempt: 1,
+        detached: false,
+        terminal: 'done',
+      },
+      state: 'terminal',
+      sse: {
+        answer: '旧轮回答',
+        thinking: '',
+        citations: [],
+        usage: null,
+        resolvedMode: null,
+        terminal: 'done',
+        errorCode: null,
+        errorMessage: null,
+        contextReport: null,
+        contextCoverage: null,
+      },
+      query: '旧轮问题',
+      operationId: null,
+      accepted: null,
+      errorCode: null,
+      errorMessage: null,
+      gapDetected: false,
+      lookup: null,
+      clearPending: false,
+      incomplete: false,
+      external: false,
+    }
+    vi.mocked(useResearchSourceChat).mockReturnValue(
+      makeChatResult({
+        conversation: {
+          getSnapshot: () => ({ turn: null, history: [archived] }),
+          subscribe: () => () => {},
+          send: vi.fn(),
+        } as never,
+      }),
+    )
+    renderPanel()
+    expect(screen.getByText('旧轮问题')).toBeInTheDocument()
+    expect(screen.getByText('旧轮回答')).toBeInTheDocument()
+  })
 })

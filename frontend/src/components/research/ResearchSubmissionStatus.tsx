@@ -200,9 +200,18 @@ export function ResearchSubmissionStatus({
         ) : null}
       </div>
 
-      {contextReport !== null && contextReport !== undefined ? (
+      {/* PR-5b（Codex 第 2 轮 P2-#11 / §7.3）：失败/未知/查回失败的提交状态卡
+          必须始终提供容量说明入口；缺失报告投影为 unknown，不得隐藏。 */}
+      {(contextReport !== null && contextReport !== undefined) ||
+      submissionView.kind === 'terminal' ||
+      submissionView.kind === 'outcome_unknown' ||
+      submissionView.kind === 'lookup_failed' ? (
         <div className="pt-1">
-          <ResearchContextReport report={contextReport} visibility={visibility} variant="failed-card" />
+          <ResearchContextReport
+            report={contextReport ?? null}
+            visibility={visibility}
+            variant="failed-card"
+          />
         </div>
       ) : null}
     </section>

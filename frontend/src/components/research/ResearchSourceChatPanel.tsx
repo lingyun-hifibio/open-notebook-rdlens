@@ -24,6 +24,8 @@ import {
 } from '@/lib/hooks/use-research-source-chat'
 import { buildSubmissionKey } from '@/lib/research/session-idempotency'
 import type { ResearchConversationSnapshot } from '@/lib/research/types'
+import type { ConversationController, ConversationSnapshot } from '@/lib/research/session-runtime'
+import type { ConversationTurn } from '@/lib/research/conversation-machine'
 import { useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
 import { formatScopeLabel } from '@/lib/research/scope'
 import { userErrorMessageKey } from '@/lib/research/errors'
@@ -72,6 +74,9 @@ export function ResearchSourceChatPanel({
   })
   // 提交时的草稿文本快照（ResearchAcceptedReceipt 不含正文，清稿核对需要）。
   const pendingSubmitTextRef = useRef<string | null>(null)
+  // PR-5b（Codex 第 2 轮 P1-#1/#3）：清稿 ACK 必须结算给**发起清稿的** controller
+  // （切换会话后 chatControllerRef 已指向新会话，不能拿“当前”实例结算）。
+  const pendingClearControllersRef = useRef(new Map<string, ConversationController>())
   // 仅有可绑定的持久 session_id 时才启用 controller：新会话仍由 legacy
   // 路径创建（PR-6 负责新会话与新协议的统一创建）。
   const chatSession = useMemo<UseResearchSourceChatSessionOptions | undefined>(() => {
@@ -83,6 +88,7 @@ export function ResearchSourceChatPanel({
       ref: sourceRef,
       onReleaseHold: (operationId: string) => editor.release(operationId),
       onClearAfterSubmission: (receipt, operationId) => {
+        const controller = pendingClearControllersRef.current.get(operationId) ?? null
         void editor
           .clearAfterSubmission(
             {
@@ -93,8 +99,19 @@ export function ResearchSourceChatPanel({
             },
             operationId,
           )
-          .then(() => {
+          .then((outcome) => {
             pendingSubmitTextRef.current = null
+            pendingClearControllersRef.current.delete(operationId)
+            // 失败/被覆盖也必须结算，否则 clearPending 永挂、首轮后无法再发。
+            const settled =
+              outcome === 'cleared'
+                ? 'cleared'
+                : outcome === 'superseded' || outcome === 'cancelled'
+                  ? 'superseded'
+                  : outcome === 'unsynced'
+                    ? 'failed'
+                    : 'blocked'
+            controller?.notifyClearSettled(operationId, settled)
           })
       },
     }
@@ -113,11 +130,92 @@ export function ResearchSourceChatPanel({
     }
     const sync = (): void => {
       const turn = sessionConversation.getSnapshot().turn
-      setSessionBusy(turn !== null && (turn.state !== 'terminal' || turn.clearPending))
+      // Codex 第 2 轮 N1：idle/not_observed 表示明确未受理，必须允许重试。
+      setSessionBusy(
+        turn !== null &&
+          (turn.clearPending ||
+            turn.state === 'preparing' ||
+            turn.state === 'submitting' ||
+            turn.state === 'accepted' ||
+            turn.state === 'streaming' ||
+            turn.state === 'lookup_pending' ||
+            turn.state === 'unknown'),
+      )
     }
     sync()
     return sessionConversation.subscribe(sync)
   }, [sessionConversation])
+  // PR-5b（Codex 第 2 轮 P1-#3）：消息区必须消费 controller 的当前轮/history
+  // （新协议问答不写入 legacy chat.turns），并与 durable 消息去重。
+  const [liveSnapshot, setLiveSnapshot] = useState<ConversationSnapshot | null>(null)
+  useEffect(() => {
+    const controller = chat.conversation ?? null
+    if (controller === null) {
+      setLiveSnapshot(null)
+      return
+    }
+    const sync = (): void => setLiveSnapshot(controller.getSnapshot())
+    sync()
+    return controller.subscribe(sync)
+  }, [chat.conversation])
+  const controllerTurns: ResearchSourceChatTurn[] = (() => {
+    if (liveSnapshot === null) return []
+    const rows: ResearchSourceChatTurn[] = []
+    const push = (turn: ConversationTurn): void => {
+      const terminalStatus: ResearchSourceChatTurn['status'] =
+        turn.sse.terminal === 'error' ? 'error' : 'done'
+      const status =
+        turn.state === 'terminal'
+          ? terminalStatus
+          : turn.state === 'unknown' || turn.state === 'lookup_pending'
+            ? 'streaming'
+            : 'streaming'
+      rows.push(
+        {
+          id: `user_${turn.identity.turnId}`,
+          role: 'user',
+          content: turn.query,
+          thinking: '',
+          citations: [],
+          usage: null,
+          resolvedMode: null,
+          degradationReasons: [],
+          sourceRef: null,
+          status: 'done',
+          reconnectCount: 0,
+          errorCode: null,
+          errorMessage: null,
+        },
+        {
+          id: turn.identity.turnId,
+          role: 'assistant',
+          content: turn.sse.answer,
+          thinking: turn.sse.thinking,
+          citations: turn.sse.citations as ResearchSourceChatTurn['citations'],
+          usage: turn.sse.usage,
+          resolvedMode: turn.sse.resolvedMode,
+          degradationReasons: [],
+          sourceRef: null,
+          status,
+          reconnectCount: 0,
+          errorCode: turn.sse.errorCode ?? turn.errorCode,
+          errorMessage: turn.sse.errorMessage ?? turn.errorMessage,
+        },
+      )
+    }
+    for (const turn of liveSnapshot.history) push(turn)
+    if (liveSnapshot.turn !== null) push(liveSnapshot.turn)
+    return rows
+  })()
+  const renderedSourceTurns: ResearchSourceChatTurn[] = (() => {
+    const controllerUserContents = new Set(
+      controllerTurns.filter((turn) => turn.role === 'user').map((turn) => turn.content),
+    )
+    const durable = chat.turns.filter(
+      (turn) => !(turn.role === 'user' && controllerUserContents.has(turn.content)),
+    )
+    return [...durable, ...controllerTurns]
+  })()
   const conversationSnapshot: ResearchConversationSnapshot = {
     isBusy: sessionConversation !== null ? sessionBusy : chat.isStreaming,
     isStreaming: sessionConversation !== null ? sessionBusy : chat.isStreaming,
@@ -150,9 +248,9 @@ export function ResearchSourceChatPanel({
       async (modelId) => {
         if (conversation === null) {
           // 新 source 会话：controller 尚无持久 session（PR-6 统一创建）。
+          // Codex 第 2 轮 P1-#3：legacy 路径在受理前不得清稿（看不到 ACK），
+          // 保留草稿让用户显式处理。
           chat.send(text, modelId)
-          const after = editor.controller?.getSnapshot() ?? null
-          if (after !== null && after.draftText === text) editor.setDraftText('')
           return true
         }
         const operationId =
@@ -185,6 +283,7 @@ export function ResearchSourceChatPanel({
           return false
         }
         pendingSubmitTextRef.current = text
+        pendingClearControllersRef.current.set(operationId, conversation)
         const result = await conversation.send({
           query: text,
           modelId,
@@ -199,6 +298,7 @@ export function ResearchSourceChatPanel({
         })
         if (result.status !== 'ok') {
           pendingSubmitTextRef.current = null
+          pendingClearControllersRef.current.delete(operationId)
           editor.release(operationId)
           return false
         }
@@ -210,6 +310,28 @@ export function ResearchSourceChatPanel({
           t,
         ),
       },
+    )
+  }
+
+  /**
+   * PR-5b（Codex 第 2 轮 P1-#3）：会话切换必须同时切换 runtime 身份，否则消息
+   * 列表（legacy）与 editor/controller（session）指向不同会话。已有会话切到
+   * 对应 ref；新会话清空 source 活动（PR-6 再统一新协议创建）。
+   */
+  const selectSourceSession = (next: string | null): void => {
+    chat.selectSession(next)
+    if (sessionRuntime === null || sourceRef === null) return
+    sessionRuntime.activate(
+      'source',
+      next === null
+        ? null
+        : {
+            domain: 'research',
+            kind: 'source',
+            projectId,
+            sessionId: next,
+            sourceId,
+          },
     )
   }
 
@@ -251,7 +373,7 @@ export function ResearchSourceChatPanel({
           size="sm"
           variant="outline"
           data-testid="srcchat-new-session"
-          onClick={() => chat.selectSession(null)}
+          onClick={() => selectSourceSession(null)}
         >
           {t('research.sourceChat.newSession')}
         </Button>
@@ -272,7 +394,7 @@ export function ResearchSourceChatPanel({
                 className="w-full rounded px-2 py-1 text-left text-xs hover:bg-accent"
                 data-testid={`srcchat-session-${session.session_id}`}
                 aria-current={session.session_id === chat.activeSessionId}
-                onClick={() => chat.selectSession(session.session_id)}
+                onClick={() => selectSourceSession(session.session_id)}
               >
                 <span className="font-medium">{session.title ?? session.session_id}</span>
                 <span className="ml-2 text-muted-foreground">{session.updated_at}</span>
@@ -286,7 +408,7 @@ export function ResearchSourceChatPanel({
         {chat.turns.length === 0 && (
           <p className="text-sm text-muted-foreground">{t('research.sourceChat.emptyState')}</p>
         )}
-        {chat.turns.map((turn) =>
+        {renderedSourceTurns.map((turn) =>
           turn.role === 'user' ? (
             <div key={turn.id} className="flex justify-end">
               <div className="max-w-[80%] rounded-lg bg-primary/10 px-3 py-2 text-sm">

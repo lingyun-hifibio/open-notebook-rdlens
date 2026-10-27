@@ -417,7 +417,18 @@ export function ResearchChatPanel({
   const draftLookupSessionRef = useRef<string | null>(null)
   useEffect(() => {
     if (!sessionWired || refreshMarkerLookups === undefined) return
-    const token = editorSnapshot?.draftToken ?? null
+    // PR-5b（Codex 第 2 轮 P2-#9）：必须等 editor 真正加载完成且草稿非空，
+    // 否则初始本地 token 会占用“本会话已查回”标记，持久草稿随后不再查回。
+    if (
+      editorSnapshot === null ||
+      editorSnapshot === undefined ||
+      editorSnapshot.phase !== 'ready' ||
+      editorSnapshot.loading ||
+      editorSnapshot.draftText.trim() === ''
+    ) {
+      return
+    }
+    const token = editorSnapshot.draftToken ?? null
     if (token === null || token === '') return
     const key = sessionRef === null || sessionRef === undefined
       ? null
@@ -440,7 +451,18 @@ export function ResearchChatPanel({
   const sessionConversationSnapshot: ResearchConversationSnapshot | null = (() => {
     if (!sessionWired || liveSnapshot === null) return null
     const turn = liveSnapshot.turn
-    const active = turn !== null && (turn.state !== 'terminal' || turn.clearPending)
+    // PR-5b（Codex 第 2 轮 N1）：只有“仍未落定/仍占用”的状态才算 busy；
+    // `idle`（明确未受理）与 `not_observed`（查回未观察到）必须允许重试，
+    // 否则一次 202 失败或空稿查回会让 composer 永久禁用。
+    const active =
+      turn !== null &&
+      (turn.clearPending ||
+        turn.state === 'preparing' ||
+        turn.state === 'submitting' ||
+        turn.state === 'accepted' ||
+        turn.state === 'streaming' ||
+        turn.state === 'lookup_pending' ||
+        turn.state === 'unknown')
     const streaming = turn !== null && turn.state === 'streaming'
     const phase: ResearchConversationPhase = !active
       ? 'idle'
@@ -488,10 +510,29 @@ export function ResearchChatPanel({
     }
     return rows
   })()
-  const durableTurnIds = new Set(turns.map((turn) => turn.id))
-  const renderedTurns: ResearchChatTurn[] = sessionWired
-    ? [...turns, ...controllerTurns.filter((turn) => !durableTurnIds.has(turn.id))]
-    : turns
+  const renderedTurns: ResearchChatTurn[] = (() => {
+    if (!sessionWired) return turns
+    // PR-5b（Codex 第 2 轮 P2-#6）：durable 历史行与 controller 行 id 命名空间
+    // 不同（message_id vs turnId），只能按持久身份去重：assistant 用
+    // generationId，user 用正文（user 行无 generation 绑定）。保留 controller
+    // 行（本轮权威），丢掉重复的 durable 副本，避免 Q1/A1→Q2/A2→Q1/A1。
+    const controllerGenerationIds = new Set(
+      controllerTurns
+        .map((turn) => turn.generationId)
+        .filter((id): id is string => id !== null && id !== ''),
+    )
+    const controllerUserContents = new Set(
+      controllerTurns.filter((turn) => turn.role === 'user').map((turn) => turn.content),
+    )
+    const durable = turns.filter((turn) => {
+      if (turn.generationId !== null && controllerGenerationIds.has(turn.generationId)) {
+        return false
+      }
+      if (turn.role === 'user' && controllerUserContents.has(turn.content)) return false
+      return true
+    })
+    return [...durable, ...controllerTurns]
+  })()
 
   // PR-5b（§4.2-4/§4.6）：详情侧可见性投影。当前批次 detail 恒可读 title+
   // record_visibility；不先占位等确认（有 detail 就立即按响应渲染）。

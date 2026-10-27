@@ -480,6 +480,57 @@ export interface ResearchSubmissionLookupSnapshot {
   readonly lookupFailed: boolean
 }
 
+/**
+ * PR-5b（Codex 第 2 轮 P1-#8）：runtime 按 sessionKey 复用 controller 且不替换
+ * transport。真正卸载后新 hook 实例会创建新 transport，但 controller 仍持有
+ * 旧代理——旧代理已解绑会静默丢事件。桥按 (runtime, sessionKey) 模块级复用，
+ * 每个挂载把 target 指向当前 transport，重挂后 controller 的同一代理自动转发
+ * 到新 transport。
+ */
+interface TransportBridge {
+  target: ConversationTransport | null
+  proxy: ConversationTransport | null
+}
+
+const TRANSPORT_BRIDGES = new WeakMap<SessionRuntime, Map<string, TransportBridge>>()
+
+function transportBridgeFor(runtime: SessionRuntime, key: string): TransportBridge {
+  let byKey = TRANSPORT_BRIDGES.get(runtime)
+  if (byKey === undefined) {
+    byKey = new Map()
+    TRANSPORT_BRIDGES.set(runtime, byKey)
+  }
+  let bridge = byKey.get(key)
+  if (bridge === undefined) {
+    bridge = { target: null, proxy: null }
+    byKey.set(key, bridge)
+  }
+  return bridge
+}
+
+function transportProxyFor(bridge: TransportBridge): ConversationTransport {
+  if (bridge.proxy !== null) return bridge.proxy
+  bridge.proxy = {
+    openStream: (input) => bridge.target?.openStream(input) ?? { abort: () => {} },
+    getSubmission: (input) => {
+      const target = bridge.target
+      if (target === null) return Promise.reject(new Error('transport_unbound'))
+      return target.getSubmission(input)
+    },
+    loadDetail: (input) => {
+      const target = bridge.target
+      if (target === null || target.loadDetail === undefined) {
+        return Promise.reject(new Error('transport_unbound'))
+      }
+      return target.loadDetail(input)
+    },
+    releaseHold: (operationId) => bridge.target?.releaseHold?.(operationId),
+    clearAfterSubmission: (receipt, operationId) =>
+      bridge.target?.clearAfterSubmission?.(receipt, operationId),
+  }
+  return bridge.proxy
+}
+
 interface ActiveTurn {
   turnId: string
   query: string
@@ -698,29 +749,6 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
    * 其 transport；离开会话时旧闭包 `cancelled=true`。稳定代理把调用转发到
    * 当前挂载绑定的 transport，返回会话后详情/查回不再永久跳过捕获。
    */
-  const boundTransportRef = useRef<ConversationTransport | null>(null)
-  const stableTransportRef = useRef<ConversationTransport | null>(null)
-  if (stableTransportRef.current === null) {
-    stableTransportRef.current = {
-      openStream: (input) =>
-        boundTransportRef.current?.openStream(input) ?? { abort: () => {} },
-      getSubmission: (input) => {
-        const target = boundTransportRef.current
-        if (target === null) return Promise.reject(new Error('transport_unbound'))
-        return target.getSubmission(input)
-      },
-      loadDetail: (input) => {
-        const target = boundTransportRef.current
-        if (target === null || target.loadDetail === undefined) {
-          return Promise.reject(new Error('transport_unbound'))
-        }
-        return target.loadDetail(input)
-      },
-      releaseHold: (operationId) => boundTransportRef.current?.releaseHold?.(operationId),
-      clearAfterSubmission: (receipt, operationId) =>
-        boundTransportRef.current?.clearAfterSubmission?.(receipt, operationId),
-    }
-  }
   const projectIdRef = useRef(projectId)
   projectIdRef.current = projectId
   const conversationKey = session === undefined ? null : sessionKey(session.ref)
@@ -950,9 +978,10 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
       releaseHold: (operationId) => releaseHold?.(operationId),
       clearAfterSubmission: (receipt, operationId) => clearAfterSubmission?.(receipt, operationId),
     }
-    boundTransportRef.current = transport
+    const bridge = transportBridgeFor(runtime, conversationKey)
+    bridge.target = transport
     const controller = options.runtime.conversation(ref, {
-      transport: stableTransportRef.current ?? transport,
+      transport: transportProxyFor(bridge),
     })
     controllerRef.current = controller
     setConversation(controller)
@@ -1032,6 +1061,19 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
       const scope = readCacheScope(runtime)
       const authority = readCacheAuthority(runtime)
       if (scope === null || authority === null) return 0
+      // PR-5b（Codex 第 2 轮 P2-#12）：冷启动先恢复持久 marker，终态结算
+      // 才有记录可写（此前 markerRef 为空导致直接提前返回）。
+      if (markerRef.current === null) {
+        try {
+          const activeToken = readActiveSubmission(scope, authority, ref)
+          if (activeToken !== null) {
+            const persisted = readSubmissionMarker(scope, authority, ref, activeToken)
+            if (persisted !== null) markerRef.current = persisted
+          }
+        } catch {
+          // 缓存损坏不影响查回（查回结果仍会更新 React 状态）。
+        }
+      }
       const ordered: string[] = []
       const addToken = (token: string | null | undefined): void => {
         if (typeof token !== 'string' || token.length === 0) return
@@ -1071,6 +1113,19 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
       return dispatched
     }
     markerReconcileRef.current = reconcileMarkers
+    // PR-5b（Codex 第 2 轮 P2-#12）：正常 SSE 终态（非查回路径）也要结算
+    // 持久 marker；否则正常完成的提交永久占用未结算预算。
+    // 测试/受限宿主可能不提供 subscribe：结算订阅是尽力行为，不得阻断加载。
+    const unsubscribeSettle =
+      typeof controller.subscribe === 'function'
+        ? controller.subscribe(() => {
+            const liveTurn = controller.getSnapshot().turn
+            if (liveTurn === null) return
+            if (liveTurn.state === 'terminal' || liveTurn.state === 'accepted') {
+              settleMarkerForToken(liveTurn.identity.draftToken)
+            }
+          })
+        : () => {}
     void controller.load().then((result) => {
       if (cancelled) return
       if (result.status !== 'ok') return
@@ -1094,7 +1149,7 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
       setSubmissionLookup(null)
       setMarkerWriteFailed(false)
       markerReconcileRef.current = null
-      if (boundTransportRef.current === transport) boundTransportRef.current = null
+      unsubscribeSettle()
       // 离开会话/卸载：只标记 detach 并中止本地读取（服务端继续执行）。
       controller.detach()
       options.runtime.releaseConversation(ref, controller)

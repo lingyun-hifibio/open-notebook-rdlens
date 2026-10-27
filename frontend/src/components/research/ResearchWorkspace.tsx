@@ -140,6 +140,9 @@ export function ResearchWorkspace({
   // PR-5b（Codex P1-#1）：清稿 ACK 必须回报 controller（`clear_settled`），
   // 否则 `clearPending` 永挂、下一次发送被 `clear_settlement_pending` 拒绝。
   const chatControllerRef = useRef<ConversationController | null>(null)
+  // Codex 第 2 轮 P1-#1：清稿 ACK 必须结算给**发起清稿的** controller（切换
+  // 会话后 chatControllerRef 已指向新会话，不能拿“当前”实例结算）。
+  const pendingClearControllersRef = useRef(new Map<string, ConversationController>())
   // PR-5b（D1，第 1 处）：把运行时 + 当前会话 ref + editor 持有者回调传给
   // useResearchChat——controller 是 trace 新协议的唯一权威（不再依赖 legacy）。
   const chatSession = useMemo<UseResearchChatSessionOptions | undefined>(() => {
@@ -162,6 +165,8 @@ export function ResearchWorkspace({
             operationId,
           )
           .then((outcome) => {
+            const controller = pendingClearControllersRef.current.get(operationId) ?? null
+            pendingClearControllersRef.current.delete(operationId)
             // 清稿失败/被覆盖也必须结算，否则 hold 与后续发送永久阻塞。
             const settled =
               outcome === 'cleared'
@@ -171,7 +176,7 @@ export function ResearchWorkspace({
                   : outcome === 'unsynced'
                     ? 'failed'
                     : 'blocked'
-            chatControllerRef.current?.notifyClearSettled(operationId, settled)
+            controller?.notifyClearSettled(operationId, settled)
           })
       },
     }
@@ -506,6 +511,7 @@ export function ResearchWorkspace({
       // “已受理”误当成未派发（不清稿、不显示可查回标识）。
       return new Promise<CoverageSubmitOutcome>((resolve) => {
         let settled = false
+        let sawCompletion = false
         const finish = (outcome: CoverageSubmitOutcome): void => {
           if (settled) return
           settled = true
@@ -530,11 +536,21 @@ export function ResearchWorkspace({
           {
             scopeLabel,
             onCompletion: (completion) => {
+              sawCompletion = true
               // consent 取消/身份失效/被禁用：未派发（零副作用），绝不伪装已受理。
               if (!completion.dispatched) finish({ status: 'not_dispatched' })
             },
           },
-        ).then((outcome) => finish(outcome ?? { status: 'not_dispatched' }))
+        ).then((outcome) => {
+          if (outcome !== undefined) {
+            finish(outcome)
+            return
+          }
+          // Codex 第 2 轮 P1-#5：consent 已登记时 runGuarded 先返回 undefined
+          // 且**不会**同步回调 onCompletion——此时必须等待用户确认后的真实
+          // outcome，不能立即 resolve not_dispatched（会永久丢弃 accepted）。
+          if (sawCompletion) finish({ status: 'not_dispatched' })
+        })
       })
     },
     [runGuarded, sendCoverage, submitCoverage, t],
@@ -613,6 +629,7 @@ export function ResearchWorkspace({
             chatEditor.release(operationId)
             return false
           }
+          pendingClearControllersRef.current.set(operationId, chatConversation)
           const result = await chatConversation.send({
             query,
             modelId,
@@ -631,6 +648,7 @@ export function ResearchWorkspace({
           })
           if (result.status !== 'ok') {
             pendingSubmitTextRef.current = null
+            pendingClearControllersRef.current.delete(operationId)
             chatEditor.release(operationId)
             return false
           }
