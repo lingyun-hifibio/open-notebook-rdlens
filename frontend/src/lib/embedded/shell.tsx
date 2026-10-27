@@ -44,6 +44,10 @@ export function ResearchWorkspaceShell({
    * 会话运行时 bootstrap 传输：`undefined`（缺省）= 生产实例；
    * `null` = 显式不接线（运行时不发起列表请求，owner 保持遮蔽）；
    * 传入对象 = 注入实现（测试）。实例保持稳定，不随渲染重建。
+   *
+   * 语义是**初始化参数**：Provider 在首次挂载（viewer/project 身份代际）
+   * 时捕获该值，同一代际内后续重渲染不会替换 runtime 的 transport；需要
+   * 换实现时请通过身份变化（重新认证）重建，而不是把 `null` 当动态开关。
    */
   transport?: SessionRuntimeTransport | null
 }) {
