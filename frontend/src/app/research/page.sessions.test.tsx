@@ -232,6 +232,9 @@ class FakeRuntime {
   })
   setDisplayPointer = vi.fn()
 
+  /** runtime 的 `active(surface)` 读端口（恢复 effect 的幂等判据）。 */
+  active = (surface: 'global' | 'source') => this.snapshot.active[surface]
+
   constructor(snapshot: Partial<SessionRuntimeSnapshot> = {}) {
     this.snapshot = { ...READY_SNAPSHOT, ...snapshot }
   }
@@ -419,7 +422,7 @@ describe('ResearchPage 会话导航：空态与指针恢复（§4.5）', () => {
     expect(screen.getByTestId('workspace')).toHaveAttribute('data-surface-active', 'true')
   })
 
-  it('display 有具体 global ref（刷新权威）→ 恢复该会话并写回页面 active', async () => {
+  it('display 有具体 global ref（刷新权威）→ 恢复并激活 runtime active(global)（P0 刷新恢复）', async () => {
     const ref = {
       domain: 'research' as const,
       kind: 'global' as const,
@@ -432,9 +435,92 @@ describe('ResearchPage 会话导航：空态与指针恢复（§4.5）', () => {
     renderPage()
 
     await waitFor(() => expect(nav()).toHaveAttribute('data-active-global-session', 'sess_display'))
-    // 恢复是读：不得因为显示恢复而调用 activate 或改写 display。
-    expect(runtimeRef.current?.activate).not.toHaveBeenCalled()
+    // P0：刷新恢复必须把页面显示权威同步进 runtime.active('global')，否则
+    // workspace 无法建 editor/controller，后续导航/清理会把页面 state 抹掉。
+    await waitFor(() => expect(runtimeRef.current?.activate).toHaveBeenCalledTimes(1))
+    expect(runtimeRef.current?.activate).toHaveBeenCalledWith('global', ref)
+    expect(runtimeRef.current?.getSnapshot().active.global).toEqual(ref)
+    // 恢复仍不得改写 display 指针（显示权威只由显式导航写）。
     expect(runtimeRef.current?.setDisplayPointer).not.toHaveBeenCalled()
+  })
+
+  it('display 无内容但 `.global` 指针存在 → 回退该指针并激活 runtime active(global)', async () => {
+    const pointerRef = {
+      domain: 'research' as const,
+      kind: 'global' as const,
+      projectId: PROJECT_ID,
+      sessionId: 'sess_pointer',
+      sourceId: null,
+    }
+    readPointer.mockImplementation((_scope, _authority, surface) =>
+      surface === 'global' ? { version: 1, ref: pointerRef, savedAt: 1 } : null,
+    )
+
+    renderPage()
+
+    await waitFor(() => expect(nav()).toHaveAttribute('data-active-global-session', 'sess_pointer'))
+    await waitFor(() => expect(runtimeRef.current?.activate).toHaveBeenCalledTimes(1))
+    expect(runtimeRef.current?.activate).toHaveBeenCalledWith('global', pointerRef)
+    expect(runtimeRef.current?.getSnapshot().active.global).toEqual(pointerRef)
+    expect(runtimeRef.current?.setDisplayPointer).not.toHaveBeenCalled()
+  })
+
+  it('display global 与 `.global` 指针并存 → 只以 display 为准激活一次（优先级不变）', async () => {
+    const displayRef = {
+      domain: 'research' as const,
+      kind: 'global' as const,
+      projectId: PROJECT_ID,
+      sessionId: 'sess_display',
+      sourceId: null,
+    }
+    const pointerRef = {
+      domain: 'research' as const,
+      kind: 'global' as const,
+      projectId: PROJECT_ID,
+      sessionId: 'sess_pointer',
+      sourceId: null,
+    }
+    readDisplayPointer.mockReturnValue({ version: 1, surface: 'global', ref: displayRef })
+    readPointer.mockImplementation((_scope, _authority, surface) =>
+      surface === 'global' ? { version: 1, ref: pointerRef, savedAt: 1 } : null,
+    )
+
+    renderPage()
+
+    await waitFor(() => expect(nav()).toHaveAttribute('data-active-global-session', 'sess_display'))
+    await waitFor(() => expect(runtimeRef.current?.activate).toHaveBeenCalledTimes(1))
+    expect(runtimeRef.current?.activate).toHaveBeenCalledWith('global', displayRef)
+    expect(runtimeRef.current?.getSnapshot().active.global).toEqual(displayRef)
+  })
+
+  it('无 display 也无 `.global` 指针 → 不调用 activate（保持空态）', async () => {
+    renderPage()
+
+    await waitFor(() => expect(nav()).toBeInTheDocument())
+    expect(nav()).not.toHaveAttribute('data-active-global-session')
+    expect(runtimeRef.current?.activate).not.toHaveBeenCalled()
+  })
+
+  it('activate 拒绝（校验失败）→ 不清指针、不写 display，保持既有降级语义', async () => {
+    const ref = {
+      domain: 'research' as const,
+      kind: 'global' as const,
+      projectId: PROJECT_ID,
+      sessionId: 'sess_rejected',
+      sourceId: null,
+    }
+    readDisplayPointer.mockReturnValue({ version: 1, surface: 'global', ref })
+    runtimeRef.current = new FakeRuntime()
+    runtimeRef.current.activate.mockReturnValue(false)
+
+    renderPage()
+
+    await waitFor(() => expect(nav()).toHaveAttribute('data-active-global-session', 'sess_rejected'))
+    expect(runtimeRef.current?.activate).toHaveBeenCalledWith('global', ref)
+    // 失败时保持现有语义：不清指针（不 activate(null)）、不改写 display。
+    expect(runtimeRef.current?.activate).not.toHaveBeenCalledWith('global', null)
+    expect(runtimeRef.current?.setDisplayPointer).not.toHaveBeenCalled()
+    expect(nav()).not.toHaveAttribute('data-source-new-session')
   })
 
   it('display `source + null`（F-M3）：进入该来源新会话态，不恢复旧 .source 指针、不清 runtime active', async () => {

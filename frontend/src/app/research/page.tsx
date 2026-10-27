@@ -24,7 +24,7 @@ import { useResearchSessionRuntimeOptional } from '@/lib/hooks/research-session-
 import { useResearchSessions } from '@/lib/hooks/use-research-sessions'
 import { readDisplayPointer, readPointer } from '@/lib/research/session-cache'
 import type { SessionRuntimeSnapshot } from '@/lib/research/session-runtime'
-import type { ResearchSessionRef } from '@/lib/research/session-contract'
+import { sessionRefEquals, type ResearchSessionRef } from '@/lib/research/session-contract'
 
 /**
  * /research：嵌入式 Research Workspace 入口路由（UI-01，设计 §4.1；RWV2-40 IA）。
@@ -200,7 +200,23 @@ function ResearchPageContent() {
     const display = readDisplayPointer(scope, authority)
     const globalPointer = readPointer(scope, authority, 'global', null)
     const displayGlobal = display?.surface === 'global' ? display.ref : undefined
-    setActiveGlobalRef(displayGlobal !== undefined ? displayGlobal : globalPointer?.ref ?? null)
+    // PR-11（P0 刷新恢复）：恢复是**读 + 重建 runtime active**，不只是页面
+    // state。display 优先、其次 `.global` 指针；只有该 surface 的 active 被
+    // 重建后，workspace 才能建 editor/controller 继续发送，后续 navScope/清理
+    // 也不会把页面 state 抹掉。source 显示时同样重建（三指针独立，§4.5）。
+    const restoredGlobalRef = displayGlobal !== undefined ? displayGlobal : globalPointer?.ref ?? null
+    setActiveGlobalRef(restoredGlobalRef)
+    // 幂等：navScope/身份清理会让本 effect 再跑一次，bootstrap 也可能已从
+    // 指针恢复同一会话；runtime 内已是同一活动会话时不再重复写指针。
+    if (
+      restoredGlobalRef !== null &&
+      !sessionRefEquals(sessionRuntime.active('global'), restoredGlobalRef)
+    ) {
+      // 校验失败（项目/kind 与当前身份不符）保持既有语义：不清指针、不写
+      // display，也不把 runtime active 强行改成别的会话（400/降级由后续导航
+      // 与列表 404 分支处理）。
+      sessionRuntime.activate('global', restoredGlobalRef)
+    }
 
     if (display?.surface === 'source') {
       setSelectedSourceId(display.sourceId)
