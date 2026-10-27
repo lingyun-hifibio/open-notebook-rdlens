@@ -1038,6 +1038,11 @@ export interface ResearchSessionAcceptReceipt {
    * 的同一个 `s1_` 键，不据回执改写。
    */
   readonly idempotencyKey: string | null
+  /**
+   * 回执里的 `accepted_editor_revision`：**只记录**（DESIGN §6.3 R7：revision
+   * 只记录不参与等值匹配，清稿用当前 revision 而非该值）。
+   */
+  readonly editorRevision: number | null
   readonly sessionRef: ResearchSessionRef
 }
 
@@ -1101,11 +1106,19 @@ export function parseSessionAcceptReceipt(
     return invalidAcceptReceipt('generation_id')
   }
   const rawKey = record.idempotency_key
+  const rawRevision = record.accepted_editor_revision
   return {
     ok: true,
     receipt: {
       generationId,
       idempotencyKey: typeof rawKey === 'string' && rawKey.length > 0 ? rawKey : null,
+      editorRevision:
+        typeof rawRevision === 'number'
+        && Number.isInteger(rawRevision)
+        && rawRevision >= 0
+        && rawRevision <= 2_147_483_647
+          ? rawRevision
+          : null,
       sessionRef: ref,
     },
   }
@@ -1222,6 +1235,13 @@ export function openResearchChatStream(
    * 一次"定时器到期后的第三次 POST"（用户已离开却继续发请求）。
    */
   let attachRetryTimer: ReturnType<typeof setTimeout> | null = null
+  /**
+   * PR-7（审查 HIGH-1 / DESIGN §6.4 首次绑定）：202 受理回执已给出本次执行的
+   * `generation_id`，attach 后 SSE `usage.accepted` 首次绑定的 generation 必须
+   * 与之严格相等。不相等说明服务端把这次提交接到了另一次执行——在传输层
+   * fail-closed（不把错误 generation 的 accepted 交给状态机去"首次绑定"）。
+   */
+  let receiptGenerationId: string | null = null
 
   const clearWatchdog = (): void => {
     if (watchdog !== null) {
@@ -1326,8 +1346,17 @@ export function openResearchChatStream(
     if (settlement.settle()) options.onHttpError?.(response.status, body)
   }
 
-  /** 2xx + `text/event-stream`：按既有规则消费（去重/终态一次/EOF）。 */
-  const consumeEventStream = async (response: Response): Promise<void> => {
+  /**
+   * 2xx + `text/event-stream`：按既有规则消费（去重/终态一次/EOF）。
+   *
+   * `expectedGenerationId` 非 null 时（PR-7 两步传输：已有 202 受理回执），
+   * 任一携带 `accepted` 扩展的事件其 `generation_id` 必须严格等于回执值
+   * （DESIGN §6.4 首次绑定），否则停止应用并按协议错误结算一次。
+   */
+  const consumeEventStream = async (
+    response: Response,
+    expectedGenerationId: string | null = null,
+  ): Promise<void> => {
     if (!response.body) {
       clearWatchdog()
       if (settlement.settle()) options.onNetworkError?.(new Error('no response body'))
@@ -1340,6 +1369,7 @@ export function openResearchChatStream(
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
     let buffer = ''
+    let protocolViolation: string | null = null
     try {
       for (;;) {
         const { done, value } = await reader.read()
@@ -1354,10 +1384,32 @@ export function openResearchChatStream(
           // ——不解析、不产生事件（它已在上面重置过空闲计时）
           if (isHeartbeatComment(frame)) continue
           const event = parseSseFrame(frame)
-          if (event) {
-            options.onEvent(event)
+          if (!event) continue
+          if (
+            expectedGenerationId !== null
+            && event.accepted !== undefined
+            && event.accepted.generation_id !== expectedGenerationId
+          ) {
+            // §6.4：回执已绑定 generation 后必须严格相等；不等 = 本次提交被
+            // 接到了另一次执行，绝不把错误 generation 交给状态机首次绑定。
+            protocolViolation =
+              `accept_generation_mismatch:receipt=${expectedGenerationId}:event=${event.accepted.generation_id}`
+            break
           }
+          options.onEvent(event)
         }
+        if (protocolViolation !== null) break
+      }
+      if (protocolViolation !== null) {
+        // 释放读取器（不留下悬挂的 read()）后按协议错误结算一次。
+        clearWatchdog()
+        try {
+          await reader.cancel()
+        } catch {
+          // 忽略：取消失败不影响协议判定
+        }
+        if (settlement.settle()) options.onProtocolError?.(protocolViolation)
+        return
       }
       // 正常读尽（EOF）：终态与否由调用方依 sse 状态判定；
       // 调用方 abort 的收尾不算 EOF（不触发 onEnd）
@@ -1398,6 +1450,18 @@ export function openResearchChatStream(
       controller.signal.addEventListener('abort', onAbort, { once: true })
     })
 
+  /**
+   * 释放一个**不参与判定**的响应体（attach 202 / attach 2xx 非流）。
+   * 未读 body 会占住连接；释放失败不影响协议判定。
+   */
+  const releaseBody = async (response: Response): Promise<void> => {
+    try {
+      await response.body?.cancel()
+    } catch {
+      // 忽略：释放失败不影响判定
+    }
+  }
+
   /** PR-7：读 202 受理回执并按 §6.3 身份匹配集校验（非法不得 attach）。 */
   const readAcceptReceipt = async (
     session: ResearchChatSessionStreamOptions,
@@ -1425,7 +1489,10 @@ export function openResearchChatStream(
    * - 重试耗尽仍 202 → 交回既有**可重试传输超时**语义（`onIdleTimeout('response')`），
    *   由调用方转提交查回/unknown：既不伪成功，也不判"未受理"，更不换键重发。
    */
-  const attachEventStream = async (session: ResearchChatSessionStreamOptions): Promise<void> => {
+  const attachEventStream = async (
+    session: ResearchChatSessionStreamOptions,
+    expectedGenerationId: string | null,
+  ): Promise<void> => {
     const delays = session.attachRetryDelaysMs ?? DEFAULT_ATTACH_RETRY_DELAYS_MS
     const attachLastEventId =
       options.lastEventId !== undefined && options.lastEventId > 0 ? options.lastEventId : 0
@@ -1438,19 +1505,25 @@ export function openResearchChatStream(
       }
       const contentType = contentTypeOf(response)
       if (isSseContentType(contentType)) {
-        await consumeEventStream(response)
+        await consumeEventStream(response, expectedGenerationId)
         return
       }
+      // 202（resume 分派）或其它 2xx 非流：body 不参与判定，先释放再决定重试。
+      await releaseBody(response)
       clearWatchdog()
       if (response.status !== 202) {
         // 2xx 非流、且不是受理回执：协议违反，fail-closed（重试只会拿到同样响应）。
         if (settlement.settle()) {
           options.onProtocolError?.(`unexpected_content_type:${contentType ?? 'none'}`)
         }
+        controller.abort()
         return
       }
       if (attempt >= delays.length) {
+        // 重试耗尽仍在 202：按既有可重试传输超时语义结算一次（调用方转查回），
+        // 并终止本地请求，避免继续持有连接。
         if (settlement.settle()) options.onIdleTimeout?.('response')
+        controller.abort()
         return
       }
       const elapsed = await waitBeforeAttachRetry(delays[attempt])
@@ -1488,11 +1561,16 @@ export function openResearchChatStream(
         const receipt = await readAcceptReceipt(sessionOptions, first)
         if (!receipt.ok) {
           clearWatchdog()
+          // 审查 MEDIUM-2：回执体读取期间调用方可能已 abort——不得把 abort
+          // 导致的读失败升级成迟到的协议错误回调。
+          if (abortReason !== null || controller.signal.aborted) return
           if (settlement.settle()) options.onProtocolError?.(receipt.reason)
           return
         }
         clearWatchdog()
-        await attachEventStream(sessionOptions)
+        // §6.4 首次绑定：把回执 generation 交给 attach 的 accepted 守卫。
+        receiptGenerationId = receipt.receipt.generationId
+        await attachEventStream(sessionOptions, receiptGenerationId)
         return
       }
       // D-24（§5.3 第 2 行）：状态通过但 Content-Type 不是 SSE 就在消费流之前

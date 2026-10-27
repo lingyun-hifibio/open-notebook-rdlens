@@ -71,7 +71,7 @@ function acceptReceipt(overrides: Record<string, unknown> = {}): Record<string, 
 }
 
 /** SSE 首事件：`usage` + `accepted` 扩展（服务端 attach(0) 会重放它）。 */
-function acceptedFrame(ref: ResearchSessionRef = REF): string {
+function acceptedFrame(ref: ResearchSessionRef = REF, generationId = 'gen_1'): string {
   return `event: usage\ndata: ${JSON.stringify({
     event_id: 1,
     type: 'usage',
@@ -84,7 +84,7 @@ function acceptedFrame(ref: ResearchSessionRef = REF): string {
         session_id: ref.sessionId,
         source_id: ref.sourceId,
       },
-      generation_id: 'gen_1',
+      generation_id: generationId,
       request_id: 'req_1',
       editor_revision: 4,
       draft_token: DRAFT,
@@ -443,6 +443,136 @@ describe('openResearchChatStream（session 协议：202 受理回执 → Last-Ev
     expect(events).toEqual([])
   })
 
+  it('202 回执 generation 与 attach SSE 的 accepted 不一致 → 协议错误且不交付事件（§6.4 首次绑定）', async () => {
+    const fetchMock = installFetch(
+      acceptResponse(),
+      sseResponse([acceptedFrame(REF, 'gen_other'), DONE_FRAME]),
+    )
+    const protocolErrors: string[] = []
+    await new Promise<void>((resolve) => {
+      openResearchChatStream(
+        sessionOptions({
+          onEvent: (event) => events.push(event),
+          onProtocolError: (reason) => {
+            protocolErrors.push(reason)
+            resolve()
+          },
+        }),
+      )
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(protocolErrors).toEqual([
+      'accept_generation_mismatch:receipt=gen_1:event=gen_other',
+    ])
+    // 错误 generation 的 accepted 不得交给状态机"首次绑定"，done 也不再交付。
+    expect(events).toEqual([])
+  })
+
+  it('生产默认退避预算 300/600/1000ms（假时钟），结算后不残留计时器', async () => {
+    vi.useFakeTimers()
+    try {
+      const fetchMock = installFetch(
+        acceptResponse(),
+        acceptResponse(acceptReceipt({ generation_state: 'accepted' })),
+        acceptResponse(acceptReceipt({ generation_state: 'accepted' })),
+        acceptResponse(acceptReceipt({ generation_state: 'accepted' })),
+        acceptResponse(acceptReceipt({ generation_state: 'accepted' })),
+      )
+      const idleTimeouts: Array<'response' | 'idle'> = []
+      // 不注入 attachRetryDelaysMs → 生产缺省 [300, 600, 1000]。
+      const options = { ...sessionOptions() } as ResearchChatSessionStreamOptions & {
+        attachRetryDelaysMs?: readonly number[]
+      }
+      delete options.attachRetryDelaysMs
+      openResearchChatStream({
+        ...options,
+        onEvent: () => {},
+        onIdleTimeout: (phase) => idleTimeouts.push(phase),
+      })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(fetchMock).toHaveBeenCalledTimes(2) // 首步 + 首次 attach
+      await vi.advanceTimersByTimeAsync(299)
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      await vi.advanceTimersByTimeAsync(1) // 300ms
+      expect(fetchMock).toHaveBeenCalledTimes(3)
+      await vi.advanceTimersByTimeAsync(599)
+      expect(fetchMock).toHaveBeenCalledTimes(3)
+      await vi.advanceTimersByTimeAsync(1) // 600ms
+      expect(fetchMock).toHaveBeenCalledTimes(4)
+      await vi.advanceTimersByTimeAsync(999)
+      expect(fetchMock).toHaveBeenCalledTimes(4)
+      await vi.advanceTimersByTimeAsync(1) // 1000ms
+      expect(fetchMock).toHaveBeenCalledTimes(5)
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(fetchMock).toHaveBeenCalledTimes(5)
+      expect(idleTimeouts).toEqual(['response'])
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('abort 在退避等待中立即清理定时器（假时钟），之后无任何 POST', async () => {
+    vi.useFakeTimers()
+    try {
+      const fetchMock = installFetch(
+        acceptResponse(),
+        acceptResponse(acceptReceipt({ generation_state: 'accepted' })),
+        acceptResponse(acceptReceipt({ generation_state: 'accepted' })),
+        acceptResponse(acceptReceipt({ generation_state: 'accepted' })),
+        acceptResponse(acceptReceipt({ generation_state: 'accepted' })),
+      )
+      const idleTimeouts: string[] = []
+      const abort = openResearchChatStream(
+        sessionOptions({
+          attachRetryDelaysMs: [300, 300, 300],
+          onEvent: (event) => events.push(event),
+          onProtocolError: (reason) => {
+            throw new Error(`unexpected protocol error: ${reason}`)
+          },
+          onIdleTimeout: (phase) => idleTimeouts.push(phase),
+        }),
+      )
+      await vi.advanceTimersByTimeAsync(1)
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      expect(vi.getTimerCount()).toBeGreaterThan(0) // 正处于退避等待
+      abort('user_cancel')
+      expect(vi.getTimerCount()).toBe(0) // 计时器已即时清理（不需等它到期）
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      expect(idleTimeouts).toEqual([])
+      expect(events).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('abort 在 202 回执体读取期间：不产生迟到的协议错误回调', async () => {
+    const fetchMock = installFetch({
+      ok: true,
+      status: 202,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      body: null,
+      json: () => new Promise((_resolve, reject) => {
+        setTimeout(() => {
+          reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))
+        }, 30)
+      }),
+    } as unknown as Response)
+    const protocolErrors: string[] = []
+    const abort = openResearchChatStream(
+      sessionOptions({
+        onEvent: () => {},
+        onProtocolError: (reason) => protocolErrors.push(reason),
+      }),
+    )
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    abort('user_cancel')
+    await new Promise((resolve) => setTimeout(resolve, 90))
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(protocolErrors).toEqual([])
+  })
+
   it('重连（options.lastEventId=7）：首步与 attach 都携带同一水位，attach 不退回 0', async () => {
     const fetchMock = installFetch(
       acceptResponse(),
@@ -585,6 +715,7 @@ describe('parseSessionAcceptReceipt', () => {
     if (!result.ok) return
     expect(result.receipt.generationId).toBe('gen_1')
     expect(result.receipt.idempotencyKey).toBe(KEY)
+    expect(result.receipt.editorRevision).toBe(4)
     expect(result.receipt.sessionRef).toEqual(REF)
   })
 
