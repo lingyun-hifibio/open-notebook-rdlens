@@ -512,26 +512,93 @@ export function ResearchChatPanel({
   })()
   const renderedTurns: ResearchChatTurn[] = (() => {
     if (!sessionWired) return turns
-    // PR-5b（Codex 第 2 轮 P2-#6）：durable 历史行与 controller 行 id 命名空间
-    // 不同（message_id vs turnId），只能按持久身份去重：assistant 用
-    // generationId，user 用正文（user 行无 generation 绑定）。保留 controller
-    // 行（本轮权威），丢掉重复的 durable 副本，避免 Q1/A1→Q2/A2→Q1/A1。
+    // PR-5b（Lead 合并前核对 P1-1 / F10）：durable 行与 controller 行 id 命名
+    // 空间不同，去重必须同时考虑 generationId/message_id/是否有正文：
+    // 冷启动 terminal 查回生成的是 **external turn**（`sse.answer` 为空，
+    // durable_restore 不回填答案）——此时不得丢弃 durable 的完整 assistant 行，
+    // 应把 durable 正文/message_id 合并进 controller 行，保证完整答案只渲染一次。
+    const consumed = new Set<string>()
+    const durable = [...turns]
+    const durableAssistants = durable.filter(
+      (turn) => turn.role === 'assistant' && turn.content.trim() !== '',
+    )
+    const findDurableAssistant = (
+      row: ResearchChatTurn,
+      userContent: string | null,
+    ): ResearchChatTurn | null => {
+      if (row.generationId !== null) {
+        const byGeneration = durableAssistants.find(
+          (turn) => !consumed.has(turn.id) && turn.generationId === row.generationId,
+        )
+        if (byGeneration !== undefined) return byGeneration
+      }
+      // 冷启动 external turn 可能没有 generationId：用同 query 的 durable user
+      // 行定位其后的 assistant 行（仅在该 user 未被 controller 复用场景）。
+      if (userContent === null || userContent === '') return null
+      const userIndex = durable.findIndex(
+        (turn) =>
+          !consumed.has(turn.id) && turn.role === 'user' && turn.content === userContent,
+      )
+      if (userIndex < 0) return null
+      for (let index = userIndex + 1; index < durable.length; index += 1) {
+        const candidate = durable[index]
+        if (candidate.role === 'user') break
+        if (
+          candidate.role === 'assistant' &&
+          candidate.content.trim() !== '' &&
+          !consumed.has(candidate.id)
+        ) {
+          return candidate
+        }
+      }
+      return null
+    }
+    const mergedController = controllerTurns.map((row, index) => {
+      if (row.role !== 'assistant' || row.content.trim() !== '') return row
+      const previous = index > 0 ? controllerTurns[index - 1] : null
+      const userContent =
+        previous !== null && previous.role === 'user' ? previous.content : null
+      const match = findDurableAssistant(row, userContent)
+      if (match === null) return row
+      consumed.add(match.id)
+      return {
+        ...row,
+        content: match.content,
+        thinking: row.thinking !== '' ? row.thinking : match.thinking,
+        citations: row.citations.length > 0 ? row.citations : match.citations,
+        usage: row.usage ?? match.usage,
+        resolvedMode: row.resolvedMode ?? match.resolvedMode,
+        serverMessageId: row.serverMessageId ?? match.serverMessageId,
+        generationId: row.generationId ?? match.generationId,
+      }
+    })
+    const controllerUserContents = new Set(
+      mergedController.filter((turn) => turn.role === 'user').map((turn) => turn.content),
+    )
     const controllerGenerationIds = new Set(
-      controllerTurns
+      mergedController
         .map((turn) => turn.generationId)
         .filter((id): id is string => id !== null && id !== ''),
     )
-    const controllerUserContents = new Set(
-      controllerTurns.filter((turn) => turn.role === 'user').map((turn) => turn.content),
-    )
-    const durable = turns.filter((turn) => {
-      if (turn.generationId !== null && controllerGenerationIds.has(turn.generationId)) {
+    const remaining = durable.filter((turn) => {
+      if (consumed.has(turn.id)) return false
+      if (turn.role === 'user' && controllerUserContents.has(turn.content)) return false
+      if (
+        turn.role === 'assistant' &&
+        turn.generationId !== null &&
+        controllerGenerationIds.has(turn.generationId) &&
+        mergedController.some(
+          (row) =>
+            row.role === 'assistant' &&
+            row.generationId === turn.generationId &&
+            row.content.trim() !== '',
+        )
+      ) {
         return false
       }
-      if (turn.role === 'user' && controllerUserContents.has(turn.content)) return false
       return true
     })
-    return [...durable, ...controllerTurns]
+    return [...remaining, ...mergedController]
   })()
 
   // PR-5b（§4.2-4/§4.6）：详情侧可见性投影。当前批次 detail 恒可读 title+
@@ -581,6 +648,32 @@ export function ResearchChatPanel({
           generationState: liveTurn.accepted !== null ? 'accepted' : null,
           submittedDraftText: liveTurn.query.trim().length > 0 ? liveTurn.query : null,
         }
+      }
+    }
+    // PR-5b（Lead 核对 P1-1）：冷启动 terminal 查回生成的是 external turn
+    // （不绑定编辑器快照），也必须渲染真实提交状态，而不是退回 not_observed。
+    if (liveTurn !== null && liveTurn.external) {
+      const generationId = liveTurn.identity.generationId
+      const submittedDraftText = liveTurn.query.trim().length > 0 ? liveTurn.query : null
+      if (liveTurn.state === 'terminal') {
+        return {
+          kind: 'terminal',
+          outcome: liveTurn.sse.terminal === 'error' ? 'failed' : 'completed',
+          failureCode: liveTurn.sse.errorCode,
+          generationId,
+          submittedDraftText,
+        }
+      }
+      if (liveTurn.state === 'accepted' || liveTurn.accepted !== null) {
+        return {
+          kind: 'accepted',
+          generationId,
+          generationState: 'accepted',
+          submittedDraftText,
+        }
+      }
+      if (liveTurn.state === 'unknown' || liveTurn.state === 'lookup_pending') {
+        return { kind: 'outcome_unknown', generationId, submittedDraftText }
       }
     }
     const lookup = submissionLookup ?? null

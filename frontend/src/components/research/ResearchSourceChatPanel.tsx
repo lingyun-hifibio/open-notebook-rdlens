@@ -77,6 +77,7 @@ export function ResearchSourceChatPanel({
   // PR-5b（Codex 第 2 轮 P1-#1/#3）：清稿 ACK 必须结算给**发起清稿的** controller
   // （切换会话后 chatControllerRef 已指向新会话，不能拿“当前”实例结算）。
   const pendingClearControllersRef = useRef(new Map<string, ConversationController>())
+  const sourceControllerRef = useRef<ConversationController | null>(null)
   // 仅有可绑定的持久 session_id 时才启用 controller：新会话仍由 legacy
   // 路径创建（PR-6 负责新会话与新协议的统一创建）。
   const chatSession = useMemo<UseResearchSourceChatSessionOptions | undefined>(() => {
@@ -88,7 +89,12 @@ export function ResearchSourceChatPanel({
       ref: sourceRef,
       onReleaseHold: (operationId: string) => editor.release(operationId),
       onClearAfterSubmission: (receipt, operationId) => {
-        const controller = pendingClearControllersRef.current.get(operationId) ?? null
+        // Lead 核对 P2-7：runtime 存活时重挂后 map 不跨实例；回退到当前
+        // controller（同一 runtime/session 复用同一实例）保证 ACK 仍被结算。
+        const controller =
+          pendingClearControllersRef.current.get(operationId) ??
+          sourceControllerRef.current ??
+          null
         void editor
           .clearAfterSubmission(
             {
@@ -117,6 +123,7 @@ export function ResearchSourceChatPanel({
     }
   }, [sessionRuntime, sourceRef, sourceSessionId, editor])
   const chat = useResearchSourceChat({ projectId, sourceId, session: chatSession })
+  sourceControllerRef.current = chat.conversation ?? null
   const editorSnapshot = editorEnabled ? editor.snapshot : null
   const wired = editorSnapshot !== null
   // Codex P1-#3（围绕同一身份）：session 模式下 busy/streaming 以 controller
@@ -208,11 +215,13 @@ export function ResearchSourceChatPanel({
     return rows
   })()
   const renderedSourceTurns: ResearchSourceChatTurn[] = (() => {
-    const controllerUserContents = new Set(
-      controllerTurns.filter((turn) => turn.role === 'user').map((turn) => turn.content),
+    // PR-5b（Lead 核对 P2-3）：与 chat 面板一致，user 与 assistant 都按
+    // “角色+正文”去重，避免 assistant 在同一轮被 durable/controller 双渲染。
+    const controllerKeys = new Set(
+      controllerTurns.map((turn) => `${turn.role}\u0000${turn.content}`),
     )
     const durable = chat.turns.filter(
-      (turn) => !(turn.role === 'user' && controllerUserContents.has(turn.content)),
+      (turn) => !controllerKeys.has(`${turn.role}\u0000${turn.content}`),
     )
     return [...durable, ...controllerTurns]
   })()
@@ -320,19 +329,29 @@ export function ResearchSourceChatPanel({
    */
   const selectSourceSession = (next: string | null): void => {
     chat.selectSession(next)
-    if (sessionRuntime === null || sourceRef === null) return
-    sessionRuntime.activate(
-      'source',
-      next === null
-        ? null
-        : {
-            domain: 'research',
-            kind: 'source',
-            projectId,
-            sessionId: next,
-            sourceId,
-          },
-    )
+    const runtime = sessionRuntime
+    if (runtime === null) return
+    // PR-5b（Lead 核对 P1-2）：从“新会话态”（active('source') === null）返回
+    // 历史会话时也必须重新 activate，否则 editor/controller 继续禁用、发送
+    // 落回 legacy。目标 ref 与当前 active 不一致才切换（含 null→ref / ref→null）。
+    const target = next === null
+      ? null
+      : {
+          domain: 'research' as const,
+          kind: 'source' as const,
+          projectId,
+          sessionId: next,
+          sourceId,
+        }
+    const current = runtime.active('source')
+    const sameSession =
+      current === null
+        ? target === null
+        : target !== null &&
+          current.kind === 'source' &&
+          current.sessionId === target.sessionId &&
+          current.sourceId === target.sourceId
+    if (!sameSession) runtime.activate('source', target)
   }
 
   const submit = () => {

@@ -1883,8 +1883,31 @@ describe('ResearchChatPanel PR-5b：会话接线与解释 UI', () => {
     localStorage.clear()
   })
 
-  it('§4.2-4：detail 同响应到达即渲染真实标题，无占位/加载态', () => {
+  it('§4.2-4：detail 同响应到达即渲染真实标题，整段渲染 never 出现占位/加载态', async () => {
+    // Lead 核对 P2-5：不仅断言最终态，还要断言整个渲染过程中从未出现
+    // “加载/先占位”节点（MutationObserver 覆盖首次 commit 及后续更新）。
+    const loadingNodes: string[] = []
+    const collect = (records: MutationRecord[]): void => {
+      for (const record of records) {
+        for (const node of Array.from(record.addedNodes)) {
+          if (!(node instanceof Element)) continue
+          if (
+            node.matches('[data-testid="chat-session-title-loading"]') ||
+            node.querySelector('[data-testid="chat-session-title-loading"]') !== null
+          ) {
+            loadingNodes.push(node.outerHTML.slice(0, 80))
+          }
+        }
+      }
+    }
+    const observer = new MutationObserver(collect)
+    observer.observe(document.body, { childList: true, subtree: true })
     renderSessionPanel({ sessionMeta: { title: '真实会话标题', recordVisibility: 'visible' } })
+    collect(observer.takeRecords())
+    await act(async () => {})
+    collect(observer.takeRecords())
+    observer.disconnect()
+    expect(loadingNodes).toEqual([])
     expect(screen.getByTestId('chat-session-title')).toHaveTextContent('真实会话标题')
     expect(screen.queryByTestId('chat-session-title-loading')).not.toBeInTheDocument()
     expect(screen.queryByText('research.session.visibility.restricted')).not.toBeInTheDocument()
@@ -2025,5 +2048,65 @@ describe('ResearchChatPanel PR-5b：会话接线与解释 UI', () => {
     renderSessionPanel({ conversation: conversationStub(null, [archived]) })
     expect(screen.getByText('上一轮问题')).toBeInTheDocument()
     expect(screen.getByText('上一轮回答')).toBeInTheDocument()
+  })
+
+  it('PR-5b（Lead 核对 P1-1 / F10）：冷启动 terminal 查回不得把 durable 完整答案去重成空 assistant', () => {
+    const durableUser = turn({ id: 'msg_u1', role: 'user', content: '冷启动问题' })
+    const durableAssistant = turn({
+      id: 'msg_gen_1_assistant',
+      role: 'assistant',
+      content: '完整答案（来自 durable 行）',
+      generationId: 'gen_1',
+      serverMessageId: 'msg_gen_1_assistant',
+      status: 'done',
+    })
+    const externalTerminal = {
+      identity: {
+        authGeneration: 1,
+        sessionKey: 'global:p1:sess-1',
+        sessionId: 'sess-1',
+        turnId: 'external-1',
+        draftToken: 'draft_1',
+        attempt: 1,
+        detached: false,
+        terminal: 'done',
+        generationId: 'gen_1',
+      },
+      state: 'terminal',
+      sse: {
+        answer: '',
+        thinking: '',
+        citations: [],
+        usage: null,
+        resolvedMode: null,
+        terminal: 'done',
+        errorCode: null,
+        errorMessage: null,
+        contextReport: null,
+        contextCoverage: null,
+      },
+      query: '冷启动问题',
+      operationId: null,
+      accepted: null,
+      errorCode: null,
+      errorMessage: null,
+      gapDetected: false,
+      lookup: null,
+      clearPending: false,
+      incomplete: true,
+      external: true,
+    } as unknown as ConversationTurn
+    renderSessionPanel({
+      turns: [durableUser, durableAssistant],
+      conversation: conversationStub(externalTerminal),
+    })
+    // 完整答案只渲染一次（不出现空 assistant / “暂无答案”占位）
+    expect(screen.getAllByText('完整答案（来自 durable 行）')).toHaveLength(1)
+    expect(screen.queryByText('research.chatNoAnswer')).not.toBeInTheDocument()
+    expect(screen.getAllByText('冷启动问题')).toHaveLength(1)
+    expect(screen.getByTestId('research-submission-status')).toHaveAttribute(
+      'data-kind',
+      'terminal',
+    )
   })
 })

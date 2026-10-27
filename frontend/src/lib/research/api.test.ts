@@ -278,6 +278,52 @@ describe('researchApi coverage（COV-09）', () => {
     expect(headers?.['Idempotency-Key']).toBe('ui-key-1')
   })
 
+  it('createCoverageChat → 非 202 视为未受理（抛 CoverageAcceptanceError，不改口径）', async () => {
+    apiClient.defaults.adapter = async (config) => ({
+      data: { generation_id: 'gen_1', job_id: 'job_1', status: 'accepted' },
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+      config,
+    })
+    await expect(
+      researchApi.createCoverageChat(
+        P,
+        { query: 'q', note_ids: [], model_id: 'm', synthesis_scope: 'all_selected' },
+        'k',
+      ),
+    ).rejects.toMatchObject({
+      name: 'CoverageAcceptanceError',
+      code: 'coverage_acceptance_invalid',
+    })
+  })
+
+  it('createCoverageChat → 202 缺合法 generation/job 也视为未受理', async () => {
+    for (const data of [
+      { job_id: 'job_1', status: 'accepted' },
+      { generation_id: '', job_id: 'job_1', status: 'accepted' },
+      { generation_id: 'gen_1', status: 'accepted' },
+    ]) {
+      apiClient.defaults.adapter = async (config) => ({
+        data,
+        status: 202,
+        statusText: 'Accepted',
+        headers: {},
+        config,
+      })
+      await expect(
+        researchApi.createCoverageChat(
+          P,
+          { query: 'q', note_ids: [], model_id: 'm', synthesis_scope: 'all_selected' },
+          'k',
+        ),
+      ).rejects.toMatchObject({
+        name: 'CoverageAcceptanceError',
+        code: 'coverage_acceptance_invalid',
+      })
+    }
+  })
+
   it('getCoverageReport → GET .../jobs/{id}/report（渲染完成后只读）', async () => {
     const captured = await capture(() => researchApi.getCoverageReport(P, 'job_1'))
     expect(captured.method).toBe('GET')

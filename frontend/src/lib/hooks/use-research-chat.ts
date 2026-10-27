@@ -490,6 +490,8 @@ export interface ResearchSubmissionLookupSnapshot {
 interface TransportBridge {
   target: ConversationTransport | null
   proxy: ConversationTransport | null
+  /** 当前挂载引用数（StrictMode/remount 期间 ≥1；归零且无活动 turn 才解绑）。 */
+  refs: number
 }
 
 const TRANSPORT_BRIDGES = new WeakMap<SessionRuntime, Map<string, TransportBridge>>()
@@ -502,7 +504,7 @@ function transportBridgeFor(runtime: SessionRuntime, key: string): TransportBrid
   }
   let bridge = byKey.get(key)
   if (bridge === undefined) {
-    bridge = { target: null, proxy: null }
+    bridge = { target: null, proxy: null, refs: 0 }
     byKey.set(key, bridge)
   }
   return bridge
@@ -797,6 +799,10 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
     const clearAfterSubmission = options.onClearAfterSubmission
     const runtime = options.runtime
     let cancelled = false
+    // PR-5b（Lead 核对 P2-1）：markerRef 必须随会话/认证代次重置，避免上一
+    // 会话的 marker 被用于结算当前会话（会话切换后 settle 守卫会因 token 不
+    // 匹配而静默跳过，看起来像“永不结算”）。
+    markerRef.current = null
     /** PR-5b（D2）：捕获同一次 loadDetail 响应中的会话元数据与 Generation 卡。 */
     const captureDetail = (detail: unknown): void => {
       if (cancelled) return
@@ -980,6 +986,7 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
     }
     const bridge = transportBridgeFor(runtime, conversationKey)
     bridge.target = transport
+    bridge.refs += 1
     const controller = options.runtime.conversation(ref, {
       transport: transportProxyFor(bridge),
     })
@@ -1034,10 +1041,21 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
       const scope = readCacheScope(runtime)
       if (scope === null) return
       const now = new Date().toISOString()
+      // Lead 核对 P2-1：accepted 查回要回填 accepted_editor_revision，供后续
+      // 清稿核对/重试使用（此前只在 SSE accepted 事件里写）。
+      // 防御式取值：controller/测试替身可能给出不完整 accepted 对象，
+      // 结算不能因缺字段抛错（否则 SSE 订阅回调产生未处理拒绝）。
+      const acceptedRevision =
+        turn.accepted !== null && typeof turn.accepted === 'object'
+          ? (turn.accepted as { editorRevision?: unknown }).editorRevision
+          : undefined
+      const observedRevision =
+        typeof acceptedRevision === 'number' ? acceptedRevision : current.observedRevision
       const next: SessionSubmissionMarker = {
         ...current,
         acceptanceState: terminal ? 'terminal' : 'accepted',
         generationId: current.generationId ?? turn.identity.generationId,
+        observedRevision,
         updatedAt: now,
         ...(terminal ? { terminalAt: now } : {}),
       }
@@ -1150,6 +1168,11 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
       setMarkerWriteFailed(false)
       markerReconcileRef.current = null
       unsubscribeSettle()
+      // PR-5b（Lead 核对 P2-2）：挂载引用归零且无活动 turn 时释放桥 target，
+      // 避免卸载后 controller 上残留旧 transport 的悬空引用；有活动 turn 时
+      // 保留 target 以便 reattach 续流，下次挂载会覆盖。
+      bridge.refs = Math.max(0, bridge.refs - 1)
+      if (bridge.refs === 0 && !controller.hasActiveTurn()) bridge.target = null
       // 离开会话/卸载：只标记 detach 并中止本地读取（服务端继续执行）。
       controller.detach()
       options.runtime.releaseConversation(ref, controller)

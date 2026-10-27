@@ -165,7 +165,12 @@ export function ResearchWorkspace({
             operationId,
           )
           .then((outcome) => {
-            const controller = pendingClearControllersRef.current.get(operationId) ?? null
+            // Lead 核对 P2-7：重挂后旧 map entry 不存在时回退当前 controller
+            // （runtime 复用同一实例即可完成 clear 结算）。
+            const controller =
+              pendingClearControllersRef.current.get(operationId) ??
+              chatControllerRef.current ??
+              null
             pendingClearControllersRef.current.delete(operationId)
             // 清稿失败/被覆盖也必须结算，否则 hold 与后续发送永久阻塞。
             const settled =
