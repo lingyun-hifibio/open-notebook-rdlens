@@ -215,15 +215,77 @@ export function ResearchSourceChatPanel({
     return rows
   })()
   const renderedSourceTurns: ResearchSourceChatTurn[] = (() => {
-    // PR-5b（Lead 核对 P2-3）：与 chat 面板一致，user 与 assistant 都按
-    // “角色+正文”去重，避免 assistant 在同一轮被 durable/controller 双渲染。
-    const controllerKeys = new Set(
-      controllerTurns.map((turn) => `${turn.role}\u0000${turn.content}`),
+    // Lead 核对（Codex 复核 P2）：不能只用“角色+正文”证明执行身份——不同
+    // 历史轮次可能答案相同。改为成对（user→assistant）匹配，且 durable 中该
+    // 成对内容唯一时才去重；空 content 的 controller assistant（冷启动外部
+    // 查回）与唯一 durable 成对答案合并，避免完整答案旁出现空占位。
+    const durable = [...chat.turns]
+    const pairKey = (user: string, assistant: string): string =>
+      `${user}\u0000${assistant}`
+    const durablePairKeys = new Set<string>()
+    const durablePairCounts = new Map<string, number>()
+    const durableUserCounts = new Map<string, number>()
+    for (let index = 0; index < durable.length; index += 1) {
+      const turn = durable[index]
+      if (turn.role === 'user') {
+        durableUserCounts.set(turn.content, (durableUserCounts.get(turn.content) ?? 0) + 1)
+        continue
+      }
+      if (turn.role !== 'assistant') continue
+      const previous = index > 0 ? durable[index - 1] : null
+      if (previous === null || previous.role !== 'user') continue
+      const key = pairKey(previous.content, turn.content)
+      durablePairKeys.add(key)
+      durablePairCounts.set(key, (durablePairCounts.get(key) ?? 0) + 1)
+    }
+    const consumed = new Set<string>()
+    const merged = controllerTurns.map((row, index) => {
+      if (row.role !== 'assistant' || row.content.trim() !== '') return row
+      const previous = index > 0 ? controllerTurns[index - 1] : null
+      if (previous === null || previous.role !== 'user') return row
+      // 同问题多份历史稿时无法证明是哪一次执行 → 不合并（宁可 displayed empty）。
+      if ((durableUserCounts.get(previous.content) ?? 0) !== 1) return row
+      const userIndex = durable.findIndex(
+        (turn) => turn.role === 'user' && turn.content === previous.content,
+      )
+      const candidate = userIndex >= 0 ? durable[userIndex + 1] : undefined
+      if (
+        candidate === undefined ||
+        candidate.role !== 'assistant' ||
+        candidate.content.trim() === ''
+      ) {
+        return row
+      }
+      consumed.add(candidate.id)
+      return { ...row, content: candidate.content }
+    })
+    const controllerPairKeys = new Set<string>()
+    for (let index = 0; index < merged.length; index += 1) {
+      const turn = merged[index]
+      if (turn.role !== 'user') continue
+      const next = merged[index + 1]
+      if (next !== undefined && next.role === 'assistant') {
+        controllerPairKeys.add(pairKey(turn.content, next.content))
+      }
+    }
+    const controllerUserContents = new Set(
+      merged.filter((turn) => turn.role === 'user').map((turn) => turn.content),
     )
-    const durable = chat.turns.filter(
-      (turn) => !controllerKeys.has(`${turn.role}\u0000${turn.content}`),
-    )
-    return [...durable, ...controllerTurns]
+    const remaining = durable.filter((turn) => {
+      if (consumed.has(turn.id)) return false
+      const index = durable.indexOf(turn)
+      const previous = index > 0 ? durable[index - 1] : null
+      if (turn.role === 'user' && controllerUserContents.has(turn.content)) return false
+      if (turn.role === 'assistant' && previous !== null && previous.role === 'user') {
+        const key = pairKey(previous.content, turn.content)
+        // 只有“唯一且被 controller 成对覆盖”的 durable 副本才丢弃。
+        if ((durablePairCounts.get(key) ?? 0) === 1 && controllerPairKeys.has(key)) {
+          return false
+        }
+      }
+      return true
+    })
+    return [...remaining, ...merged]
   })()
   const conversationSnapshot: ResearchConversationSnapshot = {
     isBusy: sessionConversation !== null ? sessionBusy : chat.isStreaming,

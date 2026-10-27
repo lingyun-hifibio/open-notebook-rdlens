@@ -15,7 +15,7 @@ import type {
   ResearchConversationSnapshot,
 } from '@/lib/research/types'
 import type { ResearchSessionRef } from '@/lib/research/session-contract'
-import { useState } from 'react'
+import { Profiler, useState } from 'react'
 import type { ResearchBackgroundNotice, ResearchChatSelection, ResearchChatTurn } from '@/lib/hooks/use-research-chat'
 import type { ResearchCitation, ResearchJob } from '@/lib/research/types'
 
@@ -1830,6 +1830,7 @@ describe('ResearchChatPanel PR-5b：会话接线与解释 UI', () => {
     markerWriteFailed = false,
     onSendCoverage = vi.fn(async () => ACCEPTED_OUTCOME),
     conversation = conversationStub(),
+    wrapPanel,
   }: {
     sessionMeta?: ResearchChatSessionMeta | null
     submissionLookup?: ResearchSubmissionLookupSnapshot | null
@@ -1837,13 +1838,16 @@ describe('ResearchChatPanel PR-5b：会话接线与解释 UI', () => {
     markerWriteFailed?: boolean
     onSendCoverage?: (q: string, snapshot: ResearchScopeSnapshot) => Promise<CoverageSubmitOutcome>
     conversation?: ConversationController
+    /** 可选的 React 包装（如 Profiler），用于断言每次 commit 的 DOM 状态。 */
+    wrapPanel?: (node: React.ReactNode) => React.ReactNode
   }) {
     const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
     return render(
       <QueryClientProvider client={queryClient}>
         <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
           <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
-            <ResearchChatPanel
+            {(wrapPanel ?? ((node: React.ReactNode) => node))(
+              <ResearchChatPanel
               turns={turns}
               isStreaming={false}
               onSend={vi.fn(async () => true)}
@@ -1866,7 +1870,8 @@ describe('ResearchChatPanel PR-5b：会话接线与解释 UI', () => {
               onChangeScope={vi.fn()}
               onDraftChange={vi.fn()}
               onRetrySave={vi.fn()}
-            />
+              />
+            )}
           </ResearchScopeProvider>
         </ResearchWorkspaceProvider>
       </QueryClientProvider>,
@@ -1884,30 +1889,29 @@ describe('ResearchChatPanel PR-5b：会话接线与解释 UI', () => {
   })
 
   it('§4.2-4：detail 同响应到达即渲染真实标题，整段渲染 never 出现占位/加载态', async () => {
-    // Lead 核对 P2-5：不仅断言最终态，还要断言整个渲染过程中从未出现
-    // “加载/先占位”节点（MutationObserver 覆盖首次 commit 及后续更新）。
-    const loadingNodes: string[] = []
-    const collect = (records: MutationRecord[]): void => {
-      for (const record of records) {
-        for (const node of Array.from(record.addedNodes)) {
-          if (!(node instanceof Element)) continue
-          if (
-            node.matches('[data-testid="chat-session-title-loading"]') ||
-            node.querySelector('[data-testid="chat-session-title-loading"]') !== null
-          ) {
-            loadingNodes.push(node.outerHTML.slice(0, 80))
-          }
-        }
-      }
-    }
-    const observer = new MutationObserver(collect)
-    observer.observe(document.body, { childList: true, subtree: true })
-    renderSessionPanel({ sessionMeta: { title: '真实会话标题', recordVisibility: 'visible' } })
-    collect(observer.takeRecords())
+    // Lead 核对（Codex 复核 P2）：用 React.Profiler 在**每次 commit** 后检查
+    // DOM，而不是 MutationObserver 收集时的节点（节点属性后续被改会假绿）。
+    const placeholderCommits: string[] = []
+    renderSessionPanel({
+      sessionMeta: { title: '真实会话标题', recordVisibility: 'visible' },
+      wrapPanel: (node) => (
+        <Profiler
+          id="header-commit"
+          onRender={() => {
+            if (document.querySelector('[data-testid="chat-session-title-loading"]')) {
+              placeholderCommits.push('loading')
+            }
+            if (document.querySelector('[data-testid="chat-session-title-unknown"]')) {
+              placeholderCommits.push('unknown')
+            }
+          }}
+        >
+          {node}
+        </Profiler>
+      ),
+    })
     await act(async () => {})
-    collect(observer.takeRecords())
-    observer.disconnect()
-    expect(loadingNodes).toEqual([])
+    expect(placeholderCommits).toEqual([])
     expect(screen.getByTestId('chat-session-title')).toHaveTextContent('真实会话标题')
     expect(screen.queryByTestId('chat-session-title-loading')).not.toBeInTheDocument()
     expect(screen.queryByText('research.session.visibility.restricted')).not.toBeInTheDocument()
@@ -2108,5 +2112,64 @@ describe('ResearchChatPanel PR-5b：会话接线与解释 UI', () => {
       'data-kind',
       'terminal',
     )
+  })
+
+  it('PR-5b（Lead 复核新增 P1）：generation 不一致时不得用同 query 旧答案兜底', () => {
+    const durableUser = turn({ id: 'msg_u_old', role: 'user', content: '重复问题' })
+    const durableAssistant = turn({
+      id: 'msg_old_assistant',
+      role: 'assistant',
+      content: '旧答案',
+      generationId: 'gen_old',
+      serverMessageId: 'msg_old_assistant',
+    })
+    const liveTurn = {
+      identity: {
+        authGeneration: 1,
+        sessionKey: 'global:p1:sess-1',
+        sessionId: 'sess-1',
+        turnId: 'turn-new',
+        draftToken: 'draft_new',
+        attempt: 1,
+        detached: false,
+        terminal: null,
+        generationId: 'gen_new',
+        observedRevision: null,
+      },
+      state: 'streaming',
+      sse: {
+        answer: '',
+        thinking: '',
+        citations: [],
+        usage: null,
+        resolvedMode: null,
+        terminal: null,
+        errorCode: null,
+        errorMessage: null,
+        contextReport: null,
+        contextCoverage: null,
+      },
+      query: '重复问题',
+      operationId: 'op-1',
+      accepted: null,
+      errorCode: null,
+      errorMessage: null,
+      gapDetected: false,
+      lookup: null,
+      clearPending: false,
+      incomplete: false,
+      external: false,
+    } as unknown as ConversationTurn
+    renderSessionPanel({
+      turns: [durableUser, durableAssistant],
+      conversation: conversationStub(liveTurn),
+    })
+    // 旧答案仍属于旧 generation（独立 durable 行，message_id 不变）；
+    expect(screen.getAllByText('旧答案')).toHaveLength(1)
+    expect(
+      document.querySelector('[data-message-id="msg_old_assistant"]'),
+    ).toHaveTextContent('旧答案')
+    // 新 generation 的空 assistant 不得吞掉旧答案（仍显示空答案占位）。
+    expect(screen.getAllByText('research.chatNoAnswer').length).toBeGreaterThan(0)
   })
 })

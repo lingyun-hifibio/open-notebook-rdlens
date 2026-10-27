@@ -1043,14 +1043,19 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
       const now = new Date().toISOString()
       // Lead 核对 P2-1：accepted 查回要回填 accepted_editor_revision，供后续
       // 清稿核对/重试使用（此前只在 SSE accepted 事件里写）。
-      // 防御式取值：controller/测试替身可能给出不完整 accepted 对象，
-      // 结算不能因缺字段抛错（否则 SSE 订阅回调产生未处理拒绝）。
+      // Lead 核对（Codex 复核对 P2）：accepted **查回**更新的是
+      // `identity.observedRevision`（`accepted_editor_revision`），不是
+      // `turn.accepted`；两者都做防御式取值，避免测试替身缺字段抛错。
       const acceptedRevision =
         turn.accepted !== null && typeof turn.accepted === 'object'
           ? (turn.accepted as { editorRevision?: unknown }).editorRevision
           : undefined
       const observedRevision =
-        typeof acceptedRevision === 'number' ? acceptedRevision : current.observedRevision
+        typeof turn.identity.observedRevision === 'number'
+          ? turn.identity.observedRevision
+          : typeof acceptedRevision === 'number'
+            ? acceptedRevision
+            : current.observedRevision
       const next: SessionSubmissionMarker = {
         ...current,
         acceptanceState: terminal ? 'terminal' : 'accepted',
@@ -1172,10 +1177,15 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
       // 避免卸载后 controller 上残留旧 transport 的悬空引用；有活动 turn 时
       // 保留 target 以便 reattach 续流，下次挂载会覆盖。
       bridge.refs = Math.max(0, bridge.refs - 1)
-      if (bridge.refs === 0 && !controller.hasActiveTurn()) bridge.target = null
-      // 离开会话/卸载：只标记 detach 并中止本地读取（服务端继续执行）。
-      controller.detach()
-      options.runtime.releaseConversation(ref, controller)
+      // Lead 核对（Codex 复核 P2）：refs>0 表示同一 transport 桥仍有其它挂载
+      // 消费者，此时不得 detach/release 共享 controller（会中断对方续流）；
+      // 末次卸载仍保留 target 直到清稿租约结算或下次挂载覆盖。
+      if (bridge.refs === 0) {
+        if (!controller.hasActiveTurn()) bridge.target = null
+        // 离开会话/卸载：只标记 detach 并中止本地读取（服务端继续执行）。
+        controller.detach()
+        options.runtime.releaseConversation(ref, controller)
+      }
       if (controllerRef.current === controller) {
         controllerRef.current = null
         setConversation(null)

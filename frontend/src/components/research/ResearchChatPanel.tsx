@@ -522,43 +522,20 @@ export function ResearchChatPanel({
     const durableAssistants = durable.filter(
       (turn) => turn.role === 'assistant' && turn.content.trim() !== '',
     )
-    const findDurableAssistant = (
-      row: ResearchChatTurn,
-      userContent: string | null,
-    ): ResearchChatTurn | null => {
-      if (row.generationId !== null) {
-        const byGeneration = durableAssistants.find(
+    const findDurableAssistant = (row: ResearchChatTurn): ResearchChatTurn | null => {
+      // Lead 核对（Codex 复核对新增 P1）：**只能**按 generationId 证明同一次
+      // 执行；已知 generation 不匹配时绝不回退到“同问题正文”（否则重复提问
+      // 的新轮会消费旧轮答案，甚至把旧 message_id 绑到新 generation 上）。
+      if (row.generationId === null || row.generationId === '') return null
+      return (
+        durableAssistants.find(
           (turn) => !consumed.has(turn.id) && turn.generationId === row.generationId,
-        )
-        if (byGeneration !== undefined) return byGeneration
-      }
-      // 冷启动 external turn 可能没有 generationId：用同 query 的 durable user
-      // 行定位其后的 assistant 行（仅在该 user 未被 controller 复用场景）。
-      if (userContent === null || userContent === '') return null
-      const userIndex = durable.findIndex(
-        (turn) =>
-          !consumed.has(turn.id) && turn.role === 'user' && turn.content === userContent,
+        ) ?? null
       )
-      if (userIndex < 0) return null
-      for (let index = userIndex + 1; index < durable.length; index += 1) {
-        const candidate = durable[index]
-        if (candidate.role === 'user') break
-        if (
-          candidate.role === 'assistant' &&
-          candidate.content.trim() !== '' &&
-          !consumed.has(candidate.id)
-        ) {
-          return candidate
-        }
-      }
-      return null
     }
-    const mergedController = controllerTurns.map((row, index) => {
+    const mergedController = controllerTurns.map((row) => {
       if (row.role !== 'assistant' || row.content.trim() !== '') return row
-      const previous = index > 0 ? controllerTurns[index - 1] : null
-      const userContent =
-        previous !== null && previous.role === 'user' ? previous.content : null
-      const match = findDurableAssistant(row, userContent)
+      const match = findDurableAssistant(row)
       if (match === null) return row
       consumed.add(match.id)
       return {
