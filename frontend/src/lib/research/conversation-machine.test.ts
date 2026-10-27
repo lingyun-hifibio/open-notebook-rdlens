@@ -1702,12 +1702,29 @@ describe('conversation-controller：副作用与迟到隔离', () => {
     const blocked = await controller.retrySubmission(sendInput(newIdentity))
     expect(blocked.status).toBe('blocked')
     expect(blocked.error?.code).toBe('replay_snapshot_unavailable')
+    // 新 token 但复用查回带回的旧 idempotency key：确认后仍必须被拒绝且零派流。
+    const reusedKey = await controller.retrySubmission(
+      sendInput({ ...newIdentity, idempotencyKey: KEY, confirmDuplicateExecution: true }),
+    )
+    expect(reusedKey.status).toBe('blocked')
+    expect(reusedKey.error?.code).toBe('new_submission_identity_required')
+    expect(calls).toHaveLength(0)
     const sent = await controller.retrySubmission(
       sendInput({ ...newIdentity, confirmDuplicateExecution: true }),
     )
     expect(sent.status).toBe('ok')
     expect(calls).toHaveLength(1)
     expect(calls[0].input).toMatchObject({ draftToken: 'draft_2', lastEventId: 0 })
+  })
+
+  it('review-audit Low：dispose 后 loadMore 优先返回 stale，不泄露分页状态', async () => {
+    const { controller } = setup({
+      loadDetail: () => ({ messages: [], next_cursor: 'c1' }),
+    })
+    expect((await controller.load()).status).toBe('ok')
+    controller.dispose()
+    const more = await controller.loadMore()
+    expect(more.status).toBe('stale')
   })
 
 })

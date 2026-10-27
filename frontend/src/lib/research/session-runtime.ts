@@ -1851,8 +1851,14 @@ export function createConversationController(input: {
               },
         })
       }
-      const previousToken = meta?.draftToken ?? turnState.identity.draftToken
-      const previousKey = meta?.idempotencyKey ?? turnState.identity.idempotencyKey
+      // 冷启动 external turn 的本地 meta 可能缺失，但查回 view 已带回旧 key；
+      // 确认后的新身份必须同时换掉旧 token 与旧 key（定向复核 BLOCKING）。
+      const previousToken = meta?.draftToken
+        ?? turnState.lookup?.view?.token
+        ?? turnState.identity.draftToken
+      const previousKey = meta?.idempotencyKey
+        ?? turnState.lookup?.view?.idempotencyKey
+        ?? turnState.identity.idempotencyKey
       if (!replay && (input.draftToken === previousToken || input.idempotencyKey === previousKey)) {
         return Promise.resolve({
           status: 'blocked',
@@ -2173,6 +2179,7 @@ export function createConversationController(input: {
   }
 
   function loadMore(): Promise<ConversationHandleResult<{ readonly messages: readonly unknown[] }>> {
+    if (isDisposed()) return Promise.resolve({ status: 'stale' })
     if (detailCursor === null) {
       return Promise.resolve({
         status: 'blocked',
