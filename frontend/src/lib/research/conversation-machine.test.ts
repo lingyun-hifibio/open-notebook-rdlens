@@ -1733,6 +1733,22 @@ describe('conversation-controller：副作用与迟到隔离', () => {
     expect(calls[0].input).toMatchObject({ draftToken: 'draft_2', lastEventId: 0 })
   })
 
+  it('PR-12：刷新恢复 external not_observed 的同一 token/key 幂等发送允许（不弹确认）', async () => {
+    const { controller, calls } = setup({
+      submission: (input) => submissionResponse({
+        draft_token: input.token,
+        idempotency_key: KEY,
+      }),
+    })
+    expect((await controller.lookupSubmission(TOKEN)).status).toBe('ok')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(controller.getSnapshot().turn?.state).toBe('not_observed')
+    const sent = await controller.send(sendInput({ operationId: 'op-refresh' }))
+    expect(sent.status).toBe('ok')
+    expect(calls).toHaveLength(1)
+    expect(calls[0].input).toMatchObject({ draftToken: TOKEN, idempotencyKey: KEY, lastEventId: 0 })
+  })
+
   it('review-audit-2 B1：确认后的新身份不得复用任何历史 turn 的 token/key', async () => {
     const { controller, calls } = setup({
       submission: (input) => submissionResponse({
