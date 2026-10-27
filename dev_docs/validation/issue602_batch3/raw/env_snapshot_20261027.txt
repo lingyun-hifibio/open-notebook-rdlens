@@ -1,0 +1,41 @@
+# PR-6 环境快照原始输出（无凭证字段）
+2026-10-27T14:01:12+08:00
+
+## fork 仓
+404c0e227ae34148b26f95a1471cebde8d52d112
+feat/issue602-b3-pr6
+
+## RDLens 主仓
+3620c9c1d741cb9173e7355f8c6a23b609f48687
+2026-10-26 15:25:54 +0800 Merge pull request #803 from HiFiBiO-Therapeutics/codex/issue602-b3-fork-baseline
+
+## docker ps（research/rdlens 相关；制表符分隔）
+research-open-notebook-open_notebook-1 ghcr.io/hifibio-therapeutics/open-notebook-rdlens Up 29 hours (healthy) 127.0.0.1:5055->5055/tcp,127.0.0.1:8502->8502/tcp
+rdlens-issue623-s3-pg postgres:16 Up 28 hours 127.0.0.1:5436->5432/tcp
+rdlens-issue623-s3-surrealdb surrealdb/surrealdb Up 28 hours 127.0.0.1:18004->8000/tcp
+rdlens613-open_notebook-1 ghcr.io/hifibio-therapeutics/open-notebook-rdlens Up 29 hours (healthy) 127.0.0.1:5155->5055/tcp,127.0.0.1:8602->8502/tcp
+rdlens613-surrealdb-1 surrealdb/surrealdb Up 29 hours (healthy) 127.0.0.1:19720->8000/tcp
+research-open-notebook-surrealdb-1 surrealdb/surrealdb Up 29 hours (healthy) (no published ports)
+rdlens_minio minio/minio Up 29 hours (healthy) 0.0.0.0:9002->9000/tcp,0.0.0.0:9003->9001/tcp
+rdlens_postgres c482971e06a8 Up 29 hours (healthy) 0.0.0.0:5434->5432/tcp
+rdlens_redis 9210b8dc25f1 Up 29 hours (healthy) 0.0.0.0:6379->6379/tcp
+
+## 部署镜像
+ghcr.io/hifibio-therapeutics/open-notebook-rdlens@sha256:1041c88e9a9abe017eb7982825f4f0b3236c369054aa9c9a9a2028cd05ebe4dc
+[ghcr.io/hifibio-therapeutics/open-notebook-rdlens:v1.14.0-rdlens.29] created=2026-10-22T01:32:52.021307736+08:00
+
+## rdlens.service
+ExecMainStartTimestamp=Mon 2026-10-26 09:17:39 CST
+Environment=HOME=/home/lchen PATH=/home/lchen/workspace/RDLens/.venv/bin:/usr/local/bin:/usr/bin:/bin LANG=C.UTF-8 PYTHONUNBUFFERED=1 RDLENS_DEV_MODE= RDLENS_MIGRATIONS_EXTERNAL=1
+ActiveState=inactive
+SubState=dead
+
+## unit flag 出现次数
+0
+
+## .env flag
+(未设置)
+
+## deploy compose flag 次数
+0
+0

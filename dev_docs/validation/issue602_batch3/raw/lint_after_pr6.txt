@@ -1,0 +1,131 @@
+
+> frontend@0.1.0 lint
+> eslint src/
+
+
+/home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr6/frontend/src/app/(dashboard)/notebooks/components/SourcesColumn.tsx
+  73:5   warning  React Hook useMemo has a missing dependency: 't'. Either include it or remove the dependency array                                      react-hooks/exhaustive-deps
+  73:21  warning  React Hook useMemo has a complex expression in the dependency array. Extract it to a separate variable so it can be statically checked  react-hooks/exhaustive-deps
+
+/home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr6/frontend/src/components/podcasts/GeneratePodcastDialog.tsx
+  124:6  warning  React Hook useMemo has a missing dependency: 'sourcesQueries'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr6/frontend/src/components/research/ComparePanel.c05.test.tsx
+  50:27  warning  '_documentIds' is defined but never used  @typescript-eslint/no-unused-vars
+
+/home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr6/frontend/src/components/research/InsightsPanel.tsx
+  68:28  warning  'setIsResolvingScope' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr6/frontend/src/components/research/ResearchChatPanel.test.tsx
+   853:31  warning  '_query' is defined but never used      @typescript-eslint/no-unused-vars
+   853:47  warning  '_selection' is defined but never used  @typescript-eslint/no-unused-vars
+   921:7   warning  '_query' is defined but never used      @typescript-eslint/no-unused-vars
+   922:7   warning  '_snapshot' is defined but never used   @typescript-eslint/no-unused-vars
+   923:7   warning  '_turnKey' is defined but never used    @typescript-eslint/no-unused-vars
+   943:7   warning  '_query' is defined but never used      @typescript-eslint/no-unused-vars
+   944:7   warning  '_snapshot' is defined but never used   @typescript-eslint/no-unused-vars
+   945:7   warning  '_turnKey' is defined but never used    @typescript-eslint/no-unused-vars
+   962:7   warning  '_query' is defined but never used      @typescript-eslint/no-unused-vars
+   963:7   warning  '_snapshot' is defined but never used   @typescript-eslint/no-unused-vars
+   964:7   warning  '_turnKey' is defined but never used    @typescript-eslint/no-unused-vars
+  1400:41  warning  '_query' is defined but never used      @typescript-eslint/no-unused-vars
+  1400:57  warning  '_snapshot' is defined but never used   @typescript-eslint/no-unused-vars
+
+/home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr6/frontend/src/components/research/ResearchChatPanel.tsx
+  577:6  warning  React Hook useEffect has a missing dependency: 'editorSnapshot'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr6/frontend/src/components/research/ResearchSearchPanel.c05.test.tsx
+  12:10  warning  'monotonicNow' is defined but never used      @typescript-eslint/no-unused-vars
+  71:10  error    Component definition is missing display name  react/display-name
+
+/home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr6/frontend/src/components/research/ResearchSearchPanel.tsx
+   21:10  warning  'c05RequestHeaders' is defined but never used                                                                   @typescript-eslint/no-unused-vars
+  184:9   warning  'idempotencyKeyRef' is assigned a value but never used                                                          @typescript-eslint/no-unused-vars
+  185:9   warning  'keyInputsRef' is assigned a value but never used                                                               @typescript-eslint/no-unused-vars
+  313:6   warning  React Hook useEffect has a missing dependency: 'getSnapshot'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr6/frontend/src/components/research/ResearchSourceChatPanel.test.tsx
+  595:43  warning  '_input' is defined but never used  @typescript-eslint/no-unused-vars
+
+/home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr6/frontend/src/components/research/ResearchWorkspace.tsx
+   50:15  warning  'ResearchConversationSnapshot' is defined but never used                                                                                                                            @typescript-eslint/no-unused-vars
+  358:5   warning  React Hook useCallback has missing dependencies: 'c05' and 'getCurrentSessionId'. Either include them or remove the dependency array                                                react-hooks/exhaustive-deps
+  666:5   warning  React Hook useCallback has missing dependencies: 'activeGlobalRef?.sessionId', 'projectId', and 'runtimeSnapshot.viewerUserId'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+
+/home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr6/frontend/src/components/research/SourceListPanel.c05.test.tsx
+   8:27  warning  '_vi' is defined but never used               @typescript-eslint/no-unused-vars
+  37:10  error    Component definition is missing display name  react/display-name
+
+/home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr6/frontend/src/components/research/TransformationRunDetail.test.tsx
+  12:15  warning  'ResearchPage' is defined but never used  @typescript-eslint/no-unused-vars
+
+/home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr6/frontend/src/components/research/TransformationRunDetail.tsx
+  75:28  warning  'setIsResolvingRerun' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr6/frontend/src/components/research/TransformationsPanel.test.tsx
+  13:3  warning  'ResearchPage' is defined but never used  @typescript-eslint/no-unused-vars
+
+/home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr6/frontend/src/components/research/TransformationsPanel.tsx
+  89:11  warning  'toast' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr6/frontend/src/components/settings/CredentialFormDialog.tsx
+  89:6  warning  React Hook useEffect has a missing dependency: 'isOmlx'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr6/frontend/src/components/sources/ModelSelector.tsx
+  71:6   warning  React Hook useMemo has a missing dependency: 't'. Either include it or remove the dependency array                                      react-hooks/exhaustive-deps
+  71:51  warning  React Hook useMemo has a complex expression in the dependency array. Extract it to a separate variable so it can be statically checked  react-hooks/exhaustive-deps
+
+/home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr6/frontend/src/lib/hooks/research-session-runtime.test.tsx
+  41:3  warning  'useResearchWorkspace' is defined but never used  @typescript-eslint/no-unused-vars
+
+/home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr6/frontend/src/lib/hooks/use-credentials.ts
+  214:33  warning  '_removed' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr6/frontend/src/lib/hooks/use-research-chat.test.tsx
+  820:36  warning  '_args' is defined but never used  @typescript-eslint/no-unused-vars
+  997:36  warning  '_args' is defined but never used  @typescript-eslint/no-unused-vars
+
+/home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr6/frontend/src/lib/hooks/use-research-chat.ts
+  57:8  warning  'SessionCacheAuthority' is defined but never used  @typescript-eslint/no-unused-vars
+  58:8  warning  'SessionCacheScope' is defined but never used      @typescript-eslint/no-unused-vars
+  63:3  warning  'ConversationSendInput' is defined but never used  @typescript-eslint/no-unused-vars
+
+/home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr6/frontend/src/lib/hooks/use-research-editor.test.tsx
+  2:27  warning  'waitFor' is defined but never used  @typescript-eslint/no-unused-vars
+
+/home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr6/frontend/src/lib/hooks/use-research-global-model.tsx
+  316:6  warning  React Hook useCallback has a missing dependency: 'consentKey'. Either include it or remove the dependency array      react-hooks/exhaustive-deps
+  396:6  warning  React Hook useCallback has a missing dependency: 'preferencesKey'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr6/frontend/src/lib/hooks/use-research-source-chat.test.tsx
+  709:36  warning  '_args' is defined but never used  @typescript-eslint/no-unused-vars
+
+/home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr6/frontend/src/lib/research/api.ts
+  1111:7  warning  'watchdogPhase' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr6/frontend/src/lib/research/editor-machine.test.ts
+  1312:5  warning  Unused eslint-disable directive (no problems were reported from 'no-console')
+
+/home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr6/frontend/src/lib/research/editor-machine.ts
+   994:7   error    'loading' is never reassigned. Use 'const' instead   prefer-const
+   994:7   warning  'loading' is assigned a value but never used         @typescript-eslint/no-unused-vars
+  1312:9   warning  'settleInFlight' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  2216:16  warning  'error' is defined but never used                    @typescript-eslint/no-unused-vars
+
+/home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr6/frontend/src/lib/research/session-cache.test.ts
+  188:10  warning  'isPlainObjectBody' is defined but never used  @typescript-eslint/no-unused-vars
+
+/home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr6/frontend/src/lib/research/session-contract.ts
+  242:51  warning  'field' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr6/frontend/src/lib/research/session-idempotency.ts
+  224:9  error  'point' is never reassigned. Use 'const' instead  prefer-const
+
+/home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr6/frontend/src/lib/research/session-runtime.ts
+   26:8   warning  'ResearchSessionKind' is defined but never used       @typescript-eslint/no-unused-vars
+   31:18  warning  'purgeViewerCache' is defined but never used          @typescript-eslint/no-unused-vars
+   33:3   warning  'readCandidatePointer' is defined but never used      @typescript-eslint/no-unused-vars
+  436:7   error    'transport' is never reassigned. Use 'const' instead  prefer-const
+
+✖ 62 problems (5 errors, 57 warnings)
+  3 errors and 1 warning potentially fixable with the `--fix` option.

@@ -1,0 +1,25 @@
+# PR-6 Gateway/路由探针原始输出（密钥类值已脱敏；重跑时请用白名单过滤，勿整段 dump env）
+2026-10-27T14:01:13+08:00
+
+## loopback 7891/7892 (RDLens 后端)
+http://127.0.0.1:7891/health -> 000 (curl exit 7, connection refused)
+http://127.0.0.1:7892/health -> 000 (curl exit 7, connection refused)
+
+## 对外入口 192.168.5.82:7890 (RDLens)
+7890/health -> 502 | <html> <head><title>502 Bad Gateway</title></head> ...
+7890/api/health -> 502 | <html> <head><title>502 Bad Gateway</title></head> ...
+7890/v1/research/projects/probe/chat/sessions -> 502 | <html> <head><title>502 Bad Gateway</title></head> ...
+
+## fork 前端入口 192.168.5.82:7800 / 8502 / 5055
+http://192.168.5.82:7800/ -> 307 | /notebooks
+http://127.0.0.1:8502/ -> 307 | /notebooks
+http://127.0.0.1:5055/health -> 200 | {"status":"healthy"}
+
+## 部署 ON 容器 env（白名单字段；密钥类变量不记录）
+RD_EMBEDDED_MODE=true
+RD_EMBEDDED_NOTEBOOK_ID=<redacted>
+RD_AI_GATEWAY_MODEL=rdlens-research-engine
+RD_AI_GATEWAY_URL=http://192.168.5.82:7890
+
+## 反向证据：部署容器无 rdlens 模块 / flag
+RDLENS_RESEARCH_SESSION_CONTRACT= None

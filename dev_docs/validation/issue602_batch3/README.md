@@ -1,0 +1,44 @@
+# RDLens #602 第三批 PR-6（3E）验证证据目录
+
+- **PR**：`feat/issue602-b3-pr6`（base `origin/main` `404c0e227ae34148b26f95a1471cebde8d52d112`，PR #77/PR-5b 合并点）
+- **范围**：键盘/IME/焦点、compact/1024/1440 布局检查、14 locale、最终面板整合、真实接入矩阵
+- **日期**：2026-10-27
+- **证据纪律**（DESIGN §10.4）：组件/jsdom 证据一律标 `simulated`；真实接入逐腿标 `pass|pending|limited|excluded` + reason；**本目录不存在任何真实接入 pass**。
+- **出口结论**：**第三批出口未满足**（真实接入矩阵因第二批 Gateway 不可用、flag off 无法执行；不勾选 #71、不宣称第三批完成）。
+
+## 文件索引
+
+| 文件 | 内容 |
+|---|---|
+| [`environment_snapshot.md`](environment_snapshot.md) | 环境快照（RDLens/fork SHA、部署镜像 digest、Gateway URL、flag、模型配置）与查询命令 |
+| [`real_integration_matrix.md`](real_integration_matrix.md) | DESIGN §10.4 十腿矩阵：逐腿 `pending`/`excluded` + reason + 证据命令/输出 |
+| [`locale_parity.md`](locale_parity.md) | 14 locale 新键清单、zh-CN/zh-TW 实质翻译、parity/interpolation/unused-key 结果 |
+| [`keyboard_layout_checks.md`](keyboard_layout_checks.md) | 键盘/IME/焦点/布局结构与红检记录；视觉检查标 `limited` |
+| [`baseline_verification.md`](baseline_verification.md) | 干净 `origin/main` 基线（locale/tsc/lint/宽范围测试）与改动后对照 |
+| [`verification_commands.md`](verification_commands.md) | 最终验证命令与原始输出摘要（含 secret-scan 门禁） |
+| [`raw/`](raw/) | 原始命令输出摘要（环境、Gateway 探针、干净 main 基线 provenance、lint 基线与改动后/set-diff、secret-scan 自检、最终验证、宽范围测试） |
+
+## 证据 secret-scan 门禁（本 PR 新增）
+
+- 脚本：`scripts/validation/scan_evidence_secrets.py`；allowlist：`dev_docs/validation/secret-scan-allowlist.txt`（只登记非凭证的 64-hex digest，如部署镜像 digest）。
+- 覆盖：64-hex（allowlist 之外拒绝）、`sk-`/`ghp_`/`github_pat_`/`AKIA`、`Bearer <token>`、PEM 私钥、`(API_KEY|TOKEN|PASSWORD|SECRET)=值`、`docker inspect … Config.Env` 原始 dump（仅当同一行同时出现环境变量赋值时才命中，避免误伤说明文字）、32–39 位（及 41+ 位）高熵 hex（40 位 commit SHA 与 allowlist digest 除外）。
+- 用法：仓库根执行 `python3 scripts/validation/scan_evidence_secrets.py`（默认扫描 `dev_docs/validation/`；只打印 `路径:行号:规则`，绝不打印命中值）。
+- 结果：本证据目录 `SECRET-SCAN OK`；合成样本自检分别命中 R1（64hex）/R3（敏感 env 赋值）/R4（env dump 形态）/R7（Bearer）（见 `raw/secret_scan_gate.txt`）。
+- 证据生成规则：环境取证只输出白名单字段（不 dump `docker inspect .Config.Env`）；提交前必跑本门禁与 `git diff --check`。
+
+## 排除项（DESIGN §10.4 / cards/PR-6）
+
+- 未部署、未重启生产/共享服务、未注入 `RDLENS_RESEARCH_SESSION_CONTRACT`。
+- 未使用外部模型、未外发真实项目内容；未执行故障注入（无隔离 Gateway）。
+- 未改第一批冻结 JSON、未新增后端接口、未改其他 PR 状态机核心/断言口径。
+- 第四批 E01–E05（trimmed/blocked 强制构造、多标签真机等）不在本批。
+
+## 剩余限制（不伪装为通过）
+
+1. 真实接入 10 腿中 9 腿 `pending`、1 腿 `excluded`（见矩阵）；第三批出口保持未完成，需第二批启用后由 6b 或后续窗口补测。
+2. compact/1024/1440 视觉检查未执行（jsdom 无布局计算，无浏览器截图/Playwright），标 `limited`；结构断言与既有 `ResearchLayout` 断点测试为 `pass`。
+3. §4.2-1“运行中徽标”无数据源（列表投影无 running 字段、runtime 无项目级运行集合），本 PR 未实现，登记（`card D2`）。
+4. source 新会话仍走 legacy 创建、历史 marker 批量查回、`sendSessionChat` consent 延迟统一 completion、真实 bootstrap transport 依赖 `hooks/`+`api.ts`+第二批可用 → 不在本 PR（`card D3`）。
+5. K1 使用 `translateOrFallback` 兜底以保持 PR-2/PR-4 既有断言口径不变；未初始化 i18n 时回退英文常量（生产 i18n 正常初始化时返回译文）。占位符替换用 `split/join`，标题含 `$&`/`$1` 不被当作替换语法。
+6. 证据纪律：`raw/` 原始日志已脱敏（不记录部署凭证/密钥；环境取证只输出白名单字段）；原始日志以 `.txt` 提交（`.log` 被 .gitignore 忽略）；提交前执行 `scripts/validation/scan_evidence_secrets.py`。
+7. 安全事件（评审 P0，已处置）：首版提交曾把部署容器环境中的敏感值写入 `raw/`。已在修复轮脱敏并重写分支 head；旧提交对象仍可能被 GitHub 保留，需由 Lead/用户完成凭据轮换与对象清理。为避免扩大暴露面，本公开文件不复述旧 SHA、环境键名或任何值；详细记录仅在内部处理。

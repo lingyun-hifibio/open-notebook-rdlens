@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -23,12 +23,14 @@ import {
   type UseResearchSourceChatSessionOptions,
 } from '@/lib/hooks/use-research-source-chat'
 import { buildSubmissionKey } from '@/lib/research/session-idempotency'
+import { sessionKey } from '@/lib/research/session-contract'
 import type { ResearchConversationSnapshot } from '@/lib/research/types'
 import type { ConversationController, ConversationSnapshot } from '@/lib/research/session-runtime'
 import type { ConversationTurn } from '@/lib/research/conversation-machine'
 import { useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
 import { formatScopeLabel } from '@/lib/research/scope'
 import { userErrorMessageKey } from '@/lib/research/errors'
+import { translateOrFallback } from '@/lib/locales/translate-or-fallback'
 
 /**
  * Source-scoped Chat 面板（Issue #182，/research 下半屏选中 Source 时）。
@@ -42,6 +44,18 @@ import { userErrorMessageKey } from '@/lib/research/errors'
  * 高亮对应 chunk/page（0-based 存储仅展示 +1）。浏览器断开 ≠ 取消——
  * 本面板没有「取消 Chat」入口。
  */
+/**
+ * PR-6（§8.1）：source 面板的会话切换焦点接管辅助——只把会话切换触发按钮与
+ * 项目级历史抽屉视为“导航入口”，其它元素（含普通 dialog）不算。
+ */
+function isSourceSessionNavigationTarget(node: HTMLElement | null): boolean {
+  if (node === null) return false
+  return (
+    node.closest('[data-testid="session-switcher-trigger"]') !== null ||
+    node.closest('[id^="research-session-drawer-"]') !== null
+  )
+}
+
 export function ResearchSourceChatPanel({
   projectId,
   sourceId,
@@ -126,6 +140,88 @@ export function ResearchSourceChatPanel({
   sourceControllerRef.current = chat.conversation ?? null
   const editorSnapshot = editorEnabled ? editor.snapshot : null
   const wired = editorSnapshot !== null
+  // PR-6（§8.1/§8.2）：source 面板会话切换的焦点接管（输入框/面板标题）。
+  const sourcePanelRef = useRef<HTMLDivElement | null>(null)
+  const sourceHeaderRef = useRef<HTMLHeadingElement | null>(null)
+  const [sourceComposerFocusToken, setSourceComposerFocusToken] = useState(0)
+  const sourceComposerIntentRef = useRef(false)
+  const pendingSourceComposerFocusRef = useRef(false)
+  const sourceIdentityRef = useRef<string | null>(sourceRef ? sessionKey(sourceRef) : null)
+  const currentSourceIdentity = sourceRef ? sessionKey(sourceRef) : null
+  // 只有“目标 source 会话自己的 editor 已就绪”才允许回焦（避免旧快照/loading 抢焦）。
+  const sourceEditorFocusReady =
+    editorSnapshot !== null &&
+    sessionKey(editorSnapshot.ref) === currentSourceIdentity &&
+    editorSnapshot.phase === 'ready' &&
+    !editorSnapshot.loading
+
+  // 离开允许区域（面板内/会话导航入口）时，intent 与挂起请求都失效。
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    const handleDocumentFocusIn = (event: Event): void => {
+      if (!sourceComposerIntentRef.current && !pendingSourceComposerFocusRef.current) return
+      const target = event.target as HTMLElement | null
+      if (target === null) return
+      if (sourcePanelRef.current?.contains(target)) return
+      if (isSourceSessionNavigationTarget(target)) return
+      sourceComposerIntentRef.current = false
+      pendingSourceComposerFocusRef.current = false
+    }
+    document.addEventListener('focusin', handleDocumentFocusIn)
+    return () => document.removeEventListener('focusin', handleDocumentFocusIn)
+  }, [])
+
+  useEffect(() => {
+    const nextIdentity = sourceRef ? sessionKey(sourceRef) : null
+    if (sourceIdentityRef.current === nextIdentity) return
+    sourceIdentityRef.current = nextIdentity
+    if (sourceComposerIntentRef.current) {
+      sourceComposerIntentRef.current = false
+      if (sourceEditorFocusReady) {
+        pendingSourceComposerFocusRef.current = false
+        setSourceComposerFocusToken((token) => token + 1)
+      } else {
+        pendingSourceComposerFocusRef.current = true
+      }
+      return
+    }
+    if (pendingSourceComposerFocusRef.current) return
+    sourceHeaderRef.current?.focus()
+  }, [sourceRef, sourceEditorFocusReady])
+
+  // 目标 editor 就绪且用户未离开允许区域时才消费挂起回焦。
+  useEffect(() => {
+    if (!pendingSourceComposerFocusRef.current || !sourceEditorFocusReady) return
+    const active = typeof document === 'undefined' ? null : (document.activeElement as HTMLElement | null)
+    const focusSafe =
+      active === null ||
+      active === document.body ||
+      isSourceSessionNavigationTarget(active) ||
+      active.getAttribute('data-testid') === 'chat-input'
+    pendingSourceComposerFocusRef.current = false
+    if (focusSafe) setSourceComposerFocusToken((token) => token + 1)
+  }, [sourceEditorFocusReady])
+
+  const handleSourcePanelFocusCapture = (
+    event: React.FocusEvent<HTMLDivElement>,
+  ): void => {
+    const target = event.target as HTMLElement | null
+    if (target === null) return
+    sourceComposerIntentRef.current = target.getAttribute('data-testid') === 'chat-input'
+  }
+
+  // 与 Chat 面板对齐：焦点离开允许区域（含 relatedTarget=null 的窗口失焦/
+  // 点击不可聚焦背景）时，intent 与挂起回焦请求都失效，避免稍后抢焦。
+  const handleSourcePanelBlurCapture = (
+    event: React.FocusEvent<HTMLDivElement>,
+  ): void => {
+    const next = event.relatedTarget as HTMLElement | null
+    if (next !== null && event.currentTarget.contains(next)) return
+    if (isSourceSessionNavigationTarget(next)) return
+    sourceComposerIntentRef.current = false
+    pendingSourceComposerFocusRef.current = false
+  }
+
   // Codex P1-#3（围绕同一身份）：session 模式下 busy/streaming 以 controller
   // 快照为权威，legacy isStreaming 在 controller 执行时为 idle 会误开放发送。
   const [sessionBusy, setSessionBusy] = useState(false)
@@ -415,14 +511,79 @@ export function ResearchSourceChatPanel({
     return null
   }
 
+  // §8.1：Source 快捷列表复用会话抽屉的键盘模式（roving tabindex、↑/↓、Home/End）。
+  const sessionItemRefs = useRef<Array<HTMLButtonElement | null>>([])
+  const [sessionItemIndex, setSessionItemIndex] = useState(0)
+  const sourceSessions = chat.sessions
+  const activeSourceSessionIndex = sourceSessions.findIndex(
+    (session) => session.session_id === chat.activeSessionId,
+  )
+  useEffect(() => {
+    sessionItemRefs.current.length = sourceSessions.length
+    setSessionItemIndex((prev) => {
+      if (sourceSessions.length === 0) return 0
+      const preferred = activeSourceSessionIndex >= 0 ? activeSourceSessionIndex : prev
+      return Math.min(preferred, sourceSessions.length - 1)
+    })
+  }, [activeSourceSessionIndex, sourceSessions.length])
+
+  const moveSourceSessionFocus = (next: number): void => {
+    if (sourceSessions.length === 0) return
+    const clamped = Math.max(0, Math.min(next, sourceSessions.length - 1))
+    setSessionItemIndex(clamped)
+    sessionItemRefs.current[clamped]?.focus()
+  }
+
+  const handleSourceSessionListKeyDown = (event: KeyboardEvent<HTMLUListElement>): void => {
+    const count = sourceSessions.length
+    if (count === 0) return
+    const focusedIndex = sessionItemRefs.current.findIndex(
+      (element) => element === document.activeElement,
+    )
+    const base = focusedIndex >= 0 ? focusedIndex : sessionItemIndex
+    switch (event.key) {
+      case 'ArrowDown':
+        event.preventDefault()
+        moveSourceSessionFocus(focusedIndex >= 0 ? (base + 1) % count : 0)
+        break
+      case 'ArrowUp':
+        event.preventDefault()
+        moveSourceSessionFocus(focusedIndex >= 0 ? (base - 1 + count) % count : count - 1)
+        break
+      case 'Home':
+        event.preventDefault()
+        moveSourceSessionFocus(0)
+        break
+      case 'End':
+        event.preventDefault()
+        moveSourceSessionFocus(count - 1)
+        break
+      default:
+        break
+    }
+  }
+
   return (
-    <div className="flex h-full min-h-0 flex-col" data-testid="srcchat-panel">
+    <div
+      ref={sourcePanelRef}
+      className="flex h-full min-h-0 flex-col"
+      data-testid="srcchat-panel"
+      onFocusCapture={handleSourcePanelFocusCapture}
+      onBlurCapture={handleSourcePanelBlurCapture}
+    >
       {/* RWV2-UIOPT-A：顶栏右侧为 ResearchLayout 展开/恢复按钮预留固定宽度
           （lg:pr-36 ≥ 按钮宽 + right-3 偏移）——New session 不被按钮遮挡，
           预留真实空间而非 z-index 遮盖；与按钮可见性同条件（compact
           <1024px 按钮隐藏，恢复原始 px-4）。 */}
       <div className="flex items-center justify-between gap-2 border-b px-4 py-2 lg:pr-36" data-testid="srcchat-topbar">
-        <h2 className="text-sm font-semibold">{t('research.sourceChat.title')}</h2>
+        <h2
+          ref={sourceHeaderRef}
+          tabIndex={-1}
+          className="min-w-0 truncate text-sm font-semibold focus:outline-none"
+          data-testid="srcchat-topbar-title"
+        >
+          {t('research.sourceChat.title')}
+        </h2>
         <Button
           size="sm"
           variant="outline"
@@ -440,25 +601,38 @@ export function ResearchSourceChatPanel({
       )}
 
       {chat.sessions.length > 0 && (
-        <ul className="max-h-24 space-y-1 overflow-y-auto border-b px-4 py-2" data-testid="srcchat-sessions">
-          {chat.sessions.map((session) => (
-            <li key={session.session_id}>
-              <button
-                type="button"
-                className="w-full rounded px-2 py-1 text-left text-xs hover:bg-accent"
-                data-testid={`srcchat-session-${session.session_id}`}
-                aria-current={session.session_id === chat.activeSessionId}
-                onClick={() => selectSourceSession(session.session_id)}
-              >
-                <span className="font-medium">{session.title ?? session.session_id}</span>
-                <span className="ml-2 text-muted-foreground">{session.updated_at}</span>
-              </button>
-            </li>
-          ))}
+        <ul
+          className="max-h-24 space-y-1 overflow-y-auto border-b px-4 py-2"
+          data-testid="srcchat-sessions"
+          aria-label={translateOrFallback(t, 'research.a11y.sessionList', 'Conversation list')}
+          onKeyDown={handleSourceSessionListKeyDown}
+        >
+          {sourceSessions.map((session, index) => {
+            const label = session.title ?? session.session_id
+            return (
+              <li key={session.session_id}>
+                <button
+                  type="button"
+                  ref={(element) => {
+                    sessionItemRefs.current[index] = element
+                  }}
+                  tabIndex={index === sessionItemIndex ? 0 : -1}
+                  title={label}
+                  className="flex w-full min-w-0 items-center gap-2 rounded px-2 py-1 text-left text-xs hover:bg-accent"
+                  data-testid={`srcchat-session-${session.session_id}`}
+                  aria-current={session.session_id === chat.activeSessionId}
+                  onClick={() => selectSourceSession(session.session_id)}
+                >
+                  <span className="min-w-0 truncate font-medium">{label}</span>
+                  <span className="ml-auto shrink-0 text-muted-foreground">{session.updated_at}</span>
+                </button>
+              </li>
+            )
+          })}
         </ul>
       )}
 
-      <div className="flex-1 space-y-4 overflow-y-auto p-4">
+      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
         {chat.turns.length === 0 && (
           <p className="text-sm text-muted-foreground">{t('research.sourceChat.emptyState')}</p>
         )}
@@ -590,6 +764,7 @@ export function ResearchSourceChatPanel({
             onSend={submitEditorDraft}
             onRetrySave={editor.retrySave}
             onRestoreDraft={editor.restoreDraft}
+            focusRequestToken={sourceComposerFocusToken}
           />
         </div>
       ) : (

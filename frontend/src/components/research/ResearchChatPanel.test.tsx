@@ -1858,7 +1858,7 @@ describe('ResearchChatPanel PR-5b：会话接线与解释 UI', () => {
                 ...createEditorState({ ref: REF, writerId: 'w-1', transportAvailable: true }),
                 phase: 'ready',
                 loading: false,
-                baseScope: { mode: 'selected', sourceIds: ['src_1'], singleSourceId: null },
+                baseScope: { mode: 'selected' as const, sourceIds: ['src_1'], singleSourceId: null },
               }}
               conversation={conversation}
               sessionRef={REF}
@@ -2342,5 +2342,384 @@ describe('ResearchChatPanel PR-5b：会话接线与解释 UI', () => {
     expect(screen.getAllByText('第一轮问题')).toHaveLength(1)
     expect(screen.getAllByText('第一轮答案')).toHaveLength(1)
     expect(document.querySelector('[data-message-id="msg_u_real"]')).not.toBeNull()
+  })
+})
+// PR-6（3E）：布局结构（§8.4）、切换后焦点（§8.2）、锚点不抢焦点（§8.3）。
+describe('ResearchChatPanel · PR-6 布局与切换焦点（§8.2/§8.3/§8.4）', () => {
+  const REF_A: ResearchSessionRef = {
+    domain: 'research',
+    kind: 'global',
+    projectId: PROJECT_ID,
+    sessionId: 'sess-pr6-a',
+    sourceId: null,
+  }
+  const REF_B: ResearchSessionRef = {
+    domain: 'research',
+    kind: 'global',
+    projectId: PROJECT_ID,
+    sessionId: 'sess-pr6-b',
+    sourceId: null,
+  }
+  const REF_C: ResearchSessionRef = {
+    domain: 'research',
+    kind: 'global',
+    projectId: PROJECT_ID,
+    sessionId: 'sess-pr6-c',
+    sourceId: null,
+  }
+  const LONG_TITLE = 'A very long research conversation title that must not overflow the panel header'
+
+  function conversationStub(): ConversationController {
+    return {
+      getSnapshot: () => ({
+        version: 1,
+        sessionKey: 'global:p1:sess-pr6',
+        authGeneration: 1,
+        turn: null,
+        history: [],
+        detailMessages: [],
+        detailCursor: null,
+      }),
+      subscribe: () => () => {},
+      load: vi.fn(async () => ({ status: 'ok' })),
+      lookupSubmission: vi.fn(async () => ({ status: 'ok' })),
+      refreshStatus: vi.fn(async () => ({ status: 'ok' })),
+    } as unknown as ConversationController
+  }
+
+  function panelUi(
+    ref: ResearchSessionRef,
+    options: {
+      turns?: ResearchChatTurn[]
+      anchor?: WireChatAnchor | null
+      editorPhase?: 'ready' | 'loading' | 'missing'
+      /** 模拟父层尚未切到目标 session 的旧 editor 快照。 */
+      editorRefOverride?: ResearchSessionRef
+      surfaceActive?: boolean
+    } = {},
+  ) {
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
+    const editorPhase = options.editorPhase ?? 'ready'
+    const editorSnapshot =
+      editorPhase === 'missing'
+        ? null
+        : {
+            ...createEditorState({
+              ref: options.editorRefOverride ?? ref,
+              writerId: 'writer-pr6',
+              transportAvailable: true,
+            }),
+            phase: editorPhase,
+            loading: editorPhase === 'loading',
+            draftText: 'hello',
+            baseScope: { mode: 'selected' as const, sourceIds: ['src_1'], singleSourceId: null },
+            chatAnchor: options.anchor ?? null,
+          }
+    return (
+      <QueryClientProvider client={queryClient}>
+        <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
+          <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+            <ResearchChatPanel
+              turns={options.turns ?? []}
+              isStreaming={false}
+              onSend={vi.fn(async () => true)}
+              onSendCoverage={vi.fn(async () => ACCEPTED_OUTCOME)}
+              editorSnapshot={editorSnapshot}
+              conversation={conversationStub()}
+              sessionRef={ref}
+              surfaceActive={options.surfaceActive ?? true}
+              sessionMeta={{ title: LONG_TITLE, recordVisibility: 'visible' }}
+              onSendSession={vi.fn(async () => true)}
+              scopeSources={[{ sourceId: 'src_1', title: 'Paper One' }]}
+              scopeNotes={[]}
+              onChangeScope={vi.fn()}
+              onDraftChange={vi.fn()}
+              onRetrySave={vi.fn()}
+            />
+          </ResearchScopeProvider>
+        </ResearchWorkspaceProvider>
+      </QueryClientProvider>
+    )
+  }
+
+  beforeEach(() => {
+    localStorage.clear()
+    seedScope({ mode: 'selected', sourceIds: ['src_1'], noteIds: [], singleSourceId: null })
+  })
+
+  afterEach(() => {
+    cleanup()
+    localStorage.clear()
+  })
+
+  it('滚动容器 min-h-0 flex-1 overflow-y-auto；输入区 shrink-0（§8.4）', () => {
+    render(panelUi(REF_A))
+    const messages = screen.getByTestId('chat-messages')
+    expect(messages.className).toContain('min-h-0')
+    expect(messages.className).toContain('flex-1')
+    expect(messages.className).toContain('overflow-y-auto')
+    const composer = screen.getByTestId('research-draft-composer')
+    expect(composer.className).toContain('shrink-0')
+  })
+
+  it('长标题 truncate 且保留可访问全称（title）', () => {
+    render(panelUi(REF_A))
+    const title = screen.getByTestId('chat-session-title')
+    expect(title.className).toContain('truncate')
+    expect(title).toHaveAttribute('title', LONG_TITLE)
+  })
+
+  it('切换会话：此前焦点在输入框时，加载完成后焦点回到输入框（§8.2）', () => {
+    const view = render(panelUi(REF_A))
+    const input = screen.getByTestId('chat-input') as HTMLTextAreaElement
+    input.focus()
+    expect(input).toHaveFocus()
+
+    view.rerender(panelUi(REF_B))
+    expect(screen.getByTestId('chat-input')).toHaveFocus()
+  })
+
+  it('切换会话：此前焦点不在输入框时焦点落到面板标题（§8.1，不抢输入框）', () => {
+    const view = render(panelUi(REF_A))
+    const send = screen.getByTestId('chat-send') as HTMLButtonElement
+    send.focus()
+    expect(send).toHaveFocus()
+
+    view.rerender(panelUi(REF_B))
+    expect(screen.getByTestId('chat-session-header')).toHaveFocus()
+    expect(screen.getByTestId('chat-input')).not.toHaveFocus()
+  })
+
+  it('焦点从输入框移到面板外普通元素后切换：不抢回输入框（§8.2）', () => {
+    const external = document.createElement('button')
+    external.setAttribute('data-testid', 'outside-plain')
+    document.body.appendChild(external)
+    try {
+      const view = render(panelUi(REF_A))
+      const input = screen.getByTestId('chat-input') as HTMLTextAreaElement
+      input.focus()
+      expect(input).toHaveFocus()
+      external.focus()
+      expect(external).toHaveFocus()
+
+      view.rerender(panelUi(REF_B))
+      expect(screen.getByTestId('chat-session-header')).toHaveFocus()
+      expect(screen.getByTestId('chat-input')).not.toHaveFocus()
+    } finally {
+      external.remove()
+    }
+  })
+
+  it('ready→ready 切换（真实导航：焦点在触发按钮）也会回焦输入框（P1 回归）', () => {
+    const trigger = document.createElement('button')
+    trigger.setAttribute('data-testid', 'session-switcher-trigger')
+    document.body.appendChild(trigger)
+    try {
+      const view = render(panelUi(REF_A))
+      const input = screen.getByTestId('chat-input') as HTMLTextAreaElement
+      input.focus()
+      // 用户从输入框直接打开历史抽屉（焦点到触发按钮，意图保留）。
+      trigger.focus()
+      expect(trigger).toHaveFocus()
+
+      view.rerender(panelUi(REF_B, { editorPhase: 'ready' }))
+      expect(screen.getByTestId('chat-input')).toHaveFocus()
+    } finally {
+      trigger.remove()
+    }
+  })
+
+  it('连续切换（B loading → C ready）沿用挂起回焦请求（P1 回归）', () => {
+    const trigger = document.createElement('button')
+    trigger.setAttribute('data-testid', 'session-switcher-trigger')
+    document.body.appendChild(trigger)
+    try {
+      const view = render(panelUi(REF_A))
+      ;(screen.getByTestId('chat-input') as HTMLTextAreaElement).focus()
+      trigger.focus()
+
+      view.rerender(panelUi(REF_B, { editorPhase: 'loading' }))
+      expect(trigger).toHaveFocus()
+      view.rerender(panelUi(REF_C, { editorPhase: 'loading' }))
+      expect(trigger).toHaveFocus()
+
+      view.rerender(panelUi(REF_C, { editorPhase: 'ready' }))
+      expect(screen.getByTestId('chat-input')).toHaveFocus()
+    } finally {
+      trigger.remove()
+    }
+  })
+
+  it('挂起回焦期间焦点被外部元素接管后失效（P1-4 回归）', () => {
+    const trigger = document.createElement('button')
+    trigger.setAttribute('data-testid', 'session-switcher-trigger')
+    const external = document.createElement('button')
+    external.setAttribute('data-testid', 'outside-plain')
+    document.body.append(trigger, external)
+    try {
+      const view = render(panelUi(REF_A))
+      ;(screen.getByTestId('chat-input') as HTMLTextAreaElement).focus()
+      trigger.focus()
+
+      view.rerender(panelUi(REF_B, { editorPhase: 'loading' }))
+      expect(trigger).toHaveFocus()
+      // 挂起期间用户把焦点移到面板外普通元素：挂起请求必须失效。
+      external.focus()
+      trigger.focus()
+
+      view.rerender(panelUi(REF_B, { editorPhase: 'ready' }))
+      expect(screen.getByTestId('chat-input')).not.toHaveFocus()
+      expect(trigger).toHaveFocus()
+    } finally {
+      trigger.remove()
+      external.remove()
+    }
+  })
+
+  it('surface 隐藏时挂起回焦失效，重新显示不执行旧请求（P1 回归）', () => {
+    const trigger = document.createElement('button')
+    trigger.setAttribute('data-testid', 'session-switcher-trigger')
+    document.body.appendChild(trigger)
+    try {
+      const view = render(panelUi(REF_A))
+      ;(screen.getByTestId('chat-input') as HTMLTextAreaElement).focus()
+      trigger.focus()
+
+      view.rerender(panelUi(REF_B, { editorPhase: 'loading' }))
+      // 隐藏期间（身份不变）挂起请求必须失效，重新显示后不得执行。
+      view.rerender(panelUi(REF_B, { editorPhase: 'loading', surfaceActive: false }))
+      view.rerender(panelUi(REF_B, { editorPhase: 'ready', surfaceActive: true }))
+      expect(screen.getByTestId('chat-input')).not.toHaveFocus()
+      expect(screen.getByTestId('chat-session-header')).not.toHaveFocus()
+    } finally {
+      trigger.remove()
+    }
+  })
+
+  it('过期意图：输入框→入口→外部控件→入口→切换不回焦输入框（P1 回归）', () => {
+    const trigger = document.createElement('button')
+    trigger.setAttribute('data-testid', 'session-switcher-trigger')
+    const external = document.createElement('button')
+    external.setAttribute('data-testid', 'outside-plain')
+    document.body.append(trigger, external)
+    try {
+      const view = render(panelUi(REF_A))
+      ;(screen.getByTestId('chat-input') as HTMLTextAreaElement).focus()
+      trigger.focus()
+      external.focus()
+      trigger.focus()
+
+      view.rerender(panelUi(REF_B, { editorPhase: 'ready' }))
+      expect(screen.getByTestId('chat-input')).not.toHaveFocus()
+      expect(screen.getByTestId('chat-session-header')).toHaveFocus()
+    } finally {
+      trigger.remove()
+      external.remove()
+    }
+  })
+
+  it('目标 editor 未就绪时不提前抢焦，就绪后才回焦输入框（§8.2）', () => {
+    const trigger = document.createElement('button')
+    trigger.setAttribute('data-testid', 'session-switcher-trigger')
+    document.body.appendChild(trigger)
+    try {
+      const view = render(panelUi(REF_A))
+      const input = screen.getByTestId('chat-input') as HTMLTextAreaElement
+      input.focus()
+      // 用户打开历史抽屉：焦点从输入框移到导航触发按钮（意图保留）。
+      trigger.focus()
+      expect(trigger).toHaveFocus()
+
+      view.rerender(panelUi(REF_B, { editorPhase: 'loading' }))
+      // editor 加载期间不得抢焦。
+      expect(trigger).toHaveFocus()
+
+      view.rerender(panelUi(REF_B, { editorPhase: 'ready' }))
+      expect(screen.getByTestId('chat-input')).toHaveFocus()
+    } finally {
+      trigger.remove()
+    }
+  })
+
+  it('旧会话 editor 快照（身份不匹配）不回焦，目标快照就绪后才回焦（P2 回归）', () => {
+    const trigger = document.createElement('button')
+    trigger.setAttribute('data-testid', 'session-switcher-trigger')
+    document.body.appendChild(trigger)
+    try {
+      const view = render(panelUi(REF_A))
+      ;(screen.getByTestId('chat-input') as HTMLTextAreaElement).focus()
+      trigger.focus()
+
+      // 父层尚未切到 B：仍传 A 的 ready 快照 → 身份不匹配，不得回焦。
+      view.rerender(panelUi(REF_B, { editorPhase: 'ready', editorRefOverride: REF_A }))
+      expect(screen.getByTestId('chat-input')).not.toHaveFocus()
+      expect(trigger).toHaveFocus()
+
+      view.rerender(panelUi(REF_B, { editorPhase: 'ready' }))
+      expect(screen.getByTestId('chat-input')).toHaveFocus()
+    } finally {
+      trigger.remove()
+    }
+  })
+
+  it('blur relatedTarget=null 清除挂起回焦（P2 回归）', () => {
+    const trigger = document.createElement('button')
+    trigger.setAttribute('data-testid', 'session-switcher-trigger')
+    document.body.appendChild(trigger)
+    try {
+      const view = render(panelUi(REF_A))
+      ;(screen.getByTestId('chat-input') as HTMLTextAreaElement).focus()
+      trigger.focus()
+
+      view.rerender(panelUi(REF_B, { editorPhase: 'loading' }))
+      expect(trigger).toHaveFocus()
+
+      // 程序化把焦点放回输入框后失焦（窗口失焦/点击不可聚焦背景 →
+      // relatedTarget=null），挂起请求应失效。
+      act(() => {
+        const input = screen.getByTestId('chat-input') as HTMLTextAreaElement
+        input.focus()
+        input.blur()
+      })
+
+      view.rerender(panelUi(REF_B, { editorPhase: 'ready' }))
+      expect(screen.getByTestId('chat-input')).not.toHaveFocus()
+    } finally {
+      trigger.remove()
+    }
+  })
+
+  it('锚点恢复只写 scrollTop，不抢焦点（§8.3）', () => {
+    const originalRect = HTMLElement.prototype.getBoundingClientRect
+    let chatScroll: HTMLElement | null = null
+    HTMLElement.prototype.getBoundingClientRect = function mockRect(this: HTMLElement) {
+      if (this.dataset?.messageId === 'msg-pr6') {
+        return { top: 100 - (chatScroll?.scrollTop ?? 0), height: 80 } as DOMRect
+      }
+      if (this.dataset?.testid === 'chat-messages') {
+        return { top: 0, height: 400 } as DOMRect
+      }
+      return { top: 0, height: 0 } as DOMRect
+    }
+    try {
+      const anchor: WireChatAnchor = { messageId: 'msg-pr6', offsetPx: 20, followTail: false }
+      const view = render(panelUi(REF_A, { anchor }))
+      chatScroll = screen.getByTestId('chat-messages')
+      Object.defineProperty(chatScroll, 'clientHeight', { value: 400, configurable: true })
+      Object.defineProperty(chatScroll, 'scrollHeight', { value: 2000, configurable: true })
+      // 目标消息随历史加载出现 → 稳定 ID 集合变化触发一次恢复。
+      view.rerender(
+        panelUi(REF_A, {
+          anchor,
+          turns: [turn({ id: 't-pr6', role: 'assistant', serverMessageId: 'msg-pr6' })],
+        }),
+      )
+      // 公式：0 + 100 - 20 = 80。
+      expect(chatScroll.scrollTop).toBe(80)
+      // 恢复只设置滚动位置：活动焦点仍在 body，未被 focus()/scrollIntoView() 抢走。
+      expect(document.activeElement).toBe(document.body)
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = originalRect
+    }
   })
 })

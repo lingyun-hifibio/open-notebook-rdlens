@@ -26,6 +26,7 @@ import {
 } from '@/components/research/ResearchSessionSwitcher'
 import { type ResearchMainAction } from '@/components/research/research-main-action'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { translateOrFallback } from '@/lib/locales/translate-or-fallback'
 import { useResearchSessionRuntimeOptional } from '@/lib/hooks/research-session-runtime'
 import { useResearchSessions } from '@/lib/hooks/use-research-sessions'
 import { readDisplayPointer, readPointer } from '@/lib/research/session-cache'
@@ -606,7 +607,11 @@ function ResearchPageContent() {
               data-testid="source-session-unavailable"
               className="text-xs text-muted-foreground"
             >
-              {RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.sourceRequired}
+              {translateOrFallback(
+                t,
+                'research.session.sourceRequired',
+                RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.sourceRequired,
+              )}
             </span>
           )}
           {globalChatGated || sourceChatGated ? (
@@ -614,7 +619,11 @@ function ResearchPageContent() {
               data-testid="session-content-gate"
               className="text-xs text-muted-foreground"
             >
-              {RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.contentNotReady}
+              {translateOrFallback(
+                t,
+                'research.session.contentNotReady',
+                RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.contentNotReady,
+              )}
             </span>
           ) : null}
         </div>

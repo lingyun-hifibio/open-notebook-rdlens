@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
 import {
   RESEARCH_SESSION_SWITCHER_PLACEHOLDERS,
@@ -116,6 +116,15 @@ function renderSwitcher(
 
 function openDrawer() {
   fireEvent.click(screen.getByTestId('session-switcher-trigger'))
+}
+
+// jsdom 没有 AnimationEvent；手工构造并挂上 animationName 供 Radix Presence 识别。
+function dispatchAnimationEnd(node: HTMLElement, animationName: string) {
+  const event = new Event('animationend', { bubbles: true })
+  Object.defineProperty(event, 'animationName', { value: animationName })
+  act(() => {
+    node.dispatchEvent(event)
+  })
 }
 
 beforeEach(() => {
@@ -443,3 +452,226 @@ describe('ResearchSessionSwitcher：review Major 回归（§4.6 / §4.1）', () 
     expect(screen.queryByTestId('session-list-error')).toBeNull()
   })
 })
+
+// PR-6（3E）：键盘/焦点/可达性（DESIGN §8.1、§8.5、§10.3）。
+describe('ResearchSessionSwitcher · PR-6 键盘与可达性（§8.1）', () => {
+  function openWithSessions() {
+    const sessions = makeSessions({
+      sessions: [
+        summary('sess_a', { title: 'Alpha' }),
+        summary('sess_b', { title: 'Beta' }),
+        summary('sess_c', { title: 'Gamma' }),
+      ],
+    })
+    renderSwitcher({ sessions })
+    openDrawer()
+    return screen.getAllByTestId('session-item') as HTMLButtonElement[]
+  }
+
+  it('roving tabindex：仅当前条目可 Tab，方向键/Home/End 移动焦点', () => {
+    const [first, second, third] = openWithSessions()
+    expect(first).toHaveAttribute('tabindex', '0')
+    expect(second).toHaveAttribute('tabindex', '-1')
+    expect(third).toHaveAttribute('tabindex', '-1')
+
+    first.focus()
+    fireEvent.keyDown(first, { key: 'ArrowDown' })
+    expect(second).toHaveFocus()
+    expect(second).toHaveAttribute('tabindex', '0')
+    expect(first).toHaveAttribute('tabindex', '-1')
+
+    fireEvent.keyDown(second, { key: 'ArrowDown' })
+    expect(third).toHaveFocus()
+
+    fireEvent.keyDown(third, { key: 'ArrowDown' })
+    expect(first).toHaveFocus()
+
+    fireEvent.keyDown(first, { key: 'ArrowUp' })
+    expect(third).toHaveFocus()
+
+    fireEvent.keyDown(third, { key: 'Home' })
+    expect(first).toHaveFocus()
+
+    fireEvent.keyDown(first, { key: 'End' })
+    expect(third).toHaveFocus()
+  })
+
+  it('触发按钮 aria-controls 指向抽屉；抽屉/列表/条目有可访问名称与完整标题', () => {
+    const longTitle = 'A very long conversation title that must stay fully accessible'
+    const sessions = makeSessions({ sessions: [summary('sess_long', { title: longTitle })] })
+    renderSwitcher({ sessions, currentRef: globalRef('sess_long') })
+
+    const trigger = screen.getByTestId('session-switcher-trigger')
+    expect(trigger).toHaveAttribute('aria-controls', 'research-session-drawer-global')
+    expect(trigger).toHaveAttribute('title', longTitle)
+    expect(trigger).toHaveAttribute('aria-label', `Current conversation: ${longTitle}`)
+
+    openDrawer()
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toHaveAttribute('id', 'research-session-drawer-global')
+    expect(within(dialog).getByRole('heading')).toHaveTextContent(/chat\.sessionsTitle|sessions/i)
+    expect(screen.getByTestId('session-list')).toHaveAttribute(
+      'aria-describedby',
+      'research-session-drawer-global-hint',
+    )
+    expect(screen.getByTestId('session-list')).toHaveAttribute('aria-label', 'Conversation list')
+    const item = screen.getByTestId('session-item')
+    expect(item).toHaveAttribute('aria-label', `Open conversation ${longTitle}`)
+    expect(item).toHaveAttribute('title', longTitle)
+  })
+
+  it('抽屉内“新对话”位于列表首位、创建中 aria-busy、Escape 关闭回触发按钮', async () => {
+    const sessions = makeSessions({
+      sessions: [summary('sess_a', { title: 'Alpha' })],
+      creating: true,
+    })
+    const { onNew } = renderSwitcher({ sessions })
+    const trigger = screen.getByTestId('session-switcher-trigger')
+    // 模拟真实点击：按钮先获得焦点，Radix 关闭时按 §8.1 把焦点还给触发按钮。
+    trigger.focus()
+    openDrawer()
+
+    const dialog = screen.getByRole('dialog')
+    const listNew = within(dialog).getByTestId('session-list-new')
+    const firstItem = within(dialog).getByTestId('session-item')
+    expect(listNew).toHaveAttribute('aria-busy', 'true')
+    expect(listNew).toBeDisabled()
+    // 新对话按钮在条目之前（§8.1“新对话按钮在列表首位”）。
+    expect(
+      listNew.compareDocumentPosition(firstItem) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    fireEvent.click(listNew)
+    expect(onNew).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    await waitFor(() => expect(trigger).toHaveFocus())
+  })
+
+  it('退出动画期间不提前兜底，动画结束后焦点才回触发按钮（P1 回归，真实 Presence 时序）', () => {
+    vi.useFakeTimers()
+    try {
+      const sessions = makeSessions({
+        sessions: [summary('sess_same', { title: 'Same' })],
+      })
+      renderSwitcher({ sessions, currentRef: globalRef('sess_same') })
+      const trigger = screen.getByTestId('session-switcher-trigger')
+      trigger.focus()
+      openDrawer()
+
+      const dialog = screen.getByRole('dialog') as HTMLElement
+      // 模拟 Radix Content 的退出动画（Presence 在 jsdom 下默认同步卸载；
+      // 这里显式给出非 none 的 animationName，让 Presence 等待 animationend）。
+      dialog.style.animationName = 'pr6-fade-out'
+      fireEvent.click(screen.getByTestId('session-item'))
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+      // 旧实现（handleSelect 里 setTimeout）会在动画尚未结束、条目仍持有焦点时
+      // 检查 activeElement，从而跳过兜底；此处推进计时器验证“不得提前回焦”。
+      act(() => {
+        vi.advanceTimersByTime(20)
+      })
+      expect(trigger).not.toHaveFocus()
+
+      dispatchAnimationEnd(dialog, 'pr6-fade-out')
+      act(() => {
+        vi.advanceTimersByTime(20)
+      })
+      expect(screen.queryByRole('dialog')).toBeNull()
+      expect(trigger).toHaveFocus()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('抽屉内新建失败（无会话变化）时，退出动画结束后兜底回触发按钮（P1 回归）', () => {
+    vi.useFakeTimers()
+    try {
+      const { onNew } = renderSwitcher()
+      const trigger = screen.getByTestId('session-switcher-trigger')
+      trigger.focus()
+      openDrawer()
+
+      const dialog = screen.getByRole('dialog') as HTMLElement
+      dialog.style.animationName = 'pr6-fade-out'
+      fireEvent.click(screen.getByTestId('session-list-new'))
+      expect(onNew).toHaveBeenCalledTimes(1)
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+      dispatchAnimationEnd(dialog, 'pr6-fade-out')
+      act(() => {
+        vi.advanceTimersByTime(20)
+      })
+      expect(screen.queryByRole('dialog')).toBeNull()
+      expect(trigger).toHaveFocus()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('激活条目后不立即回焦触发按钮；无面板接管时兜底回焦（不落 body，§8.1）', async () => {
+    const sessions = makeSessions({ sessions: [summary('sess_a', { title: 'Alpha' })] })
+    const { onOpenSession } = renderSwitcher({ sessions })
+    const trigger = screen.getByTestId('session-switcher-trigger')
+    trigger.focus()
+    openDrawer()
+    fireEvent.click(screen.getByTestId('session-item'))
+    expect(onOpenSession).toHaveBeenCalledTimes(1)
+    // 激活瞬间不抢焦：把机会留给面板接管（输入框/面板标题）。
+    expect(trigger).not.toHaveFocus()
+    // 隔离组件没有面板接管 → 兜底避免焦点落到 body。
+    await waitFor(() => expect(trigger).toHaveFocus())
+  })
+
+  it('选择当前会话（ref 不变）后焦点兜底回触发按钮，不落 body', async () => {
+    const sessions = makeSessions({ sessions: [summary('sess_same', { title: 'Same' })] })
+    renderSwitcher({ sessions, currentRef: globalRef('sess_same') })
+    const trigger = screen.getByTestId('session-switcher-trigger')
+    trigger.focus()
+    openDrawer()
+    fireEvent.click(screen.getByTestId('session-item'))
+    await waitFor(() => expect(trigger).toHaveFocus())
+  })
+
+  it('顶栏新建（抽屉未打开）不遗留激活标记：之后 Escape 仍回焦触发按钮', async () => {
+    const { onNew } = renderSwitcher()
+    const trigger = screen.getByTestId('session-switcher-trigger')
+    fireEvent.click(screen.getByTestId('session-switcher-new'))
+    expect(onNew).toHaveBeenCalledTimes(1)
+
+    trigger.focus()
+    openDrawer()
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    await waitFor(() => expect(trigger).toHaveFocus())
+  })
+
+  it('创建失败使用 role=alert（不以颜色为唯一信号）', () => {
+    const sessions = makeSessions({ createError: 'failed' })
+    renderSwitcher({ sessions })
+    expect(screen.getByTestId('session-create-error')).toHaveAttribute('role', 'alert')
+  })
+
+  it('抽屉高度受视口限制且列表内部滚动（§8.4）', () => {
+    renderSwitcher({
+      sessions: makeSessions({ sessions: [summary('sess_a', { title: 'A' })] }),
+    })
+    openDrawer()
+    const dialog = screen.getByRole('dialog')
+    expect(dialog.className).toContain('max-h-[80vh]')
+    const scroll = screen.getByTestId('session-list-scroll')
+    expect(scroll.className).toContain('min-h-0')
+    expect(scroll.className).toContain('overflow-y-auto')
+  })
+})
+
+  it('标题含 `$&`/`$1` 等替换语法时 aria-label 保留完整原文', () => {
+    const weirdTitle = 'Cost $& $1 {{name}} analysis'
+    const sessions = makeSessions({ sessions: [summary('sess_x', { title: weirdTitle })] })
+    renderSwitcher({ sessions })
+    openDrawer()
+    expect(screen.getByTestId('session-item')).toHaveAttribute(
+      'aria-label',
+      `Open conversation ${weirdTitle}`,
+    )
+  })
