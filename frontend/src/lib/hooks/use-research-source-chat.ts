@@ -362,7 +362,9 @@ export function useResearchSourceChat({
         if (cursor !== undefined && cursor !== null) {
           // source 详情在接口冻结中尚无游标参数：明确失败，绝不把首屏当下一页
           // 重复读入（review-3 #6）；分页能力随 PR-6 真实接线补齐。
-          throw new Error('source_detail_pagination_unsupported')
+          throw Object.assign(new Error('source_detail_pagination_unsupported'), {
+            code: 'detail_load_failed',
+          })
         }
         return getSourceChatSession(projectIdRef.current, String(ref.sourceId), ref.sessionId)
       },
