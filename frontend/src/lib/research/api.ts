@@ -662,6 +662,26 @@ export interface CoverageChatResponse {
 }
 
 /**
+ * #602 第三批 PR-5b（DESIGN §9.6）：Coverage 受理必须是真实的 **202 +
+ * generation/job 标识**。非 202（含通用 200 兜底）都不得进入“已受理”状态，
+ * 否则调用方会错误清空本地 Coverage 输入。
+ */
+export class CoverageAcceptanceError extends Error {
+  readonly code = 'coverage_acceptance_invalid' as const
+
+  constructor(message: string) {
+    super(message)
+    this.name = 'CoverageAcceptanceError'
+  }
+}
+
+const isValidGenerationId = (value: unknown): value is string =>
+  typeof value === 'string' && /^(?:gen|s)_[A-Za-z0-9._:-]+$/.test(value)
+
+const isValidJobId = (value: unknown): value is string =>
+  typeof value === 'string' && value.trim().length > 0
+
+/**
  * all_selected 提交：POST /chat 携带 synthesis_scope，202 返回持久
  * research_coverage Job 标识。幂等键每次用户发起新覆盖任务一个键
  * （同键同参数可重入，同键改参 409）。
@@ -697,7 +717,18 @@ export async function createCoverageChat(
       },
     },
   )
-  return response.data
+  if (response.status !== 202) {
+    throw new CoverageAcceptanceError(
+      `coverage submission was not accepted (status ${response.status})`,
+    )
+  }
+  const accepted = response.data
+  if (!isValidGenerationId(accepted?.generation_id) || !isValidJobId(accepted?.job_id)) {
+    throw new CoverageAcceptanceError(
+      'coverage acceptance is missing a valid generation or job identifier',
+    )
+  }
+  return accepted
 }
 
 /** 最终报告 + Citation snapshot + 固定 snapshot（仅 render_report 完成后可读） */

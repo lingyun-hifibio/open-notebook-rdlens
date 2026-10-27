@@ -7,7 +7,15 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
 import { ResearchCitationList } from './ResearchCitationList'
+import {
+  ResearchDraftComposer,
+  deriveResearchDraftGate,
+  researchDraftGateReasonKey,
+} from './ResearchDraftComposer'
+import { useResearchSessionRuntimeOptional } from '@/lib/hooks/research-session-runtime'
+import { useResearchEditor } from '@/lib/hooks/use-research-editor'
 import { useResearchSourceChat, type ResearchSourceChatTurn } from '@/lib/hooks/use-research-source-chat'
+import type { ResearchConversationSnapshot } from '@/lib/research/types'
 import { useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
 import { formatScopeLabel } from '@/lib/research/scope'
 import { userErrorMessageKey } from '@/lib/research/errors'
@@ -39,6 +47,56 @@ export function ResearchSourceChatPanel({
   // #243 §6.4：模型来自顶层全局设置；外部模型需确认时由守卫登记并弹窗，
   // 未确认不发请求（不变量 9）。
   const { canExecute, runGuarded } = useResearchGlobalModel()
+  // composer 门禁需要模型可用性；在 hook 之后再做组合（避免闭包顺序问题）。
+  const canExecuteModel = canExecute
+  // PR-5b（D5）：Source 面板补编辑器草稿 + composer。运行时存在时草稿以
+  // editor 为唯一权威（服务端保存 + 会话草稿），否则保留 legacy 单行入口。
+  const sessionRuntime = useResearchSessionRuntimeOptional()
+  const sourceRef = sessionRuntime?.active('source') ?? null
+  const editorEnabled =
+    sessionRuntime !== null && sourceRef !== null && sourceRef.sourceId === sourceId
+  const editor = useResearchEditor({
+    kind: 'source',
+    sessionId: sourceRef?.sessionId ?? '',
+    sourceId,
+    enabled: editorEnabled,
+  })
+  const editorSnapshot = editorEnabled ? editor.snapshot : null
+  const wired = editorSnapshot !== null
+  const conversationSnapshot: ResearchConversationSnapshot = {
+    isBusy: chat.isStreaming,
+    isStreaming: chat.isStreaming,
+    activeTurnId: null,
+    phase: chat.isStreaming ? 'streaming' : 'idle',
+  }
+  const baseGate = deriveResearchDraftGate({ editorSnapshot, conversationSnapshot })
+  const draftGate =
+    baseGate.allowed && !canExecuteModel
+      ? { allowed: false as const, reason: 'submission_not_ready' as const }
+      : baseGate
+  const draftGateReasonText =
+    draftGate.allowed || draftGate.reason === null || draftGate.reason === undefined
+      ? null
+      : t(researchDraftGateReasonKey(draftGate.reason))
+
+  /** PR-5b（D5）：session 模式发送——正文来自 editor 草稿，发送后清稿。 */
+  const submitEditorDraft = () => {
+    if (!wired || editorSnapshot === null || !draftGate.allowed) return
+    const text = editorSnapshot.draftText
+    if (text.trim().length === 0) return
+    void runGuarded(
+      (modelId) => {
+        chat.send(text, modelId)
+        void editor.flush('submit').then(() => editor.setDraftText(''))
+      },
+      {
+        scopeLabel: formatScopeLabel(
+          { mode: 'selected', sourceIds: [sourceId], noteIds: [], singleSourceId: null },
+          t,
+        ),
+      },
+    )
+  }
 
   const submit = () => {
     const trimmed = query.trim()
@@ -223,6 +281,27 @@ export function ResearchSourceChatPanel({
         )}
       </div>
 
+      {wired && (
+        <div className="border-t px-4 py-2 text-xs text-muted-foreground" data-testid="srcchat-draft-scope">
+          <span className="font-medium">{t('research.sourceChat.title')}</span>
+          {' · '}
+          <code>{sourceId}</code>
+        </div>
+      )}
+      {wired ? (
+        <div className="border-t p-3">
+          <ResearchDraftComposer
+            editorSnapshot={editorSnapshot}
+            conversationSnapshot={conversationSnapshot}
+            gate={draftGate}
+            gateReasonText={draftGateReasonText}
+            onDraftChange={editor.setDraftText}
+            onSend={submitEditorDraft}
+            onRetrySave={editor.retrySave}
+            onRestoreDraft={editor.restoreDraft}
+          />
+        </div>
+      ) : (
       <div className="flex gap-2 border-t p-3">
         <Input
           value={query}
@@ -242,6 +321,7 @@ export function ResearchSourceChatPanel({
           {t('research.sourceChat.send')}
         </Button>
       </div>
+      )}
     </div>
   )
 }

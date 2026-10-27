@@ -7,6 +7,7 @@ import {
 } from './ResearchChatPanel'
 import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
 import { ResearchScopeProvider, scopeStorageKey, useResearchScope, type ResearchScopeSnapshot } from '@/lib/research/scope'
+import type { CoverageSubmitOutcome } from '@/lib/hooks/use-research-chat'
 import { createEditorState } from '@/lib/research/editor-machine'
 import type { WireChatAnchor } from '@/lib/research/session-contract'
 import type {
@@ -30,6 +31,14 @@ import { saveResultFromResult } from '@/lib/research/api'
 // RWV2-11（K7/K8/K12）：面板直接消费共享 ResearchScopeProvider——测试经
 // localStorage 预置范围；retry 复用 turn.scopeSnapshot（null 不渲染重试）；
 // Coverage 只允许 selected 模式 1..50 Source；all 显示专属说明。
+
+/** PR-5b：Coverage 受理结果为判别对象（202 + 标识 + 登记状态）。 */
+const ACCEPTED_OUTCOME: CoverageSubmitOutcome = {
+  status: 'accepted',
+  jobId: 'job_1',
+  generationId: 'gen_1',
+  registration: 'registered',
+}
 
 const USER_ID = 'u1'
 const PROJECT_ID = 'p1'
@@ -82,7 +91,7 @@ function renderPanel(
   turns: ResearchChatTurn[],
   send = vi.fn(),
   overrides: Partial<{
-    onSendCoverage: (q: string, snapshot: ResearchScopeSnapshot) => Promise<boolean>
+    onSendCoverage: (q: string, snapshot: ResearchScopeSnapshot) => Promise<CoverageSubmitOutcome>
     scope: { mode: 'all' | 'selected'; sourceIds: string[]; noteIds: string[] }
     // #358：后端 Coverage 能力（默认 true 保 happy-path；能力关闭用例显式传 false）
     coverageEnabled: boolean
@@ -108,7 +117,7 @@ function renderPanel(
         turns={turns}
         isStreaming={false}
         onSend={send}
-        onSendCoverage={overrides.onSendCoverage ?? vi.fn(async () => true)}
+        onSendCoverage={overrides.onSendCoverage ?? vi.fn(async () => ACCEPTED_OUTCOME)}
         coverageEnabled={overrides.coverageEnabled ?? true}
         coverageJobs={overrides.coverageJobs}
         onCoverageRetry={overrides.onCoverageRetry ?? vi.fn(async () => true)}
@@ -149,7 +158,7 @@ function renderPanelWithNotice(notice: ResearchBackgroundNotice) {
             turns={[]}
             isStreaming={false}
             onSend={vi.fn()}
-            onSendCoverage={vi.fn(async () => true)}
+            onSendCoverage={vi.fn(async () => ACCEPTED_OUTCOME)}
             backgroundNotice={notice}
           />
         </ResearchScopeProvider>
@@ -182,7 +191,7 @@ function renderPanelWithNoteHarness(turns: ResearchChatTurn[], send = vi.fn()) {
             turns={turns}
             isStreaming={false}
             onSend={send}
-            onSendCoverage={vi.fn(async () => true)}
+            onSendCoverage={vi.fn(async () => ACCEPTED_OUTCOME)}
           />
           <ToggleNoteHarness />
         </ResearchScopeProvider>
@@ -512,7 +521,7 @@ describe('ResearchChatPanel coverage scope（COV-09 + RWV2-11 K3）', () => {
   })
 
   it('all_selected 提交：经 onSendCoverage 携带派发快照（202 受理后清空输入）', async () => {
-    const onSendCoverage = vi.fn(async () => true)
+    const onSendCoverage = vi.fn(async () => ACCEPTED_OUTCOME)
     renderPanel([], vi.fn(), {
       onSendCoverage,
       scope: { mode: 'selected', sourceIds: ['src-1'], noteIds: [] },
@@ -571,7 +580,7 @@ describe('ResearchChatPanel coverage scope（COV-09 + RWV2-11 K3）', () => {
 
   it('#358：能力关闭时已选 all_selected 也不发创建请求（提交闸门）', () => {
     const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
-    const onSendCoverage = vi.fn(async () => true)
+    const onSendCoverage = vi.fn(async () => ACCEPTED_OUTCOME)
     // 预置 selected 范围（1 个 Source）——all_selected 仅适用于显式选择范围
     seedScope({ mode: 'selected', sourceIds: ['src-1'], noteIds: [], singleSourceId: null })
     const { rerender } = render(
@@ -777,7 +786,7 @@ describe('ResearchChatPanel continue-research prefill（RWV2-23 AC4）', () => {
               turns={[]}
               isStreaming={false}
               onSend={vi.fn(async () => true)}
-              onSendCoverage={vi.fn(async () => true)}
+              onSendCoverage={vi.fn(async () => ACCEPTED_OUTCOME)}
               prefill={{ text: 'Continue from this result: excerpt', seq: 1 }}
             />
           </ResearchScopeProvider>
@@ -801,7 +810,7 @@ describe('ResearchChatPanel continue-research prefill（RWV2-23 AC4）', () => {
               turns={[]}
               isStreaming={false}
               onSend={vi.fn(async () => true)}
-              onSendCoverage={vi.fn(async () => true)}
+              onSendCoverage={vi.fn(async () => ACCEPTED_OUTCOME)}
               prefill={{ text: 'draft v1', seq: 1 }}
             />
           </ResearchScopeProvider>
@@ -816,7 +825,7 @@ describe('ResearchChatPanel continue-research prefill（RWV2-23 AC4）', () => {
               turns={[]}
               isStreaming={false}
               onSend={vi.fn(async () => true)}
-              onSendCoverage={vi.fn(async () => true)}
+              onSendCoverage={vi.fn(async () => ACCEPTED_OUTCOME)}
               prefill={{ text: 'draft v2', seq: 2 }}
             />
           </ResearchScopeProvider>
@@ -1030,7 +1039,7 @@ describe('ResearchChatPanel · PR-4 会话 editor 接线', () => {
             turns={turns}
             isStreaming={false}
             onSend={onSend}
-            onSendCoverage={vi.fn(async () => true)}
+            onSendCoverage={vi.fn(async () => ACCEPTED_OUTCOME)}
             editorSnapshot={
               anchor === undefined ? snapshot : { ...snapshot, chatAnchor: anchor }
             }
@@ -1075,7 +1084,7 @@ describe('ResearchChatPanel · PR-4 会话 editor 接线', () => {
               turns={[]}
               isStreaming={false}
               onSend={vi.fn(async () => true)}
-              onSendCoverage={vi.fn(async () => true)}
+              onSendCoverage={vi.fn(async () => ACCEPTED_OUTCOME)}
               editorSnapshot={null}
             />
           </ResearchScopeProvider>
@@ -1288,7 +1297,7 @@ describe('ResearchChatPanel · PR-4 修复轮（P1-1/P1-2/F3/F4）', () => {
 
   function Harness({
     onSend = vi.fn(async () => true),
-    onSendCoverage = vi.fn(async () => true),
+    onSendCoverage = vi.fn(async () => ACCEPTED_OUTCOME),
     onSessionDraftChange = vi.fn(),
     onChatAnchorChange = vi.fn(),
     onFlushPosition = vi.fn(),
@@ -1301,7 +1310,7 @@ describe('ResearchChatPanel · PR-4 修复轮（P1-1/P1-2/F3/F4）', () => {
     nullSnapshot = false,
   }: {
     onSend?: (query: string) => Promise<boolean>
-    onSendCoverage?: (query: string, snapshot: ResearchScopeSnapshot) => Promise<boolean>
+    onSendCoverage?: (query: string, snapshot: ResearchScopeSnapshot) => Promise<CoverageSubmitOutcome>
     onSessionDraftChange?: (text: string) => void
     onChatAnchorChange?: (anchor: WireChatAnchor | null) => void
     onFlushPosition?: () => void
@@ -1388,7 +1397,7 @@ describe('ResearchChatPanel · PR-4 修复轮（P1-1/P1-2/F3/F4）', () => {
   it('P1-1 Coverage 发送只清同版本 Coverage 文本，会话草稿与会话派发不受影响', async () => {
     seedScope(SCOPE_A)
     const onSend = vi.fn(async () => true)
-    const onSendCoverage = vi.fn(async (_query: string, _snapshot: ResearchScopeSnapshot) => true)
+    const onSendCoverage = vi.fn(async (_query: string, _snapshot: ResearchScopeSnapshot) => ACCEPTED_OUTCOME)
     const onSessionDraftChange = vi.fn()
     render(
       <Harness
@@ -1412,9 +1421,9 @@ describe('ResearchChatPanel · PR-4 修复轮（P1-1/P1-2/F3/F4）', () => {
 
   it('P1-1 Coverage 发送期间文本已变（版本不匹配）→ 不清新文本', async () => {
     seedScope(SCOPE_A)
-    let resolveSend: (value: boolean) => void = () => {}
+    let resolveSend: (value: CoverageSubmitOutcome) => void = () => {}
     const onSendCoverage = vi.fn(
-      () => new Promise<boolean>((resolve) => { resolveSend = resolve }),
+      () => new Promise<CoverageSubmitOutcome>((resolve) => { resolveSend = resolve }),
     )
     render(<Harness onSendCoverage={onSendCoverage} />)
     enterCoverageMode()
@@ -1422,7 +1431,7 @@ describe('ResearchChatPanel · PR-4 修复轮（P1-1/P1-2/F3/F4）', () => {
     fireEvent.click(screen.getByTestId('chat-send'))
     await waitFor(() => expect(onSendCoverage).toHaveBeenCalledTimes(1))
     fireEvent.change(screen.getByTestId('chat-input'), { target: { value: '第二版' } })
-    resolveSend(true)
+    resolveSend(ACCEPTED_OUTCOME)
     await waitFor(() => expect(screen.getByTestId('chat-input')).toHaveValue('第二版'))
   })
 
@@ -1686,7 +1695,7 @@ describe('ResearchChatPanel · PR-4 修复轮（P1-1/P1-2/F3/F4）', () => {
 
   it('P2-6 无会话快照时 Coverage 仍由本地草稿受控（发送成功清空自身文本）', async () => {
     seedScope(SCOPE_A)
-    const onSendCoverage = vi.fn(async () => true)
+    const onSendCoverage = vi.fn(async () => ACCEPTED_OUTCOME)
     render(<Harness onSendCoverage={onSendCoverage} nullSnapshot />)
     enterCoverageMode()
     fireEvent.change(screen.getByTestId('chat-input'), { target: { value: 'coverage 问题' } })
@@ -1772,5 +1781,203 @@ describe('ResearchChatPanel · PR-4 修复轮（P1-1/P1-2/F3/F4）', () => {
       'research.workbench.adminWriteDenied',
     )
     expect(screen.getByTestId('scope-mode-all')).toBeDisabled()
+  })
+})
+
+// ── PR-5b（§4.2-4/§6.7/§6.9/§7.3/§9.6）：会话头部、解释 UI 与 Coverage 隔离 ──
+
+import type { ConversationController } from '@/lib/research/session-runtime'
+import type { ConversationTurn } from '@/lib/research/conversation-machine'
+import type {
+  ResearchChatSessionMeta,
+  ResearchSubmissionLookupSnapshot,
+} from '@/lib/hooks/use-research-chat'
+
+describe('ResearchChatPanel PR-5b：会话接线与解释 UI', () => {
+  const REF: ResearchSessionRef = {
+    domain: 'research',
+    kind: 'global',
+    projectId: PROJECT_ID,
+    sessionId: 'sess-1',
+    sourceId: null,
+  }
+
+  function conversationStub(turn: ConversationTurn | null = null): ConversationController {
+    return {
+      getSnapshot: () => ({
+        version: 1,
+        sessionKey: 'global:p1:sess-1',
+        authGeneration: 1,
+        turn,
+        history: [],
+        detailMessages: [],
+        detailCursor: null,
+      }),
+      subscribe: () => () => {},
+      load: vi.fn(async () => ({ status: 'ok' })),
+      lookupSubmission: vi.fn(async () => ({ status: 'ok' })),
+      refreshStatus: vi.fn(async () => ({ status: 'ok' })),
+    } as unknown as ConversationController
+  }
+
+  function renderSessionPanel({
+    sessionMeta = null,
+    submissionLookup = null,
+    turns = [],
+    markerWriteFailed = false,
+    onSendCoverage = vi.fn(async () => ACCEPTED_OUTCOME),
+  }: {
+    sessionMeta?: ResearchChatSessionMeta | null
+    submissionLookup?: ResearchSubmissionLookupSnapshot | null
+    turns?: ResearchChatTurn[]
+    markerWriteFailed?: boolean
+    onSendCoverage?: (q: string, snapshot: ResearchScopeSnapshot) => Promise<CoverageSubmitOutcome>
+  }) {
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
+    return render(
+      <QueryClientProvider client={queryClient}>
+        <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
+          <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+            <ResearchChatPanel
+              turns={turns}
+              isStreaming={false}
+              onSend={vi.fn(async () => true)}
+              onSendCoverage={onSendCoverage}
+              coverageEnabled
+              editorSnapshot={{
+                ...createEditorState({ ref: REF, writerId: 'w-1', transportAvailable: true }),
+                phase: 'ready',
+                loading: false,
+                baseScope: { mode: 'selected', sourceIds: ['src_1'], singleSourceId: null },
+              }}
+              conversation={conversationStub()}
+              sessionRef={REF}
+              sessionMeta={sessionMeta}
+              submissionLookup={submissionLookup}
+              markerWriteFailed={markerWriteFailed}
+              onSendSession={vi.fn(async () => true)}
+              scopeSources={[{ sourceId: 'src_1', title: 'Paper One' }]}
+              scopeNotes={[]}
+              onChangeScope={vi.fn()}
+              onDraftChange={vi.fn()}
+              onRetrySave={vi.fn()}
+            />
+          </ResearchScopeProvider>
+        </ResearchWorkspaceProvider>
+      </QueryClientProvider>,
+    )
+  }
+
+  beforeEach(() => {
+    localStorage.clear()
+    seedScope({ mode: 'selected', sourceIds: ['src_1'], noteIds: [], singleSourceId: null })
+  })
+
+  afterEach(() => {
+    cleanup()
+    localStorage.clear()
+  })
+
+  it('§4.2-4：detail 同响应到达即渲染真实标题，无占位/加载态', () => {
+    renderSessionPanel({ sessionMeta: { title: '真实会话标题', recordVisibility: 'visible' } })
+    expect(screen.getByTestId('chat-session-title')).toHaveTextContent('真实会话标题')
+    expect(screen.queryByTestId('chat-session-title-loading')).not.toBeInTheDocument()
+    expect(screen.queryByText('research.session.visibility.restricted')).not.toBeInTheDocument()
+  })
+
+  it('§4.2-4/§4.6：restricted 会话只显示固定占位，标题不进入 DOM', () => {
+    renderSessionPanel({
+      sessionMeta: { title: '绝密标题', recordVisibility: 'restricted' },
+    })
+    expect(screen.getByTestId('chat-session-restricted')).toBeInTheDocument()
+    expect(screen.queryByText('绝密标题')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('chat-session-title')).not.toBeInTheDocument()
+  })
+
+  it('§6.9：受限消息不渲染正文气泡，只显示固定受限卡片', () => {
+    renderSessionPanel({
+      turns: [turn({ role: 'assistant', content: '受限正文', recordVisibility: 'restricted' })],
+    })
+    expect(screen.getByTestId('chat-restricted-message')).toBeInTheDocument()
+    expect(screen.queryByText('受限正文')).not.toBeInTheDocument()
+  })
+
+  it('§7.3：assistant 消息的 context_report 渲染为上下文说明', () => {
+    renderSessionPanel({
+      turns: [
+        turn({
+          content: '回答',
+          contextReport: {
+            status: 'trimmed',
+            history: { availableTurns: 10, includedTurns: 4, omittedTurns: 6 },
+            evidence: { includedChunks: 3, omittedChunks: 2 },
+            reasonCodes: ['history_window'],
+          } as never,
+        }),
+      ],
+    })
+    const report = screen.getByTestId('research-context-report')
+    expect(report).toHaveAttribute('data-status', 'trimmed')
+  })
+
+  it('§6.7：查回 accepted 时显示提交状态卡', () => {
+    renderSessionPanel({
+      submissionLookup: {
+        token: 'draft_1',
+        acceptance: 'accepted',
+        generationId: 'gen_1',
+        generationState: 'running',
+        submittedDraftText: null,
+        contextReport: null,
+        lookupFailed: false,
+      },
+    })
+    expect(screen.getByTestId('research-submission-status')).toHaveAttribute(
+      'data-kind',
+      'accepted',
+    )
+  })
+
+  it('§9.6 Q1/Q2：202 返回时若输入已变为 Q2，不得清空 Q2', async () => {
+    let resolveSend: (outcome: CoverageSubmitOutcome) => void = () => {}
+    const onSendCoverage = vi.fn(
+      () => new Promise<CoverageSubmitOutcome>((resolve) => { resolveSend = resolve }),
+    )
+    renderSessionPanel({ onSendCoverage })
+    fireEvent.click(screen.getByTestId('scope-all-selected-option'))
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: '问题 Q1' } })
+    fireEvent.click(screen.getByTestId('chat-send'))
+    await waitFor(() => expect(onSendCoverage).toHaveBeenCalledTimes(1))
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: '问题 Q2' } })
+    await act(async () => { resolveSend(ACCEPTED_OUTCOME) })
+    expect(screen.getByTestId('chat-input')).toHaveValue('问题 Q2')
+  })
+
+  it('§9.6：consent 取消（not_dispatched）零副作用，保留输入且不显示受理/错误', async () => {
+    renderSessionPanel({ onSendCoverage: vi.fn(async () => ({ status: 'not_dispatched' as const })) })
+    fireEvent.click(screen.getByTestId('scope-all-selected-option'))
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: '覆盖问题' } })
+    fireEvent.click(screen.getByTestId('chat-send'))
+    // 等 promise 结算与状态刷新：not_dispatched 绝不触发清稿
+    await act(async () => {})
+    expect(screen.getByTestId('chat-input')).toHaveValue('覆盖问题')
+    expect(screen.queryByTestId('coverage-accepted')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('coverage-submit-error')).not.toBeInTheDocument()
+  })
+
+  it('§9.6：202 已受理但 Jobs 登记失败 → 显示“任务登记待刷新”，不得伪装未受理', async () => {
+    renderSessionPanel({
+      onSendCoverage: vi.fn(async () => ({
+        ...ACCEPTED_OUTCOME,
+        registration: 'failed' as const,
+      })),
+    })
+    fireEvent.click(screen.getByTestId('scope-all-selected-option'))
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: '覆盖问题' } })
+    fireEvent.click(screen.getByTestId('chat-send'))
+    await waitFor(() => expect(screen.getByTestId('coverage-registration-pending')).toBeInTheDocument())
+    expect(screen.getByTestId('coverage-registration-pending')).toHaveTextContent(
+      'research.coverage.registrationPending',
+    )
   })
 })

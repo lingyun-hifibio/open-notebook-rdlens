@@ -18,6 +18,18 @@ vi.mock('@/lib/hooks/use-research-source-chat', () => ({
 // 被测对象不是全局模型本身
 vi.mock('@/lib/hooks/use-research-global-model')
 
+// PR-5b（D5）：source 面板直接消费 session runtime 的 source editor。
+vi.mock('@/lib/hooks/research-session-runtime', () => ({
+  useResearchSessionRuntimeOptional: vi.fn(() => null),
+}))
+vi.mock('@/lib/hooks/use-research-editor', () => ({
+  useResearchEditor: vi.fn(() => ({
+    snapshot: null,
+    setDraftText: vi.fn(),
+    flush: vi.fn(async () => true),
+  })),
+}))
+
 vi.mock('@/lib/hooks/use-translation', () => ({
   useTranslation: () => ({
     t: (key: string, opts?: Record<string, unknown>) =>
@@ -32,6 +44,9 @@ vi.mock('@/components/ui/markdown-renderer', () => ({
 }))
 
 import type { UseResearchSourceChatResult } from '@/lib/hooks/use-research-source-chat'
+import { useResearchSessionRuntimeOptional } from '@/lib/hooks/research-session-runtime'
+import { useResearchEditor } from '@/lib/hooks/use-research-editor'
+import { createEditorState } from '@/lib/research/editor-machine'
 
 function makeChatResult(overrides: Partial<UseResearchSourceChatResult> = {}): UseResearchSourceChatResult {
   return {
@@ -53,6 +68,12 @@ describe('ResearchSourceChatPanel', () => {
     vi.clearAllMocks()
     resetGlobalModelStub()
     vi.mocked(useResearchSourceChat).mockReturnValue(makeChatResult())
+    vi.mocked(useResearchSessionRuntimeOptional).mockReturnValue(null)
+    vi.mocked(useResearchEditor).mockReturnValue({
+      snapshot: null,
+      setDraftText: vi.fn(),
+      flush: vi.fn(async () => true),
+    } as never)
   })
 
   function renderPanel(onHighlightPage = vi.fn()) {
@@ -303,6 +324,50 @@ describe('ResearchSourceChatPanel', () => {
     expect(screen.getByText('research.errors.generic')).toBeInTheDocument()
     // raw code 保留为次级诊断（不丢信息，同时不违反 AC8 主消息规则）
     expect(screen.getByText('epoch_mismatch')).toBeInTheDocument()
+  })
+
+  it('PR-5b（D5）：运行时接线后以 source editor 草稿发送（复用 DraftComposer 门禁）', () => {
+    const ref = {
+      domain: 'research' as const,
+      kind: 'source' as const,
+      projectId: 'proj_1',
+      sessionId: 'sess_s1',
+      sourceId: 'src_1',
+    }
+    vi.mocked(useResearchSessionRuntimeOptional).mockReturnValue({
+      active: () => ref,
+    } as never)
+    const snapshot = {
+      ...createEditorState({ ref, writerId: 'w-1', transportAvailable: true }),
+      phase: 'ready' as const,
+      loading: false,
+      baseScope: { mode: 'selected' as const, sourceIds: ['src_1'], singleSourceId: 'src_1' },
+      draftText: '固定来源的问题',
+      dirty: true,
+    }
+    const setDraftText = vi.fn()
+    vi.mocked(useResearchEditor).mockReturnValue({
+      snapshot,
+      setDraftText,
+      flush: vi.fn(async () => true),
+    } as never)
+    const chat = makeChatResult()
+    vi.mocked(useResearchSourceChat).mockReturnValue(chat)
+    renderPanel()
+
+    // 固定来源范围可见；wired 路径用共享 composer（非 legacy 单行输入）
+    expect(screen.getByTestId('srcchat-draft-scope')).toBeInTheDocument()
+    expect(screen.getByTestId('research-draft-composer')).toBeInTheDocument()
+    expect(screen.queryByTestId('srcchat-input')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('chat-send'))
+    expect(chat.send).toHaveBeenCalledWith('固定来源的问题', 'm-local')
+  })
+
+  it('PR-5b（D5）：运行时缺失时保留 legacy 输入（中间 PR 入口不误开放）', () => {
+    vi.mocked(useResearchSessionRuntimeOptional).mockReturnValue(null)
+    renderPanel()
+    expect(screen.getByTestId('srcchat-input')).toBeInTheDocument()
+    expect(screen.queryByTestId('research-draft-composer')).not.toBeInTheDocument()
   })
 
   it('输入非空回车发送并清空输入框', () => {

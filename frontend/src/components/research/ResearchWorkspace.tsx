@@ -7,13 +7,17 @@ import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import { createCoverageChat, newIdempotencyKey, searchV1 } from '@/lib/research/api'
+import { buildSubmissionKey } from '@/lib/research/session-idempotency'
 import { useResearchC05 } from '@/lib/hooks/use-research-c05'
 import { buildC05GeneratedRequest, buildSourceScope } from '@/lib/research/c05-request'
 import { signatureOf } from '@/lib/research/c05-idempotency-key'
 import {
   useResearchChat,
+  type CoverageSubmitAccepted,
+  type CoverageSubmitOutcome,
   type CoverageSubmitRequest,
   type ResearchChatSelection,
+  type UseResearchChatSessionOptions,
   deriveScopeSnapshot,
 } from '@/lib/hooks/use-research-chat'
 import { formatScopeLabel, useResearchScope, type ResearchScopeSnapshot } from '@/lib/research/scope'
@@ -131,6 +135,30 @@ export function ResearchWorkspace({
     sessionRuntime === null
       ? undefined
       : runtimeSnapshot.capabilities?.submissionReady.global === true
+  const pendingSubmitTextRef = useRef<string | null>(null)
+  // PR-5b（D1，第 1 处）：把运行时 + 当前会话 ref + editor 持有者回调传给
+  // useResearchChat——controller 是 trace 新协议的唯一权威（不再依赖 legacy）。
+  const chatSession = useMemo<UseResearchChatSessionOptions | undefined>(() => {
+    if (sessionRuntime === null || activeGlobalRef === null) return undefined
+    return {
+      runtime: sessionRuntime,
+      ref: activeGlobalRef,
+      onReleaseHold: (operationId: string) => chatEditor.release(operationId),
+      // §9.2/§5.6：editor 的清稿核对需要“提交时的文本快照”（ResearchAcceptedReceipt
+      // 不含正文），由发送派发处冻结；文本已被改动时 editor 会判定 invalid 不清稿。
+      onClearAfterSubmission: (receipt, operationId) => {
+        void chatEditor.clearAfterSubmission(
+          {
+            sessionRef: receipt.ref,
+            draftToken: receipt.draftToken,
+            editorRevision: receipt.editorRevision,
+            text: pendingSubmitTextRef.current ?? '',
+          },
+          operationId,
+        )
+      },
+    }
+  }, [sessionRuntime, activeGlobalRef, chatEditor])
   // 范围条只读投影：不读写工作区选择器（DESIGN §5.3）。
   const scopeBarSources = useMemo<ResearchScopeBarSourceOption[]>(
     () =>
@@ -201,11 +229,19 @@ export function ResearchWorkspace({
     sendCoverage,
     resolveChatOrigin,
     getCurrentSessionId,
+    conversation: chatConversation,
+    sessionMeta,
+    sessionCards,
+    submissionLookup,
+    markerWriteFailed,
+    refreshMarkerLookups,
   } = useResearchChat({
     projectId: projectId ?? '',
     // PR5（C6/C7）：C-05 契约判定（能力就绪才走 c05-v1）+ 会话绑定回调（D-04）
     c05DispatchReady: () => c05.dispatchReady('chat'),
     onBindSession: bindSingleSession,
+    // PR-5b（D1）：显式会话时启用 session-v1 controller（新协议唯一发送路径）
+    session: chatSession,
   })
 
   // #243 §6.4：Chat/Compare 统一走顶层执行守卫（invariant 9）
@@ -391,7 +427,10 @@ export function ResearchWorkspace({
 
   // COV-09：all_selected 受理后登记进 Jobs 控制器（localStorage + 轮询）
   const submitCoverage = useCallback(
-    async (request: CoverageSubmitRequest, idempotencyKey: string): Promise<{ job_id: string }> => {
+    async (
+      request: CoverageSubmitRequest,
+      idempotencyKey: string,
+    ): Promise<CoverageSubmitAccepted> => {
       // R1-H7：Coverage 的 C-05 分支——能力就绪才走 c05-v1 + source_scope；
       // 旧契约保持既有形状（coverage_all_selected 能力仍是独立门禁）。
       const useC05 = c05.dispatchReady('coverage')
@@ -423,30 +462,118 @@ export function ResearchWorkspace({
         idempotencyKey,
         useC05 ? { contract: 'c05-v1' } : {},
       )
-      registerCoverageJob(accepted.job_id)
-      return { job_id: accepted.job_id }
+      // DESIGN §9.6：Jobs 登记失败**仍是已受理**——如实交出登记状态与可查回
+      // 标识，绝不伪装成未受理（否则面板会误清/误导重提）。
+      let registration: 'registered' | 'failed' = 'registered'
+      try {
+        registerCoverageJob(accepted.job_id)
+      } catch {
+        registration = 'failed'
+      }
+      return {
+        job_id: accepted.job_id,
+        generation_id: accepted.generation_id,
+        registration,
+      }
     },
     [c05, projectId, registerCoverageJob],
   )
 
   const sendCoverageChat = useCallback(
-    async (query: string, snapshot: ResearchScopeSnapshot): Promise<boolean> => {
+    async (query: string, snapshot: ResearchScopeSnapshot): Promise<CoverageSubmitOutcome> => {
       const scopeLabel = formatScopeLabel(snapshot, t)
-      const sent = await runGuarded(
-        (modelId) => {
+      const outcome = await runGuarded(
+        (modelId) =>
           sendCoverage(
             query,
             { mode: snapshot.mode, sourceIds: [...snapshot.sourceIds], noteIds: [], singleSourceId: snapshot.singleSourceId },
             modelId,
             submitCoverage,
-          )
+          ),
+        { scopeLabel },
+      )
+      // consent 取消/身份失效/被禁用：未派发（零副作用），绝不伪装成已受理。
+      return outcome ?? { status: 'not_dispatched' }
+    },
+    [runGuarded, sendCoverage, submitCoverage, t],
+  )
+
+  // PR-5b（D1，第 2/3 处）：session 模式下 Chat 发送只走 controller.send。
+  // editor hold→flush→send 的顺序与冻结快照由本组合根负责；面板只负责 UI。
+  const sendSessionChat = useCallback(
+    async (query: string, selection: ResearchChatSelection): Promise<boolean> => {
+      if (chatConversation === null || chatConversation === undefined) return false
+      const targetSessionId = activeGlobalRef?.sessionId ?? ''
+      if (targetSessionId === '') return false
+      const base = deriveScopeSnapshot(selection)
+      const scopeSnapshot = selection.mode === 'selected' && selection.sourceIds !== undefined
+        ? { mode: 'selected' as const, sourceIds: [...selection.sourceIds], noteIds: [...(selection.noteIds ?? [])], singleSourceId: selection.singleSourceId ?? null }
+        : { mode: base.mode, sourceIds: [...base.sourceIds], noteIds: [...base.noteIds], singleSourceId: base.singleSourceId }
+      const scopeLabel = formatScopeLabel(scopeSnapshot, t)
+      const sent = await runGuarded(
+        async (modelId) => {
+          const operationId =
+            typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+              ? crypto.randomUUID()
+              : `op_${Date.now()}_${Math.random().toString(36).slice(2)}`
+          chatEditor.hold('submit', operationId)
+          const flushed = await chatEditor.flush('submit')
+          if (!flushed) {
+            chatEditor.release(operationId)
+            return false
+          }
+          pendingSubmitTextRef.current = query
+          const editor = chatEditor.snapshot
+          if (editor === null) {
+            pendingSubmitTextRef.current = null
+            chatEditor.release(operationId)
+            return false
+          }
+          // D3：幂等键必须是可复算的 submission key（marker 校验要求），
+          // 随机键会让 session-cache 拒绝落盘 → 查回能力静默丢失。
+          let idempotencyKey: string
+          try {
+            idempotencyKey = buildSubmissionKey({
+              projectId,
+              ownerUserId: Number(runtimeSnapshot.viewerUserId),
+              kind: 'global',
+              sourceId: null,
+              sessionId: targetSessionId,
+              draftToken: editor.draftToken,
+            })
+          } catch {
+            pendingSubmitTextRef.current = null
+            chatEditor.release(operationId)
+            return false
+          }
+          const result = await chatConversation.send({
+            query,
+            modelId,
+            sourceIds: scopeSnapshot.sourceIds,
+            noteIds: scopeSnapshot.noteIds,
+            scope: {
+              mode: scopeSnapshot.mode,
+              sourceIds: scopeSnapshot.sourceIds,
+              singleSourceId: scopeSnapshot.singleSourceId,
+            },
+            editorRevision: editor.revision,
+            draftToken: editor.draftToken,
+            editorIntentHash: editor.intentHash ?? '',
+            idempotencyKey,
+            operationId,
+          })
+          if (result.status !== 'ok') {
+            pendingSubmitTextRef.current = null
+            chatEditor.release(operationId)
+            return false
+          }
           return true
         },
         { scopeLabel },
       )
       return sent === true
     },
-    [runGuarded, sendCoverage, submitCoverage, t],
+    [chatConversation, chatEditor, runGuarded, t],
   )
 
   // D-25：跳转被拒**不得静默**。卡片路径（CitationCard）已按
@@ -554,6 +681,15 @@ export function ResearchWorkspace({
             prefill={chatPrefill}
             editorSnapshot={chatEditorSnapshot}
             submissionReady={chatSubmissionReady}
+            editorHandle={chatEditor}
+            conversation={chatConversation ?? null}
+            sessionRef={activeGlobalRef}
+            sessionMeta={sessionMeta}
+            sessionCards={sessionCards}
+            submissionLookup={submissionLookup}
+            markerWriteFailed={markerWriteFailed}
+            refreshMarkerLookups={refreshMarkerLookups}
+            onSendSession={sendSessionChat}
             conversationSnapshot={{
               isBusy: isStreaming,
               isStreaming,

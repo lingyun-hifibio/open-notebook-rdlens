@@ -13,11 +13,29 @@ import { CoverageJobDetails } from './CoverageJobDetails'
 import { RETRYABLE_SSE_ERROR_CODES } from '@/lib/research/sse'
 import { userErrorMessageKey } from '@/lib/research/errors'
 import type {
+  CoverageSubmitOutcome,
   ResearchBackgroundNotice,
   ResearchChatSaveOrigin,
+  ResearchChatSessionMeta,
   ResearchChatTurn,
   ResearchChatSelection,
+  ResearchSubmissionLookupSnapshot,
 } from '@/lib/hooks/use-research-chat'
+import type { UseResearchEditorResult } from '@/lib/hooks/use-research-editor'
+import type { ConversationController } from '@/lib/research/session-runtime'
+import type { ConversationTurn } from '@/lib/research/conversation-machine'
+import type { ResearchCitation } from '@/lib/research/types'
+import {
+  projectSessionVisibility,
+  type ResearchContextReportProjection,
+  type ResearchSessionRef,
+} from '@/lib/research/session-contract'
+import type { ResearchGlobalChatCard } from '@/lib/research/api'
+import { ResearchContextReport } from './ResearchContextReport'
+import {
+  ResearchSubmissionStatus,
+  type ResearchSubmissionStatusView,
+} from './ResearchSubmissionStatus'
 import type { ResearchCitationDisplayItem, ResearchJob, ResearchSynthesisScope } from '@/lib/research/types'
 import { formatScopeLabel, useResearchScope, type ResearchScopeSnapshot } from '@/lib/research/scope'
 import { ResearchSessionScopeBar } from './ResearchSessionScopeBar'
@@ -157,6 +175,16 @@ export function ResearchChatPanel({
   onChatAnchorChange,
   onFlushPosition,
   surfaceActive = true,
+  editorHandle,
+  conversation,
+  sessionRef,
+  sessionMeta,
+  sessionCards,
+  submissionLookup,
+  markerWriteFailed = false,
+  refreshMarkerLookups,
+  onSendSession,
+  onNewSession,
 }: {
   turns: ResearchChatTurn[]
   isStreaming: boolean
@@ -165,8 +193,15 @@ export function ResearchChatPanel({
    * 调用方据此决定「派发后」的清理（如清空输入），使取消零副作用。
    */
   onSend: (query: string, selection?: ResearchChatSelection) => Promise<boolean>
-  /** COV-09：all_selected 提交；RWV2-11（K9）携带派发时冻结的快照 */
-  onSendCoverage: (query: string, snapshot: ResearchScopeSnapshot) => Promise<boolean>
+  /**
+   * COV-09：all_selected 提交；RWV2-11（K9）携带派发时冻结的快照。
+   * PR-5b（DESIGN §9.6）：返回真实受理结果（202 + Generation/Job 标识 +
+   * Jobs 登记状态）；`not_dispatched` 表示 consent 取消/身份失效。
+   */
+  onSendCoverage: (
+    query: string,
+    snapshot: ResearchScopeSnapshot,
+  ) => Promise<CoverageSubmitOutcome>
   /** #243：无可用全局模型时禁用发送（不变量 2/7 的 Chat 侧表达） */
   sendDisabled?: boolean
   blockedHint?: string | null
@@ -235,6 +270,29 @@ export function ResearchChatPanel({
   onFlushPosition?: () => void
   /** 当前 Chat 面板是否可见（keep-alive 隐藏时不保存/不恢复锚点，§8.3/N9）。 */
   surfaceActive?: boolean
+  /** PR-5b（D1）：会话 editor 句柄（恢复已提交稿/当前草稿）。 */
+  editorHandle?: UseResearchEditorResult
+  /** PR-5b（D1）：当前会话 conversation controller（新协议发送/查回权威）。 */
+  conversation?: ConversationController | null
+  /** PR-5b：当前会话 ref（受限占位展示短 id；不用于请求）。 */
+  sessionRef?: ResearchSessionRef | null
+  /** PR-5b（D2）：同一次详情响应捕获的会话元数据（标题/可见性）。 */
+  sessionMeta?: ResearchChatSessionMeta | null
+  /** PR-5b（D2）：同一次详情响应捕获的 Generation 卡。 */
+  sessionCards?: readonly ResearchGlobalChatCard[]
+  /** PR-5b（D3）：最近一次提交查回观测（含失败卡共用容量报告）。 */
+  submissionLookup?: ResearchSubmissionLookupSnapshot | null
+  /** PR-5b（D3）：开流前 marker 写失败（如实提示，不阻断发送）。 */
+  markerWriteFailed?: boolean
+  /** PR-5b（D3）：显式刷新未结算标记查回。 */
+  refreshMarkerLookups?: (currentDraftToken?: string | null) => Promise<number>
+  /**
+   * PR-5b（D1）：session 模式发送入口——workspace 负责 consent/模型快照/
+   * editor hold+flush/controller.send 与清稿派发；面板只负责 UI 状态。
+   */
+  onSendSession?: (query: string, selection: ResearchChatSelection) => Promise<boolean>
+  /** §7.3：用户在新会话保护本机稿（调整范围/缩短问题/新建会话动作）。 */
+  onNewSession?: () => void
 }) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
@@ -270,6 +328,21 @@ export function ResearchChatPanel({
     version: 0,
   })
   const coverageDraftVersionRef = useRef(0)
+  const [coverageOutcome, setCoverageOutcome] = useState<CoverageSubmitOutcome | null>(null)
+  // PR-5b（§9.6/D1）：新协议 turn 的唯一权威是 conversation controller——
+  // 面板订阅其快照渲染 live turn（hook 的 turns 只承载 durable 历史）。
+  const sessionConversation = conversation ?? null
+  const sessionWired = sessionConversation !== null && onSendSession !== undefined
+  const [liveTurn, setLiveTurn] = useState<ConversationTurn | null>(null)
+  useEffect(() => {
+    if (sessionConversation === null) {
+      setLiveTurn(null)
+      return
+    }
+    const sync = (): void => setLiveTurn(sessionConversation.getSnapshot().turn)
+    sync()
+    return sessionConversation.subscribe(sync)
+  }, [sessionConversation])
   const surfaceActiveRef = useRef(surfaceActive)
   surfaceActiveRef.current = surfaceActive
   const wiredConversation: ResearchConversationSnapshot = conversationSnapshot ?? {
@@ -278,6 +351,158 @@ export function ResearchChatPanel({
     activeTurnId: null,
     phase: isStreaming ? 'streaming' : 'idle',
   }
+  // PR-5b：Coverage 是独立工作流——composer 不得共享 Chat 的 isStreaming。
+  const coverageConversation: ResearchConversationSnapshot = {
+    isBusy: false,
+    isStreaming: false,
+    activeTurnId: null,
+    phase: 'idle',
+  }
+  /** PR-5b：controller 的 live turn → 面板可渲染的 turn（不写入 hook 状态）。 */
+  const sessionLiveTurns: ResearchChatTurn[] = (() => {
+    if (liveTurn === null) return []
+    const terminalStatus = liveTurn.sse.terminal === 'error' ? 'error' : 'done'
+    const status: ResearchChatTurn['status'] =
+      liveTurn.state === 'terminal'
+        ? terminalStatus
+        : liveTurn.state === 'unknown' || liveTurn.state === 'lookup_pending'
+          ? terminalStatus === 'error'
+            ? 'error'
+            : 'streaming'
+          : 'streaming'
+    const generationId = liveTurn.identity.generationId
+    const userTurn: ResearchChatTurn = {
+      id: `user_${liveTurn.identity.turnId}`,
+      role: 'user',
+      content: liveTurn.query,
+      thinking: '',
+      citations: [],
+      usage: null,
+      resolvedMode: null,
+      status: 'done',
+      reconnectCount: 0,
+      errorCode: null,
+      errorMessage: null,
+      coverageJobId: null,
+      scopeSnapshot: null,
+      serverMessageId: null,
+      generationId,
+    }
+    const assistantTurn: ResearchChatTurn = {
+      id: liveTurn.identity.turnId,
+      role: 'assistant',
+      content: liveTurn.sse.answer,
+      thinking: liveTurn.sse.thinking,
+      citations: (liveTurn.sse.citations as readonly ResearchCitation[]).map((citation) => ({
+        citation_id: citation.citation_id,
+        claim: citation.claim,
+        doc_id: citation.doc_id,
+        page_idx: citation.page_idx,
+        confidence: citation.confidence,
+      })),
+      usage: liveTurn.sse.usage,
+      resolvedMode: liveTurn.sse.resolvedMode,
+      status,
+      reconnectCount: 0,
+      errorCode: liveTurn.sse.errorCode ?? liveTurn.errorCode,
+      errorMessage: liveTurn.sse.errorMessage ?? liveTurn.errorMessage,
+      coverageJobId: null,
+      scopeSnapshot: null,
+      serverMessageId: null,
+      generationId,
+      contextReport: liveTurn.sse.contextReport,
+      contextCoverage: liveTurn.sse.contextCoverage,
+      recordVisibility: null,
+    }
+    return [userTurn, assistantTurn]
+  })()
+  const renderedTurns: ResearchChatTurn[] =
+    sessionLiveTurns.length === 0 ? turns : [...turns, ...sessionLiveTurns]
+
+  // PR-5b（§4.2-4/§4.6）：详情侧可见性投影。当前批次 detail 恒可读 title+
+  // record_visibility；不先占位等确认（有 detail 就立即按响应渲染）。
+  const sessionVisibility = projectSessionVisibility(
+    null,
+    (sessionMeta ?? null)?.recordVisibility ?? null,
+  )
+  const restrictedSession = sessionVisibility.visibility === 'restricted'
+  const legacySession = sessionVisibility.visibility === 'legacy_context_unverifiable'
+  const sessionMetaValue = sessionMeta ?? null
+  const sessionHeaderTitle =
+    sessionMetaValue === null
+      ? null
+      : sessionMetaValue.title ?? t('research.session.untitled')
+  const sessionShortId = sessionRef !== null && sessionRef !== undefined
+    ? sessionRef.sessionId.slice(0, 8)
+    : null
+
+  // PR-5b（§6.7）：提交状态投影——live turn 优先，其次最近一次查回。
+  const submissionView: ResearchSubmissionStatusView | null = (() => {
+    if (!sessionWired) return null
+    if (liveTurn !== null && !liveTurn.external) {
+      const generationId = liveTurn.identity.generationId
+      if (liveTurn.state === 'terminal') {
+        return {
+          kind: 'terminal',
+          outcome: liveTurn.sse.terminal === 'error' ? 'failed' : 'completed',
+          failureCode: liveTurn.sse.errorCode,
+          generationId,
+          submittedDraftText: liveTurn.query.trim().length > 0 ? liveTurn.query : null,
+        }
+      }
+      if (liveTurn.state === 'unknown') {
+        return {
+          kind: 'outcome_unknown',
+          generationId,
+          submittedDraftText: liveTurn.query.trim().length > 0 ? liveTurn.query : null,
+        }
+      }
+      if (liveTurn.state === 'accepted' || liveTurn.accepted !== null) {
+        return {
+          kind: 'accepted',
+          generationId,
+          generationState: liveTurn.accepted !== null ? 'accepted' : null,
+          submittedDraftText: liveTurn.query.trim().length > 0 ? liveTurn.query : null,
+        }
+      }
+    }
+    const lookup = submissionLookup ?? null
+    if (lookup === null) {
+      return markerWriteFailed ? { kind: 'not_observed' } : null
+    }
+    if (lookup.lookupFailed) {
+      return {
+        kind: 'lookup_failed',
+        generationId: lookup.generationId,
+        submittedDraftText: lookup.submittedDraftText,
+      }
+    }
+    if (lookup.acceptance === 'accepted') {
+      return {
+        kind: 'accepted',
+        generationId: lookup.generationId,
+        generationState: lookup.generationState,
+        submittedDraftText: lookup.submittedDraftText,
+      }
+    }
+    if (lookup.acceptance === 'terminal') {
+      return {
+        kind: 'terminal',
+        outcome: lookup.generationState === 'failed' ? 'failed' : 'completed',
+        failureCode: null,
+        generationId: lookup.generationId,
+        submittedDraftText: lookup.submittedDraftText,
+      }
+    }
+    if (lookup.acceptance === 'outcome_unknown') {
+      return {
+        kind: 'outcome_unknown',
+        generationId: lookup.generationId,
+        submittedDraftText: lookup.submittedDraftText,
+      }
+    }
+    return { kind: 'not_observed' }
+  })()
 
   // RWV2-23（AC4）：Continue research 预填（跨 keep-alive：首访挂载与后续
   // 递增 seq 都生效）；不自动派发——发送仍需用户点 Send（既有守卫）。
@@ -485,15 +710,21 @@ export function ResearchChatPanel({
       snapshot.noteIds.length === 0
     if (!allowed) return
     const sentVersion = coverageDraftVersionRef.current
-    void onSendCoverage(dispatchText, snapshot).then((sent) => {
-      if (!sent) return
+    setCoverageOutcome(null)
+    void onSendCoverage(dispatchText, snapshot).then((outcome) => {
+      setCoverageOutcome(outcome)
+      // §9.6：只有“已受理”才可能清空；未派发（consent 取消）零副作用。
+      if (outcome.status !== 'accepted') return
       if (!wired) {
         // 未接线保留旧行为（清本地单行输入）。
         setQuery('')
         return
       }
-      // 发送成功后只清“同一版本”的 Coverage 文本，绝不触碰会话草稿。
-      if (coverageDraftVersionRef.current === sentVersion) {
+      // 发送成功后只清“同一版本且文本未变”的 Coverage 文本，绝不触碰会话草稿。
+      if (
+        coverageDraftVersionRef.current === sentVersion &&
+        coverageDraft.text === dispatchText
+      ) {
         coverageDraftVersionRef.current += 1
         setCoverageDraft({ text: '', version: coverageDraftVersionRef.current })
       }
@@ -532,6 +763,15 @@ export function ResearchChatPanel({
             noteIds: [...snapshot.noteIds],
             singleSourceId: snapshot.singleSourceId,
           }
+    // PR-5b（§9.3/D1）：session 模式发送只走 controller.send——由 workspace
+    // 负责 consent/模型快照/editor hold+flush/清稿派发（不再经 legacy send）。
+    if (sessionWired && onSendSession !== undefined) {
+      void onSendSession(rawText, selectionWithScope).then((sent) => {
+        // P1-2（§5.7.1）：派发成功后阅读位置固定到最新（follow_tail=true）。
+        if (sent) settleFollowTailRef.current()
+      })
+      return
+    }
     // PR-4：接线后正文原样提交（不 trim 覆盖草稿），空值校验仍用 trimmed。
     void onSend(wired ? rawText : trimmed, selectionWithScope).then((sent) => {
       if (sent && !wired) setQuery('')
@@ -816,6 +1056,77 @@ export function ResearchChatPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {sessionWired && (
+        <div className="shrink-0 border-b px-3 py-2" data-testid="chat-session-header">
+          <div className="flex flex-wrap items-center gap-2">
+            {restrictedSession ? (
+              <span
+                className="text-sm font-medium"
+                data-testid="chat-session-restricted"
+              >
+                {t('research.session.visibility.restricted')}
+                {sessionShortId !== null && (
+                  <span className="ml-1 text-xs text-muted-foreground">
+                    {t('research.session.shortId', { id: sessionShortId })}
+                  </span>
+                )}
+              </span>
+            ) : sessionHeaderTitle === null ? (
+              <span
+                className="text-sm text-muted-foreground"
+                data-testid="chat-session-title-loading"
+              >
+                {t('research.loading')}
+              </span>
+            ) : (
+              <span className="text-sm font-medium" data-testid="chat-session-title">
+                {sessionHeaderTitle}
+              </span>
+            )}
+            {legacySession && (
+              <Badge variant="outline" data-testid="chat-session-legacy-badge">
+                {t('research.session.visibility.legacyBadge')}
+              </Badge>
+            )}
+            {sessionVisibility.visibility === null && (
+              <Badge variant="outline" data-testid="chat-session-visibility-unknown">
+                {t('research.session.visibility.unknownBadge')}
+              </Badge>
+            )}
+            {markerWriteFailed && (
+              <span
+                className="text-xs font-medium text-amber-600"
+                data-testid="chat-marker-write-failed"
+              >
+                {t('research.submission.markerWriteFailed')}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+      {sessionWired && submissionView !== null && (
+        <div className="shrink-0 border-b px-3 py-2">
+          <ResearchSubmissionStatus
+            submissionView={submissionView}
+            currentDraft={editorSnapshot?.draftText ?? null}
+            contextReport={submissionLookup?.contextReport ?? null}
+            visibility={sessionVisibility.visibility ?? undefined}
+            onLookup={() => {
+              void sessionConversation?.lookupSubmission(submissionLookup?.token)
+              void refreshMarkerLookups?.(editorSnapshot?.draftToken ?? null)
+            }}
+            onRestore={(text) => {
+              editorHandle?.setDraftText(text)
+              void sessionConversation?.lookupSubmission(submissionLookup?.token)
+            }}
+            onCopy={(text) => {
+              if (typeof navigator !== 'undefined' && navigator.clipboard) {
+                void navigator.clipboard.writeText(text)
+              }
+            }}
+          />
+        </div>
+      )}
       {wired && (
         <div className="shrink-0 border-b px-3 py-2">
           <ResearchSessionScopeBar
@@ -861,7 +1172,7 @@ export function ResearchChatPanel({
               : ''}
           </p>
         )}
-        {turns.map((turn) =>
+        {renderedTurns.map((turn) =>
           turn.role === 'user' ? (
             <div
               key={turn.id}
@@ -892,6 +1203,20 @@ export function ResearchChatPanel({
                   data-testid="chat-turn-scope-unavailable"
                 >
                   {t('research.scopeDetails.turnScopeUnavailable')}
+                </span>
+              )}
+            </div>
+          ) : turn.recordVisibility === 'restricted' ? (
+            <div
+              key={turn.id}
+              className="rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground"
+              data-testid="chat-restricted-message"
+              data-message-id={turn.serverMessageId ?? undefined}
+            >
+              {t('research.session.visibility.restricted')}
+              {turn.serverMessageId !== null && (
+                <span className="ml-1 font-mono">
+                  {turn.serverMessageId.slice(0, 12)}
                 </span>
               )}
             </div>
@@ -927,6 +1252,16 @@ export function ResearchChatPanel({
                         <span className="text-muted-foreground">{t('research.chatNoAnswer')}</span>
                       )}
                     </div>
+                  )}
+
+                  {/* PR-5b（§7.3）：assistant 消息下方固定“上下文说明”折叠区；
+                      null/缺失 = unknown（不填零、不显示“完整”）。 */}
+                  {turn.contextReport !== undefined && turn.contextReport !== null && (
+                    <ResearchContextReport
+                      report={turn.contextReport as ResearchContextReportProjection}
+                      onAdjustScope={onChangeScope === undefined ? undefined : undefined}
+                      onNewSession={onNewSession}
+                    />
                   )}
 
                   {(turn.usage || turn.resolvedMode) && (
@@ -1090,6 +1425,42 @@ export function ResearchChatPanel({
             </div>
           ),
         )}
+        {/* PR-5b（§6.9）：失败/排队/运行中 Generation 卡（completed 已交付
+            不出卡；失败卡必须携带失败码与可选容量报告）。 */}
+        {sessionWired &&
+          sessionCards !== undefined &&
+          sessionCards
+            .filter((card) => card.status !== 'completed')
+            .map((card) => (
+              <div
+                key={`${card.generation_id}:${card.job_id ?? ''}`}
+                className="rounded-lg border px-3 py-2 text-xs"
+                data-testid="chat-generation-card"
+                data-status={card.status}
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="outline">{card.status}</Badge>
+                  <code className="font-mono">{card.generation_id}</code>
+                  {card.failure_code !== null && card.failure_code !== undefined && (
+                    <span className="text-destructive" data-testid="chat-generation-failure-code">
+                      {card.failure_code}
+                    </span>
+                  )}
+                </div>
+                {card.status === 'failed' &&
+                  submissionLookup?.contextReport !== null &&
+                  submissionLookup?.contextReport !== undefined && (
+                    <div className="mt-2">
+                      <ResearchContextReport
+                        report={submissionLookup.contextReport}
+                        variant="failed-card"
+                        defaultOpen
+                        onNewSession={onNewSession}
+                      />
+                    </div>
+                  )}
+              </div>
+            ))}
         {isStreaming && (
           <p className="text-xs text-muted-foreground" data-testid="chat-streaming">
             {t('research.chatStreaming')}
@@ -1106,6 +1477,39 @@ export function ResearchChatPanel({
         </p>
       )}
 
+      {coverageOutcome !== null && coverageOutcome.status === 'accepted' && (
+        <p
+          className={
+            coverageOutcome.registration === 'failed'
+              ? 'border-t px-3 pt-2 text-xs font-medium text-amber-600'
+              : 'border-t px-3 pt-2 text-xs text-muted-foreground'
+          }
+          data-testid={
+            coverageOutcome.registration === 'failed'
+              ? 'coverage-registration-pending'
+              : 'coverage-accepted'
+          }
+          role="status"
+        >
+          {coverageOutcome.registration === 'failed'
+            ? t('research.coverage.registrationPending')
+            : t('research.coverage.accepted')}
+          {' · '}
+          <code>{coverageOutcome.jobId}</code>
+        </p>
+      )}
+      {coverageOutcome !== null && coverageOutcome.status === 'failed' && (
+        <p
+          className="border-t px-3 pt-2 text-xs text-destructive"
+          data-testid="coverage-submit-error"
+          role="alert"
+        >
+          {t(userErrorMessageKey(coverageOutcome.errorCode))}
+          {coverageOutcome.errorMessage && (
+            <span className="text-muted-foreground"> · {coverageOutcome.errorMessage}</span>
+          )}
+        </p>
+      )}
       <div className="space-y-2 border-t p-3">
         <CoverageScopeSelector
           value={scope}
@@ -1119,7 +1523,7 @@ export function ResearchChatPanel({
           scope === 'all_selected' ? (
             <ResearchDraftComposer
               editorSnapshot={coverageEditorSnapshot}
-              conversationSnapshot={wiredConversation}
+              conversationSnapshot={coverageConversation}
               gate={coverageGate}
               gateReasonText={composerGateReasonText}
               onDraftChange={(text) => {

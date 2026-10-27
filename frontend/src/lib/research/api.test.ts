@@ -33,6 +33,32 @@ async function capture(fn: () => Promise<unknown>): Promise<Captured> {
   return calls[before]
 }
 
+/** PR-5b：Coverage 受理响应必须是 202 + 合法 generation/job 标识。 */
+function installCoverageAcceptedAdapter(): void {
+  apiClient.defaults.adapter = async (config) => {
+    const raw = config.data
+    calls.push({
+      url: String(config.url),
+      method: String(config.method ?? 'get').toUpperCase(),
+      params: config.params as Record<string, unknown> | undefined,
+      data: typeof raw === 'string' ? JSON.parse(raw) : raw,
+      headers: (config.headers ?? {}) as Record<string, string>,
+    })
+    return {
+      data: {
+        generation_id: 'gen_1',
+        job_id: 'job_1',
+        status: 'accepted',
+        session_id: 'sess_1',
+      },
+      status: 202,
+      statusText: 'Accepted',
+      headers: {},
+      config,
+    }
+  }
+}
+
 function installAdapter() {
   apiClient.defaults.adapter = async (config) => {
     // axios 在 interceptor 之后、adapter 之前已序列化 JSON body
@@ -224,6 +250,7 @@ describe('researchApi coverage（COV-09）', () => {
   })
 
   it('createCoverageChat → POST /chat 携带 synthesis_scope=all_selected + v1 契约头', async () => {
+    installCoverageAcceptedAdapter()
     const captured = await capture(() =>
       researchApi.createCoverageChat(
         P,
@@ -274,6 +301,7 @@ describe('researchApi coverage（COV-09）', () => {
   })
 
   it('coverage 端点均未使用 /api 前缀（REQ-DEP-02）', async () => {
+    installCoverageAcceptedAdapter()
     await researchApi.createCoverageChat(
       P, { query: 'q', source_ids: ['s'], note_ids: [], model_id: 'm', synthesis_scope: 'all_selected' }, 'k',
     )
