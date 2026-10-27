@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 
 import {
   RESEARCH_SESSION_SWITCHER_PLACEHOLDERS,
@@ -116,6 +116,15 @@ function renderSwitcher(
 
 function openDrawer() {
   fireEvent.click(screen.getByTestId('session-switcher-trigger'))
+}
+
+// jsdom 没有 AnimationEvent；手工构造并挂上 animationName 供 Radix Presence 识别。
+function dispatchAnimationEnd(node: HTMLElement, animationName: string) {
+  const event = new Event('animationend', { bubbles: true })
+  Object.defineProperty(event, 'animationName', { value: animationName })
+  act(() => {
+    node.dispatchEvent(event)
+  })
 }
 
 beforeEach(() => {
@@ -537,6 +546,67 @@ describe('ResearchSessionSwitcher · PR-6 键盘与可达性（§8.1）', () => 
     fireEvent.keyDown(document.body, { key: 'Escape' })
     expect(screen.queryByRole('dialog')).toBeNull()
     await waitFor(() => expect(trigger).toHaveFocus())
+  })
+
+  it('退出动画期间不提前兜底，动画结束后焦点才回触发按钮（P1 回归，真实 Presence 时序）', () => {
+    vi.useFakeTimers()
+    try {
+      const sessions = makeSessions({
+        sessions: [summary('sess_same', { title: 'Same' })],
+      })
+      renderSwitcher({ sessions, currentRef: globalRef('sess_same') })
+      const trigger = screen.getByTestId('session-switcher-trigger')
+      trigger.focus()
+      openDrawer()
+
+      const dialog = screen.getByRole('dialog') as HTMLElement
+      // 模拟 Radix Content 的退出动画（Presence 在 jsdom 下默认同步卸载；
+      // 这里显式给出非 none 的 animationName，让 Presence 等待 animationend）。
+      dialog.style.animationName = 'pr6-fade-out'
+      fireEvent.click(screen.getByTestId('session-item'))
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+      // 旧实现（handleSelect 里 setTimeout）会在动画尚未结束、条目仍持有焦点时
+      // 检查 activeElement，从而跳过兜底；此处推进计时器验证“不得提前回焦”。
+      act(() => {
+        vi.advanceTimersByTime(20)
+      })
+      expect(trigger).not.toHaveFocus()
+
+      dispatchAnimationEnd(dialog, 'pr6-fade-out')
+      act(() => {
+        vi.advanceTimersByTime(20)
+      })
+      expect(screen.queryByRole('dialog')).toBeNull()
+      expect(trigger).toHaveFocus()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('抽屉内新建失败（无会话变化）时，退出动画结束后兜底回触发按钮（P1 回归）', () => {
+    vi.useFakeTimers()
+    try {
+      const { onNew } = renderSwitcher()
+      const trigger = screen.getByTestId('session-switcher-trigger')
+      trigger.focus()
+      openDrawer()
+
+      const dialog = screen.getByRole('dialog') as HTMLElement
+      dialog.style.animationName = 'pr6-fade-out'
+      fireEvent.click(screen.getByTestId('session-list-new'))
+      expect(onNew).toHaveBeenCalledTimes(1)
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+
+      dispatchAnimationEnd(dialog, 'pr6-fade-out')
+      act(() => {
+        vi.advanceTimersByTime(20)
+      })
+      expect(screen.queryByRole('dialog')).toBeNull()
+      expect(trigger).toHaveFocus()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('激活条目后不立即回焦触发按钮；无面板接管时兜底回焦（不落 body，§8.1）', async () => {

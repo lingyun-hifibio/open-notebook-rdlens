@@ -1,0 +1,43 @@
+# PR-6 最终验证（恢复轮 fix commit；SHA 见 PR）
+date: 2026-10-27T16:02:15+08:00
+cwd: /home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr6
+
+## 1) locale + helper
+$ (cd frontend && npx vitest run src/lib/locales/index.test.ts src/lib/locales/interpolation.test.ts src/lib/locales/translate-or-fallback.test.ts)
+EXIT:0
+ Test Files  3 passed (3)
+      Tests  38 passed (38)
+
+## 2) 键盘/布局/面板定向（6 文件）
+$ (cd frontend && npx vitest run <6 files>)
+EXIT:0
+ Test Files  6 passed (6)
+      Tests  225 passed (225)
+
+## 3) ResearchLayout（2 文件）
+EXIT:0
+ Test Files  2 passed (2)
+      Tests  31 passed (31)
+
+## 4) tsc -b
+TSC_EXIT:0
+
+## 5) lint
+LINT_EXIT:1
+✖ 62 problems (5 errors, 57 warnings)
+
+## 6) 宽范围套件
+EXIT:1
+ Test Files  2 failed | 99 passed (101)
+      Tests  25 failed | 1546 passed (1571)
+ FAIL  src/components/research/NotesPanel.test.tsx
+ FAIL  src/components/research/SourceListPanel.test.tsx
+
+## 7) secret-scan（仓库根）
+$ python3 scripts/validation/scan_evidence_secrets.py
+SCAN_EXIT:0
+SECRET-SCAN OK
+
+## 8) git diff --check
+$ git diff --check origin/main...HEAD
+DIFF_CHECK_EXIT:0

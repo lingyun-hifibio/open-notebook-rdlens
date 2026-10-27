@@ -1,0 +1,10 @@
+# lint problem 集合对照（干净 origin/main vs PR head）
+# 基线来源：.worktrees/pr6-baseline（cwd/SHA/命令见 raw/baseline_origin_main_provenance.txt）
+# 归一化：去掉行号:列号与 worktree 前缀后逐条排序；行号位移不算新增。
+
+## 汇总
+baseline: ✖ 62 problems (5 errors, 57 warnings)  [LINT_EXIT:1]
+PR:       ✖ 62 problems (5 errors, 57 warnings)  [LINT_EXIT:1]
+
+## diff（< 基线 / > PR；空 = 完全相同）
+IDENTICAL_PROBLEM_SET

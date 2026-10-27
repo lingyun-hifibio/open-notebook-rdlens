@@ -2641,6 +2641,54 @@ describe('ResearchChatPanel · PR-6 布局与切换焦点（§8.2/§8.3/§8.4）
     }
   })
 
+  it('旧会话 editor 快照（身份不匹配）不回焦，目标快照就绪后才回焦（P2 回归）', () => {
+    const trigger = document.createElement('button')
+    trigger.setAttribute('data-testid', 'session-switcher-trigger')
+    document.body.appendChild(trigger)
+    try {
+      const view = render(panelUi(REF_A))
+      ;(screen.getByTestId('chat-input') as HTMLTextAreaElement).focus()
+      trigger.focus()
+
+      // 父层尚未切到 B：仍传 A 的 ready 快照 → 身份不匹配，不得回焦。
+      view.rerender(panelUi(REF_B, { editorPhase: 'ready', editorRefOverride: REF_A }))
+      expect(screen.getByTestId('chat-input')).not.toHaveFocus()
+      expect(trigger).toHaveFocus()
+
+      view.rerender(panelUi(REF_B, { editorPhase: 'ready' }))
+      expect(screen.getByTestId('chat-input')).toHaveFocus()
+    } finally {
+      trigger.remove()
+    }
+  })
+
+  it('blur relatedTarget=null 清除挂起回焦（P2 回归）', () => {
+    const trigger = document.createElement('button')
+    trigger.setAttribute('data-testid', 'session-switcher-trigger')
+    document.body.appendChild(trigger)
+    try {
+      const view = render(panelUi(REF_A))
+      ;(screen.getByTestId('chat-input') as HTMLTextAreaElement).focus()
+      trigger.focus()
+
+      view.rerender(panelUi(REF_B, { editorPhase: 'loading' }))
+      expect(trigger).toHaveFocus()
+
+      // 程序化把焦点放回输入框后失焦（窗口失焦/点击不可聚焦背景 →
+      // relatedTarget=null），挂起请求应失效。
+      act(() => {
+        const input = screen.getByTestId('chat-input') as HTMLTextAreaElement
+        input.focus()
+        input.blur()
+      })
+
+      view.rerender(panelUi(REF_B, { editorPhase: 'ready' }))
+      expect(screen.getByTestId('chat-input')).not.toHaveFocus()
+    } finally {
+      trigger.remove()
+    }
+  })
+
   it('锚点恢复只写 scrollTop，不抢焦点（§8.3）', () => {
     const originalRect = HTMLElement.prototype.getBoundingClientRect
     let chatScroll: HTMLElement | null = null

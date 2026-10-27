@@ -210,6 +210,18 @@ export function ResearchSourceChatPanel({
     sourceComposerIntentRef.current = target.getAttribute('data-testid') === 'chat-input'
   }
 
+  // 与 Chat 面板对齐：焦点离开允许区域（含 relatedTarget=null 的窗口失焦/
+  // 点击不可聚焦背景）时，intent 与挂起回焦请求都失效，避免稍后抢焦。
+  const handleSourcePanelBlurCapture = (
+    event: React.FocusEvent<HTMLDivElement>,
+  ): void => {
+    const next = event.relatedTarget as HTMLElement | null
+    if (next !== null && event.currentTarget.contains(next)) return
+    if (isSourceSessionNavigationTarget(next)) return
+    sourceComposerIntentRef.current = false
+    pendingSourceComposerFocusRef.current = false
+  }
+
   // Codex P1-#3（围绕同一身份）：session 模式下 busy/streaming 以 controller
   // 快照为权威，legacy isStreaming 在 controller 执行时为 idle 会误开放发送。
   const [sessionBusy, setSessionBusy] = useState(false)
@@ -557,6 +569,7 @@ export function ResearchSourceChatPanel({
       className="flex h-full min-h-0 flex-col"
       data-testid="srcchat-panel"
       onFocusCapture={handleSourcePanelFocusCapture}
+      onBlurCapture={handleSourcePanelBlurCapture}
     >
       {/* RWV2-UIOPT-A：顶栏右侧为 ResearchLayout 展开/恢复按钮预留固定宽度
           （lg:pr-36 ≥ 按钮宽 + right-3 偏移）——New session 不被按钮遮挡，
