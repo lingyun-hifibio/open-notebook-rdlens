@@ -1,7 +1,7 @@
 # 宽范围套件输出摘要（完整日志未入库）
 # $ cd frontend && npx vitest run src/lib/locales src/components/research src/lib/research src/lib/hooks src/app/research
 # 干净 origin/main（raw/baseline_origin_main_provenance.txt）：2 failed | 98 passed (100)；25 failed | 1510 passed (1535)
-# 本 PR 最终 head：2 failed | 99 passed (101)；25 failed | 1546 passed (1571)
+# 本 PR 最终 head：2 failed | 99 passed (101)；25 failed | 1547 passed (1572)
 # 失败均为 NotesPanel.test.tsx(11)+SourceListPanel.test.tsx(14)，预存在、非本 PR 回归
 
  Test Files  2 failed | 99 passed (101)

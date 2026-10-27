@@ -17,7 +17,7 @@
   R2  常见 token 前缀：sk- / ghp_ / github_pat_ / AKIA
   R3  `(API_KEY|TOKEN|PASSWORD|SECRET)=值`（值长度 >= 8；放行占位符）
   R4  `Config.Env` / `docker inspect … .Config.Env` 原始 dump
-  R5  32+ hex 高熵串（熵 > 4.0；放行 allowlist 与 40-hex commit SHA）
+  R5  32–39 位（及 41+ 位）高熵 hex（熵 > 4.0；放行 allowlist 与 40-hex commit SHA）
   R6  PEM 私钥块
   R7  `Bearer <token>`（token >= 20 字符）
 """

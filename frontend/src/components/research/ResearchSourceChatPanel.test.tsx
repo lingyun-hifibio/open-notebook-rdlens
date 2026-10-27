@@ -950,7 +950,7 @@ describe('ResearchSourceChatPanel · PR-6 快捷列表键盘（§8.1）', () => 
     }
   })
 
-  it('source 面板：焦点移到外部元素/blur(null) 后挂起回焦失效（P2 回归）', () => {
+  it('source 面板：焦点移到面板外普通元素后（document focusin）挂起回焦失效（P2 回归）', () => {
     const refA = {
       domain: 'research' as const,
       kind: 'source' as const,
@@ -1000,15 +1000,86 @@ describe('ResearchSourceChatPanel · PR-6 快捷列表键盘（§8.1）', () => 
       rerender(
         <ResearchSourceChatPanel projectId="proj_1" sourceId="src_1" onHighlightPage={vi.fn()} />,
       )
-      // 焦点移到面板外普通元素（document focusin 清理 pending）。
-      external.focus()
 
-      // 再走 blur(null) 路径：把焦点放回 source composer 后失焦。
+      // 焦点先移到面板外普通元素（document focusin 清理 pending），再回到
+      // 会话导航入口；若 pending 未清，ready 后会被拉回 composer。
+      external.focus()
+      trigger.focus()
+
+      editorSnapshot = {
+        ...createEditorState({ ref: refB, writerId: 'w-pr6', transportAvailable: true }),
+        phase: 'ready',
+        loading: false,
+      }
+      rerender(
+        <ResearchSourceChatPanel projectId="proj_1" sourceId="src_1" onHighlightPage={vi.fn()} />,
+      )
+      expect(screen.getByTestId('chat-input')).not.toHaveFocus()
+      expect(trigger).toHaveFocus()
+    } finally {
+      trigger.remove()
+      external.remove()
+    }
+  })
+
+  it('source 面板：blur(relatedTarget=null) 清除挂起回焦（P2 回归，onBlurCapture）', () => {
+    const refA = {
+      domain: 'research' as const,
+      kind: 'source' as const,
+      projectId: 'proj_1',
+      sessionId: 'sess_a',
+      sourceId: 'src_1',
+    }
+    const refB = { ...refA, sessionId: 'sess_b' }
+    let activeRef: typeof refA = refA
+    let editorSnapshot = {
+      ...createEditorState({ ref: refA, writerId: 'w-pr6', transportAvailable: true }),
+      phase: 'ready' as 'ready' | 'loading',
+      loading: false,
+    }
+    vi.mocked(useResearchSessionRuntimeOptional).mockReturnValue({
+      active: () => activeRef,
+    } as never)
+    vi.mocked(useResearchEditor).mockImplementation((() => ({
+      snapshot: editorSnapshot,
+      controller: null,
+      setDraftText: vi.fn(),
+      flush: vi.fn(async () => 'saved'),
+      hold: vi.fn(),
+      release: vi.fn(),
+      clearAfterSubmission: vi.fn(async () => 'cleared'),
+    })) as never)
+    vi.mocked(useResearchSourceChat).mockReturnValue(makeChatResult())
+
+    const trigger = document.createElement('button')
+    trigger.setAttribute('data-testid', 'session-switcher-trigger')
+    document.body.appendChild(trigger)
+    try {
+      const { rerender } = render(
+        <ResearchSourceChatPanel projectId="proj_1" sourceId="src_1" onHighlightPage={vi.fn()} />,
+      )
+      ;(screen.getByTestId('chat-input') as HTMLTextAreaElement).focus()
+      trigger.focus()
+
+      // B loading → 挂起回焦。
+      activeRef = refB
+      editorSnapshot = {
+        ...createEditorState({ ref: refB, writerId: 'w-pr6', transportAvailable: true }),
+        phase: 'loading',
+        loading: true,
+      }
+      rerender(
+        <ResearchSourceChatPanel projectId="proj_1" sourceId="src_1" onHighlightPage={vi.fn()} />,
+      )
+
+      // 不经过面板外元素：把焦点放回 source composer 后直接失焦
+      // （relatedTarget=null），只能由面板根 onBlurCapture 清理 pending。
       act(() => {
         const input = screen.getByTestId('chat-input') as HTMLTextAreaElement
         input.focus()
         input.blur()
       })
+      expect(document.activeElement).toBe(document.body)
 
       editorSnapshot = {
         ...createEditorState({ ref: refB, writerId: 'w-pr6', transportAvailable: true }),
@@ -1021,7 +1092,6 @@ describe('ResearchSourceChatPanel · PR-6 快捷列表键盘（§8.1）', () => 
       expect(screen.getByTestId('chat-input')).not.toHaveFocus()
     } finally {
       trigger.remove()
-      external.remove()
     }
   })
 

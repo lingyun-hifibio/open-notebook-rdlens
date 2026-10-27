@@ -17,7 +17,7 @@
 | 焦点意图失效（P1） | 面板 `onBlurCapture` + document `focusin` 监听：焦点移到面板外普通元素/面板内非输入控件 → 清除意图；只有面板内与真实会话导航入口（触发按钮/`research-session-drawer-*`）保留 | `焦点从输入框移到面板外普通元素后切换` / `过期意图：输入框→入口→外部控件→入口→切换不回焦输入框` |
 | 连续切换与隐藏（P1） | 挂起回焦按“当前会话身份 + editor 就绪”消费；连续 A→B loading→C ready 沿用同一挂起请求；`surfaceActive=false` 使挂起失效，重新显示不执行旧请求 | `连续切换（B loading → C ready）沿用挂起回焦请求` / `surface 隐藏时挂起回焦失效` |
 | 无面板接管兜底（P1） | 兜底放在**实际卸载**的 `onCloseAutoFocus` 后（退出动画期间 activeElement 仍在条目上，过早 timer 会漏判；选择当前会话/新建失败不再落 body）；顶栏新建不遗留激活标记 | `激活条目后不立即回焦…无面板接管时兜底回焦` / `选择当前会话后焦点兜底回触发按钮` / `顶栏新建…Escape 仍回焦触发按钮` |
-| Source 面板会话切换焦点（P1） | source 面板按 `active('source')` 身份变化接管：此前在 source composer → **等目标 source editor 就绪**（身份匹配 + phase ready 且非 loading）后再回 composer，否则焦点到 source 面板标题；旧快照/loading 不抢焦；面板根 `onFocusCapture`/`onBlurCapture` 与 Chat 面板对齐 | `source 会话切换后焦点落到 source 面板标题` / `source 切换 loading 期间不抢焦，就绪后才回焦 composer` / `旧 source editor 快照…不回焦` / `source 面板：焦点移到外部元素/blur(null) 后挂起回焦失效` |
+| Source 面板会话切换焦点（P1） | source 面板按 `active('source')` 身份变化接管：此前在 source composer → **等目标 source editor 就绪**（身份匹配 + phase ready 且非 loading）后再回 composer，否则焦点到 source 面板标题；旧快照/loading 不抢焦；面板根 `onFocusCapture`/`onBlurCapture` 与 Chat 面板对齐 | `source 会话切换后焦点落到 source 面板标题` / `source 切换 loading 期间不抢焦，就绪后才回焦 composer` / `旧 source editor 快照…不回焦` / `source 面板：焦点移到面板外普通元素后（document focusin）挂起回焦失效` + `source 面板：blur(relatedTarget=null) 清除挂起回焦` |
 | 挂起请求失效（P1） | document `focusin` 与面板 blur 在 **intent 或 pending 任一存在**时都追踪；离开允许区域（含 relatedTarget=null/iframe）同时清除两者 | `挂起回焦期间焦点被外部元素接管后失效` |
 | 方向键 roving tabindex / Home / End / Enter·Space 激活 | 列表 `onKeyDown`：↑↓循环、Home/End 首尾；条目 `tabIndex` 仅当前为 0，其余 -1；激活用原生 `button` | `roving tabindex：…`（focus/tabIndex 断言） |
 | `aria-current="true"` 当前条目 | 保留 PR-2 行为 | 既有 PR-2 用例 |
@@ -95,6 +95,6 @@
 | document focusin 只在 intent 为真时清理 | FAIL：`挂起回焦期间焦点被外部元素接管后失效` |
 | 移除旧 editor 快照身份守卫（Chat/Source） | FAIL：`旧会话 editor 快照（身份不匹配）不回焦…` / `旧 source editor 快照（身份不匹配）不回焦…` |
 | blur 只清 intent 不清 pending | FAIL：`blur relatedTarget=null 清除挂起回焦` |
-| 移除 source 面板根 `onBlurCapture` | FAIL：`source 面板：焦点移到外部元素/blur(null) 后挂起回焦失效` |
+| 移除 source 面板根 `onBlurCapture` | FAIL：`source 面板：blur(relatedTarget=null) 清除挂起回焦`（与 document focusin 用例已拆分，删除 handler 时该用例单独变红） |
 | Source 回焦不校验 editor 身份/ready | FAIL：`source 切换 loading 期间不抢焦…` |
 | 删除 `tr-TR.research.session.notFound` | FAIL：`tr-TR should have the same keys as en-US` |

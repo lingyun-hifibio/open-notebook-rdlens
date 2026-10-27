@@ -21,9 +21,9 @@
 ## 证据 secret-scan 门禁（本 PR 新增）
 
 - 脚本：`scripts/validation/scan_evidence_secrets.py`；allowlist：`dev_docs/validation/secret-scan-allowlist.txt`（只登记非凭证的 64-hex digest，如部署镜像 digest）。
-- 覆盖：64-hex（allowlist 之外拒绝）、`sk-`/`ghp_`/`github_pat_`/`AKIA`、`(API_KEY|TOKEN|PASSWORD|SECRET)=值`、`docker inspect … Config.Env` dump、32+ hex 高熵串、PEM 私钥、`Bearer <token>`。
+- 覆盖：64-hex（allowlist 之外拒绝）、`sk-`/`ghp_`/`github_pat_`/`AKIA`、`Bearer <token>`、PEM 私钥、`(API_KEY|TOKEN|PASSWORD|SECRET)=值`、`docker inspect … Config.Env` 原始 dump（仅当同一行同时出现环境变量赋值时才命中，避免误伤说明文字）、32–39 位（及 41+ 位）高熵 hex（40 位 commit SHA 与 allowlist digest 除外）。
 - 用法：仓库根执行 `python3 scripts/validation/scan_evidence_secrets.py`（默认扫描 `dev_docs/validation/`；只打印 `路径:行号:规则`，绝不打印命中值）。
-- 结果：本证据目录 `SECRET-SCAN OK`；合成样本自检分别命中 R1/R3/R4/R7（见 `raw/secret_scan_gate.txt`）。
+- 结果：本证据目录 `SECRET-SCAN OK`；合成样本自检分别命中 R1（64hex）/R3（敏感 env 赋值）/R4（env dump 形态）/R7（Bearer）（见 `raw/secret_scan_gate.txt`）。
 - 证据生成规则：环境取证只输出白名单字段（不 dump `docker inspect .Config.Env`）；提交前必跑本门禁与 `git diff --check`。
 
 ## 排除项（DESIGN §10.4 / cards/PR-6）

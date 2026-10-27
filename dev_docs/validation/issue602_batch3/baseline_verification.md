@@ -34,7 +34,7 @@ problem 集合 diff：`IDENTICAL_PROBLEM_SET`（去掉行号:列号与 worktree 
 ```text
 $ npx vitest run src/lib/locales src/components/research src/lib/research src/lib/hooks src/app/research
  Test Files  2 failed | 99 passed (101)
-      Tests  25 failed | 1546 passed (1571)
+      Tests  25 failed | 1547 passed (1572)
 ```
 
 失败仅 `NotesPanel.test.tsx`（11）与 `SourceListPanel.test.tsx`（14）——**预存在失败**，在干净 `origin/main`（`.worktrees/pr6-baseline`）复跑：
@@ -45,7 +45,7 @@ $ npx vitest run src/components/research/NotesPanel.test.tsx src/components/rese
       Tests  25 failed | 2 passed (27)      # EXIT:1
 ```
 
-干净基线与本 PR 的宽范围结果：`25 failed | 1510 passed (1535)` vs `25 failed | 1546 passed (1571)`；失败文件与条数一致（**非本 PR 回归**），新增 36 条通过用例来自本 PR 键盘/焦点/i18n/动画时序测试。
+干净基线与本 PR 的宽范围结果：`25 failed | 1510 passed (1535)` vs `25 failed | 1547 passed (1572)`；失败文件与条数一致（**非本 PR 回归**），新增 37 条通过用例来自本 PR 键盘/焦点/i18n/动画时序测试。
 
 ## 4. 本 PR 定向套件（最终 head 见 PR）
 
@@ -61,7 +61,7 @@ $ npx vitest run \
     src/components/research/ResearchSourceChatPanel.test.tsx \
     src/app/research/page.sessions.test.tsx \
     src/lib/research/reading-anchor.test.ts
- Test Files  6 passed (6) / Tests 225 passed (225)
+ Test Files  6 passed (6) / Tests 226 passed (226)
 ```
 
 ## 5. 原始日志（已脱敏、去行尾空白、`.txt` 提交）
