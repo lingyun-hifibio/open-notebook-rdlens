@@ -1796,9 +1796,14 @@ export function createConversationController(input: {
       editorIntentHash: seed.editorIntentHash,
       idempotencyKey: seed.idempotencyKey,
       modelId: seed.modelId,
-      sourceIds: seed.sourceIds,
-      noteIds: seed.noteIds,
-      scope: seed.scope,
+      // 快照必须与调用方解耦：调用方随后修改原数组/scope 不得改变重放一致性判断。
+      sourceIds: [...seed.sourceIds],
+      noteIds: [...seed.noteIds],
+      scope: seed.scope === null ? null : {
+        mode: seed.scope.mode,
+        sourceIds: [...seed.scope.sourceIds],
+        singleSourceId: seed.scope.singleSourceId,
+      },
     })
   }
 
@@ -1831,29 +1836,24 @@ export function createConversationController(input: {
         })
       }
       const meta = requests.get(turnState.identity.turnId)
-      if (meta === undefined) {
-        return Promise.resolve({
-          status: 'blocked',
-          error: {
-            code: 'replay_snapshot_unavailable',
-            message: 'Original submission snapshot is no longer available',
-          },
-        })
-      }
-      const replay = sameSubmissionIntent(turnState, meta, input)
+      const replay = meta !== undefined && sameSubmissionIntent(turnState, meta, input)
       if (!replay && input.confirmDuplicateExecution !== true) {
         return Promise.resolve({
           status: 'blocked',
-          error: {
-            code: 'duplicate_execution_confirmation_required',
-            message: 'Changed submission requires explicit duplicate-execution confirmation',
-          },
+          error: meta === undefined
+            ? {
+                code: 'replay_snapshot_unavailable',
+                message: 'Original submission snapshot is unavailable; changed submission requires explicit confirmation',
+              }
+            : {
+                code: 'duplicate_execution_confirmation_required',
+                message: 'Changed submission requires explicit duplicate-execution confirmation',
+              },
         })
       }
-      if (
-        !replay
-        && (input.draftToken === meta.draftToken || input.idempotencyKey === meta.idempotencyKey)
-      ) {
+      const previousToken = meta?.draftToken ?? turnState.identity.draftToken
+      const previousKey = meta?.idempotencyKey ?? turnState.identity.idempotencyKey
+      if (!replay && (input.draftToken === previousToken || input.idempotencyKey === previousKey)) {
         return Promise.resolve({
           status: 'blocked',
           error: {
@@ -1862,7 +1862,7 @@ export function createConversationController(input: {
           },
         })
       }
-      const seed = replay
+      const seed = replay && meta !== undefined
         ? meta
         : {
             query: input.query,
@@ -2192,6 +2192,15 @@ export function createConversationController(input: {
     lookupQueue.length = 0
     lookupInFlight.clear()
     lookupTasks.clear()
+    // 销毁后旧快照/详情不得继续可读（review-audit 定向复核 BLOCKING #1）。
+    state = createConversationState({
+      sessionKey: state.sessionKey,
+      authGeneration: captureGeneration,
+    })
+    detailMessages = []
+    detailCursor = null
+    cached = null
+    version += 1
     listeners.clear()
   }
 

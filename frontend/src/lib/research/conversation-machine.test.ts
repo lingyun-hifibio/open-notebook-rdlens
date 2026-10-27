@@ -1630,11 +1630,15 @@ describe('conversation-controller：副作用与迟到隔离', () => {
     expect(controller.getSnapshot().turn?.identity.idempotencyKey).toBe(KEY)
   })
 
-  it('review-audit B2：updateAuth 跨 viewer 销毁旧 controller；旧实例 stale、新实例不相等', async () => {
+  it('review-audit B2：updateAuth 跨 viewer 销毁旧 controller；旧快照/详情不可读、新实例不相等', async () => {
     const openStream = vi.fn(() => ({ abort: () => {} }))
     const transport = {
       openStream,
       getSubmission: () => submissionResponse(),
+      loadDetail: () => ({
+        messages: [{ message_id: 'msg_a', role: 'assistant', content: 'viewer-a-content' }],
+        next_cursor: null,
+      }),
     }
     const runtime = createSessionRuntime({
       authGeneration: 1,
@@ -1643,6 +1647,11 @@ describe('conversation-controller：副作用与迟到隔离', () => {
       role: 'owner',
     })
     const first = runtime.conversation(REF, { transport })
+    // 先填充内容，再切换 viewer：dispose 后旧快照必须不可读，而不是仅断言空 turn。
+    expect((await first.send(sendInput())).status).toBe('ok')
+    expect((await first.load()).status).toBe('ok')
+    expect(first.getSnapshot().turn).not.toBeNull()
+    expect(first.getSnapshot().detailMessages).toHaveLength(1)
     runtime.updateAuth({
       authGeneration: 2,
       projectId: 'proj_1',
@@ -1651,13 +1660,54 @@ describe('conversation-controller：副作用与迟到隔离', () => {
     })
     const sent = await first.send(sendInput())
     expect(sent.status).toBe('stale')
-    expect(openStream).not.toHaveBeenCalled()
+    expect(openStream).toHaveBeenCalledTimes(1)
     expect(first.getSnapshot().turn).toBeNull()
+    expect(first.getSnapshot().detailMessages).toHaveLength(0)
 
     const second = runtime.conversation(REF, { transport })
     expect(second).not.toBe(first)
     expect((await second.send(sendInput())).status).toBe('ok')
-    expect(openStream).toHaveBeenCalledTimes(1)
+    expect(openStream).toHaveBeenCalledTimes(2)
+  })
+
+  it('review-audit B2b：调用方修改原数组/scope 后不得被误判为同意图重放（快照必须深拷贝）', async () => {
+    const { controller, calls } = setup()
+    const sourceIds = ['src_1']
+    const scope = { mode: 'all' as const, sourceIds: [] as string[], singleSourceId: null }
+    expect((await controller.send(sendInput({ sourceIds, scope }))).status).toBe('ok')
+    sourceIds.push('src_2')
+    scope.sourceIds.push('src_2')
+    await controller.lookupSubmission()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(controller.getSnapshot().turn?.state).toBe('not_observed')
+    const replay = await controller.retrySubmission(sendInput({ sourceIds, scope, operationId: 'op-2' }))
+    expect(replay.status).toBe('blocked')
+    expect(replay.error?.code).toBe('duplicate_execution_confirmation_required')
+    expect(calls).toHaveLength(1)
+  })
+
+  it('review-audit B3：冷启动 external not_observed 在显式确认 + 新身份下允许发送', async () => {
+    const { controller, calls } = setup({
+      submission: (input) => submissionResponse({ draft_token: input.token }),
+    })
+    expect((await controller.lookupSubmission('external_draft')).status).toBe('ok')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(controller.getSnapshot().turn?.state).toBe('not_observed')
+    const newIdentity = {
+      operationId: 'op-2',
+      draftToken: 'draft_2',
+      editorIntentHash: 'f'.repeat(64),
+      idempotencyKey: `s1_${'c'.repeat(64)}`,
+    }
+    const blocked = await controller.retrySubmission(sendInput(newIdentity))
+    expect(blocked.status).toBe('blocked')
+    expect(blocked.error?.code).toBe('replay_snapshot_unavailable')
+    const sent = await controller.retrySubmission(
+      sendInput({ ...newIdentity, confirmDuplicateExecution: true }),
+    )
+    expect(sent.status).toBe('ok')
+    expect(calls).toHaveLength(1)
+    expect(calls[0].input).toMatchObject({ draftToken: 'draft_2', lastEventId: 0 })
   })
 
 })
