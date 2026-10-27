@@ -78,6 +78,12 @@ export interface ResearchSseEvent {
   completion_status?: string
   code?: string
   message?: string
+  /** #602 第三批 PR-5a：受理回执（usage 事件扩展字段；形状非法整组丢弃） */
+  accepted?: ResearchAcceptedReceiptWire
+  /** #602 第三批 PR-5a：容量解释（形状非法整组丢弃；投影归 PR-5b） */
+  context_report?: ResearchContextReportWire
+  /** #602 第三批 PR-5a：上下文覆盖（形状非法整组丢弃） */
+  context_coverage?: ResearchContextCoverage
 }
 
 export type ResearchJobStatus = 'queued' | 'running' | 'cancelling' | 'cancelled' | 'completed' | 'failed'
@@ -666,4 +672,49 @@ export interface ResearchScopeBarSourceOption {
 export interface ResearchScopeBarNoteOption {
   readonly noteId: string
   readonly title: string
+}
+
+/**
+ * `accepted_receipt` wire 形状（#602 第一批冻结契约 `$defs/accepted_receipt`，
+ * 第三批 PR-5a）。`request_id`/`editor_revision` 只记录、不参与受理等值匹配
+ * （DESIGN §6.3 R7）；`session_ref` 为 snake_case wire 形状，由 sse.ts 经
+ * `session-contract.parseSessionRef` 校验后投影。
+ */
+export interface ResearchAcceptedReceiptWire {
+  session_ref: {
+    domain: string
+    kind: 'global' | 'source'
+    project_id: string
+    session_id: string
+    source_id: string | null
+  }
+  generation_id: string
+  request_id: string
+  editor_revision: number
+  draft_token: string
+  editor_intent_hash: string
+}
+
+/**
+ * `context_report` wire 形状（第一批 v1；第三批 §6.9/§9.5）。投影与渲染分别归
+ * `session-contract.parse*` 与 PR-5b；本文件只声明 wire 字段，便于 SSE 解析。
+ */
+export interface ResearchContextReportWire {
+  version: 1
+  status: 'complete' | 'trimmed' | 'blocked' | 'unknown'
+  history: {
+    available_turns: number | null
+    included_turns: number | null
+    omitted_turns: number | null
+  }
+  evidence: {
+    included_chunks: number | null
+    omitted_chunks: number | null
+  }
+  input_budget: number | null
+  serialized_input_tokens: number | null
+  estimator_version: string | null
+  reason_codes: string[]
+  required_context_missing: boolean
+  measurement_scope: 'final_reasoning_call' | 'unknown'
 }

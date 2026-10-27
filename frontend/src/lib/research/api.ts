@@ -69,7 +69,11 @@ import type {
   TransformationRunResult,
 } from '@/lib/types/research'
 import { saveIdempotencyKey } from './save-idempotency'
-import { SESSION_CONTRACT_HEADER, SESSION_CONTRACT_VERSION } from './session-contract'
+import {
+  SESSION_CONTRACT_HEADER,
+  SESSION_CONTRACT_VERSION,
+  type ResearchSessionRef,
+} from './session-contract'
 
 const researchPath = (projectId: string, ...segments: string[]): string =>
   `/v1/research/projects/${projectId}${segments.length > 0 ? `/${segments.join('/')}` : ''}`
@@ -878,20 +882,8 @@ export class ResearchStreamHttpError extends Error {
   }
 }
 
-export interface ResearchChatStreamOptions {
-  projectId: string
-  request: ResearchChatRequest
-  /**
-   * SSE 端点路径（默认 `/chat` 全局多篇语义不变；Issue #182 source chat
-   * 传 `/sources/{source_id}/chat`）。仅路径参数化，鉴权/帧解析共用。
-   */
-  path?: string
-  /** #238：v1 契约幂等键；调用方复用策略决定，缺省新键 */
-  idempotencyKey?: string
-  /** PR5（B3）：契约头显式分支——C-05 Chat 携带 c05-v1；缺省 v1 不变 */
-  contract?: 'v1' | 'c05-v1'
-  /** 断线重连的 Last-Event-ID（0 = 从头开始） */
-  lastEventId?: number
+/** SSE 流的公共回调（legacy 与新会话协议共用）。 */
+interface ResearchChatStreamCallbacks {
   /** 响应到达时读取一次响应头（Issue #182：X-Chat-Session-Id 回显） */
   onResponseMeta?: (headers: Headers) => void
   /** 流正常读尽（EOF）；是否重连由调用方按终态判定（Issue #182 恢复边界） */
@@ -918,6 +910,63 @@ export interface ResearchChatStreamOptions {
 }
 
 /**
+ * legacy SSE 变体（#602 第三批 PR-5a D1 裁决）：
+ * `protocol` 可省略，保持旧调用方/旧测试的既有签名与原行为（v1 或 c05-v1）；
+ * `sessionRef`/editor 字段在类型级禁止出现（禁止静默携带会话身份走旧协议）。
+ */
+export interface ResearchChatStreamLegacyOptions extends ResearchChatStreamCallbacks {
+  /** 显式 legacy 标记；省略视为 legacy（仅用于向后兼容） */
+  protocol?: 'legacy'
+  sessionRef?: never
+  kind?: never
+  editorRevision?: never
+  draftToken?: never
+  editorIntentHash?: never
+  projectId: string
+  request: ResearchChatRequest
+  /**
+   * SSE 端点路径（默认 `/chat` 全局多篇语义不变；Issue #182 source chat
+   * 传 `/sources/{source_id}/chat`）。仅路径参数化，鉴权/帧解析共用。
+   */
+  path?: string
+  /** #238：v1 契约幂等键；调用方复用策略决定，缺省新键 */
+  idempotencyKey?: string
+  /** PR5（B3）：契约头显式分支——C-05 Chat 携带 c05-v1；缺省 v1 不变 */
+  contract?: 'v1' | 'c05-v1'
+  /** 断线重连的 Last-Event-ID（0 = 从头开始） */
+  lastEventId?: number
+}
+
+/**
+ * 新会话协议 SSE 变体（#602 第三批 PR-5a；DESIGN §6.2/§9.4）：
+ * 必填 `sessionRef + editorRevision + draftToken + editorIntentHash + idempotencyKey`；
+ * `kind=global` 携带 `X-Research-Contract: c05-v1`，`kind=source` 携带 `v1`；
+ * 两分支都携带 `X-Research-Session-Contract: research-session-v1`。
+ * 缺失字段由类型系统拒绝，**不存在静默降级到 legacy 的路径**。
+ */
+export interface ResearchChatSessionStreamOptions extends ResearchChatStreamCallbacks {
+  protocol: 'research-session-v1'
+  projectId: string
+  kind: 'global' | 'source'
+  sessionRef: ResearchSessionRef
+  request: ResearchChatRequest
+  editorRevision: number
+  draftToken: string
+  editorIntentHash: string
+  /** 新协议固定 `focused`（DESIGN §6.2）；缺省即 focused */
+  contextLevel?: 'focused'
+  /** `s1_` 提交幂等键（重连/重放必须复用同一值） */
+  idempotencyKey: string
+  /** 断线重连的 Last-Event-ID（0 = 从头开始） */
+  lastEventId?: number
+}
+
+/** 判别联合：legacy 变体与 `research-session-v1` 变体。 */
+export type ResearchChatStreamOptions =
+  | ResearchChatStreamLegacyOptions
+  | ResearchChatSessionStreamOptions
+
+/**
  * 调用方中止流的原因（D-24/§5.3 第 3 行）；缺省视为用户取消。
  * `terminal_reached`：SSE 已给出 done/error 终态——本地收尾不应再重试，
  * 但必须**释放**读取器与看门狗（评审 MEDIUM-6：仅把 disposer 置 null
@@ -941,8 +990,66 @@ export type ResearchStreamAbortReason = 'user_cancel' | 'identity' | 'page_chang
 export function openResearchChatStream(
   options: ResearchChatStreamOptions,
 ): (reason?: ResearchStreamAbortReason) => void {
+  const isSessionProtocol = options.protocol === 'research-session-v1'
+  if (!isSessionProtocol) {
+    // 运行时防御（D1 裁决）：未声明新协议却携带会话字段 → 协议错误，
+    // 绝不静默降级为 legacy v1。
+    const raw = options as unknown as Record<string, unknown>
+    if (
+      raw.sessionRef != null
+      || raw.draftToken != null
+      || raw.editorIntentHash != null
+      || raw.editorRevision != null
+      || raw.kind != null
+    ) {
+      options.onProtocolError?.('session_fields_require_research_session_v1')
+      return () => {}
+    }
+  }
+  const legacyOptions = isSessionProtocol ? null : (options as ResearchChatStreamLegacyOptions)
+  const sessionOptions = isSessionProtocol ? (options as ResearchChatSessionStreamOptions) : null
+  if (sessionOptions !== null) {
+    const refSourceMissing =
+      sessionOptions.kind === 'source'
+      && (sessionOptions.sessionRef.sourceId ?? '').length === 0
+    if (
+      sessionOptions.sessionRef.kind !== sessionOptions.kind
+      || refSourceMissing
+      || sessionOptions.sessionRef.projectId !== sessionOptions.projectId
+    ) {
+      options.onProtocolError?.('invalid_session_ref')
+      return () => {}
+    }
+  }
+  let streamPath = '/chat'
+  let idempotencyKey = newIdempotencyKey()
+  // legacy 请求体沿用调用方原样 wire；新协议补齐 §6.2 必填字段（session_id/
+  // editor_revision/draft_token/editor_intent_hash/context_level）。
+  let requestBody: unknown = null
+  let contractHeader: 'v1' | 'c05-v1' = 'v1'
+  if (legacyOptions !== null) {
+    streamPath = legacyOptions.path ?? '/chat'
+    idempotencyKey = legacyOptions.idempotencyKey ?? newIdempotencyKey()
+    requestBody = legacyOptions.request
+    contractHeader = legacyOptions.contract ?? 'v1'
+  } else {
+    const session = options as ResearchChatSessionStreamOptions
+    streamPath = session.kind === 'source'
+      ? `/sources/${session.sessionRef.sourceId ?? ''}/chat`
+      : '/chat'
+    idempotencyKey = session.idempotencyKey
+    requestBody = {
+      ...session.request,
+      session_id: session.sessionRef.sessionId,
+      editor_revision: session.editorRevision,
+      draft_token: session.draftToken,
+      editor_intent_hash: session.editorIntentHash,
+      context_level: session.contextLevel ?? 'focused',
+    }
+    contractHeader = session.kind === 'global' ? 'c05-v1' : 'v1'
+  }
   const controller = new AbortController()
-  const url = `${requireResearchGateway()}${buildResearchUrl(options.projectId, options.path ?? '/chat')}`
+  const url = `${requireResearchGateway()}${buildResearchUrl(options.projectId, streamPath)}`
   const token = researchBearerToken()
   const settlement = createAttemptSettlement()
   /** 调用方中止的原因（用于区分 timeout / 取消 / 身份 / 页面变化） */
@@ -999,9 +1106,14 @@ export function openResearchChatStream(
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Accept: 'text/event-stream',
-    // #238：契约头显式分支（PR5：C-05 → c05-v1；缺省 v1 不变）
-    'X-Research-Contract': options.contract ?? 'v1',
-    'Idempotency-Key': options.idempotencyKey ?? newIdempotencyKey(),
+    // #238：契约头显式分支（PR5：C-05 → c05-v1；缺省 v1 不变）；
+    // PR-5a：新会话协议按 kind 固定 c05-v1/v1，不读取 legacy contract。
+    'X-Research-Contract': contractHeader,
+    'Idempotency-Key': idempotencyKey,
+  }
+  if (sessionOptions !== null) {
+    // 02 §2：所有新协议请求必带会话契约头。
+    headers[SESSION_CONTRACT_HEADER] = SESSION_CONTRACT_VERSION
   }
   if (token) {
     headers.Authorization = `Bearer ${token}`
@@ -1018,7 +1130,7 @@ export function openResearchChatStream(
   fetch(url, {
     method: 'POST',
     headers,
-    body: JSON.stringify(options.request),
+    body: JSON.stringify(requestBody),
     signal: controller.signal,
     cache: 'no-store',
   })
@@ -1220,5 +1332,62 @@ export async function putEditorState(
   const response = await apiClient.put<unknown>(editorStatePath(projectId, target), body, {
     headers: sessionContractHeaders,
   })
+  return response.data
+}
+
+// ── 提交查回（#602 第三批 PR-5a；DESIGN §3.5/§6.7，02 §3） ──
+
+/** 提交查回目标；`kind=source` 时 `sourceId` 必填（绑定当前来源）。 */
+export interface ChatSubmissionTarget {
+  kind: 'global' | 'source'
+  sourceId?: string | null
+}
+
+const chatSubmissionPath = (
+  projectId: string,
+  target: ChatSubmissionTarget,
+  sessionId: string,
+  draftToken: string,
+): string => {
+  const encodedSession = encodeURIComponent(sessionId)
+  const encodedToken = encodeURIComponent(draftToken)
+  return target.kind === 'source'
+    ? researchPath(
+        projectId,
+        'sources',
+        target.sourceId ?? '',
+        'chat',
+        'sessions',
+        encodedSession,
+        'submissions',
+        encodedToken,
+      )
+    : researchPath(
+        projectId,
+        'chat',
+        'sessions',
+        encodedSession,
+        'submissions',
+        encodedToken,
+      )
+}
+
+/**
+ * `GET .../chat/sessions/{session_id}/submissions/{draft_token}`（submission_response）。
+ *
+ * 返回**原始 JSON**：严格校验由调用方经
+ * `session-contract.parseSubmissionResponse` 完成（PR-5a 决定与 PR-2/PR-3 一致：
+ * 本函数只负责传输与协议头）。查回可重复执行，服务端不得产生新 Generation。
+ */
+export async function getChatSubmission(
+  projectId: string,
+  target: ChatSubmissionTarget,
+  sessionId: string,
+  draftToken: string,
+): Promise<unknown> {
+  const response = await apiClient.get<unknown>(
+    chatSubmissionPath(projectId, target, sessionId, draftToken),
+    { headers: sessionContractHeaders },
+  )
   return response.data
 }

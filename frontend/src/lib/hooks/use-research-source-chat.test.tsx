@@ -10,6 +10,8 @@ import {
   listSourceChatSessions,
   openResearchChatStream,
 } from '@/lib/research/api'
+import type { ResearchSessionRef } from '@/lib/research/session-contract'
+import type { ConversationController, SessionRuntime } from '@/lib/research/session-runtime'
 
 /** #243 §6.4：调用方传入的 confirmed 全局模型快照 */
 const MODEL = 'm-local'
@@ -29,8 +31,13 @@ vi.mock('@/lib/research/api', () => ({
   newIdempotencyKey: vi.fn(() => 'ik-src'),
 }))
 
+type LegacyStreamOptions = Extract<
+  Parameters<typeof openResearchChatStream>[0],
+  { protocol?: 'legacy' }
+>
+
 interface StreamCapture {
-  opts: Parameters<typeof openResearchChatStream>[0]
+  opts: LegacyStreamOptions
   emit: (event: Parameters<Parameters<typeof openResearchChatStream>[0]['onEvent']>[0]) => void
   fail: (error: Error) => void
   httpFail: (status: number, body?: unknown) => void
@@ -41,7 +48,7 @@ function openCapture(): StreamCapture[] {
   const streams: StreamCapture[] = []
   vi.mocked(openResearchChatStream).mockImplementation((opts) => {
     streams.push({
-      opts,
+      opts: opts as LegacyStreamOptions,
       emit: (event) => opts.onEvent(event),
       fail: (error) => opts.onNetworkError?.(error),
       httpFail: (status, body) => opts.onHttpError?.(status, body),
@@ -449,7 +456,7 @@ describe('useResearchSourceChat', () => {
     let aborted = 0
     vi.mocked(openResearchChatStream).mockImplementation((opts) => {
       streams.push({
-        opts,
+        opts: opts as LegacyStreamOptions,
         emit: (event) => opts.onEvent(event),
         fail: (error) => opts.onNetworkError?.(error),
         httpFail: (status, body) => opts.onHttpError?.(status, body),
@@ -688,5 +695,232 @@ describe('useResearchSourceChat', () => {
 
     expect(streams).toHaveLength(2)
     expect(streams[1].opts.request).toMatchObject({ model_id: 'm-a' })
+  })
+})
+
+describe('PR-5a（D2）：显式 session 接线（source）', () => {
+  it('经 runtime 创建对话控制器；卸载 detach + releaseConversation', () => {
+    const controller = {
+      detach: vi.fn(),
+      hasActiveTurn: vi.fn(() => false),
+      load: vi.fn(async () => ({ status: 'blocked' as const })),
+      getSnapshot: vi.fn(() => ({ turn: null, authGeneration: 1 })),
+    } as unknown as ConversationController
+    const conversation = vi.fn((..._args: unknown[]) => controller)
+    const releaseConversation = vi.fn()
+    const runtime = {
+      conversation,
+      releaseConversation,
+      getSnapshot: () => ({ authGeneration: 1 }),
+      subscribe: () => () => {},
+    } as unknown as SessionRuntime
+    const ref: ResearchSessionRef = {
+      domain: 'research',
+      kind: 'source',
+      projectId: 'proj_1',
+      sessionId: 'sess_src_1',
+      sourceId: 'src_1',
+    }
+
+    const { result, unmount } = renderHook(
+      () => useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1', session: { runtime, ref } }),
+      { wrapper: makeHookWrapper() },
+    )
+
+    expect(conversation).toHaveBeenCalledTimes(1)
+    expect(conversation.mock.calls[0]?.[0]).toEqual(ref)
+    expect(result.current.conversation).toBe(controller)
+
+    unmount()
+    expect(controller.detach).toHaveBeenCalled()
+    expect(releaseConversation).toHaveBeenCalledWith(ref, controller)
+  })
+
+  it('详情迟到：切换到另一 source 会话后旧详情不得写回 turns（review-4 #2）', async () => {
+    let resolveA: (value: unknown) => void = () => {}
+    const makeController = (load: () => Promise<unknown>) => ({
+      detach: vi.fn(),
+      hasActiveTurn: vi.fn(() => false),
+      load: vi.fn(load),
+      getSnapshot: vi.fn(() => ({ turn: null, authGeneration: 1 })),
+    }) as unknown as ConversationController
+    const controllerA = makeController(() => new Promise<unknown>((resolve) => { resolveA = resolve }))
+    const controllerB = makeController(async () => ({ status: 'ok' as const, value: { messages: [] } }))
+    const conversation = vi.fn((target: ResearchSessionRef) =>
+      target.sessionId === 'sess_src_a' ? controllerA : controllerB)
+    const runtime = {
+      conversation,
+      releaseConversation: vi.fn(),
+      getSnapshot: () => ({ authGeneration: 1 }),
+      subscribe: () => () => {},
+    } as unknown as SessionRuntime
+    const refA: ResearchSessionRef = {
+      domain: 'research', kind: 'source', projectId: 'proj_1', sessionId: 'sess_src_a', sourceId: 'src_1',
+    }
+    const refB: ResearchSessionRef = { ...refA, sessionId: 'sess_src_b' }
+    const { result, rerender } = renderHook(
+      ({ ref }: { ref: ResearchSessionRef }) =>
+        useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1', session: { runtime, ref } }),
+      { initialProps: { ref: refA }, wrapper: makeHookWrapper() },
+    )
+    rerender({ ref: refB })
+    await act(async () => {
+      resolveA({
+        status: 'ok',
+        value: {
+          messages: [{ message_id: 'msg_src_a', role: 'assistant', content: 'A answer', created_at: '2026-01-01T00:00:00Z' }],
+          next_cursor: null,
+        },
+      })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(result.current.turns).toEqual([])
+  })
+
+  it('切换到空 source 会话：上一会话已回填消息不得残留（review-5 B3）', async () => {
+    const msgA = {
+      message_id: 'msg_src_a',
+      role: 'assistant',
+      content: 'A answer',
+      created_at: '2026-01-01T00:00:00Z',
+    }
+    const makeController = (messages: unknown[]) => ({
+      detach: vi.fn(),
+      hasActiveTurn: vi.fn(() => false),
+      load: vi.fn(async () => ({ status: 'ok' as const, value: { messages, next_cursor: null } })),
+      getSnapshot: vi.fn(() => ({ turn: null, authGeneration: 1 })),
+    }) as unknown as ConversationController
+    const controllerA = makeController([msgA])
+    const controllerB = makeController([])
+    const conversation = vi.fn((target: ResearchSessionRef) =>
+      target.sessionId === 'sess_src_a' ? controllerA : controllerB)
+    const runtime = {
+      conversation,
+      releaseConversation: vi.fn(),
+      getSnapshot: () => ({ authGeneration: 1 }),
+      subscribe: () => () => {},
+    } as unknown as SessionRuntime
+    const refA: ResearchSessionRef = {
+      domain: 'research', kind: 'source', projectId: 'proj_1', sessionId: 'sess_src_a', sourceId: 'src_1',
+    }
+    const refB: ResearchSessionRef = { ...refA, sessionId: 'sess_src_b' }
+    const { result, rerender } = renderHook(
+      ({ ref }: { ref: ResearchSessionRef }) =>
+        useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1', session: { runtime, ref } }),
+      { initialProps: { ref: refA }, wrapper: makeHookWrapper() },
+    )
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(result.current.turns).toHaveLength(1)
+    rerender({ ref: refB })
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(result.current.turns).toEqual([])
+  })
+
+  it('切换到加载中的 source 会话：旧会话消息必须立即清空（review-5 B3）', async () => {
+    const msgA = {
+      message_id: 'msg_src_a2',
+      role: 'assistant',
+      content: 'A answer 2',
+      created_at: '2026-01-01T00:00:00Z',
+    }
+    const makeController = (load: () => Promise<unknown>) => ({
+      detach: vi.fn(),
+      hasActiveTurn: vi.fn(() => false),
+      load: vi.fn(load),
+      getSnapshot: vi.fn(() => ({ turn: null, authGeneration: 1 })),
+    }) as unknown as ConversationController
+    const controllerA = makeController(async () => ({
+      status: 'ok' as const, value: { messages: [msgA], next_cursor: null },
+    }))
+    const controllerB = makeController(() => new Promise<unknown>(() => {}))
+    const conversation = vi.fn((target: ResearchSessionRef) =>
+      target.sessionId === 'sess_src_a' ? controllerA : controllerB)
+    const runtime = {
+      conversation,
+      releaseConversation: vi.fn(),
+      getSnapshot: () => ({ authGeneration: 1 }),
+      subscribe: () => () => {},
+    } as unknown as SessionRuntime
+    const refA: ResearchSessionRef = {
+      domain: 'research', kind: 'source', projectId: 'proj_1', sessionId: 'sess_src_a', sourceId: 'src_1',
+    }
+    const refB: ResearchSessionRef = { ...refA, sessionId: 'sess_src_b' }
+    const { result, rerender } = renderHook(
+      ({ ref }: { ref: ResearchSessionRef }) =>
+        useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1', session: { runtime, ref } }),
+      { initialProps: { ref: refA }, wrapper: makeHookWrapper() },
+    )
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(result.current.turns).toHaveLength(1)
+    rerender({ ref: refB })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(result.current.turns).toEqual([])
+  })
+
+  it('source 新协议请求：携带 source_ids 且不发送 source_scope/note_ids（review-1 P1-#2）', () => {
+    const captures = openCapture()
+    const controller = {
+      detach: vi.fn(),
+      hasActiveTurn: vi.fn(() => false),
+      load: vi.fn(async () => ({ status: 'blocked' as const })),
+      getSnapshot: vi.fn(() => ({ turn: null, authGeneration: 1 })),
+    } as unknown as ConversationController
+    let capturedOptions: { transport: { openStream: (input: Record<string, unknown>) => { abort: (reason?: string) => void } } } | null = null
+    const conversation = vi.fn((...args: unknown[]) => {
+      capturedOptions = args[1] as typeof capturedOptions
+      return controller
+    })
+    const runtime = {
+      conversation,
+      releaseConversation: vi.fn(),
+      getSnapshot: () => ({ authGeneration: 1 }),
+      subscribe: () => () => {},
+    } as unknown as SessionRuntime
+    const ref: ResearchSessionRef = {
+      domain: 'research',
+      kind: 'source',
+      projectId: 'proj_1',
+      sessionId: 'sess_src_1',
+      sourceId: 'src_1',
+    }
+
+    renderHook(
+      () => useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1', session: { runtime, ref } }),
+      { wrapper: makeHookWrapper() },
+    )
+    expect(capturedOptions).not.toBeNull()
+    act(() => {
+      capturedOptions?.transport.openStream({
+        sessionRef: ref,
+        editorRevision: 0,
+        draftToken: 'draft_src_1',
+        editorIntentHash: 'a'.repeat(64),
+        idempotencyKey: `s1_${'b'.repeat(64)}`,
+        lastEventId: 0,
+        query: 'q-src',
+        modelId: 'm-a',
+        sourceIds: [],
+        noteIds: [],
+        scope: null,
+      })
+    })
+    expect(captures).toHaveLength(1)
+    expect(captures[0].opts.protocol).toBe('research-session-v1')
+    const request = captures[0].opts.request as unknown as Record<string, unknown>
+    expect(request.source_ids).toEqual(['src_1'])
+    expect(request.source_scope).toBeUndefined()
+    expect(request.note_ids).toBeUndefined()
   })
 })

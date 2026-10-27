@@ -18,6 +18,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
+  getChatSubmission,
   getResearchChatSession,
   newIdempotencyKey,
   openResearchChatStream,
@@ -25,7 +26,26 @@ import {
   type ResearchGlobalChatCard,
   type ResearchGlobalChatMessage,
 } from '@/lib/research/api'
-import { applySseEvent, createSseState, type ResearchSseState } from '@/lib/research/sse'
+import {
+  applySseEvent,
+  createSseState,
+  parseContextCoverageWire,
+  parseContextReportWire,
+  projectContextReport,
+  type ResearchAcceptedReceipt,
+  type ResearchSseState,
+} from '@/lib/research/sse'
+import {
+  sessionKey,
+  type ResearchContextReportProjection,
+  type ResearchSessionRef,
+} from '@/lib/research/session-contract'
+import type {
+  ConversationController,
+  ConversationSendInput,
+  ConversationTransport,
+  SessionRuntime,
+} from '@/lib/research/session-runtime'
 import { buildSourceScope } from '@/lib/research/c05-request'
 import type { ResearchChatRequest } from '@/lib/research/types'
 import { classifyC05Error } from '@/lib/research/c05-error-actions'
@@ -36,6 +56,7 @@ import {
 } from '@/lib/research/chat-origin'
 import type {
   ResearchCitationDisplayItem,
+  ResearchContextCoverage,
   ResearchSseEvent,
   ResearchTokenUsage,
 } from '@/lib/research/types'
@@ -163,18 +184,35 @@ export interface ResearchChatTurn {
    */
   serverMessageId: string | null
   generationId: string | null
+  /**
+   * PR-5a F13：持久化恢复轮保留 context_report / context_coverage /
+   * record_visibility（修复/回溯路径与 live SSE 同源；未知保持 null，
+   * 不伪造 0 或 complete）。受限消息强制安全投影（正文/思考/引用为空）。
+   */
+  contextReport?: ResearchContextReportProjection | null
+  contextCoverage?: ResearchContextCoverage | null
+  recordVisibility?: string | null
+}
+
+/** 持久化消息行 + PR-5a 扩展（服务端可选下发；缺失按 null 处理）。 */
+type DurableMessageRow = ResearchGlobalChatMessage & {
+  context_report?: unknown
+  context_coverage?: unknown
+  record_visibility?: string | null
 }
 
 /** 已持久化消息行 → 展示 turn（阅读顺序重放；completed 轮 status 恒 done） */
-function messageRowToTurn(row: ResearchGlobalChatMessage): ResearchChatTurn | null {
+export function messageRowToTurn(row: DurableMessageRow): ResearchChatTurn | null {
   if (row.role !== 'user' && row.role !== 'assistant') {
     return null
   }
+  // §6.9：受限消息不得以任何形式显示正文/思考/引用（仅保留安全投影）。
+  const restricted = row.record_visibility === 'restricted'
   const usage = row.usage
   const base = {
     id: row.message_id,
     role: row.role,
-    content: row.content ?? '',
+    content: restricted ? '' : (row.content ?? ''),
     thinking: '',
     citations: [] as ResearchCitationDisplayItem[],
     usage: null as ResearchTokenUsage | null,
@@ -190,16 +228,29 @@ function messageRowToTurn(row: ResearchGlobalChatMessage): ResearchChatTurn | nu
     serverMessageId: null,
     generationId: null,
   }
+  const extensions: Pick<ResearchChatTurn, 'contextReport' | 'contextCoverage' | 'recordVisibility'> = {}
+  const reportWire = parseContextReportWire(row.context_report)
+  if (reportWire !== null) {
+    extensions.contextReport = projectContextReport(reportWire)
+  }
+  const coverageWire = parseContextCoverageWire(row.context_coverage)
+  if (coverageWire !== null) {
+    extensions.contextCoverage = coverageWire
+  }
+  if (row.record_visibility !== undefined && row.record_visibility !== null) {
+    extensions.recordVisibility = row.record_visibility
+  }
   if (row.role === 'user') {
-    return base
+    return { ...base, ...extensions }
   }
   const generationId = parseGenerationIdFromMessageId(row.message_id)
   return {
     ...base,
-    thinking: row.thinking ?? '',
+    ...extensions,
+    thinking: restricted ? '' : (row.thinking ?? ''),
     serverMessageId: row.message_id ?? null,
     generationId,
-    citations: Array.isArray(row.citations)
+    citations: !restricted && Array.isArray(row.citations)
       ? row.citations
         .filter(
           (item): item is Record<string, unknown> =>
@@ -306,6 +357,27 @@ export interface UseResearchChatResult {
    * - 无法唯一绑定/会话不可达 → null（UI 如实显示不可存，不猜测）。
    */
   resolveChatOrigin: (turnId: string) => Promise<ResearchChatSaveOrigin | null>
+  /**
+   * PR-5a（D2 裁决）：显式传入 `session` 时由该会话对话控制器提供
+   * `research-session-v1` 协议（查回/受理/热恢复/迟到隔离）。
+   * 未传 `session` 时为 `null`，legacy 行为与返回形状不变（面板接线归 PR-5b）。
+   */
+  readonly conversation?: ConversationController | null
+}
+
+/**
+ * PR-5a：会话控制器接线参数（面板 PR-5b 注入；本 PR 不接线 UI）。
+ * 控制器是热恢复唯一权威：hook 卸载只 detach（浏览器断开 ≠ 取消），
+ * 提交 hold/清稿副作用经回调交还 editor-machine 的持有者。
+ */
+export interface UseResearchChatSessionOptions {
+  readonly runtime: SessionRuntime
+  readonly ref: ResearchSessionRef
+  readonly onReleaseHold?: (operationId: string) => void
+  readonly onClearAfterSubmission?: (
+    receipt: ResearchAcceptedReceipt,
+    operationId: string,
+  ) => void
 }
 
 /** COV-09：all_selected 提交请求载荷（note_ids 恒空数组——Notes 不支持） */
@@ -384,12 +456,14 @@ function httpErrorMessage(status: number, body: unknown): string {
   return `Research stream HTTP ${status}`
 }
 
-export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: {
+export function useResearchChat({ projectId, c05DispatchReady, onBindSession, session }: {
   projectId: string
   /** PR5（C6/C7）：C-05 契约判定（能力就绪回调；undefined = 旧 v1 全量） */
   c05DispatchReady?: () => boolean
   /** PR5（D-04）：会话身份确认时回调（绑定/清除 single 限定） */
   onBindSession?: (sessionId: string) => void
+  /** PR-5a：显式会话控制器接线（省略 = legacy 行为完全不变） */
+  session?: UseResearchChatSessionOptions
 }): UseResearchChatResult {
   const [turns, setTurns] = useState<ResearchChatTurn[]>([])
   const [backgroundNotice, setBackgroundNotice] = useState<ResearchBackgroundNotice | null>(null)
@@ -414,6 +488,144 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
     projectId: null,
     done: false,
   })
+
+  /**
+   * PR-5a（D2）：会话控制器。仅在显式传入 `session` 时创建；生命周期与
+   * `sessionKey` 绑定（StrictMode 双挂载由 runtime 引用计数吸收）。
+   */
+  const [conversation, setConversation] = useState<ConversationController | null>(null)
+  const sessionOptionsRef = useRef<UseResearchChatSessionOptions | undefined>(session)
+  sessionOptionsRef.current = session
+  const controllerRef = useRef<ConversationController | null>(null)
+  const projectIdRef = useRef(projectId)
+  projectIdRef.current = projectId
+  const conversationKey = session === undefined ? null : sessionKey(session.ref)
+  const sessionMode = session !== undefined
+
+  // 认证代次变化时必须重新取得 controller（review-2 B1）：旧实例绑定旧
+  // authGeneration，继续复用会让新请求被 runtime 判为 stale。
+  const authRuntime = session?.runtime
+  const [authEpoch, setAuthEpoch] = useState(
+    () => authRuntime?.getSnapshot().authGeneration ?? 0,
+  )
+  useEffect(() => {
+    if (authRuntime === undefined) return
+    const sync = (): void => {
+      const next = authRuntime.getSnapshot().authGeneration
+      setAuthEpoch((prev) => (prev === next ? prev : next))
+    }
+    sync()
+    return authRuntime.subscribe(sync)
+  }, [authRuntime])
+
+  useEffect(() => {
+    const options = sessionOptionsRef.current
+    if (options === undefined || conversationKey === null) {
+      return
+    }
+    const ref = options.ref
+    const releaseHold = options.onReleaseHold
+    const clearAfterSubmission = options.onClearAfterSubmission
+    const transport: ConversationTransport = {
+      openStream: (input) => {
+        // §6.2 wire 请求：global 必须用冻结的 source_scope，禁止顶层 source_ids；
+        // source kind 以路径 source_id 定位（review-1 P1-#2）。
+        const request: ResearchChatRequest = {
+          query: input.query,
+          model_id: input.modelId,
+        }
+        if (ref.kind === 'global') {
+          if (input.scope !== null) {
+            request.source_scope = {
+              mode: input.scope.mode,
+              source_ids: [...input.scope.sourceIds],
+              single_source_id: input.scope.singleSourceId,
+            }
+          }
+          request.note_ids = [...input.noteIds]
+        } else {
+          request.source_ids = ref.sourceId === null ? [] : [ref.sourceId]
+        }
+        const abort = openResearchChatStream({
+          protocol: 'research-session-v1',
+          projectId: projectIdRef.current,
+          kind: ref.kind,
+          sessionRef: ref,
+          editorRevision: input.editorRevision,
+          draftToken: input.draftToken,
+          editorIntentHash: input.editorIntentHash,
+          idempotencyKey: input.idempotencyKey,
+          lastEventId: input.lastEventId,
+          request,
+          onEvent: input.onEvent,
+          onEnd: input.onEnd,
+          onHttpError: input.onHttpError,
+          onNetworkError: input.onNetworkError,
+          onProtocolError: input.onProtocolError,
+          onIdleTimeout: input.onIdleTimeout,
+          onResponseMeta: (headers: Headers) => {
+            input.onResponseMeta?.({ sessionId: headers.get('x-chat-session-id') })
+          },
+        })
+        return {
+          abort: (reason) => {
+            // `superseded` 仅停止本地读取；服务端继续执行（§6.5 浏览器断开≠取消）。
+            abort(reason === 'superseded' ? 'page_change' : reason)
+          },
+        }
+      },
+      getSubmission: ({ token }) => getChatSubmission(
+        projectIdRef.current,
+        { kind: ref.kind, sourceId: ref.sourceId },
+        ref.sessionId,
+        token,
+      ),
+      loadDetail: ({ cursor }) => getResearchChatSession(
+        projectIdRef.current,
+        ref.sessionId,
+        cursor === null || cursor === undefined ? {} : { cursor },
+      ),
+      releaseHold: (operationId) => releaseHold?.(operationId),
+      clearAfterSubmission: (receipt, operationId) => clearAfterSubmission?.(receipt, operationId),
+    }
+    const controller = options.runtime.conversation(ref, { transport })
+    controllerRef.current = controller
+    setConversation(controller)
+    // 冷启动/切换返回：durable detail 恢复完整消息，替换临时轮（§6.5）；
+    // 缺口水位不会据此续接 SSE，只用于渲染（review-1 P1-#10）。
+    // 认证刷新/重新挂载后，若上一次离开把 turn 标记为 detached，必须主动
+    // 重新接管并继续查回结算（review-3 #2）。
+    const snapshot = controller.getSnapshot()
+    if (snapshot.turn !== null && snapshot.turn.identity.detached) {
+      void controller.reattach()
+    }
+    // 详情回填带会话/批次守卫：切换会话或认证刷新后，迟到的旧详情不得
+    // 写入当前 hook 状态（review-4 #2）。
+    let cancelled = false
+    void controller.load().then((result) => {
+      if (cancelled) return
+      if (result.status !== 'ok') return
+      if (interactedRef.current || activeRef.current) return
+      const rows = (result.value?.messages ?? []) as ResearchGlobalChatMessage[]
+      const restored = rows
+        .map((row) => messageRowToTurn(row as DurableMessageRow))
+        .filter((turn): turn is ResearchChatTurn => turn !== null)
+      // 当前会话成功返回空详情同样要写入空数组（切换到空会话时不得残留旧消息）。
+      setTurns(restored)
+    })
+    return () => {
+      cancelled = true
+      // 会话切换/卸载：清空当前会话消息，避免下一会话显示上一会话内容。
+      setTurns([])
+      // 离开会话/卸载：只标记 detach 并中止本地读取（服务端继续执行）。
+      controller.detach()
+      options.runtime.releaseConversation(ref, controller)
+      if (controllerRef.current === controller) {
+        controllerRef.current = null
+        setConversation(null)
+      }
+    }
+  }, [conversationKey, authEpoch])
 
   /**
    * RWV2-23（D2）：会话 origin 解析缓存——按阅读顺序累积的行、已见
@@ -579,6 +791,9 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
   // 会话（服务端不会因前端未恢复而另开）；恢复结果晚到且用户已交互时
   // 丢弃（interactedRef 闸），不把旧历史灌进已开始的对话。
   useEffect(() => {
+    // 会话控制器模式由 durable controller.load() 负责恢复；旧 localStorage
+    // 恢复只服务无 session 的 legacy 路径（PR-5b 面板接线前的兼容）。
+    if (sessionMode) return
     const restoreState = restoreStateRef.current
     if (restoreState.projectId === projectId && restoreState.done) return
     const storedId = readStoredSessionId(projectId)
@@ -650,7 +865,7 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
         restoreStateRef.current = { projectId: null, done: false }
       }
     }
-  }, [projectId])
+  }, [projectId, sessionMode])
 
   const runTurn = (active: ActiveTurn): void => {
     const { turnId } = active
@@ -1158,5 +1373,6 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession }: 
     send,
     sendCoverage,
     resolveChatOrigin,
+    conversation,
   }
 }

@@ -27,6 +27,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
+  getChatSubmission,
   getSourceChatSession,
   listSourceChatSessions,
   newIdempotencyKey,
@@ -34,7 +35,18 @@ import {
   type ResearchSourceChatMessage,
   type ResearchSourceChatSessionSummary,
 } from '@/lib/research/api'
-import { applySseEvent, createSseState, type ResearchSseState } from '@/lib/research/sse'
+import {
+  applySseEvent,
+  createSseState,
+  type ResearchAcceptedReceipt,
+  type ResearchSseState,
+} from '@/lib/research/sse'
+import { sessionKey, type ResearchSessionRef } from '@/lib/research/session-contract'
+import type {
+  ConversationController,
+  ConversationTransport,
+  SessionRuntime,
+} from '@/lib/research/session-runtime'
 import type {
   ResearchCitationDisplayItem,
   ResearchSseEvent,
@@ -93,6 +105,22 @@ export interface UseResearchSourceChatResult {
   /** 最近一次终态失败的 query（供 UI 重放入口）；成功发送后清空 */
   retryableQuery: string | null
   retry: () => void
+  /**
+   * PR-5a（D2）：显式传入 `session` 时由该会话对话控制器提供
+   * `research-session-v1` 协议；未传时为 `null`，legacy 行为完全不变。
+   */
+  readonly conversation?: ConversationController | null
+}
+
+/** PR-5a：Source 会话控制器接线参数（面板 PR-5b 注入；本 PR 不接线 UI）。 */
+export interface UseResearchSourceChatSessionOptions {
+  readonly runtime: SessionRuntime
+  readonly ref: ResearchSessionRef
+  readonly onReleaseHold?: (operationId: string) => void
+  readonly onClearAfterSubmission?: (
+    receipt: ResearchAcceptedReceipt,
+    operationId: string,
+  ) => void
 }
 
 interface ActiveTurn {
@@ -240,9 +268,12 @@ function mapColdMessage(message: ResearchSourceChatMessage): ResearchSourceChatT
 export function useResearchSourceChat({
   projectId,
   sourceId,
+  session,
 }: {
   projectId: string
   sourceId: string
+  /** PR-5a：显式会话控制器接线（省略 = legacy 行为完全不变） */
+  session?: UseResearchSourceChatSessionOptions
 }): UseResearchSourceChatResult {
   const [turns, setTurns] = useState<ResearchSourceChatTurn[]>([])
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
@@ -253,6 +284,120 @@ export function useResearchSourceChat({
   const sessionIdRef = useRef<string | null>(null)
   /** 终态失败 turn 的模型快照：重放沿用同一快照，不随后续切换漂移（不变量 4） */
   const retryModelRef = useRef<string | null>(null)
+
+  // PR-5a（D2）：会话控制器（显式 session 才创建；卸载只 detach，不取消服务端）。
+  const [conversation, setConversation] = useState<ConversationController | null>(null)
+  const sessionOptionsRef = useRef<UseResearchSourceChatSessionOptions | undefined>(session)
+  sessionOptionsRef.current = session
+  const projectIdRef = useRef(projectId)
+  projectIdRef.current = projectId
+  const conversationKey = session === undefined ? null : sessionKey(session.ref)
+
+  // 认证代次变化时必须重新取得 controller（review-2 B1）。
+  const authRuntime = session?.runtime
+  const [authEpoch, setAuthEpoch] = useState(
+    () => authRuntime?.getSnapshot().authGeneration ?? 0,
+  )
+  useEffect(() => {
+    if (authRuntime === undefined) return
+    const sync = (): void => {
+      const next = authRuntime.getSnapshot().authGeneration
+      setAuthEpoch((prev) => (prev === next ? prev : next))
+    }
+    sync()
+    return authRuntime.subscribe(sync)
+  }, [authRuntime])
+
+  useEffect(() => {
+    const options = sessionOptionsRef.current
+    if (options === undefined || conversationKey === null) {
+      return
+    }
+    const ref = options.ref
+    const releaseHold = options.onReleaseHold
+    const clearAfterSubmission = options.onClearAfterSubmission
+    const transport: ConversationTransport = {
+      openStream: (input) => {
+        // source 新协议以路径 source_id 定位：不携带 global 的 source_scope/note_ids。
+        const abort = openResearchChatStream({
+          protocol: 'research-session-v1',
+          projectId: projectIdRef.current,
+          kind: ref.kind,
+          sessionRef: ref,
+          editorRevision: input.editorRevision,
+          draftToken: input.draftToken,
+          editorIntentHash: input.editorIntentHash,
+          idempotencyKey: input.idempotencyKey,
+          lastEventId: input.lastEventId,
+          request: {
+            query: input.query,
+            model_id: input.modelId,
+            source_ids: ref.sourceId === null ? [] : [ref.sourceId],
+          },
+          onEvent: input.onEvent,
+          onEnd: input.onEnd,
+          onHttpError: input.onHttpError,
+          onNetworkError: input.onNetworkError,
+          onProtocolError: input.onProtocolError,
+          onIdleTimeout: input.onIdleTimeout,
+          onResponseMeta: (headers: Headers) => {
+            input.onResponseMeta?.({ sessionId: headers.get('x-chat-session-id') })
+          },
+        })
+        return {
+          abort: (reason) => {
+            abort(reason === 'superseded' ? 'page_change' : reason)
+          },
+        }
+      },
+      getSubmission: ({ token }) => getChatSubmission(
+        projectIdRef.current,
+        { kind: ref.kind, sourceId: ref.sourceId },
+        ref.sessionId,
+        token,
+      ),
+      // 注意：源会话 detail 接口（interface freeze）没有 cursor 参数，
+      // 因此源会话 durable 恢复只回填首屏；分页缺口在 PR-6 接后端参数后补齐。
+      loadDetail: ({ cursor }) => {
+        if (cursor !== undefined && cursor !== null) {
+          // source 详情在接口冻结中尚无游标参数：明确失败，绝不把首屏当下一页
+          // 重复读入（review-3 #6）；分页能力随 PR-6 真实接线补齐。
+          throw Object.assign(new Error('source_detail_pagination_unsupported'), {
+            code: 'detail_load_failed',
+          })
+        }
+        return getSourceChatSession(projectIdRef.current, String(ref.sourceId), ref.sessionId)
+      },
+      releaseHold: (operationId) => releaseHold?.(operationId),
+      clearAfterSubmission: (receipt, operationId) => clearAfterSubmission?.(receipt, operationId),
+    }
+    const controller = options.runtime.conversation(ref, { transport })
+    setConversation(controller)
+    // 冷启动/返回：durable detail 回填完整消息（不据持久水位续接 SSE）。
+    const snapshot = controller.getSnapshot()
+    if (snapshot.turn !== null && snapshot.turn.identity.detached) {
+      void controller.reattach()
+    }
+    // 详情回填带会话/批次守卫：切换会话或认证刷新后，迟到的旧详情不得
+    // 写入当前 hook 状态（review-4 #2）。
+    let cancelled = false
+    void controller.load().then((result) => {
+      if (cancelled) return
+      if (result.status !== 'ok') return
+      if (activeRef.current !== null) return
+      const rows = (result.value?.messages ?? []) as ResearchSourceChatMessage[]
+      // 当前会话成功返回空详情同样要写入空数组（切换到空会话时不得残留旧消息）。
+      setTurns(rows.map(mapColdMessage))
+    })
+    return () => {
+      cancelled = true
+      // 会话切换/卸载：清空当前会话消息，避免下一会话显示上一会话内容。
+      setTurns([])
+      controller.detach()
+      options.runtime.releaseConversation(ref, controller)
+      setConversation((current) => (current === controller ? null : current))
+    }
+  }, [conversationKey, authEpoch])
 
   const patchAssistant = useCallback((turnId: string, patch: Partial<ResearchSourceChatTurn>) => {
     setTurns((prev) => {
@@ -570,5 +715,6 @@ export function useResearchSourceChat({
     loadDetailError,
     retryableQuery,
     retry,
+    conversation,
   }
 }

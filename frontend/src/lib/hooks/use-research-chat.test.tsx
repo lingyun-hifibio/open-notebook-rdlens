@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useResearchChat, deriveScopeSnapshot, MAX_STREAM_ATTEMPTS } from './use-research-chat'
+import { messageRowToTurn, useResearchChat, deriveScopeSnapshot, MAX_STREAM_ATTEMPTS } from './use-research-chat'
 import { newIdempotencyKey, openResearchChatStream } from '@/lib/research/api'
 import type { ResearchSseEvent } from '@/lib/research/types'
+import type { ResearchSessionRef } from '@/lib/research/session-contract'
+import type { ConversationController, SessionRuntime } from '@/lib/research/session-runtime'
 
 // UI-03 Red：Chat SSE 流状态机（契约 v0 §9）——乱序/重复事件经由 reducer
 // 去重排序、断线自动按 event_id 重连（Last-Event-ID）、终态恰好一次、
@@ -742,5 +744,336 @@ describe('deriveScopeSnapshot（RWV2-11 K8）', () => {
       noteIds: [],
       singleSourceId: null,
     })
+  })
+})
+
+describe('PR-5a（D2）：显式 session 接线', () => {
+  it('经 runtime 创建对话控制器；卸载 detach + releaseConversation（引用计数归 runtime）', () => {
+    const controller = {
+      detach: vi.fn(),
+      hasActiveTurn: vi.fn(() => false),
+      load: vi.fn(async () => ({ status: 'blocked' as const })),
+      getSnapshot: vi.fn(() => ({ turn: null, authGeneration: 1 })),
+    } as unknown as ConversationController
+    const conversation = vi.fn((..._args: unknown[]) => controller)
+    const releaseConversation = vi.fn()
+    const runtime = {
+      conversation,
+      releaseConversation,
+      getSnapshot: () => ({ authGeneration: 1 }),
+      subscribe: () => () => {},
+    } as unknown as SessionRuntime
+    const ref: ResearchSessionRef = {
+      domain: 'research',
+      kind: 'global',
+      projectId: 'proj_1',
+      sessionId: 'sess_1',
+      sourceId: null,
+    }
+
+    const { result, unmount } = renderHook(() =>
+      useResearchChat({ projectId: 'proj_1', session: { runtime, ref } }),
+    )
+
+    expect(conversation).toHaveBeenCalledTimes(1)
+    expect(conversation.mock.calls[0]?.[0]).toEqual(ref)
+    expect(result.current.conversation).toBe(controller)
+
+    unmount()
+    expect(controller.detach).toHaveBeenCalled()
+    expect(releaseConversation).toHaveBeenCalledWith(ref, controller)
+  })
+
+  it('详情迟到：切换到另一会话后旧详情不得写回 turns（review-4 #2）', async () => {
+    let resolveA: (value: unknown) => void = () => {}
+    const makeController = (load: () => Promise<unknown>) => ({
+      detach: vi.fn(),
+      hasActiveTurn: vi.fn(() => false),
+      load: vi.fn(load),
+      getSnapshot: vi.fn(() => ({ turn: null, authGeneration: 1 })),
+    }) as unknown as ConversationController
+    const controllerA = makeController(() => new Promise<unknown>((resolve) => { resolveA = resolve }))
+    const controllerB = makeController(async () => ({ status: 'ok' as const, value: { messages: [] } }))
+    const conversation = vi.fn((target: ResearchSessionRef) =>
+      target.sessionId === 'sess_a' ? controllerA : controllerB)
+    const runtime = {
+      conversation,
+      releaseConversation: vi.fn(),
+      getSnapshot: () => ({ authGeneration: 1 }),
+      subscribe: () => () => {},
+    } as unknown as SessionRuntime
+    const refA: ResearchSessionRef = {
+      domain: 'research', kind: 'global', projectId: 'proj_1', sessionId: 'sess_a', sourceId: null,
+    }
+    const refB: ResearchSessionRef = { ...refA, sessionId: 'sess_b' }
+    const { result, rerender } = renderHook(
+      ({ ref }: { ref: ResearchSessionRef }) => useResearchChat({ projectId: 'proj_1', session: { runtime, ref } }),
+      { initialProps: { ref: refA } },
+    )
+    rerender({ ref: refB })
+    await act(async () => {
+      resolveA({
+        status: 'ok',
+        value: {
+          messages: [{
+            message_id: 'msg_a',
+            role: 'assistant',
+            content: 'A answer',
+            created_at: '2026-01-01T00:00:00Z',
+          }],
+          next_cursor: null,
+        },
+      })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    // 旧会话 A 的迟到详情不得覆盖当前会话 B 的 turns。
+    expect(result.current.turns).toEqual([])
+  })
+
+  it('切换到空会话：上一会话已回填消息不得残留（review-5 B3）', async () => {
+    const msgA = {
+      message_id: 'msg_a',
+      role: 'assistant',
+      content: 'A answer',
+      created_at: '2026-01-01T00:00:00Z',
+    }
+    const makeController = (messages: unknown[]) => ({
+      detach: vi.fn(),
+      hasActiveTurn: vi.fn(() => false),
+      load: vi.fn(async () => ({ status: 'ok' as const, value: { messages, next_cursor: null } })),
+      getSnapshot: vi.fn(() => ({ turn: null, authGeneration: 1 })),
+    }) as unknown as ConversationController
+    const controllerA = makeController([msgA])
+    const controllerB = makeController([])
+    const conversation = vi.fn((target: ResearchSessionRef) =>
+      target.sessionId === 'sess_a' ? controllerA : controllerB)
+    const runtime = {
+      conversation,
+      releaseConversation: vi.fn(),
+      getSnapshot: () => ({ authGeneration: 1 }),
+      subscribe: () => () => {},
+    } as unknown as SessionRuntime
+    const refA: ResearchSessionRef = {
+      domain: 'research', kind: 'global', projectId: 'proj_1', sessionId: 'sess_a', sourceId: null,
+    }
+    const refB: ResearchSessionRef = { ...refA, sessionId: 'sess_b' }
+    const { result, rerender } = renderHook(
+      ({ ref }: { ref: ResearchSessionRef }) => useResearchChat({ projectId: 'proj_1', session: { runtime, ref } }),
+      { initialProps: { ref: refA } },
+    )
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(result.current.turns).toHaveLength(1)
+    rerender({ ref: refB })
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    // B 会话成功返回空详情：必须清空 A 已回填的消息。
+    expect(result.current.turns).toEqual([])
+  })
+
+  it('切换到加载中的会话：旧会话消息必须立即清空（review-5 B3）', async () => {
+    const msgA = {
+      message_id: 'msg_a2',
+      role: 'assistant',
+      content: 'A answer 2',
+      created_at: '2026-01-01T00:00:00Z',
+    }
+    const makeController = (load: () => Promise<unknown>) => ({
+      detach: vi.fn(),
+      hasActiveTurn: vi.fn(() => false),
+      load: vi.fn(load),
+      getSnapshot: vi.fn(() => ({ turn: null, authGeneration: 1 })),
+    }) as unknown as ConversationController
+    const controllerA = makeController(async () => ({
+      status: 'ok' as const, value: { messages: [msgA], next_cursor: null },
+    }))
+    const controllerB = makeController(() => new Promise<unknown>(() => {}))
+    const conversation = vi.fn((target: ResearchSessionRef) =>
+      target.sessionId === 'sess_a' ? controllerA : controllerB)
+    const runtime = {
+      conversation,
+      releaseConversation: vi.fn(),
+      getSnapshot: () => ({ authGeneration: 1 }),
+      subscribe: () => () => {},
+    } as unknown as SessionRuntime
+    const refA: ResearchSessionRef = {
+      domain: 'research', kind: 'global', projectId: 'proj_1', sessionId: 'sess_a', sourceId: null,
+    }
+    const refB: ResearchSessionRef = { ...refA, sessionId: 'sess_b' }
+    const { result, rerender } = renderHook(
+      ({ ref }: { ref: ResearchSessionRef }) => useResearchChat({ projectId: 'proj_1', session: { runtime, ref } }),
+      { initialProps: { ref: refA } },
+    )
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(result.current.turns).toHaveLength(1)
+    rerender({ ref: refB })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    // B 的详情仍在加载，也必须先清空 A 的消息，不能继续显示上一会话。
+    expect(result.current.turns).toEqual([])
+  })
+
+  it('认证代次切换后重新 acquire controller（review-2 B1）', () => {
+    const makeController = () => ({
+      detach: vi.fn(),
+      hasActiveTurn: vi.fn(() => false),
+      load: vi.fn(async () => ({ status: 'blocked' as const })),
+      getSnapshot: vi.fn(() => ({ turn: null, authGeneration: 1 })),
+    }) as unknown as ConversationController
+    const controllers = [makeController(), makeController()]
+    let generation = 1
+    let listener: (() => void) | null = null
+    const conversation = vi.fn((..._args: unknown[]) => controllers[conversation.mock.calls.length - 1])
+    const releaseConversation = vi.fn()
+    const runtime = {
+      conversation,
+      releaseConversation,
+      getSnapshot: () => ({ authGeneration: generation }),
+      subscribe: (next: () => void) => {
+        listener = next
+        return () => { listener = null }
+      },
+    } as unknown as SessionRuntime
+    const ref: ResearchSessionRef = {
+      domain: 'research', kind: 'global', projectId: 'proj_1', sessionId: 'sess_1', sourceId: null,
+    }
+    const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime, ref } }))
+    expect(conversation).toHaveBeenCalledTimes(1)
+
+    act(() => {
+      generation = 2
+      listener?.()
+    })
+
+    expect(conversation).toHaveBeenCalledTimes(2)
+    expect(releaseConversation).toHaveBeenCalledWith(ref, controllers[0])
+    expect(result.current.conversation).toBe(controllers[1])
+  })
+
+  it('global 新协议请求：携带 source_scope 且不发送顶层 source_ids（review-1 P1-#2）', () => {
+    const captures = openCapture()
+    const controller = {
+      detach: vi.fn(),
+      hasActiveTurn: vi.fn(() => false),
+      load: vi.fn(async () => ({ status: 'blocked' as const })),
+      getSnapshot: vi.fn(() => ({ turn: null, authGeneration: 1 })),
+    } as unknown as ConversationController
+    let capturedOptions: { transport: { openStream: (input: Record<string, unknown>) => { abort: (reason?: string) => void } } } | null = null
+    const conversation = vi.fn((...args: unknown[]) => {
+      capturedOptions = args[1] as typeof capturedOptions
+      return controller
+    })
+    const runtime = {
+      conversation,
+      releaseConversation: vi.fn(),
+      getSnapshot: () => ({ authGeneration: 1 }),
+      subscribe: () => () => {},
+    } as unknown as SessionRuntime
+    const ref: ResearchSessionRef = {
+      domain: 'research',
+      kind: 'global',
+      projectId: 'proj_1',
+      sessionId: 'sess_1',
+      sourceId: null,
+    }
+
+    renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime, ref } }))
+    expect(capturedOptions).not.toBeNull()
+    act(() => {
+      capturedOptions?.transport.openStream({
+        sessionRef: ref,
+        editorRevision: 4,
+        draftToken: 'draft_1',
+        editorIntentHash: 'a'.repeat(64),
+        idempotencyKey: `s1_${'b'.repeat(64)}`,
+        lastEventId: 0,
+        query: 'q1',
+        modelId: MODEL,
+        sourceIds: ['src_1', 'src_2'],
+        noteIds: ['note_1'],
+        scope: { mode: 'selected', sourceIds: ['src_1', 'src_2'], singleSourceId: null },
+      })
+    })
+    expect(captures).toHaveLength(1)
+    expect(captures[0].opts.protocol).toBe('research-session-v1')
+    const request = captures[0].opts.request as unknown as Record<string, unknown>
+    expect(request.source_ids).toBeUndefined()
+    expect(request.note_ids).toEqual(['note_1'])
+    expect(request.source_scope).toEqual({
+      mode: 'selected',
+      source_ids: ['src_1', 'src_2'],
+      single_source_id: null,
+    })
+  })
+})
+
+describe('PR-5a F13：持久化恢复路径保留扩展字段', () => {
+  const baseRow = {
+    message_id: 'msg_gen_abc123',
+    role: 'assistant' as const,
+    content: '答案正文',
+    thinking: '思考',
+    citations: [{ citation_id: 'c1', source_id: 's1', source_title: 't', locator: null, snippet: null }],
+  }
+
+  it('context_report / context_coverage / record_visibility 随恢复轮保留；未知 report 保持 null', () => {
+    const turn = messageRowToTurn({
+      ...baseRow,
+      context_report: {
+        version: 1,
+        status: 'trimmed',
+        history: { available_turns: 5, included_turns: 2, omitted_turns: 3 },
+        evidence: { included_chunks: 4, omitted_chunks: 1 },
+        input_budget: 8000,
+        serialized_input_tokens: 6400,
+        estimator_version: 'v1',
+        reason_codes: ['history_omitted'],
+        required_context_missing: false,
+        measurement_scope: 'final_reasoning_call',
+      },
+      context_coverage: { selected_full: 3, relevant_extra: 1, trimmed: 0, missing: 2, token_estimate: 123, input_budget: 8000 },
+      record_visibility: 'legacy_context_unverifiable',
+    })
+    expect(turn?.contextReport?.status).toBe('trimmed')
+    expect(turn?.contextReport?.history.omittedTurns).toBe(3)
+    expect(turn?.contextCoverage?.missing).toBe(2)
+    expect(turn?.recordVisibility).toBe('legacy_context_unverifiable')
+    expect(turn?.content).toBe('答案正文')
+
+    const unknown = messageRowToTurn({ ...baseRow, context_report: null })
+    expect(unknown?.contextReport).toBeUndefined()
+    expect(unknown?.contextReport).not.toEqual(expect.objectContaining({ status: 'complete' }))
+  })
+
+  it('受限消息强制安全投影：正文/思考/引用不渲染', () => {
+    const turn = messageRowToTurn({
+      ...baseRow,
+      record_visibility: 'restricted',
+      context_report: {
+        version: 1,
+        status: 'unknown',
+        history: { available_turns: null, included_turns: null, omitted_turns: null },
+        evidence: { included_chunks: null, omitted_chunks: null },
+        input_budget: null,
+        serialized_input_tokens: null,
+        estimator_version: null,
+        reason_codes: [],
+        required_context_missing: false,
+        measurement_scope: 'unknown',
+      },
+    })
+    expect(turn?.content).toBe('')
+    expect(turn?.thinking).toBe('')
+    expect(turn?.citations).toEqual([])
+    expect(turn?.recordVisibility).toBe('restricted')
   })
 })
