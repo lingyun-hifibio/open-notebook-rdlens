@@ -1401,14 +1401,20 @@ export function openResearchChatStream(
         if (protocolViolation !== null) break
       }
       if (protocolViolation !== null) {
-        // 释放读取器（不留下悬挂的 read()）后按协议错误结算一次。
+        // 审查轮 2 MEDIUM-2：**先同步结算再清理**——`reader.cancel()` 可能永远
+        // pending，协议错误的上报不得依赖它完成。
+        const violation = protocolViolation
         clearWatchdog()
-        try {
-          await reader.cancel()
-        } catch {
-          // 忽略：取消失败不影响协议判定
+        // 审查轮 2 MEDIUM-1：清理前后都要重新检查中止状态（abort 后不得迟报）。
+        if (
+          abortReason === null
+          && !controller.signal.aborted
+          && settlement.settle()
+        ) {
+          options.onProtocolError?.(violation)
         }
-        if (settlement.settle()) options.onProtocolError?.(protocolViolation)
+        // 释放读取器（不留下悬挂的 read()）；不等待、失败不影响判定。
+        void reader.cancel().catch(() => {})
         return
       }
       // 正常读尽（EOF）：终态与否由调用方依 sse 状态判定；
@@ -1508,24 +1514,38 @@ export function openResearchChatStream(
         await consumeEventStream(response, expectedGenerationId)
         return
       }
-      // 202（resume 分派）或其它 2xx 非流：body 不参与判定，先释放再决定重试。
-      await releaseBody(response)
+      // 202（resume 分派）或其它 2xx 非流：body 不参与判定。
       clearWatchdog()
       if (response.status !== 202) {
         // 2xx 非流、且不是受理回执：协议违反，fail-closed（重试只会拿到同样响应）。
-        if (settlement.settle()) {
+        // 审查轮 2 MEDIUM-1/2：**同步结算**（不等待 body 释放）；abort 后不迟报。
+        if (
+          abortReason === null
+          && !controller.signal.aborted
+          && settlement.settle()
+        ) {
           options.onProtocolError?.(`unexpected_content_type:${contentType ?? 'none'}`)
         }
+        void releaseBody(response)
         controller.abort()
         return
       }
       if (attempt >= delays.length) {
         // 重试耗尽仍在 202：按既有可重试传输超时语义结算一次（调用方转查回），
         // 并终止本地请求，避免继续持有连接。
-        if (settlement.settle()) options.onIdleTimeout?.('response')
+        if (
+          abortReason === null
+          && !controller.signal.aborted
+          && settlement.settle()
+        ) {
+          options.onIdleTimeout?.('response')
+        }
+        void releaseBody(response)
         controller.abort()
         return
       }
+      // 重试前释放该响应体；同样不等待（releaseBody 内部已吞掉失败）。
+      void releaseBody(response)
       const elapsed = await waitBeforeAttachRetry(delays[attempt])
       if (!elapsed) return
     }

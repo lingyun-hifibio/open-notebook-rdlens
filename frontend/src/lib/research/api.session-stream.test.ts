@@ -140,6 +140,40 @@ function errorResponse(status: number, body: unknown): Response {
   } as unknown as Response
 }
 
+/** body.cancel() 永挂起：验证协议结算**不依赖**清理完成（审查轮 2 MEDIUM-2）。 */
+const pendingCancelBody = { cancel: () => new Promise<never>(() => {}) } as unknown as ReadableStream<Uint8Array>
+
+/** SSE 响应，但 reader.cancel() 永挂起；帧仍可正常读出。 */
+function sseResponseWithPendingCancel(frames: string[]): Response {
+  const reader = sseBody(frames).getReader()
+  const body = {
+    getReader: () => ({
+      read: () => reader.read(),
+      cancel: () => new Promise<never>(() => {}),
+    }),
+  } as unknown as ReadableStream<Uint8Array>
+  return {
+    ok: true,
+    status: 200,
+    headers: new Headers({ 'content-type': 'text/event-stream' }),
+    body,
+    json: async () => {
+      throw new Error('SSE response is not JSON')
+    },
+  } as unknown as Response
+}
+
+/** 2xx JSON 响应，但 body.cancel() 永挂起。 */
+function jsonResponseWithPendingCancel(status: number): Response {
+  return {
+    ok: true,
+    status,
+    headers: new Headers({ 'content-type': 'application/json' }),
+    body: pendingCancelBody,
+    json: async () => acceptReceipt(),
+  } as unknown as Response
+}
+
 function sessionOptions(
   overrides: Partial<ResearchChatSessionStreamOptions> = {},
 ): ResearchChatSessionStreamOptions {
@@ -571,6 +605,86 @@ describe('openResearchChatStream（session 协议：202 受理回执 → Last-Ev
     await new Promise((resolve) => setTimeout(resolve, 90))
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(protocolErrors).toEqual([])
+  })
+
+  it('generation 失配结算不依赖 reader.cancel()（cancel 永挂起也立即报协议错误）', async () => {
+    const fetchMock = installFetch(
+      acceptResponse(),
+      sseResponseWithPendingCancel([acceptedFrame(REF, 'gen_other')]),
+    )
+    const protocolErrors: string[] = []
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error('协议错误未结算（被 reader.cancel() 阻塞）')),
+        1500,
+      )
+      openResearchChatStream(
+        sessionOptions({
+          onEvent: (event) => events.push(event),
+          onProtocolError: (reason) => {
+            clearTimeout(timer)
+            protocolErrors.push(reason)
+            resolve()
+          },
+        }),
+      )
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(protocolErrors).toEqual([
+      'accept_generation_mismatch:receipt=gen_1:event=gen_other',
+    ])
+  })
+
+  it('attach 200 非流结算不依赖 body 释放（cancel 永挂起也立即报协议错误）', async () => {
+    const fetchMock = installFetch(acceptResponse(), jsonResponseWithPendingCancel(200))
+    const protocolErrors: string[] = []
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error('协议错误未结算（被 releaseBody 阻塞）')),
+        1500,
+      )
+      openResearchChatStream(
+        sessionOptions({
+          onEvent: (event) => events.push(event),
+          onProtocolError: (reason) => {
+            clearTimeout(timer)
+            protocolErrors.push(reason)
+            resolve()
+          },
+        }),
+      )
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(protocolErrors).toEqual(['unexpected_content_type:application/json'])
+    expect(events).toEqual([])
+  })
+
+  it('attach 202 耗尽结算不依赖 body 释放（cancel 永挂起也立即 onIdleTimeout）', async () => {
+    const responses = [
+      acceptResponse(),
+      ...Array.from({ length: 4 }, () => jsonResponseWithPendingCancel(202)),
+    ]
+    const fetchMock = installFetch(...responses)
+    const idleTimeouts: Array<'response' | 'idle'> = []
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error('耗尽未结算（被 releaseBody 阻塞）')),
+        3000,
+      )
+      openResearchChatStream(
+        sessionOptions({
+          onEvent: (event) => events.push(event),
+          onIdleTimeout: (phase) => {
+            clearTimeout(timer)
+            idleTimeouts.push(phase)
+            resolve()
+          },
+        }),
+      )
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(5)
+    expect(idleTimeouts).toEqual(['response'])
+    expect(events).toEqual([])
   })
 
   it('重连（options.lastEventId=7）：首步与 attach 都携带同一水位，attach 不退回 0', async () => {
