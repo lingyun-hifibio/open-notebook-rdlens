@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { createEmbeddedSession, type EmbeddedSession, type SessionState } from './session'
-import type { SessionRuntime } from '@/lib/research/session-runtime'
+import type { SessionRuntime, SessionRuntimeTransport } from '@/lib/research/session-runtime'
+import { createSessionRuntimeTransport } from '@/lib/research/session-runtime-transport'
 import { createContext, useContext } from 'react'
 
 /** PR5（D1/H8）：向子树暴露 requestIngest（面板「添加资料」按钮消费） */
@@ -28,11 +29,31 @@ import { useThemeStore } from '@/lib/stores/theme-store'
  *
  * 三态：加载（booting/ready）→ 错误（error）→ 就绪（authenticated）；
  * destroy 后清空渲染（无残留）。卸载时销毁会话。
+ *
+ * PR-8（6b 真实接入 P0）：认证后向 `ResearchSessionRuntimeProvider` 传入
+ * bootstrap 传输——缺省为生产 `createSessionRuntimeTransport()`（真实
+ * `GET /chat/sessions`），可用同一 prop 注入 mock 或显式 `null`（测试/离线
+ * 场景不触网）。不改 embedded 消息、认证与主题语义。
  */
-export function ResearchWorkspaceShell({ children }: { children?: React.ReactNode }) {
+export function ResearchWorkspaceShell({
+  children,
+  transport,
+}: {
+  children?: React.ReactNode
+  /**
+   * 会话运行时 bootstrap 传输：`undefined`（缺省）= 生产实例；
+   * `null` = 显式不接线（运行时不发起列表请求，owner 保持遮蔽）；
+   * 传入对象 = 注入实现（测试）。实例保持稳定，不随渲染重建。
+   */
+  transport?: SessionRuntimeTransport | null
+}) {
   const { t } = useTranslation()
   const [state, setState] = useState<SessionState | null>(null)
   const sessionRef = useRef<EmbeddedSession | null>(null)
+  // 生产传输的稳定实例：useMemo 空依赖，每次挂载只创建一次，
+  // 避免 Provider 因 transport 引用变化而重建 runtime（§3.4 生命周期）。
+  const productionTransport = useMemo(() => createSessionRuntimeTransport(), [])
+  const sessionTransport = transport === undefined ? productionTransport : transport
   // 认证失效需在 Provider 卸载前**同步** dispose 旧运行时（§3.4）：否则子
   // 组件 cleanup 只能报 'unmount'，旧 viewer 明文缓存与写入守卫会残留到
   // 下一个会话（review F1）。
@@ -176,6 +197,7 @@ export function ResearchWorkspaceShell({ children }: { children?: React.ReactNod
           role={identity.role}
           masked={masked}
           runtimeHandleRef={runtimeHandleRef}
+          transport={sessionTransport}
         >
           <ResearchScopeProvider userId={identity.userId} projectId={identity.projectId}>
             <ResearchGlobalModelProvider>

@@ -1,11 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act } from 'react'
-import { render, screen, cleanup } from '@testing-library/react'
+import { render, screen, cleanup, waitFor } from '@testing-library/react'
 import { ResearchWorkspaceShell } from './shell'
 import { useResearchWorkspace } from './workspace-context'
 import { clearResearchToken, getResearchToken } from './token-store'
 import { useResearchScope } from '@/lib/research/scope'
 import { useThemeStore } from '@/lib/stores/theme-store'
+import { listChatSessions } from '@/lib/research/api'
+import { useSessionSnapshot } from '@/lib/hooks/research-session-runtime'
+import {
+  SESSION_CONTRACT_VERSION,
+  type ResearchSessionCapabilities,
+} from '@/lib/research/session-contract'
+import type { SessionRuntimeTransport } from '@/lib/research/session-runtime'
 import {
   SESSION_CACHE_PREFIX,
   clearSessionCacheMemoryFallback,
@@ -20,6 +27,23 @@ import type { ResearchSessionRef } from '@/lib/research/session-contract'
 // 本文件被测对象是 shell 生命周期，用测试替身替换该 Provider。
 
 vi.mock('@/lib/hooks/use-research-global-model')
+
+// PR-8 / 6b：shell 的默认生产 transport 会经 `api.ts` 拉真实列表；单测里
+// 固定为永不结算以隔离网络，只有显式断言默认接线的用例才读取调用参数。
+vi.mock('@/lib/research/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/research/api')>()
+  return { ...actual, listChatSessions: vi.fn() }
+})
+
+const listChatSessionsMock = vi.mocked(listChatSessions)
+
+const READY_CAPABILITIES: ResearchSessionCapabilities = {
+  contract: SESSION_CONTRACT_VERSION,
+  editorReady: true,
+  submissionReady: { global: true, source: true },
+  degraded: false,
+  reason: null,
+}
 
 const PARENT_ORIGIN = 'https://rdlens.example.com'
 
@@ -90,10 +114,26 @@ function ScopeProbe() {
   return <span data-testid="scope-probe">{mode}</span>
 }
 
+/** PR-8：读取会话运行时快照，验证 bootstap transport 是否真正接线。 */
+function RuntimeProbe() {
+  const snapshot = useSessionSnapshot()
+  return (
+    <span data-testid="runtime-probe">
+      {`${snapshot.phase}|${snapshot.capabilities?.contract ?? 'none'}|${
+        snapshot.capabilities?.editorReady ? 'editor' : 'no-editor'
+      }|${snapshot.viewerUserId ?? 'null'}`}
+    </span>
+  )
+}
+
 describe('ResearchWorkspaceShell', () => {
   beforeEach(() => {
     clearResearchToken()
     vi.stubEnv('NEXT_PUBLIC_RD_PARENT_ORIGIN', PARENT_ORIGIN)
+    // 默认生产 transport 的列表请求在单测中永不结算：不触网、不产生
+    // Provider 状态回写；需要断言的用例自行改 mock 或注入 transport。
+    listChatSessionsMock.mockReset()
+    listChatSessionsMock.mockImplementation(() => new Promise<unknown>(() => {}))
   })
 
   afterEach(() => {
@@ -279,6 +319,70 @@ describe('ResearchWorkspaceShell', () => {
     dispatchMessage(validTokenMessage(String(ready.nonce), String(ready.channel)))
     expect(document.body.textContent ?? '').not.toContain('workspace-panels')
     expect(getResearchToken()).toBeNull()
+  })
+
+  // ── PR-8 / 6b：bootstrap transport 接线（真实接入 P0） ──
+
+  it('PR-8：注入 transport 时 Provider 以认证身份完成 bootstrap 并解除能力门禁', async () => {
+    const bootstrap = vi.fn(async () => ({
+      status: 'ok' as const,
+      viewerUserId: 'user_1',
+      capabilities: READY_CAPABILITIES,
+    }))
+    const transport: SessionRuntimeTransport = { bootstrap }
+    const captures = stubParentWindow()
+    render(
+      <ResearchWorkspaceShell transport={transport}>
+        <RuntimeProbe />
+      </ResearchWorkspaceShell>,
+    )
+    const ready = captures.posted[0].data
+    dispatchMessage(validTokenMessage(String(ready.nonce), String(ready.channel)))
+
+    await waitFor(() => expect(bootstrap).toHaveBeenCalledTimes(1))
+    expect(bootstrap).toHaveBeenCalledWith({
+      authGeneration: 1,
+      projectId: 'proj_abc',
+      viewerUserId: 'user_1',
+      role: 'owner',
+    })
+    await waitFor(() =>
+      expect(screen.getByTestId('runtime-probe')).toHaveTextContent(
+        'ready|research-session-v1|editor|user_1',
+      ),
+    )
+  })
+
+  it('PR-8：默认生产 transport 发起 listChatSessions(kind=all, limit=1)', async () => {
+    const captures = stubParentWindow()
+    render(<ResearchWorkspaceShell>workspace-panels</ResearchWorkspaceShell>)
+    const ready = captures.posted[0].data
+    dispatchMessage(validTokenMessage(String(ready.nonce), String(ready.channel)))
+
+    await waitFor(() =>
+      expect(listChatSessionsMock).toHaveBeenCalledWith('proj_abc', {
+        kind: 'all',
+        limit: 1,
+      }),
+    )
+  })
+
+  it('PR-8：显式 transport=null 不启用生产传输（owner 保持遮蔽/降级能力）', async () => {
+    const captures = stubParentWindow()
+    render(
+      <ResearchWorkspaceShell transport={null}>
+        <RuntimeProbe />
+      </ResearchWorkspaceShell>,
+    )
+    const ready = captures.posted[0].data
+    dispatchMessage(validTokenMessage(String(ready.nonce), String(ready.channel)))
+
+    await waitFor(() =>
+      expect(screen.getByTestId('runtime-probe')).toHaveTextContent(
+        'masked|none|no-editor|user_1',
+      ),
+    )
+    expect(listChatSessionsMock).not.toHaveBeenCalled()
   })
 
   // ── RWV2-50：父页主题应用（authenticated 后生效；离开即还原独立 fallback）──
