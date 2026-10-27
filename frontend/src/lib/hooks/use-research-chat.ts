@@ -891,6 +891,12 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
       openStream: (input) => {
         // §6.2 wire 请求：global 必须用冻结的 source_scope，禁止顶层 source_ids；
         // source kind 以路径 source_id 定位（review-1 P1-#2）。
+        //
+        // PR-7 P0-2（6b 真实接入 422 `extra_forbidden`）：服务端
+        // `SourceSessionSubmission` 是 `extra="forbid"`，source session 体只允许
+        // `session_id/editor_revision/draft_token/editor_intent_hash/query/
+        // model_id/context_level` —— **不得**携带 `source_ids`/`note_ids`/
+        // `source_scope`（来源由路径 source_id 绑定）。legacy 分支不受影响。
         const request: ResearchChatRequest = {
           query: input.query,
           model_id: input.modelId,
@@ -904,8 +910,6 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
             }
           }
           request.note_ids = [...input.noteIds]
-        } else {
-          request.source_ids = ref.sourceId === null ? [] : [ref.sourceId]
         }
         // DESIGN §6.7 / 裁决 D3：marker 必须在开流**之前**落盘（身份完整
         // 先于写入）；写失败不阻断发送，但 panel 需如实提示可查回。

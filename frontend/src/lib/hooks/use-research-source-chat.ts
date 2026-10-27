@@ -321,6 +321,8 @@ export function useResearchSourceChat({
     const transport: ConversationTransport = {
       openStream: (input) => {
         // source 新协议以路径 source_id 定位：不携带 global 的 source_scope/note_ids。
+        // PR-7 P0-2：服务端 `SourceSessionSubmission` 是 `extra="forbid"`，
+        // 顶层 `source_ids` 会 422 `extra_forbidden`；wire 只写 query/model_id。
         const abort = openResearchChatStream({
           protocol: 'research-session-v1',
           projectId: projectIdRef.current,
@@ -334,7 +336,6 @@ export function useResearchSourceChat({
           request: {
             query: input.query,
             model_id: input.modelId,
-            source_ids: ref.sourceId === null ? [] : [ref.sourceId],
           },
           onEvent: input.onEvent,
           onEnd: input.onEnd,

@@ -869,7 +869,12 @@ describe('PR-5a（D2）：显式 session 接线（source）', () => {
     expect(result.current.turns).toEqual([])
   })
 
-  it('source 新协议请求：携带 source_ids 且不发送 source_scope/note_ids（review-1 P1-#2）', () => {
+  // PR-7 P0-2（6b 真实接入）：服务端 `SourceSessionSubmission` 是
+  // `extra="forbid"`，session 协议 source 请求体只允许
+  // `session_id/editor_revision/draft_token/editor_intent_hash/query/model_id/
+  // context_level`——顶层 `source_ids` 会 422 `extra_forbidden`。source 以路径
+  // source_id 定位，wire 只写 query/model_id（身份字段由 api.ts 追加）。
+  it('source 新协议请求：只含 query/model_id，不发送 source_ids/note_ids/source_scope（PR-7 P0-2）', () => {
     const captures = openCapture()
     const controller = {
       detach: vi.fn(),
@@ -919,7 +924,8 @@ describe('PR-5a（D2）：显式 session 接线（source）', () => {
     expect(captures).toHaveLength(1)
     expect(captures[0].opts.protocol).toBe('research-session-v1')
     const request = captures[0].opts.request as unknown as Record<string, unknown>
-    expect(request.source_ids).toEqual(['src_1'])
+    expect(Object.keys(request).sort()).toEqual(['model_id', 'query'])
+    expect(request.source_ids).toBeUndefined()
     expect(request.source_scope).toBeUndefined()
     expect(request.note_ids).toBeUndefined()
   })
