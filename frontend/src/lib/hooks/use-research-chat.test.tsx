@@ -1,7 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { messageRowToTurn, useResearchChat, deriveScopeSnapshot, MAX_STREAM_ATTEMPTS } from './use-research-chat'
-import { newIdempotencyKey, openResearchChatStream } from '@/lib/research/api'
+import type { CoverageSubmitAccepted, CoverageSubmitOutcome } from './use-research-chat'
+import {
+  getChatSubmission,
+  getResearchChatSession,
+  newIdempotencyKey,
+  openResearchChatStream,
+} from '@/lib/research/api'
+import { buildSubmissionKey } from '@/lib/research/session-idempotency'
+import {
+  readActiveSubmission,
+  readSubmissionMarker,
+  writeActiveSubmission,
+  writeSubmissionMarker,
+  type SessionCacheAuthority,
+  type SessionCacheScope,
+  type SessionSubmissionMarker,
+} from '@/lib/research/session-cache'
 import type { ResearchSseEvent } from '@/lib/research/types'
 import type { ResearchSessionRef } from '@/lib/research/session-contract'
 import type { ConversationController, SessionRuntime } from '@/lib/research/session-runtime'
@@ -22,6 +38,9 @@ vi.mock('@/lib/research/api', async (importOriginal) => {
     saveResultFromResult: vi.fn(),
     newIdempotencyKey: vi.fn(() => 'ik-turn'),
     openResearchChatStream: vi.fn(),
+    // PR-5b（D2）：详情/查回响应由测试直接驱动 transport。
+    getResearchChatSession: vi.fn(),
+    getChatSubmission: vi.fn(),
   }
 })
 
@@ -70,6 +89,35 @@ function sendNow(
     result.current.send(query, selection, modelId)
   })
 }
+
+// PR-5b（D2）：详情请求默认返回空壳；restoreAllMocks 会清掉工厂 mock 的
+// 实现，因此每个用例前重新安装默认值（legacy 恢复路径可安全消费）。
+beforeEach(() => {
+  vi.mocked(getChatSubmission).mockResolvedValue({
+    session_ref: {
+      domain: 'research',
+      kind: 'global',
+      project_id: 'proj_1',
+      session_id: 'sess_1',
+      source_id: null,
+    },
+    draft_token: 'draft_default',
+    idempotency_key: `s1_${'a'.repeat(64)}`,
+    acceptance_state: 'not_observed',
+    generation_id: null,
+    generation_state: null,
+    accepted_editor_revision: null,
+    editor_intent_hash: null,
+    submitted_draft_text: null,
+    context_report: null,
+  } as never)
+  vi.mocked(getResearchChatSession).mockResolvedValue({
+    session: null,
+    messages: [],
+    cards: [],
+    next_cursor: null,
+  } as never)
+})
 
 describe('useResearchChat', () => {
   beforeEach(() => {
@@ -290,34 +338,27 @@ describe('useResearchChat', () => {
 })
 // ── COV-09：all_selected 覆盖提交（202 持久 Job，不走 SSE；§12.1） ──
 
-describe('useResearchChat.sendCoverage（COV-09）', () => {
-  beforeEach(() => {
-    // 既有 afterEach restoreAllMocks 会清掉模块级实现，这里重新钉住
-    vi.mocked(newIdempotencyKey).mockImplementation(() => 'ik-turn')
-  })
-
+describe('useResearchChat.sendCoverage（COV-09 / DESIGN §9.6）', () => {
   interface CoverageCapture {
     request: { query: string; source_ids: string[]; note_ids: string[]; model_id: string }
     idempotencyKey: string
-    submit: (request: CoverageCapture['request'], idempotencyKey: string) => Promise<{ job_id: string }>
-    resolve: (result: { job_id: string }) => void
+    resolve: (result: CoverageSubmitAccepted) => void
     reject: (error: Error) => void
   }
 
   function captureSubmit() {
     const captured: CoverageCapture[] = []
-    let resolveLast: ((r: { job_id: string }) => void) | null = null
+    let resolveLast: ((r: CoverageSubmitAccepted) => void) | null = null
     let rejectLast: ((e: Error) => void) | null = null
     const submit = vi.fn((request: CoverageCapture['request'], idempotencyKey: string) => {
       const capture: CoverageCapture = {
         request,
         idempotencyKey,
-        submit,
-        resolve: (result: { job_id: string }) => resolveLast?.(result),
-        reject: (error: Error) => rejectLast?.(error),
+        resolve: (result) => resolveLast?.(result),
+        reject: (error) => rejectLast?.(error),
       }
       captured.push(capture)
-      return new Promise<{ job_id: string }>((resolve, reject) => {
+      return new Promise<CoverageSubmitAccepted>((resolve, reject) => {
         resolveLast = resolve
         rejectLast = reject
       })
@@ -325,114 +366,135 @@ describe('useResearchChat.sendCoverage（COV-09）', () => {
     return { submit, captured }
   }
 
-  function sendCoverageNow(
-    result: ReturnType<typeof renderHook<ReturnType<typeof useResearchChat>, { projectId: string }>>['result'],
-    query: string,
-    submit: CoverageCapture['submit'],
-    selection?: Parameters<ReturnType<typeof useResearchChat>['send']>[1],
-  ) {
-    act(() => {
-      result.current.sendCoverage(query, selection, MODEL, submit)
-    })
+  function accepted(overrides: Partial<CoverageSubmitAccepted> = {}): CoverageSubmitAccepted {
+    return { job_id: 'job_1', generation_id: 'gen_1', registration: 'registered', ...overrides }
   }
 
-  it('202 成功：user + assistant 双 turn，coverageJobId 绑定、done 终态', async () => {
+  function startCoverage(
+    result: ReturnType<typeof renderHook<ReturnType<typeof useResearchChat>, { projectId: string }>>['result'],
+    query: string,
+    submit: Parameters<ReturnType<typeof useResearchChat>['sendCoverage']>[3],
+    selection?: Parameters<ReturnType<typeof useResearchChat>['send']>[1],
+  ): Promise<CoverageSubmitOutcome> {
+    return result.current.sendCoverage(query, selection, MODEL, submit)
+  }
+
+  it('202 受理：返回 accepted outcome，不写 conversation turns、不共享 Chat isStreaming', async () => {
+    const streams = openCapture()
     const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
+    // 在途 relevant SSE turn：Coverage 派发后必须原样保留（§9.6）
+    sendNow(result, '普通问答')
+    act(() => {
+      streams[0].emit(ev(1, 'answer', { delta: '进行中' }))
+    })
+    expect(result.current.isStreaming).toBe(true)
+    const turnsBefore = result.current.turns.length
+
     const { submit, captured } = captureSubmit()
-    sendCoverageNow(result, '覆盖全部所选来源', submit, { sourceIds: ['src-1', 'src-2'], noteIds: [] })
+    const pending = startCoverage(result, '覆盖全部所选来源', submit, {
+      sourceIds: ['src-1', 'src-2'],
+      noteIds: [],
+    })
     expect(captured).toHaveLength(1)
-    expect(captured[0].request).toEqual({
+    expect(captured[0].request).toMatchObject({
       query: '覆盖全部所选来源',
       source_ids: ['src-1', 'src-2'],
       note_ids: [],
       model_id: MODEL,
-      scopeMode: 'selected',
-      singleSourceId: null,
     })
-    expect(captured[0].idempotencyKey).toBe('ik-turn')
-
+    let outcome: CoverageSubmitOutcome | undefined
     await act(async () => {
-      captured[0].resolve({ job_id: 'job_1' })
+      captured[0].resolve(accepted())
+      outcome = await pending
     })
-    const assistant = lastAssistant(result.current.turns)
-    expect(assistant.coverageJobId).toBe('job_1')
-    expect(assistant.status).toBe('done')
-    expect(result.current.turns[0]).toMatchObject({ role: 'user', content: '覆盖全部所选来源' })
+    expect(outcome).toMatchObject({ status: 'accepted', jobId: 'job_1' })
+    // Chat 在途 turn 未被覆盖/标记 superseded；turns 数量不变
+    expect(result.current.turns).toHaveLength(turnsBefore)
+    expect(result.current.turns.some((t) => t.status === 'error')).toBe(false)
+    expect(result.current.isStreaming).toBe(true)
   })
 
-  it('提交失败：error turn（code/message），coverageJobId 保持 null', async () => {
+  it('受理结果原样返回：accepted + job/generation/registration', async () => {
     const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
     const { submit, captured } = captureSubmit()
-    sendCoverageNow(result, '覆盖全部所选来源', submit)
+    const pending = startCoverage(result, '覆盖全部所选来源', submit)
+    let outcome: CoverageSubmitOutcome | undefined
+    await act(async () => {
+      captured[0].resolve(accepted({ job_id: 'job-9', generation_id: 's_123', registration: 'failed' }))
+      outcome = await pending
+    })
+    expect(outcome).toEqual({
+      status: 'accepted',
+      jobId: 'job-9',
+      generationId: 's_123',
+      registration: 'failed',
+    })
+  })
+
+  it('提交失败：返回 failed outcome（code/message），不写 error turn', async () => {
+    const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
+    const turnsBefore = result.current.turns.length
+    const { submit, captured } = captureSubmit()
+    const pending = startCoverage(result, '覆盖全部所选来源', submit)
     await act(async () => {
       captured[0].reject(new Error('coverage not enabled'))
     })
-    const assistant = lastAssistant(result.current.turns)
-    expect(assistant.status).toBe('error')
-    expect(assistant.errorCode).toBe('coverage_submit_failed')
-    expect(assistant.errorMessage).toContain('coverage not enabled')
-    expect(assistant.coverageJobId).toBeNull()
+    const outcome = await pending
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      errorCode: 'coverage_submit_failed',
+    })
+    if (outcome.status !== 'failed') throw new Error('expected failed')
+    expect(outcome.errorMessage).toContain('coverage not enabled')
+    expect(result.current.turns).toHaveLength(turnsBefore)
   })
 
-  it('#358：结构化 detail.code/detail.message 解析——不再显示通用 Axios 503', async () => {
+  it('#358：结构化 detail.code/detail.message 解析——不受通用 Axios 503 干扰', async () => {
     const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
     const { submit, captured } = captureSubmit()
-    sendCoverageNow(result, '覆盖全部所选来源', submit)
-    // axios 错误形态：error.message 是通用 503，结构化信息在
-    // response.data.detail（#358 后端 FastAPI HTTPException detail 对象）
-    const axiosLikeError = Object.assign(
-      new Error('Request failed with status code 503'),
-      {
-        response: {
-          status: 503,
-          data: {
-            detail: {
-              code: 'coverage_not_enabled',
-              message:
-                'research coverage is not enabled; relevant synthesis remains available',
-            },
+    const pending = startCoverage(result, '覆盖全部所选来源', submit)
+    const axiosLikeError = Object.assign(new Error('Request failed with status code 503'), {
+      response: {
+        status: 503,
+        data: {
+          detail: {
+            code: 'coverage_not_enabled',
+            message: 'research coverage is not enabled; relevant synthesis remains available',
           },
         },
       },
-    )
+    })
     await act(async () => {
       captured[0].reject(axiosLikeError)
     })
-    const assistant = lastAssistant(result.current.turns)
-    expect(assistant.status).toBe('error')
-    // 稳定错误码进入 errorCode（面板映射本地化文案）
-    expect(assistant.errorCode).toBe('coverage_not_enabled')
-    // 后端结构化 message 作为主诊断；通用 Axios 503 不再出现
-    expect(assistant.errorMessage).toBe(
+    const outcome = await pending
+    expect(outcome).toMatchObject({ status: 'failed', errorCode: 'coverage_not_enabled' })
+    if (outcome.status !== 'failed') throw new Error('expected failed')
+    expect(outcome.errorMessage).toBe(
       'research coverage is not enabled; relevant synthesis remains available',
     )
-    expect(assistant.errorMessage).not.toContain('Request failed with status code 503')
-    expect(assistant.coverageJobId).toBeNull()
+    expect(outcome.errorMessage).not.toContain('Request failed with status code 503')
   })
 
-  it('#243 §6.4 扩展：无 confirmed 模型 → fail-closed error turn，不调用 submit', () => {
+  it('取消 consent（submit 返回 undefined）→ not_dispatched，零副作用', async () => {
     const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
-    const { submit } = captureSubmit()
-    // 只走无模型路径：不建 user turn 之外的状态，submit 绝不调用
-    act(() => {
-      result.current.sendCoverage('q', undefined, '', submit)
+    const submit = vi.fn(async () => undefined)
+    let outcome: CoverageSubmitOutcome | undefined
+    await act(async () => {
+      outcome = await result.current.sendCoverage('覆盖全部所选来源', undefined, MODEL, submit)
     })
-    expect(submit).not.toHaveBeenCalled()
-    const last = result.current.turns[result.current.turns.length - 1]
-    expect(last).toMatchObject({ role: 'assistant', status: 'error', errorCode: 'model_required' })
+    expect(outcome).toEqual({ status: 'not_dispatched' })
+    expect(result.current.turns).toHaveLength(0)
   })
 
-  it('抢占有在途 relevant SSE turn（补终态不悬挂）', () => {
-    const streams = openCapture()
+  it('#243 §6.4 扩展：无 confirmed 模型 → failed model_required，不调用 submit', async () => {
     const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1' }))
-    sendNow(result, '普通问答')
-    expect(streams).toHaveLength(1)
     const { submit } = captureSubmit()
-    sendCoverageNow(result, '覆盖全部所选来源', submit)
-    const superseded = result.current.turns.find((t) => t.status === 'error')
-    expect(superseded).toMatchObject({ errorCode: 'superseded' })
-    // 覆盖率 turn 在最后
-    expect(result.current.turns[result.current.turns.length - 1].content).toBe('')
+    // 直接以空 model 调一次（面板正常路径不会这样调用）
+    const emptyModelOutcome = await result.current.sendCoverage('q', undefined, '', submit)
+    expect(submit).not.toHaveBeenCalled()
+    expect(emptyModelOutcome).toMatchObject({ status: 'failed', errorCode: 'model_required' })
+    expect(result.current.turns).toHaveLength(0)
   })
 })
 
@@ -1054,6 +1116,13 @@ describe('PR-5a F13：持久化恢复路径保留扩展字段', () => {
     expect(unknown?.contextReport).not.toEqual(expect.objectContaining({ status: 'complete' }))
   })
 
+  it('user 行保留持久 message_id（面板 data-message-id 与身份去重依赖）', () => {
+    const user = messageRowToTurn({ message_id: 'msg_u1', role: 'user', content: '问题' } as never)
+    expect(user?.serverMessageId).toBe('msg_u1')
+    const assistant = messageRowToTurn(baseRow)
+    expect(assistant?.serverMessageId).toBe('msg_gen_abc123')
+  })
+
   it('受限消息强制安全投影：正文/思考/引用不渲染', () => {
     const turn = messageRowToTurn({
       ...baseRow,
@@ -1075,5 +1144,323 @@ describe('PR-5a F13：持久化恢复路径保留扩展字段', () => {
     expect(turn?.thinking).toBe('')
     expect(turn?.citations).toEqual([])
     expect(turn?.recordVisibility).toBe('restricted')
+  })
+})
+
+// ── PR-5b（D2/D3）：详情元数据同响应捕获、marker 开流前写入与未结算查回 ──
+
+describe('PR-5b（D2/D3）：会话元数据、submission marker 与未结算查回', () => {
+  beforeEach(() => {
+    // 工厂 vi.fn 不受 restoreAllMocks 影响：显式清空调用历史与 localStorage
+    // 标记，避免跨用例污染（调用次数断言/残留 marker）。
+    vi.clearAllMocks()
+    window.localStorage.clear()
+  })
+
+  const scope: SessionCacheScope = { viewerUserId: '1', projectId: 'proj_1' }
+  const authority: SessionCacheAuthority = {
+    authenticatedViewerUserId: '1',
+    projectId: 'proj_1',
+    authGeneration: 1,
+    currentAuthGeneration: 1,
+  }
+  const ref: ResearchSessionRef = {
+    domain: 'research',
+    kind: 'global',
+    projectId: 'proj_1',
+    sessionId: 'sess_1',
+    sourceId: null,
+  }
+
+  function submissionKeyFor(draftToken: string): string {
+    return buildSubmissionKey({
+      projectId: 'proj_1',
+      ownerUserId: 1,
+      kind: 'global',
+      sourceId: null,
+      sessionId: 'sess_1',
+      draftToken,
+    })
+  }
+
+  function markerFor(draftToken: string, acceptanceState: 'not_observed' | 'accepted' | 'terminal' = 'not_observed'): SessionSubmissionMarker {
+    const now = '2026-10-27T00:00:00.000Z'
+    return {
+      version: 1,
+      draftToken,
+      idempotencyKey: submissionKeyFor(draftToken),
+      acceptanceState,
+      request: null,
+      exactRequestAvailable: false,
+      generationId: null,
+      observedRevision: null,
+      createdAt: now,
+      updatedAt: now,
+      terminalAt: acceptanceState === 'terminal' ? now : null,
+    }
+  }
+
+  interface Harness {
+    runtime: SessionRuntime
+    controller: ConversationController
+    transport: {
+      openStream: (input: Record<string, unknown>) => { abort: (reason?: string) => void }
+      loadDetail: (input: { cursor: string | null }) => Promise<unknown>
+      getSubmission: (input: { token: string }) => Promise<unknown>
+    }
+    lookups: string[]
+    maxInFlight: { value: number }
+    setCache: (cache: { scope: SessionCacheScope | null; authority: SessionCacheAuthority | null }) => void
+  }
+
+  function harness(options: {
+    load?: () => Promise<unknown>
+    lookup?: 'ok' | 'blocked'
+  } = {}): Harness {
+    let transport: Harness['transport'] | null = null
+    let currentTurn: Record<string, unknown> | null = null
+    let cache: { scope: SessionCacheScope | null; authority: SessionCacheAuthority | null } = {
+      scope,
+      authority,
+    }
+    let inFlight = 0
+    const lookups: string[] = []
+    const maxInFlight = { value: 0 }
+    const listenerRef: { current: (() => void) | null } = { current: null }
+    const controller = {
+      detach: vi.fn(),
+      reattach: vi.fn(async () => ({ status: 'ok' as const })),
+      hasActiveTurn: vi.fn(() => false),
+      load: vi.fn(options.load ?? (async () => ({ status: 'ok' as const, value: { messages: [], next_cursor: null } }))),
+      loadMore: vi.fn(async () => ({ status: 'ok' as const, value: { messages: [], next_cursor: null } })),
+      send: vi.fn(async () => ({ status: 'ok' as const })),
+      retryTerminal: vi.fn(),
+      refreshStatus: vi.fn(),
+      lookupSubmission: vi.fn(async (token: string) => {
+        lookups.push(token)
+        inFlight += 1
+        maxInFlight.value = Math.max(maxInFlight.value, inFlight)
+        try {
+          if (options.lookup === 'blocked') return { status: 'blocked' as const, reason: 'historical_token_not_supported' }
+          await transport?.getSubmission({ token })
+          currentTurn = {
+            external: true,
+            state: 'terminal',
+            identity: { draftToken: token },
+          }
+          listenerRef.current?.()
+          return { status: 'ok' as const }
+        } finally {
+          inFlight -= 1
+        }
+      }),
+      subscribe: vi.fn((listener: () => void) => {
+        listenerRef.current = listener
+        listener()
+        return () => {
+          listenerRef.current = null
+        }
+      }),
+      getSnapshot: vi.fn(() => ({
+        version: 1,
+        sessionKey: 'sk',
+        authGeneration: 1,
+        turn: currentTurn,
+        history: [],
+        detailMessages: [],
+        detailCursor: null,
+      })),
+    } as unknown as ConversationController
+    const conversation = vi.fn((_target: ResearchSessionRef, opts: { transport: Harness['transport'] }) => {
+      transport = opts.transport
+      return controller
+    })
+    const runtime = {
+      conversation,
+      releaseConversation: vi.fn(),
+      getSnapshot: () => ({ authGeneration: 1 }),
+      subscribe: () => () => {},
+      cacheScope: () => cache.scope,
+      cacheAuthority: () => cache.authority,
+    } as unknown as SessionRuntime
+    return {
+      runtime,
+      controller,
+      get transport() {
+        if (transport === null) throw new Error('transport not installed')
+        return transport
+      },
+      lookups,
+      maxInFlight,
+      setCache: (next) => {
+        cache = next
+      },
+    }
+  }
+
+  function flush(): Promise<void> {
+    return act(async () => {
+      for (let i = 0; i < 12; i += 1) await Promise.resolve()
+    })
+  }
+
+  const streamInput = {
+    sessionRef: ref,
+    editorRevision: 1,
+    draftToken: 'draft_1',
+    editorIntentHash: 'a'.repeat(64),
+    idempotencyKey: submissionKeyFor('draft_1'),
+    lastEventId: 0,
+    query: 'q1',
+    modelId: 'm-1',
+    sourceIds: [],
+    noteIds: [],
+    scope: { mode: 'selected', sourceIds: [], singleSourceId: null },
+    onEvent: () => {},
+    onEnd: () => {},
+    onHttpError: () => {},
+    onNetworkError: () => {},
+    onProtocolError: () => {},
+  }
+
+  it('D2：同一份 loadDetail 响应被捕获为 header 元数据 + Generation cards，不额外发详情请求', async () => {
+    vi.mocked(getResearchChatSession).mockResolvedValue({
+      session: {
+        session_id: 'sess_1',
+        title: 'Real title',
+        record_visibility: 'restricted',
+      },
+      messages: [],
+      cards: [
+        {
+          generation_id: 'gen_1',
+          job_id: 'job_1',
+          status: 'failed',
+          failure_code: 'context_limit_exceeded',
+          created_at: '2026-10-27T00:00:00Z',
+        },
+      ],
+      next_cursor: null,
+    } as unknown as Awaited<ReturnType<typeof getResearchChatSession>>)
+    const h = harness()
+    const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+    await flush()
+    await act(async () => {
+      await h.transport.loadDetail({ cursor: null })
+    })
+    expect(vi.mocked(getResearchChatSession)).toHaveBeenCalledTimes(1)
+    expect(result.current.sessionMeta).toEqual({ title: 'Real title', recordVisibility: 'restricted' })
+    expect(result.current.sessionCards).toHaveLength(1)
+    expect(result.current.sessionCards?.[0]).toMatchObject({ generation_id: 'gen_1', status: 'failed' })
+  })
+
+  it('D3：marker 在 openStream 之前落盘（顺序断言）', () => {
+    const h = harness()
+    let activeAtOpen: string | null = 'missing'
+    vi.mocked(openResearchChatStream).mockImplementation(() => {
+      activeAtOpen = readActiveSubmission(scope, authority, ref)
+      return () => {}
+    })
+    renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+    act(() => {
+      h.transport.openStream(streamInput)
+    })
+    expect(activeAtOpen).toBe('draft_1')
+    expect(readSubmissionMarker(scope, authority, ref, 'draft_1')).not.toBeNull()
+    expect(vi.mocked(openResearchChatStream)).toHaveBeenCalledTimes(1)
+  })
+
+  it('D3：marker 写入失败不阻断发送，但如实标记 markerWriteFailed', () => {
+    const h = harness()
+    h.setCache({ scope: null, authority: null })
+    vi.mocked(openResearchChatStream).mockImplementation(() => () => {})
+    const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+    act(() => {
+      h.transport.openStream(streamInput)
+    })
+    expect(vi.mocked(openResearchChatStream)).toHaveBeenCalledTimes(1)
+    expect(result.current.markerWriteFailed).toBe(true)
+  })
+
+  it('D3：冷启动查回顺序 active→其余 marker，逐条串行（并发 ≤ 1）', async () => {
+    writeSubmissionMarker(scope, ref, markerFor('t_a'))
+    writeSubmissionMarker(scope, ref, markerFor('t_b'))
+    writeSubmissionMarker(scope, ref, markerFor('t_c'))
+    writeActiveSubmission(scope, ref, 't_active')
+    vi.mocked(getChatSubmission).mockResolvedValue({
+      session_ref: { domain: 'research', kind: 'global', project_id: 'proj_1', session_id: 'sess_1', source_id: null },
+      draft_token: 't_active',
+      idempotency_key: `s1_${'b'.repeat(64)}`,
+      acceptance_state: 'not_observed',
+      generation_id: null,
+      generation_state: null,
+      accepted_editor_revision: null,
+      editor_intent_hash: null,
+      submitted_draft_text: null,
+      context_report: null,
+    } as unknown as Awaited<ReturnType<typeof getChatSubmission>>)
+    const h = harness()
+    renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+    await flush()
+    expect(h.lookups[0]).toBe('t_active')
+    expect(new Set(h.lookups)).toEqual(new Set(['t_active', 't_a', 't_b', 't_c']))
+    expect(h.maxInFlight.value).toBe(1)
+  })
+
+  it('D3/F10：冷启动 marker + 非空 durable detail + terminal 查回 → 保留已提交稿与恢复消息，不重发', async () => {
+    writeSubmissionMarker(scope, ref, markerFor('t_old', 'terminal'))
+    writeActiveSubmission(scope, ref, 't_old')
+    vi.mocked(getChatSubmission).mockResolvedValue({
+      session_ref: { domain: 'research', kind: 'global', project_id: 'proj_1', session_id: 'sess_1', source_id: null },
+      draft_token: 't_old',
+      idempotency_key: `s1_${'b'.repeat(64)}`,
+      acceptance_state: 'terminal',
+      generation_id: 'gen_old',
+      generation_state: 'completed',
+      accepted_editor_revision: 1,
+      editor_intent_hash: 'a'.repeat(64),
+      submitted_draft_text: '上一份已提交草稿',
+      context_report: {
+        version: 1,
+        status: 'trimmed',
+        history: { available_turns: 3, included_turns: 2, omitted_turns: 1 },
+        evidence: { included_chunks: 2, omitted_chunks: 1 },
+        input_budget: 1000,
+        serialized_input_tokens: 800,
+        estimator_version: 'v1',
+        reason_codes: ['history_omitted'],
+        required_context_missing: false,
+        measurement_scope: 'final_reasoning_call',
+      },
+    } as unknown as Awaited<ReturnType<typeof getChatSubmission>>)
+    const h = harness({
+      load: async () => ({
+        status: 'ok' as const,
+        value: {
+          messages: [{
+            message_id: 'msg_1',
+            role: 'assistant',
+            content: '历史答案',
+            created_at: '2026-10-26T00:00:00Z',
+          }],
+          next_cursor: null,
+        },
+      }),
+    })
+    const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+    await flush()
+    expect(h.lookups).toContain('t_old')
+    expect(result.current.turns).toHaveLength(1)
+    expect(result.current.turns[0]?.content).toBe('历史答案')
+    expect(result.current.submissionLookup).toMatchObject({
+      token: 't_old',
+      acceptance: 'terminal',
+      generationState: 'completed',
+      submittedDraftText: '上一份已提交草稿',
+    })
+    // 不自动重发（新执行必须显式确认）
+    expect(vi.mocked(openResearchChatStream)).not.toHaveBeenCalled()
+    // 不清稿：marker 仍保留，供面板“查看/复制/恢复已提交稿”
+    expect(readSubmissionMarker(scope, authority, ref, 't_old')).not.toBeNull()
   })
 })

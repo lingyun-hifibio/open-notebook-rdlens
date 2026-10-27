@@ -662,6 +662,26 @@ export interface CoverageChatResponse {
 }
 
 /**
+ * #602 第三批 PR-5b（DESIGN §9.6）：Coverage 受理必须是真实的 **202 +
+ * generation/job 标识**。非 202（含通用 200 兜底）都不得进入“已受理”状态，
+ * 否则调用方会错误清空本地 Coverage 输入。
+ */
+export class CoverageAcceptanceError extends Error {
+  readonly code = 'coverage_acceptance_invalid' as const
+
+  constructor(message: string) {
+    super(message)
+    this.name = 'CoverageAcceptanceError'
+  }
+}
+
+const isValidGenerationId = (value: unknown): value is string =>
+  typeof value === 'string' && /^(?:gen|s)_[A-Za-z0-9._:-]+$/.test(value)
+
+const isValidJobId = (value: unknown): value is string =>
+  typeof value === 'string' && value.trim().length > 0
+
+/**
  * all_selected 提交：POST /chat 携带 synthesis_scope，202 返回持久
  * research_coverage Job 标识。幂等键每次用户发起新覆盖任务一个键
  * （同键同参数可重入，同键改参 409）。
@@ -697,7 +717,18 @@ export async function createCoverageChat(
       },
     },
   )
-  return response.data
+  if (response.status !== 202) {
+    throw new CoverageAcceptanceError(
+      `coverage submission was not accepted (status ${response.status})`,
+    )
+  }
+  const accepted = response.data
+  if (!isValidGenerationId(accepted?.generation_id) || !isValidJobId(accepted?.job_id)) {
+    throw new CoverageAcceptanceError(
+      'coverage acceptance is missing a valid generation or job identifier',
+    )
+  }
+  return accepted
 }
 
 /** 最终报告 + Citation snapshot + 固定 snapshot（仅 render_report 完成后可读） */
@@ -804,9 +835,11 @@ export async function getSourceChatSession(
   projectId: string,
   sourceId: string,
   sessionId: string,
+  options: { sessionContract?: boolean } = {},
 ): Promise<ResearchSourceChatSessionDetail> {
   const response = await apiClient.get<ResearchSourceChatSessionDetail>(
     researchPath(projectId, 'sources', sourceId, 'chat', 'sessions', sessionId),
+    options.sessionContract === true ? { headers: sessionContractHeaders } : undefined,
   )
   return response.data
 }
@@ -837,6 +870,11 @@ export interface ResearchGlobalChatCard {
   status: string
   failure_code: string | null
   created_at?: string | null
+  /**
+   * PR-5b（§7.3）：失败卡自身携带的容量报告（后端加性字段；缺失 =
+   * unknown，不得回退到其它 Generation 的报告）。
+   */
+  context_report?: unknown
 }
 
 /** GET 全局会话详情响应（消息按阅读顺序返回；next_cursor 分页游标） */
@@ -847,6 +885,8 @@ export interface ResearchGlobalChatSessionDetail {
     owner_user_id?: number | null
     created_at?: string | null
     updated_at?: string | null
+    /** PR-5b（§4.6）：列表/详情同语义的会话可见性（第三批加性字段）。 */
+    record_visibility?: string | null
   }
   messages: ResearchGlobalChatMessage[]
   cards: ResearchGlobalChatCard[]
@@ -860,11 +900,17 @@ export interface ResearchGlobalChatSessionDetail {
 export async function getResearchChatSession(
   projectId: string,
   sessionId: string,
-  params: { cursor?: string } = {},
+  params: { cursor?: string; sessionContract?: boolean } = {},
 ): Promise<ResearchGlobalChatSessionDetail> {
+  const { cursor, sessionContract } = params
   const response = await apiClient.get<ResearchGlobalChatSessionDetail>(
     researchPath(projectId, 'chat', 'sessions', sessionId),
-    { params },
+    {
+      ...(cursor === undefined ? {} : { params: { cursor } }),
+      // PR-5b（§6.7/§9.5）：只有新会话协议路径显式请求 session DTO 扩展；
+      // legacy 调用不携带该头，返回形状/行为保持不变（Lead 裁决 D2）。
+      ...(sessionContract === true ? { headers: sessionContractHeaders } : {}),
+    },
   )
   return response.data
 }

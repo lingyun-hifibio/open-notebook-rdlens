@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { act, render, screen, fireEvent } from '@testing-library/react'
 import { ResearchSourceChatPanel } from './ResearchSourceChatPanel'
 import { useResearchSourceChat } from '@/lib/hooks/use-research-source-chat'
 import {
@@ -18,6 +18,23 @@ vi.mock('@/lib/hooks/use-research-source-chat', () => ({
 // 被测对象不是全局模型本身
 vi.mock('@/lib/hooks/use-research-global-model')
 
+// PR-5b（D5）：source 面板直接消费 session runtime 的 source editor。
+vi.mock('@/lib/hooks/research-session-runtime', () => ({
+  useResearchSessionRuntimeOptional: vi.fn(() => null),
+  useSessionSnapshot: vi.fn(() => ({ viewerUserId: '1' })),
+}))
+vi.mock('@/lib/hooks/use-research-editor', () => ({
+  useResearchEditor: vi.fn(() => ({
+    snapshot: null,
+    controller: null,
+    setDraftText: vi.fn(),
+    flush: vi.fn(async () => 'saved'),
+    hold: vi.fn(),
+    release: vi.fn(),
+    clearAfterSubmission: vi.fn(async () => 'cleared'),
+  })),
+}))
+
 vi.mock('@/lib/hooks/use-translation', () => ({
   useTranslation: () => ({
     t: (key: string, opts?: Record<string, unknown>) =>
@@ -32,6 +49,9 @@ vi.mock('@/components/ui/markdown-renderer', () => ({
 }))
 
 import type { UseResearchSourceChatResult } from '@/lib/hooks/use-research-source-chat'
+import { useResearchSessionRuntimeOptional } from '@/lib/hooks/research-session-runtime'
+import { useResearchEditor } from '@/lib/hooks/use-research-editor'
+import { createEditorState } from '@/lib/research/editor-machine'
 
 function makeChatResult(overrides: Partial<UseResearchSourceChatResult> = {}): UseResearchSourceChatResult {
   return {
@@ -53,6 +73,16 @@ describe('ResearchSourceChatPanel', () => {
     vi.clearAllMocks()
     resetGlobalModelStub()
     vi.mocked(useResearchSourceChat).mockReturnValue(makeChatResult())
+    vi.mocked(useResearchSessionRuntimeOptional).mockReturnValue(null)
+    vi.mocked(useResearchEditor).mockReturnValue({
+      snapshot: null,
+      controller: null,
+      setDraftText: vi.fn(),
+      flush: vi.fn(async () => 'saved'),
+      hold: vi.fn(),
+      release: vi.fn(),
+      clearAfterSubmission: vi.fn(async () => 'cleared'),
+    } as never)
   })
 
   function renderPanel(onHighlightPage = vi.fn()) {
@@ -305,6 +335,50 @@ describe('ResearchSourceChatPanel', () => {
     expect(screen.getByText('epoch_mismatch')).toBeInTheDocument()
   })
 
+  it('PR-5b（D5）：运行时接线后以 source editor 草稿发送（复用 DraftComposer 门禁）', () => {
+    const ref = {
+      domain: 'research' as const,
+      kind: 'source' as const,
+      projectId: 'proj_1',
+      sessionId: 'sess_s1',
+      sourceId: 'src_1',
+    }
+    vi.mocked(useResearchSessionRuntimeOptional).mockReturnValue({
+      active: () => ref,
+    } as never)
+    const snapshot = {
+      ...createEditorState({ ref, writerId: 'w-1', transportAvailable: true }),
+      phase: 'ready' as const,
+      loading: false,
+      baseScope: { mode: 'selected' as const, sourceIds: ['src_1'], singleSourceId: 'src_1' },
+      draftText: '固定来源的问题',
+      dirty: true,
+    }
+    const setDraftText = vi.fn()
+    vi.mocked(useResearchEditor).mockReturnValue({
+      snapshot,
+      setDraftText,
+      flush: vi.fn(async () => true),
+    } as never)
+    const chat = makeChatResult()
+    vi.mocked(useResearchSourceChat).mockReturnValue(chat)
+    renderPanel()
+
+    // 固定来源范围可见；wired 路径用共享 composer（非 legacy 单行输入）
+    expect(screen.getByTestId('srcchat-draft-scope')).toBeInTheDocument()
+    expect(screen.getByTestId('research-draft-composer')).toBeInTheDocument()
+    expect(screen.queryByTestId('srcchat-input')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('chat-send'))
+    expect(chat.send).toHaveBeenCalledWith('固定来源的问题', 'm-local')
+  })
+
+  it('PR-5b（D5）：运行时缺失时保留 legacy 输入（中间 PR 入口不误开放）', () => {
+    vi.mocked(useResearchSessionRuntimeOptional).mockReturnValue(null)
+    renderPanel()
+    expect(screen.getByTestId('srcchat-input')).toBeInTheDocument()
+    expect(screen.queryByTestId('research-draft-composer')).not.toBeInTheDocument()
+  })
+
   it('输入非空回车发送并清空输入框', () => {
     const chat = makeChatResult()
     vi.mocked(useResearchSourceChat).mockReturnValue(chat)
@@ -350,5 +424,363 @@ describe('ResearchSourceChatPanel', () => {
     renderPanel()
     expect(screen.getByTestId('srcchat-input')).toBeDisabled()
     expect(screen.getByTestId('srcchat-send')).toBeDisabled()
+  })
+
+  it('PR-5b（Codex P1-#3）：保存未确认（conflict）时不派发且不清会话草稿', async () => {
+    const ref = {
+      domain: 'research' as const,
+      kind: 'source' as const,
+      projectId: 'proj_1',
+      sessionId: 'sess_src',
+      sourceId: 'src_1',
+    }
+    vi.mocked(useResearchSessionRuntimeOptional).mockReturnValue({
+      active: () => ref,
+    } as never)
+    const base = createEditorState({ ref, writerId: 'w-1', transportAvailable: true })
+    const snapshot = {
+      ...base,
+      phase: 'ready' as const,
+      loading: false,
+      revision: 3,
+      intentHash: 'hash-3',
+      draftToken: 'draft_3',
+      baseScope: { mode: 'selected' as const, sourceIds: ['src_1'], singleSourceId: 'src_1' },
+      draftText: '未保存的问题',
+      dirty: true,
+    }
+    const setDraftText = vi.fn()
+    const release = vi.fn()
+    const hold = vi.fn()
+    vi.mocked(useResearchEditor).mockReturnValue({
+      snapshot,
+      controller: { getSnapshot: () => snapshot },
+      setDraftText,
+      flush: vi.fn(async () => 'conflict'),
+      hold,
+      release,
+      clearAfterSubmission: vi.fn(async () => 'cleared'),
+    } as never)
+    const conversationSend = vi.fn(async () => ({ status: 'ok' }))
+    const chat = makeChatResult({
+      conversation: {
+        send: conversationSend,
+        getSnapshot: () => ({ turn: null, history: [] }),
+        subscribe: () => () => {},
+        notifyClearSettled: vi.fn(),
+      } as never,
+    })
+    vi.mocked(useResearchSourceChat).mockReturnValue(chat)
+    renderPanel()
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('chat-send'))
+    })
+
+    expect(hold).toHaveBeenCalledWith('submit', expect.any(String))
+    expect(conversationSend).not.toHaveBeenCalled()
+    expect(chat.send).not.toHaveBeenCalled()
+    expect(setDraftText).not.toHaveBeenCalled()
+    expect(release).toHaveBeenCalled()
+  })
+
+  it('PR-5b（Codex 第 2 轮 P1-#3）：controller history 轮次必须渲染进消息区', () => {
+    const archived = {
+      identity: {
+        authGeneration: 1,
+        sessionKey: 'source:proj_1:src_1:sess_src',
+        sessionId: 'sess_src',
+        turnId: 'turn-old',
+        draftToken: 'draft_old',
+        attempt: 1,
+        detached: false,
+        terminal: 'done',
+      },
+      state: 'terminal',
+      sse: {
+        answer: '旧轮回答',
+        thinking: '',
+        citations: [],
+        usage: null,
+        resolvedMode: null,
+        terminal: 'done',
+        errorCode: null,
+        errorMessage: null,
+        contextReport: null,
+        contextCoverage: null,
+      },
+      query: '旧轮问题',
+      operationId: null,
+      accepted: null,
+      errorCode: null,
+      errorMessage: null,
+      gapDetected: false,
+      lookup: null,
+      clearPending: false,
+      incomplete: false,
+      external: false,
+    }
+    vi.mocked(useResearchSourceChat).mockReturnValue(
+      makeChatResult({
+        conversation: {
+          getSnapshot: () => ({ turn: null, history: [archived] }),
+          subscribe: () => () => {},
+          send: vi.fn(),
+        } as never,
+      }),
+    )
+    renderPanel()
+    expect(screen.getByText('旧轮问题')).toBeInTheDocument()
+    expect(screen.getByText('旧轮回答')).toBeInTheDocument()
+  })
+
+  it('PR-5b（Lead 核对 P1-2）：新会话态点历史会话会重新 activate，editor 恢复且发送走 controller', async () => {
+    let activeRef: {
+      domain: 'research'
+      kind: 'source'
+      projectId: string
+      sessionId: string
+      sourceId: string
+    } | null = null
+    const activate = vi.fn((_surface: string, next: typeof activeRef) => {
+      activeRef = next
+      return true
+    })
+    vi.mocked(useResearchSessionRuntimeOptional).mockReturnValue({
+      active: () => activeRef,
+      activate,
+    } as never)
+
+    const ref = {
+      domain: 'research' as const,
+      kind: 'source' as const,
+      projectId: 'proj_1',
+      sessionId: 'sess_h',
+      sourceId: 'src_1',
+    }
+    const snapshot = {
+      ...createEditorState({ ref, writerId: 'w-1', transportAvailable: true }),
+      phase: 'ready' as const,
+      loading: false,
+      revision: 2,
+      intentHash: 'hash-2',
+      draftToken: 'draft_2',
+      baseScope: { mode: 'selected' as const, sourceIds: ['src_1'], singleSourceId: 'src_1' },
+      draftText: '历史会话的问题',
+      dirty: true,
+    }
+    const hold = vi.fn()
+    const release = vi.fn()
+    vi.mocked(useResearchEditor).mockImplementation((() =>
+      activeRef === null
+        ? {
+            snapshot: null,
+            controller: null,
+            setDraftText: vi.fn(),
+            flush: vi.fn(async () => 'saved'),
+            hold,
+            release,
+            clearAfterSubmission: vi.fn(async () => 'cleared'),
+          }
+        : {
+            snapshot,
+            controller: { getSnapshot: () => snapshot },
+            setDraftText: vi.fn(),
+            flush: vi.fn(async () => 'saved'),
+            hold,
+            release,
+            clearAfterSubmission: vi.fn(async () => 'cleared'),
+          }) as never)
+
+    const conversationSend = vi.fn(async (_input: Record<string, unknown>) => ({ status: 'ok' }))
+    const chat = makeChatResult({
+      sessions: [
+        { session_id: 'sess_h', title: '历史会话', updated_at: '2026-01-01T00:00:00Z' } as never,
+      ],
+      conversation: {
+        send: conversationSend,
+        getSnapshot: () => ({ turn: null, history: [] }),
+        subscribe: () => () => {},
+        notifyClearSettled: vi.fn(),
+      } as never,
+    })
+    vi.mocked(useResearchSourceChat).mockReturnValue(chat)
+
+    const { rerender } = render(
+      <ResearchSourceChatPanel projectId="proj_1" sourceId="src_1" onHighlightPage={vi.fn()} />,
+    )
+    // 新会话态：legacy 输入可见
+    expect(screen.getByTestId('srcchat-input')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('srcchat-session-sess_h'))
+    expect(activate).toHaveBeenCalledWith('source', {
+      domain: 'research',
+      kind: 'source',
+      projectId: 'proj_1',
+      sessionId: 'sess_h',
+      sourceId: 'src_1',
+    })
+
+    // runtime 快照变化 → 重渲染：editor/controller 恢复（wired composer）
+    rerender(
+      <ResearchSourceChatPanel projectId="proj_1" sourceId="src_1" onHighlightPage={vi.fn()} />,
+    )
+    expect(screen.getByTestId('research-draft-composer')).toBeInTheDocument()
+    expect(screen.getByTestId('srcchat-draft-scope')).toBeInTheDocument()
+    expect(screen.queryByTestId('srcchat-input')).not.toBeInTheDocument()
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('chat-send'))
+    })
+    expect(conversationSend).toHaveBeenCalledTimes(1)
+    expect(conversationSend.mock.calls[0][0]).toMatchObject({
+      query: '历史会话的问题',
+      editorRevision: 2,
+      draftToken: 'draft_2',
+    })
+    expect(chat.send).not.toHaveBeenCalled()
+  })
+
+  it('PR-5b（Codex 复核 P1）：source 重复提问不得消费历史答案，durable 元数据保留', () => {
+    const liveTurn = {
+      identity: {
+        authGeneration: 1,
+        sessionKey: 'source:proj_1:src_1:sess_src',
+        sessionId: 'sess_src',
+        turnId: 'turn-new',
+        draftToken: 'draft_new',
+        attempt: 1,
+        detached: false,
+        terminal: null,
+        generationId: 'gen_new',
+        observedRevision: null,
+      },
+      state: 'streaming',
+      sse: {
+        answer: '',
+        thinking: '',
+        citations: [],
+        usage: null,
+        resolvedMode: null,
+        terminal: null,
+        errorCode: null,
+        errorMessage: null,
+        contextReport: null,
+        contextCoverage: null,
+      },
+      query: '重复问题',
+      operationId: 'op-1',
+      accepted: null,
+      errorCode: null,
+      errorMessage: null,
+      gapDetected: false,
+      lookup: null,
+      clearPending: false,
+      incomplete: false,
+      external: false,
+    }
+    vi.mocked(useResearchSourceChat).mockReturnValue(
+      makeChatResult({
+        turns: [
+          {
+            id: 'old-user',
+            role: 'user',
+            content: '重复问题',
+            thinking: '',
+            citations: [],
+            usage: null,
+            resolvedMode: null,
+            degradationReasons: [],
+            sourceRef: null,
+            status: 'done',
+            reconnectCount: 0,
+            errorCode: null,
+            errorMessage: null,
+          },
+          {
+            id: 'old-assistant',
+            role: 'assistant',
+            content: '旧答案',
+            thinking: '',
+            citations: [],
+            usage: { input_tokens: 7, output_tokens: 3 },
+            resolvedMode: null,
+            degradationReasons: [],
+            sourceRef: null,
+            status: 'done',
+            reconnectCount: 0,
+            errorCode: null,
+            errorMessage: null,
+          },
+        ],
+        conversation: {
+          getSnapshot: () => ({ turn: liveTurn, history: [] }),
+          subscribe: () => () => {},
+          send: vi.fn(),
+        } as never,
+      }),
+    )
+    renderPanel()
+    expect(screen.getAllByText('旧答案')).toHaveLength(1)
+    // 历史问句必须保留（不能只凭同 query 删除 durable user，破坏旧问答配对）
+    expect(screen.getAllByText('重复问题')).toHaveLength(2)
+    // 新轮空 answer 保持空占位（没有吞掉旧答案）
+    expect(screen.getByText('research.chatNoAnswer')).toBeInTheDocument()
+    // durable 行保留自身元数据（usage 徽标），且不伪造成新轮
+    expect(screen.getByTestId('srcchat-turn-meta-old-assistant')).toBeInTheDocument()
+    expect(screen.queryByTestId('srcchat-turn-meta-turn-new')).not.toBeInTheDocument()
+  })
+
+  it('PR-5b（Lead 复核 P2）：source ref→ref / ref→null 会话切换均同步 runtime 身份', () => {
+    const refA = {
+      domain: 'research' as const,
+      kind: 'source' as const,
+      projectId: 'proj_1',
+      sessionId: 'sess_a',
+      sourceId: 'src_1',
+    }
+    let activeRef: typeof refA | null = refA
+    const activate = vi.fn((_surface: string, next: typeof refA | null) => {
+      activeRef = next
+      return true
+    })
+    vi.mocked(useResearchSessionRuntimeOptional).mockReturnValue({
+      active: () => activeRef,
+      activate,
+    } as never)
+    const snapshot = {
+      ...createEditorState({ ref: refA, writerId: 'w-1', transportAvailable: true }),
+      phase: 'ready' as const,
+      loading: false,
+      draftText: '草稿',
+      dirty: true,
+    }
+    vi.mocked(useResearchEditor).mockReturnValue({
+      snapshot,
+      controller: { getSnapshot: () => snapshot },
+      setDraftText: vi.fn(),
+      flush: vi.fn(async () => 'saved'),
+      hold: vi.fn(),
+      release: vi.fn(),
+      clearAfterSubmission: vi.fn(async () => 'cleared'),
+    } as never)
+    vi.mocked(useResearchSourceChat).mockReturnValue(
+      makeChatResult({
+        sessions: [
+          { session_id: 'sess_b', title: '会话 B', updated_at: '2026-01-01T00:00:00Z' } as never,
+        ],
+      }),
+    )
+    renderPanel()
+    activate.mockClear()
+    // ref→ref：切到另一个历史会话
+    fireEvent.click(screen.getByTestId('srcchat-session-sess_b'))
+    expect(activate).toHaveBeenCalledWith(
+      'source',
+      expect.objectContaining({ sessionId: 'sess_b' }),
+    )
+    // ref→null：回到新会话
+    activate.mockClear()
+    fireEvent.click(screen.getByTestId('srcchat-new-session'))
+    expect(activate).toHaveBeenCalledWith('source', null)
   })
 })

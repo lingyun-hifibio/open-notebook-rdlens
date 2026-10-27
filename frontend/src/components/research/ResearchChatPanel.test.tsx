@@ -7,6 +7,7 @@ import {
 } from './ResearchChatPanel'
 import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
 import { ResearchScopeProvider, scopeStorageKey, useResearchScope, type ResearchScopeSnapshot } from '@/lib/research/scope'
+import type { CoverageSubmitOutcome } from '@/lib/hooks/use-research-chat'
 import { createEditorState } from '@/lib/research/editor-machine'
 import type { WireChatAnchor } from '@/lib/research/session-contract'
 import type {
@@ -14,7 +15,7 @@ import type {
   ResearchConversationSnapshot,
 } from '@/lib/research/types'
 import type { ResearchSessionRef } from '@/lib/research/session-contract'
-import { useState } from 'react'
+import { Profiler, useState } from 'react'
 import type { ResearchBackgroundNotice, ResearchChatSelection, ResearchChatTurn } from '@/lib/hooks/use-research-chat'
 import type { ResearchCitation, ResearchJob } from '@/lib/research/types'
 
@@ -30,6 +31,14 @@ import { saveResultFromResult } from '@/lib/research/api'
 // RWV2-11（K7/K8/K12）：面板直接消费共享 ResearchScopeProvider——测试经
 // localStorage 预置范围；retry 复用 turn.scopeSnapshot（null 不渲染重试）；
 // Coverage 只允许 selected 模式 1..50 Source；all 显示专属说明。
+
+/** PR-5b：Coverage 受理结果为判别对象（202 + 标识 + 登记状态）。 */
+const ACCEPTED_OUTCOME: CoverageSubmitOutcome = {
+  status: 'accepted',
+  jobId: 'job_1',
+  generationId: 'gen_1',
+  registration: 'registered',
+}
 
 const USER_ID = 'u1'
 const PROJECT_ID = 'p1'
@@ -82,7 +91,7 @@ function renderPanel(
   turns: ResearchChatTurn[],
   send = vi.fn(),
   overrides: Partial<{
-    onSendCoverage: (q: string, snapshot: ResearchScopeSnapshot) => Promise<boolean>
+    onSendCoverage: (q: string, snapshot: ResearchScopeSnapshot) => Promise<CoverageSubmitOutcome>
     scope: { mode: 'all' | 'selected'; sourceIds: string[]; noteIds: string[] }
     // #358：后端 Coverage 能力（默认 true 保 happy-path；能力关闭用例显式传 false）
     coverageEnabled: boolean
@@ -108,7 +117,7 @@ function renderPanel(
         turns={turns}
         isStreaming={false}
         onSend={send}
-        onSendCoverage={overrides.onSendCoverage ?? vi.fn(async () => true)}
+        onSendCoverage={overrides.onSendCoverage ?? vi.fn(async () => ACCEPTED_OUTCOME)}
         coverageEnabled={overrides.coverageEnabled ?? true}
         coverageJobs={overrides.coverageJobs}
         onCoverageRetry={overrides.onCoverageRetry ?? vi.fn(async () => true)}
@@ -149,7 +158,7 @@ function renderPanelWithNotice(notice: ResearchBackgroundNotice) {
             turns={[]}
             isStreaming={false}
             onSend={vi.fn()}
-            onSendCoverage={vi.fn(async () => true)}
+            onSendCoverage={vi.fn(async () => ACCEPTED_OUTCOME)}
             backgroundNotice={notice}
           />
         </ResearchScopeProvider>
@@ -182,7 +191,7 @@ function renderPanelWithNoteHarness(turns: ResearchChatTurn[], send = vi.fn()) {
             turns={turns}
             isStreaming={false}
             onSend={send}
-            onSendCoverage={vi.fn(async () => true)}
+            onSendCoverage={vi.fn(async () => ACCEPTED_OUTCOME)}
           />
           <ToggleNoteHarness />
         </ResearchScopeProvider>
@@ -512,7 +521,7 @@ describe('ResearchChatPanel coverage scope（COV-09 + RWV2-11 K3）', () => {
   })
 
   it('all_selected 提交：经 onSendCoverage 携带派发快照（202 受理后清空输入）', async () => {
-    const onSendCoverage = vi.fn(async () => true)
+    const onSendCoverage = vi.fn(async () => ACCEPTED_OUTCOME)
     renderPanel([], vi.fn(), {
       onSendCoverage,
       scope: { mode: 'selected', sourceIds: ['src-1'], noteIds: [] },
@@ -571,7 +580,7 @@ describe('ResearchChatPanel coverage scope（COV-09 + RWV2-11 K3）', () => {
 
   it('#358：能力关闭时已选 all_selected 也不发创建请求（提交闸门）', () => {
     const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
-    const onSendCoverage = vi.fn(async () => true)
+    const onSendCoverage = vi.fn(async () => ACCEPTED_OUTCOME)
     // 预置 selected 范围（1 个 Source）——all_selected 仅适用于显式选择范围
     seedScope({ mode: 'selected', sourceIds: ['src-1'], noteIds: [], singleSourceId: null })
     const { rerender } = render(
@@ -777,7 +786,7 @@ describe('ResearchChatPanel continue-research prefill（RWV2-23 AC4）', () => {
               turns={[]}
               isStreaming={false}
               onSend={vi.fn(async () => true)}
-              onSendCoverage={vi.fn(async () => true)}
+              onSendCoverage={vi.fn(async () => ACCEPTED_OUTCOME)}
               prefill={{ text: 'Continue from this result: excerpt', seq: 1 }}
             />
           </ResearchScopeProvider>
@@ -801,7 +810,7 @@ describe('ResearchChatPanel continue-research prefill（RWV2-23 AC4）', () => {
               turns={[]}
               isStreaming={false}
               onSend={vi.fn(async () => true)}
-              onSendCoverage={vi.fn(async () => true)}
+              onSendCoverage={vi.fn(async () => ACCEPTED_OUTCOME)}
               prefill={{ text: 'draft v1', seq: 1 }}
             />
           </ResearchScopeProvider>
@@ -816,7 +825,7 @@ describe('ResearchChatPanel continue-research prefill（RWV2-23 AC4）', () => {
               turns={[]}
               isStreaming={false}
               onSend={vi.fn(async () => true)}
-              onSendCoverage={vi.fn(async () => true)}
+              onSendCoverage={vi.fn(async () => ACCEPTED_OUTCOME)}
               prefill={{ text: 'draft v2', seq: 2 }}
             />
           </ResearchScopeProvider>
@@ -1030,7 +1039,7 @@ describe('ResearchChatPanel · PR-4 会话 editor 接线', () => {
             turns={turns}
             isStreaming={false}
             onSend={onSend}
-            onSendCoverage={vi.fn(async () => true)}
+            onSendCoverage={vi.fn(async () => ACCEPTED_OUTCOME)}
             editorSnapshot={
               anchor === undefined ? snapshot : { ...snapshot, chatAnchor: anchor }
             }
@@ -1075,7 +1084,7 @@ describe('ResearchChatPanel · PR-4 会话 editor 接线', () => {
               turns={[]}
               isStreaming={false}
               onSend={vi.fn(async () => true)}
-              onSendCoverage={vi.fn(async () => true)}
+              onSendCoverage={vi.fn(async () => ACCEPTED_OUTCOME)}
               editorSnapshot={null}
             />
           </ResearchScopeProvider>
@@ -1288,7 +1297,7 @@ describe('ResearchChatPanel · PR-4 修复轮（P1-1/P1-2/F3/F4）', () => {
 
   function Harness({
     onSend = vi.fn(async () => true),
-    onSendCoverage = vi.fn(async () => true),
+    onSendCoverage = vi.fn(async () => ACCEPTED_OUTCOME),
     onSessionDraftChange = vi.fn(),
     onChatAnchorChange = vi.fn(),
     onFlushPosition = vi.fn(),
@@ -1301,7 +1310,7 @@ describe('ResearchChatPanel · PR-4 修复轮（P1-1/P1-2/F3/F4）', () => {
     nullSnapshot = false,
   }: {
     onSend?: (query: string) => Promise<boolean>
-    onSendCoverage?: (query: string, snapshot: ResearchScopeSnapshot) => Promise<boolean>
+    onSendCoverage?: (query: string, snapshot: ResearchScopeSnapshot) => Promise<CoverageSubmitOutcome>
     onSessionDraftChange?: (text: string) => void
     onChatAnchorChange?: (anchor: WireChatAnchor | null) => void
     onFlushPosition?: () => void
@@ -1388,7 +1397,7 @@ describe('ResearchChatPanel · PR-4 修复轮（P1-1/P1-2/F3/F4）', () => {
   it('P1-1 Coverage 发送只清同版本 Coverage 文本，会话草稿与会话派发不受影响', async () => {
     seedScope(SCOPE_A)
     const onSend = vi.fn(async () => true)
-    const onSendCoverage = vi.fn(async (_query: string, _snapshot: ResearchScopeSnapshot) => true)
+    const onSendCoverage = vi.fn(async (_query: string, _snapshot: ResearchScopeSnapshot) => ACCEPTED_OUTCOME)
     const onSessionDraftChange = vi.fn()
     render(
       <Harness
@@ -1412,9 +1421,9 @@ describe('ResearchChatPanel · PR-4 修复轮（P1-1/P1-2/F3/F4）', () => {
 
   it('P1-1 Coverage 发送期间文本已变（版本不匹配）→ 不清新文本', async () => {
     seedScope(SCOPE_A)
-    let resolveSend: (value: boolean) => void = () => {}
+    let resolveSend: (value: CoverageSubmitOutcome) => void = () => {}
     const onSendCoverage = vi.fn(
-      () => new Promise<boolean>((resolve) => { resolveSend = resolve }),
+      () => new Promise<CoverageSubmitOutcome>((resolve) => { resolveSend = resolve }),
     )
     render(<Harness onSendCoverage={onSendCoverage} />)
     enterCoverageMode()
@@ -1422,7 +1431,7 @@ describe('ResearchChatPanel · PR-4 修复轮（P1-1/P1-2/F3/F4）', () => {
     fireEvent.click(screen.getByTestId('chat-send'))
     await waitFor(() => expect(onSendCoverage).toHaveBeenCalledTimes(1))
     fireEvent.change(screen.getByTestId('chat-input'), { target: { value: '第二版' } })
-    resolveSend(true)
+    resolveSend(ACCEPTED_OUTCOME)
     await waitFor(() => expect(screen.getByTestId('chat-input')).toHaveValue('第二版'))
   })
 
@@ -1686,7 +1695,7 @@ describe('ResearchChatPanel · PR-4 修复轮（P1-1/P1-2/F3/F4）', () => {
 
   it('P2-6 无会话快照时 Coverage 仍由本地草稿受控（发送成功清空自身文本）', async () => {
     seedScope(SCOPE_A)
-    const onSendCoverage = vi.fn(async () => true)
+    const onSendCoverage = vi.fn(async () => ACCEPTED_OUTCOME)
     render(<Harness onSendCoverage={onSendCoverage} nullSnapshot />)
     enterCoverageMode()
     fireEvent.change(screen.getByTestId('chat-input'), { target: { value: 'coverage 问题' } })
@@ -1772,5 +1781,566 @@ describe('ResearchChatPanel · PR-4 修复轮（P1-1/P1-2/F3/F4）', () => {
       'research.workbench.adminWriteDenied',
     )
     expect(screen.getByTestId('scope-mode-all')).toBeDisabled()
+  })
+})
+
+// ── PR-5b（§4.2-4/§6.7/§6.9/§7.3/§9.6）：会话头部、解释 UI 与 Coverage 隔离 ──
+
+import type { ConversationController } from '@/lib/research/session-runtime'
+import type { ConversationTurn } from '@/lib/research/conversation-machine'
+import { messageRowToTurn } from '@/lib/hooks/use-research-chat'
+import type {
+  ResearchChatSessionMeta,
+  ResearchSubmissionLookupSnapshot,
+} from '@/lib/hooks/use-research-chat'
+
+describe('ResearchChatPanel PR-5b：会话接线与解释 UI', () => {
+  const REF: ResearchSessionRef = {
+    domain: 'research',
+    kind: 'global',
+    projectId: PROJECT_ID,
+    sessionId: 'sess-1',
+    sourceId: null,
+  }
+
+  function conversationStub(
+    turn: ConversationTurn | null = null,
+    history: ConversationTurn[] = [],
+  ): ConversationController {
+    return {
+      getSnapshot: () => ({
+        version: 1,
+        sessionKey: 'global:p1:sess-1',
+        authGeneration: 1,
+        turn,
+        history,
+        detailMessages: [],
+        detailCursor: null,
+      }),
+      subscribe: () => () => {},
+      load: vi.fn(async () => ({ status: 'ok' })),
+      lookupSubmission: vi.fn(async () => ({ status: 'ok' })),
+      refreshStatus: vi.fn(async () => ({ status: 'ok' })),
+    } as unknown as ConversationController
+  }
+
+  function renderSessionPanel({
+    sessionMeta = null,
+    submissionLookup = null,
+    turns = [],
+    markerWriteFailed = false,
+    onSendCoverage = vi.fn(async () => ACCEPTED_OUTCOME),
+    conversation = conversationStub(),
+    wrapPanel,
+  }: {
+    sessionMeta?: ResearchChatSessionMeta | null
+    submissionLookup?: ResearchSubmissionLookupSnapshot | null
+    turns?: ResearchChatTurn[]
+    markerWriteFailed?: boolean
+    onSendCoverage?: (q: string, snapshot: ResearchScopeSnapshot) => Promise<CoverageSubmitOutcome>
+    conversation?: ConversationController
+    /** 可选的 React 包装（如 Profiler），用于断言每次 commit 的 DOM 状态。 */
+    wrapPanel?: (node: React.ReactNode) => React.ReactNode
+  }) {
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
+    return render(
+      <QueryClientProvider client={queryClient}>
+        <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
+          <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+            {(wrapPanel ?? ((node: React.ReactNode) => node))(
+              <ResearchChatPanel
+              turns={turns}
+              isStreaming={false}
+              onSend={vi.fn(async () => true)}
+              onSendCoverage={onSendCoverage}
+              coverageEnabled
+              editorSnapshot={{
+                ...createEditorState({ ref: REF, writerId: 'w-1', transportAvailable: true }),
+                phase: 'ready',
+                loading: false,
+                baseScope: { mode: 'selected', sourceIds: ['src_1'], singleSourceId: null },
+              }}
+              conversation={conversation}
+              sessionRef={REF}
+              sessionMeta={sessionMeta}
+              submissionLookup={submissionLookup}
+              markerWriteFailed={markerWriteFailed}
+              onSendSession={vi.fn(async () => true)}
+              scopeSources={[{ sourceId: 'src_1', title: 'Paper One' }]}
+              scopeNotes={[]}
+              onChangeScope={vi.fn()}
+              onDraftChange={vi.fn()}
+              onRetrySave={vi.fn()}
+              />
+            )}
+          </ResearchScopeProvider>
+        </ResearchWorkspaceProvider>
+      </QueryClientProvider>,
+    )
+  }
+
+  beforeEach(() => {
+    localStorage.clear()
+    seedScope({ mode: 'selected', sourceIds: ['src_1'], noteIds: [], singleSourceId: null })
+  })
+
+  afterEach(() => {
+    cleanup()
+    localStorage.clear()
+  })
+
+  it('§4.2-4：detail 同响应到达即渲染真实标题，整段渲染 never 出现占位/加载态', async () => {
+    // Lead 核对（Codex 复核 P2）：用 React.Profiler 在**每次 commit** 后检查
+    // DOM，而不是 MutationObserver 收集时的节点（节点属性后续被改会假绿）。
+    const placeholderCommits: string[] = []
+    renderSessionPanel({
+      sessionMeta: { title: '真实会话标题', recordVisibility: 'visible' },
+      wrapPanel: (node) => (
+        <Profiler
+          id="header-commit"
+          onRender={() => {
+            if (document.querySelector('[data-testid="chat-session-title-loading"]')) {
+              placeholderCommits.push('loading')
+            }
+            if (document.querySelector('[data-testid="chat-session-title-unknown"]')) {
+              placeholderCommits.push('unknown')
+            }
+          }}
+        >
+          {node}
+        </Profiler>
+      ),
+    })
+    await act(async () => {})
+    expect(placeholderCommits).toEqual([])
+    expect(screen.getByTestId('chat-session-title')).toHaveTextContent('真实会话标题')
+    expect(screen.queryByTestId('chat-session-title-loading')).not.toBeInTheDocument()
+    expect(screen.queryByText('research.session.visibility.restricted')).not.toBeInTheDocument()
+  })
+
+  it('§4.2-4/§4.6：restricted 会话只显示固定占位，标题不进入 DOM', () => {
+    renderSessionPanel({
+      sessionMeta: { title: '绝密标题', recordVisibility: 'restricted' },
+    })
+    expect(screen.getByTestId('chat-session-restricted')).toBeInTheDocument()
+    expect(screen.queryByText('绝密标题')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('chat-session-title')).not.toBeInTheDocument()
+  })
+
+  it('§6.9：受限消息不渲染正文气泡，只显示固定受限卡片', () => {
+    renderSessionPanel({
+      turns: [turn({ role: 'assistant', content: '受限正文', recordVisibility: 'restricted' })],
+    })
+    expect(screen.getByTestId('chat-restricted-message')).toBeInTheDocument()
+    expect(screen.queryByText('受限正文')).not.toBeInTheDocument()
+  })
+
+  it('§7.3：assistant 消息的 context_report 渲染为上下文说明', () => {
+    renderSessionPanel({
+      turns: [
+        turn({
+          content: '回答',
+          contextReport: {
+            status: 'trimmed',
+            history: { availableTurns: 10, includedTurns: 4, omittedTurns: 6 },
+            evidence: { includedChunks: 3, omittedChunks: 2 },
+            reasonCodes: ['history_window'],
+          } as never,
+        }),
+      ],
+    })
+    const report = screen.getByTestId('research-context-report')
+    expect(report).toHaveAttribute('data-status', 'trimmed')
+  })
+
+  it('§6.7：查回 accepted 时显示提交状态卡', () => {
+    renderSessionPanel({
+      submissionLookup: {
+        token: 'draft_1',
+        acceptance: 'accepted',
+        generationId: 'gen_1',
+        generationState: 'running',
+        submittedDraftText: null,
+        contextReport: null,
+        lookupFailed: false,
+      },
+    })
+    expect(screen.getByTestId('research-submission-status')).toHaveAttribute(
+      'data-kind',
+      'accepted',
+    )
+  })
+
+  it('§9.6 Q1/Q2：202 返回时若输入已变为 Q2，不得清空 Q2', async () => {
+    let resolveSend: (outcome: CoverageSubmitOutcome) => void = () => {}
+    const onSendCoverage = vi.fn(
+      () => new Promise<CoverageSubmitOutcome>((resolve) => { resolveSend = resolve }),
+    )
+    renderSessionPanel({ onSendCoverage })
+    fireEvent.click(screen.getByTestId('scope-all-selected-option'))
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: '问题 Q1' } })
+    fireEvent.click(screen.getByTestId('chat-send'))
+    await waitFor(() => expect(onSendCoverage).toHaveBeenCalledTimes(1))
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: '问题 Q2' } })
+    await act(async () => { resolveSend(ACCEPTED_OUTCOME) })
+    expect(screen.getByTestId('chat-input')).toHaveValue('问题 Q2')
+  })
+
+  it('§9.6：consent 取消（not_dispatched）零副作用，保留输入且不显示受理/错误', async () => {
+    renderSessionPanel({ onSendCoverage: vi.fn(async () => ({ status: 'not_dispatched' as const })) })
+    fireEvent.click(screen.getByTestId('scope-all-selected-option'))
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: '覆盖问题' } })
+    fireEvent.click(screen.getByTestId('chat-send'))
+    // 等 promise 结算与状态刷新：not_dispatched 绝不触发清稿
+    await act(async () => {})
+    expect(screen.getByTestId('chat-input')).toHaveValue('覆盖问题')
+    expect(screen.queryByTestId('coverage-accepted')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('coverage-submit-error')).not.toBeInTheDocument()
+  })
+
+  it('§9.6：202 已受理但 Jobs 登记失败 → 显示“任务登记待刷新”，不得伪装未受理', async () => {
+    renderSessionPanel({
+      onSendCoverage: vi.fn(async () => ({
+        ...ACCEPTED_OUTCOME,
+        registration: 'failed' as const,
+      })),
+    })
+    fireEvent.click(screen.getByTestId('scope-all-selected-option'))
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: '覆盖问题' } })
+    fireEvent.click(screen.getByTestId('chat-send'))
+    await waitFor(() => expect(screen.getByTestId('coverage-registration-pending')).toBeInTheDocument())
+    expect(screen.getByTestId('coverage-registration-pending')).toHaveTextContent(
+      'research.coverage.registrationPending',
+    )
+  })
+
+  it('PR-5b（Codex P1-#6）：controller 归档到 history 的上一轮不会消失', () => {
+    const archived = {
+      identity: {
+        authGeneration: 1,
+        sessionKey: 'global:p1:sess-1',
+        sessionId: 'sess-1',
+        turnId: 'turn-old',
+        draftToken: 'draft_old',
+        attempt: 1,
+        detached: false,
+        terminal: 'done',
+      },
+      state: 'terminal',
+      sse: {
+        answer: '上一轮回答',
+        thinking: '',
+        citations: [],
+        usage: null,
+        resolvedMode: null,
+        terminal: 'done',
+        errorCode: null,
+        errorMessage: null,
+        contextReport: null,
+        contextCoverage: null,
+      },
+      query: '上一轮问题',
+      operationId: null,
+      accepted: null,
+      errorCode: null,
+      errorMessage: null,
+      gapDetected: false,
+      lookup: null,
+      clearPending: false,
+      incomplete: false,
+      external: false,
+    } as unknown as ConversationTurn
+    renderSessionPanel({ conversation: conversationStub(null, [archived]) })
+    expect(screen.getByText('上一轮问题')).toBeInTheDocument()
+    expect(screen.getByText('上一轮回答')).toBeInTheDocument()
+  })
+
+  it('PR-5b（Lead 核对 P1-1 / F10）：冷启动 terminal 查回不得把 durable 完整答案去重成空 assistant', () => {
+    const durableUser = turn({
+      id: 'msg_u1',
+      role: 'user',
+      content: '冷启动问题',
+      serverMessageId: 'msg_u1',
+    })
+    const durableAssistant = turn({
+      id: 'msg_gen_1_assistant',
+      role: 'assistant',
+      content: '完整答案（来自 durable 行）',
+      generationId: 'gen_1',
+      serverMessageId: 'msg_gen_1_assistant',
+      status: 'done',
+    })
+    const externalTerminal = {
+      identity: {
+        authGeneration: 1,
+        sessionKey: 'global:p1:sess-1',
+        sessionId: 'sess-1',
+        turnId: 'external-1',
+        draftToken: 'draft_1',
+        attempt: 1,
+        detached: false,
+        terminal: 'done',
+        generationId: 'gen_1',
+      },
+      state: 'terminal',
+      sse: {
+        answer: '',
+        thinking: '',
+        citations: [],
+        usage: null,
+        resolvedMode: null,
+        terminal: 'done',
+        errorCode: null,
+        errorMessage: null,
+        contextReport: null,
+        contextCoverage: null,
+      },
+      query: '冷启动问题',
+      operationId: null,
+      accepted: null,
+      errorCode: null,
+      errorMessage: null,
+      gapDetected: false,
+      lookup: null,
+      clearPending: false,
+      incomplete: true,
+      external: true,
+    } as unknown as ConversationTurn
+    renderSessionPanel({
+      turns: [durableUser, durableAssistant],
+      conversation: conversationStub(externalTerminal),
+    })
+    // durable user 行必须保留其 message_id（身份不丢）
+    expect(document.querySelector('[data-message-id="msg_u1"]')).not.toBeNull()
+    // 完整答案只渲染一次（不出现空 assistant / “暂无答案”占位）
+    expect(screen.getAllByText('完整答案（来自 durable 行）')).toHaveLength(1)
+    expect(screen.queryByText('research.chatNoAnswer')).not.toBeInTheDocument()
+    expect(screen.getAllByText('冷启动问题')).toHaveLength(1)
+    expect(screen.getByTestId('research-submission-status')).toHaveAttribute(
+      'data-kind',
+      'terminal',
+    )
+  })
+
+  it('PR-5b（Lead 复核新增 P1）：generation 不一致时不得用同 query 旧答案兜底', () => {
+    const durableUser = turn({
+      id: 'msg_u_old',
+      role: 'user',
+      content: '重复问题',
+      serverMessageId: 'msg_u_old',
+    })
+    const durableAssistant = turn({
+      id: 'msg_old_assistant',
+      role: 'assistant',
+      content: '旧答案',
+      generationId: 'gen_old',
+      serverMessageId: 'msg_old_assistant',
+    })
+    const liveTurn = {
+      identity: {
+        authGeneration: 1,
+        sessionKey: 'global:p1:sess-1',
+        sessionId: 'sess-1',
+        turnId: 'turn-new',
+        draftToken: 'draft_new',
+        attempt: 1,
+        detached: false,
+        terminal: null,
+        generationId: 'gen_new',
+        observedRevision: null,
+      },
+      state: 'streaming',
+      sse: {
+        answer: '',
+        thinking: '',
+        citations: [],
+        usage: null,
+        resolvedMode: null,
+        terminal: null,
+        errorCode: null,
+        errorMessage: null,
+        contextReport: null,
+        contextCoverage: null,
+      },
+      query: '重复问题',
+      operationId: 'op-1',
+      accepted: null,
+      errorCode: null,
+      errorMessage: null,
+      gapDetected: false,
+      lookup: null,
+      clearPending: false,
+      incomplete: false,
+      external: false,
+    } as unknown as ConversationTurn
+    renderSessionPanel({
+      turns: [durableUser, durableAssistant],
+      conversation: conversationStub(liveTurn),
+    })
+    // 旧 user/assistant 必须保留 message_id 且相邻（旧问答配对不被破坏）
+    const oldUserEl = document.querySelector('[data-message-id="msg_u_old"]')
+    expect(oldUserEl).not.toBeNull()
+    const oldAssistantEl = document.querySelector('[data-message-id="msg_old_assistant"]')
+    expect(oldAssistantEl).toHaveTextContent('旧答案')
+    expect(oldUserEl?.nextElementSibling).toBe(oldAssistantEl)
+    expect(screen.getAllByText('旧答案')).toHaveLength(1)
+    // 新 generation 的空 assistant 不插入空占位（新问题独立呈现）
+    expect(screen.queryByText('research.chatNoAnswer')).not.toBeInTheDocument()
+  })
+
+  it('PR-5b（Codex 复核 P1）：热恢复时 durable 与 controller history 同轮不得重复', () => {
+    const durableUser = turn({
+      id: 'msg_u1',
+      role: 'user',
+      content: '第一轮问题',
+      serverMessageId: 'msg_u1',
+    })
+    const durableAssistant = turn({
+      id: 'msg_gen_1_assistant',
+      role: 'assistant',
+      content: '第一轮答案',
+      generationId: 'gen_1',
+      serverMessageId: 'msg_gen_1_assistant',
+    })
+    const roundOne = {
+      identity: {
+        authGeneration: 1,
+        sessionKey: 'global:p1:sess-1',
+        sessionId: 'sess-1',
+        turnId: 'turn-old',
+        draftToken: 'draft_old',
+        attempt: 1,
+        detached: false,
+        terminal: 'done',
+        generationId: 'gen_1',
+        observedRevision: null,
+      },
+      state: 'terminal',
+      sse: {
+        answer: '第一轮答案',
+        thinking: '',
+        citations: [],
+        usage: null,
+        resolvedMode: null,
+        terminal: 'done',
+        errorCode: null,
+        errorMessage: null,
+        contextReport: null,
+        contextCoverage: null,
+      },
+      query: '第一轮问题',
+      operationId: null,
+      accepted: null,
+      errorCode: null,
+      errorMessage: null,
+      gapDetected: false,
+      lookup: null,
+      clearPending: false,
+      incomplete: false,
+      external: false,
+    } as unknown as ConversationTurn
+    const liveTurn = {
+      ...roundOne,
+      identity: {
+        authGeneration: 1,
+        sessionKey: 'global:p1:sess-1',
+        sessionId: 'sess-1',
+        turnId: 'turn-new',
+        draftToken: 'draft_new',
+        attempt: 1,
+        detached: false,
+        terminal: null,
+        generationId: 'gen_2',
+        observedRevision: null,
+      },
+      state: 'streaming',
+      sse: { ...roundOne.sse, answer: '', terminal: null },
+      query: '第二轮问题',
+      operationId: 'op-2',
+    } as unknown as ConversationTurn
+    renderSessionPanel({
+      turns: [durableUser, durableAssistant],
+      conversation: {
+        getSnapshot: () => ({
+          version: 2,
+          sessionKey: 'global:p1:sess-1',
+          authGeneration: 1,
+          turn: liveTurn,
+          history: [roundOne],
+          detailMessages: [],
+          detailCursor: null,
+        }),
+        subscribe: () => () => {},
+        load: vi.fn(async () => ({ status: 'ok' })),
+        lookupSubmission: vi.fn(async () => ({ status: 'ok' })),
+        refreshStatus: vi.fn(async () => ({ status: 'ok' })),
+      } as unknown as ConversationController,
+    })
+    // durable 第一轮保留一次；controller 同 generation 轮被跳过
+    expect(screen.getAllByText('第一轮问题')).toHaveLength(1)
+    expect(screen.getAllByText('第一轮答案')).toHaveLength(1)
+    // 第二轮独立呈现（空 assistant 不投影空占位）
+    expect(screen.getAllByText('第二轮问题')).toHaveLength(1)
+    expect(screen.queryByText('research.chatNoAnswer')).not.toBeInTheDocument()
+  })
+
+  it('PR-5b（Codex 复核覆盖缺口）：真实 mapper 的 msg_<gen> 身份也能驱动热恢复去重', () => {
+    const generationId = 'gen_a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6'
+    const durableUser = messageRowToTurn({
+      message_id: 'msg_u_real',
+      role: 'user',
+      content: '第一轮问题',
+    } as never)
+    const durableAssistant = messageRowToTurn({
+      message_id: `msg_${generationId}_assistant`,
+      role: 'assistant',
+      content: '第一轮答案',
+    } as never)
+    expect(durableUser?.serverMessageId).toBe('msg_u_real')
+    expect(durableAssistant?.generationId).toBe(generationId)
+    const historyTurn = {
+      identity: {
+        authGeneration: 1,
+        sessionKey: 'global:p1:sess-1',
+        sessionId: 'sess-1',
+        turnId: 'turn-real',
+        draftToken: 'draft_real',
+        attempt: 1,
+        detached: false,
+        terminal: 'done',
+        generationId,
+        observedRevision: null,
+      },
+      state: 'terminal',
+      sse: {
+        answer: '第一轮答案',
+        thinking: '',
+        citations: [],
+        usage: null,
+        resolvedMode: null,
+        terminal: 'done',
+        errorCode: null,
+        errorMessage: null,
+        contextReport: null,
+        contextCoverage: null,
+      },
+      query: '第一轮问题',
+      operationId: null,
+      accepted: null,
+      errorCode: null,
+      errorMessage: null,
+      gapDetected: false,
+      lookup: null,
+      clearPending: false,
+      incomplete: false,
+      external: false,
+    } as unknown as ConversationTurn
+    renderSessionPanel({
+      turns: [durableUser!, durableAssistant!],
+      conversation: conversationStub(null, [historyTurn]),
+    })
+    expect(screen.getAllByText('第一轮问题')).toHaveLength(1)
+    expect(screen.getAllByText('第一轮答案')).toHaveLength(1)
+    expect(document.querySelector('[data-message-id="msg_u_real"]')).not.toBeNull()
   })
 })
