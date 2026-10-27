@@ -1,0 +1,29 @@
+# 干净 origin/main 基线（worktree /home/lchen/workspace/open-notebook-rdlens/.worktrees/pr6-baseline）
+date: 2026-10-27T15:04:45+08:00
+cwd: /home/lchen/workspace/open-notebook-rdlens/.worktrees/pr6-baseline/frontend
+HEAD: 404c0e227ae34148b26f95a1471cebde8d52d112
+base ref: 404c0e227ae34148b26f95a1471cebde8d52d112
+
+## 1) locale + interpolation
+VITEST_EXIT:0
+ Test Files  2 passed (2)
+      Tests  35 passed (35)
+
+## 2) tsc -b
+TSC_EXIT:0
+
+## 3) npm run lint
+LINT_EXIT:1
+✖ 62 problems (5 errors, 57 warnings)
+
+## 4) 预存在失败两文件
+EXIT:1
+ Test Files  2 failed (2)
+      Tests  25 failed | 2 passed (27)
+
+## 5) 宽范围套件
+BROAD_EXIT:1
+ Test Files  2 failed | 98 passed (100)
+      Tests  25 failed | 1510 passed (1535)
+ FAIL  src/components/research/NotesPanel.test.tsx
+ FAIL  src/components/research/SourceListPanel.test.tsx

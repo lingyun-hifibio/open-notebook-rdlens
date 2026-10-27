@@ -21,10 +21,11 @@
  * 在组件内以 exported 常量占位（证据级别 simulated；PR-6 键清单见 PR 正文）。
  */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { translateOrFallback } from '@/lib/locales/translate-or-fallback'
 import type { UseResearchSessionsResult } from '@/lib/hooks/use-research-sessions'
 import type { SessionSurface } from '@/lib/research/session-runtime'
 import {
@@ -34,7 +35,11 @@ import {
   type ResearchSessionSummaryProjection,
 } from '@/lib/research/session-contract'
 
-/** 未指向任何会话时的当前标识（调用方可用 copy 覆盖为本地化文案）。 */
+/**
+ * en-US 兜底文案（PR-6：i18n 键已在 14 locale 登记；真实 i18n 返回译文，
+ * 未初始化/缺键时回退到这里的英文，保证既有 PR-2 断言口径不变）。
+ * 调用方仍可用 `copy` 覆盖本地化文案。
+ */
 export const RESEARCH_SESSION_SWITCHER_PLACEHOLDERS = {
   /** 当前会话为空时的“新对话”占位（§4.2-4）。 */
   currentNewSession: 'New conversation',
@@ -66,6 +71,10 @@ export const RESEARCH_SESSION_SWITCHER_PLACEHOLDERS = {
   contentNotReady:
     'Session content is not wired yet (PR-5a). Legacy chat panels are disabled while session navigation is active.',
 } as const
+
+/** §8.1 抽屉键盘说明（sr-only；真实 i18n 时由 `research.a11y.keyboardHint` 提供）。 */
+const KEYBOARD_HINT_FALLBACK =
+  'Use the Up and Down arrow keys to move between conversations. Home and End jump to the first or last conversation. Press Enter to open the focused conversation. Press Escape to close.'
 
 export interface ResearchSessionSwitcherCopy {
   readonly currentNewSession: string
@@ -147,34 +156,190 @@ export function ResearchSessionSwitcher({
     () => ({
       currentNewSession:
         copyOverride?.currentNewSession ??
-        t('research.sourceChat.newSession') ??
-        RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.currentNewSession,
+        translateOrFallback(
+          t,
+          'research.session.newConversation',
+          RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.currentNewSession,
+        ),
       restrictedSession:
-        copyOverride?.restrictedSession ?? RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.restrictedSession,
+        copyOverride?.restrictedSession ??
+        translateOrFallback(
+          t,
+          'research.session.restrictedConversation',
+          RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.restrictedSession,
+        ),
       unknownVisibilitySession:
         copyOverride?.unknownVisibilitySession ??
-        RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.unknownVisibilitySession,
+        translateOrFallback(
+          t,
+          'research.session.unknownVisibility',
+          RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.unknownVisibilitySession,
+        ),
       unnamedSession:
-        copyOverride?.unnamedSession ?? RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.unnamedSession,
+        copyOverride?.unnamedSession ??
+        translateOrFallback(
+          t,
+          'research.session.unnamed',
+          RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.unnamedSession,
+        ),
       createNotReady:
-        copyOverride?.createNotReady ?? RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.createNotReady,
+        copyOverride?.createNotReady ??
+        translateOrFallback(
+          t,
+          'research.session.createNotReady',
+          RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.createNotReady,
+        ),
       sourceRequired:
-        copyOverride?.sourceRequired ?? RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.sourceRequired,
+        copyOverride?.sourceRequired ??
+        translateOrFallback(
+          t,
+          'research.session.sourceRequired',
+          RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.sourceRequired,
+        ),
       unauthorized:
-        copyOverride?.unauthorized ?? RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.unauthorized,
+        copyOverride?.unauthorized ??
+        translateOrFallback(
+          t,
+          'research.session.unauthorized',
+          RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.unauthorized,
+        ),
       sourceUnavailable:
-        copyOverride?.sourceUnavailable ?? RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.sourceUnavailable,
+        copyOverride?.sourceUnavailable ??
+        translateOrFallback(
+          t,
+          'research.session.sourceUnavailable',
+          RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.sourceUnavailable,
+        ),
       createFailed:
-        copyOverride?.createFailed ?? RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.createFailed,
-      creating: copyOverride?.creating ?? RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.creating,
-      draft: copyOverride?.draft ?? RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.draft,
+        copyOverride?.createFailed ??
+        translateOrFallback(
+          t,
+          'research.session.createFailed',
+          RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.createFailed,
+        ),
+      creating:
+        copyOverride?.creating ??
+        translateOrFallback(
+          t,
+          'research.session.creating',
+          RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.creating,
+        ),
+      draft:
+        copyOverride?.draft ??
+        translateOrFallback(
+          t,
+          'research.session.draft',
+          RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.draft,
+        ),
       legacyContextUnverifiable:
         copyOverride?.legacyContextUnverifiable ??
-        RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.legacyContextUnverifiable,
-      notFound: copyOverride?.notFound ?? RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.notFound,
+        translateOrFallback(
+          t,
+          'research.session.visibility.legacyBadge',
+          RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.legacyContextUnverifiable,
+        ),
+      notFound:
+        copyOverride?.notFound ??
+        translateOrFallback(
+          t,
+          'research.session.notFound',
+          RESEARCH_SESSION_SWITCHER_PLACEHOLDERS.notFound,
+        ),
     }),
     [copyOverride, t],
   )
+
+  // 键盘/可达性文案（DESIGN §8.1、§8.5）。
+  const labels = useMemo(
+    () => ({
+      currentSession: translateOrFallback(t, 'research.a11y.currentSession', 'Current conversation'),
+      sessionList: translateOrFallback(t, 'research.a11y.sessionList', 'Conversation list'),
+      newConversation: translateOrFallback(
+        t,
+        'research.a11y.newConversation',
+        'Start a new conversation',
+      ),
+      loadMoreSessions: translateOrFallback(
+        t,
+        'research.a11y.loadMoreSessions',
+        'Load more conversations',
+      ),
+      keyboardHint: translateOrFallback(t, 'research.a11y.keyboardHint', KEYBOARD_HINT_FALLBACK),
+    }),
+    [t],
+  )
+
+  const drawerId = `research-session-drawer-${surface}`
+
+  // roving tabindex（§8.1）：列表内只有当前条目可 Tab 进入；方向键/Home/End
+  // 在条目间移动焦点，Enter/Space 由原生 button 激活。
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
+  // 选择会话/新建对话触发的关闭不把焦点拉回触发按钮（§8.1：激活后焦点去
+  // 输入框或面板标题，由面板在 sessionRef 变化时接管）。
+  const activatedRef = useRef(false)
+  const itemRefs = useRef<Array<HTMLButtonElement | null>>([])
+  const [activeItemIndex, setActiveItemIndex] = useState(0)
+  const itemCount = sessions.sessions.length
+
+  useEffect(() => {
+    itemRefs.current.length = itemCount
+  }, [itemCount])
+
+  useEffect(() => {
+    if (!open) return
+    const currentIndex = currentRef
+      ? sessions.sessions.findIndex((item) => sessionRefEquals(item.ref, currentRef))
+      : -1
+    const nextIndex = currentIndex >= 0 ? currentIndex : 0
+    setActiveItemIndex(nextIndex)
+    // 打开后焦点进入抽屉并落在当前/首条（§8.1）；列表刷新不重复抢焦点。
+    const timer = window.setTimeout(() => {
+      itemRefs.current[nextIndex]?.focus()
+    }, 0)
+    return () => window.clearTimeout(timer)
+    // 仅在打开时定位一次（sessions/currentRef 不参与依赖，避免刷新抢焦点）。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+
+  useEffect(() => {
+    setActiveItemIndex((prev) => {
+      if (itemCount === 0) return 0
+      return Math.min(prev, itemCount - 1)
+    })
+  }, [itemCount])
+
+  const moveItemFocus = (next: number): void => {
+    if (itemCount === 0) return
+    const clamped = Math.max(0, Math.min(next, itemCount - 1))
+    setActiveItemIndex(clamped)
+    itemRefs.current[clamped]?.focus()
+  }
+
+  const handleListKeyDown = (event: KeyboardEvent<HTMLUListElement>): void => {
+    if (itemCount === 0) return
+    const focusedIndex = itemRefs.current.findIndex((element) => element === document.activeElement)
+    const base = focusedIndex >= 0 ? focusedIndex : activeItemIndex
+    switch (event.key) {
+      case 'ArrowDown':
+        event.preventDefault()
+        moveItemFocus(focusedIndex >= 0 ? (base + 1) % itemCount : 0)
+        break
+      case 'ArrowUp':
+        event.preventDefault()
+        moveItemFocus(focusedIndex >= 0 ? (base - 1 + itemCount) % itemCount : itemCount - 1)
+        break
+      case 'Home':
+        event.preventDefault()
+        moveItemFocus(0)
+        break
+      case 'End':
+        event.preventDefault()
+        moveItemFocus(itemCount - 1)
+        break
+      default:
+        break
+    }
+  }
 
   const currentItem = useMemo(() => {
     if (!currentRef) return null
@@ -204,11 +369,18 @@ export function ResearchSessionSwitcher({
   }
 
   const handleSelect = (ref: ResearchSessionRef) => {
+    activatedRef.current = true
     setOpen(false)
     onOpenSession(ref)
   }
 
   const handleNew = () => {
+    // 只有“从抽屉里新建”才把关闭焦点交接给面板；顶栏按钮不关闭抽屉，
+    // 不得留下未消费的激活标记（否则下一次 Escape 会跳过回焦）。
+    const fromDrawer = open
+    if (fromDrawer) {
+      activatedRef.current = true
+    }
     setOpen(false)
     onNew()
   }
@@ -216,10 +388,14 @@ export function ResearchSessionSwitcher({
   return (
     <div className="flex min-w-0 items-center gap-2" data-testid={`session-switcher-${surface}`}>
       <button
+        ref={triggerRef}
         type="button"
         data-testid="session-switcher-trigger"
         aria-haspopup="dialog"
         aria-expanded={open}
+        aria-controls={drawerId}
+        aria-label={`${labels.currentSession}: ${currentLabel}`}
+        title={currentLabel}
         className="flex min-w-0 items-center gap-2 rounded-md border border-border/60 bg-background px-2 py-1 text-sm hover:bg-accent"
         onClick={openDrawer}
       >
@@ -240,6 +416,7 @@ export function ResearchSessionSwitcher({
             className="shrink-0 rounded-md border border-border/60 bg-background px-2 py-1 text-sm hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
             onClick={handleNew}
             disabled={createDisabled || sessions.creating}
+            aria-busy={sessions.creating || undefined}
             title={createHint ?? undefined}
             aria-describedby={createHint ? `session-create-hint-${surface}` : undefined}
           >
@@ -258,7 +435,7 @@ export function ResearchSessionSwitcher({
       )}
       {sessions.createError ? (
         <span
-          role="status"
+          role="alert"
           data-testid="session-create-error"
           className="max-w-[16rem] truncate text-xs text-destructive"
         >
@@ -267,11 +444,53 @@ export function ResearchSessionSwitcher({
       ) : null}
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[70vh] overflow-y-auto sm:max-w-md">
+        <DialogContent
+          id={drawerId}
+          className="flex max-h-[80vh] flex-col overflow-hidden sm:max-w-md"
+          onCloseAutoFocus={(event) => {
+            // 受控 open（未用 Radix DialogTrigger）时 Radix 不会自动回焦。
+            // 普通关闭（Escape/关闭按钮）→ §8.1 焦点回到触发按钮；
+            // 激活会话/新建对话 → 焦点交给面板（输入框或面板标题）。
+            // 兜底必须在**实际卸载**（本回调）后才排 timer：退出动画期间
+            // activeElement 可能仍在条目上，过早检查会漏掉“最终落 body”。
+            event.preventDefault()
+            if (activatedRef.current) {
+              activatedRef.current = false
+              if (typeof window === 'undefined') return
+              window.setTimeout(() => {
+                if (typeof document === 'undefined') return
+                const active = document.activeElement
+                if (active === null || active === document.body) {
+                  triggerRef.current?.focus()
+                }
+              }, 0)
+              return
+            }
+            triggerRef.current?.focus()
+          }}
+        >
           <DialogHeader>
             <DialogTitle>{t('chat.sessionsTitle')}</DialogTitle>
           </DialogHeader>
+          <p id={`${drawerId}-hint`} className="sr-only">
+            {labels.keyboardHint}
+          </p>
 
+          {!sessions.unauthorized ? (
+            <button
+              type="button"
+              data-testid="session-list-new"
+              className="shrink-0 self-start rounded-md border px-2 py-1 text-sm hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={handleNew}
+              disabled={createDisabled || sessions.creating}
+              aria-busy={sessions.creating || undefined}
+              aria-label={labels.newConversation}
+            >
+              {sessions.creating ? copy.creating : copy.currentNewSession}
+            </button>
+          ) : null}
+
+          <div className="min-h-0 flex-1 overflow-y-auto" data-testid="session-list-scroll">
           {sessions.unauthorized ? (
             <p data-testid="session-list-unauthorized" className="text-sm text-muted-foreground">
               {copy.unauthorized}
@@ -348,10 +567,23 @@ export function ResearchSessionSwitcher({
                       </button>
                     </div>
                   ) : null}
-                  <ul className="flex flex-col gap-1" data-testid="session-list" role="list">
-                    {sessions.sessions.map((item) => {
+                  <ul
+                    className="flex flex-col gap-1"
+                    data-testid="session-list"
+                    role="list"
+                    aria-label={labels.sessionList}
+                    aria-describedby={`${drawerId}-hint`}
+                    onKeyDown={handleListKeyDown}
+                  >
+                    {sessions.sessions.map((item, index) => {
                       const isActive = currentRef !== null && sessionRefEquals(item.ref, currentRef)
                       const title = itemTitle(item, copy)
+                      const itemAriaLabel = translateOrFallback(
+                        t,
+                        'research.a11y.sessionItem',
+                        'Open conversation {{name}}',
+                        { name: title.text },
+                      )
                       const updatedAt =
                         typeof item.updatedAt === 'string' && item.updatedAt.length > 0
                           ? formatUpdatedAt(item.updatedAt)
@@ -360,9 +592,15 @@ export function ResearchSessionSwitcher({
                         <li key={sessionKey(item.ref)}>
                           <button
                             type="button"
+                            ref={(element) => {
+                              itemRefs.current[index] = element
+                            }}
                             data-testid="session-item"
                             data-session-id={item.ref.sessionId}
                             data-kind={item.ref.kind}
+                            tabIndex={index === activeItemIndex ? 0 : -1}
+                            aria-label={itemAriaLabel}
+                            title={title.text}
                             aria-current={isActive ? 'true' : undefined}
                             className="flex w-full flex-col items-start gap-1 rounded-md px-2 py-1.5 text-left hover:bg-accent data-[active=true]:bg-accent"
                             data-active={isActive ? 'true' : undefined}
@@ -426,11 +664,14 @@ export function ResearchSessionSwitcher({
             </>
           )}
 
+          </div>
+
           {!sessions.loading && sessions.hasMore && !sessions.error ? (
             <div className="flex flex-col gap-1">
               <button
                 type="button"
                 data-testid="session-list-load-more"
+                aria-label={labels.loadMoreSessions}
                 className="self-start rounded-md border px-2 py-1 text-sm hover:bg-accent disabled:opacity-50"
                 onClick={() => sessions.loadMore()}
                 disabled={sessions.loadingMore}

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type FocusEvent } from 'react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -30,6 +30,7 @@ import type { ConversationTurn } from '@/lib/research/conversation-machine'
 import type { ResearchCitation } from '@/lib/research/types'
 import {
   projectSessionVisibility,
+  sessionKey,
   type ResearchContextReportProjection,
   type ResearchSessionRef,
 } from '@/lib/research/session-contract'
@@ -221,6 +222,21 @@ function conversationTurnToTurns(turn: ConversationTurn): ResearchChatTurn[] {
   return [userTurn, assistantTurn]
 }
 
+/**
+ * PR-6（§8.1）：判断焦点目标是否属于“会话导航入口”（会话切换触发按钮/抽屉）。
+ * 用户从输入框切到导航入口时，“此前焦点在输入框”的意图保留（激活后回焦输入框）；
+ * 焦点移到面板内其它控件或面板外普通元素则清除该意图（不抢焦点）。
+ */
+function isSessionNavigationTarget(node: HTMLElement | null): boolean {
+  if (node === null) return false
+  // 只认会话切换器触发按钮与项目级历史抽屉（id 前缀固定），
+  // 不把任意 portal 对话框当作会话导航。
+  return (
+    node.closest('[data-testid="session-switcher-trigger"]') !== null ||
+    node.closest('[id^="research-session-drawer-"]') !== null
+  )
+}
+
 export function ResearchChatPanel({
   turns,
   isStreaming,
@@ -376,6 +392,119 @@ export function ResearchChatPanel({
   // PR-4：editor 接线标记——undefined 表示宿主未装配 runtime（过渡回退）。
   const wired = editorSnapshot !== undefined
   const chatScrollRef = useRef<HTMLDivElement | null>(null)
+  const panelRootRef = useRef<HTMLDivElement | null>(null)
+  const sessionHeaderRef = useRef<HTMLDivElement | null>(null)
+  // PR-6（§8.2）：切换后回焦输入框的意图与请求。
+  const [composerFocusToken, setComposerFocusToken] = useState(0)
+  // “此前焦点在输入框”的意图：焦点在会话导航入口之间移动时保留；移到
+  // 面板内其它控件或面板外普通元素时清除（document focusin 监听，见下）。
+  const composerFocusIntentRef = useRef(false)
+  // 目标 editor 尚未就绪时挂起回焦，就绪后消费（§8.2“加载完成后回到输入框”）。
+  const pendingComposerFocusRef = useRef(false)
+  const sessionIdentityRef = useRef<string | null>(sessionRef ? sessionKey(sessionRef) : null)
+
+  const currentSessionIdentity = sessionRef ? sessionKey(sessionRef) : null
+  const editorSnapshotIdentity =
+    editorSnapshot !== null && editorSnapshot !== undefined ? sessionKey(editorSnapshot.ref) : null
+  // 只有“当前会话自己的 editor 已就绪”才允许回焦（避免用旧会话快照抢焦）。
+  const editorFocusReady =
+    editorSnapshot !== null &&
+    editorSnapshot !== undefined &&
+    editorSnapshotIdentity !== null &&
+    editorSnapshotIdentity === currentSessionIdentity &&
+    editorSnapshot.phase === 'ready' &&
+    !editorSnapshot.loading
+
+  // 面板外焦点变化：意图只对“面板内/会话导航入口”有效。用户若从入口移到
+  // 其它控件再回来，意图已失效（P1：不因过期意图抢焦）。
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    const handleDocumentFocusIn = (event: Event): void => {
+      // intent 或 pending 任一存在都要跟踪：进入 loading 后 intent 已被消费，
+      // 但挂起请求仍可能因用户离开而失效。
+      if (!composerFocusIntentRef.current && !pendingComposerFocusRef.current) return
+      const target = event.target as HTMLElement | null
+      if (target === null) return
+      if (panelRootRef.current?.contains(target)) return
+      if (isSessionNavigationTarget(target)) return
+      composerFocusIntentRef.current = false
+      pendingComposerFocusRef.current = false
+    }
+    document.addEventListener('focusin', handleDocumentFocusIn)
+    return () => document.removeEventListener('focusin', handleDocumentFocusIn)
+  }, [])
+
+  // surface 隐藏时让挂起请求失效：重新显示后不得执行旧会话的回焦。
+  useEffect(() => {
+    if (surfaceActive) return
+    composerFocusIntentRef.current = false
+    pendingComposerFocusRef.current = false
+  }, [surfaceActive])
+
+  useEffect(() => {
+    const nextIdentity = sessionRef ? sessionKey(sessionRef) : null
+    if (sessionIdentityRef.current === nextIdentity) return
+    sessionIdentityRef.current = nextIdentity
+    if (!surfaceActive) {
+      composerFocusIntentRef.current = false
+      pendingComposerFocusRef.current = false
+      return
+    }
+    // §8.1/§8.2：此前焦点在输入框 → 回输入框（目标 editor 就绪则立即请求，
+    // 否则挂起等就绪；连续切换沿用同一挂起请求）；否则焦点落到面板标题。
+    if (composerFocusIntentRef.current) {
+      composerFocusIntentRef.current = false
+      if (editorFocusReady) {
+        pendingComposerFocusRef.current = false
+        setComposerFocusToken((token) => token + 1)
+      } else {
+        pendingComposerFocusRef.current = true
+      }
+      return
+    }
+    if (pendingComposerFocusRef.current) return
+    sessionHeaderRef.current?.focus()
+  }, [sessionRef, surfaceActive, editorFocusReady])
+
+  // 目标 editor 就绪且用户未把焦点移到别处时才消费挂起的回焦请求。
+  useEffect(() => {
+    if (!pendingComposerFocusRef.current || !surfaceActive || !editorFocusReady) return
+    const active = typeof document === 'undefined' ? null : (document.activeElement as HTMLElement | null)
+    const focusSafe =
+      active === null ||
+      active === document.body ||
+      isSessionNavigationTarget(active) ||
+      active.getAttribute('data-testid') === 'chat-input'
+    if (!focusSafe) {
+      pendingComposerFocusRef.current = false
+      return
+    }
+    pendingComposerFocusRef.current = false
+    setComposerFocusToken((token) => token + 1)
+  }, [editorFocusReady, surfaceActive, sessionRef])
+
+  const handlePanelFocusCapture = (event: FocusEvent<HTMLDivElement>): void => {
+    const target = event.target as HTMLElement | null
+    if (target === null) return
+    if (
+      target.getAttribute('data-testid') === 'chat-input' &&
+      target.closest('[data-local-draft="true"]') === null
+    ) {
+      composerFocusIntentRef.current = true
+      return
+    }
+    if (!isSessionNavigationTarget(target)) composerFocusIntentRef.current = false
+  }
+
+  const handlePanelBlurCapture = (event: FocusEvent<HTMLDivElement>): void => {
+    const next = event.relatedTarget as HTMLElement | null
+    if (next !== null && event.currentTarget.contains(next)) return
+    if (isSessionNavigationTarget(next)) return
+    // 焦点离开允许区域（含 relatedTarget=null，如 iframe/失焦）：
+    // intent 与挂起请求都失效，避免后续抢焦。
+    composerFocusIntentRef.current = false
+    pendingComposerFocusRef.current = false
+  }
   const anchorTimerRef = useRef<number | null>(null)
   // F3：滚动 16ms 节流缓存最近一次可测量的锚点；隐藏/卸载时容器已不可度量，
   // flush 用缓存把 <1000ms 内的滚动位置写回，避免丢位置。
@@ -1207,10 +1336,20 @@ export function ResearchChatPanel({
   }, [wired, surfaceActive, stableMessageIdSignature, editorSnapshot?.positionUnavailable])
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div
+      ref={panelRootRef}
+      className="flex h-full min-h-0 flex-col"
+      onFocusCapture={handlePanelFocusCapture}
+      onBlurCapture={handlePanelBlurCapture}
+    >
       {sessionWired && (
-        <div className="shrink-0 border-b px-3 py-2" data-testid="chat-session-header">
-          <div className="flex flex-wrap items-center gap-2">
+        <div
+          ref={sessionHeaderRef}
+          tabIndex={-1}
+          className="shrink-0 border-b px-3 py-2 focus:outline-none"
+          data-testid="chat-session-header"
+        >
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             {restrictedSession ? (
               <span
                 className="text-sm font-medium"
@@ -1237,7 +1376,11 @@ export function ResearchChatPanel({
                   : t('research.loading')}
               </span>
             ) : (
-              <span className="text-sm font-medium" data-testid="chat-session-title">
+              <span
+                className="min-w-0 truncate text-sm font-medium"
+                title={sessionHeaderTitle}
+                data-testid="chat-session-title"
+              >
                 {sessionHeaderTitle}
               </span>
             )}
@@ -1303,7 +1446,7 @@ export function ResearchChatPanel({
       )}
       <div
         ref={chatScrollRef}
-        className="flex-1 space-y-4 overflow-y-auto p-4"
+        className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4"
         onScroll={scheduleChatAnchor}
         data-testid="chat-messages"
       >
@@ -1727,6 +1870,7 @@ export function ResearchChatPanel({
               onSend={submit}
               onRetrySave={onRetrySave ?? (() => {})}
               onRestoreDraft={onRestoreDraft}
+              focusRequestToken={composerFocusToken}
             />
           )
         ) : (

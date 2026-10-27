@@ -977,6 +977,19 @@ export const zhCN = {
   },
   research: {
     session: {
+      newConversation: '新对话',
+      restrictedConversation: '受限会话',
+      unknownVisibility: '会话',
+      unnamed: '未命名会话',
+      createNotReady: '暂不可创建新对话',
+      sourceRequired: '请先打开来源再开始对话',
+      unauthorized: '私有对话仅项目所有者可读',
+      sourceUnavailable: '该来源暂不可用，本机草稿已保留',
+      createFailed: '无法创建新对话',
+      creating: '正在创建对话…',
+      draft: '草稿',
+      notFound: '该会话已不存在',
+      contentNotReady: '会话内容尚未接线。会话导航启用期间旧聊天面板已禁用。',
       untitled: '未命名会话',
       shortId: '会话 {{id}}',
       visibility: {
@@ -984,6 +997,14 @@ export const zhCN = {
         legacyBadge: '旧记录——来源不可验证',
         unknownBadge: '可见性未知',
       },
+    },
+    a11y: {
+      sessionList: '会话列表',
+      sessionItem: '打开会话 {{name}}',
+      currentSession: '当前会话',
+      newConversation: '开始新对话',
+      loadMoreSessions: '加载更多会话',
+      keyboardHint: '使用上下方向键在不同会话间移动；Home 和 End 跳到第一条或最后一条；按 Enter 打开；按 Escape 关闭。',
     },
     submission: {
       notObserved: '未记录提交状态',

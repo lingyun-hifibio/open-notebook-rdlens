@@ -977,6 +977,19 @@ export const enUS = {
   },
   research: {
     session: {
+      newConversation: 'New conversation',
+      restrictedConversation: 'Restricted conversation',
+      unknownVisibility: 'Conversation',
+      unnamed: 'Untitled conversation',
+      createNotReady: 'New conversations are not available yet',
+      sourceRequired: 'Open a source to start a conversation',
+      unauthorized: 'Private conversations are only readable by the project owner',
+      sourceUnavailable: 'This source is temporarily unavailable. Your local draft is kept.',
+      createFailed: 'Could not start a new conversation',
+      creating: 'Starting a conversation…',
+      draft: 'Draft',
+      notFound: 'This conversation no longer exists',
+      contentNotReady: 'Session content is not wired yet (PR-5a). Legacy chat panels are disabled while session navigation is active.',
       untitled: 'Untitled session',
       shortId: 'Session {{id}}',
       visibility: {
@@ -984,6 +997,14 @@ export const enUS = {
         legacyBadge: 'Legacy record — source cannot be verified',
         unknownBadge: 'Visibility unavailable',
       },
+    },
+    a11y: {
+      sessionList: 'Conversation list',
+      sessionItem: 'Open conversation {{name}}',
+      currentSession: 'Current conversation',
+      newConversation: 'Start a new conversation',
+      loadMoreSessions: 'Load more conversations',
+      keyboardHint: 'Use the Up and Down arrow keys to move between conversations. Home and End jump to the first or last conversation. Press Enter to open the focused conversation. Press Escape to close.',
     },
     submission: {
       notObserved: 'Submission status was not recorded',

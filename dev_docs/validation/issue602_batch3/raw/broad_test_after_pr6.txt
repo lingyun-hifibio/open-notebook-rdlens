@@ -1,0 +1,25 @@
+# 宽范围套件输出摘要（完整日志未入库）
+# $ npx vitest run src/lib/locales src/components/research src/lib/research src/lib/hooks src/app/research
+# 另在干净 origin/main（raw/baseline_origin_main_provenance.txt）同命令：25 failed | 1510 passed；
+# 本 PR：25 failed | 1540 passed（同样仅 NotesPanel/SourceListPanel 预存在失败）。
+
+ FAIL  src/components/research/NotesPanel.test.tsx > NotesPanel > 21 项分两批浏览，跨页选择保持且计数准确
+ FAIL  src/components/research/NotesPanel.test.tsx > NotesPanel > 删除已选 Note 后保持 selected 模式、清理 ID 并显示 Scope 更新反馈
+ FAIL  src/components/research/NotesPanel.test.tsx > NotesPanel > 加载失败显示重试且不伪装为空数据
+ FAIL  src/components/research/NotesPanel.test.tsx > NotesPanel > 每行复选框带可访问名称且与 CRUD 按钮区分（aria-label 含标题）
+ FAIL  src/components/research/SourceListPanel.test.tsx > SourceListPanel > 渲染全部四种状态（pending/ready/stale/failed）
+ FAIL  src/components/research/SourceListPanel.test.tsx > SourceListPanel > ready/stale 可选择，pending/failed 不可选择，stale 显示英文风险提示
+ FAIL  src/components/research/SourceListPanel.test.tsx > SourceListPanel > failed 状态展示管理员可重试提示（retry-visible；Owner 无重试按钮）
+ FAIL  src/components/research/SourceListPanel.test.tsx > SourceListPanel > 紧凑单行列表：每来源一个 listitem（选择复选框 + 状态徽标 + 标题 + 打开按钮）
+ FAIL  src/components/research/SourceListPanel.test.tsx > SourceListPanel > 点击来源行回调 onOpenSource(sourceId)，与选择复选框互不干扰
+ FAIL  src/components/research/SourceListPanel.test.tsx > SourceListPanel > 行首复选框进入/退出选中：写入 provider 并切换到 selected 模式（左栏编辑）
+ FAIL  src/components/research/SourceListPanel.test.tsx > SourceListPanel > 21 项分两批浏览，跨页选择保持且计数准确
+ FAIL  src/components/research/SourceListPanel.test.tsx > SourceListPanel > 恰好 20 项全部可见且不显示 Load more
+ FAIL  src/components/research/SourceListPanel.test.tsx > SourceListPanel > selected 模式最后一项不可取消（复选框禁用，仍保持 ≥1 有效选择）
+ FAIL  src/components/research/SourceListPanel.test.tsx > SourceListPanel > 每行复选框带可访问名称（aria-label 含文档名，屏幕阅读器语义）
+ FAIL  src/components/research/SourceListPanel.test.tsx > SourceListPanel > 加载失败展示错误状态与重试，绝不伪装为空数据
+ FAIL  src/components/research/SourceListPanel.test.tsx > SourceListPanel（RWV2-43 meta 可读化） > synced_at 非 null → meta 显示版本 + Synced 标签 + 格式化时间，无裸 ISO
+ FAIL  src/components/research/SourceListPanel.test.tsx > SourceListPanel（RWV2-43 meta 可读化） > pending/failed（synced_at null）→ meta 不含 Synced 段（R2-1 回归红线）
+ FAIL  src/components/research/SourceListPanel.test.tsx > SourceListPanel（RWV2-43 meta 可读化） > Open 动作：图标按钮 a11y 可达（role button + aria-label），与选择分离
+ Test Files  2 failed | 99 passed (101)
+      Tests  25 failed | 1540 passed (1565)

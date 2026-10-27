@@ -977,6 +977,19 @@ export const zhTW = {
   },
   research: {
     session: {
+      newConversation: '新對話',
+      restrictedConversation: '受限會話',
+      unknownVisibility: '會話',
+      unnamed: '未命名會話',
+      createNotReady: '暫無法建立新對話',
+      sourceRequired: '請先開啟來源再開始對話',
+      unauthorized: '私有對話僅專案擁有者可讀',
+      sourceUnavailable: '該來源暫不可用，本機草稿已保留',
+      createFailed: '無法建立新對話',
+      creating: '正在建立對話…',
+      draft: '草稿',
+      notFound: '該會話已不存在',
+      contentNotReady: '會話內容尚未接線。會話導覽啟用期間舊聊天面板已停用。',
       untitled: '未命名會話',
       shortId: '會話 {{id}}',
       visibility: {
@@ -984,6 +997,14 @@ export const zhTW = {
         legacyBadge: '舊記錄——來源不可驗證',
         unknownBadge: '可見性未知',
       },
+    },
+    a11y: {
+      sessionList: '會話清單',
+      sessionItem: '開啟會話 {{name}}',
+      currentSession: '目前會話',
+      newConversation: '開始新對話',
+      loadMoreSessions: '載入更多會話',
+      keyboardHint: '使用上下方向鍵在不同會話間移動；Home 和 End 跳到第一條或最後一條；按 Enter 開啟；按 Escape 關閉。',
     },
     submission: {
       notObserved: '未記錄提交狀態',

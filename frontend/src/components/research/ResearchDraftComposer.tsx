@@ -50,6 +50,11 @@ export interface ResearchDraftComposerProps {
    * 不渲染会话保存状态/重试/恢复入口，也不受会话 editor 保存状态影响。
    */
   readonly localDraftMode?: boolean
+  /**
+   * PR-6（§8.2）：父层在“切换会话前焦点在输入框”时递增该 token，
+   * 加载完成后把焦点还给 textarea；其它情况不抢焦点。
+   */
+  readonly focusRequestToken?: number
 }
 
 /** 门禁原因 → 既有 i18n 键（不使用 `defaultValue` 兜底）。 */
@@ -182,6 +187,7 @@ export function ResearchDraftComposer({
   onRetrySave,
   onRestoreDraft,
   localDraftMode = false,
+  focusRequestToken,
 }: ResearchDraftComposerProps) {
   const { t } = useTranslation()
   const [localDraft, setLocalDraft] = useState('')
@@ -201,6 +207,19 @@ export function ResearchDraftComposer({
     textarea.style.height = `${next}px`
     textarea.style.overflowY = textarea.scrollHeight > TEXTAREA_MAX_HEIGHT_PX ? 'auto' : 'hidden'
   }, [value])
+
+  // §8.2：切换会话后把焦点还给输入框（仅父层明确请求时；不抢锚点恢复/其它焦点）。
+  const lastFocusRequestRef = useRef<number | undefined>(undefined)
+  useEffect(() => {
+    if (focusRequestToken === undefined) return
+    if (lastFocusRequestRef.current === undefined) {
+      lastFocusRequestRef.current = focusRequestToken
+      return
+    }
+    if (lastFocusRequestRef.current === focusRequestToken) return
+    lastFocusRequestRef.current = focusRequestToken
+    textareaRef.current?.focus()
+  }, [focusRequestToken])
 
   const saveStateText = (() => {
     switch (saveState) {
@@ -249,7 +268,11 @@ export function ResearchDraftComposer({
     !localDraftMode && restoreCandidate !== null && onRestoreDraft !== undefined
 
   return (
-    <div className="shrink-0 space-y-1.5 border-t px-4 py-2" data-testid="research-draft-composer">
+    <div
+      className="shrink-0 space-y-1.5 border-t px-4 py-2"
+      data-testid="research-draft-composer"
+      data-local-draft={localDraftMode ? 'true' : undefined}
+    >
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         {!localDraftMode && (
           <p

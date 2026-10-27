@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { createEvent, fireEvent, render, screen } from '@testing-library/react'
 
 import type { ResearchSessionRef } from '@/lib/research/session-contract'
 import { createEditorState } from '@/lib/research/editor-machine'
@@ -387,5 +387,50 @@ describe('ResearchDraftComposer · PR-4 修复轮（F5/N2/N4）', () => {
       'research.editor.composerLabel',
     )
     expect(screen.getByTestId('chat-send')).toHaveAttribute('aria-label', 'research.chatSend')
+  })
+})
+
+// PR-6（3E）：IME 边界与切换后焦点（DESIGN §8.2、§10.3）。
+describe('ResearchDraftComposer · PR-6 IME 与焦点（§8.2）', () => {
+  it('keyCode=229（Safari/旧 IME）不发送', () => {
+    const onSend = vi.fn()
+    renderComposer({ onSend })
+    const textarea = screen.getByTestId('chat-input')
+    const event = createEvent.keyDown(textarea, { key: 'Enter' })
+    Object.defineProperty(event, 'keyCode', { value: 229 })
+    fireEvent(textarea, event)
+    expect(onSend).not.toHaveBeenCalled()
+  })
+
+  it('Shift+Enter 不发送且不阻止默认换行', () => {
+    const onSend = vi.fn()
+    renderComposer({ onSend })
+    const textarea = screen.getByTestId('chat-input')
+    const event = createEvent.keyDown(textarea, { key: 'Enter', shiftKey: true })
+    fireEvent(textarea, event)
+    expect(onSend).not.toHaveBeenCalled()
+    expect(event.defaultPrevented).toBe(false)
+  })
+
+  it('focusRequestToken 变化才聚焦输入框；首次挂载不抢焦点', () => {
+    const props = {
+      editorSnapshot: makeSnapshot({ draftText: 'hello' }),
+      conversationSnapshot: IDLE_CONVERSATION,
+      gate: ALLOWED,
+      gateReasonText: null,
+      onDraftChange: vi.fn(),
+      onSend: vi.fn(),
+      onRetrySave: vi.fn(),
+    }
+    const view = render(<ResearchDraftComposer {...props} focusRequestToken={0} />)
+    expect(screen.getByTestId('chat-input')).not.toHaveFocus()
+
+    view.rerender(<ResearchDraftComposer {...props} focusRequestToken={1} />)
+    expect(screen.getByTestId('chat-input')).toHaveFocus()
+
+    // 同一 token 重复渲染不重复抢焦点（用户可自行移走焦点）。
+    screen.getByTestId('chat-send').focus()
+    view.rerender(<ResearchDraftComposer {...props} focusRequestToken={1} />)
+    expect(screen.getByTestId('chat-send')).toHaveFocus()
   })
 })
