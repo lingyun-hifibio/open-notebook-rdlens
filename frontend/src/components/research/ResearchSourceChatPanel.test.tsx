@@ -639,4 +639,92 @@ describe('ResearchSourceChatPanel', () => {
     })
     expect(chat.send).not.toHaveBeenCalled()
   })
+
+  it('PR-5b（Codex 复核 P1）：source 重复提问不得消费历史答案，durable 元数据保留', () => {
+    const liveTurn = {
+      identity: {
+        authGeneration: 1,
+        sessionKey: 'source:proj_1:src_1:sess_src',
+        sessionId: 'sess_src',
+        turnId: 'turn-new',
+        draftToken: 'draft_new',
+        attempt: 1,
+        detached: false,
+        terminal: null,
+        generationId: 'gen_new',
+        observedRevision: null,
+      },
+      state: 'streaming',
+      sse: {
+        answer: '',
+        thinking: '',
+        citations: [],
+        usage: null,
+        resolvedMode: null,
+        terminal: null,
+        errorCode: null,
+        errorMessage: null,
+        contextReport: null,
+        contextCoverage: null,
+      },
+      query: '重复问题',
+      operationId: 'op-1',
+      accepted: null,
+      errorCode: null,
+      errorMessage: null,
+      gapDetected: false,
+      lookup: null,
+      clearPending: false,
+      incomplete: false,
+      external: false,
+    }
+    vi.mocked(useResearchSourceChat).mockReturnValue(
+      makeChatResult({
+        turns: [
+          {
+            id: 'old-user',
+            role: 'user',
+            content: '重复问题',
+            thinking: '',
+            citations: [],
+            usage: null,
+            resolvedMode: null,
+            degradationReasons: [],
+            sourceRef: null,
+            status: 'done',
+            reconnectCount: 0,
+            errorCode: null,
+            errorMessage: null,
+          },
+          {
+            id: 'old-assistant',
+            role: 'assistant',
+            content: '旧答案',
+            thinking: '',
+            citations: [],
+            usage: { input_tokens: 7, output_tokens: 3 },
+            resolvedMode: null,
+            degradationReasons: [],
+            sourceRef: null,
+            status: 'done',
+            reconnectCount: 0,
+            errorCode: null,
+            errorMessage: null,
+          },
+        ],
+        conversation: {
+          getSnapshot: () => ({ turn: liveTurn, history: [] }),
+          subscribe: () => () => {},
+          send: vi.fn(),
+        } as never,
+      }),
+    )
+    renderPanel()
+    expect(screen.getAllByText('旧答案')).toHaveLength(1)
+    // 新轮空 answer 保持空占位（没有吞掉旧答案）
+    expect(screen.getByText('research.chatNoAnswer')).toBeInTheDocument()
+    // durable 行保留自身元数据（usage 徽标），且不伪造成新轮
+    expect(screen.getByTestId('srcchat-turn-meta-old-assistant')).toBeInTheDocument()
+    expect(screen.queryByTestId('srcchat-turn-meta-turn-new')).not.toBeInTheDocument()
+  })
 })

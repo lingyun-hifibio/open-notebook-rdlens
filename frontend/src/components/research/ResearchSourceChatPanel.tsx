@@ -215,78 +215,50 @@ export function ResearchSourceChatPanel({
     return rows
   })()
   const renderedSourceTurns: ResearchSourceChatTurn[] = (() => {
-    // Lead 核对（Codex 复核 P2）：不能只用“角色+正文”证明执行身份——不同
-    // 历史轮次可能答案相同。改为成对（user→assistant）匹配，且 durable 中该
-    // 成对内容唯一时才去重；空 content 的 controller assistant（冷启动外部
-    // 查回）与唯一 durable 成对答案合并，避免完整答案旁出现空占位。
+    // Codex 聚焦复核（4e9451f..1248827 P1/P2）：source 的 durable 行没有
+    // generation 身份，**禁止**仅凭“同 query/唯一匹配”把旧答案合并进新轮
+    // （重复提问会串旧答案），也不做只复制 content 的合并（会丢 citations/
+    // usage/resolvedMode/sourceRef）。空 external assistant 保持为空占位，
+    // 完整历史答案以 durable 行原样保留。
     const durable = [...chat.turns]
     const pairKey = (user: string, assistant: string): string =>
       `${user}\u0000${assistant}`
-    const durablePairKeys = new Set<string>()
     const durablePairCounts = new Map<string, number>()
-    const durableUserCounts = new Map<string, number>()
     for (let index = 0; index < durable.length; index += 1) {
       const turn = durable[index]
-      if (turn.role === 'user') {
-        durableUserCounts.set(turn.content, (durableUserCounts.get(turn.content) ?? 0) + 1)
-        continue
-      }
       if (turn.role !== 'assistant') continue
       const previous = index > 0 ? durable[index - 1] : null
       if (previous === null || previous.role !== 'user') continue
       const key = pairKey(previous.content, turn.content)
-      durablePairKeys.add(key)
       durablePairCounts.set(key, (durablePairCounts.get(key) ?? 0) + 1)
     }
-    const consumed = new Set<string>()
-    const merged = controllerTurns.map((row, index) => {
-      if (row.role !== 'assistant' || row.content.trim() !== '') return row
-      const previous = index > 0 ? controllerTurns[index - 1] : null
-      if (previous === null || previous.role !== 'user') return row
-      // 同问题多份历史稿时无法证明是哪一次执行 → 不合并（宁可 displayed empty）。
-      if ((durableUserCounts.get(previous.content) ?? 0) !== 1) return row
-      const userIndex = durable.findIndex(
-        (turn) => turn.role === 'user' && turn.content === previous.content,
-      )
-      const candidate = userIndex >= 0 ? durable[userIndex + 1] : undefined
-      if (
-        candidate === undefined ||
-        candidate.role !== 'assistant' ||
-        candidate.content.trim() === ''
-      ) {
-        return row
-      }
-      consumed.add(candidate.id)
-      return { ...row, content: candidate.content }
-    })
     const controllerPairKeys = new Set<string>()
-    for (let index = 0; index < merged.length; index += 1) {
-      const turn = merged[index]
+    for (let index = 0; index < controllerTurns.length; index += 1) {
+      const turn = controllerTurns[index]
       if (turn.role !== 'user') continue
-      const next = merged[index + 1]
-      if (next !== undefined && next.role === 'assistant') {
+      const next = controllerTurns[index + 1]
+      if (next !== undefined && next.role === 'assistant' && next.content.trim() !== '') {
         controllerPairKeys.add(pairKey(turn.content, next.content))
       }
     }
     const controllerUserContents = new Set(
-      merged.filter((turn) => turn.role === 'user').map((turn) => turn.content),
+      controllerTurns.filter((turn) => turn.role === 'user').map((turn) => turn.content),
     )
-    const remaining = durable.filter((turn) => {
-      if (consumed.has(turn.id)) return false
-      const index = durable.indexOf(turn)
+    const remaining = durable.filter((turn, index) => {
       const previous = index > 0 ? durable[index - 1] : null
       if (turn.role === 'user' && controllerUserContents.has(turn.content)) return false
       if (turn.role === 'assistant' && previous !== null && previous.role === 'user') {
         const key = pairKey(previous.content, turn.content)
-        // 只有“唯一且被 controller 成对覆盖”的 durable 副本才丢弃。
+        // 仅当 durable 中该成对内容唯一且被 controller 成对覆盖时才去重。
         if ((durablePairCounts.get(key) ?? 0) === 1 && controllerPairKeys.has(key)) {
           return false
         }
       }
       return true
     })
-    return [...remaining, ...merged]
+    return [...remaining, ...controllerTurns]
   })()
+
   const conversationSnapshot: ResearchConversationSnapshot = {
     isBusy: sessionConversation !== null ? sessionBusy : chat.isStreaming,
     isStreaming: sessionConversation !== null ? sessionBusy : chat.isStreaming,

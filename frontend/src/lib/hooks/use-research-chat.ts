@@ -1177,15 +1177,15 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
       // 避免卸载后 controller 上残留旧 transport 的悬空引用；有活动 turn 时
       // 保留 target 以便 reattach 续流，下次挂载会覆盖。
       bridge.refs = Math.max(0, bridge.refs - 1)
-      // Lead 核对（Codex 复核 P2）：refs>0 表示同一 transport 桥仍有其它挂载
-      // 消费者，此时不得 detach/release 共享 controller（会中断对方续流）；
-      // 末次卸载仍保留 target 直到清稿租约结算或下次挂载覆盖。
+      // Codex 聚焦复核（4e9451f..1248827）：每次挂载都必须配对 release，否则
+      // runtime 引用计数泄漏（acquire=2/release=1 残留空闲 controller）。
+      // detach 只允许末次挂载执行，避免中断共享消费者的续流。
       if (bridge.refs === 0) {
         if (!controller.hasActiveTurn()) bridge.target = null
         // 离开会话/卸载：只标记 detach 并中止本地读取（服务端继续执行）。
         controller.detach()
-        options.runtime.releaseConversation(ref, controller)
       }
+      options.runtime.releaseConversation(ref, controller)
       if (controllerRef.current === controller) {
         controllerRef.current = null
         setConversation(null)
