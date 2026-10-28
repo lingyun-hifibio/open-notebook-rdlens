@@ -60,10 +60,18 @@ export function ResearchSourceChatPanel({
   projectId,
   sourceId,
   onHighlightPage,
+  onNewSession,
 }: {
   projectId: string
   sourceId: string
   onHighlightPage: (pageIdx: number) => void
+  /**
+   * PR-14（方案 A）：会话身份统一创建入口。提供时“新会话”走 `POST
+   * .../sources/{id}/chat/sessions`（新契约，返回可持久化 ref），确保刷新/
+   * 重开可由 display/.source 指针直接恢复；缺省（无运行时宿主）保留 legacy
+   * `selectSession(null)` 语义。
+   */
+  onNewSession?: () => void | Promise<void>
 }) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
@@ -485,6 +493,35 @@ export function ResearchSourceChatPanel({
     if (!sameSession) runtime.activate('source', target)
   }
 
+  /**
+   * PR-14（方案 A）：从运行时指针直接恢复 source 会话，**不依赖旧列表**。
+   *
+   * 刷新/重开后 display/.source 指针把活动 source ref 交回运行时（页面级
+   * effect 或 runtime `restoreActiveFromCache`）；面板此前只由列表点击
+   * `selectSession` 绑定消息，导致“会话已激活但消息为空”。这里在运行时
+   * 活动 ref 属于本来源、且面板尚未绑定该会话时，按 ref 冷恢复详情
+   * （GET session detail），列表仅作身份枚举。
+   *
+   * 用户显式“新会话”（selectSourceSession(null) → active(null)）时
+   * `restoredSessionId` 为 null，不会把旧会话拉回（F-M3 语义保持）。
+   */
+  const restoredSessionId =
+    sourceRef !== null && sourceRef.sourceId === sourceId ? sourceRef.sessionId : null
+  const restoredBindingRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (restoredSessionId === null) {
+      restoredBindingRef.current = null
+      return
+    }
+    if (chat.activeSessionId === restoredSessionId) {
+      restoredBindingRef.current = restoredSessionId
+      return
+    }
+    if (restoredBindingRef.current === restoredSessionId) return
+    restoredBindingRef.current = restoredSessionId
+    chat.selectSession(restoredSessionId)
+  }, [restoredSessionId, chat.activeSessionId, chat.selectSession])
+
   const submit = () => {
     const trimmed = query.trim()
     if (!trimmed || chat.isStreaming) return
@@ -514,7 +551,24 @@ export function ResearchSourceChatPanel({
   // §8.1：Source 快捷列表复用会话抽屉的键盘模式（roving tabindex、↑/↓、Home/End）。
   const sessionItemRefs = useRef<Array<HTMLButtonElement | null>>([])
   const [sessionItemIndex, setSessionItemIndex] = useState(0)
-  const sourceSessions = chat.sessions
+  // 方案 A：列表只做身份枚举；旧读路径首页/404 不含已恢复会话时，用运行时
+  // ref 合成一条“当前会话”身份行（不伪造 title/updated_at，排序置顶）。
+  const sourceSessions = (() => {
+    if (restoredSessionId === null) return chat.sessions
+    if (chat.sessions.some((session) => session.session_id === restoredSessionId)) {
+      return chat.sessions
+    }
+    return [
+      {
+        session_id: restoredSessionId,
+        title: null,
+        source_id: sourceId,
+        created_at: '',
+        updated_at: '',
+      },
+      ...chat.sessions,
+    ]
+  })()
   const activeSourceSessionIndex = sourceSessions.findIndex(
     (session) => session.session_id === chat.activeSessionId,
   )
@@ -588,7 +642,13 @@ export function ResearchSourceChatPanel({
           size="sm"
           variant="outline"
           data-testid="srcchat-new-session"
-          onClick={() => selectSourceSession(null)}
+          onClick={() => {
+            if (onNewSession !== undefined) {
+              void onNewSession()
+              return
+            }
+            selectSourceSession(null)
+          }}
         >
           {t('research.sourceChat.newSession')}
         </Button>
@@ -600,7 +660,7 @@ export function ResearchSourceChatPanel({
         </div>
       )}
 
-      {chat.sessions.length > 0 && (
+      {sourceSessions.length > 0 && (
         <ul
           className="max-h-24 space-y-1 overflow-y-auto border-b px-4 py-2"
           data-testid="srcchat-sessions"

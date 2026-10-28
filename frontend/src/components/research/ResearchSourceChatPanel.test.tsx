@@ -1159,4 +1159,107 @@ describe('ResearchSourceChatPanel · PR-6 快捷列表键盘（§8.1）', () => 
     fireEvent.keyDown(third, { key: 'ArrowUp' })
     expect(second).toHaveFocus()
   })
+
+/**
+ * PR-14（6b 缺口 1 / 方案 A）：恢复不依赖旧列表——运行时活动 source ref
+ * （display/.source 指针恢复结果）直接驱动面板冷恢复与 editor 绑定；
+ * 面板“新会话”统一走新契约创建（页面注入 onCreate）。
+ */
+describe('ResearchSourceChatPanel PR-14：指针恢复与统一新会话', () => {
+  const restoredRef = {
+    domain: 'research' as const,
+    kind: 'source' as const,
+    projectId: 'proj_1',
+    sessionId: 'sess_restored',
+    sourceId: 'src_1',
+  }
+
+  it('运行时已恢复 source ref → 面板按指针绑定消息会话，不要求旧列表包含它', () => {
+    vi.mocked(useResearchSessionRuntimeOptional).mockReturnValue({
+      active: () => restoredRef,
+    } as never)
+    const chat = makeChatResult({ sessions: [], activeSessionId: null })
+    vi.mocked(useResearchSourceChat).mockReturnValue(chat)
+
+    renderPanel()
+
+    expect(chat.selectSession).toHaveBeenCalledWith('sess_restored')
+  })
+
+  it('旧列表不含已恢复会话 → 列表仍显示“当前会话”身份行（仅身份枚举，不伪造标题）', () => {
+    vi.mocked(useResearchSessionRuntimeOptional).mockReturnValue({
+      active: () => restoredRef,
+    } as never)
+    vi.mocked(useResearchSourceChat).mockReturnValue(
+      makeChatResult({ sessions: [], activeSessionId: 'sess_restored' }),
+    )
+
+    renderPanel()
+
+    const row = screen.getByTestId('srcchat-session-sess_restored')
+    expect(row).toHaveAttribute('aria-current', 'true')
+    expect(row).toHaveTextContent('sess_restored')
+  })
+
+  it('恢复后 editor 以该来源会话启用（草稿/scope/anchor 由 editor load 恢复）', () => {
+    vi.mocked(useResearchSessionRuntimeOptional).mockReturnValue({
+      active: () => restoredRef,
+    } as never)
+    vi.mocked(useResearchSourceChat).mockReturnValue(
+      makeChatResult({ activeSessionId: 'sess_restored' }),
+    )
+    const snapshot = {
+      ...createEditorState({ ref: restoredRef, writerId: 'w-restored', transportAvailable: true }),
+      phase: 'ready' as const,
+      loading: false,
+      draftText: 'restored draft',
+      dirty: false,
+    }
+    vi.mocked(useResearchEditor).mockReturnValue({ snapshot } as never)
+
+    renderPanel()
+
+    expect(useResearchEditor).toHaveBeenLastCalledWith({
+      kind: 'source',
+      sessionId: 'sess_restored',
+      sourceId: 'src_1',
+      enabled: true,
+    })
+    expect(screen.getByTestId('srcchat-draft-scope')).toBeInTheDocument()
+    expect(
+      (screen.getByTestId('chat-input') as HTMLTextAreaElement).value,
+    ).toBe('restored draft')
+  })
+
+  it('提供 onNewSession → 新会话入口走新契约创建，不清空成 legacy 新会话态', () => {
+    const onNewSession = vi.fn()
+    const chat = makeChatResult()
+    vi.mocked(useResearchSessionRuntimeOptional).mockReturnValue(null)
+    vi.mocked(useResearchSourceChat).mockReturnValue(chat)
+
+    render(
+      <ResearchSourceChatPanel
+        projectId="proj_1"
+        sourceId="src_1"
+        onHighlightPage={vi.fn()}
+        onNewSession={onNewSession}
+      />,
+    )
+    fireEvent.click(screen.getByTestId('srcchat-new-session'))
+
+    expect(onNewSession).toHaveBeenCalledTimes(1)
+    expect(chat.selectSession).not.toHaveBeenCalled()
+  })
+
+  it('未提供 onNewSession（无运行时宿主）→ 保留 legacy selectSession(null)', () => {
+    const chat = makeChatResult()
+    vi.mocked(useResearchSessionRuntimeOptional).mockReturnValue(null)
+    vi.mocked(useResearchSourceChat).mockReturnValue(chat)
+
+    renderPanel()
+    fireEvent.click(screen.getByTestId('srcchat-new-session'))
+
+    expect(chat.selectSession).toHaveBeenCalledWith(null)
+  })
+})
 })

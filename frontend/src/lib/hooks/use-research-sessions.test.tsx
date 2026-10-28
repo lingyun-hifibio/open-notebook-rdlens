@@ -492,6 +492,18 @@ describe('useResearchSessions：Source 旧读路径（§4.1 兼容边界）', ()
     expect(result.current.sourceUnavailable).toBe(true)
   })
 
+  it('旧读路径不含新契约会话（空首页/分页未覆盖）→ 不判 not_found，恢复交给指针', async () => {
+    const controller = makeRuntime()
+    vi.mocked(listSourceChatSessions).mockResolvedValueOnce({ items: [], next_cursor: null })
+
+    const { result } = renderSessions({ runtime: controller.runtime, surface: 'source', sourceId: 'src-1' })
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.sessions).toEqual([])
+    expect(result.current.error).toBeNull()
+    expect(result.current.sourceUnavailable).toBe(false)
+  })
+
   it('source 旧读路径不因新契约能力降级而禁用（原兼容阅读入口仍可用）', async () => {
     const controller = makeRuntime({ capabilities: null })
     vi.mocked(listSourceChatSessions).mockResolvedValueOnce({ items: [], next_cursor: null })
