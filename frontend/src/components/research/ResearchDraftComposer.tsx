@@ -104,6 +104,15 @@ export function deriveResearchDraftGate(input: {
   readonly conversationSnapshot: ResearchConversationSnapshot
   /** `false` = 会话 submission capability 未就绪（§6.1 条件 2）；缺省不额外门禁。 */
   readonly submissionReady?: boolean
+  /**
+   * 会话种类（缺省 `global`）。**source 会话的 editor `base_scope` 按设计恒为
+   * `null`**（DESIGN §4.3：`base_scope=null / single_source_id=null`，范围由
+   * source 绑定隐式给出、且不可变），因此不能套用全局的
+   * “legacy 必须先重选范围”规则——否则 source 面板发送按钮永久禁用
+   * （生产实测 2026-10-28，`research-draft-gate-hint` 恒为
+   * “Select a source or note…”，`POST …/sources/{id}/chat` 从不发出）。
+   */
+  readonly kind?: 'global' | 'source'
 }): ResearchDraftGate {
   const { editorSnapshot, conversationSnapshot } = input
   if (editorSnapshot === null) return { allowed: false, reason: 'runtime_unavailable' }
@@ -144,7 +153,13 @@ export function deriveResearchDraftGate(input: {
     return { allowed: false, reason: 'empty_draft' }
   }
   // legacy（base_scope=null）必须先重选范围，不得默认 all（DESIGN §7.2）。
-  if (editorSnapshot.baseScope === null && editorSnapshot.singleSourceId === null) {
+  // source 会话例外：其 base_scope 按 §4.3 恒为 null，范围由来源绑定隐式确定，
+  // 不需要（也无法）在编辑器里重选。
+  if (
+    input.kind !== 'source'
+    && editorSnapshot.baseScope === null
+    && editorSnapshot.singleSourceId === null
+  ) {
     return { allowed: false, reason: 'scope_invalid' }
   }
   if (
