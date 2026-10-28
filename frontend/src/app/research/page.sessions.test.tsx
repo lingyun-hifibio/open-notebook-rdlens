@@ -141,10 +141,12 @@ vi.mock('@/components/research/ResearchSourceChatPanel', () => ({
     projectId,
     sourceId,
     onHighlightPage,
+    onNewSession,
   }: {
     projectId: string
     sourceId: string
     onHighlightPage: (pageIdx: number) => void
+    onNewSession?: () => void | Promise<void>
   }) => (
     <div data-testid="source-chat-panel" data-project={projectId} data-source={sourceId}>
       <textarea
@@ -154,6 +156,12 @@ vi.mock('@/components/research/ResearchSourceChatPanel', () => ({
         }}
       />
       <button type="button" data-testid="srcchat-send" onClick={() => workspaceSpies.sourceSend()} />
+      <button
+        type="button"
+        data-testid="panel-new-session"
+        data-has-new-session={String(onNewSession !== undefined)}
+        onClick={() => void onNewSession?.()}
+      />
       <button type="button" data-testid="panel-cite-page" onClick={() => onHighlightPage(7)} />
     </div>
   ),
@@ -1006,6 +1014,95 @@ describe('ResearchPage 会话导航：review B6/B7/B8/Major 回归', () => {
       version: 1,
       surface: 'global',
       ref: null,
+    })
+  })
+})
+
+/**
+ * PR-14（6b 缺口 1 / 方案 A）：Source 会话刷新/重开恢复不依赖旧列表。
+ * 恢复真源是 display/.source 指针；旧读路径列表只做身份枚举/展示。
+ */
+describe('ResearchPage PR-14：Source 指针恢复（不依赖旧列表）与 404 语义', () => {
+  const REF_SRC = {
+    domain: 'research' as const,
+    kind: 'source' as const,
+    projectId: PROJECT_ID,
+    sessionId: 'sess_src_restored',
+    sourceId: 'src-1',
+  }
+
+  it('刷新恢复：display 指针含 source ref 且旧列表为空 → 仍直接恢复并激活（列表仅身份枚举）', async () => {
+    readDisplayPointer.mockReturnValue({
+      version: 1,
+      surface: 'source',
+      sourceId: 'src-1',
+      ref: REF_SRC,
+    })
+    // 旧读路径首页不含该新契约会话（或分页未覆盖）。
+    listSourceChatSessions.mockResolvedValue({ items: [], total: 0 })
+
+    renderPage()
+
+    await waitFor(() =>
+      expect(nav()).toHaveAttribute('data-active-source-session', 'sess_src_restored'),
+    )
+    expect(runtimeRef.current?.activate).toHaveBeenCalledWith('source', REF_SRC)
+    expect(nav()).not.toHaveAttribute('data-source-new-session')
+    // 面板已挂载并收到恢复后的来源（editor 由该会话绑定初始化）。
+    await waitFor(() => expect(screen.getByTestId('source-chat-panel')).toBeInTheDocument())
+    expect(screen.getByTestId('source-chat-panel')).toHaveAttribute('data-source', 'src-1')
+    expect(screen.getByTestId('panel-new-session')).toHaveAttribute(
+      'data-has-new-session',
+      'true',
+    )
+  })
+
+  it('来源解析 404（source_unavailable）→ 不清 display/.source 指针、不取消活动会话', async () => {
+    readDisplayPointer.mockReturnValue({
+      version: 1,
+      surface: 'source',
+      sourceId: 'src-1',
+      ref: REF_SRC,
+    })
+    listSourceChatSessions.mockRejectedValue(
+      Object.assign(new Error('source unavailable'), { response: { status: 404 } }),
+    )
+
+    renderPage()
+
+    await waitFor(() =>
+      expect(nav()).toHaveAttribute('data-active-source-session', 'sess_src_restored'),
+    )
+    await waitFor(() => expect(screen.getByTestId('source-chat-panel')).toBeInTheDocument())
+    // 404 只影响列表可用性，不清活动会话/指针（本机草稿保留语义）。
+    expect(runtimeRef.current?.activate).not.toHaveBeenCalledWith('source', null)
+    expect(runtimeRef.current?.setDisplayPointer).not.toHaveBeenCalledWith(
+      expect.objectContaining({ surface: 'source', ref: null }),
+    )
+    expect(nav()).toHaveAttribute('data-active-source-session', 'sess_src_restored')
+  })
+
+  it('面板“新会话”走新契约创建（POST source sessions）→ 激活并写 display 指针', async () => {
+    createChatSession.mockResolvedValue(wireCreateResponse('sess_src_new2', 'source'))
+    renderPage()
+    await waitFor(() => expect(nav()).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId('workbench-open-source'))
+    await waitFor(() => expect(screen.getByTestId('source-chat-panel')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByTestId('panel-new-session'))
+
+    await waitFor(() =>
+      expect(nav()).toHaveAttribute('data-active-source-session', 'sess_src_new2'),
+    )
+    expect(createChatSession).toHaveBeenCalledWith(
+      PROJECT_ID,
+      expect.objectContaining({ kind: 'source', sourceId: 'src-1' }),
+    )
+    expect(runtimeRef.current?.setDisplayPointer).toHaveBeenCalledWith({
+      version: 1,
+      surface: 'source',
+      sourceId: 'src-1',
+      ref: expect.objectContaining({ sessionId: 'sess_src_new2', kind: 'source' }),
     })
   })
 })

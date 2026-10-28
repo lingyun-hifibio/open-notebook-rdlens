@@ -499,6 +499,48 @@ describe('useResearchSourceChat', () => {
     expect(newSessionId).toMatch(/^sess_[0-9a-f-]{36}$/)
   })
 
+  it('切换 Source 不 cancel：只中止本地读取，不发送服务端 cancel/abort 请求', async () => {
+    // 工厂 vi.fn 的调用历史不会被 restoreAllMocks 重置（跨用例污染），显式清零。
+    vi.mocked(openResearchChatStream).mockClear()
+    vi.mocked(getSourceChatSession).mockClear()
+    const streams = openCapture()
+    let aborted = 0
+    vi.mocked(openResearchChatStream).mockImplementation((opts) => {
+      streams.push({
+        opts: opts as LegacyStreamOptions,
+        emit: (event) => opts.onEvent(event),
+        fail: (error) => opts.onNetworkError?.(error),
+        httpFail: (status, body) => opts.onHttpError?.(status, body),
+        end: () => opts.onEnd?.(),
+      })
+      return () => {
+        aborted += 1
+      }
+    })
+
+    const { result, rerender } = renderHook(
+      ({ sourceId }: { sourceId: string }) =>
+        useResearchSourceChat({ projectId: 'proj_1', sourceId }),
+      {
+        initialProps: { sourceId: 'src_1' },
+        wrapper: makeHookWrapper(),
+      },
+    )
+    await act(async () => {
+      result.current.send('问题', MODEL)
+    })
+
+    await act(async () => {
+      rerender({ sourceId: 'src_2' })
+    })
+
+    // 本地读取中止 1 次（浏览器断开 ≠ 服务端取消）；不得再发任何取消/追加请求。
+    expect(aborted).toBe(1)
+    expect(openResearchChatStream).toHaveBeenCalledTimes(1)
+    expect(getSourceChatSession).not.toHaveBeenCalled()
+    expect(result.current.activeSessionId).toBeNull()
+  })
+
   it('新会话按钮语义（selectSession(null)）：清空当前 session 与 turns，下次发送重新预生成', async () => {
     const streams = openCapture()
     const { result } = renderHook(() =>

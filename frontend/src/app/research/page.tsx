@@ -561,6 +561,10 @@ function ResearchPageContent() {
                       projectId={projectId}
                       sourceId={navSelectedSourceId}
                       onHighlightPage={handleHighlightPage}
+                      // PR-14（方案 A）：面板“新会话”统一走新契约创建（POST
+                      // .../sources/{id}/chat/sessions → activate → display/.source
+                      // 指针），刷新/重开可由指针直接恢复，不依赖旧列表。
+                      onNewSession={handleNewSourceSession}
                     />
                   </div>
                 )}
