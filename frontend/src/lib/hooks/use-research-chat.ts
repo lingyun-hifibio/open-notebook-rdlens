@@ -210,6 +210,11 @@ export interface ResearchChatTurn {
   contextReport?: ResearchContextReportProjection | null
   contextCoverage?: ResearchContextCoverage | null
   recordVisibility?: string | null
+  /**
+   * PR-13（F-1）：controller 投影轮保留本次提交正文，供错误卡 Retry 复用
+   * （legacy 轮从相邻 durable user 行取，controller 轮没有该行）。
+   */
+  submittedQuery?: string | null
 }
 
 /** 持久化消息行 + PR-5a 扩展（服务端可选下发；缺失按 null 处理）。 */
