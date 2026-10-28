@@ -66,6 +66,10 @@
 - `gap_registration.md`：第一批 `list_query` 缺 source_id 已登记 #584（评论 6459850878），#602 记录 6459879248。
 - 证据 PR：#87（本目录）；代码 PR-13 #86（F-1）。
 
+## 生产部署（2026-10-28，用户授权）
+
+见 `b5_execution_20261028.md`：生产后端 `932c0b4f`、`RDLENS_RESEARCH_SESSION_CONTRACT=true`、前端镜像 `rdlens.30`（`sha256:d0c0b519…`）、台账 RDLens #833。生产 API 真实链路已通过（201/200/202/200 SSE）。生产 UI 人工走查、48 场景、24h 观察仍 outstanding。
+
 ## 结论
 
 第三批在隔离真实 Gateway 上完成最小矩阵：10 腿中 **7 pass + 3 limited（腿 6/8/9 的限定项）**；未发现新的产品 P0（PR-7…PR-12 的修复已覆盖发现项）。生产部署与 503/E05 取证不在本证据范围。
