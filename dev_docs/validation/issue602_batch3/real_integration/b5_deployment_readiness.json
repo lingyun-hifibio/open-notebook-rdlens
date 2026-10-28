@@ -114,6 +114,12 @@
         "active_state": "inactive",
         "health_7891": 0,
         "note": "another session systemctl stop; still inactive at 15:30"
+      },
+      {
+        "at": "2026-10-28T16:13:25",
+        "active_state": "inactive",
+        "health_7891": 0,
+        "note": "delivery-time resample: still inactive (stopped 15:19:44); drop-in zz-c05-acceptance.conf now deleted => C-05 off"
       }
     ],
     "effective_flags": {
@@ -122,7 +128,7 @@
       "RESEARCH_EXTERNAL_LLM_ENABLED": true,
       "RESEARCH_DOCUMENT_WORKSPACE_CONTEXT_ENABLED": true,
       "RESEARCH_WORKSPACE_V2_ENABLED": true,
-      "RESEARCH_C05_SCOPE_ENABLED": true,
+      "RESEARCH_C05_SCOPE_ENABLED": false,
       "RDLENS_RESEARCH_SESSION_CONTRACT": false
     },
     "flag_sources": {
@@ -154,7 +160,8 @@
       "baked_parent_origin": "http://192.168.5.82:7890",
       "csp_frame_ancestors": "http://192.168.5.82:7890",
       "cors_allowed_origins": "http://192.168.5.82:7800"
-    }
+    },
+    "effective_flags_note": "C-05 was true 14:54-15:19 via a temporary drop-in; that drop-in has since been deleted, so C-05 is now off (see final_resample; G3 materialised)."
   },
   "deployment_items": [
     {
@@ -383,5 +390,113 @@
     "b5_evidence/E01_git_baseline.log",
     "b5_evidence/E02_frozen_contract.log",
     "b5_evidence/E03_unit_hashes.log"
-  ]
+  ],
+  "final_resample": {
+    "at": "2026-10-28T16:13:25+08:00",
+    "rdlens_service": {
+      "active_state": "inactive",
+      "sub_state": "dead",
+      "inactive_enter_timestamp": "2026-10-28 15:19:44",
+      "exec_main_start_timestamp": "2026-10-28 15:08:30"
+    },
+    "health_7891": {
+      "http": 0,
+      "error": "connection refused"
+    },
+    "dropin_zz_c05_acceptance": {
+      "exists": false,
+      "note": "present 14:54-15:19, deleted outside this task window; rdlens.service.d now only has 10-research-preview.conf"
+    },
+    "effective_c05_scope_enabled": false,
+    "session_contract_flag": {
+      "value": false,
+      "sources_checked": [
+        "RDLens/.env",
+        "~/.config/rdlens/research-preview.env",
+        "systemctl cat rdlens.service (unit + drop-ins)"
+      ],
+      "hits": 0
+    },
+    "research_preview_env_flags_present": [
+      "RESEARCH_ENABLED=true",
+      "RESEARCH_CONTRACT_V1_ENABLED=true",
+      "RESEARCH_EXTERNAL_LLM_ENABLED=true",
+      "RESEARCH_DOCUMENT_WORKSPACE_CONTEXT_ENABLED=true",
+      "RESEARCH_WORKSPACE_V2_ENABLED=true"
+    ],
+    "note": "C-05 and session contract are absent from research-preview.env"
+  },
+  "release_ordering_constraint": {
+    "id": "G2/D1",
+    "rule": "RDLENS_RESEARCH_SESSION_CONTRACT must be enabled BEFORE the new frontend image is swapped, or within the same window.",
+    "consequence_if_violated": "third-batch UI ships with capabilities.sessions=false => new-protocol sessions 404 / read-only / send disabled (DESIGN section 2.6 release ordering)",
+    "current": "off in all three sources"
+  },
+  "required_from_user": [
+    {
+      "id": "U1",
+      "item": "exclusive maintenance window + start/stop authorization",
+      "needed": "window start/end (suggest >=60 min), authorizer identity, confirmation that other sessions will not systemctl/restart/write production during the window",
+      "status": "missing",
+      "evidence": "production externally started 14:54:46, restarted 15:08:21, stopped 15:19:44 during this task window"
+    },
+    {
+      "id": "U2",
+      "item": "written approval / change ticket",
+      "needed": "approver identity or change-ticket id (batch-2 left only verbal authorization)",
+      "status": "missing"
+    },
+    {
+      "id": "U3",
+      "item": "backup responsible person",
+      "needed": "named person to run the backup, verify sha256/byte counts, and decide the restore point on rollback",
+      "status": "missing",
+      "note": "batch-2 ruling was single-operator self-accountability; nobody designated for this window"
+    }
+  ],
+  "non_user_rulings_still_needed": [
+    {
+      "id": "R1",
+      "item": "G1 drift ruling: adopt 45de492e as official baseline vs revert to 622a43e2"
+    },
+    {
+      "id": "R2",
+      "item": "image build/push authorization for rdlens.30 (builder identity, GHCR push credential, digest ledger owner)"
+    }
+  ],
+  "switch_steps": [
+    "1 window + rulings; run b5_deploy_window.sh preflight --deploy-sha <SHA> (exit 0 verified for fabfeed0)",
+    "2 backup: Surreal namespace export + pg_dump at same point; record sha256 and bytes",
+    "3 enable flags first: RDLENS_RESEARCH_SESSION_CONTRACT=true into research-preview.env; move RESEARCH_C05_SCOPE_ENABLED into research-preview.env (temporary drop-in already deleted); three-source recheck",
+    "4 switch backend: stop -> target SHA -> uv sync -> migrate --apply -> migrate --check (expect PG 34 / Surreal 11) -> start",
+    "5 verify backend: /health 200, /v1/research/health ready, projects/*/chat/sessions unauthenticated = 401 (registered) not 404",
+    "6 build+push rdlens.30 with frozen build args, lock digest, update compose.yaml, docker compose up -d open_notebook, backfill 5 ledgers",
+    "7 smoke: api_smoke.py (10 legs) + ui_final.js (8 legs) against 7891/7800/7890; plus legacy global/source detail 200 regression",
+    "8 24h observation (E14 attempt 3): no downtime in window, +12h recheck",
+    "9 archive evidence + section 12 sign-off; rollback per section 5.2 (same binary + flags off, no down-migration)"
+  ],
+  "evidence_notes": {
+    "committed": [
+      "b5_evidence/api_smoke.json",
+      "b5_evidence/ui_smoke.json",
+      "b5_evidence/ui_send_1440.png",
+      "b5_evidence/ui_reload_1440.png"
+    ],
+    "local_only_not_committed": [
+      "b5_evidence/frontend_build.log",
+      "b5_evidence/tsc.log",
+      "b5_evidence/vitest.log",
+      "b5_evidence/E01_git_baseline.log",
+      "b5_evidence/E02_frozen_contract.log",
+      "b5_evidence/E03_unit_hashes.log"
+    ],
+    "why_logs_not_committed": "*.log is gitignored; E02/E03 additionally trip secret-scan R1 on non-secret 64-hex digests",
+    "key_values_from_local_logs": {
+      "production_sha": "45de492e526792fb3c502cefcd42da623df0c849",
+      "deploy_sha_used_in_preflight": "fabfeed07ef7d9fa6dd8c5770dfd76a7f93471e4",
+      "frozen_contract_size_bytes": 140644,
+      "frozen_contract_sha256_abbrev": "03eaf56e…24c73f",
+      "frozen_contract_sha256_note": "full 64-hex intentionally omitted from committed evidence (secret-scan R1); see local-only E02 log"
+    }
+  }
 }

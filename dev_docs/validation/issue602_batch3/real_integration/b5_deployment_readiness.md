@@ -4,6 +4,7 @@
 - **性质**：**只读生产 + 隔离/staging 预演**。本任务未改动生产 flag、未启停 `rdlens.service`、未写生产数据、未重启 7896/8503/8504。
 - **结论**：**`READY-WITH-GAPS / BLOCKED-ON-WINDOW`** —— 构建与同版本预演通过（前端生产构建 + 生产候选后端在隔离 PG/Surreal 上 10/10 API + 8/8 UI），但生产切换被三件事挡住：① 生产正处于**其他会话反复启停**的状态（本任务窗口内 14:54 起、15:08 重启、15:19 又 stop），无法取得稳定窗口；② 生产代码已**未经 B5 记录地漂移** 94 个提交（部署基线 `622a43e2` → 当前 `45de492e`）；③ 新前端镜像 `rdlens.30` 尚未构建/锁 digest，而生产镜像 `rdlens.29` 比第三批代码落后 101 个提交。
 - **不得据此宣称生产 B5 完成**；第三批功能在生产为 **未上线（flag 未开）**。
+- **发布顺序硬约束（G2/D1）**：`RDLENS_RESEARCH_SESSION_CONTRACT` **必须在换前端镜像之前、或与换镜像同一窗口内开启**。否则第三批 UI 上线后 `capabilities.sessions=false`，新协议会话一律 404/只读禁发（DESIGN §2.6 发布顺序）。当前实测该 flag 三来源（`.env` / `research-preview.env` / unit+drop-in）全部 **0 命中 = off**。
 
 ---
 
@@ -80,6 +81,7 @@ npm run build
 | 14:54:46 | 另一会话 `systemctl start`（新 drop-in `zz-c05-acceptance.conf`） | 200 | 启动迁移 34/11，journal 0 ERROR |
 | 15:08:21 | 另一会话 `systemctl restart` | 200 | 重启后 15:08:30 ready |
 | **15:19:44** | 另一会话 `systemctl stop` → **inactive** | **000** | 截至 15:30 仍 inactive |
+| **16:13:25**（收口复采样） | 仍 **inactive/dead**（`InactiveEnterTimestamp=2026-10-28 15:19:44`；`ExecMainStartTimestamp=15:08:30`） | **000**（connection refused） | 见 §3.4 |
 
 > 三次动作均为**其他会话**（`sudo[...]  lchen … COMMAND=/usr/bin/systemctl start|restart|stop rdlens`），本任务未执行任何启停。
 
@@ -92,7 +94,7 @@ npm run build
 | `RESEARCH_EXTERNAL_LLM_ENABLED` | **true** | 同上 | 覆盖 `false`（L712）——**外发已开**，第三批不要求改它 |
 | `RESEARCH_DOCUMENT_WORKSPACE_CONTEXT_ENABLED` | true | 同上 | — |
 | `RESEARCH_WORKSPACE_V2_ENABLED` | true | 同上 | — |
-| `RESEARCH_C05_SCOPE_ENABLED` | **true** | **新增 drop-in `/etc/systemd/system/rdlens.service.d/zz-c05-acceptance.conf`**（2026-10-28 14:54:11，注释写“验收后删除”） | 该 drop-in 为**台账外临时 drift** |
+| `RESEARCH_C05_SCOPE_ENABLED` | 14:54–15:19 期间 **true**（临时 drop-in）；**16:13 复采样已失效** | 曾由 drop-in `/etc/systemd/system/rdlens.service.d/zz-c05-acceptance.conf`（2026-10-28 14:54:11，注释“验收后删除”）注入；**该文件已于本任务窗口外被删除**（`rdlens.service.d/` 目录 mtime 15:19，现仅剩 `10-research-preview.conf`），且 `research-preview.env` 无该行 | **C-05 现为 off**；见 §3.4 G3 已发生 |
 | `RDLENS_RESEARCH_SESSION_CONTRACT` | **未设置（off）** | `.env` / `research-preview.env` / unit 三处均 0 命中 | **第三批上线前置：必须显式开启** |
 | `RESEARCH_CORS_ALLOWED_ORIGINS` | `http://192.168.5.82:7800` | `research-preview.env` | 与前端 iframe 实际 origin 一致（实测 preflight 200） |
 
@@ -107,6 +109,20 @@ npm run build
 | 路由注册状态 | `/v1/research/health` 200、`/workspace-status` 200、`projects/*/sources` 401、**`projects/*/chat/sessions` 404**（带 `X-Research-Session-Contract` 头仍 404 ⇒ 路由未注册，非鉴权失败） |
 
 > **推论**：生产目前是「research 已开、会话契约未开、前端为第二批镜像」的**半开状态**；第三批 UI 一旦随 `rdlens.29` 之前的镜像上线，`capabilities.sessions=false` 会让新协议会话变成只读/禁发（DESIGN §2.6 的发布顺序约束）。**必须先开 `RDLENS_RESEARCH_SESSION_CONTRACT=true` 并重启，再换第三批镜像**（或同窗口内先 flag 后镜像）。
+
+---
+
+### 3.4 收口复采样（2026-10-28 16:13，任务交付前最终状态）
+
+| 项 | 16:13 实测 | 与 15:30 结论的差异 |
+|---|---|---|
+| `rdlens.service` | `inactive`/`dead`，`InactiveEnterTimestamp=2026-10-28 15:19:44`，`ExecMainStartTimestamp=15:08:30` | 一致（仍停） |
+| 7891 `/health` | `curl` exit 7 → **HTTP 000 connection refused** | 一致（后端未运行） |
+| drop-in `zz-c05-acceptance.conf` | **文件不存在**；`/etc/systemd/system/rdlens.service.d/` 现仅 `10-research-preview.conf` | **新增事实**：临时 drop-in 已被外部删除 ⇒ `RESEARCH_C05_SCOPE_ENABLED` 回到 off（G3 预言的"删 drop-in 丢 C-05"已发生） |
+| `RDLENS_RESEARCH_SESSION_CONTRACT` | 三来源（`research-preview.env` / `RDLens/.env` / unit+drop-in）**均 0 命中 = off** | 一致（G2 仍未闭合） |
+| `research-preview.env` 现有 flag（只读键名） | `RESEARCH_ENABLED=true`、`RESEARCH_CONTRACT_V1_ENABLED=true`、`RESEARCH_EXTERNAL_LLM_ENABLED=true`、`RESEARCH_DOCUMENT_WORKSPACE_CONTEXT_ENABLED=true`、`RESEARCH_WORKSPACE_V2_ENABLED=true`；**无 C-05、无 session contract** | 新增细节 |
+
+> **注意**：`RESEARCH_EXTERNAL_LLM_ENABLED=true` 在生产为**已开**状态（第二批遗留），第三批发布不要求改它；但若按"最小外发"原则回滚，需与负责人确认是否要一并关回 `false`。
 
 ---
 
@@ -268,7 +284,7 @@ OK preflight 全部通过
 |---|---|---|---|
 | **G1** | **生产代码未记录漂移 94 commits**（`622a43e2` → `45de492e`，含 10 个 research/api 文件） | 第二批 B5 的“已部署 SHA”事实失效；无人能说清当前在生产跑的是哪个版本 | **需负责人裁决**：回退重走 B5，或把 `45de492e` 追认为正式基线并补记录 |
 | **G2** | **`RDLENS_RESEARCH_SESSION_CONTRACT` 未开** | 第三批前端上线后 `capabilities.sessions=false`，新协议会话只读/禁发；`chat/sessions*` 全是 404 | 开 flag + 重启（D1），**必须在换镜像前或同窗口** |
-| **G3** | **临时 drop-in `zz-c05-acceptance.conf` 在册**（2026-10-28 14:54 新增，注释“验收后删除”） | 台账外 drift；删 drop-in 会丢 C-05 | 把 `RESEARCH_C05_SCOPE_ENABLED` 并入 `research-preview.env` 后再删 drop-in |
+| **G3** | **临时 drop-in `zz-c05-acceptance.conf` 已被外部删除**（14:54 新增 → 16:13 已不存在），`RESEARCH_C05_SCOPE_ENABLED` 从 true 回落到 **off** | C-05 资料范围契约在生产失效；带 `X-Research-Contract: c05-v1` 的请求会得 426 | 授权窗口内把 `RESEARCH_C05_SCOPE_ENABLED=true` 写入 `research-preview.env`（正式渠道）后重启；不要再依赖 drop-in |
 | **G4** | **新前端镜像未构建**（`rdlens.30` 不存在） | 生产 iframe 仍是 101 commits 前的构建，第三批 UI 不会上线 | 发布窗口内构建+推+锁 digest+改 compose+回填 5 处台账 |
 | **G5** | **生产启停被多会话争用**（本窗口 14:54/15:08/15:19 三次外部动作） | 无法取得稳定窗口；E14 无法成立 | 需负责人协调独占窗口 |
 | **G6** | 24h 观察 E14 连续 2 次 INVALID | B5 停在 `DEPLOYED / PENDING-OBSERVATION` | 第 3 次窗口（硬约束：窗内不停服，+12 h 中途复检） |
@@ -293,6 +309,31 @@ OK preflight 全部通过
 
 > 以上 1–4 之外的准备工作**已就绪**：preflight 通过、备份工具齐备、构建与预演通过、切换 checklist 与回滚步骤已成文。
 
+### 9.1 必须由用户提供的三项（缺一不得开工）
+
+| # | 项 | 需要的具体信息 | 当前状态 |
+|---|---|---|---|
+| 1 | **独占维护窗口 + 启停授权** | 窗口起止时间（建议 ≥ 60 min）、授权人、窗内"其他会话不得 `systemctl`/重启/写生产"的确认 | **缺**。生产在本任务窗口内被外部会话 14:54 start → 15:08 restart → **15:19 stop**（见 §3.1，证据时间点）；无独占性 |
+| 2 | **书面审批 / 变更单** | 书面审批人或变更单/工单号（第二批遗留仅口头授权） | **缺**。未开单、未通知 |
+| 3 | **备份责任人** | 指定执行备份并核对 sha256/字节数、并在回滚时决策恢复点的人 | **缺**。第二批裁决为"单人运维、执行人自担"，本次未指定 |
+
+> 另外两项需 Lead/负责人裁决（非用户信息，但同样阻塞）：**G1 版本漂移裁决**（`45de492e` 追认 vs 回退 `622a43e2`）、**镜像发布授权**（构建/推 `rdlens.30` 的执行人与 GHCR push 权限）。
+
+
+---
+
+## 9.2 可切换步骤（授权后按序执行，命令已就绪）
+
+1. **取窗口**：确认 §9.1 三项 + G1 裁决；`b5_deploy_window.sh preflight --deploy-sha <目标SHA>`（已对 `fabfeed0` 验证 exit 0）。
+2. **备份**：Surreal 整 namespace 导出 + `pg_dump`（同一时点），记录 sha256 与字节数；口令文件 `…/surreal_backups/.backup_passphrase`（0600）已就绪。
+3. **开 flag（先于镜像）**：`RDLENS_RESEARCH_SESSION_CONTRACT=true` 写入 `research-preview.env`；把 `RESEARCH_C05_SCOPE_ENABLED` 从临时 drop-in `zz-c05-acceptance.conf` 并入正式渠道后删 drop-in + `daemon-reload`；三来源复查无遗漏（G2/G3）。
+4. **切后端**：停服 → 切 SHA（或确认 `45de492e` 为基线）→ `uv sync` → `migrate --apply` → `migrate --check`（预期 PG 34 / Surreal 11）→ 启动。
+5. **验证后端**：`/health` 200、`/v1/research/health` `{"enabled":true,"status":"ready"}`、`projects/*/chat/sessions` 不带 token 应为 **401（路由已注册）而非 404**。
+6. **换前端镜像**：构建 `rdlens.30`（§4.1 冻结参数）→ 推 GHCR → 锁 digest → 改 `deploy/research/compose.yaml` → `docker compose up -d open_notebook` → 回填 5 处台账。
+7. **冒烟**：复用 `api_smoke.py`（10 腿）与 `ui_final.js`（8 腿）口径指向 7891/7800/7890；再补旧路径回归（旧 global/source detail 200）。
+8. **24h 观察（E14 第 3 次）**：窗内不停服，+12 h 复检 `systemctl is-active`/`uptime -s`。
+9. **归档**：证据 + §12 签收；回滚按 §5.2（同二进制 + flag off，不 down migration）。
+
 ---
 
 ## 10. 本任务边界声明
@@ -307,11 +348,24 @@ OK preflight 全部通过
 
 | 文件 | 内容 |
 |---|---|
-| `b5_evidence/frontend_build.log` | `npm run build` 完整输出（exit 0，Next 16.2.6，16/16 页） |
-| `b5_evidence/tsc.log` | `tsc --noEmit`（0 行输出，exit 0） |
-| `b5_evidence/vitest.log` | 4 文件 / 87 用例通过 |
+| `b5_evidence/frontend_build.log` | `npm run build` 完整输出（exit 0，Next 16.2.6，16/16 页）——**本地产物，`.gitignore` 的 `*.log` 排除，不入库**；关键摘要已内联到 §2.1 |
+| `b5_evidence/tsc.log` | `tsc --noEmit`（0 行输出，exit 0）——本地产物，不入库 |
+| `b5_evidence/vitest.log` | 4 文件 / 87 用例通过——本地产物，不入库（摘要见 §2.1） |
 | `b5_evidence/api_smoke.json` | 10 腿 API 冒烟（含每腿状态码与判据） |
 | `b5_evidence/ui_smoke.json` | 8 腿 UI 冒烟（含 45 次 research API 调用、console error=0） |
 | `b5_evidence/ui_send_1440.png`、`ui_reload_1440.png` | 发送后 / 刷新后截图 |
-| `b5_evidence/E01_git_baseline.log`、`E02_frozen_contract.log`、`E03_unit_hashes.log` | preflight 产出的只读核对证据 |
+| `b5_evidence/E01_git_baseline.log`、`E02_frozen_contract.log`、`E03_unit_hashes.log` | preflight 只读核对证据——**本地产物**；`*.log` 被 `.gitignore` 排除，且 E02/E03 含非凭证 64-hex digest 会触发 secret-scan R1，故不入库。关键值：E01 = 生产 `45de492e` / 部署 SHA `fabfeed0`；E02 = 冻结 JSON `03eaf56e…24c73f`（140,644 B）；E03 = 4 个 unit 文件 sha256（见 §6.1） |
 | `b5_deployment_readiness.json` | 机器可读摘要（版本、构建、flag、GAP、阻塞项） |
+
+---
+
+## 12. 人工签收（授权窗口填）
+
+| 项 | 负责人 | 时间 | 结论 | 备注 |
+|---|---|---|---|---|
+| 独占窗口与启停授权 | | | ☐ 批准 / ☐ 拒绝 | |
+| G1 版本漂移裁决（`45de492e` 追认 / 回退 `622a43e2`） | | | ☐ 追认 / ☐ 回退 | |
+| 书面审批 / 变更单号 | | | ☐ 已开单 | 单号： |
+| 备份执行人 + 回滚决策人 | | | ☐ 已指定 | |
+| 镜像 `rdlens.30` 构建/推送授权 | | | ☐ 批准 / ☐ 拒绝 | |
+| 部署执行与结果 | | | ☐ 完成 / ☐ 部分 / ☐ 失败 | |
