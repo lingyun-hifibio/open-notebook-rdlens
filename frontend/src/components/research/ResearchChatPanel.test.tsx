@@ -1096,6 +1096,72 @@ describe('ResearchChatPanel · PR-4 会话 editor 接线', () => {
     expect(screen.getByTestId('research-draft-gate-hint')).toBeInTheDocument()
   })
 
+  // O-3（#602）：首屏尚未创建任何会话时直接切到全局 Chat。
+  //
+  // 生产实测（2026-10-28/29）：`editorSnapshot === null` 且 `sessionRef === null`
+  // 时 composer 仍按“有会话”渲染——保存状态落到 `unavailable`（渲染成
+  // “Loading research workspace…”）、门禁落成通用的 `runtime_unavailable`
+  // （“An unexpected error occurred…”），而 `New session` 入口就在旁边且可用。
+  // 两段文案都在描述一个**不存在的会话加载失败**，把“尚未创建会话”误报成
+  // 故障（DESIGN §4.3：没有活动会话时只展示“新对话”入口，创建成功后才
+  // 启用输入区）。
+  it('O-3：无活动会话（sessionRef=null）时用“新对话”空态替代故障式 composer', () => {
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })}>
+        <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
+          <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+            <ResearchChatPanel
+              turns={[]}
+              isStreaming={false}
+              onSend={vi.fn(async () => true)}
+              onSendCoverage={vi.fn(async () => ACCEPTED_OUTCOME)}
+              editorSnapshot={null}
+              sessionRef={null}
+              onNewSession={vi.fn()}
+            />
+          </ResearchScopeProvider>
+        </ResearchWorkspaceProvider>
+      </QueryClientProvider>,
+    )
+    // 不提供可持久化输入（§4.3）。
+    expect(screen.queryByTestId('research-draft-composer')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('research-draft-save-state')).not.toBeInTheDocument()
+    // 不得把“没有会话”误报成运行时错误/加载中。
+    expect(screen.queryByTestId('research-draft-gate-hint')).not.toBeInTheDocument()
+    expect(
+      screen.queryByText(
+        'An unexpected error occurred. Retry, or contact an administrator if it persists.',
+      ),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText('Loading research workspace…')).not.toBeInTheDocument()
+    // 只展示新对话入口（§4.3）。
+    expect(screen.getByTestId('chat-no-session')).toBeInTheDocument()
+    expect(screen.getByTestId('chat-no-session-new')).toBeInTheDocument()
+  })
+
+  it('O-3：无活动会话空态的“新对话”按钮触发宿主创建回调', () => {
+    const onNewSession = vi.fn()
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })}>
+        <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
+          <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+            <ResearchChatPanel
+              turns={[]}
+              isStreaming={false}
+              onSend={vi.fn(async () => true)}
+              onSendCoverage={vi.fn(async () => ACCEPTED_OUTCOME)}
+              editorSnapshot={null}
+              sessionRef={null}
+              onNewSession={onNewSession}
+            />
+          </ResearchScopeProvider>
+        </ResearchWorkspaceProvider>
+      </QueryClientProvider>,
+    )
+    fireEvent.click(screen.getByTestId('chat-no-session-new'))
+    expect(onNewSession).toHaveBeenCalledTimes(1)
+  })
+
   it('single 范围按 mode=single 派发并携带 singleSourceId（执行范围编码 §5.3）', async () => {
     const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
     const onSend = vi.fn<(query: string, selection?: ResearchChatSelection) => Promise<boolean>>(

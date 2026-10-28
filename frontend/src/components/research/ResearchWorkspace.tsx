@@ -96,6 +96,12 @@ export interface ResearchWorkspaceProps {
   onRevealSavedArtifact?: (kind: 'note' | 'insight', artifactId: string) => void
   /** RWV2-23（AC4）：Chat composer 预填草稿（seq 递增触发） */
   chatPrefill?: { text: string; seq: number } | null
+  /**
+   * O-3（#602）：无活动会话时 Chat 空态的“新对话”入口——复用已有创建
+   * 链路（`POST /chat/sessions` → activate → display 指针），与 Header 的
+   * 同名入口同一路径，不在面板内新增第二个创建实现。
+   */
+  onNewGlobalSession?: () => void
 }
 
 export function ResearchWorkspace({
@@ -107,6 +113,7 @@ export function ResearchWorkspace({
   onOpenResearchChatDraft,
   onRevealSavedArtifact,
   chatPrefill,
+  onNewGlobalSession,
 }: ResearchWorkspaceProps) {
   const { t } = useTranslation()
   const { toast } = useToast()
@@ -780,6 +787,7 @@ export function ResearchWorkspace({
             markerWriteFailed={markerWriteFailed}
             refreshMarkerLookups={refreshMarkerLookups}
             onSendSession={sendSessionChat}
+            onNewSession={onNewGlobalSession}
             conversationSnapshot={{
               isBusy: isStreaming,
               isStreaming,

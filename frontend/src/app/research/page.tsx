@@ -548,6 +548,9 @@ function ResearchPageContent() {
                     onOpenResearchChatDraft={openResearchChatDraft}
                     onRevealSavedArtifact={revealSavedArtifact}
                     chatPrefill={chatPrefill}
+                    // O-3（#602）：无活动会话时 Chat 空态的新对话入口复用
+                    // Header 同一创建链路（single-flight、幂等 client id）。
+                    onNewGlobalSession={handleNewGlobalSession}
                   />
                 </div>
                 {navSelectedSourceId !== null && (

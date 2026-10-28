@@ -555,6 +555,21 @@ export function ResearchChatPanel({
   // 面板订阅其快照渲染 live turn（hook 的 turns 只承载 durable 历史）。
   const sessionConversation = conversation ?? null
   const sessionWired = sessionConversation !== null && onSendSession !== undefined
+  /**
+   * O-3（#602）：当前没有任何活动会话（宿主显式传 `sessionRef=null`）。
+   *
+   * `editorSnapshot === null` 有两种完全不同的语义，必须分开处理：
+   * - runtime 已装配、但**尚未创建/选择会话**（`sessionRef === null`）——
+   *   正常空态，DESIGN §4.3 要求“没有活动会话时不提供可持久化的 composer
+   *   输入，只展示新对话入口”；把它当成会话加载失败会渲染出
+   *   “Loading research workspace…” + “An unexpected error occurred…”，
+   *   把正常空态误报成故障（生产实测 2026-10-28/29，O-3）。
+   * - 会话存在但 editor 尚未就绪——真正的加载中/失败，保持既有门禁与文案。
+   *
+   * 只有**显式 `null`** 才表示“确认无会话”：`sessionRef` 缺省（`undefined`）
+   * 表示宿主未提供该信息，此时不得改变既有门禁语义（回归安全）。
+   */
+  const noActiveSession = wired && sessionRef === null
   const [liveSnapshot, setLiveSnapshot] = useState<ConversationSnapshot | null>(null)
   useEffect(() => {
     if (sessionConversation === null) {
@@ -1520,7 +1535,7 @@ export function ResearchChatPanel({
           />
         </div>
       )}
-      {wired && (
+      {wired && !noActiveSession && (
         <div className="shrink-0 border-b px-3 py-2">
           <ResearchSessionScopeBar
             editorSnapshot={editorSnapshot ?? null}
@@ -1954,6 +1969,29 @@ export function ResearchChatPanel({
               onRetrySave={() => {}}
               localDraftMode
             />
+          ) : noActiveSession ? (
+            // O-3：没有活动会话是正常空态，不是加载失败——按 §4.3 只给
+            // “新对话”入口，不渲染可持久化输入，也不显示任何故障文案。
+            <div
+              className="flex flex-col items-start gap-2 rounded-md border border-dashed p-3"
+              data-testid="chat-no-session"
+            >
+              <p className="text-sm text-muted-foreground">
+                {t('research.session.newConversation')}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t('chat.createToStart')}
+              </p>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => onNewSession?.()}
+                disabled={onNewSession === undefined}
+                data-testid="chat-no-session-new"
+              >
+                {t('research.sourceChat.newSession')}
+              </Button>
+            </div>
           ) : (
             <ResearchDraftComposer
               editorSnapshot={editorSnapshot ?? null}
