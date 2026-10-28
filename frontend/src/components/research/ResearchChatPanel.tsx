@@ -11,6 +11,7 @@ import { ResultActions } from './ResultActions'
 import { COVERAGE_SOURCE_HARD_MAX, CoverageScopeSelector } from './CoverageScopeSelector'
 import { CoverageJobDetails } from './CoverageJobDetails'
 import { RETRYABLE_SSE_ERROR_CODES } from '@/lib/research/sse'
+import { allowsRetryAction } from '@/lib/research/c05-error-actions'
 import { userErrorMessageKey } from '@/lib/research/errors'
 import type {
   CoverageSubmitOutcome,
@@ -162,14 +163,24 @@ function conversationTurnToTurns(turn: ConversationTurn): ResearchChatTurn[] {
   if (turn.external) return []
   const terminalStatus: ResearchChatTurn['status'] =
     turn.sse.terminal === 'error' ? 'error' : 'done'
+  // PR-13（F-1）：not_accepted 在 machine 里落成 `state='idle'` + `errorCode`
+  // （见 conversation-machine 的 http_failure 分支，明确未受理、零副作用）。
+  // 若此处仍按“idle → streaming”投影，错误卡永远不渲染（它会吞掉空答案的
+  // assistant 行），用户看到的是“发送了但什么都没有”，可无限重复提交。
+  const notAcceptedCode =
+    turn.state === 'idle' && turn.errorCode !== null && turn.errorCode !== ''
+      ? turn.errorCode
+      : null
   const status: ResearchChatTurn['status'] =
-    turn.state === 'terminal'
-      ? terminalStatus
-      : turn.state === 'unknown' || turn.state === 'lookup_pending'
-        ? terminalStatus === 'error'
-          ? 'error'
+    notAcceptedCode !== null
+      ? 'error'
+      : turn.state === 'terminal'
+        ? terminalStatus
+        : turn.state === 'unknown' || turn.state === 'lookup_pending'
+          ? terminalStatus === 'error'
+            ? 'error'
+            : 'streaming'
           : 'streaming'
-        : 'streaming'
   const generationId = turn.identity.generationId
   const userTurn: ResearchChatTurn = {
     id: `user_${turn.identity.turnId}`,
@@ -189,8 +200,10 @@ function conversationTurnToTurns(turn: ConversationTurn): ResearchChatTurn[] {
     generationId,
   }
   // 空 answer 的非 error turn 不投影 assistant 行（避免“暂无答案”空占位；
-  // 流式进度由面板 streaming 指示器承担）。终态 error 保留行以渲染错误卡。
-  if (turn.sse.answer === '' && turn.sse.terminal !== 'error') {
+  // 流式进度由面板 streaming 指示器承担）。error 保留行以渲染错误卡——
+  // 包括 PR-13 的 not_accepted（`sse.terminal` 仍是 null，只能看投影后的
+  // status 判断）。
+  if (turn.sse.answer === '' && status !== 'error') {
     return [userTurn]
   }
   const assistantTurn: ResearchChatTurn = {
@@ -209,15 +222,19 @@ function conversationTurnToTurns(turn: ConversationTurn): ResearchChatTurn[] {
     resolvedMode: turn.sse.resolvedMode,
     status,
     reconnectCount: 0,
-    errorCode: turn.sse.errorCode ?? turn.errorCode,
+    errorCode: notAcceptedCode ?? turn.sse.errorCode ?? turn.errorCode,
     errorMessage: turn.sse.errorMessage ?? turn.errorMessage,
     coverageJobId: null,
+    // PR-13：controller 投影轮不带派发快照（controller 不保留 scope），因此
+    // 沿用既有规则「无原快照不显示 Retry」——不得用当前选择冒充派发范围。
+    // 错误卡仍照常渲染稳定码与恢复动作说明。
     scopeSnapshot: null,
     serverMessageId: null,
     generationId,
     contextReport: turn.sse.contextReport,
     contextCoverage: turn.sse.contextCoverage,
     recordVisibility: null,
+    submittedQuery: turn.query,
   }
   return [userTurn, assistantTurn]
 }
@@ -1706,6 +1723,7 @@ export function ResearchChatPanel({
                 <div
                   className="space-y-1 rounded-lg border border-destructive/50 px-3 py-2 text-xs"
                   data-testid="chat-error"
+                  role="alert"
                 >
                   {/* #292 P0：稳定码展示本地化用户文案（集中映射，RWV2-42）；
                       未知码回落通用文案；errorMessage 仅作诊断行，不作主要提示 */}
@@ -1720,7 +1738,11 @@ export function ResearchChatPanel({
                         修改 Scope 不得影响重试；null（恢复轮）不渲染重试按钮，
                         永不静默以空数组=全项目派发（P1-①）。 */}
                     {turn.errorCode &&
-                      RETRYABLE_SSE_ERROR_CODES.includes(turn.errorCode) &&
+                      (RETRYABLE_SSE_ERROR_CODES.includes(turn.errorCode) ||
+                        // PR-13：明确未受理（idle+code）轮只在 wire 动作为
+                        // retry_same_key/reconcile_then_retry 时允许 Retry；
+                        // show_unavailable（如 c05_entry_not_ready）不提供。
+                        allowsRetryAction(turn.errorCode)) &&
                       turn.scopeSnapshot !== null && (
                         <>
                           <Badge variant="secondary">{t('research.chatRetryable')}</Badge>
@@ -1729,7 +1751,9 @@ export function ResearchChatPanel({
                             size="sm"
                             onClick={() => {
                               const userTurn = turns[turns.indexOf(turn) - 1]
-                              void onSend(userTurn?.content ?? '', {
+                              const retryText =
+                                turn.submittedQuery ?? userTurn?.content ?? ''
+                              void onSend(retryText, {
                                 mode: turn.scopeSnapshot!.mode,
                                 sourceIds: [...turn.scopeSnapshot!.sourceIds],
                                 noteIds: [...turn.scopeSnapshot!.noteIds],

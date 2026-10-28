@@ -16,6 +16,7 @@ import type {
 } from '@/lib/research/types'
 import type { ResearchSessionRef } from '@/lib/research/session-contract'
 import { Profiler, useState } from 'react'
+import { userErrorMessageKey, RESEARCH_GENERIC_ERROR_KEY } from '@/lib/research/errors'
 import type { ResearchBackgroundNotice, ResearchChatSelection, ResearchChatTurn } from '@/lib/hooks/use-research-chat'
 import type { ResearchCitation, ResearchJob } from '@/lib/research/types'
 
@@ -3234,5 +3235,158 @@ describe('ResearchChatPanel PR-10：会话切走再回来', () => {
     fireEvent.click(screen.getByTestId('reload-a-done'))
     await waitFor(() => expect(refreshMarkerLookups).toHaveBeenCalledTimes(2))
     expect(refreshMarkerLookups).toHaveBeenLastCalledWith('draft_a_persisted_reloaded')
+  })
+
+})
+
+// ── PR-13（F-1）：not_accepted（idle + 稳定码）必须渲染错误卡，不得静默 ──
+
+describe('ResearchChatPanel PR-13：not_accepted 类 503 不得静默', () => {
+  const PR13_REF: ResearchSessionRef = {
+    domain: 'research',
+    kind: 'global',
+    projectId: PROJECT_ID,
+    sessionId: 'sess-1',
+    sourceId: null,
+  }
+  /** machine 的 not_accepted 落形态：state='idle' + errorCode，sse 无终态。 */
+  function notAcceptedTurn(code: string): ConversationTurn {
+    return {
+      identity: {
+        authGeneration: 1,
+        sessionKey: 'global:p1:sess-1',
+        sessionId: 'sess-1',
+        turnId: 'turn-na',
+        draftToken: 'draft_na',
+        attempt: 1,
+        detached: false,
+        terminal: null,
+        generationId: null,
+        observedRevision: null,
+      },
+      state: 'idle',
+      sse: {
+        answer: '',
+        thinking: '',
+        citations: [],
+        usage: null,
+        resolvedMode: null,
+        terminal: null,
+        errorCode: null,
+        errorMessage: null,
+        contextReport: null,
+        contextCoverage: null,
+      },
+      query: '未受理的问题',
+      operationId: 'op_na',
+      accepted: null,
+      errorCode: code,
+      errorMessage: null,
+      gapDetected: false,
+      lookup: null,
+      clearPending: false,
+      incomplete: false,
+      external: false,
+    } as unknown as ConversationTurn
+  }
+
+  function conversationWith(turn: ConversationTurn): ConversationController {
+    return {
+      getSnapshot: () => ({
+        version: 2,
+        sessionKey: 'global:p1:sess-1',
+        authGeneration: 1,
+        turn,
+        history: [],
+        detailMessages: [],
+        detailCursor: null,
+      }),
+      subscribe: () => () => {},
+      load: vi.fn(async () => ({ status: 'ok' })),
+      lookupSubmission: vi.fn(async () => ({ status: 'ok' })),
+      refreshStatus: vi.fn(async () => ({ status: 'ok' })),
+    } as unknown as ConversationController
+  }
+
+  function renderNa(turn: ConversationTurn) {
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
+          <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+            <ResearchChatPanel
+              turns={[]}
+              isStreaming={false}
+              onSend={vi.fn(async () => true)}
+              onSendCoverage={vi.fn(async () => ACCEPTED_OUTCOME)}
+              editorSnapshot={{
+                ...createEditorState({
+                  ref: PR13_REF,
+                  writerId: 'w-1',
+                  transportAvailable: true,
+                }),
+                phase: 'ready',
+                loading: false,
+                draftText: '未受理的问题',
+                dirty: true,
+                baseScope: {
+                  mode: 'selected' as const,
+                  sourceIds: ['src_1'],
+                  singleSourceId: null,
+                },
+              }}
+              conversation={conversationWith(turn)}
+              sessionRef={PR13_REF}
+              onSendSession={vi.fn(async () => true)}
+              scopeSources={[{ sourceId: 'src_1', title: 'Paper One' }]}
+              scopeNotes={[]}
+              onChangeScope={vi.fn()}
+              onDraftChange={vi.fn()}
+              onRetrySave={vi.fn()}
+            />
+          </ResearchScopeProvider>
+        </ResearchWorkspaceProvider>
+      </QueryClientProvider>,
+    )
+  }
+
+  const CODES = [
+    'c05_contract_not_enabled',
+    'c05_entry_not_ready',
+    'editor_state_invalid',
+    'session_contract_unsupported',
+    'input_snapshot_invalid',
+    'context_limit_exceeded',
+    'invalid_request',
+    'session_context_changed',
+  ] as const
+
+  it.each(CODES)('%s：idle+码 → 渲染 chat-error（role=alert）且显示稳定码文案', (code) => {
+    renderNa(notAcceptedTurn(code))
+    const card = screen.getByTestId('chat-error')
+    expect(card).toBeInTheDocument()
+    expect(card).toHaveAttribute('role', 'alert')
+    // 主提示必须是该码的本地化文案（t 替身返回 key），不是 generic 兜底
+    expect(card).toHaveTextContent(userErrorMessageKey(code))
+    expect(userErrorMessageKey(code)).not.toBe(RESEARCH_GENERIC_ERROR_KEY)
+  })
+
+  it('show_unavailable 类（c05_entry_not_ready）不渲染 Retry：wire 动作不允许重试', () => {
+    renderNa(notAcceptedTurn('c05_entry_not_ready'))
+    expect(screen.getByTestId('chat-error')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'research.chatRetry' })).toBeNull()
+  })
+
+  it('idle 且无 errorCode（正常空闲）不渲染错误卡', () => {
+    const idle = notAcceptedTurn('c05_entry_not_ready')
+    renderNa({ ...idle, errorCode: null, errorMessage: null } as ConversationTurn)
+    expect(screen.queryByTestId('chat-error')).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('errorCode 为空的 idle 轮也不得当成错误（防误报）', () => {
+    const idle = notAcceptedTurn('')
+    renderNa(idle)
+    expect(screen.queryByTestId('chat-error')).toBeNull()
   })
 })

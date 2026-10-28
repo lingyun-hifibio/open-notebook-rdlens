@@ -133,6 +133,27 @@ const ACTION_TABLE: Record<string, { acceptance: C05Acceptance; action: C05Clien
   result_missing: { acceptance: 'accepted', action: 'stop_and_confirm', retryable: false },
 }
 
+/**
+ * PR-13（F-1）：码 → 服务端动作表里的 `retryable`（未登记返回 null）。
+ *
+ * 仅用于 UI **投影层**决定“明确未受理”轮的 Retry 是否可用：wire 的
+ * `recovery_action=show_unavailable` 一律 `retryable:false`（不渲染 Retry），
+ * `retry_same_key`/`reconcile_then_retry` 才是允许原键重试的动作。动作本身
+ * 已在 machine/session 决定，本函数不改变任何状态机语义。
+ */
+export function retryableForCode(code: string | null | undefined): boolean | null {
+  if (typeof code !== 'string' || code.length === 0) return null
+  return ACTION_TABLE[code]?.retryable ?? null
+}
+
+/** PR-13：该码的动作是否属于“同键重试/对账后重试”（允许展示 Retry）。 */
+export function allowsRetryAction(code: string | null | undefined): boolean {
+  if (typeof code !== 'string' || code.length === 0) return false
+  const entry = ACTION_TABLE[code]
+  if (entry === undefined) return false
+  return entry.action === 'retry_same_key' || entry.action === 'reconcile_then_retry'
+}
+
 const TERMINAL_FAILURE_CODES = new Set([
   'outcome_unknown', 'result_missing', 'local_generation_failed', 'external_dispatch_failed',
 ])

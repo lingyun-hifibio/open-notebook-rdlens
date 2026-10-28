@@ -71,6 +71,18 @@ export const RESEARCH_ERROR_USER_COPY: Record<string, string> = {
   // all_selected 创建端点（POST /chat）被后端 Coverage 能力门禁拒绝时的
   // detail.code——可达用户面（提交路径），非 Job 终态码，见文件头注释。
   coverage_not_enabled: 'research.chatErrorCoverageNotEnabled',
+
+  // ── PR-13（F-1）：not_accepted（明确未受理，idle + 稳定码） ──
+  // 这 8 个码来自 conversation-machine 的 DEFINITE_NOT_ACCEPTED_CODES；此前
+  // 无文案 → 错误卡即便渲染也只剩 generic 兜底，用户拿不到“下一步做什么”。
+  c05_entry_not_ready: 'research.errors.entryNotReady',
+  c05_contract_not_enabled: 'research.errors.contractNotEnabled',
+  editor_state_invalid: 'research.errors.editorStateInvalid',
+  session_contract_unsupported: 'research.errors.sessionContractUnsupported',
+  input_snapshot_invalid: 'research.errors.inputSnapshotInvalid',
+  context_limit_exceeded: 'research.errors.contextLimitExceeded',
+  invalid_request: 'research.errors.invalidRequest',
+  session_context_changed: 'research.errors.sessionContextChanged',
 }
 
 /** 未知/内部码统一兜底（raw 只作次级诊断，不作主消息——AC8）。 */
