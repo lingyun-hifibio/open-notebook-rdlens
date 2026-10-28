@@ -1263,3 +1263,60 @@ describe('ResearchSourceChatPanel PR-14：指针恢复与统一新会话', () =>
   })
 })
 })
+
+describe('PR-15 source 会话发送门禁（生产实证回归，2026-10-28）', () => {
+  it('source 会话 base_scope=null 时不得被判 scope_invalid（否则生产发送永久禁用）', async () => {
+    // 生产实测：source 会话 editor 的 base_scope 按 DESIGN §4.3 恒为 null，
+    // 旧 deriveResearchDraftGate 套用全局「legacy 必须先重选范围」规则
+    // → gate.reason='scope_invalid'，发送按钮 disabled，POST 从不发出。
+    const ref = { domain: 'research' as const, kind: 'source' as const, projectId: 'proj_1', sessionId: 'sess_src', sourceId: 'src_1' }
+    const snapshot = {
+      ...createEditorState({ ref, writerId: 'w-1', transportAvailable: true }),
+      phase: 'ready' as const,
+      loading: false,
+      revision: 2,
+      intentHash: 'hash-2',
+      draftToken: 'draft_2',
+      baseScope: null,
+      singleSourceId: null,
+      draftText: '只问这个来源的问题',
+      dirty: false,
+    }
+    let activeRef: typeof ref | null = null
+    vi.mocked(useResearchSessionRuntimeOptional).mockReturnValue({
+      active: () => activeRef,
+      activate: vi.fn((_surface: string, next: typeof activeRef) => {
+        activeRef = next
+        return true
+      }),
+    } as never)
+    activeRef = ref
+    const conversationSend = vi.fn(async (_input: Record<string, unknown>) => ({ status: 'ok' }))
+    vi.mocked(useResearchEditor).mockImplementation((() => ({
+      snapshot,
+      controller: { getSnapshot: () => snapshot },
+      setDraftText: vi.fn(),
+      flush: vi.fn(async () => 'saved'),
+      hold: vi.fn(),
+      release: vi.fn(),
+      clearAfterSubmission: vi.fn(async () => 'cleared'),
+    })) as never)
+    vi.mocked(useResearchSourceChat).mockReturnValue(makeChatResult({
+      conversation: {
+        getSnapshot: () => ({ turn: null, history: [] }),
+        subscribe: () => () => {},
+        send: conversationSend,
+      } as never,
+    }) as never)
+
+    render(<ResearchSourceChatPanel projectId="proj_1" sourceId="src_1" onHighlightPage={vi.fn()} />)
+
+    expect(screen.getByTestId('research-draft-composer')).toBeInTheDocument()
+    // 关键断言：不得出现 scope_invalid 提示，且发送按钮可用
+    expect(screen.queryByTestId('research-draft-gate-hint')).not.toBeInTheDocument()
+    const sendButton = screen.getByTestId('chat-send')
+    expect(sendButton).not.toBeDisabled()
+    await act(async () => { fireEvent.click(sendButton) })
+    expect(conversationSend).toHaveBeenCalledTimes(1)
+  })
+})

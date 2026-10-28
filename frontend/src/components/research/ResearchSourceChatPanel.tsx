@@ -372,7 +372,9 @@ export function ResearchSourceChatPanel({
       ? 'streaming'
       : 'idle',
   }
-  const baseGate = deriveResearchDraftGate({ editorSnapshot, conversationSnapshot })
+  const baseGate = deriveResearchDraftGate({
+    editorSnapshot, conversationSnapshot, kind: 'source',
+  })
   const draftGate =
     baseGate.allowed && !canExecuteModel
       ? { allowed: false as const, reason: 'submission_not_ready' as const }
