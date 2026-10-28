@@ -10,7 +10,7 @@
 | 4 | 认证切换隔离/旧响应不回填 | pass | 真实 refresh 后发送 202→200；测试 |
 | 5 | 两标签草稿分支/多分支恢复/T1 查回 | pass（simulated） | 组件测试；未做真实双标签人工走查（记录为 simulated） |
 | 6 | 冷启动 durable/热恢复续水位/durable 不重复 | pass | 真实 submit/lookup/SSE；PR-12 刷新发送 |
-| 7 | Coverage 隔离 + Source 完整链路有真实证据或明确 limited | **limited** | Source API 主链 pass；UI 刷新/重开草稿恢复 limited（`source_chain.md`），且发现疑似缺陷；按 §10.4“缺该链路则出口不完整” |
+| 7 | Coverage 隔离 + Source 完整链路有真实证据或明确 limited | **pass（主链）/limited（404/cancel）** | PR-14 #88 已修复刷新/重开恢复（真实 UI `matches=true`）；404 不清指针、切 source 不 cancel 未单独取证，标 limited；设计允许逐腿 limited 并注明 |
 | 8 | display ref 刷新权威；source editor 授权；source 404 | pass（全局）/limited（source 404） | 全局刷新恢复；source 404 未构造 |
 | 9 | 错误 envelope 排序/not_accepted 不进 unknown | pass | 真实 503/409/422/426；PR-13 #86 修复 not_accepted UI |
 | 10 | SSE/消息/终态按会话隔离；迟到回执 | pass（simulated） | 状态机测试；真实单会话 SSE |
@@ -24,12 +24,12 @@
 
 ## 出口判定
 
-**未满足**。仅剩两项硬性未闭合：
-1. **§10.4 第 6 腿 Source 完整链路**：UI 刷新/重开草稿恢复 limited，且 `source_chain.md` 记录疑似缺陷（reload 后草稿 0、session 不在列表）；需在稳定 source 会话下复现并修复/补证。
-2. **生产 B5 未执行**：隔离真实部署可作 §10.4 隔离证据，但设计明确“第二批可用的构建/部署”；生产 `rdlens.service` inactive、契约 flag false，需用户授权后部署并在部署环境重跑矩阵。
+**仅剩 1 项硬性未闭合**：
+1. ~~§10.4 第 6 腿 Source 完整链路~~：**已修复**（PR #88，真实 UI 复验 `matches=true`；404/cancel 标 limited 并注明）。
+2. **生产 B5 未执行**：隔离真实部署可作 §10.4 隔离证据，但设计明确“第二批可用的构建/部署”；生产当前被外部会话反复启停（14:54 start→15:08 restart→15:19 stop），代码漂移 94 commits，`RDLENS_RESEARCH_SESSION_CONTRACT` 未开，`rdlens.30` 镜像未构建。**需用户/负责人提供：独占窗口+启停授权、书面审批/变更单、备份责任人；并裁决 G1 版本漂移与镜像授权**。
 
 ## 建议
 - 重新打开 fork **#71**（当前 closed 记录“隔离真实接入完成”不满足 §10.4 第 6 腿严格口径）。
-- 新增 Source 缺陷修复任务（先复现，确认是 UI 还是后端/缓存）。
+- ~~Source 缺陷修复~~：已完成（PR #88 #88）。
 - 生产 B5 由部署窗口完成后，重跑 `README.md` 矩阵并更新 `deployment.md`。
 - 其余 6b 证据任务（B5 隔离固化、Source API、503/envelope、键盘/IME、缺口登记）已完成。

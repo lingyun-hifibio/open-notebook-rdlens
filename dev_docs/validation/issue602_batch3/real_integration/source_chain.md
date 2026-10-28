@@ -31,3 +31,10 @@
 ## 结论
 - API 层主链路（create→save→send→SSE）**pass**；UI 创建/保存/发送 **pass**；重开/刷新的草稿恢复 **limited 且发现疑似缺陷**；切换/404/cancel **limited**。
 - 因此 §10.4 第 6 腿在严格口径下**尚未完成**；建议补测并在有缺陷时先修复再勾选第三批出口。
+
+## 更新（2026-10-28，PR-14 #88 合并后）
+
+- **修复已合并**：PR #88（`5d80ac6`）实现方案 A——Source 恢复不依赖旧列表：运行时活动 source ref 直接冷恢复 detail + `selectSession`；旧列表缺会话时用 ref 合成当前会话身份行；新会话统一走新契约创建并写 display/.source。
+- **复验（真实 UI）**：创建 source 会话→输入→保存→刷新 host→重新打开 source：`composerAfterReload=true`、草稿值与刷新前一致（`matches=true`）、display/.source 指针保留、console error 0；测试 4 文件 120 passed、`tsc -b` 0、红检 2 项有效。
+- **本文件先前记录的 “reload 后草稿 0 / session 不在列表” 缺陷已关闭**（根因是恢复依赖旧列表 + 会话不在旧列表）。
+- **仍为 limited（不影响 PR-14 合并）**：source 404 不清指针、切 source 不 cancel 两项未单独取证，建议后续补测；本轮不伪造 pass。
