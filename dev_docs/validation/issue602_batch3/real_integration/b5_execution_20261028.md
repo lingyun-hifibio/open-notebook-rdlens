@@ -72,8 +72,9 @@ src/components/research/ResearchSubmissionStatus.test.tsx(13,23): error TS2307: 
 
 ## 5. 未完成 / limited（不伪造）
 
-1. **浏览器 UI 端到端未做**：`192.168.5.82:7890` 需 RDLens 登录（无凭据）；直接打开 iframe `7800/research` 停在 “Loading research workspace…”（缺宿主 postMessage 握手）。**UI 腿标 limited**，需具备登录凭据的操作者在真实浏览器强刷后验证：新建会话→输入→保存→发送→SSE→刷新恢复。
+1. ~~浏览器 UI 端到端未做~~ → **已完成**（2026-10-28 19:00，用户提供 `testuser@hifibio.com` 凭据）：见 `prod_ui_20261028/README.md`。登录→研究页→bootstrap 全 200→新建会话→输入保存→发送 **202→200 SSE**→错误卡（`persistent_job_required`）→刷新草稿恢复 `restored:true`。前置修复：宿主 `frontend/dist` 重建并注入 `VITE_RESEARCH_WORKSPACE_URL`（原 dist 缺该变量 → `workspace_not_configured`）。
 2. **24h 观察（E14）未开始**：需窗口内不停服 + 12h 中途复检。
+2b. **Source 面板生产 UI**、**1024/compact 生产视口**未覆盖（隔离环境已测）。
 3. **48 场景复核（E13）未做**。
 4. **C-05 范围能力仍 disabled**（`capabilities.c05.enabled=false`，各入口 `unavailable_reason=c05_contract_disabled`）：按第二批既有状态，不在本次窗口开启（需负责人对 C-05 单独授权）。
 5. **B5 脚本 flag 断言未改代码**（见 §3.2，只做手工绕行）。

@@ -27,7 +27,8 @@
 **生产 B5 已于 2026-10-28 执行**（用户授权；见 `b5_execution_20261028.md`）：
 1. ~~§10.4 第 6 腿 Source 完整链路~~：**已修复**（PR #88，真实 UI 复验 `matches=true`；404/cancel 标 limited 并注明）。
 2. ~~生产 B5 未执行~~ → **已部署**：后端 `932c0b4f`（迁移 34/11 校验通过）、`RDLENS_RESEARCH_SESSION_CONTRACT=true`（路由 404→401）、前端镜像 `rdlens.30`（`sha256:d0c0b519…`，容器 healthy）、台账 RDLens PR #833。生产 API 真实链路（创建 201 → 编辑 PUT 200 → 提交 202 accepted → attach 200 SSE）已通过。
-3. **仍 outstanding（生产验收，不阻塞代码交付）**：① 浏览器 UI 人工走查（需 RDLens 登录凭据；本轮 limited）；② 48 场景复核 E13；③ 24h 观察 E14；④ C-05 范围能力（`c05.enabled=false`）需单独授权。
+3. **生产浏览器 UI 走查已完成**（`prod_ui_20261028/README.md`）：登录→研究页→bootstrap 全 200→新建会话→保存→发送 **202→200 SSE**→错误卡→刷新草稿恢复 `restored:true`；外部模型 422 fail-closed 符合设计。
+4. **仍 outstanding**：① 48 场景复核 E13；② 24h 观察 E14；③ Source 面板生产 UI 与 1024/compact 生产视口；④ C-05 范围能力需单独授权。
 
 ## 建议
 - 重新打开 fork **#71**（当前 closed 记录“隔离真实接入完成”不满足 §10.4 第 6 腿严格口径）。
