@@ -1,0 +1,68 @@
+{
+  "generated_at": "2026-10-28T14:53:41+0800",
+  "project_id": "usr_1_869d30c1637545d4a1082dc2a75f1397",
+  "session_id": "sess_b5rev_237184dea45e",
+  "gateway": "127.0.0.1:7898",
+  "results": [
+    {
+      "leg": "create_session",
+      "status": 201,
+      "verdict": "PASS",
+      "detail": "{\"session_ref\":{\"domain\":\"research\",\"kind\":\"global\",\"project_id\":\"usr_1_869d30c1637545d4a1082dc2a75f1397\",\"session_id\":\""
+    },
+    {
+      "leg": "list_contains_new_session",
+      "status": 200,
+      "verdict": "PASS",
+      "detail": ""
+    },
+    {
+      "leg": "get_editor_state",
+      "status": 200,
+      "verdict": "PASS",
+      "detail": "keys=['capabilities', 'editor_intent_hash', 'editor_revision', 'editor_state', 'session_ref', 'state_warnings']"
+    },
+    {
+      "leg": "save_editor_state",
+      "status": 200,
+      "verdict": "PASS",
+      "detail": ""
+    },
+    {
+      "leg": "save_replay_same_mutation",
+      "status": 200,
+      "verdict": "PASS",
+      "detail": ""
+    },
+    {
+      "leg": "save_cas_conflict",
+      "status": 409,
+      "verdict": "PASS",
+      "detail": "code=editor_revision_conflict"
+    },
+    {
+      "leg": "post_chat",
+      "status": 202,
+      "verdict": "PASS",
+      "detail": "location=<none> ct=application/json"
+    },
+    {
+      "leg": "bind_sse",
+      "status": 200,
+      "verdict": "PASS",
+      "detail": "ct=text/event-stream; charset=utf-8 events=['usage', 'thinking', 'answer', 'citation', 'usage', 'done'] lines=18"
+    },
+    {
+      "leg": "lookup_submission",
+      "status": 200,
+      "verdict": "PASS",
+      "detail": "acceptance_state=terminal"
+    },
+    {
+      "leg": "refresh_recovery",
+      "status": 200,
+      "verdict": "PASS",
+      "detail": "list_has_session=True editor_rev=1 draft_present=True"
+    }
+  ]
+}

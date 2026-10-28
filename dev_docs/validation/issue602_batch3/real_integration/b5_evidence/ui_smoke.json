@@ -1,0 +1,205 @@
+{
+  "env": {
+    "build": "production standalone",
+    "next": "16.2.6",
+    "gateway": "127.0.0.1:7898",
+    "served": "127.0.0.1:8514",
+    "host": "127.0.0.1:8513"
+  },
+  "steps": [
+    {
+      "name": "host_token_handshake",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "iframe_bootstrap_api_200",
+      "ok": true,
+      "detail": "8 类 research API 200"
+    },
+    {
+      "name": "create_and_type_draft",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "reload_restores_draft_query",
+      "ok": true,
+      "detail": "value_len=13"
+    },
+    {
+      "name": "send_enabled",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "post_chat_202_then_sse_200",
+      "ok": true,
+      "detail": "202=true sse200=true"
+    },
+    {
+      "name": "terminal_state_rendered",
+      "ok": true,
+      "detail": "Entire project Edit scope Qwen3.8-27B Local · Local Activity Export research artifacts Chat Sessions 新对话 New session Open a source to start a conversation RESEARCH SCOPE Entire pro"
+    },
+    {
+      "name": "reload_after_send_recovery",
+      "ok": true,
+      "detail": "Entire project Edit scope Qwen3.8-27B Local · Local Activity Export research artifacts Chat Sessions 新对话 New session Open a source to start a conversation RESEARCH SCOPE Entire pro"
+    }
+  ],
+  "consoleErrors": [],
+  "network": [
+    {
+      "p": "projects/usr_1_869d30c1637545d4a1082dc2a75f1397/notes",
+      "s": 200,
+      "ct": "application/json"
+    },
+    {
+      "p": "projects/usr_1_869d30c1637545d4a1082dc2a75f1397/execution-preferences",
+      "s": 200,
+      "ct": "application/json"
+    },
+    {
+      "p": "projects/usr_1_869d30c1637545d4a1082dc2a75f1397/models",
+      "s": 200,
+      "ct": "application/json"
+    },
+    {
+      "p": "projects/usr_1_869d30c1637545d4a1082dc2a75f1397/sources",
+      "s": 200,
+      "ct": "application/json"
+    },
+    {
+      "p": "projects/usr_1_869d30c1637545d4a1082dc2a75f1397/external-egress-consent",
+      "s": 200,
+      "ct": "application/json"
+    },
+    {
+      "p": "projects/usr_1_869d30c1637545d4a1082dc2a75f1397/jobs",
+      "s": 200,
+      "ct": "application/json"
+    },
+    {
+      "p": "projects/usr_1_869d30c1637545d4a1082dc2a75f1397/models",
+      "s": 200,
+      "ct": "application/json"
+    },
+    {
+      "p": "projects/usr_1_869d30c1637545d4a1082dc2a75f1397/chat/sessions",
+      "s": 200,
+      "ct": "application/json"
+    },
+    {
+      "p": "projects/usr_1_869d30c1637545d4a1082dc2a75f1397/chat/sessions",
+      "s": 200,
+      "ct": "application/json"
+    },
+    {
+      "p": "projects/usr_1_869d30c1637545d4a1082dc2a75f1397/chat/sessions/sess_34feaf84daca4",
+      "s": 200,
+      "ct": "application/json"
+    },
+    {
+      "p": "projects/usr_1_869d30c1637545d4a1082dc2a75f1397/chat/sessions/sess_34feaf84daca4",
+      "s": 200,
+      "ct": "application/json"
+    },
+    {
+      "p": "projects/usr_1_869d30c1637545d4a1082dc2a75f1397/chat/sessions/sess_34feaf84daca4",
+      "s": 200,
+      "ct": "application/json"
+    },
+    {
+      "p": "projects/usr_1_869d30c1637545d4a1082dc2a75f1397/jobs",
+      "s": 200,
+      "ct": "application/json"
+    },
+    {
+      "p": "projects/usr_1_869d30c1637545d4a1082dc2a75f1397/chat/sessions/sess_34feaf84daca4",
+      "s": 200,
+      "ct": "application/json"
+    },
+    {
+      "p": "projects/usr_1_869d30c1637545d4a1082dc2a75f1397/chat",
+      "s": 202,
+      "ct": "application/json"
+    },
+    {
+      "p": "projects/usr_1_869d30c1637545d4a1082dc2a75f1397/chat",
+      "s": 200,
+      "ct": "text/event-stream; charset=utf-8"
+    },
+    {
+      "p": "projects/usr_1_869d30c1637545d4a1082dc2a75f1397/chat/sessions/sess_34feaf84daca4",
+      "s": 200,
+      "ct": "application/json"
+    },
+    {
+      "p": "projects/usr_1_869d30c1637545d4a1082dc2a75f1397/notes",
+      "s": 200,
+      "ct": "application/json"
+    },
+    {
+      "p": "projects/usr_1_869d30c1637545d4a1082dc2a75f1397/execution-preferences",
+      "s": 200,
+      "ct": "application/json"
+    },
+    {
+      "p": "projects/usr_1_869d30c1637545d4a1082dc2a75f1397/models",
+      "s": 200,
+      "ct": "application/json"
+    },
+    {
+      "p": "projects/usr_1_869d30c1637545d4a1082dc2a75f1397/sources",
+      "s": 200,
+      "ct": "application/json"
+    },
+    {
+      "p": "projects/usr_1_869d30c1637545d4a1082dc2a75f1397/jobs",
+      "s": 200,
+      "ct": "application/json"
+    },
+    {
+      "p": "projects/usr_1_869d30c1637545d4a1082dc2a75f1397/external-egress-consent",
+      "s": 200,
+      "ct": "application/json"
+    },
+    {
+      "p": "projects/usr_1_869d30c1637545d4a1082dc2a75f1397/models",
+      "s": 200,
+      "ct": "application/json"
+    },
+    {
+      "p": "projects/usr_1_869d30c1637545d4a1082dc2a75f1397/chat/sessions",
+      "s": 200,
+      "ct": "application/json"
+    },
+    {
+      "p": "projects/usr_1_869d30c1637545d4a1082dc2a75f1397/chat/sessions",
+      "s": 200,
+      "ct": "application/json"
+    },
+    {
+      "p": "projects/usr_1_869d30c1637545d4a1082dc2a75f1397/chat/sessions/sess_34feaf84daca4",
+      "s": 200,
+      "ct": "application/json"
+    },
+    {
+      "p": "projects/usr_1_869d30c1637545d4a1082dc2a75f1397/chat/sessions/sess_34feaf84daca4",
+      "s": 200,
+      "ct": "application/json"
+    },
+    {
+      "p": "projects/usr_1_869d30c1637545d4a1082dc2a75f1397/chat/sessions/sess_34feaf84daca4",
+      "s": 200,
+      "ct": "application/json"
+    },
+    {
+      "p": "projects/usr_1_869d30c1637545d4a1082dc2a75f1397/jobs",
+      "s": 200,
+      "ct": "application/json"
+    }
+  ],
+  "researchCalls": 45
+}
