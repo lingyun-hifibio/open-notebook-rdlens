@@ -18,7 +18,7 @@
 | 7 | 草稿刷新恢复（PR-12/PR-14 生效） | **pass** | 保存后刷新 → composer 出现且 `inputValue === 草稿串`（`restored: true`） |
 | 8 | 会话持久化 | **pass** | `GET .../chat/sessions?kind=all` 返回本会话；详情 `messages` 含本轮 user 消息；`has_draft` 状态正确 |
 | 9 | 外部模型路径 | **pass（fail-closed，符合设计）** | 选 `DeepSeek V4 Flash`（external）发送 → **422** `session_contract_unsupported: external models are not supported on the session submission path yet`；UI 显示错误卡、不静默 |
-| 10 | 生产模型偏好 | 变更并记录 | 为完成本地模型发送腿，`PATCH execution-preferences preferred_model_id=Qwen3.6-35B`（原 `deepseek-v4-flash`，可回滚） |
+| 10 | 生产模型偏好 | 变更并记录 | 为完成本地模型发送腿，`PATCH execution-preferences preferred_model_id=Qwen3.6-35B`（原 `deepseek-v4-flash`）。**owner 2026-10-28 决定：暂时保持本地，不回滚**；原值保留在此以便随时恢复 |
 
 ## 未覆盖（不伪造）
 
@@ -27,6 +27,11 @@
 3. **48 场景复核（E13）**、**24h 观察（E14）**：未执行。
 4. **C-05 范围能力**：生产 `capabilities.c05.enabled=false`（各入口 `unavailable_reason=c05_contract_disabled`），未开启（需单独授权）。
 5. **正常 `success` 综合答案样本**：本项目的 source 规模触发 `persistent_job_required`，未取得正常答案轮（属数据规模与既有产品行为，非本次部署缺陷）。
+
+## 已知限制（本轮发现）
+
+- **会话提交路径不支持 external 模型**：带 `X-Research-Session-Contract: research-session-v1` 的 `POST /chat` 对 `provider_id != local` 的模型返回 **422** `session_contract_unsupported: external models are not supported on the session submission path yet`（fail-closed，UI 正确显示错误卡）。因此当项目 `preferred_model_id` 为 external（如 `deepseek-v4-flash`）时，新建会话默认发送必然失败，需手动切本地模型。**已由 owner 决定暂以“项目默认模型置为本地 Qwen3.6-35B”规避，不回滚**；该限制本身登记为产品缺口（外部模型在会话路径的支持待后续批次）。
+- 模型偏好存储位置：PG `research_workspace_mapping(preferred_model_id, default_context_level, preference_updated_at)`，**按项目**生效，非全局。
 
 ## 结论
 
