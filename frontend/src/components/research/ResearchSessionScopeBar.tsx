@@ -247,8 +247,18 @@ export function ResearchSessionScopeBar({
             </label>
           ))}
           {(notes.length > 0 || staleNoteIds.length > 0) && (
-            <p className="pt-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {t('research.layout.scope.selectedSummary', { count: noteIds.length })}
+            <p
+              className="pt-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+              data-testid="scope-selected-summary"
+            >
+              {/* #602 O-2：模板为 "Selected: {{sources}} sources, {{notes}} notes"，
+                  必须同时传 sources/notes；只传 count 会让 14 个 locale 都渲染
+                  未插值的 {{...}} 原文。计数口径与 ResearchScopeSummary /
+                  TransformationsPanel 的既有正确用法一致。 */}
+              {t('research.layout.scope.selectedSummary', {
+                sources: selectedSourceIds.length,
+                notes: noteIds.length,
+              })}
             </p>
           )}
           {notes.map(note => (
