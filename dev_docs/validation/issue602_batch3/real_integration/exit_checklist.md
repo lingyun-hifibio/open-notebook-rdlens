@@ -10,13 +10,13 @@
 | 4 | 认证切换隔离/旧响应不回填 | pass | 真实 refresh 后发送 202→200；测试 |
 | 5 | 两标签草稿分支/多分支恢复/T1 查回 | pass（simulated） | 组件测试；未做真实双标签人工走查（记录为 simulated） |
 | 6 | 冷启动 durable/热恢复续水位/durable 不重复 | pass | 真实 submit/lookup/SSE；PR-12 刷新发送 |
-| 7 | Coverage 隔离 + Source 完整链路有真实证据或明确 limited | **pass（主链）/limited（404）** | **生产真实走查完成**（`source_prod_20261028/README.md`，`rdlens.32`）：创建 201 → 保存 → 发送 **202→200 SSE** → 切换 source 草稿恢复 → 刷新重开恢复 → B 草稿独立 → 无 cancel。走查中发现并修复 2 个 P0：来源 id 冒号（RDLens #844）、source 发送门禁（fork #97）。仅「来源 404 不清指针」为 limited（有单测、生产未构造） |
-| 8 | display ref 刷新权威；source editor 授权；source 404 | pass（全局 + source editor）/limited（source 404） | 全局刷新恢复；source editor 授权成功即可编辑已实测；source 404 未构造（limited） |
+| 7 | Coverage 隔离 + Source 完整链路有真实证据或明确 limited | **pass（主链 + 404）** | **生产真实走查完成**（`source_prod_20261028/README.md`，`rdlens.32`）：创建 201 → 保存 → 发送 **202→200 SSE** → 切换 source 草稿恢复 → 刷新重开恢复 → B 草稿独立 → 无 cancel。走查中发现并修复 2 个 P0：来源 id 冒号（RDLens #844）、source 发送门禁（fork #97）。**「来源 404 不清指针/不清本机草稿」已由生产真实 404 取证为 pass**（`source_prod_20261028/source_404_and_viewport.md` ①）：6 个来源域请求全 **404**、`display.sourceId` 未被清、草稿记录文本逐字一致、恢复后 `inputValue` 完全相同、无「会话不存在」致命清空 |
+| 8 | display ref 刷新权威；source editor 授权；source 404 | **pass** | 全局刷新恢复；source editor 授权成功即可编辑已实测；**source 404 已在生产真实构造并取证 pass**（`source_404_and_viewport.md` ①，三条腿：改指针触发真实 404 / 同身份 404 回放 / 404 窗口内 `Restore draft` 逐字恢复）。诚实边界：未用真实撤权或对象删除构造 |
 | 9 | 错误 envelope 排序/not_accepted 不进 unknown | pass | 真实 503/409/422/426；PR-13 #86 修复 not_accepted UI |
 | 10 | SSE/消息/终态按会话隔离；迟到回执 | pass（simulated） | 状态机测试；真实单会话 SSE |
 | 11 | 失败轮容量解释/权限变化/来源不可用/受限消息 | pass（simulated） | 组件测试；未做真实容量构造（E05 另计） |
 | 12 | 标题取更严投影/restricted 不渲染 | pass（simulated） | 测试；真实 UI 未构造 restricted |
-| 13 | 键盘/焦点/IME/1024/1440/compact 检查记录 | **pass** | 稳定全局 Chat 补测（`keyboard_ime_visual.md`，task-19） |
+| 13 | 键盘/焦点/IME/1024/1440/compact 检查记录 | **pass** | 隔离环境：稳定全局 Chat 补测（`keyboard_ime_visual.md`，task-19）。**生产视口补测**（`source_prod_20261028/source_404_and_viewport.md` ②，`rdlens.32`）：1440×900 / 1024×768（命中 `lg`，桌面双栏）/ **1023×768（真 compact，pane 折叠）** 三档 × 全局 chat + source 面板两态——`workspace-tabs-row`、`session-switcher-global`、`research-draft-composer`、`chat-send` 均可见且 `boundingBox` 完整在视口内（最紧的 `chat-send.right=995`），9 组 `scrollWidth-clientWidth` 全为 **0**；source 面板态 `workspace-tabs-row` 为 0×0 属 Source focus 隐藏设计，不记为缺陷。**新发现观察项（不阻塞出口，建议另开 PR/issue）**：1023/1024 下范围条出现未插值 i18n 串 `SELECTED: {{SOURCES}} SOURCES, {{NOTES}} NOTES`（`ResearchSessionScopeBar.tsx:251` 只传 `count`）；首屏直接切全局 Chat **稳定复现**（6/6 探针）`POST …/bootstrap` `net::ERR_ABORTED`，save state 停在 `Loading research workspace…`、门禁提示为 `An unexpected error occurred…`，点一次 `New session` 后恢复 |
 | 14 | F01–F17/M5/可见性/authEpoch 测试；tsc/lint/build | pass | 相关套件/类型检查；lint 基线见 PR 记录 |
 | 15 | 第二批可用后完成真实接入矩阵（本地模型+合成内容） | **pass（生产已部署，矩阵含 documented excluded）** | 隔离预演 10 腿（`deployment.md`）；**生产 B5 已部署**（`b5_execution_20261028.md`）：API 201/200/202/200-SSE + 生产 UI 发送 202→200 SSE、错误卡、刷新恢复；E13 48 场景与 E14 24h 观察经 owner 2026-10-28 指示**省略（excluded）** |
 | 16 | 第一批 list_query source 选择器缺口登记 | **pass** | `gap_registration.md`：#584 评论、#602 记录 |
@@ -25,20 +25,21 @@
 ## 出口判定
 
 **生产 B5 已于 2026-10-28 执行**（用户授权；见 `b5_execution_20261028.md`）：
-1. ~~§10.4 第 6 腿 Source 完整链路~~：**已修复**（PR #88，真实 UI 复验 `matches=true`；404/cancel 标 limited 并注明）。
+1. ~~§10.4 第 6 腿 Source 完整链路~~：**已修复**（PR #88，真实 UI 复验 `matches=true`）；**404 已收紧为 pass**（`source_404_and_viewport.md` ①，生产真实 404 取证）；cancel 沿用 0 次 `DELETE`/`cancel` 证据。
 2. ~~生产 B5 未执行~~ → **已部署**：后端 `932c0b4f`（迁移 34/11 校验通过）、`RDLENS_RESEARCH_SESSION_CONTRACT=true`（路由 404→401）、前端镜像 `rdlens.30`（`sha256:d0c0b519…`，容器 healthy）、台账 RDLens PR #833。生产 API 真实链路（创建 201 → 编辑 PUT 200 → 提交 202 accepted → attach 200 SSE）已通过。
 3. **生产浏览器 UI 走查已完成**（`prod_ui_20261028/README.md`）：登录→研究页→bootstrap 全 200→新建会话→保存→发送 **202→200 SSE**→错误卡→刷新草稿恢复 `restored:true`；外部模型 422 fail-closed 符合设计。
 4. **E13 48 场景复核 / E14 24h 观察：按 owner 指示省略**（2026-10-28 21:39 “E13/E14 直接省略”）→ 记为 **excluded**，不计 pass。
-5. **仍 limited（已登记，不阻塞出口）**：① Source 面板生产 UI 未走查（隔离环境已覆盖）；② 1024/compact **生产**视口未测（隔离已测）；③ source 404 不清指针、切 source 不 cancel 未单独取证；④ C-05 范围能力（`c05.enabled=false`）未开启，需单独授权——不属第三批范围。
+5. **仍 limited（已登记，不阻塞出口）**：① ~~Source 面板生产 UI 未走查~~ → **已完成**（`source_prod_20261028/README.md`，生产真实走查 8 腿 pass，含 2 个 P0 修复）；② ~~1024/compact 生产视口未测~~ → **已补测 pass**（`source_prod_20261028/source_404_and_viewport.md` ②：1440/1024/1023 三档，见第 13 项）；③ ~~source 404 不清指针未单独取证~~ → **已真实取证 pass**（同文件 ①，见第 7/8 项）；**切 source 不 cancel** 沿用 `README.md` 第 8 腿（全流程 0 个 `DELETE`/`cancel`）；④ C-05 范围能力（`c05.enabled=false`）未开启，需单独授权——**不属第三批范围**，仍 limited。**当前仅剩 ④ 为 limited。**
 
 ### 出口判定结论
 **第三批出口满足**（`pass` 与逐腿 `limited`/owner `excluded` 并注明，无未登记缺口）。依据：
-- 17 项中 15 项 pass（含本轮将 #2/#15/#17 依据生产证据升级）、1 项 pass/limited（#7）、1 项 pass/limited（#8）；
-- 生产 B5 真实部署 + 生产 API/UI 链路通过；
-- E13/E14 由 owner 明确省略；C-05 与 Source 生产 UI 以 limited 登记，不影响第三批会话交互契约的交付判定。
+- 17 项**全部 pass**（含本轮将 #2/#15/#17 依据生产证据升级，#7/#8/#13 依据生产 404 与生产视口证据收紧；#3/#5/#10/#11/#12 维持原有 `pass（simulated）` 口径，未改动）；
+- 生产 B5 真实部署 + 生产 API/UI 链路通过；Source 主链、source 404 语义、三档视口均已在生产取证；
+- E13/E14 由 owner 明确省略（excluded）；**唯一 remaining limited 是 C-05 范围能力（`c05.enabled=false`，需单独授权、不属第三批范围）**，不影响第三批会话交互契约的交付判定。
 
 ## 建议
 - 重新打开 fork **#71**（当前 closed 记录“隔离真实接入完成”不满足 §10.4 第 6 腿严格口径）。
 - ~~Source 缺陷修复~~：已完成（PR #88 #88）。
-- 生产 B5 已执行；下一步在具备登录凭据的环境补 UI 走查 + 48 场景 + 24h 观察，并重跑 `README.md` 矩阵。
+- ~~补生产 UI 走查~~：已完成（`source_prod_20261028/README.md` + `source_404_and_viewport.md`，基线镜像 `rdlens.32` / 后端 `5153e1c2`）。剩余 owner 侧待办：E13 48 场景与 E14 24h 观察仍按 2026-10-28 指示 excluded。
+- **建议另开 issue（本轮新发现，均不阻塞第三批出口）**：① `ResearchSessionScopeBar.tsx:251` 的 `selectedSummary` 只传 `count`，导致 1023/1024 下渲染出未插值的 `{{SOURCES}}`/`{{NOTES}}`（详见 `source_404_and_viewport.md` O-2）；② 首屏切全局 Chat 偶发 `POST …/bootstrap` `net::ERR_ABORTED`，`save state` 停在 `Loading research workspace…`，需点 `New session` 才恢复（详见同文件 O-3）。
 - 其余 6b 证据任务（B5 隔离固化、Source API、503/envelope、键盘/IME、缺口登记）已完成。
