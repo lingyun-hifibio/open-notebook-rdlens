@@ -1,0 +1,154 @@
+{
+  "task": "B5 / #602 batch3 6b task-13",
+  "date": "2026-10-28",
+  "evidence_level": "isolated_real_deployment",
+  "environment": "isolated",
+  "versions": {
+    "rdlens_backend_sha": "3620c9c1d741cb9173e7355f8c6a23b609f48687",
+    "rdlens_backend_worktree": "/home/lchen/workspace/RDLens-issue602-b3",
+    "rdlens_main_repo_head_observed": "92ae0c09f95338a967b3e078104af3c3f19d5149",
+    "fork_evidence_worktree_head": "8226f12564569c91df1afca82e3cb79f4bea0e50",
+    "fork_evidence_branch": "feat/issue602-b3-remaining-evidence",
+    "frontend_worktree": "/home/lchen/workspace/open-notebook-rdlens/.worktrees/batch3-pr12/frontend",
+    "frontend_sha": "92be0401d5357b17171f07158f008bb5ed61bfbf",
+    "frontend_branch": "feat/issue602-b3-pr12",
+    "frontend_mode": "next_dev",
+    "model": "Qwen3.8-27B (SGLang, local, 127.0.0.1:9999)",
+    "fork_origin_main": "8226f12564569c91df1afca82e3cb79f4bea0e50",
+    "fork_local_main_branch_stale": "7c99dffd14a2b334b5ff07364ff15e28bc88f700"
+  },
+  "services": {
+    "gateway": "http://127.0.0.1:7896 (uvicorn rdlens.api.app:create_app --factory)",
+    "frontend": "http://127.0.0.1:8503 (next dev)",
+    "host": "http://127.0.0.1:8504 (host_server.py, /token + iframe host)",
+    "postgres": "127.0.0.1:5436/knowledge_os_issue602_b3 (container rdlens-issue623-s3-pg)",
+    "surrealdb": "http://127.0.0.1:18004 (surrealdb-2.6.5, container rdlens-issue623-s3-surrealdb)",
+    "redis": "redis://localhost:6379/2 (configured, not independently verified)"
+  },
+  "effective_flags": {
+    "RESEARCH_ENABLED": true,
+    "RESEARCH_CONTRACT_V1_ENABLED": true,
+    "RDLENS_RESEARCH_SESSION_CONTRACT": true,
+    "RESEARCH_C05_SCOPE_ENABLED": true,
+    "RESEARCH_DOCUMENT_WORKSPACE_CONTEXT_ENABLED": true,
+    "RESEARCH_EXTERNAL_LLM_ENABLED": false,
+    "RESEARCH_CORS_ALLOWED_ORIGINS": [
+      "http://127.0.0.1:8503",
+      "http://127.0.0.1:8504"
+    ],
+    "secrets_configured_not_recorded": [
+      "RESEARCH_JWT_SECRET",
+      "RESEARCH_SURREAL_PASSWORD",
+      "RDLENS_PG_DSN password"
+    ]
+  },
+  "health": {
+    "gateway_health": {
+      "http": 200,
+      "body": {
+        "status": "ok"
+      }
+    },
+    "research_health": {
+      "http": 200,
+      "body": {
+        "enabled": true,
+        "status": "ready"
+      }
+    },
+    "workspace_status": {
+      "http": 200,
+      "body": {
+        "workspace_v2_enabled": false
+      }
+    },
+    "unauthenticated_research_route": {
+      "http": 401,
+      "body": {
+        "detail": "research token required"
+      }
+    },
+    "cors_preflight_from_8503": {
+      "http": 200,
+      "allow_origin": "http://127.0.0.1:8503"
+    },
+    "frontend_research_page": {
+      "http": 200,
+      "title": "Open Notebook",
+      "bytes": 34029
+    },
+    "host_root": {
+      "http": 200,
+      "iframe": "http://127.0.0.1:8503/research"
+    },
+    "host_token": {
+      "http": 200,
+      "keys": [
+        "expires_at",
+        "token"
+      ],
+      "values_recorded": false
+    }
+  },
+  "browser_bootstrap": {
+    "engine": "chromium headless (playwright-core, 1440x950)",
+    "host_ready": true,
+    "last_message_type": "ready",
+    "console_errors": 0,
+    "research_api_calls": 10,
+    "research_api_non_200": 0,
+    "ui_model_label": "Qwen3.8-27B Local"
+  },
+  "databases": {
+    "postgres": {
+      "database": "knowledge_os_issue602_b3",
+      "public_tables": 44,
+      "current_user": "admin"
+    },
+    "surreal_active": {
+      "namespace": "rdlens_research",
+      "database": "research_artifacts",
+      "research_tables_present": true
+    },
+    "surreal_brief_pair": {
+      "namespace": "rdlens_research_602",
+      "database": "research_artifacts_602",
+      "tables": 0,
+      "used_by_gateway": false
+    }
+  },
+  "production": {
+    "rdlens_service": "inactive/dead",
+    "research_enabled": false,
+    "research_contract_v1_enabled": false,
+    "research_external_llm_enabled": false,
+    "modified": false,
+    "b5_executed": false,
+    "requires_user_authorization": true
+  },
+  "rollback": {
+    "production": "no action (nothing changed); future authorized B5 rollback = restore flags false + restart rdlens.service",
+    "isolated_processes": [
+      "gateway pid 1862101",
+      "frontend pid 1419847 (parent next dev 1419788)",
+      "host pid 2534192"
+    ],
+    "db_containers": "shared with #623 S3; do not destroy/clear",
+    "repo": "RDLens worktree clean/detached 3620c9c1; evidence branch docs only, no commit/push"
+  },
+  "verdict": {
+    "usable_as_design_10_4_evidence": "limited",
+    "scope": "isolated real deployment only",
+    "not_claimed": [
+      "production B5",
+      "production build artifact",
+      "second-batch production availability"
+    ],
+    "deviations": [
+      "surreal active ns/db are defaults (rdlens_research/research_artifacts); _602 pair exists but empty and unused",
+      "frontend is next dev from batch3-pr12 worktree, not a production build",
+      "redis db 2 not independently verified",
+      "fork main observed 7c99dff, lead stated 8226f12 (which is evidence branch HEAD)"
+    ]
+  }
+}
