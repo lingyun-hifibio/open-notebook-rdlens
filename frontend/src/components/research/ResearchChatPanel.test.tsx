@@ -1096,6 +1096,99 @@ describe('ResearchChatPanel · PR-4 会话 editor 接线', () => {
     expect(screen.getByTestId('research-draft-gate-hint')).toBeInTheDocument()
   })
 
+  // O-3（#602）：首屏尚未创建任何会话时直接切到全局 Chat。
+  //
+  // 生产实测（2026-10-28/29）：`editorSnapshot === null` 且 `sessionRef === null`
+  // 时 composer 仍按“有会话”渲染——保存状态落到 `unavailable`（渲染成
+  // “Loading research workspace…”）、门禁落成通用的 `runtime_unavailable`
+  // （“An unexpected error occurred…”），而 `New session` 入口就在旁边且可用。
+  // 两段文案都在描述一个**不存在的会话加载失败**，把“尚未创建会话”误报成
+  // 故障（DESIGN §4.3：没有活动会话时只展示“新对话”入口，创建成功后才
+  // 启用输入区）。
+  it('O-3：无活动会话（sessionRef=null）时用“新对话”空态替代故障式 composer', () => {
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })}>
+        <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
+          <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+            <ResearchChatPanel
+              turns={[]}
+              isStreaming={false}
+              onSend={vi.fn(async () => true)}
+              onSendCoverage={vi.fn(async () => ACCEPTED_OUTCOME)}
+              editorSnapshot={null}
+              sessionRef={null}
+              onNewSession={vi.fn()}
+            />
+          </ResearchScopeProvider>
+        </ResearchWorkspaceProvider>
+      </QueryClientProvider>,
+    )
+    // 不提供可持久化输入（§4.3）。
+    expect(screen.queryByTestId('research-draft-composer')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('research-draft-save-state')).not.toBeInTheDocument()
+    // 不得把“没有会话”误报成运行时错误/加载中。
+    expect(screen.queryByTestId('research-draft-gate-hint')).not.toBeInTheDocument()
+    expect(
+      screen.queryByText(
+        'An unexpected error occurred. Retry, or contact an administrator if it persists.',
+      ),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText('Loading research workspace…')).not.toBeInTheDocument()
+    // 只展示空态指路（§4.3）；创建入口唯一留在 Header 的会话切换器。
+    expect(screen.getByTestId('chat-no-session')).toBeInTheDocument()
+    // 不得在面板内另造创建入口（会与 Header 的 single-flight/门禁/
+    // creating 状态分叉，且创建成功后按钮卸载导致焦点丢失）。
+    expect(screen.queryByTestId('chat-no-session-new')).not.toBeInTheDocument()
+    // 空态时 scope bar 一并隐藏（没有会话就没有可编辑范围）。
+    expect(screen.queryByTestId('research-session-scope-bar')).not.toBeInTheDocument()
+  })
+
+  it('O-3：会话存在但 editor 未就绪时保持既有加载门禁（不误判为空态）', () => {
+    // 有 sessionRef、但 editorSnapshot 仍为 null = 真正的加载中，
+    // 必须继续显示旧语义（composer + 加载文案），不能被空态吞掉。
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })}>
+        <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
+          <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+            <ResearchChatPanel
+              turns={[]}
+              isStreaming={false}
+              onSend={vi.fn(async () => true)}
+              onSendCoverage={vi.fn(async () => ACCEPTED_OUTCOME)}
+              editorSnapshot={null}
+              sessionRef={REF}
+            />
+          </ResearchScopeProvider>
+        </ResearchWorkspaceProvider>
+      </QueryClientProvider>,
+    )
+    expect(screen.queryByTestId('chat-no-session')).not.toBeInTheDocument()
+    expect(screen.getByTestId('research-draft-composer')).toBeInTheDocument()
+    expect(screen.getByTestId('research-draft-gate-hint')).toBeInTheDocument()
+  })
+
+  it('O-3：sessionRef 缺省（undefined）时保持既有语义，不进入空态', () => {
+    // `undefined` = 宿主未提供该信息（旧装配），不得据此改变门禁行为。
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })}>
+        <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
+          <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+            <ResearchChatPanel
+              turns={[]}
+              isStreaming={false}
+              onSend={vi.fn(async () => true)}
+              onSendCoverage={vi.fn(async () => ACCEPTED_OUTCOME)}
+              editorSnapshot={null}
+            />
+          </ResearchScopeProvider>
+        </ResearchWorkspaceProvider>
+      </QueryClientProvider>,
+    )
+    expect(screen.queryByTestId('chat-no-session')).not.toBeInTheDocument()
+    expect(screen.getByTestId('research-draft-composer')).toBeInTheDocument()
+    expect(screen.getByTestId('research-draft-gate-hint')).toBeInTheDocument()
+  })
+
   it('single 范围按 mode=single 派发并携带 singleSourceId（执行范围编码 §5.3）', async () => {
     const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
     const onSend = vi.fn<(query: string, selection?: ResearchChatSelection) => Promise<boolean>>(

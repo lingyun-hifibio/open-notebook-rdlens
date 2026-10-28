@@ -555,6 +555,21 @@ export function ResearchChatPanel({
   // 面板订阅其快照渲染 live turn（hook 的 turns 只承载 durable 历史）。
   const sessionConversation = conversation ?? null
   const sessionWired = sessionConversation !== null && onSendSession !== undefined
+  /**
+   * O-3（#602）：当前没有任何活动会话（宿主显式传 `sessionRef=null`）。
+   *
+   * `editorSnapshot === null` 有两种完全不同的语义，必须分开处理：
+   * - runtime 已装配、但**尚未创建/选择会话**（`sessionRef === null`）——
+   *   正常空态，DESIGN §4.3 要求“没有活动会话时不提供可持久化的 composer
+   *   输入，只展示新对话入口”；把它当成会话加载失败会渲染出
+   *   “Loading research workspace…” + “An unexpected error occurred…”，
+   *   把正常空态误报成故障（生产实测 2026-10-28/29，O-3）。
+   * - 会话存在但 editor 尚未就绪——真正的加载中/失败，保持既有门禁与文案。
+   *
+   * 只有**显式 `null`** 才表示“确认无会话”：`sessionRef` 缺省（`undefined`）
+   * 表示宿主未提供该信息，此时不得改变既有门禁语义（回归安全）。
+   */
+  const noActiveSession = wired && sessionRef === null
   const [liveSnapshot, setLiveSnapshot] = useState<ConversationSnapshot | null>(null)
   useEffect(() => {
     if (sessionConversation === null) {
@@ -1520,7 +1535,7 @@ export function ResearchChatPanel({
           />
         </div>
       )}
-      {wired && (
+      {wired && !noActiveSession && (
         <div className="shrink-0 border-b px-3 py-2">
           <ResearchSessionScopeBar
             editorSnapshot={editorSnapshot ?? null}
@@ -1954,6 +1969,26 @@ export function ResearchChatPanel({
               onRetrySave={() => {}}
               localDraftMode
             />
+          ) : noActiveSession ? (
+            // O-3：没有活动会话是正常空态，不是加载失败——按 §4.3 不渲染
+            // 可持久化输入，也不显示任何故障文案。
+            //
+            // 这里**不放创建按钮**：Header 的会话切换器（`New session`）
+            // 已经是 DESIGN §4.3 的唯一创建入口，且自带 single-flight、
+            // capability 门禁、creating/aria-busy 与 unauthorized 隐藏。
+            // 面板内再放一个按钮会产生第二套创建状态（门禁不同步、创建
+            // 成功后按钮卸载导致焦点落 body），故此处只指路。
+            <div
+              className="rounded-md border border-dashed p-3"
+              data-testid="chat-no-session"
+            >
+              <p className="text-sm font-medium text-muted-foreground">
+                {t('research.session.newConversation')}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {t('chat.createToStart')}
+              </p>
+            </div>
           ) : (
             <ResearchDraftComposer
               editorSnapshot={editorSnapshot ?? null}
