@@ -73,9 +73,9 @@ src/components/research/ResearchSubmissionStatus.test.tsx(13,23): error TS2307: 
 ## 5. 未完成 / limited（不伪造）
 
 1. ~~浏览器 UI 端到端未做~~ → **已完成**（2026-10-28 19:00，用户提供 `testuser@hifibio.com` 凭据）：见 `prod_ui_20261028/README.md`。登录→研究页→bootstrap 全 200→新建会话→输入保存→发送 **202→200 SSE**→错误卡（`persistent_job_required`）→刷新草稿恢复 `restored:true`。前置修复：宿主 `frontend/dist` 重建并注入 `VITE_RESEARCH_WORKSPACE_URL`（原 dist 缺该变量 → `workspace_not_configured`）。
-2. **24h 观察（E14）未开始**：需窗口内不停服 + 12h 中途复检。
+2. **24h 观察（E14）：按 owner 指示省略**（2026-10-28 21:39 “E13/E14 直接省略”）→ 记 **excluded**，不计 pass。
 2b. **Source 面板生产 UI**、**1024/compact 生产视口**未覆盖（隔离环境已测）。
-3. **48 场景复核（E13）未做**。
+3. **48 场景复核（E13）：按 owner 指示省略** → 记 **excluded**。
 4. **C-05 范围能力仍 disabled**（`capabilities.c05.enabled=false`，各入口 `unavailable_reason=c05_contract_disabled`）：按第二批既有状态，不在本次窗口开启（需负责人对 C-05 单独授权）。
 5. **B5 脚本 flag 断言未改代码**（见 §3.2，只做手工绕行）。
 
@@ -85,4 +85,8 @@ src/components/research/ResearchSubmissionStatus.test.tsx(13,23): error TS2307: 
 - 数据：PG dump（120 MB）+ Surreal 会话/消息 JSON（79/125）可恢复；Redis 22 键。
 
 ## 7. 结论
-**生产 B5 已执行并达到“已部署 + API 真实链路通过”**；剩余生产验收项为 UI 人工走查、48 场景复核、24h 观察（E14），以及 C-05 单独授权。不宣称 E14/第三批生产验收完成。
+**生产 B5 已执行并通过真实链路验证**：
+- API 级：创建 201 → editor PUT 200 → 提交 202 accepted → attach 200 SSE；
+- UI 级（`prod_ui_20261028/README.md`）：登录→研究页→bootstrap 全 200→新建会话→保存→发送 202→200 SSE→错误卡→刷新草稿恢复 `restored:true`→会话持久化；外部模型 422 fail-closed。
+- **E13/E14 按 owner 指示省略（excluded）**；C-05 与 Source 生产 UI/1024 生产视口登记 limited，不属第三批范围或已有隔离环境等价证据。
+**第三批出口判定：满足**（见 `exit_checklist.md` §出口判定）。
