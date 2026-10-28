@@ -10,8 +10,8 @@
 | 4 | 认证切换隔离/旧响应不回填 | pass | 真实 refresh 后发送 202→200；测试 |
 | 5 | 两标签草稿分支/多分支恢复/T1 查回 | pass（simulated） | 组件测试；未做真实双标签人工走查（记录为 simulated） |
 | 6 | 冷启动 durable/热恢复续水位/durable 不重复 | pass | 真实 submit/lookup/SSE；PR-12 刷新发送 |
-| 7 | Coverage 隔离 + Source 完整链路有真实证据或明确 limited | **pass（主链）/limited（404/cancel）** | PR-14 #88 修复刷新/重开恢复（真实 UI `matches=true`）；source 404 不清指针、切 source 不 cancel 未单独取证 → **limited（已注明）**，设计允许逐腿 limited。Source 面板生产 UI 未走查 → limited |
-| 8 | display ref 刷新权威；source editor 授权；source 404 | pass（全局）/limited（source 404） | 全局刷新恢复；source 404 未构造 |
+| 7 | Coverage 隔离 + Source 完整链路有真实证据或明确 limited | **pass（主链）/limited（404）** | **生产真实走查完成**（`source_prod_20261028/README.md`，`rdlens.32`）：创建 201 → 保存 → 发送 **202→200 SSE** → 切换 source 草稿恢复 → 刷新重开恢复 → B 草稿独立 → 无 cancel。走查中发现并修复 2 个 P0：来源 id 冒号（RDLens #844）、source 发送门禁（fork #97）。仅「来源 404 不清指针」为 limited（有单测、生产未构造） |
+| 8 | display ref 刷新权威；source editor 授权；source 404 | pass（全局 + source editor）/limited（source 404） | 全局刷新恢复；source editor 授权成功即可编辑已实测；source 404 未构造（limited） |
 | 9 | 错误 envelope 排序/not_accepted 不进 unknown | pass | 真实 503/409/422/426；PR-13 #86 修复 not_accepted UI |
 | 10 | SSE/消息/终态按会话隔离；迟到回执 | pass（simulated） | 状态机测试；真实单会话 SSE |
 | 11 | 失败轮容量解释/权限变化/来源不可用/受限消息 | pass（simulated） | 组件测试；未做真实容量构造（E05 另计） |
