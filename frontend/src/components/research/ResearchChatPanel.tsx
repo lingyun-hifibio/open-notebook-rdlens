@@ -1970,27 +1970,24 @@ export function ResearchChatPanel({
               localDraftMode
             />
           ) : noActiveSession ? (
-            // O-3：没有活动会话是正常空态，不是加载失败——按 §4.3 只给
-            // “新对话”入口，不渲染可持久化输入，也不显示任何故障文案。
+            // O-3：没有活动会话是正常空态，不是加载失败——按 §4.3 不渲染
+            // 可持久化输入，也不显示任何故障文案。
+            //
+            // 这里**不放创建按钮**：Header 的会话切换器（`New session`）
+            // 已经是 DESIGN §4.3 的唯一创建入口，且自带 single-flight、
+            // capability 门禁、creating/aria-busy 与 unauthorized 隐藏。
+            // 面板内再放一个按钮会产生第二套创建状态（门禁不同步、创建
+            // 成功后按钮卸载导致焦点落 body），故此处只指路。
             <div
-              className="flex flex-col items-start gap-2 rounded-md border border-dashed p-3"
+              className="rounded-md border border-dashed p-3"
               data-testid="chat-no-session"
             >
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm font-medium text-muted-foreground">
                 {t('research.session.newConversation')}
               </p>
-              <p className="text-xs text-muted-foreground">
+              <p className="mt-1 text-xs text-muted-foreground">
                 {t('chat.createToStart')}
               </p>
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => onNewSession?.()}
-                disabled={onNewSession === undefined}
-                data-testid="chat-no-session-new"
-              >
-                {t('research.sourceChat.newSession')}
-              </Button>
             </div>
           ) : (
             <ResearchDraftComposer

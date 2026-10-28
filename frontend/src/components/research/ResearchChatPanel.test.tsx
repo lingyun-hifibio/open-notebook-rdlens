@@ -1134,13 +1134,18 @@ describe('ResearchChatPanel · PR-4 会话 editor 接线', () => {
       ),
     ).not.toBeInTheDocument()
     expect(screen.queryByText('Loading research workspace…')).not.toBeInTheDocument()
-    // 只展示新对话入口（§4.3）。
+    // 只展示空态指路（§4.3）；创建入口唯一留在 Header 的会话切换器。
     expect(screen.getByTestId('chat-no-session')).toBeInTheDocument()
-    expect(screen.getByTestId('chat-no-session-new')).toBeInTheDocument()
+    // 不得在面板内另造创建入口（会与 Header 的 single-flight/门禁/
+    // creating 状态分叉，且创建成功后按钮卸载导致焦点丢失）。
+    expect(screen.queryByTestId('chat-no-session-new')).not.toBeInTheDocument()
+    // 空态时 scope bar 一并隐藏（没有会话就没有可编辑范围）。
+    expect(screen.queryByTestId('research-session-scope-bar')).not.toBeInTheDocument()
   })
 
-  it('O-3：无活动会话空态的“新对话”按钮触发宿主创建回调', () => {
-    const onNewSession = vi.fn()
+  it('O-3：会话存在但 editor 未就绪时保持既有加载门禁（不误判为空态）', () => {
+    // 有 sessionRef、但 editorSnapshot 仍为 null = 真正的加载中，
+    // 必须继续显示旧语义（composer + 加载文案），不能被空态吞掉。
     render(
       <QueryClientProvider client={new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })}>
         <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
@@ -1151,15 +1156,37 @@ describe('ResearchChatPanel · PR-4 会话 editor 接线', () => {
               onSend={vi.fn(async () => true)}
               onSendCoverage={vi.fn(async () => ACCEPTED_OUTCOME)}
               editorSnapshot={null}
-              sessionRef={null}
-              onNewSession={onNewSession}
+              sessionRef={REF}
             />
           </ResearchScopeProvider>
         </ResearchWorkspaceProvider>
       </QueryClientProvider>,
     )
-    fireEvent.click(screen.getByTestId('chat-no-session-new'))
-    expect(onNewSession).toHaveBeenCalledTimes(1)
+    expect(screen.queryByTestId('chat-no-session')).not.toBeInTheDocument()
+    expect(screen.getByTestId('research-draft-composer')).toBeInTheDocument()
+    expect(screen.getByTestId('research-draft-gate-hint')).toBeInTheDocument()
+  })
+
+  it('O-3：sessionRef 缺省（undefined）时保持既有语义，不进入空态', () => {
+    // `undefined` = 宿主未提供该信息（旧装配），不得据此改变门禁行为。
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })}>
+        <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
+          <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+            <ResearchChatPanel
+              turns={[]}
+              isStreaming={false}
+              onSend={vi.fn(async () => true)}
+              onSendCoverage={vi.fn(async () => ACCEPTED_OUTCOME)}
+              editorSnapshot={null}
+            />
+          </ResearchScopeProvider>
+        </ResearchWorkspaceProvider>
+      </QueryClientProvider>,
+    )
+    expect(screen.queryByTestId('chat-no-session')).not.toBeInTheDocument()
+    expect(screen.getByTestId('research-draft-composer')).toBeInTheDocument()
+    expect(screen.getByTestId('research-draft-gate-hint')).toBeInTheDocument()
   })
 
   it('single 范围按 mode=single 派发并携带 singleSourceId（执行范围编码 §5.3）', async () => {
