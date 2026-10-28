@@ -26,10 +26,10 @@
 | 3 | 空会话与重开 | **pass** | API 列表/编辑器读回；UI 刷新后会话列表与指针保留（未命名标题字面量“新对话”） |
 | 4 | 提交与查回（本地模型+合成问题） | **pass** | `POST /chat` 202 accepted → lookup 200；UI `Submitted — completed` + Usage 284/37 |
 | 5 | SSE 绑定/切换不 cancel | **pass（API 层）** | 202 后同 body/key + `Last-Event-ID:0` → 200 SSE：thinking/answer/citation/usage/done；服务端 streaming 无 cancel 调用 |
-| 6 | Source 完整链路（create→save→send→SSE→lookup） | **pass（API 层）** | source session 201；editor PUT 200；send 202→attach 200 SSE；lookup terminal；UI source 端到端未单独走查（limited） |
+| 6 | Source 完整链路（create→save→send→SSE→lookup） | **limited** | API 主链 pass（201/200/200 SSE）；UI 创建/保存/发送/SSE pass；但刷新/重开草稿恢复与 source 404/cancel 未完整取证（见 `source_chain.md`；UI reload 后 `draft_matches=false`、session 不在列表，疑似缺口待复核） |
 | 7 | 权限（owner/Admin/跨用户/来源 404） | **pass** | owner 200；admin_readonly list 403 `chat_owner_required`；跨用户 403；source 不存在 404 |
-| 8 | 失败路径/故障注入 | **limited** | 停隔离 Gateway 后 UI 显示 “Failed to load workspace data / Retry”，无崩溃；未做 503 注入（无专用故障注入窗口） |
-| 9 | 错误 envelope 实样 | **limited** | 已采集 403/404/409/422/426 原始 envelope；未采集 503 `c05_entry_not_ready` |
+| 8 | 失败路径/故障注入 | **pass（带注）** | 真实 503 族 + 依赖断开已采集；UI 在真实 envelope 回放下曾静默（F-1），PR-13 #86 修复后错误卡/恢复说明/草稿保留已复验；网络断连 UI 错误条+Retry 亦 pass。transport 注入标 simulated |
+| 9 | 错误 envelope 实样 | **pass** | 4 个真实 503（`c05_entry_not_ready`/`c05_mode_not_ready`/`note_availability_unavailable` 及依赖断开变体）+ 403/404/409/422/426；稳定码/retryable/request_id 齐全（`fault_injection.md`） |
 | 10 | 认证代际 refresh | **pass** | host 下发 `refresh` 后 UI 发送仍 `POST /chat` 202→200 SSE |
 
 ## 真实 UI 复核（2026-10-28）
@@ -52,10 +52,19 @@
 ## 剩余限制（不伪装为 pass）
 
 1. 生产部署/B5（flag-on、24h 观察、镜像发布）**未执行**；本证据为隔离真实 Gateway，不等于生产验收。
-2. 腿 8/9 的 503 故障注入与错误实样缺失（`limited`）；腿 6 的 Source 面板 UI 端到端未单独走查（API 层 pass）。
+2. 腿 6 Source 完整链路仍为 **limited**：UI 刷新/重开草稿恢复与 404/cancel 未完整取证，且发现 reload 后草稿丢失/会话不在列表的疑似缺陷；严格按 DESIGN §10.4，该项未完成。腿 8/9 已由 `fault_injection.md` 补齐（F-1 由 PR-13 #86 修复）。
 3. 本地模型回答被证据一致性闸门拦截（degraded），未取得正常综合答案样本；容量 trimmed/blocked 的真实构造归第四批 E05。
-4. 视觉仅结构/无横向溢出与截图，人工视觉走查未做（`limited`）；真实浏览器 200ms 退出动画等仍为模拟。
+4. 键盘/IME/视觉：稳定全局 Chat 下 1440/1024/compact、Tab/Enter/Shift+Enter/IME/错误态均已补测 pass（`keyboard_ime_visual.md`）；错误态传输层为 simulated，send 焦点环偏淡为可选打磨。
 5. 隔离 seed 的 `research_workspace_mapping` 为运行期补行，建议回填脚本。
+
+## 6b 收口补充证据（2026-10-28，task-13…19）
+
+- `deployment.md` / `deployment.json`：隔离真实部署固化（RDLens `3620c9c1`、真实 PG/Surreal、本地模型、bootstrap 全 200）；**生产 B5 未执行**（limited）。
+- `source_chain.md`：Source API 主链 pass；UI 刷新/重开草稿恢复 limited，发现疑似缺陷；严格口径下 §10.4 第 6 腿未完成。
+- `fault_injection.md`：腿 9 pass（4 个真实 503）；腿 8 曾 limited（F-1），PR-13 #86 修复后错误卡/草稿保留复验 pass。
+- `keyboard_ime_visual.md`：1440/1024/compact、Tab/焦点、Enter/Shift+Enter、CDP IME、错误态全部 pass（错误态 simulated）。
+- `gap_registration.md`：第一批 `list_query` 缺 source_id 已登记 #584（评论 6459850878），#602 记录 6459879248。
+- 证据 PR：#87（本目录）；代码 PR-13 #86（F-1）。
 
 ## 结论
 
