@@ -227,6 +227,95 @@ describe('#892 尾部窗口：首读与向更早一页', () => {
     expect(more.status).toBe('blocked')
     expect(more.status === 'blocked' ? more.error?.code : null).toBe('no_more_detail')
   })
+
+  it('F7：更早页的游标只由「更早一页」推进；新鲜尾部读不得把游标退回', async () => {
+    const h = harness({
+      loadDetail: (input) => {
+        if (input.cursor === null || input.cursor === undefined) {
+          // 新鲜尾部读：后向游标锚在窗口内最旧那条（back-1）。
+          return {
+            messages: [{ message_id: 'msg_3', role: 'assistant', content: '最新' }],
+            next_cursor: 'back-1',
+          }
+        }
+        // 更早一页：后向游标继续往更早推进（back-2）。
+        return {
+          messages: [{ message_id: 'msg_1', role: 'assistant', content: '更早' }],
+          next_cursor: 'back-2',
+        }
+      },
+    })
+    await h.controller.load()
+    expect(h.controller.getSnapshot().detailCursor).toBe('back-1')
+    await h.controller.loadMore()
+    expect(h.controller.getSnapshot().detailCursor).toBe('back-2')
+
+    // 收敛 tick 的新鲜尾部读不得把游标退回 back-1（否则按钮复活成死按钮、
+    // 用户会重复取同一页）。
+    await h.controller.load()
+    expect(h.controller.getSnapshot().detailCursor).toBe('back-2')
+  })
+
+  it('F7：翻到最旧后游标为空 → 「更早一页」如实 blocked，且不再复活', async () => {
+    let page = 0
+    const h = harness({
+      loadDetail: (input) => {
+        if (input.cursor === null || input.cursor === undefined) {
+          page = 0
+          return {
+            messages: [{ message_id: 'msg_3', role: 'assistant', content: '最新' }],
+            next_cursor: 'back-1',
+          }
+        }
+        page += 1
+        return {
+          messages: [{ message_id: `msg_${page}`, role: 'assistant', content: `更早${page}` }],
+          next_cursor: null,
+        }
+      },
+    })
+    await h.controller.load()
+    await h.controller.loadMore()
+    expect(h.controller.getSnapshot().detailCursor).toBeNull()
+    // 再点一次：如实 blocked，不得重复取同一页
+    const again = await h.controller.loadMore()
+    expect(again.status).toBe('blocked')
+    // 新鲜尾部读不得让游标复活
+    await h.controller.load()
+    expect(h.controller.getSnapshot().detailCursor).toBeNull()
+  })
+
+  it('F4：同一 message_id 的受限副本替换非受限副本（更严格的可见性胜出）', async () => {
+    const h = harness({
+      loadDetail: (input) => {
+        if (input.cursor === null || input.cursor === undefined) {
+          return {
+            messages: [{
+              message_id: 'msg_1',
+              role: 'assistant',
+              content: '机密答案',
+            }],
+            next_cursor: 'back-1',
+          }
+        }
+        // 同一 id 的后到副本被服务端按当前 viewer 权限投影为受限。
+        return {
+          messages: [{
+            message_id: 'msg_1',
+            role: 'assistant',
+            content: '机密答案',
+            record_visibility: 'restricted',
+          }],
+          next_cursor: null,
+        }
+      },
+    })
+    await h.controller.load()
+    await h.controller.loadMore()
+    const rows = h.controller.getSnapshot().detailMessages as Array<Record<string, unknown>>
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.record_visibility).toBe('restricted')
+  })
 })
 
 describe('#892 尾部窗口：durable_restored 的 complete 判定', () => {
@@ -271,10 +360,10 @@ describe('#892 尾部窗口：durable_restored 的 complete 判定', () => {
     expect(h.detailCalls[0]).toMatchObject({ order: 'desc', cursor: null })
   })
 
-  it('desc：无目标 generation 时，窗口内存在有正文的 assistant 行 → 完整', async () => {
+  it('desc：无目标 generation 时，窗口内**最后一条**是有正文的 assistant 行 → 完整', async () => {
     const h = harness({
       // 冷启动 external 查回未观测到 generation（not_observed）→ 目标 generation
-      // 为空，判定退到「窗口内存在有正文的 assistant 行」。
+      // 为空，判定退到「窗口内最后一条是有正文的 assistant 行」。
       submission: () => submissionResponse(),
       loadDetail: () => ({
         messages: [{
@@ -291,6 +380,30 @@ describe('#892 尾部窗口：durable_restored 的 complete 判定', () => {
     expect(h.controller.getSnapshot().turn?.incomplete).toBe(true)
     await h.controller.load()
     expect(h.controller.getSnapshot().turn?.incomplete).toBe(false)
+  })
+
+  it('desc：无目标 generation 时，窗口内最后一条**不是**有正文的 assistant 行 → 不完整', async () => {
+    const h = harness({
+      submission: () => submissionResponse(),
+      // 窗口里只有**更早一轮**的 assistant 行（不是最后一条）→ 不得宣告完整
+      // （complete 是单向闩锁，误判无法回退）。
+      loadDetail: () => ({
+        messages: [
+          {
+            message_id: 'msg_earlier_assistant',
+            role: 'assistant',
+            content: '更早一轮的答案',
+          },
+          { message_id: 'msg_latest_user', role: 'user', content: '最新问题' },
+        ],
+        next_cursor: 'back-1',
+      }),
+    })
+    await h.controller.lookupSubmission('tok_cold')
+    await flush()
+    expect(h.controller.getSnapshot().turn?.incomplete).toBe(true)
+    await h.controller.load()
+    expect(h.controller.getSnapshot().turn?.incomplete).toBe(true)
   })
 
   it('desc：窗口内没有目标 generation → 仍不完整', async () => {
