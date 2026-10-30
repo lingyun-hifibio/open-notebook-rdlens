@@ -1570,6 +1570,53 @@ describe('PR-5b（D2/D3）：会话元数据、submission marker 与未结算查
       })
     }
 
+    /** NIT-3（#896）：terminal 查回响应（经 harness.lookupSubmission → transport.getSubmission）。 */
+    function submissionResponse(
+      acceptanceState: 'terminal' | 'accepted' | 'not_observed',
+      generationId: string | null = GEN,
+    ) {
+      return {
+        session_ref: { domain: 'research', kind: 'global', project_id: 'proj_1', session_id: 'sess_1', source_id: null },
+        draft_token: 't_old',
+        idempotency_key: `s1_${'b'.repeat(64)}`,
+        acceptance_state: acceptanceState,
+        generation_id: generationId,
+        generation_state: acceptanceState === 'terminal' ? 'completed' : 'running',
+        accepted_editor_revision: 1,
+        editor_intent_hash: 'a'.repeat(64),
+        submitted_draft_text: '旧问题',
+        context_report: null,
+      } as unknown as Awaited<ReturnType<typeof getChatSubmission>>
+    }
+
+    async function advanceFast(ticks: number): Promise<void> {
+      for (let i = 0; i < ticks; i += 1) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(CONVERGENCE_INTERVAL_MS)
+        })
+      }
+    }
+
+    async function advanceSlow(ticks: number): Promise<void> {
+      for (let i = 0; i < ticks; i += 1) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(CONVERGENCE_SLOW_INTERVAL_MS)
+        })
+      }
+    }
+
+    /** 耗尽完整收敛窗口（30 fast + 18 slow）。 */
+    async function exhaustConvergenceWindow(): Promise<void> {
+      await advanceFast(CONVERGENCE_MAX_ATTEMPTS)
+      await advanceSlow(CONVERGENCE_SLOW_MAX_ATTEMPTS)
+    }
+
+    /** 补偿窗口已消费首个 fast tick 后，推进剩余 29 fast + 18 slow。 */
+    async function exhaustCompensationRemainder(): Promise<void> {
+      await advanceFast(CONVERGENCE_MAX_ATTEMPTS - 1)
+      await advanceSlow(CONVERGENCE_SLOW_MAX_ATTEMPTS)
+    }
+
     beforeEach(() => {
       vi.useFakeTimers()
     })
@@ -2037,6 +2084,278 @@ describe('PR-5b（D2/D3）：会话元数据、submission marker 与未结算查
       expect(result.current.turns).toHaveLength(2)
       expect(result.current.turns[1]).toMatchObject({ role: 'assistant', content: '答案' })
       expect(result.current.sessionCards).toHaveLength(0)
+    })
+
+    // NIT-3（#896）：fast+slow 预算耗尽后经 Check status/terminal 观测隐藏 running
+    // 卡时，必须仍补拉一次有界详情，否则「卡消失、答案不出现」直到手动刷新。
+    it('NIT-3（#896）：预算耗尽后终态查回 → 补拉一次详情，消息回填且卡保持隐藏（含失败重试）', async () => {
+      vi.mocked(getResearchChatSession).mockResolvedValue(detail([userRow], [card('running')]))
+      const h = harness({ terminalGenerationId: GEN })
+      const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+      await flush()
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: null })
+      })
+      expect(result.current.sessionCards).toHaveLength(1)
+      loadThroughTransport(h)
+      const before = vi.mocked(getResearchChatSession).mock.calls.length
+      const windowTicks = CONVERGENCE_MAX_ATTEMPTS + CONVERGENCE_SLOW_MAX_ATTEMPTS
+
+      await exhaustConvergenceWindow()
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(before + windowTicks)
+      // 预算耗尽后详情停拉、running 卡保留（终态尚未观测）。
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CONVERGENCE_SLOW_INTERVAL_MS * 3)
+      })
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(before + windowTicks)
+      expect(result.current.sessionCards).toHaveLength(1)
+
+      // Check status 等价：terminal 查回观测到终态，running 卡立即隐藏。
+      vi.mocked(getChatSubmission).mockResolvedValue(submissionResponse('terminal'))
+      await act(async () => {
+        await h.controller.lookupSubmission('t_old')
+      })
+      expect(result.current.sessionCards).toHaveLength(0)
+
+      // 补偿窗口首个 tick：详情瞬时失败（有界重试），消息尚未回填。
+      const exhausted = vi.mocked(getResearchChatSession).mock.calls.length
+      vi.mocked(getResearchChatSession).mockRejectedValueOnce(new Error('detail_network_down'))
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CONVERGENCE_INTERVAL_MS)
+      })
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(exhausted + 1)
+      expect(result.current.turns).toHaveLength(1)
+
+      // 下一 tick 成功：已交付 assistant 行回填，卡保持隐藏。
+      vi.mocked(getResearchChatSession).mockResolvedValue(detail([userRow, assistantRow], []))
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CONVERGENCE_INTERVAL_MS)
+      })
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(exhausted + 2)
+      expect(result.current.turns).toHaveLength(2)
+      expect(result.current.turns[1]).toMatchObject({ role: 'assistant', content: '答案' })
+      expect(result.current.sessionCards).toHaveLength(0)
+
+      // 收敛后不再轮询。
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CONVERGENCE_SLOW_INTERVAL_MS * 5)
+      })
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(exhausted + 2)
+    })
+
+    it('NIT-3（#896）：预算耗尽补偿窗口精确 48 次，同 generation 重复终态通知不重开窗口', async () => {
+      vi.mocked(getResearchChatSession).mockResolvedValue(detail([userRow], [card('running')]))
+      const h = harness({ terminalGenerationId: GEN })
+      const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+      await flush()
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: null })
+      })
+      loadThroughTransport(h)
+      const before = vi.mocked(getResearchChatSession).mock.calls.length
+      const windowTicks = CONVERGENCE_MAX_ATTEMPTS + CONVERGENCE_SLOW_MAX_ATTEMPTS
+
+      await exhaustConvergenceWindow()
+      const base = vi.mocked(getResearchChatSession).mock.calls.length
+      expect(base).toBe(before + windowTicks)
+
+      // 首次终态观测：下一 2s 必须补拉一次详情（基线无补偿 → 本断言红）。
+      vi.mocked(getChatSubmission).mockResolvedValue(submissionResponse('terminal'))
+      await act(async () => {
+        await h.controller.lookupSubmission('t_old')
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CONVERGENCE_INTERVAL_MS)
+      })
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(base + 1)
+
+      // 补偿窗口：首个 fast tick 已消费，剩余 29 fast + 18 slow → 窗口共 48 次。
+      await exhaustCompensationRemainder()
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(base + windowTicks)
+
+      // 同 generation 重复终态通知：不得重开窗口（每 generation 至多一次）。
+      await act(async () => {
+        await h.controller.lookupSubmission('t_old')
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CONVERGENCE_SLOW_INTERVAL_MS * 3)
+      })
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(base + windowTicks)
+      expect(result.current.sessionCards).toHaveLength(0)
+    })
+
+    it('NIT-3（#896）：终态观测发生在最后一次详情 GET 在途时 → tick 结束后补拉一次（G1）', async () => {
+      vi.mocked(getResearchChatSession).mockResolvedValue(detail([userRow], [card('running')]))
+      const h = harness({ terminalGenerationId: GEN })
+      const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+      await flush()
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: null })
+      })
+      loadThroughTransport(h)
+      const before = vi.mocked(getResearchChatSession).mock.calls.length
+      const windowTicks = CONVERGENCE_MAX_ATTEMPTS + CONVERGENCE_SLOW_MAX_ATTEMPTS
+
+      // 47 tick 后第 48 次 slow tick 的 timer 已装（预算未耗尽）。
+      await advanceFast(CONVERGENCE_MAX_ATTEMPTS)
+      await advanceSlow(CONVERGENCE_SLOW_MAX_ATTEMPTS - 1)
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(before + windowTicks - 1)
+
+      // 第 48 次详情 GET 在途（deferred getResearchChatSession）。
+      let resolveDetail: (value: unknown) => void = () => {}
+      vi.mocked(getResearchChatSession).mockImplementation((() => new Promise((resolve) => {
+        resolveDetail = resolve as (value: unknown) => void
+      })) as never)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CONVERGENCE_SLOW_INTERVAL_MS)
+      })
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(before + windowTicks)
+
+      // 在途期间 terminal 查回：卡立即隐藏，且不得重复发详情。
+      vi.mocked(getChatSubmission).mockResolvedValue(submissionResponse('terminal'))
+      await act(async () => {
+        await h.controller.lookupSubmission('t_old')
+      })
+      expect(result.current.sessionCards).toHaveLength(0)
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(before + windowTicks)
+
+      // 释放在途详情（running/无消息）→ tick 完成，补拉窗口开启。
+      await act(async () => {
+        resolveDetail(detail([userRow], [card('running')]))
+        for (let i = 0; i < 12; i += 1) await Promise.resolve()
+      })
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(before + windowTicks)
+
+      vi.mocked(getResearchChatSession).mockResolvedValue(detail([userRow, assistantRow], []))
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CONVERGENCE_INTERVAL_MS)
+      })
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(before + windowTicks + 1)
+      expect(result.current.turns).toHaveLength(2)
+      expect(result.current.turns[1]).toMatchObject({ role: 'assistant', content: '答案' })
+      expect(result.current.sessionCards).toHaveLength(0)
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CONVERGENCE_SLOW_INTERVAL_MS * 3)
+      })
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(before + windowTicks + 1)
+    })
+
+    it('NIT-3（#896）：终态观测发生在最后一个 slow timer 待触发时 → 预算耗尽后补拉一次（G1）', async () => {
+      vi.mocked(getResearchChatSession).mockResolvedValue(detail([userRow], [card('running')]))
+      const h = harness({ terminalGenerationId: GEN })
+      const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+      await flush()
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: null })
+      })
+      loadThroughTransport(h)
+      const before = vi.mocked(getResearchChatSession).mock.calls.length
+      const windowTicks = CONVERGENCE_MAX_ATTEMPTS + CONVERGENCE_SLOW_MAX_ATTEMPTS
+
+      // 47 tick 后预算尚未耗尽：第 48 次 slow tick 的 10s timer 待触发。
+      await advanceFast(CONVERGENCE_MAX_ATTEMPTS)
+      await advanceSlow(CONVERGENCE_SLOW_MAX_ATTEMPTS - 1)
+      const pendingAt = vi.mocked(getResearchChatSession).mock.calls.length
+      expect(pendingAt).toBe(before + windowTicks - 1)
+
+      // timer pending 期间 terminal 查回：卡立即隐藏，不得插队发详情。
+      vi.mocked(getChatSubmission).mockResolvedValue(submissionResponse('terminal'))
+      await act(async () => {
+        await h.controller.lookupSubmission('t_old')
+      })
+      expect(result.current.sessionCards).toHaveLength(0)
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(pendingAt)
+
+      // 第 48 次 tick 跑完（预算耗尽）后 flush 应重开 2s 补拉窗口。
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CONVERGENCE_SLOW_INTERVAL_MS)
+      })
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(pendingAt + 1)
+
+      vi.mocked(getResearchChatSession).mockResolvedValue(detail([userRow, assistantRow], []))
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CONVERGENCE_INTERVAL_MS)
+      })
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(pendingAt + 2)
+      expect(result.current.turns).toHaveLength(2)
+      expect(result.current.turns[1]).toMatchObject({ role: 'assistant', content: '答案' })
+      expect(result.current.sessionCards).toHaveLength(0)
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CONVERGENCE_SLOW_INTERVAL_MS * 3)
+      })
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(pendingAt + 2)
+    })
+
+    it('NIT-3（#896）：双 generation 各自至多一次补偿、互不抑制（G3）', async () => {
+      vi.mocked(getResearchChatSession).mockResolvedValue(
+        detail([userRow], [card('running', GEN), card('running', OTHER_GEN)]),
+      )
+      const h = harness()
+      const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+      await flush()
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: null })
+      })
+      expect(result.current.sessionCards).toHaveLength(2)
+      loadThroughTransport(h)
+      const before = vi.mocked(getResearchChatSession).mock.calls.length
+      const windowTicks = CONVERGENCE_MAX_ATTEMPTS + CONVERGENCE_SLOW_MAX_ATTEMPTS
+
+      await exhaustConvergenceWindow()
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(before + windowTicks)
+
+      // Generation A 终态：A 卡立即隐藏，下一 2s 开启 A 的补偿窗口。
+      act(() => {
+        h.emitTurn({
+          external: true,
+          state: 'terminal',
+          identity: { draftToken: 't_a', generationId: GEN },
+        })
+      })
+      expect(result.current.sessionCards).toHaveLength(1)
+      expect(result.current.sessionCards?.[0]).toMatchObject({ generation_id: OTHER_GEN, status: 'running' })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CONVERGENCE_INTERVAL_MS)
+      })
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(before + windowTicks + 1)
+
+      // Generation B 终态（A 补偿窗口内）：登记 pending，不打断当前窗口。
+      act(() => {
+        h.emitTurn({
+          external: true,
+          state: 'terminal',
+          identity: { draftToken: 't_b', generationId: OTHER_GEN },
+        })
+      })
+      expect(result.current.sessionCards).toHaveLength(0)
+      await exhaustCompensationRemainder()
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(before + 2 * windowTicks)
+
+      // B 获得自己的补偿窗口（每 generation 一次）。
+      await exhaustConvergenceWindow()
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(before + 3 * windowTicks)
+      expect(result.current.sessionCards).toHaveLength(0)
+      expect(result.current.turns).toHaveLength(1)
+
+      // 重复通知两个 generation：不得再重开窗口。
+      act(() => {
+        h.emitTurn({
+          external: true,
+          state: 'terminal',
+          identity: { draftToken: 't_a', generationId: GEN },
+        })
+        h.emitTurn({
+          external: true,
+          state: 'terminal',
+          identity: { draftToken: 't_b', generationId: OTHER_GEN },
+        })
+      })
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CONVERGENCE_SLOW_INTERVAL_MS * 3)
+      })
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(before + 3 * windowTicks)
     })
   })
 })
