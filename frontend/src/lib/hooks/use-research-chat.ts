@@ -1187,19 +1187,32 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
      * RDLens #892：不再整表替换——收敛 tick 读的是尾部窗口（desc），整表替换会
      * 抹掉已通过「加载更早的消息」取回的历史行；改为按 `message_id` 合并
      * （阅读顺序、去重首见保留）。
+     *
+     * 审查 H-1：三个「防覆盖」守卫只作用于**新鲜详情读**（cursor=null）——
+     * 它们的目的是「不让详情读**覆盖**已有 turns」。分页读（带游标的「更早
+     * 一页」）只做 prepend、不覆盖任何新状态 → 守卫对它不适用；否则会出现
+     * 「数据取回了（controller 侧正确、游标已推进）但渲染列表缺页、该页永久
+     * 无法再取回」。
      */
-    function syncTurnsFromDetail(detail: unknown, incomingIsOlder: boolean): void {
-      if (cancelled || activeRef.current !== null) return
-      if (turnsRef.current.some(
-        (turn) => turn.status === 'streaming' || turn.status === 'reconnecting',
-      )) {
-        return
-      }
-      const liveTurn = controllerRef.current?.getSnapshot?.().turn ?? null
-      if (liveTurn !== null && liveTurn.external !== true) {
-        if (isActiveTurnState(liveTurn.state)) return
-        const generationId = liveTurn.identity.generationId
-        if (typeof generationId !== 'string' || generationId.length === 0) return
+    function syncTurnsFromDetail(
+      detail: unknown,
+      incomingIsOlder: boolean,
+      isPagedRead: boolean,
+    ): void {
+      if (cancelled) return
+      if (!isPagedRead) {
+        if (activeRef.current !== null) return
+        if (turnsRef.current.some(
+          (turn) => turn.status === 'streaming' || turn.status === 'reconnecting',
+        )) {
+          return
+        }
+        const liveTurn = controllerRef.current?.getSnapshot?.().turn ?? null
+        if (liveTurn !== null && liveTurn.external !== true) {
+          if (isActiveTurnState(liveTurn.state)) return
+          const generationId = liveTurn.identity.generationId
+          if (typeof generationId !== 'string' || generationId.length === 0) return
+        }
       }
       const rows = (detail as { messages?: unknown } | null)?.messages
       if (!Array.isArray(rows)) return
@@ -1452,7 +1465,7 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
           }
           // Issue #881（F1）+ #892：合并 durable turns（尾部窗口不得抹掉已加载
           // 的更早历史行；「更早一页」按阅读顺序 prepend）。
-          syncTurnsFromDetail(detail, detailIncomingIsOlder(readOrder, cursor))
+          syncTurnsFromDetail(detail, detailIncomingIsOlder(readOrder, cursor), isPagedRead)
           return detail
         })
       },

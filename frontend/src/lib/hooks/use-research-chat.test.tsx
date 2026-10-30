@@ -2823,5 +2823,40 @@ describe('PR-5b（D2/D3）：会话元数据、submission marker 与未结算查
         recordVisibility: 'restricted',
       })
     })
+
+    it('H-1：分页读不受「防覆盖」守卫限制：终态且 generationId=null 时更早一页仍进入 UI（行数确实增加）', async () => {
+      vi.mocked(getResearchChatSession).mockImplementation(((_p: string, _s: string, params?: { order?: string; cursor?: string }) => {
+        const p = params as { order?: string; cursor?: string } | undefined
+        return Promise.resolve(
+          p?.order === 'desc' && p?.cursor !== undefined
+            ? detailOf(olderRows, [], null)
+            : detailOf(tailRows, [], 'back-1'),
+        )
+      }) as never)
+      const h = harness()
+      const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+      await flush()
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: null })
+      })
+      expect(result.current.turns).toHaveLength(2)
+
+      // 终态且没有 generationId 的会话（防覆盖守卫会拦下新鲜详情读）。
+      act(() => {
+        h.emitTurn({
+          external: false,
+          state: 'terminal',
+          identity: { draftToken: 't_1', generationId: null },
+        })
+      })
+
+      // 分页读只 prepend、不覆盖 → 不受该守卫限制：更早的一页必须进入 UI。
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: 'back-1' })
+      })
+      expect(result.current.turns).toHaveLength(4)
+      expect(result.current.turns[0]).toMatchObject({ role: 'user', content: '旧问题' })
+      expect(result.current.turns[3]).toMatchObject({ role: 'assistant', content: '最新答案' })
+    })
   })
 })
