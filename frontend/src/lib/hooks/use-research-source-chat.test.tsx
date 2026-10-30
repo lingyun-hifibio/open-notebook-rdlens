@@ -625,7 +625,12 @@ describe('useResearchSourceChat', () => {
       result.current.selectSession('sess_old')
     })
 
-    expect(vi.mocked(getSourceChatSession)).toHaveBeenCalledWith('proj_1', 'src_1', 'sess_old')
+    // RDLens #892 审查 F1：冷恢复读**尾部窗口**（order=desc + limit=50），
+    // 不再读「第一页」（asc）。
+    expect(vi.mocked(getSourceChatSession)).toHaveBeenCalledWith('proj_1', 'src_1', 'sess_old', {
+      order: 'desc',
+      limit: 50,
+    })
     expect(result.current.activeSessionId).toBe('sess_old')
     expect(result.current.turns).toHaveLength(2)
     const [userTurn, assistantTurn] = result.current.turns
@@ -1034,5 +1039,170 @@ describe('RDLens #892：源会话尾部窗口（desc）', () => {
       order: 'desc',
       limit: 50,
     })
+  })
+})
+
+/**
+ * RDLens #892 独立审查 F1/F6：
+ * - F1：`selectSession` 走「读第一页 + 整表替换」活路径 → 与 controller 的
+ *   desc 尾部读并发覆盖，最终显示哪一页取决于响应先后（非确定）。
+ * - F6：source hook 完全没有详情序号守卫 → 迟到响应可乱序合并/替换。
+ */
+describe('RDLens #892 审查修复：source 会话详情读取', () => {
+  interface SourceHarness {
+    runtime: SessionRuntime
+    controller: ConversationController
+    transport: { loadDetail: (input: Record<string, unknown>) => Promise<unknown> }
+  }
+
+  function sourceHarness(options: {
+    load?: () => Promise<unknown>
+  } = {}): SourceHarness {
+    const controller = {
+      detach: vi.fn(),
+      hasActiveTurn: vi.fn(() => false),
+      load: vi.fn(options.load ?? (async () => ({
+        status: 'ok' as const,
+        value: { messages: [], next_cursor: null },
+      }))),
+      getSnapshot: vi.fn(() => ({ turn: null, authGeneration: 1 })),
+    } as unknown as ConversationController
+    let captured: { transport: SourceHarness['transport'] } | null = null
+    const conversation = vi.fn((...args: unknown[]) => {
+      captured = args[1] as typeof captured
+      return controller
+    })
+    const runtime = {
+      conversation,
+      releaseConversation: vi.fn(),
+      getSnapshot: () => ({ authGeneration: 1 }),
+      subscribe: () => () => {},
+    } as unknown as SessionRuntime
+    return {
+      runtime,
+      controller,
+      get transport() {
+        if (captured === null) throw new Error('transport not captured')
+        return captured.transport
+      },
+    }
+  }
+
+  const ref: ResearchSessionRef = {
+    domain: 'research', kind: 'source', projectId: 'proj_1', sessionId: 'sess_src_1', sourceId: 'src_1',
+  }
+
+  const tailMessage = {
+    message_id: 'msg_tail',
+    role: 'assistant' as const,
+    content: '最新答案',
+    created_at: '2026-10-30T00:00:00Z',
+  }
+  const olderMessage = {
+    message_id: 'msg_older',
+    role: 'assistant' as const,
+    content: '更早答案',
+    created_at: '2026-10-29T00:00:00Z',
+  }
+
+  it('F1：selectSession 读尾部窗口（只发 order=desc + limit=50）', async () => {
+    const h = sourceHarness()
+    vi.mocked(getSourceChatSession).mockResolvedValue({
+      session: { session_id: 'sess_src_1', title: null },
+      messages: [tailMessage],
+      next_cursor: null,
+    } as never)
+    const { result } = renderHook(
+      () => useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1', session: { runtime: h.runtime, ref } }),
+      { wrapper: makeHookWrapper() },
+    )
+    await act(async () => {
+      result.current.selectSession('sess_src_1')
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(getSourceChatSession).toHaveBeenCalledWith('proj_1', 'src_1', 'sess_src_1', {
+      order: 'desc',
+      limit: 50,
+    })
+  })
+
+  it('F1：selectSession 读到的尾部窗口不得抹掉已加载的更早行', async () => {
+    // controller 路径先回填「更早的一行 + 最新一行」。
+    const h = sourceHarness({
+      load: async () => ({
+        status: 'ok' as const,
+        value: { messages: [olderMessage, tailMessage], next_cursor: null },
+      }),
+    })
+    vi.mocked(getSourceChatSession).mockResolvedValue({
+      session: { session_id: 'sess_src_1', title: null },
+      messages: [tailMessage],
+      next_cursor: null,
+    } as never)
+    const { result } = renderHook(
+      () => useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1', session: { runtime: h.runtime, ref } }),
+      { wrapper: makeHookWrapper() },
+    )
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(result.current.turns).toHaveLength(2)
+
+    // selectSession 再读一次尾部窗口 → 合并而非整表替换（更早行不得消失）。
+    await act(async () => {
+      result.current.selectSession('sess_src_1')
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(result.current.turns).toHaveLength(2)
+    expect(result.current.turns.map((turn) => turn.content)).toEqual(['更早答案', '最新答案'])
+  })
+
+  it('F6：迟到的旧详情响应整体丢弃（不得乱序并入 turns）', async () => {
+    const h = sourceHarness()
+    const responses: Array<(value: unknown) => void> = []
+    vi.mocked(getSourceChatSession).mockImplementation((() => new Promise((resolve) => {
+      responses.push(resolve as (value: unknown) => void)
+    })) as never)
+    const { result } = renderHook(
+      () => useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1', session: { runtime: h.runtime, ref } }),
+      { wrapper: makeHookWrapper() },
+    )
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    let older: Promise<unknown> = Promise.resolve()
+    let newer: Promise<unknown> = Promise.resolve()
+    await act(async () => {
+      older = h.transport.loadDetail({ cursor: null, order: 'desc', limit: 50 })
+      newer = h.transport.loadDetail({ cursor: null, order: 'desc', limit: 50 })
+    })
+    // 更新的一读先返回。
+    await act(async () => {
+      responses[1]?.({
+        session: { session_id: 'sess_src_1', title: null },
+        messages: [tailMessage],
+        next_cursor: null,
+      })
+      await newer
+    })
+    expect(result.current.turns).toHaveLength(1)
+    expect(result.current.turns[0]?.content).toBe('最新答案')
+
+    // 迟到的旧响应：整体丢弃，不得并入（否则会出现乱序/重复行）。
+    await act(async () => {
+      responses[0]?.({
+        session: { session_id: 'sess_src_1', title: null },
+        messages: [olderMessage],
+        next_cursor: null,
+      })
+      await older
+    })
+    expect(result.current.turns).toHaveLength(1)
+    expect(result.current.turns[0]?.content).toBe('最新答案')
   })
 })

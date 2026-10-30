@@ -276,23 +276,30 @@ const SOURCE_DETAIL_WINDOW_LIMIT = 50
  * RDLens #892：按 `message_id` 合并源会话 durable 行（阅读顺序；首见保留）。
  *
  * 尾部窗口（desc）刷新不得抹掉已通过「更早一页」取回的历史行。
+ *
+ * 语义：已存在的 id **原位保留**（不重排）；新增 id 按 `incomingIsOlder`
+ * 插到前面（更早的一页）或后面（更新的一批）。
  */
 function mergeSourceTurns(
   current: readonly ResearchSourceChatTurn[],
   incoming: readonly ResearchSourceChatTurn[],
   incomingIsOlder: boolean,
 ): ResearchSourceChatTurn[] {
-  const ordered = incomingIsOlder
-    ? [...incoming, ...current]
-    : [...current, ...incoming]
-  const seen = new Set<string>()
-  const merged: ResearchSourceChatTurn[] = []
-  for (const turn of ordered) {
-    if (seen.has(turn.id)) continue
-    seen.add(turn.id)
-    merged.push(turn)
+  const base = [...current]
+  const baseIndex = new Map<string, number>()
+  base.forEach((turn, index) => {
+    if (!baseIndex.has(turn.id)) baseIndex.set(turn.id, index)
+  })
+  const added: ResearchSourceChatTurn[] = []
+  const addedIndex = new Map<string, number>()
+  for (const turn of incoming) {
+    if (baseIndex.has(turn.id)) continue
+    const addedExisting = addedIndex.get(turn.id)
+    if (addedExisting !== undefined) continue
+    addedIndex.set(turn.id, added.length)
+    added.push(turn)
   }
-  return merged
+  return incomingIsOlder ? [...added, ...base] : [...base, ...added]
 }
 
 export function useResearchSourceChat({
@@ -314,6 +321,36 @@ export function useResearchSourceChat({
   const sessionIdRef = useRef<string | null>(null)
   /** 终态失败 turn 的模型快照：重放沿用同一快照，不随后续切换漂移（不变量 4） */
   const retryModelRef = useRef<string | null>(null)
+  /**
+   * RDLens #892 审查 F1：当前 turns 里 durable 行所属的会话。
+   * 换会话 → 整表替换（上一会话的行不得带进来）；同一会话 → 合并。
+   */
+  const durableSessionRef = useRef<string | null>(null)
+
+  /**
+   * 应用源会话 durable 行到 turns（按会话隔离）。
+   *
+   * @param rows         服务端返回的消息行（阅读顺序）
+   * @param sessionId    这些行所属的会话
+   * @param incomingIsOlder 是否比已加载的行更早（更早的一批排在前面）
+   */
+  const applySourceRows = useCallback((
+    rows: readonly ResearchSourceChatMessage[],
+    sessionId: string,
+    incomingIsOlder: boolean,
+  ): void => {
+    const restored = rows.map(mapColdMessage)
+    if (restored.length === 0) return
+    setTurns((prev) => {
+      if (durableSessionRef.current !== sessionId) {
+        // 换会话 → 整表替换（只保留 live 轮，不得带上上一会话的行）。
+        durableSessionRef.current = sessionId
+        const ids = new Set(restored.map((turn) => turn.id))
+        return [...restored, ...prev.filter((turn) => !ids.has(turn.id))]
+      }
+      return mergeSourceTurns(prev, restored, incomingIsOlder)
+    })
+  }, [])
 
   // PR-5a（D2）：会话控制器（显式 session 才创建；卸载只 detach，不取消服务端）。
   const [conversation, setConversation] = useState<ConversationController | null>(null)
@@ -346,6 +383,12 @@ export function useResearchSourceChat({
     const ref = options.ref
     const releaseHold = options.onReleaseHold
     const clearAfterSubmission = options.onClearAfterSubmission
+    // 详情回填带会话/批次守卫：切换会话或认证刷新后，迟到的旧详情不得
+    // 写入当前 hook 状态（review-4 #2）。
+    let cancelled = false
+    // RDLens #892 审查 F6：详情请求单调序号（迟到旧响应整体丢弃）。
+    let detailRequestSeq = 0
+    let detailAppliedSeq = 0
     const transport: ConversationTransport = {
       openStream: (input) => {
         // source 新协议以路径 source_id 定位：不携带 global 的 source_scope/note_ids。
@@ -391,6 +434,12 @@ export function useResearchSourceChat({
       // 「更早一页」（后向游标）。此前的 `source_detail_pagination_unsupported`
       // 显式拒绝前提已不成立（后端 source 详情路由早已接受 cursor/limit）。
       loadDetail: ({ cursor, order, limit }) => {
+        // RDLens #892 审查 F6：详情请求单调序号守卫——迟到的**旧**响应整体
+        // 丢弃（不得乱序并入/替换 turns）。分页读（带游标）必须总是并入，
+        // 重复行由 message_id 去重防住（与全局 hook 同构）。
+        detailRequestSeq += 1
+        const requestSeq = detailRequestSeq
+        const isPagedRead = cursor !== null && cursor !== undefined
         return getSourceChatSession(
           projectIdRef.current,
           String(ref.sourceId),
@@ -400,7 +449,21 @@ export function useResearchSourceChat({
             order: order ?? 'desc',
             limit: limit ?? SOURCE_DETAIL_WINDOW_LIMIT,
           },
-        )
+        ).then((detail) => {
+          if (cancelled) return detail
+          if (!isPagedRead) {
+            if (requestSeq <= detailAppliedSeq) {
+              // 迟到旧响应：整体丢弃。
+              return detail
+            }
+            detailAppliedSeq = requestSeq
+          }
+          const rows = Array.isArray(detail?.messages)
+            ? (detail.messages as ResearchSourceChatMessage[])
+            : []
+          applySourceRows(rows, ref.sessionId, isPagedRead)
+          return detail
+        })
       },
       releaseHold: (operationId) => releaseHold?.(operationId),
       clearAfterSubmission: (receipt, operationId) => clearAfterSubmission?.(receipt, operationId),
@@ -414,55 +477,29 @@ export function useResearchSourceChat({
     }
     // 详情回填带会话/批次守卫：切换会话或认证刷新后，迟到的旧详情不得
     // 写入当前 hook 状态（review-4 #2）。
-    let cancelled = false
     void controller.load().then((result) => {
       if (cancelled) return
       if (result.status !== 'ok') return
       if (activeRef.current !== null) return
       const rows = (result.value?.messages ?? []) as ResearchSourceChatMessage[]
-      const restored = rows.map(mapColdMessage)
-      if (restored.length === 0) {
+      if (rows.length === 0) {
         // 当前会话成功返回空详情同样要写入空数组（切换到空会话时不得残留旧消息）。
         setTurns([])
         return
       }
       // RDLens #892：合并而非整表替换（尾部窗口不得抹掉已加载的更早历史行）。
-      setTurns((prev) => mergeSourceTurns(prev, restored, false))
+      applySourceRows(rows, ref.sessionId, false)
     })
     return () => {
       cancelled = true
       // 会话切换/卸载：清空当前会话消息，避免下一会话显示上一会话内容。
       setTurns([])
+      durableSessionRef.current = null
       controller.detach()
       options.runtime.releaseConversation(ref, controller)
       setConversation((current) => (current === controller ? null : current))
     }
   }, [conversationKey, authEpoch])
-
-  /**
-   * RDLens #892：控制器 durable 行（阅读顺序）→ turns。
-   *
-   * 控制器在 desc 模式下把「更早一页」prepend 进 detailMessages，并把刷新到的
-   * 尾部窗口**合并**进去（不整表替换）→ detailMessages 始终是已加载历史的
-   * 阅读顺序快照。这里把它投影为 turns（live 轮保留在尾部）。
-   */
-  useEffect(() => {
-    if (conversation === null) return
-    const sync = (): void => {
-      const snapshot = conversation.getSnapshot()
-      const rows = snapshot?.detailMessages
-      if (!Array.isArray(rows) || rows.length === 0) return
-      const durable = (rows as ResearchSourceChatMessage[]).map(mapColdMessage)
-      const durableIds = new Set(durable.map((turn) => turn.id))
-      setTurns((prev) => [
-        ...durable,
-        ...prev.filter((turn) => !durableIds.has(turn.id)),
-      ])
-    }
-    sync()
-    if (typeof conversation.subscribe !== 'function') return
-    return conversation.subscribe(sync)
-  }, [conversation])
 
   const patchAssistant = useCallback((turnId: string, patch: Partial<ResearchSourceChatTurn>) => {
     setTurns((prev) => {
@@ -747,19 +784,27 @@ export function useResearchSourceChat({
     setLoadDetailError(null)
     if (sessionId === null) {
       setTurns([])
+      durableSessionRef.current = null
       return
     }
     void (async () => {
       try {
-        const detail = await getSourceChatSession(projectId, sourceId, sessionId)
+        // RDLens #892 审查 F1：读**尾部窗口**（order=desc + limit=50），不再读
+        // 「第一页」（asc）：否则与 controller 的 desc 读并发覆盖，最终显示哪
+        // 一页取决于响应先后（非确定）；>50 条会话还会永远看不到最新答案。
+        const detail = await getSourceChatSession(projectId, sourceId, sessionId, {
+          order: 'desc',
+          limit: SOURCE_DETAIL_WINDOW_LIMIT,
+        })
         if (sessionIdRef.current !== sessionId) return // 选择已切换，丢弃过期结果
-        setTurns(detail.messages.map(mapColdMessage))
+        // 合并而非整表替换：同一会话已加载的更早行不得被尾部窗口抹掉。
+        applySourceRows(detail.messages, sessionId, false)
       } catch (err) {
         if (sessionIdRef.current !== sessionId) return
         setLoadDetailError(err instanceof Error ? err.message : String(err))
       }
     })()
-  }, [projectId, sourceId, stopActive])
+  }, [projectId, sourceId, stopActive, applySourceRows])
 
   const retry = (): void => {
     if (retryableQuery === null) return
