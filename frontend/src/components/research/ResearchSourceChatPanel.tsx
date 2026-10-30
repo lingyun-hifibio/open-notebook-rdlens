@@ -56,6 +56,30 @@ function isSourceSessionNavigationTarget(node: HTMLElement | null): boolean {
   )
 }
 
+/**
+ * RDLens #892（审查 F2）：`now` 是否是「在 `before` 之前插入了更早的行」。
+ *
+ * 判据：`before` 的 id 序列在 `now` 中仍是**连续子序列**，且其前面还有行
+ * （= 更早的一页被 prepend 到顶部）。仅比较行数会把「流式新增/收敛合并」
+ * 这类无关变化误判成 prepend。与全局面板同款逻辑（各自面板内联，避免
+ * 跨面板共享模块）。
+ */
+function earlierSourcePagePrepended(before: readonly string[], now: readonly string[]): boolean {
+  if (before.length === 0) return false
+  if (now.length <= before.length) return false
+  for (let start = 0; start + before.length <= now.length; start += 1) {
+    let matched = true
+    for (let index = 0; index < before.length; index += 1) {
+      if (now[start + index] !== before[index]) {
+        matched = false
+        break
+      }
+    }
+    if (matched) return start > 0
+  }
+  return false
+}
+
 export function ResearchSourceChatPanel({
   projectId,
   sourceId,
@@ -363,6 +387,72 @@ export function ResearchSourceChatPanel({
     const remaining = durable.filter((_, index) => !dropped.has(index))
     return [...remaining, ...controllerTurns]
   })()
+
+  /**
+   * RDLens #892（审查补充）：源面板「加载更早的消息」入口。
+   *
+   * - 尾部窗口（desc）首读只拿到最新一段历史；更早的一页由 controller 的
+   *   `loadMore()` 取回（后向游标），返回行 prepend 到消息列表顶部；
+   * - prepend 改变容器 `scrollHeight` → 按差值补偿 `scrollTop`（与全局面板
+   *   同款逻辑；复用既有通用 i18n 键，不新增 locale 键）。
+   */
+  const [loadingEarlierSourceMessages, setLoadingEarlierSourceMessages] = useState(false)
+  const sourceMessagesRef = useRef<HTMLDivElement | null>(null)
+  /** prepend 补偿意图（按 prepend 事实消费，审查 F2）。 */
+  const pendingSourcePrependRef = useRef<{
+    scrollHeight: number
+    scrollTop: number
+    ids: readonly string[]
+  } | null>(null)
+  /** 是否还有更早的历史（控制器快照的后向游标非空 = 还有更早的一页）。 */
+  const hasEarlierSourceMessages =
+    sessionConversation !== null && (liveSnapshot?.detailCursor ?? null) !== null
+  const handleLoadEarlierSourceMessages = (): void => {
+    const controller = sessionConversation
+    if (controller === null || loadingEarlierSourceMessages) return
+    const container = sourceMessagesRef.current
+    pendingSourcePrependRef.current = container === null
+      ? null
+      : {
+        scrollHeight: container.scrollHeight,
+        scrollTop: container.scrollTop,
+        ids: renderedSourceTurns.map((turn) => turn.id),
+      }
+    setLoadingEarlierSourceMessages(true)
+    void controller
+      .loadMore()
+      .then((result) => {
+        setLoadingEarlierSourceMessages(false)
+        const rows = result.status === 'ok' ? result.value?.messages : null
+        if (!Array.isArray(rows) || rows.length === 0) {
+          pendingSourcePrependRef.current = null
+        }
+      })
+      .catch(() => {
+        setLoadingEarlierSourceMessages(false)
+        pendingSourcePrependRef.current = null
+      })
+  }
+  useEffect(() => {
+    const pending = pendingSourcePrependRef.current
+    if (pending === null) return
+    const container = sourceMessagesRef.current
+    const now = renderedSourceTurns.map((turn) => turn.id)
+    if (!earlierSourcePagePrepended(pending.ids, now)) {
+      // 无关变化 → 不滚动、不消费意图；只推进基线。
+      if (container !== null) {
+        pending.scrollHeight = container.scrollHeight
+        pending.scrollTop = container.scrollTop
+      }
+      pending.ids = now
+      return
+    }
+    pendingSourcePrependRef.current = null
+    if (container === null) return
+    const delta = container.scrollHeight - pending.scrollHeight
+    if (delta <= 0) return
+    container.scrollTop = pending.scrollTop + delta
+  }, [renderedSourceTurns])
 
   const conversationSnapshot: ResearchConversationSnapshot = {
     isBusy: sessionConversation !== null ? sessionBusy : chat.isStreaming,
@@ -694,7 +784,23 @@ export function ResearchSourceChatPanel({
         </ul>
       )}
 
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+      <div ref={sourceMessagesRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+        {hasEarlierSourceMessages && (
+          <div className="flex justify-center pb-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleLoadEarlierSourceMessages}
+              disabled={loadingEarlierSourceMessages}
+              data-testid="srcchat-load-earlier"
+            >
+              {loadingEarlierSourceMessages
+                ? t('research.pagination.loadingMore')
+                : t('research.pagination.loadMore')}
+            </Button>
+          </div>
+        )}
         {chat.turns.length === 0 && (
           <p className="text-sm text-muted-foreground">{t('research.sourceChat.emptyState')}</p>
         )}
