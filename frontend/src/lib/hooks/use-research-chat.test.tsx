@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { messageRowToTurn, useResearchChat, deriveScopeSnapshot, MAX_STREAM_ATTEMPTS } from './use-research-chat'
+import { messageRowToTurn, useResearchChat, deriveScopeSnapshot, MAX_STREAM_ATTEMPTS, CONVERGENCE_INTERVAL_MS, CONVERGENCE_MAX_ATTEMPTS } from './use-research-chat'
 import type { CoverageSubmitAccepted, CoverageSubmitOutcome } from './use-research-chat'
 import {
   getChatSubmission,
   getResearchChatSession,
   newIdempotencyKey,
   openResearchChatStream,
+  type ResearchGlobalChatCard,
 } from '@/lib/research/api'
 import { buildSubmissionKey } from '@/lib/research/session-idempotency'
 import {
@@ -1266,11 +1267,15 @@ describe('PR-5b（D2/D3）：会话元数据、submission marker 与未结算查
     lookups: string[]
     maxInFlight: { value: number }
     setCache: (cache: { scope: SessionCacheScope | null; authority: SessionCacheAuthority | null }) => void
+    /** Issue #881：驱动 controller 快照（external 冷启动轮/终态等）。 */
+    emitTurn: (turn: Record<string, unknown> | null) => void
   }
 
   function harness(options: {
     load?: () => Promise<unknown>
     lookup?: 'ok' | 'blocked'
+    /** Issue #881：terminal 查回绑定的 generation（external turn 身份）。 */
+    terminalGenerationId?: string | null
   } = {}): Harness {
     let transport: Harness['transport'] | null = null
     let currentTurn: Record<string, unknown> | null = null
@@ -1301,7 +1306,7 @@ describe('PR-5b（D2/D3）：会话元数据、submission marker 与未结算查
           currentTurn = {
             external: true,
             state: 'terminal',
-            identity: { draftToken: token },
+            identity: { draftToken: token, generationId: options.terminalGenerationId ?? null },
           }
           listenerRef.current?.()
           return { status: 'ok' as const }
@@ -1349,6 +1354,10 @@ describe('PR-5b（D2/D3）：会话元数据、submission marker 与未结算查
       maxInFlight,
       setCache: (next) => {
         cache = next
+      },
+      emitTurn: (turn) => {
+        currentTurn = turn
+        listenerRef.current?.()
       },
     }
   }
@@ -1517,5 +1526,263 @@ describe('PR-5b（D2/D3）：会话元数据、submission marker 与未结算查
     expect(vi.mocked(openResearchChatStream)).not.toHaveBeenCalled()
     // 不清稿：marker 仍保留，供面板“查看/复制/恢复已提交稿”
     expect(readSubmissionMarker(scope, authority, ref, 't_old')).not.toBeNull()
+  })
+
+  // ── Issue #881：恢复出的 running Generation 卡在终态后收敛 ──
+  describe('Issue #881：恢复收敛（终态剔除 + 有界详情轮询）', () => {
+    const GEN = `gen_${'a'.repeat(32)}`
+    const OTHER_GEN = `gen_${'b'.repeat(32)}`
+    const USER_MSG = `msg_${GEN}_user`
+    const ASSISTANT_MSG = `msg_${GEN}_assistant`
+
+    function card(status: string, generationId: string = GEN): ResearchGlobalChatCard {
+      return { generation_id: generationId, job_id: null, status, failure_code: null }
+    }
+
+    function detail(messages: unknown[], cards: unknown[]) {
+      return {
+        session: { session_id: 'sess_1', title: null, record_visibility: 'visible' },
+        messages,
+        cards,
+        next_cursor: null,
+      } as unknown as Awaited<ReturnType<typeof getResearchChatSession>>
+    }
+
+    const userRow = {
+      message_id: USER_MSG,
+      role: 'user',
+      content: '问题',
+      created_at: '2026-10-30T00:00:00Z',
+    }
+    const assistantRow = {
+      message_id: ASSISTANT_MSG,
+      role: 'assistant',
+      content: '答案',
+      created_at: '2026-10-30T00:00:00Z',
+      citations: [],
+    }
+
+    /** 让轮询 tick 真正走 transport（真实 runtime 的 controller.load 语义）。 */
+    function loadThroughTransport(h: Harness): void {
+      vi.mocked(h.controller.load).mockImplementation(async () => {
+        await h.transport.loadDetail({ cursor: null })
+        return { status: 'ok' as const, value: { messages: [], next_cursor: null } }
+      })
+    }
+
+    beforeEach(() => {
+      vi.useFakeTimers()
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('终态剔除：恢复出的 running 卡在观测到同 generation 终态后消失', async () => {
+      vi.mocked(getResearchChatSession).mockResolvedValue(detail([userRow], [card('running')]))
+      const h = harness()
+      const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+      await flush()
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: null })
+      })
+      expect(result.current.sessionCards).toHaveLength(1)
+      expect(result.current.sessionCards?.[0]?.status).toBe('running')
+
+      act(() => {
+        h.emitTurn({
+          external: false,
+          state: 'terminal',
+          identity: { draftToken: 't_1', generationId: GEN },
+        })
+      })
+
+      expect(result.current.sessionCards).toHaveLength(0)
+    })
+
+    it('交付竞态：详情已含同 generation 的 assistant 行时隐藏 running 卡并回填消息；failed 卡保留', async () => {
+      vi.mocked(getResearchChatSession).mockResolvedValue(
+        detail([userRow, assistantRow], [card('running'), card('failed', OTHER_GEN)]),
+      )
+      const h = harness()
+      const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+      await flush()
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: null })
+      })
+
+      expect(result.current.sessionCards).toHaveLength(1)
+      expect(result.current.sessionCards?.[0]).toMatchObject({
+        generation_id: OTHER_GEN,
+        status: 'failed',
+      })
+      expect(result.current.turns).toHaveLength(2)
+      expect(result.current.turns[1]).toMatchObject({ role: 'assistant', content: '答案', status: 'done' })
+    })
+
+    it('详情刷新同步消息：mount 后 cursor=null 的 loadDetail 结果回填 turns', async () => {
+      const h = harness()
+      const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+      await flush()
+      expect(result.current.turns).toHaveLength(0)
+
+      vi.mocked(getResearchChatSession).mockResolvedValue(detail([userRow, assistantRow], []))
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: null })
+      })
+
+      expect(result.current.turns).toHaveLength(2)
+      expect(result.current.turns[0]).toMatchObject({ role: 'user', content: '问题' })
+      expect(result.current.turns[1]).toMatchObject({ role: 'assistant', content: '答案', status: 'done' })
+    })
+
+    it('live 流进行中：详情刷新不得覆盖 streaming turns', async () => {
+      const streams = openCapture()
+      const h = harness()
+      const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+      await flush()
+      act(() => {
+        result.current.send('q1', undefined, MODEL)
+      })
+      expect(result.current.turns).toHaveLength(2)
+      expect(result.current.turns[1]?.status).toBe('streaming')
+
+      vi.mocked(getResearchChatSession).mockResolvedValue(detail([userRow, assistantRow], []))
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: null })
+      })
+
+      expect(result.current.turns).toHaveLength(2)
+      expect(result.current.turns[1]?.status).toBe('streaming')
+      expect(streams).toHaveLength(1)
+    })
+
+    it('冷启动 running 卡：有界轮询详情，交付后卡消失且 assistant 消息出现', async () => {
+      vi.mocked(getResearchChatSession)
+        .mockResolvedValueOnce(detail([userRow], [card('running')]))
+        .mockResolvedValue(detail([userRow, assistantRow], []))
+      const h = harness()
+      const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+      await flush()
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: null })
+      })
+      expect(result.current.sessionCards).toHaveLength(1)
+
+      loadThroughTransport(h)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CONVERGENCE_INTERVAL_MS)
+      })
+
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBeGreaterThanOrEqual(2)
+      expect(result.current.sessionCards).toHaveLength(0)
+      expect(result.current.turns).toHaveLength(2)
+      expect(result.current.turns[1]).toMatchObject({ role: 'assistant', content: '答案' })
+    })
+
+    it('轮询有界：达到 CONVERGENCE_MAX_ATTEMPTS 后停止，不再请求详情', async () => {
+      vi.mocked(getResearchChatSession).mockResolvedValue(detail([userRow], [card('running')]))
+      const h = harness()
+      const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+      await flush()
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: null })
+      })
+      loadThroughTransport(h)
+      const before = vi.mocked(getResearchChatSession).mock.calls.length
+
+      for (let i = 0; i < CONVERGENCE_MAX_ATTEMPTS; i += 1) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(CONVERGENCE_INTERVAL_MS)
+        })
+      }
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(
+        before + CONVERGENCE_MAX_ATTEMPTS,
+      )
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CONVERGENCE_INTERVAL_MS)
+      })
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(
+        before + CONVERGENCE_MAX_ATTEMPTS,
+      )
+      expect(result.current.sessionCards).toHaveLength(1)
+    })
+
+    it('切会话/卸载：收敛轮询定时器清理，不再请求旧会话详情', async () => {
+      vi.mocked(getResearchChatSession).mockResolvedValue(detail([userRow], [card('running')]))
+      const h = harness()
+      const { result, rerender, unmount } = renderHook(
+        ({ sessionId }: { sessionId: string }) => useResearchChat({
+          projectId: 'proj_1',
+          session: { runtime: h.runtime, ref: { ...ref, sessionId } },
+        }),
+        { initialProps: { sessionId: 'sess_1' } },
+      )
+      await flush()
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: null })
+      })
+      expect(result.current.sessionCards).toHaveLength(1)
+      const before = vi.mocked(getResearchChatSession).mock.calls.length
+
+      rerender({ sessionId: 'sess_b' })
+      await flush()
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CONVERGENCE_INTERVAL_MS * 3)
+      })
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(before)
+
+      unmount()
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CONVERGENCE_INTERVAL_MS * 3)
+      })
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(before)
+    })
+
+    it('Check status 等价：terminal 查回 + 详情刷新 → 消息出现、running 卡隐藏（无需二次整页刷新）', async () => {
+      vi.mocked(getChatSubmission).mockResolvedValue({
+        session_ref: { domain: 'research', kind: 'global', project_id: 'proj_1', session_id: 'sess_1', source_id: null },
+        draft_token: 't_old',
+        idempotency_key: `s1_${'b'.repeat(64)}`,
+        acceptance_state: 'terminal',
+        generation_id: GEN,
+        generation_state: 'completed',
+        accepted_editor_revision: 1,
+        editor_intent_hash: 'a'.repeat(64),
+        submitted_draft_text: '旧问题',
+        context_report: null,
+      } as unknown as Awaited<ReturnType<typeof getChatSubmission>>)
+      vi.mocked(getResearchChatSession)
+        .mockResolvedValueOnce(detail([userRow], [card('running')]))
+        .mockResolvedValue(detail([userRow, assistantRow], []))
+      const h = harness({ terminalGenerationId: GEN })
+      const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+      await flush()
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: null })
+      })
+      expect(result.current.sessionCards).toHaveLength(1)
+
+      loadThroughTransport(h)
+      await act(async () => {
+        await h.controller.lookupSubmission('t_old')
+      })
+
+      // 终态已知：running 卡立即不再下发（不等轮询），查回观测可见。
+      expect(result.current.sessionCards).toHaveLength(0)
+      expect(result.current.submissionLookup).toMatchObject({
+        token: 't_old',
+        acceptance: 'terminal',
+        generationState: 'completed',
+      })
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CONVERGENCE_INTERVAL_MS)
+      })
+      expect(result.current.turns).toHaveLength(2)
+      expect(result.current.turns[1]).toMatchObject({ role: 'assistant', content: '答案' })
+      expect(result.current.sessionCards).toHaveLength(0)
+    })
   })
 })
