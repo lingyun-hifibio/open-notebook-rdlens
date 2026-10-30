@@ -302,6 +302,20 @@ function mergeSourceTurns(
   return incomingIsOlder ? [...added, ...base] : [...base, ...added]
 }
 
+/**
+ * RDLens #892 审查 L-7：与全局 hook 同构的方向判定（source controller 恒为
+ * desc，但保持写法一致更稳）。
+ * - desc（尾部窗口）：`cursor=null` → 最新的一批；带游标 → 更早的一批。
+ * - asc（前向读）：`cursor=null` → 最旧的一批；带游标 → 更新的一批。
+ */
+function sourceDetailIncomingIsOlder(
+  order: 'asc' | 'desc',
+  cursor: string | null | undefined,
+): boolean {
+  const hasCursor = cursor !== null && cursor !== undefined
+  return order === 'desc' ? hasCursor : !hasCursor
+}
+
 export function useResearchSourceChat({
   projectId,
   sourceId,
@@ -322,13 +336,19 @@ export function useResearchSourceChat({
   /** 终态失败 turn 的模型快照：重放沿用同一快照，不随后续切换漂移（不变量 4） */
   const retryModelRef = useRef<string | null>(null)
   /**
-   * RDLens #892 审查 F1：当前 turns 里 durable 行所属的会话。
-   * 换会话 → 整表替换（上一会话的行不得带进来）；同一会话 → 合并。
+   * RDLens #892 审查 F1/M-1：当前 turns 里 durable 行所属的会话 + 这些行的 id。
+   * 换会话 → 整表替换（上一会话的 durable 行一律丢弃，只保留 live 轮）；
+   * 同一会话 → 合并。
    */
   const durableSessionRef = useRef<string | null>(null)
+  /** 当前 turns 中属于 durable（服务端持久行）的行 id 集合（其余为 live 轮）。 */
+  const durableIdsRef = useRef<Set<string>>(new Set())
 
   /**
    * 应用源会话 durable 行到 turns（按会话隔离）。
+   *
+   * 审查 M-1：换会话时**只保留 live 轮**（上一会话的 durable 行一律丢弃），
+   * 且**空窗口也必须执行整表替换**（切到空会话 → 旧行必须清空）。
    *
    * @param rows         服务端返回的消息行（阅读顺序）
    * @param sessionId    这些行所属的会话
@@ -340,14 +360,22 @@ export function useResearchSourceChat({
     incomingIsOlder: boolean,
   ): void => {
     const restored = rows.map(mapColdMessage)
-    if (restored.length === 0) return
     setTurns((prev) => {
       if (durableSessionRef.current !== sessionId) {
-        // 换会话 → 整表替换（只保留 live 轮，不得带上上一会话的行）。
+        // 换会话 → 整表替换：只保留 live 轮（不在旧 durable 集合里的行），
+        // 上一会话的 durable 行一律丢弃；空窗口同样执行替换。
         durableSessionRef.current = sessionId
-        const ids = new Set(restored.map((turn) => turn.id))
-        return [...restored, ...prev.filter((turn) => !ids.has(turn.id))]
+        const liveTurns = prev.filter((turn) => !durableIdsRef.current.has(turn.id))
+        durableIdsRef.current = new Set(restored.map((turn) => turn.id))
+        return [...restored, ...liveTurns]
       }
+      if (restored.length === 0) {
+        // 同一会话的空窗口：不是「清空」信号（已加载的更早行必须保留）。
+        return prev
+      }
+      const nextIds = new Set(durableIdsRef.current)
+      for (const turn of restored) nextIds.add(turn.id)
+      durableIdsRef.current = nextIds
       return mergeSourceTurns(prev, restored, incomingIsOlder)
     })
   }, [])
@@ -440,13 +468,14 @@ export function useResearchSourceChat({
         detailRequestSeq += 1
         const requestSeq = detailRequestSeq
         const isPagedRead = cursor !== null && cursor !== undefined
+        const readOrder: 'asc' | 'desc' = order ?? 'desc'
         return getSourceChatSession(
           projectIdRef.current,
           String(ref.sourceId),
           ref.sessionId,
           {
             ...(cursor === null || cursor === undefined ? {} : { cursor }),
-            order: order ?? 'desc',
+            order: readOrder,
             limit: limit ?? SOURCE_DETAIL_WINDOW_LIMIT,
           },
         ).then((detail) => {
@@ -461,7 +490,8 @@ export function useResearchSourceChat({
           const rows = Array.isArray(detail?.messages)
             ? (detail.messages as ResearchSourceChatMessage[])
             : []
-          applySourceRows(rows, ref.sessionId, isPagedRead)
+          // 审查 L-7：方向判定与全局 hook 同构（desc：带游标=更早的一批）。
+          applySourceRows(rows, ref.sessionId, sourceDetailIncomingIsOlder(readOrder, cursor))
           return detail
         })
       },
@@ -485,6 +515,8 @@ export function useResearchSourceChat({
       if (rows.length === 0) {
         // 当前会话成功返回空详情同样要写入空数组（切换到空会话时不得残留旧消息）。
         setTurns([])
+        durableSessionRef.current = null
+        durableIdsRef.current = new Set()
         return
       }
       // RDLens #892：合并而非整表替换（尾部窗口不得抹掉已加载的更早历史行）。
@@ -495,11 +527,12 @@ export function useResearchSourceChat({
       // 会话切换/卸载：清空当前会话消息，避免下一会话显示上一会话内容。
       setTurns([])
       durableSessionRef.current = null
+      durableIdsRef.current = new Set()
       controller.detach()
       options.runtime.releaseConversation(ref, controller)
       setConversation((current) => (current === controller ? null : current))
     }
-  }, [conversationKey, authEpoch])
+  }, [conversationKey, authEpoch, applySourceRows])
 
   const patchAssistant = useCallback((turnId: string, patch: Partial<ResearchSourceChatTurn>) => {
     setTurns((prev) => {
@@ -529,6 +562,8 @@ export function useResearchSourceChat({
     setRetryableQuery(null)
     retryModelRef.current = null
     setTurns([])
+    durableSessionRef.current = null
+    durableIdsRef.current = new Set()
   }, [sourceId, stopActive])
 
   useEffect(() => stopActive, [stopActive])
@@ -785,6 +820,7 @@ export function useResearchSourceChat({
     if (sessionId === null) {
       setTurns([])
       durableSessionRef.current = null
+      durableIdsRef.current = new Set()
       return
     }
     void (async () => {

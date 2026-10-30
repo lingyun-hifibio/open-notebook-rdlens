@@ -1108,7 +1108,7 @@ describe('RDLens #892 审查修复：source 会话详情读取', () => {
   it('F1：selectSession 读尾部窗口（只发 order=desc + limit=50）', async () => {
     const h = sourceHarness()
     vi.mocked(getSourceChatSession).mockResolvedValue({
-      session: { session_id: 'sess_src_1', title: null },
+      session: { session_id: 'sess_src_other', title: null },
       messages: [tailMessage],
       next_cursor: null,
     } as never)
@@ -1116,15 +1116,21 @@ describe('RDLens #892 审查修复：source 会话详情读取', () => {
       () => useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1', session: { runtime: h.runtime, ref } }),
       { wrapper: makeHookWrapper() },
     )
+    // 判别力：只看**本次动作新增**的调用（该文件的 mock 调用历史跨用例累计），
+    // 且该 sessionId 与 controller 的不同 → 只能由 selectSession 的调用满足。
+    const before = vi.mocked(getSourceChatSession).mock.calls.length
     await act(async () => {
-      result.current.selectSession('sess_src_1')
+      // 独立 sessionId（与 controller 的 ref.sessionId 不同）。
+      result.current.selectSession('sess_src_other')
       await Promise.resolve()
       await Promise.resolve()
     })
-    expect(getSourceChatSession).toHaveBeenCalledWith('proj_1', 'src_1', 'sess_src_1', {
+    const calls = vi.mocked(getSourceChatSession).mock.calls.slice(before)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toEqual(['proj_1', 'src_1', 'sess_src_other', {
       order: 'desc',
       limit: 50,
-    })
+    }])
   })
 
   it('F1：selectSession 读到的尾部窗口不得抹掉已加载的更早行', async () => {
@@ -1151,13 +1157,90 @@ describe('RDLens #892 审查修复：source 会话详情读取', () => {
     expect(result.current.turns).toHaveLength(2)
 
     // selectSession 再读一次尾部窗口 → 合并而非整表替换（更早行不得消失）。
+    const before = vi.mocked(getSourceChatSession).mock.calls.length
     await act(async () => {
       result.current.selectSession('sess_src_1')
       await Promise.resolve()
       await Promise.resolve()
     })
+    // 判别力：只看本次动作新增的调用（mock 调用历史跨用例累计）。
+    const calls = vi.mocked(getSourceChatSession).mock.calls.slice(before)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toEqual(['proj_1', 'src_1', 'sess_src_1', {
+      order: 'desc',
+      limit: 50,
+    }])
     expect(result.current.turns).toHaveLength(2)
     expect(result.current.turns.map((turn) => turn.content)).toEqual(['更早答案', '最新答案'])
+  })
+
+  it('M-1：切到空会话 → 上一会话的 durable 行必须清空（空窗口也整表替换）', async () => {
+    const h = sourceHarness({
+      load: async () => ({
+        status: 'ok' as const,
+        value: { messages: [olderMessage, tailMessage], next_cursor: null },
+      }),
+    })
+    // 目标会话是空的（窗口 0 行）。
+    vi.mocked(getSourceChatSession).mockResolvedValue({
+      session: { session_id: 'sess_src_b', title: null },
+      messages: [],
+      next_cursor: null,
+    } as never)
+    const { result } = renderHook(
+      () => useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1', session: { runtime: h.runtime, ref } }),
+      { wrapper: makeHookWrapper() },
+    )
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(result.current.turns).toHaveLength(2)
+
+    await act(async () => {
+      result.current.selectSession('sess_src_b')
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    // 空会话也必须整表替换：上一会话的行不得残留。
+    expect(result.current.turns).toEqual([])
+  })
+
+  it('M-1：切到有内容的会话 → 不残留上一会话的 durable 行', async () => {
+    const h = sourceHarness({
+      load: async () => ({
+        status: 'ok' as const,
+        value: { messages: [olderMessage, tailMessage], next_cursor: null },
+      }),
+    })
+    const nextMessage = {
+      message_id: 'msg_next_session',
+      role: 'assistant' as const,
+      content: '新会话的答案',
+      created_at: '2026-10-30T01:00:00Z',
+    }
+    vi.mocked(getSourceChatSession).mockResolvedValue({
+      session: { session_id: 'sess_src_b', title: null },
+      messages: [nextMessage],
+      next_cursor: null,
+    } as never)
+    const { result } = renderHook(
+      () => useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1', session: { runtime: h.runtime, ref } }),
+      { wrapper: makeHookWrapper() },
+    )
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(result.current.turns).toHaveLength(2)
+
+    await act(async () => {
+      result.current.selectSession('sess_src_b')
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(result.current.turns).toHaveLength(1)
+    expect(result.current.turns[0]?.content).toBe('新会话的答案')
   })
 
   it('F6：迟到的旧详情响应整体丢弃（不得乱序并入 turns）', async () => {
