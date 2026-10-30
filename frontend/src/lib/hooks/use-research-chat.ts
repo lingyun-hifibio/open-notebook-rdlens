@@ -947,6 +947,16 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
     let convergenceFastAttempts = 0
     let convergenceSlowAttempts = 0
     let convergenceInflight = false
+    /**
+     * Issue #896（NIT-3）：预算耗尽后终态观测的补偿状态（effect 作用域，随会话/
+     * 认证代次重建，`resetConvergenceBudget()` 不清除）。
+     * - `terminalRefetchGranted`：本 effect 内已获得补偿窗口的 generation——每个
+     *   generation 至多一次，防止重复终态通知反复重置预算形成轮询循环；
+     * - `pendingTerminalRefetch`：观测时正忙（inflight/timer pending）或预算尚未
+     *   耗尽而暂不能补偿的候选，由 tick 结束边界重放。
+     */
+    const terminalRefetchGranted = new Set<string>()
+    const pendingTerminalRefetch = new Set<string>()
     let visibleCards: readonly ResearchGlobalChatCard[] = []
     const clearConvergence = (): void => {
       if (convergenceTimer !== null) {
@@ -1000,11 +1010,50 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
       }
       return false
     }
+    /**
+     * Issue #896（NIT-3 / G1）：在 tick 结束/调度空闲边界重放 pending 终态补偿。
+     * 仅当预算已耗尽（`nextConvergenceDelay()===null`）、无 timer、无 inflight、
+     * 仍需要收敛且该 generation 尚未补偿/未交付时 grant + 清零预算（让随后的
+     * `scheduleConvergence()` 重开一次有界窗口）；预算未耗尽则保留 pending 到
+     * 耗尽边界（覆盖「终态早到、交付晚于预算」与最后 timer 在途场景）。
+     */
+    const flushPendingTerminalRefetch = (): void => {
+      if (cancelled || pendingTerminalRefetch.size === 0) return
+      if (convergenceInflight || convergenceTimer !== null) return
+      if (!convergenceNeeded()) {
+        pendingTerminalRefetch.clear()
+        return
+      }
+      if (nextConvergenceDelay() !== null) return
+      let granted = false
+      for (const generationId of [...pendingTerminalRefetch]) {
+        pendingTerminalRefetch.delete(generationId)
+        if (terminalRefetchGranted.has(generationId)) continue
+        if (deliveredGenerationsRef.current.has(generationId)) continue
+        terminalRefetchGranted.add(generationId)
+        granted = true
+      }
+      if (granted) resetConvergenceBudget()
+    }
+    /**
+     * Issue #896（NIT-3 / G1）：登记终态观测的补拉候选。预算已耗尽且空闲时
+     * 立即 grant + 清零预算（由调用方的 `scheduleConvergence()` 重开窗口）；
+     * 忙碌（inflight/timer pending）或预算未耗尽时留在 pending，由
+     * `flushPendingTerminalRefetch()` 在 tick/timer 结束边界重放。
+     * 每个 generation 每个 effect 生命周期至多补偿一次。
+     */
+    const requestTerminalRefetch = (generationId: string): void => {
+      if (cancelled || terminalRefetchGranted.has(generationId)) return
+      if (!convergenceNeeded()) return
+      pendingTerminalRefetch.add(generationId)
+      flushPendingTerminalRefetch()
+    }
     async function runConvergenceTick(): Promise<void> {
       if (cancelled || convergenceInflight) return
       const controller = controllerRef.current
       if (controller === null) return
       if (!convergenceNeeded()) {
+        pendingTerminalRefetch.clear()
         resetConvergenceBudget()
         return
       }
@@ -1020,6 +1069,9 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
         convergenceInflight = false
       }
       if (cancelled) return
+      // Issue #896（NIT-3 / G1）：终态观测发生在本 tick 在途期间时，tick 结束后
+      // 重新评估 pending——预算已耗尽则补偿一次详情补拉。
+      flushPendingTerminalRefetch()
       scheduleConvergence()
     }
     /** 单飞调度：上一发未返回不重发；预算耗尽或不再需要时停止。 */
@@ -1028,6 +1080,7 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
       if (!convergenceNeeded()) {
         // Issue #881（F3）：episode 自然结束（卡清除/消息到齐/live turn 接管）
         // 即清零预算并取消未触发的 tick；下一次在途卡重新获得完整 fast+slow 窗口。
+        pendingTerminalRefetch.clear()
         resetConvergenceBudget()
         if (convergenceTimer !== null) {
           clearTimeout(convergenceTimer)
@@ -1475,6 +1528,10 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
               if (typeof generationId === 'string' && generationId.length > 0) {
                 terminalGenerationsRef.current.add(generationId)
                 syncVisibleCards()
+                // Issue #896（NIT-3）：预算耗尽后（含本 tick 在途/最后 timer 待触发
+                // 的终态观测）仍须让该 generation 获得一次有界详情补拉，否则卡已
+                // 隐藏但答案要等手动刷新才出现。
+                requestTerminalRefetch(generationId)
                 scheduleConvergence()
               }
             }
