@@ -256,10 +256,17 @@ const SESSION_READ_PAGE_CAP = 1000
 const DETAIL_WINDOW_LIMIT = 50
 
 /**
- * RDLens #892：按 `message_id` 合并 durable 行（阅读顺序；首见保留）。
+ * RDLens #892：按 `message_id` 合并 durable 行（阅读顺序；默认首见保留）。
  *
  * 收敛 tick 读的是**尾部窗口**（desc）：若整表替换，已通过「加载更早的
  * 消息」取回的历史行会被尾部窗口抹掉 → 必须合并而非替换。
+ *
+ * 语义（审查 F4）：
+ * - 已存在的 id：**原位保留**（不重排）；仅当后到副本是**受限副本**
+ *   （`record_visibility=restricted`）时替换原行——更严格的可见性胜出，
+ *   否则旧正文会继续显示；
+ * - 新增 id：按 `incomingIsOlder` 插到列表**前面**（更早的一页）或**后面**
+ *   （更新的一批）。
  *
  * @param current  已加载的行（含更早的历史行）
  * @param incoming 本次读到的行
@@ -270,19 +277,43 @@ function mergeDurableTurns(
   incoming: readonly ResearchChatTurn[],
   incomingIsOlder: boolean,
 ): ResearchChatTurn[] {
-  const ordered = incomingIsOlder
-    ? [...incoming, ...current]
-    : [...current, ...incoming]
-  const seen = new Set<string>()
-  const merged: ResearchChatTurn[] = []
-  for (const turn of ordered) {
-    // 恢复行的稳定键是 message_id（serverMessageId）；live 行退化为 turn id。
-    const key = turn.serverMessageId ?? turn.id
-    if (seen.has(key)) continue
-    seen.add(key)
-    merged.push(turn)
+  // 恢复行的稳定键是 message_id（serverMessageId）；live 行退化为 turn id。
+  const keyOf = (turn: ResearchChatTurn): string => turn.serverMessageId ?? turn.id
+  const base = [...current]
+  const baseIndex = new Map<string, number>()
+  base.forEach((turn, index) => {
+    const key = keyOf(turn)
+    if (!baseIndex.has(key)) baseIndex.set(key, index)
+  })
+  const added: ResearchChatTurn[] = []
+  const addedIndex = new Map<string, number>()
+  for (const turn of incoming) {
+    const key = keyOf(turn)
+    const existing = baseIndex.get(key)
+    if (existing !== undefined) {
+      // 同 id：受限副本优先（更严格的可见性胜出）；其余首见保留（内容不变）。
+      if (
+        base[existing]?.recordVisibility !== 'restricted'
+        && turn.recordVisibility === 'restricted'
+      ) {
+        base[existing] = turn
+      }
+      continue
+    }
+    const addedExisting = addedIndex.get(key)
+    if (addedExisting !== undefined) {
+      if (
+        added[addedExisting]?.recordVisibility !== 'restricted'
+        && turn.recordVisibility === 'restricted'
+      ) {
+        added[addedExisting] = turn
+      }
+      continue
+    }
+    addedIndex.set(key, added.length)
+    added.push(turn)
   }
-  return merged
+  return incomingIsOlder ? [...added, ...base] : [...base, ...added]
 }
 
 /**
@@ -1384,6 +1415,9 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
         // **尾部窗口**（order=desc + limit=50）；「更早一页」沿用同一方向并
         // 携带后向游标（方向不匹配服务端返回 422，不得静默错页）。
         const readOrder: 'asc' | 'desc' = order ?? 'desc'
+        // 审查 F3：单调序号守卫只作用于**新鲜详情读**（cursor=null）；分页读
+        // （带游标）必须总是并入。
+        const isPagedRead = cursor !== null && cursor !== undefined
         return getResearchChatSession(
           projectIdRef.current,
           ref.sessionId,
@@ -1397,15 +1431,25 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
           },
         ).then((detail) => {
           if (cancelled) return detail
-          if (requestSeq <= detailAppliedSeq) {
-            // 迟到旧响应：不得只丢卡片仍覆盖 turns（review F1）。
-            return detail
-          }
-          detailAppliedSeq = requestSeq
           const rawMessages = (detail as { messages?: unknown } | null)?.messages
-          lastAppliedMessages = Array.isArray(rawMessages) ? rawMessages : null
-          // PR-5b（D2）：同一次响应捕获 header 元数据/卡——不得再发第二次详情。
-          captureDetail(detail)
+          if (isPagedRead) {
+            // RDLens #892 审查 F3：分页读（带游标的「更早一页」）**不得**被
+            // 「最新详情」守卫整体丢弃——否则收敛 tick 后发先返回时，更早一
+            // 页永不进 UI（控制器侧却已推进游标 → 用户再点直接跳过该页）。
+            // 重复行由 `message_id` 去重防住；卡/元数据不覆盖（旧卡不得复活）。
+            for (const generationId of collectDeliveredGenerations(rawMessages)) {
+              deliveredGenerationsRef.current.add(generationId)
+            }
+          } else {
+            if (requestSeq <= detailAppliedSeq) {
+              // 迟到旧响应：不得只丢卡片仍覆盖 turns（review F1）——**整体丢弃**。
+              return detail
+            }
+            detailAppliedSeq = requestSeq
+            lastAppliedMessages = Array.isArray(rawMessages) ? rawMessages : null
+            // PR-5b（D2）：同一次响应捕获 header 元数据/卡——不得再发第二次详情。
+            captureDetail(detail)
+          }
           // Issue #881（F1）+ #892：合并 durable turns（尾部窗口不得抹掉已加载
           // 的更早历史行；「更早一页」按阅读顺序 prepend）。
           syncTurnsFromDetail(detail, detailIncomingIsOlder(readOrder, cursor))

@@ -2753,5 +2753,75 @@ describe('PR-5b（D2/D3）：会话元数据、submission marker 与未结算查
       expect(result.current.turns).toHaveLength(2)
       expect(result.current.turns[0]).toMatchObject({ role: 'user', content: '最新问题' })
     })
+
+    it('F3：分页读（带游标）不被「最新详情」守卫整体丢弃：更新的一读先返回时，更早一页仍并入', async () => {
+      const responses: Array<(value: unknown) => void> = []
+      vi.mocked(getResearchChatSession).mockImplementation((() => new Promise((resolve) => {
+        responses.push(resolve as (value: unknown) => void)
+      })) as never)
+      const h = harness()
+      const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+      await flush()
+
+      // 先点「加载更早」（分页读），随后收敛 tick 发一次新鲜读。
+      let paged: Promise<unknown> = Promise.resolve()
+      let fresh: Promise<unknown> = Promise.resolve()
+      await act(async () => {
+        paged = h.transport.loadDetail({ cursor: 'back-1' })
+        fresh = h.transport.loadDetail({ cursor: null })
+      })
+      // 更新的一读（新鲜尾部读）先返回。
+      await act(async () => {
+        responses[1]?.(detailOf(tailRows))
+        await fresh
+      })
+      expect(result.current.turns).toHaveLength(2)
+
+      // 分页读后返回：不得被守卫整体丢弃 → 更早的一页必须并入。
+      await act(async () => {
+        responses[0]?.(detailOf(olderRows))
+        await paged
+      })
+      expect(result.current.turns).toHaveLength(4)
+      expect(result.current.turns[0]).toMatchObject({ role: 'user', content: '旧问题' })
+      expect(result.current.turns[3]).toMatchObject({ role: 'assistant', content: '最新答案' })
+    })
+
+    it('F4：同一 message_id 的受限副本替换非受限副本（更严格的可见性胜出）', async () => {
+      const restrictedRow = {
+        message_id: ASSISTANT_MSG,
+        role: 'assistant',
+        content: '机密答案',
+        thinking: '机密思考',
+        record_visibility: 'restricted',
+        created_at: '2026-10-30T00:00:01Z',
+      }
+      vi.mocked(getResearchChatSession).mockImplementation(((_p: string, _s: string, params?: { order?: string; cursor?: string }) => {
+        const p = params as { order?: string; cursor?: string } | undefined
+        return Promise.resolve(
+          p?.order === 'desc' && p?.cursor !== undefined
+            ? detailOf([restrictedRow], [], null)
+            : detailOf(tailRows, [], 'back-1'),
+        )
+      }) as never)
+      const h = harness()
+      const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+      await flush()
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: null })
+      })
+      expect(result.current.turns[1]).toMatchObject({ content: '最新答案' })
+
+      // 同一 id 的受限副本到达 → 必须替换（正文/思考被清空 + 标记受限）。
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: 'back-1' })
+      })
+      expect(result.current.turns).toHaveLength(2)
+      expect(result.current.turns[1]).toMatchObject({
+        content: '',
+        thinking: '',
+        recordVisibility: 'restricted',
+      })
+    })
   })
 })
