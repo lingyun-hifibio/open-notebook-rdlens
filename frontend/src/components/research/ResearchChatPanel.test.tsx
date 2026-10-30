@@ -3593,6 +3593,19 @@ describe('ResearchChatPanel：加载更早的消息（#892 迭代 2）', () => {
               >
                 unrelated
               </button>
+              <button
+                type="button"
+                data-testid="append-tail"
+                onClick={() => {
+                  // 流式尾部追加：行数增长，但新行在**末尾**（不是 prepend）。
+                  setTurns((prev) => [
+                    ...prev,
+                    turn({ id: 't2', role: 'assistant', content: '流式新答案' }),
+                  ])
+                }}
+              >
+                append
+              </button>
             </ResearchScopeProvider>
           </ResearchWorkspaceProvider>
         </QueryClientProvider>
@@ -3680,6 +3693,42 @@ describe('ResearchChatPanel：加载更早的消息（#892 迭代 2）', () => {
     expect((container as HTMLElement).scrollTop).toBe(20)
 
     // 真正的 prepend 到达 → 按差值补偿（基线已被无关变化推进到 130）。
+    await act(async () => {
+      scrollHeight = 190
+      fireEvent.click(screen.getByTestId('prepend-older'))
+    })
+    expect((container as HTMLElement).scrollTop).toBe(80)
+  })
+
+  it('L-2：流式尾部追加一行（行数增长但不是 prepend）不得滚动；真 prepend 才补偿', async () => {
+    const stub = makeControllerStub()
+    renderPanelWithConversation(stub.controller, [turn({ id: 't1', role: 'assistant', content: '新答案' })])
+
+    const container = screen.getByTestId('chat-messages')
+    let scrollHeight = 100
+    Object.defineProperty(container, 'scrollHeight', {
+      configurable: true,
+      get: () => scrollHeight,
+    })
+    Object.defineProperty(container, 'scrollTop', {
+      configurable: true,
+      writable: true,
+      value: 20,
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'research.pagination.loadMore' }))
+    })
+
+    // 流式尾部追加：行数增长（2 行），但新行在末尾 → **不是** prepend。
+    // 判别力：若判据退化为「行数增长即 prepend」，这里会错误补偿（scrollTop 变 50）。
+    await act(async () => {
+      scrollHeight = 130
+      fireEvent.click(screen.getByTestId('append-tail'))
+    })
+    expect((container as HTMLElement).scrollTop).toBe(20)
+
+    // 真正的 prepend（更早的一页插到顶部）→ 按差值补偿。
     await act(async () => {
       scrollHeight = 190
       fireEvent.click(screen.getByTestId('prepend-older'))
