@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { messageRowToTurn, useResearchChat, deriveScopeSnapshot, MAX_STREAM_ATTEMPTS, CONVERGENCE_INTERVAL_MS, CONVERGENCE_MAX_ATTEMPTS } from './use-research-chat'
+import { messageRowToTurn, useResearchChat, deriveScopeSnapshot, MAX_STREAM_ATTEMPTS, CONVERGENCE_INTERVAL_MS, CONVERGENCE_MAX_ATTEMPTS, CONVERGENCE_SLOW_INTERVAL_MS, CONVERGENCE_SLOW_MAX_ATTEMPTS } from './use-research-chat'
 import type { CoverageSubmitAccepted, CoverageSubmitOutcome } from './use-research-chat'
 import {
   getChatSubmission,
@@ -1680,7 +1680,182 @@ describe('PR-5b（D2/D3）：会话元数据、submission marker 与未结算查
       expect(result.current.turns[1]).toMatchObject({ role: 'assistant', content: '答案' })
     })
 
-    it('轮询有界：达到 CONVERGENCE_MAX_ATTEMPTS 后停止，不再请求详情', async () => {
+    it('轮询有界：fast 30 次后转 slow（10s），slow 18 次后停止（总 GET 有界）', async () => {
+      vi.mocked(getResearchChatSession).mockResolvedValue(detail([userRow], [card('running')]))
+      const h = harness()
+      const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+      await flush()
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: null })
+      })
+      loadThroughTransport(h)
+      const before = vi.mocked(getResearchChatSession).mock.calls.length
+
+      // 快速阶段：2s 间隔，最多 30 次。
+      for (let i = 0; i < CONVERGENCE_MAX_ATTEMPTS; i += 1) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(CONVERGENCE_INTERVAL_MS)
+        })
+      }
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(
+        before + CONVERGENCE_MAX_ATTEMPTS,
+      )
+
+      // 快速预算耗尽后 2s 内不再请求（已转 10s 慢速阶段）。
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CONVERGENCE_INTERVAL_MS)
+      })
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(
+        before + CONVERGENCE_MAX_ATTEMPTS,
+      )
+
+      // 慢速阶段：10s 间隔，最多 18 次。
+      for (let i = 0; i < CONVERGENCE_SLOW_MAX_ATTEMPTS; i += 1) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(CONVERGENCE_SLOW_INTERVAL_MS)
+        })
+      }
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(
+        before + CONVERGENCE_MAX_ATTEMPTS + CONVERGENCE_SLOW_MAX_ATTEMPTS,
+      )
+
+      // 总预算耗尽：再推进长时间也不再有请求，真实在途卡保留。
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CONVERGENCE_SLOW_INTERVAL_MS * 3)
+      })
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(
+        before + CONVERGENCE_MAX_ATTEMPTS + CONVERGENCE_SLOW_MAX_ATTEMPTS,
+      )
+      expect(result.current.sessionCards).toHaveLength(1)
+    })
+
+    it('F1 乱序：并发详情中迟到的旧响应不得覆盖较新的 turns/cards（不回退 2→1）', async () => {
+      const responses: Array<(value: unknown) => void> = []
+      vi.mocked(getResearchChatSession).mockImplementation((() => new Promise((resolve) => {
+        responses.push(resolve as (value: unknown) => void)
+      })) as never)
+      const h = harness()
+      const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+      await flush()
+
+      let older: Promise<unknown> = Promise.resolve()
+      let newer: Promise<unknown> = Promise.resolve()
+      await act(async () => {
+        older = h.transport.loadDetail({ cursor: null })
+        newer = h.transport.loadDetail({ cursor: null })
+      })
+      // 较新请求先返回（2 条消息、无卡），旧请求随后才返回（1 条消息 + 在途卡）。
+      await act(async () => {
+        responses[1]?.(detail([userRow, assistantRow], []))
+        await newer
+      })
+      expect(result.current.turns).toHaveLength(2)
+      expect(result.current.sessionCards).toHaveLength(0)
+
+      await act(async () => {
+        responses[0]?.(detail([userRow], [card('running', OTHER_GEN)]))
+        await older
+      })
+      // 旧响应整体丢弃：turns 不得 2→1，也不得回退出一张在途卡。
+      expect(result.current.turns).toHaveLength(2)
+      expect(result.current.turns[1]).toMatchObject({ role: 'assistant', content: '答案' })
+      expect(result.current.sessionCards).toHaveLength(0)
+    })
+
+    it('F1 mount load 迟到：controller.load 的旧结果不得覆盖较新的详情响应', async () => {
+      let resolveMountLoad: (value: unknown) => void = () => {}
+      const h = harness({
+        load: () => new Promise<unknown>((resolve) => {
+          resolveMountLoad = resolve
+        }),
+      })
+      const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+      await flush()
+
+      // 较新的详情先应用（2 条消息）。
+      vi.mocked(getResearchChatSession).mockResolvedValue(detail([userRow, assistantRow], []))
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: null })
+      })
+      expect(result.current.turns).toHaveLength(2)
+
+      // mount 的 controller.load 随后才返回旧结果（1 条消息）。
+      await act(async () => {
+        resolveMountLoad({ status: 'ok', value: { messages: [userRow], next_cursor: null } })
+        for (let i = 0; i < 8; i += 1) await Promise.resolve()
+      })
+      expect(result.current.turns).toHaveLength(2)
+      expect(result.current.turns[1]).toMatchObject({ role: 'assistant', content: '答案' })
+    })
+
+    it('F2 terminal turn 不阻塞轮询：非 external 终态驻留后仍继续收敛', async () => {
+      vi.mocked(getResearchChatSession)
+        .mockResolvedValueOnce(detail([userRow], [card('running')]))
+        .mockResolvedValue(detail([userRow, assistantRow], []))
+      const h = harness()
+      const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+      await flush()
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: null })
+      })
+      expect(result.current.sessionCards).toHaveLength(1)
+      loadThroughTransport(h)
+
+      // runtime 的 terminal turn 永不置空：旧实现「存在 turn 即停」会永久卡住。
+      act(() => {
+        h.emitTurn({
+          external: false,
+          state: 'terminal',
+          identity: { draftToken: 't_1', generationId: GEN },
+        })
+      })
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CONVERGENCE_INTERVAL_MS)
+      })
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBeGreaterThanOrEqual(2)
+      expect(result.current.sessionCards).toHaveLength(0)
+      expect(result.current.turns).toHaveLength(2)
+      expect(result.current.turns[1]).toMatchObject({ role: 'assistant', content: '答案' })
+    })
+
+    it('F3 episode 重置：episode 自然结束后，新的 running 卡重新获得完整 fast 预算', async () => {
+      vi.mocked(getResearchChatSession)
+        .mockResolvedValueOnce(detail([userRow], [card('running')]))
+        .mockResolvedValueOnce(detail([], []))
+        .mockResolvedValue(detail([userRow], [card('running')]))
+      const h = harness()
+      const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+      await flush()
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: null })
+      })
+      loadThroughTransport(h)
+      // 第一个 episode 在首个 tick 收敛（卡消失）。
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CONVERGENCE_INTERVAL_MS)
+      })
+      expect(result.current.sessionCards).toHaveLength(0)
+
+      // 新 episode：再次恢复出 running 卡。
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: null })
+      })
+      expect(result.current.sessionCards).toHaveLength(1)
+      const before = vi.mocked(getResearchChatSession).mock.calls.length
+
+      for (let i = 0; i < CONVERGENCE_MAX_ATTEMPTS; i += 1) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(CONVERGENCE_INTERVAL_MS)
+        })
+      }
+      // 完整预算（旧实现会少 1 次：上一 episode 的计数未重置）。
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(
+        before + CONVERGENCE_MAX_ATTEMPTS,
+      )
+    })
+
+    it('F3 慢速阶段：>60s 生成仍以 10s 间隔继续，并在交付后收敛', async () => {
       vi.mocked(getResearchChatSession).mockResolvedValue(detail([userRow], [card('running')]))
       const h = harness()
       const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
@@ -1696,17 +1871,96 @@ describe('PR-5b（D2/D3）：会话元数据、submission marker 与未结算查
           await vi.advanceTimersByTimeAsync(CONVERGENCE_INTERVAL_MS)
         })
       }
-      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(
-        before + CONVERGENCE_MAX_ATTEMPTS,
-      )
+      const afterFast = vi.mocked(getResearchChatSession).mock.calls.length
+      expect(afterFast).toBe(before + CONVERGENCE_MAX_ATTEMPTS)
 
+      // 快速阶段结束后 2s 无请求，10s 才有一次（慢速阶段生效）。
       await act(async () => {
         await vi.advanceTimersByTimeAsync(CONVERGENCE_INTERVAL_MS)
       })
-      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(
-        before + CONVERGENCE_MAX_ATTEMPTS,
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(afterFast)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CONVERGENCE_SLOW_INTERVAL_MS)
+      })
+      expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(afterFast + 1)
+
+      // 长生成在 fast 窗口之后交付：下一个慢速 tick 拉到消息即收敛。
+      vi.mocked(getResearchChatSession).mockResolvedValue(detail([userRow, assistantRow], []))
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CONVERGENCE_SLOW_INTERVAL_MS)
+      })
+      expect(result.current.sessionCards).toHaveLength(0)
+      expect(result.current.turns).toHaveLength(2)
+      expect(result.current.turns[1]).toMatchObject({ role: 'assistant', content: '答案' })
+    })
+
+    it('F5 等值去重：语义相同的详情卡不替换 sessionCards 状态（字段/序列化比较）', async () => {
+      vi.mocked(getResearchChatSession).mockResolvedValue(detail([userRow], [card('running')]))
+      const h = harness()
+      const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+      await flush()
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: null })
+      })
+      const first = result.current.sessionCards
+      expect(first).toHaveLength(1)
+
+      // 新响应：语义相同但对象全新。引用比较会误判为变化（旧实现每次新数组）。
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: null })
+      })
+      expect(result.current.sessionCards).toBe(first)
+      expect(result.current.sessionCards?.[0]?.status).toBe('running')
+    })
+
+    it('restricted 会话：收敛时消息仍为安全投影（正文/思考不泄漏），在途卡正常收敛', async () => {
+      const restrictedSession = {
+        session_id: 'sess_1',
+        title: 'restricted',
+        record_visibility: 'restricted',
+      }
+      const restrictedUser = {
+        ...userRow,
+        content: '机密问题',
+        record_visibility: 'restricted',
+      }
+      const restrictedAssistant = {
+        ...assistantRow,
+        content: '机密答案',
+        thinking: '机密思考',
+        record_visibility: 'restricted',
+      }
+      const restrictedDetail = (messages: unknown[], cards: unknown[]) => (
+        {
+          session: restrictedSession,
+          messages,
+          cards,
+          next_cursor: null,
+        } as unknown as Awaited<ReturnType<typeof getResearchChatSession>>
       )
+      vi.mocked(getResearchChatSession)
+        .mockResolvedValueOnce(restrictedDetail([restrictedUser], [card('running')]))
+        .mockResolvedValue(restrictedDetail([restrictedUser, restrictedAssistant], []))
+      const h = harness()
+      const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+      await flush()
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: null })
+      })
+      expect(result.current.sessionMeta).toMatchObject({ recordVisibility: 'restricted' })
       expect(result.current.sessionCards).toHaveLength(1)
+      expect(result.current.turns[0]?.content).toBe('')
+
+      loadThroughTransport(h)
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CONVERGENCE_INTERVAL_MS)
+      })
+      expect(result.current.sessionCards).toHaveLength(0)
+      expect(result.current.turns).toHaveLength(2)
+      expect(result.current.turns[0]?.content).toBe('')
+      expect(result.current.turns[1]?.content).toBe('')
+      expect(result.current.turns[1]?.thinking).toBe('')
+      expect(result.current.turns[1]?.recordVisibility).toBe('restricted')
     })
 
     it('切会话/卸载：收敛轮询定时器清理，不再请求旧会话详情', async () => {
