@@ -1048,6 +1048,10 @@ describe('RDLens #892：源会话尾部窗口（desc）', () => {
  *   desc 尾部读并发覆盖，最终显示哪一页取决于响应先后（非确定）。
  * - F6：source hook 完全没有详情序号守卫 → 迟到响应可乱序合并/替换。
  */
+interface SourceTransportStub {
+  loadDetail: (input: Record<string, unknown>) => Promise<unknown>
+}
+
 describe('RDLens #892 审查修复：source 会话详情读取', () => {
   interface SourceHarness {
     runtime: SessionRuntime
@@ -1288,6 +1292,92 @@ describe('RDLens #892 审查修复：source 会话详情读取', () => {
     })
     expect(result.current.turns).toHaveLength(1)
     expect(result.current.turns[0]?.content).toBe('最新答案')
+  })
+
+  it('R1：分页读不得触发跨会话整表替换（切会话后点「加载更早」不得替换当前会话内容）', async () => {
+    const controllerRow = {
+      message_id: 'msg_controller_session',
+      role: 'assistant' as const,
+      content: 'controller 会话的答案',
+      created_at: '2026-10-30T00:00:00Z',
+    }
+    const controllerOlderRow = {
+      message_id: 'msg_controller_older',
+      role: 'assistant' as const,
+      content: 'controller 会话的更早答案',
+      created_at: '2026-10-29T00:00:00Z',
+    }
+    const displayedRow = {
+      message_id: 'msg_displayed_session',
+      role: 'assistant' as const,
+      content: '当前会话的答案',
+      created_at: '2026-10-30T02:00:00Z',
+    }
+    let capturedTransport: SourceTransportStub | null = null
+    const controller = {
+      detach: vi.fn(),
+      hasActiveTurn: vi.fn(() => false),
+      load: vi.fn(async () => ({
+        status: 'ok' as const,
+        value: { messages: [controllerRow], next_cursor: null },
+      })),
+      loadMore: vi.fn(async () => {
+        // controller 的「更早一页」：属于 controller 会话，不是当前展示会话。
+        await capturedTransport?.loadDetail({ cursor: 'back-1', order: 'desc', limit: 50 })
+        return { status: 'ok' as const, value: { messages: [controllerOlderRow] } }
+      }),
+      getSnapshot: vi.fn(() => ({ turn: null, authGeneration: 1 })),
+    } as unknown as ConversationController
+    const conversation = vi.fn((...args: unknown[]) => {
+      capturedTransport = (args[1] as { transport: SourceTransportStub })?.transport ?? null
+      return controller
+    })
+    const runtime = {
+      conversation,
+      releaseConversation: vi.fn(),
+      getSnapshot: () => ({ authGeneration: 1 }),
+      subscribe: () => () => {},
+    } as unknown as SessionRuntime
+    vi.mocked(getSourceChatSession).mockImplementation((_p, _s, _source, options) => {
+      const opts = options as { cursor?: string } | undefined
+      // 带游标 = controller 会话的「更早一页」；不带游标 = 当前展示会话的尾部窗口。
+      const payload = opts?.cursor === undefined
+        ? {
+          session: { session_id: 'sess_displayed', title: null },
+          messages: [displayedRow],
+          next_cursor: null,
+        }
+        : {
+          session: { session_id: 'sess_src_1', title: null },
+          messages: [controllerOlderRow],
+          next_cursor: null,
+        }
+      return Promise.resolve(payload as never)
+    })
+
+    const { result } = renderHook(
+      () => useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1', session: { runtime, ref } }),
+      { wrapper: makeHookWrapper() },
+    )
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    // 切到「当前展示会话」：其尾部窗口成为当前内容。
+    await act(async () => {
+      result.current.selectSession('sess_displayed')
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(result.current.turns.map((turn) => turn.content)).toEqual(['当前会话的答案'])
+
+    // 点「加载更早」→ controller（仍绑在它自己的会话上）取回更早一页：
+    // 当前会话的内容不得被 controller 会话的行整表替换。
+    await act(async () => {
+      await controller.loadMore()
+      await Promise.resolve()
+    })
+    expect(result.current.turns.map((turn) => turn.content)).toEqual(['当前会话的答案'])
   })
 
   it('F6：迟到的旧详情响应整体丢弃（不得乱序并入 turns）', async () => {

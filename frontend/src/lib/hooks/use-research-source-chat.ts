@@ -350,18 +350,31 @@ export function useResearchSourceChat({
   /**
    * 应用源会话 durable 行到 turns（按会话隔离）。
    *
+   * 审查 R1：跨会话整表替换**只对新鲜详情读**（cursor=null）生效；分页读
+   * （带游标的「更早一页」）永远只做 prepend、绝不整表替换——否则「加载更早」
+   * 会把当前会话的内容整表替换成 controller 会话的行（分页读按定义属于
+   * controller 自己的会话；controller 与当前展示会话不一致的过渡态里，
+   * 这属于跨会话串行内容）。
+   *
    * @param rows         服务端返回的消息行（阅读顺序）
    * @param sessionId    这些行所属的会话
    * @param incomingIsOlder 是否比已加载的行更早（更早的一批排在前面）
+   * @param isPagedRead  是否为分页读（带游标）
    */
   const applySourceRows = useCallback((
     rows: readonly ResearchSourceChatMessage[],
     sessionId: string,
     incomingIsOlder: boolean,
+    isPagedRead: boolean,
   ): void => {
     const restored = rows.map(mapColdMessage)
     setTurns((prev) => {
       if (durableSessionRef.current !== sessionId) {
+        if (isPagedRead) {
+          // 分页读属于 controller 的会话，与当前展示会话不一致 → 既不替换也不
+          // 并入（turns 是按会话的列表）。
+          return prev
+        }
         // 跨会话 → **整表替换**：旧会话的行（durable 与 live 一律）全部丢弃，
         // 只留新会话读到的行；空窗口同样执行替换（切到空会话 → 旧行清空）。
         durableSessionRef.current = sessionId
@@ -486,7 +499,12 @@ export function useResearchSourceChat({
             ? (detail.messages as ResearchSourceChatMessage[])
             : []
           // 审查 L-7：方向判定与全局 hook 同构（desc：带游标=更早的一批）。
-          applySourceRows(rows, ref.sessionId, sourceDetailIncomingIsOlder(readOrder, cursor))
+          applySourceRows(
+            rows,
+            ref.sessionId,
+            sourceDetailIncomingIsOlder(readOrder, cursor),
+            isPagedRead,
+          )
           return detail
         })
       },
@@ -511,10 +529,10 @@ export function useResearchSourceChat({
         // 当前会话成功返回空详情同样要写入空数组（切换到空会话时不得残留旧消息）。
         setTurns([])
         durableSessionRef.current = null
-          return
+        return
       }
       // RDLens #892：合并而非整表替换（尾部窗口不得抹掉已加载的更早历史行）。
-      applySourceRows(rows, ref.sessionId, false)
+      applySourceRows(rows, ref.sessionId, false, false)
     })
     return () => {
       cancelled = true
@@ -825,7 +843,7 @@ export function useResearchSourceChat({
         })
         if (sessionIdRef.current !== sessionId) return // 选择已切换，丢弃过期结果
         // 合并而非整表替换：同一会话已加载的更早行不得被尾部窗口抹掉。
-        applySourceRows(detail.messages, sessionId, false)
+        applySourceRows(detail.messages, sessionId, false, false)
       } catch (err) {
         if (sessionIdRef.current !== sessionId) return
         setLoadDetailError(err instanceof Error ? err.message : String(err))
