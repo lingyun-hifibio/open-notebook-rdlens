@@ -3493,7 +3493,12 @@ describe('ResearchChatPanel：加载更早的消息（#892 迭代 2）', () => {
     emit: (patch: { detailCursor: string | null }) => void
   }
 
-  function makeControllerStub(): ControllerStub {
+  function makeControllerStub(options: {
+    /** loadMore 的返回（默认：1 行）；传 `{rows: []}` 模拟「没有更早的行」。 */
+    rows?: Array<{ message_id: string; role: 'assistant'; content: string }>
+    /** loadMore 是否失败。 */
+    fails?: boolean
+  } = {}): ControllerStub {
     let snapshot = {
       version: 1,
       sessionKey: 'sk',
@@ -3504,10 +3509,16 @@ describe('ResearchChatPanel：加载更早的消息（#892 迭代 2）', () => {
       detailCursor: 'back-1' as string | null,
     }
     const listeners: Array<() => void> = []
-    const loadMore = vi.fn(async () => ({
-      status: 'ok' as const,
-      value: { messages: [{ message_id: 'msg_old', role: 'assistant', content: '旧答案' }] },
-    }))
+    const rows = options.rows ?? [{ message_id: 'msg_old', role: 'assistant' as const, content: '旧答案' }]
+    const loadMore = vi.fn(async () => {
+      if (options.fails === true) {
+        throw new Error('load_more_failed')
+      }
+      return {
+        status: 'ok' as const,
+        value: { messages: rows },
+      }
+    })
     const controller = {
       getSnapshot: () => snapshot,
       subscribe: (listener: () => void) => {
@@ -3674,5 +3685,63 @@ describe('ResearchChatPanel：加载更早的消息（#892 迭代 2）', () => {
       fireEvent.click(screen.getByTestId('prepend-older'))
     })
     expect((container as HTMLElement).scrollTop).toBe(80)
+  })
+
+  it('loadMore 返回 0 行 → 补偿意图被丢弃（后续 prepend 不产生滚动）', async () => {
+    const stub = makeControllerStub({ rows: [] })
+    renderPanelWithConversation(stub.controller, [turn({ id: 't1', role: 'assistant', content: '新答案' })])
+
+    const container = screen.getByTestId('chat-messages')
+    let scrollHeight = 100
+    Object.defineProperty(container, 'scrollHeight', {
+      configurable: true,
+      get: () => scrollHeight,
+    })
+    Object.defineProperty(container, 'scrollTop', {
+      configurable: true,
+      writable: true,
+      value: 20,
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'research.pagination.loadMore' }))
+    })
+    expect(stub.loadMore).toHaveBeenCalledTimes(1)
+
+    // 没有新行 → 补偿意图必须被丢弃：随后的 prepend 不得触发任何滚动。
+    await act(async () => {
+      scrollHeight = 190
+      fireEvent.click(screen.getByTestId('prepend-older'))
+    })
+    expect((container as HTMLElement).scrollTop).toBe(20)
+  })
+
+  it('loadMore 失败 → 补偿意图被丢弃（不产生滚动）', async () => {
+    const stub = makeControllerStub({ fails: true })
+    renderPanelWithConversation(stub.controller, [turn({ id: 't1', role: 'assistant', content: '新答案' })])
+
+    const container = screen.getByTestId('chat-messages')
+    let scrollHeight = 100
+    Object.defineProperty(container, 'scrollHeight', {
+      configurable: true,
+      get: () => scrollHeight,
+    })
+    Object.defineProperty(container, 'scrollTop', {
+      configurable: true,
+      writable: true,
+      value: 20,
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'research.pagination.loadMore' }))
+    })
+    expect(stub.loadMore).toHaveBeenCalledTimes(1)
+
+    // 失败 → 补偿意图必须被丢弃：随后的 prepend 不得触发任何滚动。
+    await act(async () => {
+      scrollHeight = 190
+      fireEvent.click(screen.getByTestId('prepend-older'))
+    })
+    expect((container as HTMLElement).scrollTop).toBe(20)
   })
 })
