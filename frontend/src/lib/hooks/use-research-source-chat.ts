@@ -295,17 +295,6 @@ function mergeSourceTurns(
   return merged
 }
 
-/**
- * RDLens #892：本次详情响应相对已加载内容的位置（desc：首读=最新，带游标=更早）。
- */
-function sourceDetailIncomingIsOlder(
-  order: 'asc' | 'desc',
-  cursor: string | null | undefined,
-): boolean {
-  const hasCursor = cursor !== null && cursor !== undefined
-  return order === 'desc' ? hasCursor : !hasCursor
-}
-
 export function useResearchSourceChat({
   projectId,
   sourceId,
