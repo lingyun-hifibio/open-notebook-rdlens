@@ -64,6 +64,7 @@ import type {
   ConversationTransport,
   SessionRuntime,
 } from '@/lib/research/session-runtime'
+import type { ConversationTurnState } from '@/lib/research/conversation-machine'
 import { buildSourceScope } from '@/lib/research/c05-request'
 import type { ResearchChatRequest } from '@/lib/research/types'
 import { classifyC05Error } from '@/lib/research/c05-error-actions'
@@ -198,6 +199,48 @@ function collectDeliveredGenerations(messages: unknown): Set<string> {
   return delivered
 }
 
+/**
+ * Issue #881（F5）：容量报告等值比较（序列化兜底，序列化失败按不等处理）。
+ * 每次 captureDetail 都会重建报表对象，不能用引用比较。
+ */
+function sameContextReport(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  try {
+    return JSON.stringify(a) === JSON.stringify(b)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Issue #881（F5）：Generation 卡片字段等值比较——每次详情响应都会重建卡对象，
+ * 引用恒不等会让「等值跳过」永久失效（收敛窗口内每 2s 冗余 setState）。
+ * 只比较影响展示/判停的字段；created_at 等仅展示时间戳的变化不触发重渲染。
+ */
+function sameCard(a: ResearchGlobalChatCard, b: ResearchGlobalChatCard): boolean {
+  return a.generation_id === b.generation_id
+    && a.status === b.status
+    && (a.job_id ?? null) === (b.job_id ?? null)
+    && (a.failure_code ?? null) === (b.failure_code ?? null)
+    && sameContextReport(
+      a.context_report,
+      (b as { context_report?: unknown }).context_report,
+    )
+}
+
+/**
+ * Issue #881（F2）：turn 是否处于活跃执行状态——只有这些状态由 live 流/控制器
+ * 自身收敛；`terminal/unknown/not_observed/idle` 会在 runtime 长期驻留，
+ * 不得据此永久停止详情轮询。
+ */
+function isActiveTurnState(state: ConversationTurnState): boolean {
+  return state === 'preparing'
+    || state === 'submitting'
+    || state === 'accepted'
+    || state === 'streaming'
+    || state === 'lookup_pending'
+}
+
 /** 断线/409 的最大重连尝试次数（含首次） */
 export const MAX_STREAM_ATTEMPTS = 3
 
@@ -211,17 +254,29 @@ const SESSION_READ_PAGE_CAP = 1000
 export const RECONNECT_BACKOFF_MS = 300
 
 /**
- * Issue #881：恢复收敛轮询间隔（ms）。刷新/切会话恢复出 running/queued 的
- * Generation 卡后，按该间隔重拉会话详情；卡消失（服务端终态且交付完成）或
- * 消息出现即停止，避免在途卡永久残留、assistant 答案不出现。
+ * Issue #881：恢复收敛轮询（快速阶段）间隔（ms）。刷新/切会话恢复出
+ * running/queued 的 Generation 卡后，按该间隔重拉会话详情；卡消失（服务端
+ * 终态且交付完成）或消息出现即停止，避免在途卡永久残留、assistant 答案不出现。
  */
 export const CONVERGENCE_INTERVAL_MS = 2000
 
 /**
- * Issue #881：恢复收敛轮询上限（含首次，约 60s）。达到上限后保留真实在途卡
- * （不伪造终态、不无限轮询）；生成超时由服务端自身语义收敛，用户可手动刷新。
+ * Issue #881：快速阶段轮询上限（含首次，约 60s）。耗尽后转慢速阶段，避免
+ * 长生成（>60s）在服务端终态前就把预算烧光（独立审查 F3）。
  */
 export const CONVERGENCE_MAX_ATTEMPTS = 30
+
+/**
+ * Issue #881（F3）：慢速阶段轮询间隔（ms，10s × 18 ≈ 3 分钟）。总收敛窗口
+ * ≈ 4 分钟 / ≤48 次详情 GET，仍单飞、仍可被卡消失/live turn/切换停止。
+ */
+export const CONVERGENCE_SLOW_INTERVAL_MS = 10000
+
+/**
+ * Issue #881（F3）：慢速阶段轮询上限（18 次）。fast+slow 总窗口内仍未收敛则
+ * 保留真实在途卡（不伪造终态、不无限轮询）。
+ */
+export const CONVERGENCE_SLOW_MAX_ATTEMPTS = 18
 
 export type ResearchChatTurnStatus = 'streaming' | 'reconnecting' | 'done' | 'error'
 
@@ -880,8 +935,17 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
      * 这里用「详情轮询 + 终态已知集」收敛：卡消失（服务端终态且交付完成）或
      * 消息出现即停；failed/unknown 卡保留（真实终态呈现）。
      */
+    // Issue #881（F1）：详情请求单调序号。详情请求可并发（轮询 load()、
+    // durable_restore、Check status 查回），只允许最新响应写 turns/cards/meta；
+    // 迟到旧响应整体丢弃（不得只丢卡片、仍覆盖 turns——会造成 2→1 回退并
+    // 把 running 卡当已交付而永久隐藏）。
+    let detailRequestSeq = 0
+    let detailAppliedSeq = 0
+    /** 最近一次已应用详情响应的 messages 数组（mount load 回调据此丢弃过期结果）。 */
+    let lastAppliedMessages: readonly unknown[] | null = null
     let convergenceTimer: ReturnType<typeof setTimeout> | null = null
-    let convergenceAttempts = 0
+    let convergenceFastAttempts = 0
+    let convergenceSlowAttempts = 0
     let convergenceInflight = false
     let visibleCards: readonly ResearchGlobalChatCard[] = []
     const clearConvergence = (): void => {
@@ -890,12 +954,35 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
         convergenceTimer = null
       }
     }
+    /** Issue #881（F3）：episode 结束（不再需要收敛）时清零预算。 */
+    const resetConvergenceBudget = (): void => {
+      convergenceFastAttempts = 0
+      convergenceSlowAttempts = 0
+    }
+    /**
+     * Issue #881（F3）：fast（2s×30）→ slow（10s×18）两阶段；返回 null 表示
+     * 总预算耗尽（停止轮询、保留真实在途卡）。
+     */
+    const nextConvergenceDelay = (): number | null => {
+      if (convergenceFastAttempts < CONVERGENCE_MAX_ATTEMPTS) {
+        return CONVERGENCE_INTERVAL_MS
+      }
+      if (convergenceSlowAttempts < CONVERGENCE_SLOW_MAX_ATTEMPTS) {
+        return CONVERGENCE_SLOW_INTERVAL_MS
+      }
+      return null
+    }
     /** 是否仍需要收敛：有未证明终态/未交付的在途卡，或已终态但消息尚未落库。 */
     const convergenceNeeded = (): boolean => {
       if (cancelled) return false
       const liveTurn = controllerRef.current?.getSnapshot?.().turn ?? null
-      // 出现真实 live turn（非冷启动 external 查回轮）时由流/控制器自身收敛。
-      if (liveTurn !== null && liveTurn.external !== true) return false
+      // Issue #881（F2）：只有**活跃执行中**的 turn 由流/控制器自行收敛；runtime
+      // 的 terminal turn 永不置空，若按「存在 turn」停止轮询，用户发送/409 之后
+      // 恢复出的剩余 running 卡将永久不再收敛。terminal/unknown/not_observed/
+      // idle 一律不阻塞（仍按卡与终态集判断）。
+      if (liveTurn !== null && liveTurn.external !== true && isActiveTurnState(liveTurn.state)) {
+        return false
+      }
       const settledFailures = new Set(
         rawSessionCardsRef.current
           .filter((card) => card.status === 'failed' || card.status === 'unknown')
@@ -917,9 +1004,14 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
       if (cancelled || convergenceInflight) return
       const controller = controllerRef.current
       if (controller === null) return
-      if (!convergenceNeeded()) return
+      if (!convergenceNeeded()) {
+        resetConvergenceBudget()
+        return
+      }
+      const fastPhase = convergenceFastAttempts < CONVERGENCE_MAX_ATTEMPTS
       convergenceInflight = true
-      convergenceAttempts += 1
+      if (fastPhase) convergenceFastAttempts += 1
+      else convergenceSlowAttempts += 1
       try {
         await controller.load()
       } catch {
@@ -930,21 +1022,35 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
       if (cancelled) return
       scheduleConvergence()
     }
-    /** 单飞调度：上一发未返回不重发；达到上限或不再需要时停止。 */
+    /** 单飞调度：上一发未返回不重发；预算耗尽或不再需要时停止。 */
     function scheduleConvergence(): void {
-      if (cancelled || convergenceTimer !== null) return
-      if (convergenceAttempts >= CONVERGENCE_MAX_ATTEMPTS) return
-      if (!convergenceNeeded()) return
+      if (cancelled) return
+      if (!convergenceNeeded()) {
+        // Issue #881（F3）：episode 自然结束（卡清除/消息到齐/live turn 接管）
+        // 即清零预算并取消未触发的 tick；下一次在途卡重新获得完整 fast+slow 窗口。
+        resetConvergenceBudget()
+        if (convergenceTimer !== null) {
+          clearTimeout(convergenceTimer)
+          convergenceTimer = null
+        }
+        return
+      }
+      if (convergenceTimer !== null) return
+      const delay = nextConvergenceDelay()
+      if (delay === null) return
       convergenceTimer = setTimeout(() => {
         convergenceTimer = null
         void runConvergenceTick()
-      }, CONVERGENCE_INTERVAL_MS)
+      }, delay)
     }
     /**
      * Issue #881（F1）：整表详情刷新 → 重建 durable turns（恢复后终态交付完成的
      * assistant 消息必须出现，而不是只在 mount 时回填一次）。
-     * 守卫：无活动 legacy 流、无 streaming 本地轮、且 controller 没有正在进行的
-     * 非 external turn（external 冷启动查回轮不投影为消息，可安全替换）。
+     * 守卫：无活动 legacy 流、无 streaming 本地轮；controller 的活跃 turn
+     * （preparing/submitting/accepted/streaming/lookup_pending）由流自身收敛，
+     * 不覆盖。非活跃 turn（terminal/unknown/not_observed/idle）只有在
+     * generationId 可证明时替换——external 冷启动查回轮不投影为消息，可安全替换；
+     * 其余靠 generationId 让面板跳过 controller 副本，避免重复 user 行。
      */
     function syncTurnsFromDetail(detail: unknown): void {
       if (cancelled || activeRef.current !== null) return
@@ -955,7 +1061,7 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
       }
       const liveTurn = controllerRef.current?.getSnapshot?.().turn ?? null
       if (liveTurn !== null && liveTurn.external !== true) {
-        if (liveTurn.state !== 'terminal') return
+        if (isActiveTurnState(liveTurn.state)) return
         const generationId = liveTurn.identity.generationId
         if (typeof generationId !== 'string' || generationId.length === 0) return
       }
@@ -966,7 +1072,11 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
         .filter((turn): turn is ResearchChatTurn => turn !== null)
       setTurns(restored)
     }
-    /** 按终态/已交付集合重算下发给面板的卡（等值时跳过，避免重复渲染）。 */
+    /**
+     * 按终态/已交付集合重算下发给面板的卡。Issue #881（F5）：相等判定改为
+     * 字段/序列化等值（每次详情响应都会重建卡对象，引用比较恒不等，会在收敛
+     * 窗口内每 2s 触发一次冗余 setState）。
+     */
     const syncVisibleCards = (): void => {
       const next = hideStaleRunningCards(
         rawSessionCardsRef.current,
@@ -975,7 +1085,7 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
       )
       if (
         next.length === visibleCards.length
-        && next.every((card, index) => card === visibleCards[index])
+        && next.every((card, index) => sameCard(card, visibleCards[index]))
       ) {
         return
       }
@@ -1158,24 +1268,39 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
         captureSubmission(token, raw)
         return raw
       }),
-      loadDetail: ({ cursor }) => getResearchChatSession(
-        projectIdRef.current,
-        ref.sessionId,
-        {
-          ...(cursor === null || cursor === undefined ? {} : { cursor }),
-          // PR-5b（Codex P1-#4 / §6.7）：新会话协议显式请求 session DTO 扩展
-          // （record_visibility/扩展消息/失败卡报告）——仍是同一次响应。
-          sessionContract: true,
-        },
-      ).then((detail) => {
-        // PR-5b（D2）：同一次响应捕获 header 元数据/卡——不得再发第二次详情。
-        captureDetail(detail)
-        // Issue #881（F1）：整表刷新（cursor 为空）时重建 durable turns。
-        if (cursor === null || cursor === undefined) {
-          syncTurnsFromDetail(detail)
-        }
-        return detail
-      }),
+      loadDetail: ({ cursor }) => {
+        // Issue #881（F1）：每次详情请求取单调序号，响应只允许「最新」写入
+        // turns/cards/meta；更旧的响应（并发 load()/durable_restore/查回导致）
+        // 整体丢弃，防止 2→1 回退与 running 卡被误判已交付而永久隐藏。
+        detailRequestSeq += 1
+        const requestSeq = detailRequestSeq
+        return getResearchChatSession(
+          projectIdRef.current,
+          ref.sessionId,
+          {
+            ...(cursor === null || cursor === undefined ? {} : { cursor }),
+            // PR-5b（Codex P1-#4 / §6.7）：新会话协议显式请求 session DTO 扩展
+            // （record_visibility/扩展消息/失败卡报告）——仍是同一次响应。
+            sessionContract: true,
+          },
+        ).then((detail) => {
+          if (cancelled) return detail
+          if (requestSeq <= detailAppliedSeq) {
+            // 迟到旧响应：不得只丢卡片仍覆盖 turns（review F1）。
+            return detail
+          }
+          detailAppliedSeq = requestSeq
+          const rawMessages = (detail as { messages?: unknown } | null)?.messages
+          lastAppliedMessages = Array.isArray(rawMessages) ? rawMessages : null
+          // PR-5b（D2）：同一次响应捕获 header 元数据/卡——不得再发第二次详情。
+          captureDetail(detail)
+          // Issue #881（F1）：整表刷新（cursor 为空）时重建 durable turns。
+          if (cursor === null || cursor === undefined) {
+            syncTurnsFromDetail(detail)
+          }
+          return detail
+        })
+      },
       releaseHold: (operationId) => releaseHold?.(operationId),
       clearAfterSubmission: (receipt, operationId) => clearAfterSubmission?.(receipt, operationId),
     }
@@ -1360,11 +1485,17 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
       if (result.status !== 'ok') return
       if (interactedRef.current || activeRef.current) return
       const rows = (result.value?.messages ?? []) as ResearchGlobalChatMessage[]
-      const restored = rows
-        .map((row) => messageRowToTurn(row as DurableMessageRow))
-        .filter((turn): turn is ResearchChatTurn => turn !== null)
-      // 当前会话成功返回空详情同样要写入空数组（切换到空会话时不得残留旧消息）。
-      setTurns(restored)
+      // Issue #881（F1）：mount load 的响应若已被更新的详情响应取代（并发
+      // durable_restore/查回先落），其 messages 数组不再是最新应用版本 →
+      // 不覆盖 turns（marker 结算与轮询调度仍照常执行）。
+      const staleMountLoad = lastAppliedMessages !== null && rows !== lastAppliedMessages
+      if (!staleMountLoad) {
+        const restored = rows
+          .map((row) => messageRowToTurn(row as DurableMessageRow))
+          .filter((turn): turn is ResearchChatTurn => turn !== null)
+        // 当前会话成功返回空详情同样要写入空数组（切换到空会话时不得残留旧消息）。
+        setTurns(restored)
+      }
       // §6.7：冷启动/打开会话必须先查回未结算提交（不清稿、不换键、不重发）。
       void reconcileMarkers(null)
       // Issue #881（F3）：恢复出在途卡时启动有界收敛轮询。
