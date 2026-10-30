@@ -1243,6 +1243,53 @@ describe('RDLens #892 审查修复：source 会话详情读取', () => {
     expect(result.current.turns[0]?.content).toBe('新会话的答案')
   })
 
+  it('口径：同会话合并**保留 live 轮**；跨会话整表替换（旧 live 轮也丢弃）', async () => {
+    vi.mocked(getSourceChatSession).mockResolvedValue({
+      session: { session_id: 'sess_live', title: null },
+      messages: [tailMessage],
+      next_cursor: null,
+    } as never)
+    // legacy 模式（不接 session runtime）：hook 自己的 send 会把 live 轮写进 turns。
+    const { result } = renderHook(
+      () => useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1' }),
+      { wrapper: makeHookWrapper() },
+    )
+    await act(async () => {
+      result.current.selectSession('sess_live')
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(result.current.turns).toHaveLength(1)
+
+    // 发一条消息 → live 轮（user + assistant）进入 turns。
+    await act(async () => {
+      result.current.send('新问题', MODEL)
+      await Promise.resolve()
+    })
+    const liveTurns = result.current.turns.filter((turn) => turn.id.startsWith('turn_'))
+    expect(liveTurns.length).toBeGreaterThan(0)
+    const beforeLive = result.current.turns.length
+
+    // 同一会话再读一次 durable → **合并**：live 轮必须保留。
+    await act(async () => {
+      result.current.selectSession('sess_live')
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(result.current.turns).toHaveLength(beforeLive)
+    expect(result.current.turns.filter((turn) => turn.id.startsWith('turn_')).length)
+      .toBe(liveTurns.length)
+
+    // 跨会话 → **整表替换**：旧会话的 live 轮也必须丢弃。
+    await act(async () => {
+      result.current.selectSession('sess_other')
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(result.current.turns).toHaveLength(1)
+    expect(result.current.turns[0]?.content).toBe('最新答案')
+  })
+
   it('F6：迟到的旧详情响应整体丢弃（不得乱序并入 turns）', async () => {
     const h = sourceHarness()
     const responses: Array<(value: unknown) => void> = []
