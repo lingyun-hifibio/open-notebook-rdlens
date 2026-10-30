@@ -254,6 +254,37 @@ function isSessionNavigationTarget(node: HTMLElement | null): boolean {
   )
 }
 
+/**
+ * RDLens #892（审查 F2）：消息行的稳定身份（durable 行 = message_id；live 行
+ * 退化为 turn id）。
+ */
+function chatTurnIdentity(turn: ResearchChatTurn): string {
+  return turn.serverMessageId ?? turn.id
+}
+
+/**
+ * RDLens #892（审查 F2）：`now` 是否是「在 `before` 之前插入了更早的行」。
+ *
+ * 判据：`before` 的 id 序列在 `now` 中仍是**连续子序列**，且其前面还有行
+ * （= 更早的一页被 prepend 到顶部）。仅比较行数会把「流式新增/收敛合并」
+ * 这类无关变化误判成 prepend。
+ */
+function earlierPagePrepended(before: readonly string[], now: readonly string[]): boolean {
+  if (before.length === 0) return false
+  if (now.length <= before.length) return false
+  for (let start = 0; start + before.length <= now.length; start += 1) {
+    let matched = true
+    for (let index = 0; index < before.length; index += 1) {
+      if (now[start + index] !== before[index]) {
+        matched = false
+        break
+      }
+    }
+    if (matched) return start > 0
+  }
+  return false
+}
+
 export function ResearchChatPanel({
   turns,
   isStreaming,
@@ -590,11 +621,18 @@ export function ResearchChatPanel({
    *   阅读位置锚点错乱（复用既有 `chatScrollRef` 与 scrollTop 机制）。
    */
   const [loadingEarlier, setLoadingEarlier] = useState(false)
-  /** prepend 补偿意图：请求前记录容器几何，等更早的行渲染后按差值补偿。 */
+  /**
+   * prepend 补偿意图：请求前记录容器几何与当时的行 id 序列，等**确实出现更早
+   * 的行**时按差值补偿。
+   *
+   * 审查 F2：补偿意图必须按「prepend 事实」消费——请求在途期间的任何无关
+   * turns 变化（流式新增、收敛合并、内容更新）都不得消费它（否则要么虚假
+   * 跳动，要么真 prepend 到达时意图已清空 → 正确锚定值丢失）。
+   */
   const pendingPrependRef = useRef<{
     scrollHeight: number
     scrollTop: number
-    count: number
+    ids: readonly string[]
   } | null>(null)
   /** 是否还有更早的历史（控制器快照的后向游标非空 = 还有更早的一页）。 */
   const hasEarlierMessages =
@@ -608,7 +646,7 @@ export function ResearchChatPanel({
       : {
         scrollHeight: container.scrollHeight,
         scrollTop: container.scrollTop,
-        count: turns.length,
+        ids: turns.map(chatTurnIdentity),
       }
     setLoadingEarlier(true)
     void controller
@@ -629,13 +667,26 @@ export function ResearchChatPanel({
   /**
    * prepend 后的滚动补偿：容器 `scrollHeight` 增加了多少，`scrollTop` 就补回
    * 多少 → 视口停在原来那条消息上（不跳动）。
+   *
+   * 审查 F2：只有**确实新增了更早的行**（prepend 事实）才补偿；无关变化只
+   * 推进基线（scrollHeight/scrollTop/id 序列），不滚动、不消费意图。
    */
   useEffect(() => {
     const pending = pendingPrependRef.current
     if (pending === null) return
-    pendingPrependRef.current = null
-    if (turns.length <= pending.count) return
     const container = chatScrollRef.current
+    const now = turns.map(chatTurnIdentity)
+    if (!earlierPagePrepended(pending.ids, now)) {
+      // 无关变化 → 不滚动、不消费意图；只把基线推进到当前几何（后续 prepend
+      // 的差值才只含 prepend 自身的高度）。
+      if (container !== null) {
+        pending.scrollHeight = container.scrollHeight
+        pending.scrollTop = container.scrollTop
+      }
+      pending.ids = now
+      return
+    }
+    pendingPrependRef.current = null
     if (container === null) return
     const delta = container.scrollHeight - pending.scrollHeight
     if (delta <= 0) return

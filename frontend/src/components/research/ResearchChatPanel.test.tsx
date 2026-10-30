@@ -3570,6 +3570,18 @@ describe('ResearchChatPanel：加载更早的消息（#892 迭代 2）', () => {
               >
                 prepend
               </button>
+              <button
+                type="button"
+                data-testid="unrelated-change"
+                onClick={() => {
+                  // 无关变化：更新已有行的正文（行数与顺序不变）。
+                  setTurns((prev) => prev.map((item) => (
+                    item.id === 't1' ? { ...item, content: `${item.content}（更新）` } : item
+                  )))
+                }}
+              >
+                unrelated
+              </button>
             </ResearchScopeProvider>
           </ResearchWorkspaceProvider>
         </QueryClientProvider>
@@ -3623,6 +3635,42 @@ describe('ResearchChatPanel：加载更早的消息（#892 迭代 2）', () => {
     // 更早的一页被 prepend（容器变高 60px）→ scrollTop 必须同步补 60px。
     await act(async () => {
       scrollHeight = 160
+      fireEvent.click(screen.getByTestId('prepend-older'))
+    })
+    expect((container as HTMLElement).scrollTop).toBe(80)
+  })
+
+  it('F2：无关 turns 变化不得消费补偿意图（不得滚动）；真 prepend 才按差值补偿', async () => {
+    const stub = makeControllerStub()
+    renderPanelWithConversation(stub.controller, [turn({ id: 't1', role: 'assistant', content: '新答案' })])
+
+    const container = screen.getByTestId('chat-messages')
+    let scrollHeight = 100
+    Object.defineProperty(container, 'scrollHeight', {
+      configurable: true,
+      get: () => scrollHeight,
+    })
+    Object.defineProperty(container, 'scrollTop', {
+      configurable: true,
+      writable: true,
+      value: 20,
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'research.pagination.loadMore' }))
+    })
+
+    // 请求在途期间的无关变化（流式新增 / 收敛合并 / 内容更新）：
+    // 不得滚动，也不得把补偿意图消费掉。
+    await act(async () => {
+      scrollHeight = 130
+      fireEvent.click(screen.getByTestId('unrelated-change'))
+    })
+    expect((container as HTMLElement).scrollTop).toBe(20)
+
+    // 真正的 prepend 到达 → 按差值补偿（基线已被无关变化推进到 130）。
+    await act(async () => {
+      scrollHeight = 190
       fireEvent.click(screen.getByTestId('prepend-older'))
     })
     expect((container as HTMLElement).scrollTop).toBe(80)
