@@ -3483,3 +3483,148 @@ describe('ResearchChatPanel PR-13：not_accepted 类 503 不得静默', () => {
     expect(screen.queryByTestId('chat-error')).toBeNull()
   })
 })
+
+// ── RDLens #892（迭代 2）：「加载更早的消息」入口 + prepend 滚动补偿 ──
+
+describe('ResearchChatPanel：加载更早的消息（#892 迭代 2）', () => {
+  interface ControllerStub {
+    controller: ConversationController
+    loadMore: ReturnType<typeof vi.fn>
+    emit: (patch: { detailCursor: string | null }) => void
+  }
+
+  function makeControllerStub(): ControllerStub {
+    let snapshot = {
+      version: 1,
+      sessionKey: 'sk',
+      authGeneration: 1,
+      turn: null,
+      history: [],
+      detailMessages: [],
+      detailCursor: 'back-1' as string | null,
+    }
+    const listeners: Array<() => void> = []
+    const loadMore = vi.fn(async () => ({
+      status: 'ok' as const,
+      value: { messages: [{ message_id: 'msg_old', role: 'assistant', content: '旧答案' }] },
+    }))
+    const controller = {
+      getSnapshot: () => snapshot,
+      subscribe: (listener: () => void) => {
+        listeners.push(listener)
+        return () => {
+          const index = listeners.indexOf(listener)
+          if (index >= 0) listeners.splice(index, 1)
+        }
+      },
+      loadMore,
+      detach: vi.fn(),
+      hasActiveTurn: vi.fn(() => false),
+    } as unknown as ConversationController
+    return {
+      controller,
+      loadMore,
+      emit: (patch) => {
+        snapshot = { ...snapshot, ...patch }
+        for (const listener of [...listeners]) listener()
+      },
+    }
+  }
+
+  function renderPanelWithConversation(
+    controller: ConversationController,
+    initialTurns: ResearchChatTurn[],
+    onLoaded?: () => void,
+  ) {
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
+    function Harness() {
+      const [turns, setTurns] = useState<ResearchChatTurn[]>(initialTurns)
+      return (
+        <QueryClientProvider client={queryClient}>
+          <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
+            <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+              <ResearchChatPanel
+                turns={turns}
+                isStreaming={false}
+                onSend={vi.fn()}
+                onSendCoverage={vi.fn(async () => ACCEPTED_OUTCOME)}
+                conversation={controller}
+                sessionRef={{
+                  domain: 'research',
+                  kind: 'global',
+                  projectId: PROJECT_ID,
+                  sessionId: 'sess_1',
+                  sourceId: null,
+                }}
+              />
+              <button
+                type="button"
+                data-testid="prepend-older"
+                onClick={() => {
+                  setTurns((prev) => [
+                    turn({ id: 'msg_old', role: 'assistant', content: '旧答案' }),
+                    ...prev,
+                  ])
+                  onLoaded?.()
+                }}
+              >
+                prepend
+              </button>
+            </ResearchScopeProvider>
+          </ResearchWorkspaceProvider>
+        </QueryClientProvider>
+      )
+    }
+    return render(<Harness />)
+  }
+
+  it('存在「加载更早的消息」入口（复用既有通用 i18n 键），点击后调用 controller.loadMore()', async () => {
+    const stub = makeControllerStub()
+    renderPanelWithConversation(stub.controller, [turn({ id: 't1', role: 'assistant', content: '新答案' })])
+
+    const button = screen.getByRole('button', { name: 'research.pagination.loadMore' })
+    expect(button).toBeInTheDocument()
+
+    await act(async () => {
+      fireEvent.click(button)
+    })
+    expect(stub.loadMore).toHaveBeenCalledTimes(1)
+  })
+
+  it('没有更早历史（后向游标为空）时不渲染该入口', () => {
+    const stub = makeControllerStub()
+    stub.emit({ detailCursor: null })
+    renderPanelWithConversation(stub.controller, [turn({ id: 't1', role: 'assistant', content: '新答案' })])
+    expect(screen.queryByRole('button', { name: 'research.pagination.loadMore' })).toBeNull()
+  })
+
+  it('prepend 后按 scrollHeight 差值补偿 scrollTop（视口不跳动）', async () => {
+    const stub = makeControllerStub()
+    renderPanelWithConversation(stub.controller, [turn({ id: 't1', role: 'assistant', content: '新答案' })])
+
+    const container = screen.getByTestId('chat-messages')
+    let scrollHeight = 100
+    Object.defineProperty(container, 'scrollHeight', {
+      configurable: true,
+      get: () => scrollHeight,
+    })
+    Object.defineProperty(container, 'scrollTop', {
+      configurable: true,
+      writable: true,
+      value: 20,
+    })
+
+    const button = screen.getByRole('button', { name: 'research.pagination.loadMore' })
+    await act(async () => {
+      fireEvent.click(button)
+    })
+    expect(stub.loadMore).toHaveBeenCalledTimes(1)
+
+    // 更早的一页被 prepend（容器变高 60px）→ scrollTop 必须同步补 60px。
+    await act(async () => {
+      scrollHeight = 160
+      fireEvent.click(screen.getByTestId('prepend-older'))
+    })
+    expect((container as HTMLElement).scrollTop).toBe(80)
+  })
+})

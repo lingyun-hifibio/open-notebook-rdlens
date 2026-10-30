@@ -581,6 +581,66 @@ export function ResearchChatPanel({
     return sessionConversation.subscribe(sync)
   }, [sessionConversation])
   const liveTurn = liveSnapshot?.turn ?? null
+  /**
+   * RDLens #892（迭代 2）：「加载更早的消息」入口。
+   *
+   * - 尾部窗口（desc）首读只拿到最新一段历史；更早的一页由 controller 的
+   *   `loadMore()` 取回（后向游标），返回行 prepend 到消息列表顶部；
+   * - prepend 会改变容器 `scrollHeight` → 必须做差值补偿，否则视口跳动、
+   *   阅读位置锚点错乱（复用既有 `chatScrollRef` 与 scrollTop 机制）。
+   */
+  const [loadingEarlier, setLoadingEarlier] = useState(false)
+  /** prepend 补偿意图：请求前记录容器几何，等更早的行渲染后按差值补偿。 */
+  const pendingPrependRef = useRef<{
+    scrollHeight: number
+    scrollTop: number
+    count: number
+  } | null>(null)
+  /** 是否还有更早的历史（控制器快照的后向游标非空 = 还有更早的一页）。 */
+  const hasEarlierMessages =
+    sessionConversation !== null && (liveSnapshot?.detailCursor ?? null) !== null
+  const handleLoadEarlier = (): void => {
+    const controller = sessionConversation
+    if (controller === null || loadingEarlier) return
+    const container = chatScrollRef.current
+    pendingPrependRef.current = container === null
+      ? null
+      : {
+        scrollHeight: container.scrollHeight,
+        scrollTop: container.scrollTop,
+        count: turns.length,
+      }
+    setLoadingEarlier(true)
+    void controller
+      .loadMore()
+      .then((result) => {
+        setLoadingEarlier(false)
+        const rows = result.status === 'ok' ? result.value?.messages : null
+        if (!Array.isArray(rows) || rows.length === 0) {
+          // 没有新行（无更多/失败）→ 无需补偿，丢弃补偿意图。
+          pendingPrependRef.current = null
+        }
+      })
+      .catch(() => {
+        setLoadingEarlier(false)
+        pendingPrependRef.current = null
+      })
+  }
+  /**
+   * prepend 后的滚动补偿：容器 `scrollHeight` 增加了多少，`scrollTop` 就补回
+   * 多少 → 视口停在原来那条消息上（不跳动）。
+   */
+  useEffect(() => {
+    const pending = pendingPrependRef.current
+    if (pending === null) return
+    pendingPrependRef.current = null
+    if (turns.length <= pending.count) return
+    const container = chatScrollRef.current
+    if (container === null) return
+    const delta = container.scrollHeight - pending.scrollHeight
+    if (delta <= 0) return
+    container.scrollTop = pending.scrollTop + delta
+  }, [turns])
   // PR-5b（Codex P2-#9）：冷启动恢复出的非空持久草稿也必须先查回一次当前
   // draft token（marker 写失败/被清除且 cards 为空时 F10 的兜底路径）。
   //
@@ -1563,6 +1623,22 @@ export function ResearchChatPanel({
           >
             {t('research.editor.positionUnavailable')}
           </p>
+        )}
+        {hasEarlierMessages && (
+          <div className="flex justify-center pb-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleLoadEarlier}
+              disabled={loadingEarlier}
+              data-testid="chat-load-earlier"
+            >
+              {loadingEarlier
+                ? t('research.pagination.loadingMore')
+                : t('research.pagination.loadMore')}
+            </Button>
+          </div>
         )}
         {turns.length === 0 && (
           <p className="text-sm text-muted-foreground">{t('research.chatEmpty')}</p>
