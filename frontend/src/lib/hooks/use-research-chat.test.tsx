@@ -2357,5 +2357,223 @@ describe('PR-5b（D2/D3）：会话元数据、submission marker 与未结算查
       })
       expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(before + 3 * windowTicks)
     })
+
+    // ── Issue #896 NIT-7：恢复收敛四条边界回归 ──
+    describe('Issue #896 NIT-7：恢复收敛边界回归', () => {
+      const USER_MSG_2 = `msg_${GEN}_user_2`
+      const userRow2 = {
+        message_id: USER_MSG_2,
+        role: 'user',
+        content: '问题2',
+        created_at: '2026-10-30T00:00:00Z',
+      }
+
+      it('NIT-7① active streaming 时抑制收敛轮询，terminal 后下一 tick 恢复一次详情 GET', async () => {
+        vi.mocked(getResearchChatSession).mockResolvedValue(detail([userRow], [card('running')]))
+        const h = harness()
+        const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+        await flush()
+        await act(async () => {
+          await h.transport.loadDetail({ cursor: null })
+        })
+        expect(result.current.sessionCards).toHaveLength(1)
+        loadThroughTransport(h)
+
+        // active streaming：由 live 流自行收敛，详情轮询必须被抑制。
+        act(() => {
+          h.emitTurn({
+            external: false,
+            state: 'streaming',
+            identity: { draftToken: 't_live', generationId: GEN },
+          })
+        })
+        const before = vi.mocked(getResearchChatSession).mock.calls.length
+        for (let i = 0; i < 5; i += 1) {
+          await act(async () => {
+            await vi.advanceTimersByTimeAsync(CONVERGENCE_INTERVAL_MS)
+          })
+        }
+        expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(before)
+
+        // terminal：running 卡立即剔除；下一 tick 恢复一次收敛 GET 补齐交付。
+        act(() => {
+          h.emitTurn({
+            external: false,
+            state: 'terminal',
+            identity: { draftToken: 't_live', generationId: GEN },
+          })
+        })
+        // 立即剔除语义在 tick 前取样（tick 后卡仍应保持隐藏）。
+        const cardsAfterTerminal = result.current.sessionCards?.length ?? -1
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(CONVERGENCE_INTERVAL_MS)
+        })
+        expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(before + 1)
+        expect(cardsAfterTerminal).toBe(0)
+        expect(result.current.sessionCards).toHaveLength(0)
+      })
+
+      it('NIT-7② slow 阶段切会话/卸载清理收敛 timer（vi.getTimerCount 无泄漏）', async () => {
+        vi.mocked(getResearchChatSession).mockResolvedValue(detail([userRow], [card('running')]))
+        const h = harness()
+        const view = renderHook(
+          ({ sessionId }: { sessionId: string }) => useResearchChat({
+            projectId: 'proj_1',
+            session: { runtime: h.runtime, ref: { ...ref, sessionId } },
+          }),
+          { initialProps: { sessionId: 'sess_1' } },
+        )
+        await flush()
+        // t0：mount 完成、尚无收敛 episode（默认 load 不经 transport，无 timer）。
+        const t0 = vi.getTimerCount()
+        expect(t0).toBe(0)
+
+        await act(async () => {
+          await h.transport.loadDetail({ cursor: null })
+        })
+        expect(view.result.current.sessionCards).toHaveLength(1)
+        expect(vi.getTimerCount()).toBe(t0 + 1)
+        loadThroughTransport(h)
+        const before = vi.mocked(getResearchChatSession).mock.calls.length
+
+        for (let i = 0; i < CONVERGENCE_MAX_ATTEMPTS; i += 1) {
+          await act(async () => {
+            await vi.advanceTimersByTimeAsync(CONVERGENCE_INTERVAL_MS)
+          })
+        }
+        // fast 预算耗尽、slow timer 待触发：仍恰好 1 个收敛 timer，GET 有界。
+        expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(
+          before + CONVERGENCE_MAX_ATTEMPTS,
+        )
+        expect(vi.getTimerCount()).toBe(t0 + 1)
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(CONVERGENCE_INTERVAL_MS)
+        })
+        expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(
+          before + CONVERGENCE_MAX_ATTEMPTS,
+        )
+        expect(vi.getTimerCount()).toBe(t0 + 1)
+
+        // 切会话：旧会话收敛 timer 必须清理（新会话用空详情，避免自身轮询噪声）。
+        vi.mocked(getResearchChatSession).mockResolvedValue(detail([], []))
+        view.rerender({ sessionId: 'sess_b' })
+        await flush()
+        expect(vi.getTimerCount()).toBe(t0)
+        const afterSwitch = vi.mocked(getResearchChatSession).mock.calls.length
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(CONVERGENCE_SLOW_INTERVAL_MS * 3)
+        })
+        expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(afterSwitch)
+        expect(vi.getTimerCount()).toBe(t0)
+        view.unmount()
+        await flush()
+
+        // 二次 mount 到 slow 阶段后 unmount：timer 同样必须清理。
+        vi.mocked(getResearchChatSession).mockResolvedValue(detail([userRow], [card('running')]))
+        const view2 = renderHook(
+          ({ sessionId }: { sessionId: string }) => useResearchChat({
+            projectId: 'proj_1',
+            session: { runtime: h.runtime, ref: { ...ref, sessionId } },
+          }),
+          { initialProps: { sessionId: 'sess_1' } },
+        )
+        await flush()
+        await act(async () => {
+          await h.transport.loadDetail({ cursor: null })
+        })
+        expect(view2.result.current.sessionCards).toHaveLength(1)
+        expect(vi.getTimerCount()).toBe(t0 + 1)
+        loadThroughTransport(h)
+        const before2 = vi.mocked(getResearchChatSession).mock.calls.length
+        for (let i = 0; i < CONVERGENCE_MAX_ATTEMPTS; i += 1) {
+          await act(async () => {
+            await vi.advanceTimersByTimeAsync(CONVERGENCE_INTERVAL_MS)
+          })
+        }
+        expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(
+          before2 + CONVERGENCE_MAX_ATTEMPTS,
+        )
+        expect(vi.getTimerCount()).toBe(t0 + 1)
+        view2.unmount()
+        await flush()
+        expect(vi.getTimerCount()).toBe(t0)
+        const afterUnmount = vi.mocked(getResearchChatSession).mock.calls.length
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(CONVERGENCE_SLOW_INTERVAL_MS * 3)
+        })
+        expect(vi.mocked(getResearchChatSession).mock.calls.length).toBe(afterUnmount)
+        expect(vi.getTimerCount()).toBe(t0)
+      })
+
+      it('NIT-7③ mount controller.load 自响应不被 identity 守卫误判 stale，后续详情正常替换', async () => {
+        const sharedMessages = [userRow, assistantRow]
+        vi.mocked(getResearchChatSession).mockResolvedValue(detail(sharedMessages, []))
+        const h = harness()
+        // 非 active turn 且 generationId 缺失：详情路径被 syncTurnsFromDetail 的
+        // generationId 守卫挡住，turns 只能由 mount load 自身响应写入。
+        h.emitTurn({
+          external: false,
+          state: 'unknown',
+          identity: { draftToken: 't_unk', generationId: null },
+        })
+        // 真实 runtime 语义：controller.load 内部经 transport 取详情，并把同一
+        // messages 数组引用作为 value.messages 返回（session-runtime.ts 透传）。
+        vi.mocked(h.controller.load).mockImplementation(async () => {
+          const raw = await h.transport.loadDetail({ cursor: null }) as { messages: unknown[] }
+          return { status: 'ok' as const, value: { messages: raw.messages, next_cursor: null } }
+        })
+        const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+        await flush()
+        expect(result.current.turns).toHaveLength(2)
+
+        // 更新的详情响应正常替换（not_observed + generationId 时放宽允许）。
+        act(() => {
+          h.emitTurn({
+            external: false,
+            state: 'not_observed',
+            identity: { draftToken: 't_unk', generationId: GEN },
+          })
+        })
+        vi.mocked(getResearchChatSession).mockResolvedValue(detail([userRow, assistantRow, userRow2], []))
+        await act(async () => {
+          await h.transport.loadDetail({ cursor: null })
+        })
+        expect(result.current.turns).toHaveLength(3)
+      })
+
+      it('NIT-7④ not_observed 瞬态不完整详情：turns 2→1（观测行为）→ 下一次详情恢复 2', async () => {
+        vi.mocked(getResearchChatSession).mockResolvedValue(detail([userRow, assistantRow], []))
+        const h = harness()
+        const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+        await flush()
+        act(() => {
+          h.emitTurn({
+            external: false,
+            state: 'not_observed',
+            identity: { draftToken: 't_unk', generationId: GEN },
+          })
+        })
+        // 详情 #1：已交付 user+assistant 两条。
+        await act(async () => {
+          await h.transport.loadDetail({ cursor: null })
+        })
+        expect(result.current.turns).toHaveLength(2)
+
+        // 详情 #2：瞬态不完整（仅 user 行）——固定已接受的 Low 现状（2→1）。
+        vi.mocked(getResearchChatSession).mockResolvedValue(detail([userRow], []))
+        await act(async () => {
+          await h.transport.loadDetail({ cursor: null })
+        })
+        expect(result.current.turns).toHaveLength(1)
+
+        // 详情 #3：完整详情恢复已交付消息（下一次详情可恢复）。
+        vi.mocked(getResearchChatSession).mockResolvedValue(detail([userRow, assistantRow], []))
+        await act(async () => {
+          await h.transport.loadDetail({ cursor: null })
+        })
+        expect(result.current.turns).toHaveLength(2)
+        expect(result.current.turns[1]).toMatchObject({ role: 'assistant', content: '答案' })
+      })
+    })
   })
 })
