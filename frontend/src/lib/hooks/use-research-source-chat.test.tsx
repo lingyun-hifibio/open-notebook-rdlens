@@ -972,3 +972,67 @@ describe('PR-5a（D2）：显式 session 接线（source）', () => {
     expect(request.note_ids).toBeUndefined()
   })
 })
+
+// RDLens #892：源会话 detail 与全局同构——尾部窗口（order=desc）+「更早一页」。
+// 此前 source 会话 detail 显式拒绝游标（source_detail_pagination_unsupported），
+// 其前提（源详情接口没有 cursor 参数）已不成立。
+describe('RDLens #892：源会话尾部窗口（desc）', () => {
+  it('detail 不再拒绝游标：按 order=desc/limit=50 取尾部窗口，「更早一页」透传后向游标', async () => {
+    const controller = {
+      detach: vi.fn(),
+      hasActiveTurn: vi.fn(() => false),
+      load: vi.fn(async () => ({ status: 'ok' as const, value: { messages: [], next_cursor: null } })),
+      getSnapshot: vi.fn(() => ({ turn: null, authGeneration: 1 })),
+    } as unknown as ConversationController
+    let capturedOptions: {
+      transport: { loadDetail: (input: Record<string, unknown>) => Promise<unknown> }
+    } | null = null
+    const conversation = vi.fn((...args: unknown[]) => {
+      capturedOptions = args[1] as typeof capturedOptions
+      return controller
+    })
+    const runtime = {
+      conversation,
+      releaseConversation: vi.fn(),
+      getSnapshot: () => ({ authGeneration: 1 }),
+      subscribe: () => () => {},
+    } as unknown as SessionRuntime
+    const ref: ResearchSessionRef = {
+      domain: 'research',
+      kind: 'source',
+      projectId: 'proj_1',
+      sessionId: 'sess_src_1',
+      sourceId: 'src_1',
+    }
+    vi.mocked(getSourceChatSession).mockResolvedValue({
+      session: { session_id: 'sess_src_1', title: null },
+      messages: [],
+      next_cursor: null,
+    } as never)
+
+    renderHook(
+      () => useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1', session: { runtime, ref } }),
+      { wrapper: makeHookWrapper() },
+    )
+    expect(capturedOptions).not.toBeNull()
+
+    // 首读（恢复）= 尾部窗口。
+    await act(async () => {
+      await capturedOptions?.transport.loadDetail({ cursor: null, order: 'desc', limit: 50 })
+    })
+    expect(getSourceChatSession).toHaveBeenLastCalledWith('proj_1', 'src_1', 'sess_src_1', {
+      order: 'desc',
+      limit: 50,
+    })
+
+    // 「更早一页」：此前抛 source_detail_pagination_unsupported → 现在必须透传游标。
+    await act(async () => {
+      await capturedOptions?.transport.loadDetail({ cursor: 'c1', order: 'desc', limit: 50 })
+    })
+    expect(getSourceChatSession).toHaveBeenLastCalledWith('proj_1', 'src_1', 'sess_src_1', {
+      cursor: 'c1',
+      order: 'desc',
+      limit: 50,
+    })
+  })
+})

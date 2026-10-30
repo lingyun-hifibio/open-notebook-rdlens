@@ -2576,4 +2576,182 @@ describe('PR-5b（D2/D3）：会话元数据、submission marker 与未结算查
       })
     })
   })
+
+  // ── RDLens #892：会话消息「尾部窗口」读取 ──
+  describe('Issue #892：尾部窗口（desc）读取 + 合并语义', () => {
+    const GEN = `gen_${'a'.repeat(32)}`
+    const USER_MSG = `msg_${GEN}_user`
+    const ASSISTANT_MSG = `msg_${GEN}_assistant`
+
+    /** 尾部窗口（最新 50 条）里的两行。 */
+    const tailRows = [
+      {
+        message_id: USER_MSG,
+        role: 'user',
+        content: '最新问题',
+        created_at: '2026-10-30T00:00:00Z',
+      },
+      {
+        message_id: ASSISTANT_MSG,
+        role: 'assistant',
+        content: '最新答案',
+        created_at: '2026-10-30T00:00:01Z',
+        citations: [],
+      },
+    ]
+    /** 「更早一页」的两行（>50 条会话的历史前段）。 */
+    const olderRows = [
+      { message_id: 'msg_old_user', role: 'user', content: '旧问题', created_at: '2026-10-29T00:00:00Z' },
+      {
+        message_id: 'msg_old_assistant',
+        role: 'assistant',
+        content: '旧答案',
+        created_at: '2026-10-29T00:00:01Z',
+        citations: [],
+      },
+    ]
+
+    function detailOf(
+      messages: unknown[],
+      cards: unknown[] = [],
+      nextCursor: string | null = null,
+    ) {
+      return {
+        session: { session_id: 'sess_1', title: null, record_visibility: 'visible' },
+        messages,
+        cards,
+        next_cursor: nextCursor,
+      } as unknown as Awaited<ReturnType<typeof getResearchChatSession>>
+    }
+
+    beforeEach(() => {
+      vi.useFakeTimers()
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('恢复读尾部窗口：请求 order=desc + limit=50，最新 assistant 可见且 running 卡清除', async () => {
+      // 服务端按方向返回不同窗口：desc → 最新 50 条；asc → 最旧的一页。
+      vi.mocked(getResearchChatSession).mockImplementation(((_p: string, _s: string, params?: { order?: string; cursor?: string }) => {
+        const order = (params as { order?: string } | undefined)?.order
+        return Promise.resolve(
+          order === 'desc'
+            ? detailOf(tailRows, [{ generation_id: GEN, job_id: null, status: 'running', failure_code: null }])
+            : detailOf(olderRows),
+        )
+      }) as never)
+      const h = harness()
+      const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+      await flush()
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: null })
+      })
+
+      // 请求形状：尾部窗口（desc + limit=50）
+      expect(vi.mocked(getResearchChatSession)).toHaveBeenCalledWith(
+        'proj_1',
+        'sess_1',
+        expect.objectContaining({ order: 'desc', limit: 50 }),
+      )
+      // 最新 assistant 可见（不是最旧的一页）
+      expect(result.current.turns).toHaveLength(2)
+      expect(result.current.turns[1]).toMatchObject({ role: 'assistant', content: '最新答案' })
+      // running 卡清除：deliveredGenerations 由尾部窗口内的 assistant 行算出
+      expect(result.current.sessionCards).toHaveLength(0)
+    })
+
+    it('「更早一页」prepend 到消息列表顶部（阅读顺序）', async () => {
+      vi.mocked(getResearchChatSession).mockImplementation(((_p: string, _s: string, params?: { order?: string; cursor?: string }) => {
+        const p = params as { cursor?: string; order?: string } | undefined
+        return Promise.resolve(
+          p?.order === 'desc' && p?.cursor !== undefined
+            ? detailOf(olderRows, [], null)
+            : detailOf(tailRows, [], 'back-1'),
+        )
+      }) as never)
+      const h = harness()
+      const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+      await flush()
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: null })
+      })
+      expect(result.current.turns).toHaveLength(2)
+
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: 'back-1' })
+      })
+
+      // 更早的一页排在前面（阅读顺序），且后向游标与方向同时携带
+      expect(result.current.turns).toHaveLength(4)
+      expect(result.current.turns[0]).toMatchObject({ role: 'user', content: '旧问题' })
+      expect(result.current.turns[3]).toMatchObject({ role: 'assistant', content: '最新答案' })
+      expect(vi.mocked(getResearchChatSession)).toHaveBeenLastCalledWith(
+        'proj_1',
+        'sess_1',
+        expect.objectContaining({ order: 'desc', limit: 50, cursor: 'back-1' }),
+      )
+    })
+
+    it('收敛 tick 的尾部窗口不得抹掉已加载的更早行（合并而非整表替换）', async () => {
+      vi.mocked(getResearchChatSession).mockImplementation(((_p: string, _s: string, params?: { order?: string; cursor?: string }) => {
+        const p = params as { cursor?: string; order?: string } | undefined
+        return Promise.resolve(
+          p?.order === 'desc' && p?.cursor !== undefined
+            ? detailOf(olderRows, [], null)
+            : detailOf(tailRows, [], 'back-1'),
+        )
+      }) as never)
+      const h = harness()
+      const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+      await flush()
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: null })
+      })
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: 'back-1' })
+      })
+      expect(result.current.turns).toHaveLength(4)
+
+      // 收敛 tick 再读一次尾部窗口（cursor=null）：已加载的更早行必须还在。
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: null })
+      })
+      expect(result.current.turns).toHaveLength(4)
+      expect(result.current.turns[0]).toMatchObject({ role: 'user', content: '旧问题' })
+      expect(result.current.turns[3]).toMatchObject({ role: 'assistant', content: '最新答案' })
+    })
+
+    it('F1 守卫与合并语义共存：迟到的旧响应整体丢弃，不得把更早行并进来', async () => {
+      const responses: Array<(value: unknown) => void> = []
+      vi.mocked(getResearchChatSession).mockImplementation((() => new Promise((resolve) => {
+        responses.push(resolve as (value: unknown) => void)
+      })) as never)
+      const h = harness()
+      const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+      await flush()
+
+      let older: Promise<unknown> = Promise.resolve()
+      let newer: Promise<unknown> = Promise.resolve()
+      await act(async () => {
+        older = h.transport.loadDetail({ cursor: null })
+        newer = h.transport.loadDetail({ cursor: null })
+      })
+      // 较新请求先返回（尾部窗口两行）。
+      await act(async () => {
+        responses[1]?.(detailOf(tailRows))
+        await newer
+      })
+      expect(result.current.turns).toHaveLength(2)
+
+      // 旧请求随后返回：整体丢弃（不得并入「旧问题」行，也不得回退 turns）。
+      await act(async () => {
+        responses[0]?.(detailOf(olderRows))
+        await older
+      })
+      expect(result.current.turns).toHaveLength(2)
+      expect(result.current.turns[0]).toMatchObject({ role: 'user', content: '最新问题' })
+    })
+  })
 })

@@ -241,6 +241,68 @@ describe('researchApi（Gateway 白名单契约）', () => {
   })
 })
 
+// ── RDLens #892：会话消息尾部窗口读取（order/limit/cursor 查询参数） ──
+
+describe('researchApi 会话详情尾部窗口（#892）', () => {
+  beforeEach(() => {
+    calls.length = 0
+    installAdapter()
+  })
+
+  afterEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('getResearchChatSession：order=desc + limit=50 透传为查询参数', async () => {
+    const captured = await capture(() =>
+      researchApi.getResearchChatSession(P, 'sess_1', { order: 'desc', limit: 50 }),
+    )
+    expect(captured.method).toBe('GET')
+    expect(captured.url).toBe(`/v1/research/projects/${P}/chat/sessions/sess_1`)
+    expect(captured.params).toEqual({ order: 'desc', limit: 50 })
+  })
+
+  it('getResearchChatSession：后向游标与方向同时携带（更早一页）', async () => {
+    const captured = await capture(() =>
+      researchApi.getResearchChatSession(P, 'sess_1', {
+        order: 'desc',
+        limit: 50,
+        cursor: 'eyJ0cyI6IjIwMjYifQ',
+      }),
+    )
+    expect(captured.params).toEqual({
+      order: 'desc',
+      limit: 50,
+      cursor: 'eyJ0cyI6IjIwMjYifQ',
+    })
+  })
+
+  it('getResearchChatSession：不传参数时不带查询参数（legacy 行为不变）', async () => {
+    const captured = await capture(() => researchApi.getResearchChatSession(P, 'sess_1'))
+    expect(captured.url).toBe(`/v1/research/projects/${P}/chat/sessions/sess_1`)
+    expect(captured.params).toBeUndefined()
+  })
+
+  it('getSourceChatSession：同样支持 order/limit/cursor（源会话尾部窗口）', async () => {
+    const captured = await capture(() =>
+      researchApi.getSourceChatSession(P, 'src_1', 'sess_1', {
+        order: 'desc',
+        limit: 50,
+      }),
+    )
+    expect(captured.method).toBe('GET')
+    expect(captured.url).toBe(`/v1/research/projects/${P}/sources/src_1/chat/sessions/sess_1`)
+    expect(captured.params).toEqual({ order: 'desc', limit: 50 })
+  })
+
+  it('getSourceChatSession：不传参数时不带查询参数', async () => {
+    const captured = await capture(() =>
+      researchApi.getSourceChatSession(P, 'src_1', 'sess_1'),
+    )
+    expect(captured.params).toBeUndefined()
+  })
+})
+
 // ── COV-09：Coverage 提交 / 报告读取 / 人工重试（COV-08 §12.1/§12.2） ──
 
 describe('researchApi coverage（COV-09）', () => {

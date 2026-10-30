@@ -267,6 +267,45 @@ function mapColdMessage(message: ResearchSourceChatMessage): ResearchSourceChatT
   }
 }
 
+/**
+ * RDLens #892：durable detail 尾部窗口大小（恢复固定 50；后端 limit 上限 100）。
+ */
+const SOURCE_DETAIL_WINDOW_LIMIT = 50
+
+/**
+ * RDLens #892：按 `message_id` 合并源会话 durable 行（阅读顺序；首见保留）。
+ *
+ * 尾部窗口（desc）刷新不得抹掉已通过「更早一页」取回的历史行。
+ */
+function mergeSourceTurns(
+  current: readonly ResearchSourceChatTurn[],
+  incoming: readonly ResearchSourceChatTurn[],
+  incomingIsOlder: boolean,
+): ResearchSourceChatTurn[] {
+  const ordered = incomingIsOlder
+    ? [...incoming, ...current]
+    : [...current, ...incoming]
+  const seen = new Set<string>()
+  const merged: ResearchSourceChatTurn[] = []
+  for (const turn of ordered) {
+    if (seen.has(turn.id)) continue
+    seen.add(turn.id)
+    merged.push(turn)
+  }
+  return merged
+}
+
+/**
+ * RDLens #892：本次详情响应相对已加载内容的位置（desc：首读=最新，带游标=更早）。
+ */
+function sourceDetailIncomingIsOlder(
+  order: 'asc' | 'desc',
+  cursor: string | null | undefined,
+): boolean {
+  const hasCursor = cursor !== null && cursor !== undefined
+  return order === 'desc' ? hasCursor : !hasCursor
+}
+
 export function useResearchSourceChat({
   projectId,
   sourceId,
@@ -359,17 +398,20 @@ export function useResearchSourceChat({
         ref.sessionId,
         token,
       ),
-      // 注意：源会话 detail 接口（interface freeze）没有 cursor 参数，
-      // 因此源会话 durable 恢复只回填首屏；分页缺口在 PR-6 接后端参数后补齐。
-      loadDetail: ({ cursor }) => {
-        if (cursor !== undefined && cursor !== null) {
-          // source 详情在接口冻结中尚无游标参数：明确失败，绝不把首屏当下一页
-          // 重复读入（review-3 #6）；分页能力随 PR-6 真实接线补齐。
-          throw Object.assign(new Error('source_detail_pagination_unsupported'), {
-            code: 'detail_load_failed',
-          })
-        }
-        return getSourceChatSession(projectIdRef.current, String(ref.sourceId), ref.sessionId)
+      // RDLens #892：源会话 detail 与全局同构——支持尾部窗口（order=desc）与
+      // 「更早一页」（后向游标）。此前的 `source_detail_pagination_unsupported`
+      // 显式拒绝前提已不成立（后端 source 详情路由早已接受 cursor/limit）。
+      loadDetail: ({ cursor, order, limit }) => {
+        return getSourceChatSession(
+          projectIdRef.current,
+          String(ref.sourceId),
+          ref.sessionId,
+          {
+            ...(cursor === null || cursor === undefined ? {} : { cursor }),
+            order: order ?? 'desc',
+            limit: limit ?? SOURCE_DETAIL_WINDOW_LIMIT,
+          },
+        )
       },
       releaseHold: (operationId) => releaseHold?.(operationId),
       clearAfterSubmission: (receipt, operationId) => clearAfterSubmission?.(receipt, operationId),
@@ -389,8 +431,14 @@ export function useResearchSourceChat({
       if (result.status !== 'ok') return
       if (activeRef.current !== null) return
       const rows = (result.value?.messages ?? []) as ResearchSourceChatMessage[]
-      // 当前会话成功返回空详情同样要写入空数组（切换到空会话时不得残留旧消息）。
-      setTurns(rows.map(mapColdMessage))
+      const restored = rows.map(mapColdMessage)
+      if (restored.length === 0) {
+        // 当前会话成功返回空详情同样要写入空数组（切换到空会话时不得残留旧消息）。
+        setTurns([])
+        return
+      }
+      // RDLens #892：合并而非整表替换（尾部窗口不得抹掉已加载的更早历史行）。
+      setTurns((prev) => mergeSourceTurns(prev, restored, false))
     })
     return () => {
       cancelled = true
@@ -401,6 +449,31 @@ export function useResearchSourceChat({
       setConversation((current) => (current === controller ? null : current))
     }
   }, [conversationKey, authEpoch])
+
+  /**
+   * RDLens #892：控制器 durable 行（阅读顺序）→ turns。
+   *
+   * 控制器在 desc 模式下把「更早一页」prepend 进 detailMessages，并把刷新到的
+   * 尾部窗口**合并**进去（不整表替换）→ detailMessages 始终是已加载历史的
+   * 阅读顺序快照。这里把它投影为 turns（live 轮保留在尾部）。
+   */
+  useEffect(() => {
+    if (conversation === null) return
+    const sync = (): void => {
+      const snapshot = conversation.getSnapshot()
+      const rows = snapshot?.detailMessages
+      if (!Array.isArray(rows) || rows.length === 0) return
+      const durable = (rows as ResearchSourceChatMessage[]).map(mapColdMessage)
+      const durableIds = new Set(durable.map((turn) => turn.id))
+      setTurns((prev) => [
+        ...durable,
+        ...prev.filter((turn) => !durableIds.has(turn.id)),
+      ])
+    }
+    sync()
+    if (typeof conversation.subscribe !== 'function') return
+    return conversation.subscribe(sync)
+  }, [conversation])
 
   const patchAssistant = useCallback((turnId: string, patch: Partial<ResearchSourceChatTurn>) => {
     setTurns((prev) => {

@@ -832,15 +832,32 @@ export async function listSourceChatSessions(
   return response.data
 }
 
+/**
+ * 拉取源会话详情（RDLens #892：与全局详情同构，支持 `order`/`limit`/`cursor`
+ * 的尾部窗口与「更早一页」读取；不传参数时请求保持不变）。
+ */
 export async function getSourceChatSession(
   projectId: string,
   sourceId: string,
   sessionId: string,
-  options: { sessionContract?: boolean } = {},
+  options: {
+    cursor?: string
+    limit?: number
+    order?: ResearchChatMessageOrder
+    sessionContract?: boolean
+  } = {},
 ): Promise<ResearchSourceChatSessionDetail> {
+  const { cursor, limit, order, sessionContract } = options
+  const query: Record<string, string | number> = {}
+  if (cursor !== undefined) query.cursor = cursor
+  if (limit !== undefined) query.limit = limit
+  if (order !== undefined) query.order = order
   const response = await apiClient.get<ResearchSourceChatSessionDetail>(
     researchPath(projectId, 'sources', sourceId, 'chat', 'sessions', sessionId),
-    options.sessionContract === true ? { headers: sessionContractHeaders } : undefined,
+    {
+      ...(Object.keys(query).length === 0 ? {} : { params: query }),
+      ...(sessionContract === true ? { headers: sessionContractHeaders } : {}),
+    },
   )
   return response.data
 }
@@ -895,19 +912,39 @@ export interface ResearchGlobalChatSessionDetail {
 }
 
 /**
+ * RDLens #892：会话消息读取方向。
+ * - `asc`（默认，与既有行为一致）：从最旧往后读，`next_cursor` 是**前向**游标。
+ * - `desc`：尾部窗口——返回最新 `limit` 条但按**阅读顺序**呈现，`next_cursor`
+ *   是**后向**游标（锚点＝窗口内最旧那条；继续带上它可取更早的一页）。
+ */
+export type ResearchChatMessageOrder = 'asc' | 'desc'
+
+/**
  * 拉取全局 Chat 会话详情（消息 + 在途/失败后台卡）。owner-only
  * （后端 404 不泄露其他 Owner 会话存在性）。
+ *
+ * RDLens #892：`order`/`limit` 支持尾部窗口读取（恢复/收敛固定
+ * `order=desc` + `limit=50`）；不传参数时请求与响应形状保持不变。
  */
 export async function getResearchChatSession(
   projectId: string,
   sessionId: string,
-  params: { cursor?: string; sessionContract?: boolean } = {},
+  params: {
+    cursor?: string
+    limit?: number
+    order?: ResearchChatMessageOrder
+    sessionContract?: boolean
+  } = {},
 ): Promise<ResearchGlobalChatSessionDetail> {
-  const { cursor, sessionContract } = params
+  const { cursor, limit, order, sessionContract } = params
+  const query: Record<string, string | number> = {}
+  if (cursor !== undefined) query.cursor = cursor
+  if (limit !== undefined) query.limit = limit
+  if (order !== undefined) query.order = order
   const response = await apiClient.get<ResearchGlobalChatSessionDetail>(
     researchPath(projectId, 'chat', 'sessions', sessionId),
     {
-      ...(cursor === undefined ? {} : { params: { cursor } }),
+      ...(Object.keys(query).length === 0 ? {} : { params: query }),
       // PR-5b（§6.7/§9.5）：只有新会话协议路径显式请求 session DTO 扩展；
       // legacy 调用不携带该头，返回形状/行为保持不变（Lead 裁决 D2）。
       ...(sessionContract === true ? { headers: sessionContractHeaders } : {}),

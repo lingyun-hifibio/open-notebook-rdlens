@@ -250,6 +250,54 @@ export const MAX_STREAM_ATTEMPTS = 3
  */
 const SESSION_READ_PAGE_CAP = 1000
 
+/**
+ * RDLens #892：durable detail 尾部窗口大小（恢复/收敛固定 50；后端 limit 上限 100）。
+ */
+const DETAIL_WINDOW_LIMIT = 50
+
+/**
+ * RDLens #892：按 `message_id` 合并 durable 行（阅读顺序；首见保留）。
+ *
+ * 收敛 tick 读的是**尾部窗口**（desc）：若整表替换，已通过「加载更早的
+ * 消息」取回的历史行会被尾部窗口抹掉 → 必须合并而非替换。
+ *
+ * @param current  已加载的行（含更早的历史行）
+ * @param incoming 本次读到的行
+ * @param incomingIsOlder incoming 是否比 current 更早（更早的一批排在前面）
+ */
+function mergeDurableTurns(
+  current: readonly ResearchChatTurn[],
+  incoming: readonly ResearchChatTurn[],
+  incomingIsOlder: boolean,
+): ResearchChatTurn[] {
+  const ordered = incomingIsOlder
+    ? [...incoming, ...current]
+    : [...current, ...incoming]
+  const seen = new Set<string>()
+  const merged: ResearchChatTurn[] = []
+  for (const turn of ordered) {
+    // 恢复行的稳定键是 message_id（serverMessageId）；live 行退化为 turn id。
+    const key = turn.serverMessageId ?? turn.id
+    if (seen.has(key)) continue
+    seen.add(key)
+    merged.push(turn)
+  }
+  return merged
+}
+
+/**
+ * RDLens #892：本次详情响应相对已加载内容的位置。
+ * - desc（尾部窗口）：`cursor=null` → 最新的一批；带游标 → 更早的一批。
+ * - asc（前向读）：`cursor=null` → 最旧的一批；带游标 → 更新的一批。
+ */
+function detailIncomingIsOlder(
+  order: 'asc' | 'desc',
+  cursor: string | null | undefined,
+): boolean {
+  const hasCursor = cursor !== null && cursor !== undefined
+  return order === 'desc' ? hasCursor : !hasCursor
+}
+
 /** 重连退避基数（ms）；第 n 次重试等待 base * 2^(n-1) */
 export const RECONNECT_BACKOFF_MS = 300
 
@@ -1097,15 +1145,19 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
       }, delay)
     }
     /**
-     * Issue #881（F1）：整表详情刷新 → 重建 durable turns（恢复后终态交付完成的
-     * assistant 消息必须出现，而不是只在 mount 时回填一次）。
+     * Issue #881（F1）+ RDLens #892：详情刷新 → **合并** durable turns（恢复后
+     * 终态交付完成的 assistant 消息必须出现，而不是只在 mount 时回填一次）。
      * 守卫：无活动 legacy 流、无 streaming 本地轮；controller 的活跃 turn
      * （preparing/submitting/accepted/streaming/lookup_pending）由流自身收敛，
      * 不覆盖。非活跃 turn（terminal/unknown/not_observed/idle）只有在
      * generationId 可证明时替换——external 冷启动查回轮不投影为消息，可安全替换；
      * 其余靠 generationId 让面板跳过 controller 副本，避免重复 user 行。
+     *
+     * RDLens #892：不再整表替换——收敛 tick 读的是尾部窗口（desc），整表替换会
+     * 抹掉已通过「加载更早的消息」取回的历史行；改为按 `message_id` 合并
+     * （阅读顺序、去重首见保留）。
      */
-    function syncTurnsFromDetail(detail: unknown): void {
+    function syncTurnsFromDetail(detail: unknown, incomingIsOlder: boolean): void {
       if (cancelled || activeRef.current !== null) return
       if (turnsRef.current.some(
         (turn) => turn.status === 'streaming' || turn.status === 'reconnecting',
@@ -1123,7 +1175,8 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
       const restored = rows
         .map((row) => messageRowToTurn(row as DurableMessageRow))
         .filter((turn): turn is ResearchChatTurn => turn !== null)
-      setTurns(restored)
+      if (restored.length === 0) return
+      setTurns((prev) => mergeDurableTurns(prev, restored, incomingIsOlder))
     }
     /**
      * 按终态/已交付集合重算下发给面板的卡。Issue #881（F5）：相等判定改为
@@ -1321,17 +1374,23 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
         captureSubmission(token, raw)
         return raw
       }),
-      loadDetail: ({ cursor }) => {
+      loadDetail: ({ cursor, order, limit }) => {
         // Issue #881（F1）：每次详情请求取单调序号，响应只允许「最新」写入
         // turns/cards/meta；更旧的响应（并发 load()/durable_restore/查回导致）
         // 整体丢弃，防止 2→1 回退与 running 卡被误判已交付而永久隐藏。
         detailRequestSeq += 1
         const requestSeq = detailRequestSeq
+        // RDLens #892：恢复（mount）、收敛 tick、Check status 查回一律读
+        // **尾部窗口**（order=desc + limit=50）；「更早一页」沿用同一方向并
+        // 携带后向游标（方向不匹配服务端返回 422，不得静默错页）。
+        const readOrder: 'asc' | 'desc' = order ?? 'desc'
         return getResearchChatSession(
           projectIdRef.current,
           ref.sessionId,
           {
             ...(cursor === null || cursor === undefined ? {} : { cursor }),
+            order: readOrder,
+            limit: limit ?? DETAIL_WINDOW_LIMIT,
             // PR-5b（Codex P1-#4 / §6.7）：新会话协议显式请求 session DTO 扩展
             // （record_visibility/扩展消息/失败卡报告）——仍是同一次响应。
             sessionContract: true,
@@ -1347,10 +1406,9 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
           lastAppliedMessages = Array.isArray(rawMessages) ? rawMessages : null
           // PR-5b（D2）：同一次响应捕获 header 元数据/卡——不得再发第二次详情。
           captureDetail(detail)
-          // Issue #881（F1）：整表刷新（cursor 为空）时重建 durable turns。
-          if (cursor === null || cursor === undefined) {
-            syncTurnsFromDetail(detail)
-          }
+          // Issue #881（F1）+ #892：合并 durable turns（尾部窗口不得抹掉已加载
+          // 的更早历史行；「更早一页」按阅读顺序 prepend）。
+          syncTurnsFromDetail(detail, detailIncomingIsOlder(readOrder, cursor))
           return detail
         })
       },
@@ -1550,8 +1608,13 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
         const restored = rows
           .map((row) => messageRowToTurn(row as DurableMessageRow))
           .filter((turn): turn is ResearchChatTurn => turn !== null)
-        // 当前会话成功返回空详情同样要写入空数组（切换到空会话时不得残留旧消息）。
-        setTurns(restored)
+        // RDLens #892：合并而非替换（尾部窗口不得抹掉已加载的更早历史行）。
+        if (restored.length === 0) {
+          // 当前会话成功返回空详情同样要写入空数组（切换到空会话时不得残留旧消息）。
+          setTurns([])
+        } else {
+          setTurns((prev) => mergeDurableTurns(prev, restored, false))
+        }
       }
       // §6.7：冷启动/打开会话必须先查回未结算提交（不清稿、不换键、不重发）。
       void reconcileMarkers(null)
