@@ -2858,5 +2858,79 @@ describe('PR-5b（D2/D3）：会话元数据、submission marker 与未结算查
       expect(result.current.turns[0]).toMatchObject({ role: 'user', content: '旧问题' })
       expect(result.current.turns[3]).toMatchObject({ role: 'assistant', content: '最新答案' })
     })
+
+    it('#892/#896 调和：分页取回更早一行后，新鲜详情读（窗口更小）→ 更早的行仍在、窗口内行按新详情替换', async () => {
+      let freshCalls = 0
+      vi.mocked(getResearchChatSession).mockImplementation(((_p: string, _s: string, params?: { order?: string; cursor?: string }) => {
+        const p = params as { order?: string; cursor?: string } | undefined
+        if (p?.cursor !== undefined) {
+          // 分页读（更早一页）。
+          return Promise.resolve(detailOf(olderRows, [], null))
+        }
+        freshCalls += 1
+        // 第一次新鲜读：完整尾部窗口；第二次：瞬态不完整（只剩 user 行）。
+        return Promise.resolve(
+          freshCalls === 1
+            ? detailOf(tailRows, [], 'back-1')
+            : detailOf([tailRows[0]], [], 'back-1'),
+        )
+      }) as never)
+      const h = harness()
+      const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+      await flush()
+
+      // ① 新鲜详情读 → 窗口两行。
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: null })
+      })
+      expect(result.current.turns).toHaveLength(2)
+
+      // ② 分页读（更早一页）→ 更早的行进入列表（4 行，更早在前）。
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: 'back-1' })
+      })
+      expect(result.current.turns).toHaveLength(4)
+      expect(result.current.turns[0]).toMatchObject({ role: 'user', content: '旧问题' })
+
+      // ③ 新鲜详情读（窗口更小：只剩 user 行）→ 窗口内行按新详情替换，
+      //    但「更早一页」的行必须仍在。
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: null })
+      })
+      expect(result.current.turns).toHaveLength(3)
+      expect(result.current.turns[0]).toMatchObject({ role: 'user', content: '旧问题' })
+      expect(result.current.turns[1]).toMatchObject({ role: 'assistant', content: '旧答案' })
+      expect(result.current.turns[2]).toMatchObject({ role: 'user', content: '最新问题' })
+      // 窗口内被新详情替换掉的 assistant 行不得残留。
+      expect(result.current.turns.some((turn) => turn.content === '最新答案')).toBe(false)
+    })
+
+    it('#892/#896 调和：无分页行时，新鲜详情读仍是整表替换（上游 NIT-7④ 口径）', async () => {
+      let freshCalls = 0
+      vi.mocked(getResearchChatSession).mockImplementation((() => {
+        freshCalls += 1
+        return Promise.resolve(
+          freshCalls === 1
+            ? detailOf(tailRows, [], null)
+            : detailOf([tailRows[0]], [], null),
+        )
+      }) as never)
+      const h = harness()
+      const { result } = renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }))
+      await flush()
+
+      // ① 详情 #1：窗口两行 → 2。
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: null })
+      })
+      expect(result.current.turns).toHaveLength(2)
+
+      // ② 详情 #2（瞬态不完整，只剩 user 行）→ 整表替换 → 1（上游 NIT-7④）。
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: null })
+      })
+      expect(result.current.turns).toHaveLength(1)
+      expect(result.current.turns[0]).toMatchObject({ role: 'user', content: '最新问题' })
+    })
   })
 })
