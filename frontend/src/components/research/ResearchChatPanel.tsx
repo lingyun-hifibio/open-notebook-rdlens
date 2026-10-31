@@ -254,6 +254,37 @@ function isSessionNavigationTarget(node: HTMLElement | null): boolean {
   )
 }
 
+/**
+ * RDLens #892（审查 F2）：消息行的稳定身份（durable 行 = message_id；live 行
+ * 退化为 turn id）。
+ */
+function chatTurnIdentity(turn: ResearchChatTurn): string {
+  return turn.serverMessageId ?? turn.id
+}
+
+/**
+ * RDLens #892（审查 F2）：`now` 是否是「在 `before` 之前插入了更早的行」。
+ *
+ * 判据：`before` 的 id 序列在 `now` 中仍是**连续子序列**，且其前面还有行
+ * （= 更早的一页被 prepend 到顶部）。仅比较行数会把「流式新增/收敛合并」
+ * 这类无关变化误判成 prepend。
+ */
+function earlierPagePrepended(before: readonly string[], now: readonly string[]): boolean {
+  if (before.length === 0) return false
+  if (now.length <= before.length) return false
+  for (let start = 0; start + before.length <= now.length; start += 1) {
+    let matched = true
+    for (let index = 0; index < before.length; index += 1) {
+      if (now[start + index] !== before[index]) {
+        matched = false
+        break
+      }
+    }
+    if (matched) return start > 0
+  }
+  return false
+}
+
 export function ResearchChatPanel({
   turns,
   isStreaming,
@@ -581,6 +612,86 @@ export function ResearchChatPanel({
     return sessionConversation.subscribe(sync)
   }, [sessionConversation])
   const liveTurn = liveSnapshot?.turn ?? null
+  /**
+   * RDLens #892（迭代 2）：「加载更早的消息」入口。
+   *
+   * - 尾部窗口（desc）首读只拿到最新一段历史；更早的一页由 controller 的
+   *   `loadMore()` 取回（后向游标），返回行 prepend 到消息列表顶部；
+   * - prepend 会改变容器 `scrollHeight` → 必须做差值补偿，否则视口跳动、
+   *   阅读位置锚点错乱（复用既有 `chatScrollRef` 与 scrollTop 机制）。
+   */
+  const [loadingEarlier, setLoadingEarlier] = useState(false)
+  /**
+   * prepend 补偿意图：请求前记录容器几何与当时的行 id 序列，等**确实出现更早
+   * 的行**时按差值补偿。
+   *
+   * 审查 F2：补偿意图必须按「prepend 事实」消费——请求在途期间的任何无关
+   * turns 变化（流式新增、收敛合并、内容更新）都不得消费它（否则要么虚假
+   * 跳动，要么真 prepend 到达时意图已清空 → 正确锚定值丢失）。
+   */
+  const pendingPrependRef = useRef<{
+    scrollHeight: number
+    scrollTop: number
+    ids: readonly string[]
+  } | null>(null)
+  /** 是否还有更早的历史（控制器快照的后向游标非空 = 还有更早的一页）。 */
+  const hasEarlierMessages =
+    sessionConversation !== null && (liveSnapshot?.detailCursor ?? null) !== null
+  const handleLoadEarlier = (): void => {
+    const controller = sessionConversation
+    if (controller === null || loadingEarlier) return
+    const container = chatScrollRef.current
+    pendingPrependRef.current = container === null
+      ? null
+      : {
+        scrollHeight: container.scrollHeight,
+        scrollTop: container.scrollTop,
+        ids: turns.map(chatTurnIdentity),
+      }
+    setLoadingEarlier(true)
+    void controller
+      .loadMore()
+      .then((result) => {
+        setLoadingEarlier(false)
+        const rows = result.status === 'ok' ? result.value?.messages : null
+        if (!Array.isArray(rows) || rows.length === 0) {
+          // 没有新行（无更多/失败）→ 无需补偿，丢弃补偿意图。
+          pendingPrependRef.current = null
+        }
+      })
+      .catch(() => {
+        setLoadingEarlier(false)
+        pendingPrependRef.current = null
+      })
+  }
+  /**
+   * prepend 后的滚动补偿：容器 `scrollHeight` 增加了多少，`scrollTop` 就补回
+   * 多少 → 视口停在原来那条消息上（不跳动）。
+   *
+   * 审查 F2：只有**确实新增了更早的行**（prepend 事实）才补偿；无关变化只
+   * 推进基线（scrollHeight/scrollTop/id 序列），不滚动、不消费意图。
+   */
+  useEffect(() => {
+    const pending = pendingPrependRef.current
+    if (pending === null) return
+    const container = chatScrollRef.current
+    const now = turns.map(chatTurnIdentity)
+    if (!earlierPagePrepended(pending.ids, now)) {
+      // 无关变化 → 不滚动、不消费意图；只把基线推进到当前几何（后续 prepend
+      // 的差值才只含 prepend 自身的高度）。
+      if (container !== null) {
+        pending.scrollHeight = container.scrollHeight
+        pending.scrollTop = container.scrollTop
+      }
+      pending.ids = now
+      return
+    }
+    pendingPrependRef.current = null
+    if (container === null) return
+    const delta = container.scrollHeight - pending.scrollHeight
+    if (delta <= 0) return
+    container.scrollTop = pending.scrollTop + delta
+  }, [turns])
   // PR-5b（Codex P2-#9）：冷启动恢复出的非空持久草稿也必须先查回一次当前
   // draft token（marker 写失败/被清除且 cards 为空时 F10 的兜底路径）。
   //
@@ -1563,6 +1674,22 @@ export function ResearchChatPanel({
           >
             {t('research.editor.positionUnavailable')}
           </p>
+        )}
+        {hasEarlierMessages && (
+          <div className="flex justify-center pb-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleLoadEarlier}
+              disabled={loadingEarlier}
+              data-testid="chat-load-earlier"
+            >
+              {loadingEarlier
+                ? t('research.pagination.loadingMore')
+                : t('research.pagination.loadMore')}
+            </Button>
+          </div>
         )}
         {turns.length === 0 && (
           <p className="text-sm text-muted-foreground">{t('research.chatEmpty')}</p>

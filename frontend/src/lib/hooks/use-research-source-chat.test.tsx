@@ -625,7 +625,12 @@ describe('useResearchSourceChat', () => {
       result.current.selectSession('sess_old')
     })
 
-    expect(vi.mocked(getSourceChatSession)).toHaveBeenCalledWith('proj_1', 'src_1', 'sess_old')
+    // RDLens #892 审查 F1：冷恢复读**尾部窗口**（order=desc + limit=50），
+    // 不再读「第一页」（asc）。
+    expect(vi.mocked(getSourceChatSession)).toHaveBeenCalledWith('proj_1', 'src_1', 'sess_old', {
+      order: 'desc',
+      limit: 50,
+    })
     expect(result.current.activeSessionId).toBe('sess_old')
     expect(result.current.turns).toHaveLength(2)
     const [userTurn, assistantTurn] = result.current.turns
@@ -970,5 +975,454 @@ describe('PR-5a（D2）：显式 session 接线（source）', () => {
     expect(request.source_ids).toBeUndefined()
     expect(request.source_scope).toBeUndefined()
     expect(request.note_ids).toBeUndefined()
+  })
+})
+
+// RDLens #892：源会话 detail 与全局同构——尾部窗口（order=desc）+「更早一页」。
+// 此前 source 会话 detail 显式拒绝游标（source_detail_pagination_unsupported），
+// 其前提（源详情接口没有 cursor 参数）已不成立。
+describe('RDLens #892：源会话尾部窗口（desc）', () => {
+  it('detail 不再拒绝游标：按 order=desc/limit=50 取尾部窗口，「更早一页」透传后向游标', async () => {
+    const controller = {
+      detach: vi.fn(),
+      hasActiveTurn: vi.fn(() => false),
+      load: vi.fn(async () => ({ status: 'ok' as const, value: { messages: [], next_cursor: null } })),
+      getSnapshot: vi.fn(() => ({ turn: null, authGeneration: 1 })),
+    } as unknown as ConversationController
+    let capturedOptions: {
+      transport: { loadDetail: (input: Record<string, unknown>) => Promise<unknown> }
+    } | null = null
+    const conversation = vi.fn((...args: unknown[]) => {
+      capturedOptions = args[1] as typeof capturedOptions
+      return controller
+    })
+    const runtime = {
+      conversation,
+      releaseConversation: vi.fn(),
+      getSnapshot: () => ({ authGeneration: 1 }),
+      subscribe: () => () => {},
+    } as unknown as SessionRuntime
+    const ref: ResearchSessionRef = {
+      domain: 'research',
+      kind: 'source',
+      projectId: 'proj_1',
+      sessionId: 'sess_src_1',
+      sourceId: 'src_1',
+    }
+    vi.mocked(getSourceChatSession).mockResolvedValue({
+      session: { session_id: 'sess_src_1', title: null },
+      messages: [],
+      next_cursor: null,
+    } as never)
+
+    renderHook(
+      () => useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1', session: { runtime, ref } }),
+      { wrapper: makeHookWrapper() },
+    )
+    expect(capturedOptions).not.toBeNull()
+
+    // 首读（恢复）= 尾部窗口。
+    await act(async () => {
+      await capturedOptions?.transport.loadDetail({ cursor: null, order: 'desc', limit: 50 })
+    })
+    expect(getSourceChatSession).toHaveBeenLastCalledWith('proj_1', 'src_1', 'sess_src_1', {
+      order: 'desc',
+      limit: 50,
+    })
+
+    // 「更早一页」：此前抛 source_detail_pagination_unsupported → 现在必须透传游标。
+    await act(async () => {
+      await capturedOptions?.transport.loadDetail({ cursor: 'c1', order: 'desc', limit: 50 })
+    })
+    expect(getSourceChatSession).toHaveBeenLastCalledWith('proj_1', 'src_1', 'sess_src_1', {
+      cursor: 'c1',
+      order: 'desc',
+      limit: 50,
+    })
+  })
+})
+
+/**
+ * RDLens #892 独立审查 F1/F6：
+ * - F1：`selectSession` 走「读第一页 + 整表替换」活路径 → 与 controller 的
+ *   desc 尾部读并发覆盖，最终显示哪一页取决于响应先后（非确定）。
+ * - F6：source hook 完全没有详情序号守卫 → 迟到响应可乱序合并/替换。
+ */
+interface SourceTransportStub {
+  loadDetail: (input: Record<string, unknown>) => Promise<unknown>
+}
+
+describe('RDLens #892 审查修复：source 会话详情读取', () => {
+  interface SourceHarness {
+    runtime: SessionRuntime
+    controller: ConversationController
+    transport: { loadDetail: (input: Record<string, unknown>) => Promise<unknown> }
+  }
+
+  function sourceHarness(options: {
+    load?: () => Promise<unknown>
+  } = {}): SourceHarness {
+    const controller = {
+      detach: vi.fn(),
+      hasActiveTurn: vi.fn(() => false),
+      load: vi.fn(options.load ?? (async () => ({
+        status: 'ok' as const,
+        value: { messages: [], next_cursor: null },
+      }))),
+      getSnapshot: vi.fn(() => ({ turn: null, authGeneration: 1 })),
+    } as unknown as ConversationController
+    let captured: { transport: SourceHarness['transport'] } | null = null
+    const conversation = vi.fn((...args: unknown[]) => {
+      captured = args[1] as typeof captured
+      return controller
+    })
+    const runtime = {
+      conversation,
+      releaseConversation: vi.fn(),
+      getSnapshot: () => ({ authGeneration: 1 }),
+      subscribe: () => () => {},
+    } as unknown as SessionRuntime
+    return {
+      runtime,
+      controller,
+      get transport() {
+        if (captured === null) throw new Error('transport not captured')
+        return captured.transport
+      },
+    }
+  }
+
+  const ref: ResearchSessionRef = {
+    domain: 'research', kind: 'source', projectId: 'proj_1', sessionId: 'sess_src_1', sourceId: 'src_1',
+  }
+
+  const tailMessage = {
+    message_id: 'msg_tail',
+    role: 'assistant' as const,
+    content: '最新答案',
+    created_at: '2026-10-30T00:00:00Z',
+  }
+  const olderMessage = {
+    message_id: 'msg_older',
+    role: 'assistant' as const,
+    content: '更早答案',
+    created_at: '2026-10-29T00:00:00Z',
+  }
+
+  it('F1：selectSession 读尾部窗口（只发 order=desc + limit=50）', async () => {
+    const h = sourceHarness()
+    vi.mocked(getSourceChatSession).mockResolvedValue({
+      session: { session_id: 'sess_src_other', title: null },
+      messages: [tailMessage],
+      next_cursor: null,
+    } as never)
+    const { result } = renderHook(
+      () => useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1', session: { runtime: h.runtime, ref } }),
+      { wrapper: makeHookWrapper() },
+    )
+    // 判别力：只看**本次动作新增**的调用（该文件的 mock 调用历史跨用例累计），
+    // 且该 sessionId 与 controller 的不同 → 只能由 selectSession 的调用满足。
+    const before = vi.mocked(getSourceChatSession).mock.calls.length
+    await act(async () => {
+      // 独立 sessionId（与 controller 的 ref.sessionId 不同）。
+      result.current.selectSession('sess_src_other')
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    const calls = vi.mocked(getSourceChatSession).mock.calls.slice(before)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toEqual(['proj_1', 'src_1', 'sess_src_other', {
+      order: 'desc',
+      limit: 50,
+    }])
+  })
+
+  it('F1：selectSession 读到的尾部窗口不得抹掉已加载的更早行', async () => {
+    // controller 路径先回填「更早的一行 + 最新一行」。
+    const h = sourceHarness({
+      load: async () => ({
+        status: 'ok' as const,
+        value: { messages: [olderMessage, tailMessage], next_cursor: null },
+      }),
+    })
+    vi.mocked(getSourceChatSession).mockResolvedValue({
+      session: { session_id: 'sess_src_1', title: null },
+      messages: [tailMessage],
+      next_cursor: null,
+    } as never)
+    const { result } = renderHook(
+      () => useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1', session: { runtime: h.runtime, ref } }),
+      { wrapper: makeHookWrapper() },
+    )
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(result.current.turns).toHaveLength(2)
+
+    // selectSession 再读一次尾部窗口 → 合并而非整表替换（更早行不得消失）。
+    const before = vi.mocked(getSourceChatSession).mock.calls.length
+    await act(async () => {
+      result.current.selectSession('sess_src_1')
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    // 判别力：只看本次动作新增的调用（mock 调用历史跨用例累计）。
+    const calls = vi.mocked(getSourceChatSession).mock.calls.slice(before)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toEqual(['proj_1', 'src_1', 'sess_src_1', {
+      order: 'desc',
+      limit: 50,
+    }])
+    expect(result.current.turns).toHaveLength(2)
+    expect(result.current.turns.map((turn) => turn.content)).toEqual(['更早答案', '最新答案'])
+  })
+
+  it('M-1：切到空会话 → 上一会话的 durable 行必须清空（空窗口也整表替换）', async () => {
+    const h = sourceHarness({
+      load: async () => ({
+        status: 'ok' as const,
+        value: { messages: [olderMessage, tailMessage], next_cursor: null },
+      }),
+    })
+    // 目标会话是空的（窗口 0 行）。
+    vi.mocked(getSourceChatSession).mockResolvedValue({
+      session: { session_id: 'sess_src_b', title: null },
+      messages: [],
+      next_cursor: null,
+    } as never)
+    const { result } = renderHook(
+      () => useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1', session: { runtime: h.runtime, ref } }),
+      { wrapper: makeHookWrapper() },
+    )
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(result.current.turns).toHaveLength(2)
+
+    await act(async () => {
+      result.current.selectSession('sess_src_b')
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    // 空会话也必须整表替换：上一会话的行不得残留。
+    expect(result.current.turns).toEqual([])
+  })
+
+  it('M-1：切到有内容的会话 → 不残留上一会话的 durable 行', async () => {
+    const h = sourceHarness({
+      load: async () => ({
+        status: 'ok' as const,
+        value: { messages: [olderMessage, tailMessage], next_cursor: null },
+      }),
+    })
+    const nextMessage = {
+      message_id: 'msg_next_session',
+      role: 'assistant' as const,
+      content: '新会话的答案',
+      created_at: '2026-10-30T01:00:00Z',
+    }
+    vi.mocked(getSourceChatSession).mockResolvedValue({
+      session: { session_id: 'sess_src_b', title: null },
+      messages: [nextMessage],
+      next_cursor: null,
+    } as never)
+    const { result } = renderHook(
+      () => useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1', session: { runtime: h.runtime, ref } }),
+      { wrapper: makeHookWrapper() },
+    )
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(result.current.turns).toHaveLength(2)
+
+    await act(async () => {
+      result.current.selectSession('sess_src_b')
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(result.current.turns).toHaveLength(1)
+    expect(result.current.turns[0]?.content).toBe('新会话的答案')
+  })
+
+  it('口径：同会话合并**保留 live 轮**；跨会话整表替换（旧 live 轮也丢弃）', async () => {
+    vi.mocked(getSourceChatSession).mockResolvedValue({
+      session: { session_id: 'sess_live', title: null },
+      messages: [tailMessage],
+      next_cursor: null,
+    } as never)
+    // legacy 模式（不接 session runtime）：hook 自己的 send 会把 live 轮写进 turns。
+    const { result } = renderHook(
+      () => useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1' }),
+      { wrapper: makeHookWrapper() },
+    )
+    await act(async () => {
+      result.current.selectSession('sess_live')
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(result.current.turns).toHaveLength(1)
+
+    // 发一条消息 → live 轮（user + assistant）进入 turns。
+    await act(async () => {
+      result.current.send('新问题', MODEL)
+      await Promise.resolve()
+    })
+    const liveTurns = result.current.turns.filter((turn) => turn.id.startsWith('turn_'))
+    expect(liveTurns.length).toBeGreaterThan(0)
+    const beforeLive = result.current.turns.length
+
+    // 同一会话再读一次 durable → **合并**：live 轮必须保留。
+    await act(async () => {
+      result.current.selectSession('sess_live')
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(result.current.turns).toHaveLength(beforeLive)
+    expect(result.current.turns.filter((turn) => turn.id.startsWith('turn_')).length)
+      .toBe(liveTurns.length)
+
+    // 跨会话 → **整表替换**：旧会话的 live 轮也必须丢弃。
+    await act(async () => {
+      result.current.selectSession('sess_other')
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(result.current.turns).toHaveLength(1)
+    expect(result.current.turns[0]?.content).toBe('最新答案')
+  })
+
+  it('R1：分页读不得触发跨会话整表替换（切会话后点「加载更早」不得替换当前会话内容）', async () => {
+    const controllerRow = {
+      message_id: 'msg_controller_session',
+      role: 'assistant' as const,
+      content: 'controller 会话的答案',
+      created_at: '2026-10-30T00:00:00Z',
+    }
+    const controllerOlderRow = {
+      message_id: 'msg_controller_older',
+      role: 'assistant' as const,
+      content: 'controller 会话的更早答案',
+      created_at: '2026-10-29T00:00:00Z',
+    }
+    const displayedRow = {
+      message_id: 'msg_displayed_session',
+      role: 'assistant' as const,
+      content: '当前会话的答案',
+      created_at: '2026-10-30T02:00:00Z',
+    }
+    let capturedTransport: SourceTransportStub | null = null
+    const controller = {
+      detach: vi.fn(),
+      hasActiveTurn: vi.fn(() => false),
+      load: vi.fn(async () => ({
+        status: 'ok' as const,
+        value: { messages: [controllerRow], next_cursor: null },
+      })),
+      loadMore: vi.fn(async () => {
+        // controller 的「更早一页」：属于 controller 会话，不是当前展示会话。
+        await capturedTransport?.loadDetail({ cursor: 'back-1', order: 'desc', limit: 50 })
+        return { status: 'ok' as const, value: { messages: [controllerOlderRow] } }
+      }),
+      getSnapshot: vi.fn(() => ({ turn: null, authGeneration: 1 })),
+    } as unknown as ConversationController
+    const conversation = vi.fn((...args: unknown[]) => {
+      capturedTransport = (args[1] as { transport: SourceTransportStub })?.transport ?? null
+      return controller
+    })
+    const runtime = {
+      conversation,
+      releaseConversation: vi.fn(),
+      getSnapshot: () => ({ authGeneration: 1 }),
+      subscribe: () => () => {},
+    } as unknown as SessionRuntime
+    vi.mocked(getSourceChatSession).mockImplementation((_p, _s, _source, options) => {
+      const opts = options as { cursor?: string } | undefined
+      // 带游标 = controller 会话的「更早一页」；不带游标 = 当前展示会话的尾部窗口。
+      const payload = opts?.cursor === undefined
+        ? {
+          session: { session_id: 'sess_displayed', title: null },
+          messages: [displayedRow],
+          next_cursor: null,
+        }
+        : {
+          session: { session_id: 'sess_src_1', title: null },
+          messages: [controllerOlderRow],
+          next_cursor: null,
+        }
+      return Promise.resolve(payload as never)
+    })
+
+    const { result } = renderHook(
+      () => useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1', session: { runtime, ref } }),
+      { wrapper: makeHookWrapper() },
+    )
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    // 切到「当前展示会话」：其尾部窗口成为当前内容。
+    await act(async () => {
+      result.current.selectSession('sess_displayed')
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(result.current.turns.map((turn) => turn.content)).toEqual(['当前会话的答案'])
+
+    // 点「加载更早」→ controller（仍绑在它自己的会话上）取回更早一页：
+    // 当前会话的内容不得被 controller 会话的行整表替换。
+    await act(async () => {
+      await controller.loadMore()
+      await Promise.resolve()
+    })
+    expect(result.current.turns.map((turn) => turn.content)).toEqual(['当前会话的答案'])
+  })
+
+  it('F6：迟到的旧详情响应整体丢弃（不得乱序并入 turns）', async () => {
+    const h = sourceHarness()
+    const responses: Array<(value: unknown) => void> = []
+    vi.mocked(getSourceChatSession).mockImplementation((() => new Promise((resolve) => {
+      responses.push(resolve as (value: unknown) => void)
+    })) as never)
+    const { result } = renderHook(
+      () => useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1', session: { runtime: h.runtime, ref } }),
+      { wrapper: makeHookWrapper() },
+    )
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    let older: Promise<unknown> = Promise.resolve()
+    let newer: Promise<unknown> = Promise.resolve()
+    await act(async () => {
+      older = h.transport.loadDetail({ cursor: null, order: 'desc', limit: 50 })
+      newer = h.transport.loadDetail({ cursor: null, order: 'desc', limit: 50 })
+    })
+    // 更新的一读先返回。
+    await act(async () => {
+      responses[1]?.({
+        session: { session_id: 'sess_src_1', title: null },
+        messages: [tailMessage],
+        next_cursor: null,
+      })
+      await newer
+    })
+    expect(result.current.turns).toHaveLength(1)
+    expect(result.current.turns[0]?.content).toBe('最新答案')
+
+    // 迟到的旧响应：整体丢弃，不得并入（否则会出现乱序/重复行）。
+    await act(async () => {
+      responses[0]?.({
+        session: { session_id: 'sess_src_1', title: null },
+        messages: [olderMessage],
+        next_cursor: null,
+      })
+      await older
+    })
+    expect(result.current.turns).toHaveLength(1)
+    expect(result.current.turns[0]?.content).toBe('最新答案')
   })
 })

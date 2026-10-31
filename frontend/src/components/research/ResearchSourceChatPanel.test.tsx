@@ -52,6 +52,7 @@ import type { UseResearchSourceChatResult } from '@/lib/hooks/use-research-sourc
 import { useResearchSessionRuntimeOptional } from '@/lib/hooks/research-session-runtime'
 import { useResearchEditor } from '@/lib/hooks/use-research-editor'
 import { createEditorState } from '@/lib/research/editor-machine'
+import type { ConversationController } from '@/lib/research/session-runtime'
 
 function makeChatResult(overrides: Partial<UseResearchSourceChatResult> = {}): UseResearchSourceChatResult {
   return {
@@ -1318,5 +1319,68 @@ describe('PR-15 source 会话发送门禁（生产实证回归，2026-10-28）',
     expect(sendButton).not.toBeDisabled()
     await act(async () => { fireEvent.click(sendButton) })
     expect(conversationSend).toHaveBeenCalledTimes(1)
+  })
+})
+
+/**
+ * RDLens #892（审查补充）：源面板「加载更早的消息」入口。
+ *
+ * source controller 已支持 `loadMore()`（后向游标取更早一页），但源面板此前
+ * 没有入口 → 长会话（>50 条）只能看到尾部窗口且翻不回去。
+ */
+describe('ResearchSourceChatPanel：加载更早的消息（#892）', () => {
+  function makeControllerStub(detailCursor: string | null = 'back-1') {
+    const snapshot = {
+      version: 1,
+      sessionKey: 'sk',
+      authGeneration: 1,
+      turn: null,
+      history: [],
+      detailMessages: [],
+      detailCursor,
+    }
+    const listeners: Array<() => void> = []
+    const loadMore = vi.fn(async () => ({
+      status: 'ok' as const,
+      value: { messages: [{ message_id: 'msg_old', role: 'assistant' as const, content: '旧答案' }] },
+    }))
+    const controller = {
+      getSnapshot: () => snapshot,
+      subscribe: (listener: () => void) => {
+        listeners.push(listener)
+        return () => {
+          const index = listeners.indexOf(listener)
+          if (index >= 0) listeners.splice(index, 1)
+        }
+      },
+      loadMore,
+      detach: vi.fn(),
+      hasActiveTurn: vi.fn(() => false),
+    } as unknown as ConversationController
+    return { controller, loadMore }
+  }
+
+  it('存在「加载更早的消息」入口（复用既有通用 i18n 键），点击后调用 controller.loadMore()', async () => {
+    const stub = makeControllerStub()
+    vi.mocked(useResearchSourceChat).mockReturnValue(
+      makeChatResult({ conversation: stub.controller }),
+    )
+    render(<ResearchSourceChatPanel projectId="proj_1" sourceId="src_1" onHighlightPage={vi.fn()} />)
+
+    const button = screen.getByRole('button', { name: 'research.pagination.loadMore' })
+    expect(button).toBeInTheDocument()
+    await act(async () => {
+      fireEvent.click(button)
+    })
+    expect(stub.loadMore).toHaveBeenCalledTimes(1)
+  })
+
+  it('没有更早历史（后向游标为空）时不渲染该入口', () => {
+    const stub = makeControllerStub(null)
+    vi.mocked(useResearchSourceChat).mockReturnValue(
+      makeChatResult({ conversation: stub.controller }),
+    )
+    render(<ResearchSourceChatPanel projectId="proj_1" sourceId="src_1" onHighlightPage={vi.fn()} />)
+    expect(screen.queryByRole('button', { name: 'research.pagination.loadMore' })).toBeNull()
   })
 })

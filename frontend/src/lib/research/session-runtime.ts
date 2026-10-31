@@ -1180,6 +1180,15 @@ export interface ConversationTransport {
   readonly loadDetail?: (input: {
     readonly sessionRef: ResearchSessionRef
     readonly cursor?: string | null
+    /**
+     * RDLens #892：读取方向。
+     * - `asc`（前向）：从最旧往后读，`cursor` = 下一页（窗口之后）。
+     * - `desc`（后向/尾部窗口）：取最新 `limit` 条并按阅读顺序返回，
+     *   `cursor` = 更早的一页（锚点＝窗口内最旧那条）。
+     */
+    readonly order?: 'asc' | 'desc'
+    /** RDLens #892：窗口大小（恢复路径固定 50；后端上限 100）。 */
+    readonly limit?: number
   }) => Promise<unknown> | unknown
   readonly releaseHold?: (operationId: string) => void
   readonly clearAfterSubmission?: (
@@ -1351,6 +1360,109 @@ function failureFromError(error: unknown): { status: number | null; code: string
   return { status, code }
 }
 
+/**
+ * RDLens #892：durable detail 的读取方向。
+ * - `desc`（默认）：尾部窗口——取最新 `limit` 条并按阅读顺序返回；`next_cursor`
+ *   是**后向**游标（更早的一页）。
+ * - `asc`：前向读——从最旧往后读；`next_cursor` 是前向游标。
+ */
+export type ConversationDetailOrder = 'asc' | 'desc'
+
+/** RDLens #892：尾部窗口大小（恢复路径固定 50；后端 limit 上限 100）。 */
+export const CONVERSATION_DETAIL_WINDOW_LIMIT = 50
+
+/**
+ * 详情行的稳定键（`message_id`）；无 id 的行无法去重（返回 null）。
+ */
+function detailRowKey(row: unknown): string | null {
+  if (row === null || typeof row !== 'object') return null
+  const messageId = (row as { message_id?: unknown }).message_id
+  return typeof messageId === 'string' && messageId.length > 0 ? messageId : null
+}
+
+/**
+ * 该行是否被服务端按当前 viewer 权限投影为受限（RDLens #892 审查 F4）。
+ *
+ * 受限副本**更严格**：同一 `message_id` 的后到受限副本必须替换已加载的
+ * 非受限副本（否则旧正文继续显示 → 越权可见）。
+ */
+function detailRowIsRestricted(row: unknown): boolean {
+  if (row === null || typeof row !== 'object') return false
+  const record = row as { record_visibility?: unknown }
+  return record.record_visibility === 'restricted'
+}
+
+/**
+ * 合并两批详情行（阅读顺序；按 `message_id` 去重，默认首见保留）。
+ *
+ * RDLens #892 审查 F4：同一 id 的**受限副本优先**替换非受限副本（更严格的
+ * 可见性胜出——服务端按当前 viewer 权限投影为 restricted 时，旧正文不得继续
+ * 显示）；其余情况仍首见保留（内容不变的行不重复刷新）。
+ *
+ * @param base 已有的行（保持原位）
+ * @param incoming 本次读到的行
+ * @param incomingIsOlder incoming 是否比 base 更早（更早的一批排在前面）
+ */
+function mergeDetailRows(
+  base: readonly unknown[],
+  incoming: readonly unknown[],
+  incomingIsOlder: boolean,
+): readonly unknown[] {
+  const merged = [...base]
+  const baseIndex = new Map<string, number>()
+  merged.forEach((row, index) => {
+    const key = detailRowKey(row)
+    if (key !== null && !baseIndex.has(key)) baseIndex.set(key, index)
+  })
+  const added: unknown[] = []
+  const addedIndex = new Map<string, number>()
+  for (const row of incoming) {
+    const key = detailRowKey(row)
+    if (key === null) {
+      added.push(row)
+      continue
+    }
+    const existing = baseIndex.get(key)
+    if (existing !== undefined) {
+      // 同 id：受限副本优先（更严格的可见性胜出）；其余首见保留。
+      if (!detailRowIsRestricted(merged[existing]) && detailRowIsRestricted(row)) {
+        merged[existing] = row
+      }
+      continue
+    }
+    const addedExisting = addedIndex.get(key)
+    if (addedExisting !== undefined) {
+      if (!detailRowIsRestricted(added[addedExisting]) && detailRowIsRestricted(row)) {
+        added[addedExisting] = row
+      }
+      continue
+    }
+    addedIndex.set(key, added.length)
+    added.push(row)
+  }
+  return incomingIsOlder ? [...added, ...merged] : [...merged, ...added]
+}
+
+/**
+ * 行是否属于目标 generation：优先读显式 generation 字段；v1 契约行可不带该
+ * 字段，此时用 `msg_<gen>_assistant` 形态的 message_id 证明（与
+ * `collectDeliveredGenerations` 同一判据）。
+ */
+function detailRowMatchesGeneration(row: unknown, generationId: string): boolean {
+  if (row === null || typeof row !== 'object') return false
+  const record = row as Record<string, unknown>
+  if (
+    record.generation_id === generationId
+    || record.generationId === generationId
+    || record.background_generation_id === generationId
+  ) {
+    return true
+  }
+  if (record.role !== 'assistant') return false
+  const messageId = record.message_id
+  return typeof messageId === 'string' && messageId === `msg_${generationId}_assistant`
+}
+
 /** 新建会话对话控制器（每个运行时实例经 `runtime.conversation(ref)` 复用）。 */
 export function createConversationController(input: {
   readonly ref: ResearchSessionRef
@@ -1359,8 +1471,14 @@ export function createConversationController(input: {
   readonly isDisposed?: () => boolean
   readonly lookupBackoffMs?: readonly number[]
   readonly now?: () => string
+  /** RDLens #892：durable detail 读取方向（默认尾部窗口 `desc`）。 */
+  readonly detailOrder?: ConversationDetailOrder
+  /** RDLens #892：durable detail 窗口大小（默认 50）。 */
+  readonly detailLimit?: number
 }): ConversationController {
   const { ref, transport } = input
+  const detailOrder: ConversationDetailOrder = input.detailOrder ?? 'desc'
+  const detailLimit = input.detailLimit ?? CONVERSATION_DETAIL_WINDOW_LIMIT
   let state: ConversationState = createConversationState({
     sessionKey: sessionKey(ref),
     authGeneration: input.authGeneration,
@@ -1385,6 +1503,11 @@ export function createConversationController(input: {
   let captureGeneration = input.authGeneration
   let detailMessages: readonly unknown[] = []
   let detailCursor: string | null = null
+  /**
+   * RDLens #892 审查 F7：desc 模式下后向游标是否已被「更早一页」推进。
+   * 一旦推进，新鲜尾部读不得再把游标退回（否则翻到最旧后入口复活成死按钮）。
+   */
+  let detailCursorPaged = false
   const lookupTasks = new Map<string, { readonly turnId: string; readonly attempt: number }>()
   const lookupTimers = new Set<ReturnType<typeof setTimeout>>()
   const lookupBackoff = input.lookupBackoffMs ?? [1000, 2000]
@@ -2141,7 +2264,14 @@ export function createConversationController(input: {
     }
     const detailGeneration = captureGeneration
     try {
-      const raw = await loader({ sessionRef: ref, cursor })
+      // RDLens #892：方向与窗口大小由控制器决定（默认尾部窗口 desc/50），
+      // transport 只负责把参数透传到 API。
+      const raw = await loader({
+        sessionRef: ref,
+        cursor,
+        order: detailOrder,
+        limit: detailLimit,
+      })
       if (isDisposed()) return { status: 'stale' }
       if (captureGeneration !== detailGeneration) {
         // 认证刷新后旧代次详情不得回填/宣告完整。
@@ -2153,11 +2283,26 @@ export function createConversationController(input: {
       const messages = Array.isArray(record?.messages) ? record.messages : []
       const nextCursor = typeof record?.next_cursor === 'string' ? record.next_cursor : null
       if (cursor === null) {
-        detailMessages = messages
+        // desc（尾部窗口）刷新：**合并**而不是整表替换——收敛 tick 读到的尾部
+        // 窗口不得抹掉已通过「更早一页」取回的历史行（#892 §2.2）。
+        detailMessages = detailOrder === 'desc'
+          ? mergeDetailRows(detailMessages, messages, false)
+          : messages
+      } else if (detailOrder === 'desc') {
+        // 后向游标：返回的是**更早**的一页 → prepend 到已有窗口之前（阅读顺序）。
+        detailMessages = mergeDetailRows(detailMessages, messages, true)
       } else {
-        detailMessages = [...detailMessages, ...messages]
+        detailMessages = mergeDetailRows(detailMessages, messages, false)
       }
-      detailCursor = nextCursor
+      // RDLens #892 审查 F7：desc 模式下**更早页的游标只由「更早一页」推进**。
+      // 新鲜尾部读的游标锚点恒为窗口内最旧那条（back-1）：若覆盖已推进的游标，
+      // 翻到最旧后入口会「复活」成死按钮（重复取同一页）。
+      if (detailOrder === 'desc' && cursor !== null) {
+        detailCursor = nextCursor
+        detailCursorPaged = true
+      } else if (detailOrder !== 'desc' || !detailCursorPaged) {
+        detailCursor = nextCursor
+      }
       commit()
       const turn = currentTurn()
       if (turn !== null && turn.incomplete) {
@@ -2173,17 +2318,30 @@ export function createConversationController(input: {
         })
         const hasGeneration = targetGeneration === null
           ? detailMessages.length > 0
-          : detailMessages.some((row) => {
-              if (typeof row !== 'object' || row === null) return false
-              const record = row as Record<string, unknown>
-              return record.generation_id === targetGeneration
-                || record.generationId === targetGeneration
-                || record.background_generation_id === targetGeneration
-            })
+          : detailMessages.some((row) => detailRowMatchesGeneration(row, targetGeneration))
+        // RDLens #892 审查 F5：目标 generation 未知时，判定收紧为「窗口内
+        // **最后一条**消息是有正文的 assistant 行」——`complete` 是单向闩锁
+        // （conversation-machine 的 durable_restored 只把 incomplete 置 false），
+        // 误判无法回退，故不能只看「窗口内存在」某条 assistant 行。
+        const lastRow = detailMessages[detailMessages.length - 1] ?? null
+        const lastRowIsAssistantWithBody = lastRow !== null
+          && typeof lastRow === 'object'
+          && (lastRow as Record<string, unknown>).role === 'assistant'
+          && typeof (lastRow as Record<string, unknown>).content === 'string'
+          && ((lastRow as Record<string, unknown>).content as string).length > 0
+        // RDLens #892：desc（尾部窗口）首读即最新，`next_cursor` 非空只表示
+        // 「还有更早的历史」→ 不再要求游标为空；改判「恢复目标已出现在窗口内」。
+        // asc（前向读）判定保持现状：未读到末页即不完整。
+        const targetReached = targetGeneration === null
+          ? lastRowIsAssistantWithBody
+          : hasGeneration
+        const complete = detailOrder === 'desc'
+          ? targetReached
+          : nextCursor === null && (hasGeneration || (targetGeneration === null && hasAssistant))
         dispatch({
           type: 'durable_restored',
           turnId: turn.identity.turnId,
-          complete: nextCursor === null && (hasGeneration || (targetGeneration === null && hasAssistant)),
+          complete,
         })
       }
       return { status: 'ok', value: { messages } }
@@ -2231,6 +2389,7 @@ export function createConversationController(input: {
     })
     detailMessages = []
     detailCursor = null
+    detailCursorPaged = false
     cached = null
     version += 1
     listeners.clear()

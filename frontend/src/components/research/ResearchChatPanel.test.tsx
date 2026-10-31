@@ -3483,3 +3483,314 @@ describe('ResearchChatPanel PR-13：not_accepted 类 503 不得静默', () => {
     expect(screen.queryByTestId('chat-error')).toBeNull()
   })
 })
+
+// ── RDLens #892（迭代 2）：「加载更早的消息」入口 + prepend 滚动补偿 ──
+
+describe('ResearchChatPanel：加载更早的消息（#892 迭代 2）', () => {
+  interface ControllerStub {
+    controller: ConversationController
+    loadMore: ReturnType<typeof vi.fn>
+    emit: (patch: { detailCursor: string | null }) => void
+  }
+
+  function makeControllerStub(options: {
+    /** loadMore 的返回（默认：1 行）；传 `{rows: []}` 模拟「没有更早的行」。 */
+    rows?: Array<{ message_id: string; role: 'assistant'; content: string }>
+    /** loadMore 是否失败。 */
+    fails?: boolean
+  } = {}): ControllerStub {
+    let snapshot = {
+      version: 1,
+      sessionKey: 'sk',
+      authGeneration: 1,
+      turn: null,
+      history: [],
+      detailMessages: [],
+      detailCursor: 'back-1' as string | null,
+    }
+    const listeners: Array<() => void> = []
+    const rows = options.rows ?? [{ message_id: 'msg_old', role: 'assistant' as const, content: '旧答案' }]
+    const loadMore = vi.fn(async () => {
+      if (options.fails === true) {
+        throw new Error('load_more_failed')
+      }
+      return {
+        status: 'ok' as const,
+        value: { messages: rows },
+      }
+    })
+    const controller = {
+      getSnapshot: () => snapshot,
+      subscribe: (listener: () => void) => {
+        listeners.push(listener)
+        return () => {
+          const index = listeners.indexOf(listener)
+          if (index >= 0) listeners.splice(index, 1)
+        }
+      },
+      loadMore,
+      detach: vi.fn(),
+      hasActiveTurn: vi.fn(() => false),
+    } as unknown as ConversationController
+    return {
+      controller,
+      loadMore,
+      emit: (patch) => {
+        snapshot = { ...snapshot, ...patch }
+        for (const listener of [...listeners]) listener()
+      },
+    }
+  }
+
+  function renderPanelWithConversation(
+    controller: ConversationController,
+    initialTurns: ResearchChatTurn[],
+    onLoaded?: () => void,
+  ) {
+    const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
+    function Harness() {
+      const [turns, setTurns] = useState<ResearchChatTurn[]>(initialTurns)
+      return (
+        <QueryClientProvider client={queryClient}>
+          <ResearchWorkspaceProvider userId={USER_ID} projectId={PROJECT_ID} role="owner">
+            <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+              <ResearchChatPanel
+                turns={turns}
+                isStreaming={false}
+                onSend={vi.fn()}
+                onSendCoverage={vi.fn(async () => ACCEPTED_OUTCOME)}
+                conversation={controller}
+                sessionRef={{
+                  domain: 'research',
+                  kind: 'global',
+                  projectId: PROJECT_ID,
+                  sessionId: 'sess_1',
+                  sourceId: null,
+                }}
+              />
+              <button
+                type="button"
+                data-testid="prepend-older"
+                onClick={() => {
+                  setTurns((prev) => [
+                    turn({ id: 'msg_old', role: 'assistant', content: '旧答案' }),
+                    ...prev,
+                  ])
+                  onLoaded?.()
+                }}
+              >
+                prepend
+              </button>
+              <button
+                type="button"
+                data-testid="unrelated-change"
+                onClick={() => {
+                  // 无关变化：更新已有行的正文（行数与顺序不变）。
+                  setTurns((prev) => prev.map((item) => (
+                    item.id === 't1' ? { ...item, content: `${item.content}（更新）` } : item
+                  )))
+                }}
+              >
+                unrelated
+              </button>
+              <button
+                type="button"
+                data-testid="append-tail"
+                onClick={() => {
+                  // 流式尾部追加：行数增长，但新行在**末尾**（不是 prepend）。
+                  setTurns((prev) => [
+                    ...prev,
+                    turn({ id: 't2', role: 'assistant', content: '流式新答案' }),
+                  ])
+                }}
+              >
+                append
+              </button>
+            </ResearchScopeProvider>
+          </ResearchWorkspaceProvider>
+        </QueryClientProvider>
+      )
+    }
+    return render(<Harness />)
+  }
+
+  it('存在「加载更早的消息」入口（复用既有通用 i18n 键），点击后调用 controller.loadMore()', async () => {
+    const stub = makeControllerStub()
+    renderPanelWithConversation(stub.controller, [turn({ id: 't1', role: 'assistant', content: '新答案' })])
+
+    const button = screen.getByRole('button', { name: 'research.pagination.loadMore' })
+    expect(button).toBeInTheDocument()
+
+    await act(async () => {
+      fireEvent.click(button)
+    })
+    expect(stub.loadMore).toHaveBeenCalledTimes(1)
+  })
+
+  it('没有更早历史（后向游标为空）时不渲染该入口', () => {
+    const stub = makeControllerStub()
+    stub.emit({ detailCursor: null })
+    renderPanelWithConversation(stub.controller, [turn({ id: 't1', role: 'assistant', content: '新答案' })])
+    expect(screen.queryByRole('button', { name: 'research.pagination.loadMore' })).toBeNull()
+  })
+
+  it('prepend 后按 scrollHeight 差值补偿 scrollTop（视口不跳动）', async () => {
+    const stub = makeControllerStub()
+    renderPanelWithConversation(stub.controller, [turn({ id: 't1', role: 'assistant', content: '新答案' })])
+
+    const container = screen.getByTestId('chat-messages')
+    let scrollHeight = 100
+    Object.defineProperty(container, 'scrollHeight', {
+      configurable: true,
+      get: () => scrollHeight,
+    })
+    Object.defineProperty(container, 'scrollTop', {
+      configurable: true,
+      writable: true,
+      value: 20,
+    })
+
+    const button = screen.getByRole('button', { name: 'research.pagination.loadMore' })
+    await act(async () => {
+      fireEvent.click(button)
+    })
+    expect(stub.loadMore).toHaveBeenCalledTimes(1)
+
+    // 更早的一页被 prepend（容器变高 60px）→ scrollTop 必须同步补 60px。
+    await act(async () => {
+      scrollHeight = 160
+      fireEvent.click(screen.getByTestId('prepend-older'))
+    })
+    expect((container as HTMLElement).scrollTop).toBe(80)
+  })
+
+  it('F2：无关 turns 变化不得消费补偿意图（不得滚动）；真 prepend 才按差值补偿', async () => {
+    const stub = makeControllerStub()
+    renderPanelWithConversation(stub.controller, [turn({ id: 't1', role: 'assistant', content: '新答案' })])
+
+    const container = screen.getByTestId('chat-messages')
+    let scrollHeight = 100
+    Object.defineProperty(container, 'scrollHeight', {
+      configurable: true,
+      get: () => scrollHeight,
+    })
+    Object.defineProperty(container, 'scrollTop', {
+      configurable: true,
+      writable: true,
+      value: 20,
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'research.pagination.loadMore' }))
+    })
+
+    // 请求在途期间的无关变化（流式新增 / 收敛合并 / 内容更新）：
+    // 不得滚动，也不得把补偿意图消费掉。
+    await act(async () => {
+      scrollHeight = 130
+      fireEvent.click(screen.getByTestId('unrelated-change'))
+    })
+    expect((container as HTMLElement).scrollTop).toBe(20)
+
+    // 真正的 prepend 到达 → 按差值补偿（基线已被无关变化推进到 130）。
+    await act(async () => {
+      scrollHeight = 190
+      fireEvent.click(screen.getByTestId('prepend-older'))
+    })
+    expect((container as HTMLElement).scrollTop).toBe(80)
+  })
+
+  it('L-2：流式尾部追加一行（行数增长但不是 prepend）不得滚动；真 prepend 才补偿', async () => {
+    const stub = makeControllerStub()
+    renderPanelWithConversation(stub.controller, [turn({ id: 't1', role: 'assistant', content: '新答案' })])
+
+    const container = screen.getByTestId('chat-messages')
+    let scrollHeight = 100
+    Object.defineProperty(container, 'scrollHeight', {
+      configurable: true,
+      get: () => scrollHeight,
+    })
+    Object.defineProperty(container, 'scrollTop', {
+      configurable: true,
+      writable: true,
+      value: 20,
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'research.pagination.loadMore' }))
+    })
+
+    // 流式尾部追加：行数增长（2 行），但新行在末尾 → **不是** prepend。
+    // 判别力：若判据退化为「行数增长即 prepend」，这里会错误补偿（scrollTop 变 50）。
+    await act(async () => {
+      scrollHeight = 130
+      fireEvent.click(screen.getByTestId('append-tail'))
+    })
+    expect((container as HTMLElement).scrollTop).toBe(20)
+
+    // 真正的 prepend（更早的一页插到顶部）→ 按差值补偿。
+    await act(async () => {
+      scrollHeight = 190
+      fireEvent.click(screen.getByTestId('prepend-older'))
+    })
+    expect((container as HTMLElement).scrollTop).toBe(80)
+  })
+
+  it('loadMore 返回 0 行 → 补偿意图被丢弃（后续 prepend 不产生滚动）', async () => {
+    const stub = makeControllerStub({ rows: [] })
+    renderPanelWithConversation(stub.controller, [turn({ id: 't1', role: 'assistant', content: '新答案' })])
+
+    const container = screen.getByTestId('chat-messages')
+    let scrollHeight = 100
+    Object.defineProperty(container, 'scrollHeight', {
+      configurable: true,
+      get: () => scrollHeight,
+    })
+    Object.defineProperty(container, 'scrollTop', {
+      configurable: true,
+      writable: true,
+      value: 20,
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'research.pagination.loadMore' }))
+    })
+    expect(stub.loadMore).toHaveBeenCalledTimes(1)
+
+    // 没有新行 → 补偿意图必须被丢弃：随后的 prepend 不得触发任何滚动。
+    await act(async () => {
+      scrollHeight = 190
+      fireEvent.click(screen.getByTestId('prepend-older'))
+    })
+    expect((container as HTMLElement).scrollTop).toBe(20)
+  })
+
+  it('loadMore 失败 → 补偿意图被丢弃（不产生滚动）', async () => {
+    const stub = makeControllerStub({ fails: true })
+    renderPanelWithConversation(stub.controller, [turn({ id: 't1', role: 'assistant', content: '新答案' })])
+
+    const container = screen.getByTestId('chat-messages')
+    let scrollHeight = 100
+    Object.defineProperty(container, 'scrollHeight', {
+      configurable: true,
+      get: () => scrollHeight,
+    })
+    Object.defineProperty(container, 'scrollTop', {
+      configurable: true,
+      writable: true,
+      value: 20,
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'research.pagination.loadMore' }))
+    })
+    expect(stub.loadMore).toHaveBeenCalledTimes(1)
+
+    // 失败 → 补偿意图必须被丢弃：随后的 prepend 不得触发任何滚动。
+    await act(async () => {
+      scrollHeight = 190
+      fireEvent.click(screen.getByTestId('prepend-older'))
+    })
+    expect((container as HTMLElement).scrollTop).toBe(20)
+  })
+})
