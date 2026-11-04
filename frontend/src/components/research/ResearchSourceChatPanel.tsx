@@ -578,7 +578,13 @@ export function ResearchSourceChatPanel({
   const returnScrollRef = useRef<{ seq: number; attempts: number } | null>(null)
   useEffect(() => {
     if (scrollToMessage === undefined || scrollToMessage === null) return
-    if (sourceSessionId === '' || scrollToMessage.sessionId !== sourceSessionId) return
+    if (sourceSessionId === '' || scrollToMessage.sessionId !== sourceSessionId) {
+      // 复审 F53：page 会先切目标会话；切换完成前不滚动。若宽限期内仍未切到
+      // 目标会话（会话不存在/激活失败），显示 position_unavailable，绝不静默
+      // no-op；切换成功时本 effect 重跑并清理定时器。
+      const timer = window.setTimeout(() => setReturnTargetUnavailable(true), 1500)
+      return () => window.clearTimeout(timer)
+    }
     const current = returnScrollRef.current
     if (current === null || current.seq !== scrollToMessage.seq) {
       returnScrollRef.current = { seq: scrollToMessage.seq, attempts: 0 }

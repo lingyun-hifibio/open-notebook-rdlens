@@ -1678,8 +1678,9 @@ export function readLatestReturnTarget(input: {
 }
 
 /**
- * citation 点击 → 记录返回目标（page 处理器的纯逻辑部分）：message_id 缺失/
- * 身份非法 → null（不写半条）；成功时同时写 sessionStorage + localStorage。
+ * citation 点击 → 构造并**尽力**记录返回目标：message_id 缺失/身份非法 →
+ * null（不写半条）；storage 全部不可用时不伪造“已记录”，但仍返回本次内存
+ * 目标（本页可即时返回；重开由「无 storage → position_unavailable」兜底）。
  */
 export function recordCitationReturnTarget(input: {
   readonly projectId: string
@@ -1697,11 +1698,12 @@ export function recordCitationReturnTarget(input: {
     citation: input.citation,
   })
   if (target === null) return null
-  return recordSessionReturnTarget({
+  recordSessionReturnTarget({
     target,
     sessionStorage: input.sessionStorage,
     localStorage: input.localStorage,
   })
+  return target
 }
 
 /** 「返回原回答」动作计划（page 只据此切 surface / 会话 / 下发滚动请求）。 */

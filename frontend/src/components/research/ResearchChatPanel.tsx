@@ -219,6 +219,10 @@ function conversationTurnToTurns(turn: ConversationTurn): ResearchChatTurn[] {
       doc_id: citation.doc_id,
       page_idx: citation.page_idx,
       confidence: citation.confidence,
+      // 复审 F52：controller/流式投影不得丢弃 citation 身份；「返回原回答」
+      // 与 citation 高亮按 doc_version/chunk_id 做确定性匹配。
+      doc_version: citation.doc_version,
+      chunk_id: citation.chunk_id,
     })),
     usage: turn.sse.usage,
     resolvedMode: turn.sse.resolvedMode,
@@ -933,7 +937,11 @@ export function ResearchChatPanel({
     // 切换完成后本 effect 因 activeSessionId 变化重跑（绝不把目标 message id
     // 用于其它会话的已加载消息）。
     const activeSessionId = sessionRef?.sessionId ?? null
-    if (activeSessionId === null || scrollToMessage.sessionId !== activeSessionId) return
+    if (activeSessionId === null || scrollToMessage.sessionId !== activeSessionId) {
+      // 复审 F53：同 source 面板——切会话宽限期后仍未就绪 → position_unavailable。
+      const timer = window.setTimeout(() => setReturnTargetUnavailable(true), 1500)
+      return () => window.clearTimeout(timer)
+    }
     const current = returnScrollRef.current
     if (current === null || current.seq !== scrollToMessage.seq) {
       returnScrollRef.current = { seq: scrollToMessage.seq, attempts: 0 }

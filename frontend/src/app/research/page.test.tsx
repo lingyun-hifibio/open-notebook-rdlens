@@ -94,6 +94,11 @@ interface WorkspacePropsMock {
   onActiveActionChange: (action: string) => void
   onCitationJump: (sourceId: string, pageIdx: number | null) => void
   onEditScopeAllStates: () => void
+  onCitationReturn?: (
+    citation: { citation_id: number; claim: string; doc_id: string; page_idx: number | null; confidence: null },
+    messageId: string | null,
+    sourceId: string,
+  ) => void
   pendingSelection?: { target: 'global' | 'source'; sourceId: string } | null
   selectionChip?: { label: string } | null
   onSelectionConsumed?: () => void
@@ -119,6 +124,12 @@ vi.mock('@/components/research/ResearchWorkspace', () => ({
         onClick={() => props.onCitationJump('src_9', 7)}
       />
       <button data-testid="ws-edit-scope" onClick={() => props.onEditScopeAllStates()} />
+      <button data-testid="ws-cite-live"
+        onClick={() => props.onCitationReturn?.(
+          { citation_id: 1, claim: 'live claim', doc_id: 'doc_live', page_idx: 7, confidence: null },
+          null,
+          'src_9',
+        )} />
       <button data-testid="ws-consume-selection" onClick={() => props.onSelectionConsumed?.()} />
     </div>
   ),
@@ -146,12 +157,17 @@ vi.mock('@/components/research/ResearchSourceChatPanel', () => ({
   ResearchSourceChatPanel: ({
     sourceId,
     onHighlightPage,
+    onCitationReturn,
     selectionContext,
     selectionChip,
     onSelectionConsumed,
   }: {
     sourceId: string
     onHighlightPage: (pageIdx: number) => void
+    onCitationReturn?: (
+      citation: { citation_id: number; claim: string; doc_id: string; page_idx: number | null; confidence: null },
+      messageId: string | null,
+    ) => void
     selectionContext?: { sourceId: string; quote: string } | null
     selectionChip?: { label: string } | null
     onSelectionConsumed?: () => void
@@ -167,6 +183,11 @@ vi.mock('@/components/research/ResearchSourceChatPanel', () => ({
       data-has-selection-consumed={onSelectionConsumed === undefined ? 'false' : 'true'}
     >
       <button data-testid="panel-cite-page" onClick={() => onHighlightPage(7)} />
+      <button data-testid="panel-cite-live"
+        onClick={() => onCitationReturn?.(
+          { citation_id: 2, claim: 'live claim', doc_id: 'doc_live', page_idx: 7, confidence: null },
+          null,
+        )} />
       <button
         data-testid="panel-consume-selection"
         onClick={() => onSelectionConsumed?.()}
@@ -282,6 +303,22 @@ describe('/research Source 专注 + Source Chat 组合（Issue #182 + RWV2-40）
     expect(workbenchEl().getAttribute('data-focused-source-id')).toBe('src_1')
   })
 
+  it('F52：live citation（message_id=null）仍打开/高亮来源（global）', () => {
+    render(<ResearchPage />)
+    fireEvent.click(screen.getByTestId('ws-cite-live'))
+    expect(screen.getByTestId('source-chat-panel')).toBeInTheDocument()
+    expect(screen.getByTestId('source-chat-panel').getAttribute('data-source-id')).toBe('src_9')
+    expect(workbenchEl().getAttribute('data-highlight-page-idx')).toBe('7')
+  })
+
+  it('F52：live citation（message_id=null）仍高亮来源页（source，不退出 focus）', () => {
+    render(<ResearchPage />)
+    fireEvent.click(screen.getByTestId('wb-open'))
+    fireEvent.click(screen.getByTestId('panel-cite-live'))
+    expect(workbenchEl().getAttribute('data-highlight-page-idx')).toBe('7')
+    expect(workbenchEl().getAttribute('data-focused-source-id')).toBe('src_1')
+  })
+
   it('跨区 Citation（Workspace 报告）→ 选源并进入 Source focus + 高亮', () => {
     render(<ResearchPage />)
     fireEvent.click(screen.getByTestId('ws-cite'))
@@ -339,5 +376,66 @@ describe('/research Source 专注 + Source Chat 组合（Issue #182 + RWV2-40）
     expect(workbenchEl()).toHaveAttribute('data-highlight-page-idx', '7')
     expect(workbenchEl()).toHaveAttribute('data-highlight-request-id', '2')
     expect(workbenchEl()).toBe(originalWorkbench)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Issue #1013 F01（复审 BLOCKING）：选段 target 随活动 surface，且选段真的
+// 到达 source 面板的 getter（selectionContext prop）；清除只发生在携带它的
+// surface 路径上（global 发送不得清 source chip，反之亦然）。
+// ---------------------------------------------------------------------------
+
+describe('/research · Issue #1013 F01 选段 surface 接线', () => {
+  beforeEach(() => {
+    mediaQueryMocks.hasUsableHeight.mockReturnValue(true)
+    mediaQueryMocks.isDesktop.mockReturnValue(true)
+  })
+
+  it('global 讨论 → target=global 且 source 面板无选段；source focus 讨论 → target=source 且 selectionContext 进入面板', () => {
+    render(<ResearchPage />)
+
+    // 全局 surface：pending 目标必须是 global（不是写死的 source）。
+    fireEvent.click(screen.getByTestId('wb-discuss-selection'))
+    expect(screen.getByTestId('workspace')).toHaveAttribute('data-pending-target', 'global')
+    expect(screen.getByTestId('workspace')).toHaveAttribute('data-pending-source', 'src_1')
+    expect(screen.getByTestId('workspace')).toHaveAttribute('data-has-selection-chip', 'true')
+    expect(screen.getByTestId('workspace')).toHaveAttribute('data-has-selection-consumed', 'true')
+
+    // 进入 source focus 后再讨论：target=source，且面板收到真实选段对象
+    // （面板把它注入 headed hook 的 getSelectionContext）。
+    fireEvent.click(screen.getByTestId('wb-open'))
+    expect(screen.queryByTestId('source-chat-panel')).not.toBeNull()
+    // pending 仍是 global target：source 面板不得拿到选段。
+    expect(screen.getByTestId('source-chat-panel')).toHaveAttribute('data-selection-source', '')
+    expect(screen.getByTestId('source-chat-panel')).toHaveAttribute('data-has-selection-consumed', 'false')
+
+    fireEvent.click(screen.getByTestId('wb-discuss-selection'))
+    expect(screen.getByTestId('workspace')).toHaveAttribute('data-pending-target', 'source')
+    const panel = screen.getByTestId('source-chat-panel')
+    expect(panel).toHaveAttribute('data-selection-source', 'src_1')
+    expect(panel).toHaveAttribute('data-selection-quote', 'world')
+    expect(panel).toHaveAttribute('data-has-selection-chip', 'true')
+    expect(panel).toHaveAttribute('data-has-selection-consumed', 'true')
+    // global 面板不得获得清除 source chip 的回调（避免静默清掉）。
+    expect(screen.getByTestId('workspace')).toHaveAttribute('data-has-selection-consumed', 'false')
+
+    // source 面板受理后清除（page 侧只在 source 匹配时传入回调）。
+    fireEvent.click(screen.getByTestId('panel-consume-selection'))
+    expect(screen.getByTestId('source-chat-panel')).toHaveAttribute('data-selection-source', '')
+    expect(screen.getByTestId('source-chat-panel')).toHaveAttribute('data-has-selection-chip', 'false')
+    expect(screen.getByTestId('workspace')).toHaveAttribute('data-pending-target', '')
+  })
+
+  it('source-target pending 不会被 global surface 的清除路径消费', () => {
+    render(<ResearchPage />)
+    fireEvent.click(screen.getByTestId('wb-open'))
+    fireEvent.click(screen.getByTestId('wb-discuss-selection'))
+    expect(screen.getByTestId('source-chat-panel')).toHaveAttribute('data-has-selection-chip', 'true')
+
+    // global 面板的清除回调必须不存在；点击替身按钮不得清掉 source chip。
+    expect(screen.getByTestId('workspace')).toHaveAttribute('data-has-selection-consumed', 'false')
+    fireEvent.click(screen.getByTestId('ws-consume-selection'))
+    expect(screen.getByTestId('source-chat-panel')).toHaveAttribute('data-has-selection-chip', 'true')
+    expect(screen.getByTestId('source-chat-panel')).toHaveAttribute('data-selection-source', 'src_1')
   })
 })

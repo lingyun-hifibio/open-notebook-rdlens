@@ -548,6 +548,14 @@ function ResearchPageContent() {
       citation: ResearchCitationDisplayItem,
       messageId: string | null,
     ) => {
+      // 复审 F52：citation 点击**始终**打开/高亮来源；durable message id 只
+      // 决定是否记录「返回原回答」目标（live/流式 citation 没有 message_id，
+      // 但跳转必须可用，不得因缺少 message_id 整条点击失效）。
+      if (surface === 'source') {
+        if (citation.page_idx !== null) handleHighlightPage(citation.page_idx)
+      } else {
+        handleCitationJump(citationSourceId, citation.page_idx)
+      }
       if (messageId === null || messageId.length === 0) return
       const ref = surface === 'global' ? navActiveGlobalRef : navActiveSourceRef
       if (ref === null) return
@@ -571,7 +579,7 @@ function ResearchPageContent() {
       setReturnUnavailable(false)
       setLastCitationIdentity(target.citation)
     },
-    [navActiveGlobalRef, navActiveSourceRef, projectId],
+    [handleCitationJump, handleHighlightPage, navActiveGlobalRef, navActiveSourceRef, projectId],
   )
 
   /**
