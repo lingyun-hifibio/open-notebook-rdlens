@@ -718,3 +718,209 @@ export interface ResearchContextReportWire {
   required_context_missing: boolean
   measurement_scope: 'final_reasoning_call' | 'unknown'
 }
+
+// ── 搜索记录回访 wire（Issue #1014；D1-F 主单 §2.4/§2.6） ──
+//
+// 列表保持 `d1f-search-record-list-v1`；详情按 outcome 分支：completed 返回
+// `d1f-search-record-v2`（v1 键 + result_available/hits/citations），
+// no_hit 返回 v1 + 可选 `model`，no_generation/failed 返回 v1 原样。
+// 消费者必须按 schema_version 与可选键分支并容错未知枚举（计划 §2.6）。
+// 解析器（`./search-records.ts`）负责把 wire 未知/缺失/畸形形状归一化，
+// 本文件只声明归一化后的形状；不伪造任何片段、claim 或模型。
+
+/** 记录终态（未知值原样保留，UI 按「其他终态」展示，不崩溃）。 */
+export type ResearchSearchRecordOutcome =
+  | 'completed'
+  | 'no_hit'
+  | 'no_generation'
+  | 'failed'
+  | (string & {})
+
+/** 列表 item（`d1f-search-record-list-v1`；不含来源身份/片段/conclusion）。 */
+export interface ResearchSearchRecordListItem {
+  schema_version: string
+  record_id: string
+  generation_id: string
+  created_at: string | null
+  completed_at: string | null
+  query: string
+  /** 已知值见 `ResearchSearchRecordOutcome`；未知值原样保留。 */
+  outcome: string | null
+  outcome_detail: string | null
+  generation_state: string | null
+  requested_mode: string | null
+  resolved_mode: string | null
+  context_level: string | null
+  hit_count: number
+  scope_mode: string | null
+  source_total: number
+  failure_code: string | null
+  degradation_codes: string[]
+}
+
+/** 列表页（服务端 keyset cursor）。 */
+export interface ResearchSearchRecordPage {
+  schema_version: string
+  items: ResearchSearchRecordListItem[]
+  next_cursor: string | null
+}
+
+/** 记录内冻结的来源引用（精确版本身份）。 */
+export interface ResearchSearchRecordScopeRef {
+  document_id: string
+  document_version: string
+}
+
+/** 记录内冻结的当时资料范围（`d1f-search-scope-v1`）。 */
+export interface ResearchSearchRecordScope {
+  schema_version: string
+  contract_version: string | null
+  resolution: string
+  mode: string | null
+  requested_source_ids: string[]
+  note_ids: string[]
+  resolved_source_refs: ResearchSearchRecordScopeRef[]
+  missing_source_ids: string[]
+  includes_exact_versions: boolean
+  contains_document_body: boolean
+  single_source_id: string | null
+  warnings: string[]
+  source_total: number
+}
+
+/** 详情「允许来源」条目（按现行权限过滤后的投影）。 */
+export interface ResearchSearchRecordScopeSource {
+  document_id: string
+  document_version: string
+  source_id: string | null
+  status: string | null
+  warning: string | null
+}
+
+/** 详情来源计数（受限时 visible=0/restricted=total）。 */
+export interface ResearchSearchRecordSourceCounts {
+  total: number
+  visible: number
+  restricted: number
+}
+
+/** 实际命中条目（片段仅当现行权限通过且 artifact 可读时出现）。 */
+export interface ResearchSearchRecordHit {
+  document_id: string
+  document_version: string
+  chunk_id: string
+  page_idx: number | null
+  source_id: string | null
+  /** null = 片段不可用；UI 显示「片段不可用」，绝不伪造文本。 */
+  snippet: string | null
+  /** `source_unavailable` / `snippet_unavailable` / 未知值原样保留。 */
+  warning: string | null
+}
+
+/** 最终引用条目。 */
+export interface ResearchSearchRecordCitation {
+  citation_id: number | null
+  chunk_id: string
+  document_id: string
+  document_version: string
+  page_idx: number | null
+  source_id: string | null
+  /** null = claim 不可用；不渲染伪造 claim。 */
+  claim: string | null
+  snippet: string | null
+  warning: string | null
+}
+
+/** 实际命中集合（total 为 dispatch-time 精确总数）。 */
+export interface ResearchSearchRecordHits {
+  total: number
+  truncated: boolean
+  items: ResearchSearchRecordHit[]
+}
+
+/** 最终引用集合（total 为 dispatch-time 精确总数）。 */
+export interface ResearchSearchRecordCitations {
+  total: number
+  truncated: boolean
+  items: ResearchSearchRecordCitation[]
+}
+
+/** 实际模型（仅 completed/no_hit 有记录；成员可 null）。 */
+export interface ResearchSearchRecordModel {
+  model_id: string | null
+  provider_id: string | null
+}
+
+/** C-17 canonical 降级原因（只消费记录已存字段，不新增降级码）。 */
+export interface ResearchSearchRecordDegradation {
+  code: string
+  scope: string | null
+  severity: string | null
+  affects_answer: boolean | null
+  retryable: boolean | null
+  origin: string | null
+}
+
+/** failed 的安全失败信息。 */
+export interface ResearchSearchRecordFailure {
+  code: string
+  detail_safe: string | null
+}
+
+/** 详情 conclusion（受限时 text=null）。 */
+export interface ResearchSearchRecordConclusion {
+  text: string | null
+  truncated: boolean
+}
+
+/** 详情 coverage 有界摘要（缺失键不出现）。 */
+export type ResearchSearchRecordCoverage = Record<string, string | number | boolean | null>
+
+/**
+ * 搜索记录详情（归一化后）。
+ *
+ * v2 三键仅在 completed 出现；parser 用 `null` 表示「wire 未携带该键」，
+ * 从而让 UI 对 v1 行**不渲染** v2 分区（计划 §2.8「v1 行不渲染 v2 分区」）。
+ */
+export interface ResearchSearchRecordDetail {
+  schema_version: string
+  record_id: string
+  generation_id: string
+  created_at: string | null
+  completed_at: string | null
+  query: string
+  outcome: string | null
+  outcome_detail: string | null
+  generation_state: string | null
+  requested_mode: string | null
+  resolved_mode: string | null
+  context_level: string | null
+  hit_count: number
+  scope: ResearchSearchRecordScope | null
+  source_counts: ResearchSearchRecordSourceCounts
+  sources: ResearchSearchRecordScopeSource[]
+  conclusion: ResearchSearchRecordConclusion
+  degradations: ResearchSearchRecordDegradation[]
+  degradation_schema_version: string | null
+  failure: ResearchSearchRecordFailure | null
+  coverage: ResearchSearchRecordCoverage | null
+  /** 非 `visible` 一律按受限处理（fail-closed，不泄露来源身份）。 */
+  record_visibility: 'visible' | 'restricted'
+  warnings: string[]
+  /** v2：artifact 可读且 response 可解析；null = wire 未携带（v1 行）。 */
+  result_available: boolean | null
+  /** v2：实际命中；null = wire 未携带（v1 行）。 */
+  hits: ResearchSearchRecordHits | null
+  /** v2：最终引用；null = wire 未携带（v1 行）。 */
+  citations: ResearchSearchRecordCitations | null
+  /** v1/v2 共用可选键：null = 记录无模型（键不存在）。 */
+  model: ResearchSearchRecordModel | null
+}
+
+/** 搜索历史读取错误分类（UI 文案与重试策略见 `search-records.ts`）。 */
+export type ResearchSearchRecordErrorKind =
+  | 'not_enabled'
+  | 'forbidden'
+  | 'not_found'
+  | 'store_unavailable'
+  | 'unknown'

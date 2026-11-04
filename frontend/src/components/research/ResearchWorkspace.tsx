@@ -749,6 +749,10 @@ export function ResearchWorkspace({
                     ? (noteId) => onRevealSavedArtifact('note', noteId)
                     : undefined
                 }
+                // #1014（D1-F）：搜索历史详情的来源跳转复用组合根既有链路；
+                // sources 供详情解析来源身份并复核跳转四闸（不新增阅读器）。
+                onCitationJump={onCitationJump}
+                sources={sources}
               />
             )
       case 'research-chat':
