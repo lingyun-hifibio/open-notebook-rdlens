@@ -1534,6 +1534,8 @@ export const deDE = {
     snippetUnavailable: "Auszug nicht verfügbar",
     cited: "Zitiert",
     notCited: "Nicht zitiert",
+    claimUnavailable: "Aussage nicht erfasst",
+    citationUnknown: "Zitatstatus nicht bestätigt (Zitatliste gekürzt)",
     jump: "Quelle öffnen",
     resultUnavailable: "Das gespeicherte Ergebnis ist nicht verfügbar — Auszüge können nicht angezeigt werden.",
     noHits: "Es wurden keine tatsächlichen Treffer erfasst.",

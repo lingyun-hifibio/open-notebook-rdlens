@@ -1548,6 +1548,8 @@ export const enUS = {
     snippetUnavailable: "Snippet unavailable",
     cited: "Cited",
     notCited: "Not cited",
+    claimUnavailable: "Claim not recorded",
+    citationUnknown: "Citation status unconfirmed (citation list truncated)",
     jump: "Open source",
     resultUnavailable: "The stored result is unavailable — snippets cannot be shown.",
     noHits: "No actual hits were recorded.",

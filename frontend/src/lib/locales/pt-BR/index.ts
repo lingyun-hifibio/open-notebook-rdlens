@@ -1532,6 +1532,8 @@ export const ptBR = {
     snippetUnavailable: "Trecho indisponível",
     cited: "Citado",
     notCited: "Não citado",
+    claimUnavailable: "Afirmação não registrada",
+    citationUnknown: "Status de citação não confirmado (lista de citações truncada)",
     jump: "Abrir fonte",
     resultUnavailable: "O resultado armazenado está indisponível — os trechos não podem ser exibidos.",
     noHits: "Nenhum acerto real foi registrado.",

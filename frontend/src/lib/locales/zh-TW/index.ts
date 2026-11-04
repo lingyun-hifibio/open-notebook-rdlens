@@ -1532,6 +1532,8 @@ export const zhTW = {
     snippetUnavailable: "片段不可用",
     cited: "已引用",
     notCited: "未引用",
+    claimUnavailable: "未記錄陳述",
+    citationUnknown: "引用狀態未確認（引用清單已截斷）",
     jump: "開啟來源",
     resultUnavailable: "已儲存結果不可用——無法顯示片段。",
     noHits: "未記錄實際命中。",

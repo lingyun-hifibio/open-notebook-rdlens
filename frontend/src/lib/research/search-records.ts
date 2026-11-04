@@ -441,24 +441,54 @@ export function searchRecordScopeModeLabelKey(mode: string | null): string {
 }
 
 /**
- * 命中项是否「已引用」（计划 §2.12 #16）：按 `(document_version, chunk_id)`
- * 与 citations 集合比对（`page_idx` 同值优先仅用于同一复合键的重复项，不改变
- * 布尔结论）。两个集合都只能消费自身计数，不互相替代。
+ * 命中项引用状态（计划 §2.12 #16），三态：
+ * - `cited`：`(document_version, chunk_id)` 复合键出现在 citations 集合中
+ *   （`page_idx` 同值优先用于同一复合键多候选时的匹配顺序；复合键成员已足以
+ *   判定已引用，不因页不同而误判未引用）；
+ * - `not_cited`：citations 集合**完整**（`truncated=false`）且未命中；
+ * - `unknown`：citations 身份快照被截断（host 按引擎顺序去重后最多存 200 项、
+ *   `citation_count` 保留精确数）——未命中集合可能落在截断窗口之外，
+ *   **不得断言「未引用」**（避免假否定），UI 显示「引用状态未确认」。
  */
-export function isHitCited(
+export type HitCitationStatus = 'cited' | 'not_cited' | 'unknown'
+
+export function hitCitationStatus(
   hit: ResearchSearchRecordHit,
   citations: readonly ResearchSearchRecordCitation[],
-): boolean {
-  // 复合键成员即视为「已引用」；page_idx 只用于同一复合键重复项的优先匹配
-  // （布尔结论不受其影响），因此不额外按页过滤。
-  return citations.some(
+  citationsTruncated: boolean,
+): HitCitationStatus {
+  const sameChunk = citations.filter(
     (citation) =>
       citation.document_version === hit.document_version
       && citation.chunk_id === hit.chunk_id,
   )
+  // page_idx 同值优先：先取同页候选（匹配顺序口径，结论与复合键成员一致）。
+  if (
+    hit.page_idx !== null
+    && sameChunk.some((citation) => citation.page_idx === hit.page_idx)
+  ) {
+    return 'cited'
+  }
+  if (sameChunk.length > 0) return 'cited'
+  return citationsTruncated ? 'unknown' : 'not_cited'
 }
 
-/** 是否有 v2 结果投影可渲染（completed v2 或容错携带了 hits/citations 键）。 */
+/** 兼容辅助：是否「已引用」（`unknown` 不算已引用）。 */
+export function isHitCited(
+  hit: ResearchSearchRecordHit,
+  citations: readonly ResearchSearchRecordCitation[],
+): boolean {
+  return hitCitationStatus(hit, citations, false) === 'cited'
+}
+
+/**
+ * 是否有 v2 结果投影可渲染（completed v2 或容错携带了 hits/citations 键）。
+ *
+ * 口径（L-3）：按**可选键是否存在**渲染 v2 分区，而不是硬分支
+ * `schema_version`。这是有意的消费者容错：wire 升版/加性键先于消费者发布时
+ * 不丢数据；未知/未来 schema 只要携带结果键就按同一投影渲染。当前 host
+ * 契约保证仅 completed 携带三键（v1 行不渲染 v2 分区，见 §2.8）。
+ */
 export function hasSearchRecordResultProjection(
   detail: ResearchSearchRecordDetail,
 ): boolean {

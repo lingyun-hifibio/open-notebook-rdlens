@@ -1532,6 +1532,8 @@ export const jaJP = {
     snippetUnavailable: "スニペット利用不可",
     cited: "引用済み",
     notCited: "未引用",
+    claimUnavailable: "主張が記録されていません",
+    citationUnknown: "引用状態は未確認です（引用一覧が切り詰められています）",
     jump: "ソースを開く",
     resultUnavailable: "保存された結果を利用できないため、スニペットを表示できません。",
     noHits: "実際のヒットは記録されていません。",

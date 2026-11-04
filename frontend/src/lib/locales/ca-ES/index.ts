@@ -1532,6 +1532,8 @@ export const caES = {
     snippetUnavailable: "Fragment no disponible",
     cited: "Citat",
     notCited: "No citat",
+    claimUnavailable: "Afirmació no registrada",
+    citationUnknown: "Estat de la citació no confirmat (llista de citacions truncada)",
     jump: "Obre la font",
     resultUnavailable: "El resultat desat no està disponible — no es poden mostrar fragments.",
     noHits: "No s'ha registrat cap resultat real.",

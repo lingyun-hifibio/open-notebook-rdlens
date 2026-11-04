@@ -1532,6 +1532,8 @@ export const itIT = {
     snippetUnavailable: "Estratto non disponibile",
     cited: "Citato",
     notCited: "Non citato",
+    claimUnavailable: "Affermazione non registrata",
+    citationUnknown: "Stato della citazione non confermato (elenco citazioni troncato)",
     jump: "Apri fonte",
     resultUnavailable: "Il risultato memorizzato non è disponibile — impossibile mostrare gli estratti.",
     noHits: "Nessun risultato effettivo registrato.",

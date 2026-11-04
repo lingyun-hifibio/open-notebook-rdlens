@@ -1532,6 +1532,8 @@ export const frFR = {
     snippetUnavailable: "Extrait indisponible",
     cited: "Cité",
     notCited: "Non cité",
+    claimUnavailable: "Affirmation non enregistrée",
+    citationUnknown: "Statut de la citation non confirmé (liste des citations tronquée)",
     jump: "Ouvrir la source",
     resultUnavailable: "Le résultat stocké est indisponible — les extraits ne peuvent pas être affichés.",
     noHits: "Aucun résultat réel enregistré.",

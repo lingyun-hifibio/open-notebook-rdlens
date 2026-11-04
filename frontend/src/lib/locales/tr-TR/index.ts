@@ -1532,6 +1532,8 @@ export const trTR = {
     snippetUnavailable: "Parçacık kullanılamıyor",
     cited: "Alıntılandı",
     notCited: "Alıntılanmadı",
+    claimUnavailable: "İfade kaydedilmedi",
+    citationUnknown: "Alıntı durumu doğrulanmadı (alıntı listesi kısaltıldı)",
     jump: "Kaynağı aç",
     resultUnavailable: "Saklanan sonuç kullanılamıyor — parçacıklar gösterilemiyor.",
     noHits: "Gerçek isabet kaydedilmedi.",

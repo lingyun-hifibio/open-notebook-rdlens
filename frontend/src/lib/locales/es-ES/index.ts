@@ -1533,6 +1533,8 @@ export const esES = {
     snippetUnavailable: "Fragmento no disponible",
     cited: "Citado",
     notCited: "No citado",
+    claimUnavailable: "Afirmación no registrada",
+    citationUnknown: "Estado de la cita no confirmado (lista de citas truncada)",
     jump: "Abrir fuente",
     resultUnavailable: "El resultado guardado no está disponible — no se pueden mostrar fragmentos.",
     noHits: "No se registraron resultados reales.",

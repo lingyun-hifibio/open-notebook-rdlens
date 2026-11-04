@@ -1533,6 +1533,8 @@ export const bnIN = {
     snippetUnavailable: "স্নিপেট অনুপলব্ধ",
     cited: "উদ্ধৃত",
     notCited: "উদ্ধৃত নয়",
+    claimUnavailable: "দাবি রেকর্ড করা হয়নি",
+    citationUnknown: "উদ্ধৃতি অবস্থা নিশ্চিত নয় (উদ্ধৃতি তালিকা ছেঁটে ফেলা হয়েছে)",
     jump: "সোর্স খুলুন",
     resultUnavailable: "সংরক্ষিত ফলাফল অনুপলব্ধ — স্নিপেট দেখানো যাবে না।",
     noHits: "কোনো প্রকৃত হিট রেকর্ড হয়নি।",

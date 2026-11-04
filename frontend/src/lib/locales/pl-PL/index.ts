@@ -1532,6 +1532,8 @@ export const plPL = {
     snippetUnavailable: "Fragment niedostępny",
     cited: "Cytowane",
     notCited: "Niecytowane",
+    claimUnavailable: "Twierdzenie nie zostało zapisane",
+    citationUnknown: "Status cytowania niepotwierdzony (lista cytowań obcięta)",
     jump: "Otwórz źródło",
     resultUnavailable: "Zapisany wynik jest niedostępny — nie można pokazać fragmentów.",
     noHits: "Nie zapisano rzeczywistych trafień.",

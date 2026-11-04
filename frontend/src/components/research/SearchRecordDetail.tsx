@@ -30,7 +30,7 @@ import { useTranslation } from '@/lib/hooks/use-translation'
 import { formatResearchTimestamp } from '@/lib/research/format'
 import {
   hasSearchRecordResultProjection,
-  isHitCited,
+  hitCitationStatus,
   searchRecordOutcomeDetailKey,
   searchRecordOutcomeLabelKey,
   searchRecordScopeModeLabelKey,
@@ -184,6 +184,7 @@ function HitItem({
   index,
   sources,
   citations,
+  citationsTruncated,
   restricted,
   resultAvailable,
   onCitationJump,
@@ -192,6 +193,7 @@ function HitItem({
   index: number
   sources: readonly ResearchSource[]
   citations: readonly ResearchSearchRecordCitation[]
+  citationsTruncated: boolean
   restricted: boolean
   resultAvailable: boolean
   onCitationJump?: (sourceId: string, pageIdx: number | null) => void
@@ -204,19 +206,22 @@ function HitItem({
     hit.document_version,
   )
   const jump = evaluateRecordJump(sources, hit)
-  const cited = isHitCited(hit, citations)
+  // 三态：citations 截断时不得把「未出现在已存窗口」断言成「未引用」。
+  const citationStatus = hitCitationStatus(hit, citations, citationsTruncated)
   const snippetAvailable = !restricted && resultAvailable && hit.snippet !== null
   return (
     <li className="space-y-1 border-t pt-2" data-testid={`search-record-hit-${index}`}>
       <div className="flex flex-wrap items-center gap-2">
         <ItemSourceMeta source={source} pageIdx={hit.page_idx} />
         <Badge
-          variant={cited ? 'default' : 'outline'}
+          variant={citationStatus === 'cited' ? 'default' : 'outline'}
           data-testid={`search-record-hit-cited-${index}`}
         >
-          {cited
+          {citationStatus === 'cited'
             ? t('research.searchHistory.cited')
-            : t('research.searchHistory.notCited')}
+            : citationStatus === 'unknown'
+              ? t('research.searchHistory.citationUnknown')
+              : t('research.searchHistory.notCited')}
         </Badge>
         {hit.warning === 'source_unavailable' && (
           <span className="text-xs" data-testid={`search-record-hit-source-unavailable-${index}`}>
@@ -285,7 +290,7 @@ function CitationItem({
         </p>
       ) : (
         <p className="text-xs text-muted-foreground" data-testid={`search-record-citation-claim-unavailable-${index}`}>
-          {t('research.searchHistory.snippetUnavailable')}
+          {t('research.searchHistory.claimUnavailable')}
         </p>
       )}
       {snippetAvailable && (
@@ -526,6 +531,7 @@ export function SearchRecordDetail({
                       index={index}
                       sources={sources}
                       citations={citations?.items ?? []}
+                      citationsTruncated={citations?.truncated === true}
                       restricted={restricted}
                       resultAvailable={resultAvailable}
                       onCitationJump={onCitationJump}

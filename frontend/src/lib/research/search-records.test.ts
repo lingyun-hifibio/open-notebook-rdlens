@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest'
 import {
   classifySearchRecordError,
   hasSearchRecordResultProjection,
+  hitCitationStatus,
   isHitCited,
   isSearchRecordErrorRetryable,
   isSearchRecordRestricted,
@@ -449,5 +450,88 @@ describe('展示映射与三可区分辅助', () => {
       },
       citations,
     )).toBe(false)
+  })
+
+  it('三态：citations 截断时未出现在已存窗口的命中 = unknown（不假断言未引用）', () => {
+    const citations = parseSearchRecordDetail(COMPLETED_DETAIL).citations?.items ?? []
+    const uncitedHit = {
+      document_id: 'doc_a',
+      document_version: 'v1',
+      chunk_id: 'c_other',
+      page_idx: 2,
+      source_id: 'src_1',
+      snippet: null,
+      warning: null,
+    }
+    // 未截断：集合完整 → 可断言未引用
+    expect(hitCitationStatus(uncitedHit, citations, false)).toBe('not_cited')
+    // 截断：citation 可能落在窗口外 → 不得断言未引用
+    expect(hitCitationStatus(uncitedHit, citations, true)).toBe('unknown')
+    // 已命中优先于截断：复合键成员 → cited
+    const citedHit = {
+      document_id: 'doc_a',
+      document_version: 'v1',
+      chunk_id: 'c1',
+      page_idx: 0,
+      source_id: 'src_1',
+      snippet: null,
+      warning: null,
+    }
+    expect(hitCitationStatus(citedHit, citations, true)).toBe('cited')
+  })
+
+  it('page_idx 同值优先：同 version+chunk 多候选页时仍按复合键成员判已引用', () => {
+    const duplicatePageCitations = [
+      {
+        citation_id: 1,
+        chunk_id: 'dup',
+        document_id: 'doc_x',
+        document_version: 'v1',
+        page_idx: 0,
+        source_id: 'src_x',
+        claim: 'p0',
+        snippet: null,
+        warning: null,
+      },
+      {
+        citation_id: 2,
+        chunk_id: 'dup',
+        document_id: 'doc_x',
+        document_version: 'v1',
+        page_idx: 5,
+        source_id: 'src_x',
+        claim: 'p5',
+        snippet: null,
+        warning: null,
+      },
+    ] as const
+    // 同页候选存在 → cited（page_idx 同值优先的匹配顺序）
+    expect(hitCitationStatus(
+      {
+        document_id: 'doc_x',
+        document_version: 'v1',
+        chunk_id: 'dup',
+        page_idx: 5,
+        source_id: 'src_x',
+        snippet: null,
+        warning: null,
+      },
+      duplicatePageCitations,
+      false,
+    )).toBe('cited')
+    // 页不同但复合键成员仍在集合中 → 仍为 cited（不因页不同误判未引用）
+    expect(hitCitationStatus(
+      {
+        document_id: 'doc_x',
+        document_version: 'v1',
+        chunk_id: 'dup',
+        page_idx: 9,
+        source_id: 'src_x',
+        snippet: null,
+        warning: null,
+      },
+      duplicatePageCitations,
+      false,
+    )).toBe('cited')
   })
 })

@@ -1531,6 +1531,8 @@ export const zhCN = {
     snippetUnavailable: "片段不可用",
     cited: "已引用",
     notCited: "未引用",
+    claimUnavailable: "未记录陈述",
+    citationUnknown: "引用状态未确认（引用列表已截断）",
     jump: "打开来源",
     resultUnavailable: "已存结果不可用——无法展示片段。",
     noHits: "未记录实际命中。",

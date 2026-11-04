@@ -808,6 +808,15 @@ describe('ResearchSearchPanel #1014：搜索历史入口（能力位 fail-closed
     expect(screen.queryByTestId('search-history-open')).toBeNull()
   })
 
+  it('能力位键缺失（旧后端）时不显示入口（fail-closed）', async () => {
+    vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
+    vi.mocked(listModels).mockResolvedValue({ models: MODELS })
+    renderPanel(['d1'], { userId: 'u1' })
+    await waitFor(() => expect(screen.getByTestId('search-context-selector')).toBeTruthy())
+    await waitFor(() => expect(listModels).toHaveBeenCalled())
+    expect(screen.queryByTestId('search-history-open')).toBeNull()
+  })
+
   it('既有实时 Search 派发行为不受入口影响（能力位 true 时仍只走 searchV1）', async () => {
     vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
     vi.mocked(listModels).mockResolvedValue({

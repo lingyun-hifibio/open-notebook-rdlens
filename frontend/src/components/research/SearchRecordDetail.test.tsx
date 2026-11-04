@@ -239,6 +239,27 @@ describe('SearchRecordDetail：completed v2 六分区', () => {
     )
   })
 
+  it('citations 截断：未出现在已存窗口的命中显示「引用状态未确认」，不断言未引用', () => {
+    const c1 = COMPLETED_RAW.citations.items[0]
+    renderDetail({
+      citations: { total: 250, truncated: true, items: [c1] },
+    })
+    // 复合键成员（c1，page 0）仍为已引用
+    expect(screen.getByTestId('search-record-hit-cited-0').textContent).toBe(
+      'research.searchHistory.cited',
+    )
+    // c2/c3 未出现在已存窗口：截断 → 第三态，不是「未引用」
+    expect(screen.getByTestId('search-record-hit-cited-1').textContent).toBe(
+      'research.searchHistory.citationUnknown',
+    )
+    expect(screen.getByTestId('search-record-hit-cited-2').textContent).toBe(
+      'research.searchHistory.citationUnknown',
+    )
+    expect(screen.getByTestId('search-record-section-citations').textContent).toContain(
+      'research.searchHistory.truncated|{"total":250,"shown":1}',
+    )
+  })
+
   it('truncated：显示 dispatch-time 精确总数与去重后展示数（不声称完整）', () => {
     renderDetail()
     expect(screen.getByTestId('search-record-hits-truncated').textContent).toBe(
@@ -255,6 +276,35 @@ describe('SearchRecordDetail：completed v2 六分区', () => {
     // claim 存在但 snippet 缺失：claim 照常展示
     expect(screen.getByTestId('search-record-citation-claim-1').textContent).toBe('claim two')
     expect(screen.queryByTestId('search-record-citation-snippet-1')).toBeNull()
+  })
+
+  it('claim 缺失但 snippet 可用：显示独立「未记录陈述」文案，片段照常展示', () => {
+    renderDetail({
+      citations: {
+        total: 1,
+        truncated: false,
+        items: [
+          {
+            citation_id: 1,
+            chunk_id: 'c1',
+            document_id: 'doc_a',
+            document_version: 'v1',
+            page_idx: 0,
+            source_id: 'src_1',
+            claim: null,
+            snippet: 'hit snippet one',
+            warning: 'snippet_unavailable',
+          },
+        ],
+      },
+    })
+    expect(
+      screen.getByTestId('search-record-citation-claim-unavailable-0').textContent,
+    ).toBe('research.searchHistory.claimUnavailable')
+    // snippet 可用时照常展示（不因 claim 缺失被吞）
+    expect(
+      screen.getByTestId('search-record-citation-snippet-0').textContent,
+    ).toBe('hit snippet one')
   })
 
   it('第六分区显示实际模型（model_id/provider_id，缺失成员显示未记录）', () => {
@@ -323,6 +373,31 @@ describe('SearchRecordDetail：跳转四闸', () => {
     const hit = screen.getByTestId('search-record-hit-0')
     expect(hit.textContent).toContain('doc_a')
     expect(hit.textContent).toContain('v1')
+  })
+
+  it('页码缺失（来源/版本可用）→ 禁用并显示既有 degradedPage 文案', () => {
+    renderDetail({
+      hits: {
+        total: 1,
+        truncated: false,
+        items: [
+          {
+            document_id: 'doc_a',
+            document_version: 'v1',
+            chunk_id: 'c1',
+            page_idx: null,
+            source_id: 'src_1',
+            snippet: 'x',
+            warning: null,
+          },
+        ],
+      },
+    })
+    const jump = screen.getByTestId('search-record-hit-jump-0') as HTMLButtonElement
+    expect(jump.disabled).toBe(true)
+    expect(screen.getByTestId('search-record-hit-jump-0-degraded').textContent).toBe(
+      'research.citation.degradedPage',
+    )
   })
 
   it('wire source_id=null / 页码缺失 → 禁用，不静默跳转', () => {
