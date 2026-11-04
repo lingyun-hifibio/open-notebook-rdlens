@@ -50,6 +50,10 @@ export const QUERY_KEYS = {
   researchModelCatalog: (projectId: string) => ['research', projectId, 'model-catalog'] as const,
   researchExecutionPreferences: (projectId: string) => ['research', projectId, 'execution-preferences'] as const,
   researchEgressConsent: (projectId: string) => ['research', projectId, 'egress-consent'] as const,
+  // #1014 D1-F：搜索历史（列表 keyset cursor / 详情）。Owner 专属只读面；
+  // 工作台内实际查询键另加身份段（见下方 identity 判别键）。
+  researchSearchRecords: (projectId: string) => ['research', projectId, 'search-records'] as const,
+  researchSearchRecord: (projectId: string, recordId: string) => ['research', projectId, 'search-records', recordId] as const,
 }
 
 /**
@@ -190,6 +194,22 @@ export function researchExecutionPreferencesIdentityKey(identity: ResearchQueryI
 /** 判别键：外发（egress）consent。 */
 export function researchEgressConsentIdentityKey(identity: ResearchQueryIdentity): readonly unknown[] {
   return researchQueryKey(identity, 'egress-consent')
+}
+
+/**
+ * 判别键：搜索历史列表（#1014）。身份段追加在尾部——沿用
+ * `['research', projectId, 'search-records']` 前缀失效仍能命中全部代际。
+ */
+export function researchSearchRecordsIdentityKey(identity: ResearchQueryIdentity): readonly unknown[] {
+  return researchQueryKey(identity, 'search-records')
+}
+
+/** 判别键：搜索历史详情（#1014）。 */
+export function researchSearchRecordIdentityKey(
+  identity: ResearchQueryIdentity,
+  recordId: string,
+): readonly unknown[] {
+  return researchQueryKey(identity, 'search-records', recordId)
 }
 
 function identityFromQuery(query: Query): ResearchQueryIdentity | null {

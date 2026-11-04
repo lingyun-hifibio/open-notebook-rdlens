@@ -23,6 +23,7 @@ import { getAuthToken } from '@/lib/auth-token'
 import { isEmbeddedMode, getEmbeddedGatewayUrl } from '@/lib/embedded/config'
 import { getResearchToken } from '@/lib/embedded/token-store'
 import { parseSseFrame } from './sse'
+import { parseSearchRecordDetail, parseSearchRecordListPage } from './search-records'
 import {
   STREAM_IDLE_TIMEOUT_MS,
   createAttemptSettlement,
@@ -46,6 +47,8 @@ import type {
   ResearchJob,
   ResearchModelsResponse,
   ResearchSearchOutcome,
+  ResearchSearchRecordDetail,
+  ResearchSearchRecordPage,
   ResearchSearchRequest,
   ResearchSearchResponse,
   ResearchSourceRef,
@@ -602,6 +605,42 @@ export async function searchV1(
     }
   }
   throw new Error(`unexpected search response status: ${response.status}`)
+}
+
+// ── 搜索记录回访（Issue #1014 / D1-F 主单；只读，Owner 专属） ──
+
+/**
+ * 搜索记录列表（`GET .../search-records`，服务端 keyset cursor）。
+ *
+ * 列表保持 `d1f-search-record-list-v1`：不含来源身份/片段/conclusion；
+ * 容错解析由 `./search-records` 承担（未知枚举/缺失键不崩溃、不伪造）。
+ */
+export async function listSearchRecords(
+  projectId: string,
+  params: { cursor?: string; limit?: number } = {},
+): Promise<ResearchSearchRecordPage> {
+  const response = await apiClient.get<unknown>(
+    researchPath(projectId, 'search-records'),
+    { params },
+  )
+  return parseSearchRecordListPage(response.data)
+}
+
+/**
+ * 搜索记录详情（`GET .../search-records/{record_id}`）。
+ *
+ * completed = `d1f-search-record-v2`（v1 键 + result_available/hits/citations），
+ * no_hit = v1 + 可选 model，no_generation/failed = v1 原样；解析器归一化
+ * 可选键（缺失 → null，UI 不渲染 v2 分区）并做受限 fail-closed。
+ */
+export async function getSearchRecord(
+  projectId: string,
+  recordId: string,
+): Promise<ResearchSearchRecordDetail> {
+  const response = await apiClient.get<unknown>(
+    researchPath(projectId, 'search-records', recordId),
+  )
+  return parseSearchRecordDetail(response.data)
 }
 
 export async function createCompare(
