@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState, type ReactNode } from 'react'
-import { ResearchWorkspace } from './ResearchWorkspace'
+import { ResearchWorkspace, dispatchChatCitationClick } from './ResearchWorkspace'
 import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
 import { ResearchJobsProvider } from './ResearchJobsProvider'
 import { ResearchScopeProvider, scopeStorageKey, useResearchScope } from '@/lib/research/scope'
@@ -713,6 +713,39 @@ describe('Issue #1013 M-02：citation → return target → 返回原回答（�
   afterEach(() => {
     localStorage.clear()
     sessionStorage.clear()
+  })
+
+  it('F52：live citation（messageId=null）仍先打开/高亮来源，且不记录 return target', () => {
+    const onCitationJump = vi.fn()
+    const onCitationReturn = vi.fn()
+    const source = {
+      source_id: 'src_9',
+      document_id: 'doc_9',
+      document_version: 'v1',
+      status: 'ready',
+    } as unknown as ResearchSource
+    dispatchChatCitationClick({
+      citation: {
+        citation_id: 1,
+        claim: 'live claim',
+        doc_id: 'doc_9',
+        doc_version: 'v1',
+        chunk_id: 'chunk_9',
+        page_idx: 7,
+        confidence: null,
+      },
+      messageId: null,
+      sources: [source],
+      onCitationJump,
+      onCitationReturn,
+    })
+    expect(onCitationJump).toHaveBeenCalledWith('src_9', 7, {
+      docId: 'doc_9',
+      docVersion: 'v1',
+      chunkId: 'chunk_9',
+      pageIdx: 7,
+    })
+    expect(onCitationReturn).not.toHaveBeenCalled()
   })
 
   it('citation 点击→记录 target（键含 project/session/source）→读取→返回动作切 global surface+滚动', () => {

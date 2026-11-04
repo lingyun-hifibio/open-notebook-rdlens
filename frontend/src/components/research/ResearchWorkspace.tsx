@@ -123,6 +123,44 @@ export interface ResearchWorkspaceProps {
   onSelectionJump?: (selection: WireSelectionProjection) => void
 }
 
+/**
+ * Issue #1013 复审 F52：全局 Chat citation 点击的纯派发逻辑（可单测）。
+ *
+ * 关键顺序：**先**解析来源并打开/高亮（不依赖 message_id），**再**在存在
+ * durable message_id 时记录 return target。live/流式 citation 没有
+ * message_id，但用户点击必须仍能跳到来源；不得因缺少 message_id 整条点击
+ * 静默失效。
+ */
+export function dispatchChatCitationClick(input: {
+  readonly citation: ResearchCitationDisplayItem
+  readonly messageId: string | null
+  readonly sources: readonly ResearchSource[] | undefined
+  readonly onCitationJump: (
+    sourceId: string,
+    pageIdx: number | null,
+    identity?: { docId: string; docVersion: string | null; chunkId: string | null; pageIdx: number | null },
+  ) => void
+  readonly onCitationReturn?: (
+    citation: ResearchCitationDisplayItem,
+    messageId: string,
+    sourceId: string,
+  ) => void
+}): void {
+  const source = resolveCitationSource(
+    input.sources,
+    input.citation as unknown as ResearchCitation,
+  )
+  if (!source || source.source_id === null) return
+  input.onCitationJump(source.source_id, input.citation.page_idx, {
+    docId: input.citation.doc_id,
+    docVersion: input.citation.doc_version ?? null,
+    chunkId: input.citation.chunk_id ?? null,
+    pageIdx: input.citation.page_idx ?? null,
+  })
+  if (input.messageId === null || input.messageId.length === 0) return
+  input.onCitationReturn?.(input.citation, input.messageId, source.source_id)
+}
+
 export function ResearchWorkspace({
   activeAction,
   onActiveActionChange,
@@ -754,17 +792,7 @@ export function ResearchWorkspace({
   // 并把 (citation 身份 + durable message_id + 来源 id) 交给组合根记录 return target。
   const handleChatCitationReturn = useCallback(
     (citation: ResearchCitationDisplayItem, messageId: string | null) => {
-      if (messageId === null || messageId.length === 0) return
-      // 版本感知解析（与跳转派发同纪律；展示结构只缺未用字段，安全收窄）。
-      const source = resolveCitationSource(sources, citation as unknown as ResearchCitation)
-      if (!source || source.source_id === null) return
-      onCitationJump(source.source_id, citation.page_idx, {
-        docId: citation.doc_id,
-        docVersion: citation.doc_version ?? null,
-        chunkId: citation.chunk_id ?? null,
-        pageIdx: citation.page_idx ?? null,
-      })
-      onCitationReturn?.(citation, messageId, source.source_id)
+      dispatchChatCitationClick({ citation, messageId, sources, onCitationJump, onCitationReturn })
     },
     [onCitationJump, onCitationReturn, sources],
   )
