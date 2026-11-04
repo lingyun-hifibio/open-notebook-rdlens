@@ -37,7 +37,7 @@ import {
   restoreScrollTop,
   type ScrollContainerMetrics,
 } from '@/lib/research/reading-anchor'
-import type { WireSelectionProjection } from '@/lib/research/session-contract'
+import type { WireSelectionContext, WireSelectionProjection } from '@/lib/research/session-contract'
 import type { ResearchCitationDisplayItem } from '@/lib/research/types'
 
 /**
@@ -94,6 +94,7 @@ export function ResearchSourceChatPanel({
   onHighlightPage,
   onNewSession,
   selectionChip = null,
+  selectionContext = null,
   onSelectionConsumed,
   onCitationReturn,
   scrollToMessage,
@@ -116,7 +117,15 @@ export function ResearchSourceChatPanel({
     readonly onRemove: () => void
     readonly disabled?: boolean
   } | null
-  /** 选段随 headed 提交成功后清除页级 pending（失败不清，可重试）。 */
+  /**
+   * Issue #1013 §2.11：随本轮 source headed 提交的选段上下文（页级 pending
+   * 中归属本来源且 target=source 的那一条）。未提供/来源不匹配 → 不携带。
+   */
+  selectionContext?: WireSelectionContext | null
+  /**
+   * 选段随 headed 提交成功后清除页级 pending（失败不清，可重试）。
+   * 只在本次请求确实携带了 `selectionContext` 时调用。
+   */
   onSelectionConsumed?: () => void
   /**
    * Issue #1013 §2.10：citation 点击 → 记录 return target（citation 身份 +
@@ -155,6 +164,10 @@ export function ResearchSourceChatPanel({
   // （切换会话后 chatControllerRef 已指向新会话，不能拿“当前”实例结算）。
   const pendingClearControllersRef = useRef(new Map<string, ConversationController>())
   const sourceControllerRef = useRef<ConversationController | null>(null)
+  // Issue #1013 F01（复审 BLOCKING）：选段 getter 必须是读取时刻真值，且不能
+  // 形成 stale closure——ref 每渲染更新，hook 在真正提交时读取。
+  const selectionContextRef = useRef<WireSelectionContext | null>(selectionContext)
+  selectionContextRef.current = selectionContext
   // 仅有可绑定的持久 session_id 时才启用 controller：新会话仍由 legacy
   // 路径创建（PR-6 负责新会话与新协议的统一创建）。
   const chatSession = useMemo<UseResearchSourceChatSessionOptions | undefined>(() => {
@@ -164,6 +177,12 @@ export function ResearchSourceChatPanel({
     return {
       runtime: sessionRuntime,
       ref: sourceRef,
+      // §2.11：只携带**本来源**的选段；跨来源 pending 绝不误发（host 会以
+      // source_ref 不一致拒绝）。
+      getSelectionContext: () => {
+        const selection = selectionContextRef.current
+        return selection !== null && selection.sourceId === sourceId ? selection : null
+      },
       onReleaseHold: (operationId: string) => editor.release(operationId),
       onClearAfterSubmission: (receipt, operationId) => {
         // Lead 核对 P2-7：runtime 存活时重挂后 map 不跨实例；回退到当前
@@ -704,6 +723,11 @@ export function ResearchSourceChatPanel({
         }
         pendingSubmitTextRef.current = text
         pendingClearControllersRef.current.set(operationId, conversation)
+        // Issue #1013 F01（复审）：只有**本次请求确实携带**了本来源选段时才
+        // 在受理后清除页级 chip；legacy（无 controller）路径不携带选段，绝不
+        // 假清除（chip 保留，用户可见未被消费）。
+        const selection = selectionContextRef.current
+        const selectionCarried = selection !== null && selection.sourceId === sourceId
         const result = await conversation.send({
           query: text,
           modelId,
@@ -722,8 +746,9 @@ export function ResearchSourceChatPanel({
           editor.release(operationId)
           return false
         }
-        // Issue #1013 §2.11：已受理 → 清除页级 pending 选段（失败保留可重试）。
-        onSelectionConsumed?.()
+        // Issue #1013 §2.11：已受理且选段已随请求发出 → 清除页级 pending；
+        // 失败/路径未携带 → 保留可重试。
+        if (selectionCarried) onSelectionConsumed?.()
         // §2.10：发送后 follow_tail（滚动到底部，锚点在后续 scroll 中记录）。
         const container = sourceMessagesRef.current
         if (container !== null) container.scrollTop = container.scrollHeight

@@ -16,6 +16,14 @@ import {
   resetGlobalModelStub,
   setGlobalModelStub,
 } from '@/test/global-model-stub'
+import {
+  buildSessionReturnTarget,
+  planReturnToAnswer,
+  readActiveSessionReturnTarget,
+  recordCitationReturnTarget,
+  type ReturnTargetCitation,
+} from '@/lib/research/conversation-machine'
+import type { ResearchSessionRef } from '@/lib/research/session-contract'
 
 // UI-03 Red：工作区组合（REQ-SCOPE-04）——无项目上下文 fail-closed 错误态；
 // 有上下文时加载 Source/Note 并渲染主区动作。
@@ -662,5 +670,168 @@ describe('ResearchWorkspace（RWV2-40 五动作主区；#445）', () => {
     // 重试刷新同一资源缓存
     fireEvent.click(screen.getByTestId('workspace-resources-retry'))
     await waitFor(() => expect(vi.mocked(api.listSources).mock.calls.length).toBeGreaterThanOrEqual(2))
+  })
+})
+
+
+// ---------------------------------------------------------------------------
+// Issue #1013 复审 M-02：page 层 return target 组合接线的整链语义。
+//
+// page.tsx 的存储/会话安全逻辑已抽成 conversation-machine 的纯函数
+// （`recordCitationReturnTarget` / `readActiveSessionReturnTarget` /
+// `planReturnToAnswer`），page 只调用它们并切 surface / 下发滚动请求；
+// 本组合根测试覆盖「citation 点击→记录 target→打开来源→返回原回答→
+// 切 surface+滚动 / 目标缺失→position_unavailable 不跳最新」的同一链路。
+// ---------------------------------------------------------------------------
+
+describe('Issue #1013 M-02：citation → return target → 返回原回答（组合根语义）', () => {
+  const PROJECT_ID_1013 = 'proj_1'
+  const GLOBAL_REF: ResearchSessionRef = {
+    domain: 'research',
+    kind: 'global',
+    projectId: PROJECT_ID_1013,
+    sessionId: 'sess_global',
+    sourceId: null,
+  }
+  const SOURCE_REF: ResearchSessionRef = {
+    domain: 'research',
+    kind: 'source',
+    projectId: PROJECT_ID_1013,
+    sessionId: 'sess_source',
+    sourceId: 'src_9',
+  }
+  const CITATION: ReturnTargetCitation = {
+    sourceId: 'src_9',
+    docId: 'doc_9',
+    docVersion: 'v1',
+    chunkId: 'chunk_9',
+    pageIdx: 7,
+  }
+  const EXPECTED_KEY =
+    'rdlens.research.return-target.v1/proj_1/sess_global/src_9'
+
+  afterEach(() => {
+    localStorage.clear()
+    sessionStorage.clear()
+  })
+
+  it('citation 点击→记录 target（键含 project/session/source）→读取→返回动作切 global surface+滚动', () => {
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+    // 1) 打开来源后记录（page 的 handleCitationReturn 纯逻辑部分）。
+    const target = recordCitationReturnTarget({
+      projectId: PROJECT_ID_1013,
+      ref: GLOBAL_REF,
+      messageId: 'msg-return',
+      citation: CITATION,
+      sessionStorage: window.sessionStorage,
+      localStorage: window.localStorage,
+    })
+    expect(target).not.toBeNull()
+    // 键含 project + session + citation source（M-01）。
+    expect(Object.keys(localStorage)).toContain(EXPECTED_KEY)
+    expect(Object.keys(sessionStorage)).toContain(EXPECTED_KEY)
+    // 不写/不依赖 chat_anchor（滚动锚点只表达最后阅读位置）。
+    const writtenKeys = setItem.mock.calls.map((call) => String(call[0]))
+    expect(writtenKeys).toContain(EXPECTED_KEY)
+    expect(writtenKeys.some((key) => key.includes('chat_anchor'))).toBe(false)
+    expect(writtenKeys.some((key) => key.includes('editor'))).toBe(false)
+    setItem.mockRestore()
+
+    // 2) page 打开来源时读取：只在当前活动会话候选内命中（sessionStorage 优先）。
+    const read = readActiveSessionReturnTarget({
+      storages: [window.sessionStorage, window.localStorage],
+      projectId: PROJECT_ID_1013,
+      citationSourceId: CITATION.sourceId,
+      sessionIds: [GLOBAL_REF.sessionId],
+    })
+    expect(read?.messageId).toBe('msg-return')
+
+    // 3) 「返回原回答」→ 决策切回 global surface 并滚动到 durable message。
+    const plan = planReturnToAnswer({
+      target: read,
+      globalRef: GLOBAL_REF,
+      sourceRef: SOURCE_REF,
+    })
+    expect(plan).toEqual({
+      kind: 'navigate',
+      surface: 'global',
+      sessionId: 'sess_global',
+      messageId: 'msg-return',
+    })
+  })
+
+  it('跨会话不串用：其它会话读到 null；目标会话与 active 不一致时决策 unavailable（不跳其它会话）', () => {
+    recordCitationReturnTarget({
+      projectId: PROJECT_ID_1013,
+      ref: GLOBAL_REF,
+      messageId: 'msg-return',
+      citation: CITATION,
+      localStorage: window.localStorage,
+    })
+    // 会话 B 打开同一来源：键不同 → 读不到 A 的目标。
+    expect(
+      readActiveSessionReturnTarget({
+        storages: [window.localStorage],
+        projectId: PROJECT_ID_1013,
+        citationSourceId: CITATION.sourceId,
+        sessionIds: ['sess_other'],
+      }),
+    ).toBeNull()
+    // 即使拿到 A 的目标（stale state），决策也拒绝跨会话跳转。
+    const targetA = readActiveSessionReturnTarget({
+      storages: [window.localStorage],
+      projectId: PROJECT_ID_1013,
+      citationSourceId: CITATION.sourceId,
+      sessionIds: ['sess_global'],
+    })
+    expect(targetA).not.toBeNull()
+    expect(
+      planReturnToAnswer({
+        target: targetA,
+        globalRef: { ...GLOBAL_REF, sessionId: 'sess_other' },
+        sourceRef: null,
+      }),
+    ).toEqual({ kind: 'unavailable' })
+    // 目标属于 source 会话时，source/final ref 不匹配同样拒绝。
+    const targetSource = buildSessionReturnTarget({
+      projectId: PROJECT_ID_1013,
+      ref: SOURCE_REF,
+      messageId: 'msg_source',
+      citation: CITATION,
+    })
+    expect(
+      planReturnToAnswer({
+        target: targetSource,
+        globalRef: GLOBAL_REF,
+        sourceRef: null,
+      }),
+    ).toEqual({ kind: 'unavailable' })
+  })
+
+  it('目标缺失 → unavailable（position_unavailable 文案），不跳最新/不落其它会话', () => {
+    // 1) 无 message_id 的 citation 点击不产生目标（不写半条）。
+    expect(
+      recordCitationReturnTarget({
+        projectId: PROJECT_ID_1013,
+        ref: GLOBAL_REF,
+        messageId: null,
+        citation: CITATION,
+        localStorage: window.localStorage,
+      }),
+    ).toBeNull()
+    expect(Object.keys(localStorage)).toHaveLength(0)
+    // 2) 无目标/无 storage 记录 → 返回动作不可用（page 显示 position_unavailable，
+    //    不下发滚动请求、不跳最新）。
+    expect(
+      planReturnToAnswer({ target: null, globalRef: GLOBAL_REF, sourceRef: SOURCE_REF }),
+    ).toEqual({ kind: 'unavailable' })
+    expect(
+      readActiveSessionReturnTarget({
+        storages: [window.sessionStorage, window.localStorage],
+        projectId: PROJECT_ID_1013,
+        citationSourceId: CITATION.sourceId,
+        sessionIds: [GLOBAL_REF.sessionId, SOURCE_REF.sessionId],
+      }),
+    ).toBeNull()
   })
 })

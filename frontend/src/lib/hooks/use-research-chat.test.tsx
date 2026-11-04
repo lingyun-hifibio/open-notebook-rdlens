@@ -30,6 +30,7 @@ import {
   buildSessionReturnTarget,
   citationMatchesReturnIdentity,
   findReturnTargetMessage,
+  readLatestSessionReturnTarget,
   readSessionReturnTarget,
   recordSessionReturnTarget,
   writeSessionReturnTarget,
@@ -3197,7 +3198,7 @@ describe('Issue #1013 F08/F09：返回原回答目标（citation 身份 + durabl
     pageIdx: 2,
   }
 
-  it('build/写读：sessionStorage + localStorage 双写，键含 project/source', () => {
+  it('M-01 build/写读：sessionStorage + localStorage 双写，键含 project/session/citation source', () => {
     const target = buildSessionReturnTarget({
       projectId: 'proj_1',
       ref,
@@ -3211,21 +3212,63 @@ describe('Issue #1013 F08/F09：返回原回答目标（citation 身份 + durabl
     expect(recordSessionReturnTarget({ target, sessionStorage: session, localStorage: local })).toEqual(
       target,
     )
-    expect(readSessionReturnTarget(session, 'proj_1', 'src_1')).toEqual(target)
-    expect(readSessionReturnTarget(local, 'proj_1', 'src_1')).toEqual(target)
-    // 跨项目/其它来源不可读（键含 project/source）
-    expect(readSessionReturnTarget(local, 'proj_2', 'src_1')).toBeNull()
-    expect(readSessionReturnTarget(local, 'proj_1', 'src_2')).toBeNull()
+    expect(readSessionReturnTarget(session, 'proj_1', 'src_1', 'sess_1')).toEqual(target)
+    expect(readSessionReturnTarget(local, 'proj_1', 'src_1', 'sess_1')).toEqual(target)
+    // 键必须含 session（M-01：`<prefix>/<project>/<session>/<source>`）
+    expect([...local.map.keys()]).toEqual([
+      'rdlens.research.return-target.v1/proj_1/sess_1/src_1',
+    ])
+    // 跨项目/其它来源/其它会话不可读（键含 project/session/source）
+    expect(readSessionReturnTarget(local, 'proj_2', 'src_1', 'sess_1')).toBeNull()
+    expect(readSessionReturnTarget(local, 'proj_1', 'src_2', 'sess_1')).toBeNull()
+    expect(readSessionReturnTarget(local, 'proj_1', 'src_1', 'sess_2')).toBeNull()
+  })
+
+  it('M-01 同一 citation 在两会话各自记录 target：互不串用，跨会话读取不命中', () => {
+    const globalA = { ...ref, sessionId: 'sess_a' }
+    const globalB = { ...ref, sessionId: 'sess_b' }
+    const targetA = buildSessionReturnTarget({
+      projectId: 'proj_1',
+      ref: globalA,
+      messageId: 'msg_a',
+      citation: identity,
+      recordedAt: '2026-11-04T00:00:00Z',
+    })
+    const targetB = buildSessionReturnTarget({
+      projectId: 'proj_1',
+      ref: globalB,
+      messageId: 'msg_b',
+      citation: identity,
+      recordedAt: '2026-11-04T00:00:01Z',
+    })
+    const storage = fakeStorage()
+    recordSessionReturnTarget({ target: targetA, sessionStorage: storage })
+    recordSessionReturnTarget({ target: targetB, sessionStorage: storage })
+    // 两会话各自精确命中（不互相覆盖：键不同）
+    expect(readSessionReturnTarget(storage, 'proj_1', 'src_1', 'sess_a')?.messageId).toBe('msg_a')
+    expect(readSessionReturnTarget(storage, 'proj_1', 'src_1', 'sess_b')?.messageId).toBe('msg_b')
+    expect(storage.map.size).toBe(2)
+    // 跨会话读取（sess_c）不命中：绝不把 A/B 的目标当作当前会话目标
+    expect(readSessionReturnTarget(storage, 'proj_1', 'src_1', 'sess_c')).toBeNull()
+    // 只允许在当前活动的候选会话中读；取最新 recordedAt
+    expect(
+      readLatestSessionReturnTarget(storage, 'proj_1', 'src_1', ['sess_a'])?.messageId,
+    ).toBe('msg_a')
+    expect(
+      readLatestSessionReturnTarget(storage, 'proj_1', 'src_1', ['sess_a', 'sess_b'])?.messageId,
+    ).toBe('msg_b')
+    expect(readLatestSessionReturnTarget(storage, 'proj_1', 'src_1', ['sess_c'])).toBeNull()
+    expect(readLatestSessionReturnTarget(storage, 'proj_1', 'src_1', [])).toBeNull()
   })
 
   it('storage 损坏/缺失/storage 不可用 → null（不抛错、不回退 chat_anchor）', () => {
     const storage = fakeStorage()
     storage.setItem(
-      `rdlens.research.return-target.v1/proj_1/src_1`,
+      'rdlens.research.return-target.v1/proj_1/sess_1/src_1',
       '{not json',
     )
-    expect(readSessionReturnTarget(storage, 'proj_1', 'src_1')).toBeNull()
-    expect(readSessionReturnTarget(null, 'proj_1', 'src_1')).toBeNull()
+    expect(readSessionReturnTarget(storage, 'proj_1', 'src_1', 'sess_1')).toBeNull()
+    expect(readSessionReturnTarget(null, 'proj_1', 'src_1', 'sess_1')).toBeNull()
     expect(writeSessionReturnTarget(null, null as never)).toBe(false)
   })
 

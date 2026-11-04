@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ResearchWorkspaceShell } from '@/lib/embedded/shell'
 import { isEmbeddedMode } from '@/lib/embedded/config'
@@ -29,8 +29,9 @@ import type { WireSelectionProjection } from '@/lib/research/session-contract'
 import type { ResearchCitationDisplayItem } from '@/lib/research/types'
 import {
   buildSessionReturnTarget,
-  readSessionReturnTarget,
-  recordSessionReturnTarget,
+  planReturnToAnswer,
+  readActiveSessionReturnTarget,
+  recordCitationReturnTarget,
   type ReturnTargetCitation,
   type SessionReturnTarget,
 } from '@/lib/research/conversation-machine'
@@ -214,22 +215,44 @@ function ResearchPageContent() {
     setNavScopeKey(identityKey)
   }, [identityKey, navScopeMatches])
 
-  // Issue #1013（D1-E-2）§2.10：打开来源时读取该来源的「返回原回答」耐久
-  // 目标（localStorage 跨重开优先；sessionStorage 本 tab 即时返回）。
+  /**
+   * Issue #1013（D1-E-2）§2.10：当前 surface 的候选会话 id。
+   * M-01（复审）：返回目标的 storage 键含 session，读取必须限定在**当前**
+   * 活动会话（global/source）内——否则会话 A 记录的目标会在会话 B 打开同一
+   * 来源时被读出，点击后跳到另一会话（§2.13 fail）。
+   */
+  const returnTargetSessionIds = useMemo(() => {
+    const ids = [navActiveGlobalRef?.sessionId, navActiveSourceRef?.sessionId].filter(
+      (sessionId): sessionId is string => typeof sessionId === 'string' && sessionId.length > 0,
+    )
+    return [...new Set(ids)]
+  }, [navActiveGlobalRef, navActiveSourceRef])
+
+  // 打开来源时读取该来源的「返回原回答」耐久目标（sessionStorage 本 tab 即时
+  // 返回优先；localStorage 跨重开保留）；无当前会话命中 → 不显示入口。
   useEffect(() => {
-    if (!projectId || navSelectedSourceId === null) {
+    if (!projectId || navSelectedSourceId === null || returnTargetSessionIds.length === 0) {
       setReturnTarget(null)
       setReturnUnavailable(false)
       return
     }
-    const read = (storage: Storage | null): SessionReturnTarget | null =>
-      storage === null ? null : readSessionReturnTarget(storage, projectId, navSelectedSourceId)
     const stored = typeof window === 'undefined'
       ? null
-      : read(window.sessionStorage) ?? read(window.localStorage)
+      : readActiveSessionReturnTarget({
+          storages: [window.sessionStorage, window.localStorage],
+          projectId,
+          citationSourceId: navSelectedSourceId,
+          sessionIds: returnTargetSessionIds,
+        })
     setReturnTarget(stored)
     setReturnUnavailable(false)
-  }, [projectId, navSelectedSourceId, navSourceFocusActive, sourceOpenRequest])
+  }, [
+    projectId,
+    navSelectedSourceId,
+    navSourceFocusActive,
+    sourceOpenRequest,
+    returnTargetSessionIds,
+  ])
 
   // 刷新/重开恢复（§4.5）：只有拿到 cacheScope/cacheAuthority（owner + viewer
   // 已确认）后才读指针。display 有具体 ref 时是显示权威；display
@@ -541,7 +564,7 @@ function ResearchPageContent() {
       if (messageId === null || messageId.length === 0) return
       const ref = surface === 'global' ? navActiveGlobalRef : navActiveSourceRef
       if (ref === null) return
-      const target = buildSessionReturnTarget({
+      const target = recordCitationReturnTarget({
         projectId,
         ref,
         messageId,
@@ -552,15 +575,11 @@ function ResearchPageContent() {
           chunkId: citation.chunk_id ?? null,
           pageIdx: citation.page_idx ?? null,
         },
+        ...(typeof window === 'undefined'
+          ? {}
+          : { sessionStorage: window.sessionStorage, localStorage: window.localStorage }),
       })
       if (target === null) return
-      if (typeof window !== 'undefined') {
-        recordSessionReturnTarget({
-          target,
-          sessionStorage: window.sessionStorage,
-          localStorage: window.localStorage,
-        })
-      }
       setReturnTarget(target)
       setReturnUnavailable(false)
       setLastCitationIdentity(target.citation)
@@ -630,21 +649,30 @@ function ResearchPageContent() {
         })
       }
     }
-    if (target === null) {
+    // M-01（复审）：跳转前用纯函数做会话安全决策——无目标/目标会话已不是当前
+    // 该 surface 的 active 会话 → unavailable（绝不落到其它会话）。
+    const plan = planReturnToAnswer({
+      target,
+      globalRef: navActiveGlobalRef,
+      sourceRef: navActiveSourceRef,
+    })
+    if (plan.kind === 'unavailable') {
       setReturnUnavailable(true)
       return
     }
-    if (target.kind === 'source') {
+    if (plan.surface === 'source') {
       setSourceFocusActive(true)
-      if (target.sourceSessionSourceId !== null) setSelectedSourceId(target.sourceSessionSourceId)
+      if (target !== null && target.sourceSessionSourceId !== null) {
+        setSelectedSourceId(target.sourceSessionSourceId)
+      }
     } else {
       setSourceFocusActive(false)
     }
     setReturnUnavailable(false)
     setScrollToMessage({
-      surface: target.kind,
-      sessionId: target.sessionId,
-      messageId: target.messageId,
+      surface: plan.surface,
+      sessionId: plan.sessionId,
+      messageId: plan.messageId,
       seq: (returnRequestSeqRef.current += 1),
     })
   }, [
@@ -652,7 +680,6 @@ function ResearchPageContent() {
     lastCitationIdentity,
     navActiveGlobalRef,
     navActiveSourceRef,
-    navSelectedSourceId,
     projectId,
     returnTarget,
   ])

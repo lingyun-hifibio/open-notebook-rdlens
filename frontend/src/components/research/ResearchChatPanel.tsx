@@ -2312,6 +2312,9 @@ export function SelectionContextChip({
     : positionUnavailable
       ? t('research.selection.positionUnavailable')
       : t('research.selection.chip', {
+          // 复审 F03：模板带 `{{source}}`；消息投影没有来源展示名，使用稳定
+          // 的 source_id（绝不让占位符原样出现在用户界面）。
+          source: selection.sourceId,
           page: selection.pageIdx === null ? '-' : selection.pageIdx + 1,
           start: range.start,
           end: range.end,

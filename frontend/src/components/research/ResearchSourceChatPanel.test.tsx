@@ -51,8 +51,13 @@ vi.mock('@/components/ui/markdown-renderer', () => ({
 import type {
   ResearchSourceChatTurn,
   UseResearchSourceChatResult,
+  UseResearchSourceChatSessionOptions,
 } from '@/lib/hooks/use-research-source-chat'
-import type { WireSelectionProjection } from '@/lib/research/session-contract'
+import type {
+  WireSelectionContext,
+  WireSelectionProjection,
+} from '@/lib/research/session-contract'
+import { selectionContextToWire } from '@/lib/research/session-contract'
 import type { ResearchCitationDisplayItem } from '@/lib/research/types'
 import { useResearchSessionRuntimeOptional } from '@/lib/hooks/research-session-runtime'
 import { useResearchEditor } from '@/lib/hooks/use-research-editor'

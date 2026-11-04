@@ -25,6 +25,33 @@ import type {
 } from '@/lib/research/types'
 import type { WireSelectionProjection } from '@/lib/research/session-contract'
 
+// 复审 F03：测试环境的通用 t() 只返回 key，无法发现模板占位符未填充。
+// 本文件对 `research.selection.chip` 使用与 en-US 同形的模板并真实插值；
+// 任何缺失参数都会在 DOM 中留下 `{{name}}`，断言可直接失败。
+const translationMock = vi.hoisted(() => {
+  const CHIP_TEMPLATE = '{{source}} · p.{{page}} · {{start}}–{{end}} · {{quote}}'
+  const interpolate = (opts: Record<string, unknown> | undefined): string => {
+    const values = opts ?? {}
+    return CHIP_TEMPLATE.replace(/\{\{(\w+)\}\}/g, (_match, name: string) => {
+      const value = values[name]
+      return value === undefined || value === null ? `{{${name}}}` : String(value)
+    })
+  }
+  return {
+    t: vi.fn((key: string, opts?: Record<string, unknown>) =>
+      key === 'research.selection.chip' ? interpolate(opts) : key,
+    ),
+  }
+})
+
+vi.mock('@/lib/hooks/use-translation', () => ({
+  useTranslation: () => ({
+    t: translationMock.t,
+    language: 'en-US',
+    setLanguage: vi.fn(),
+  }),
+}))
+
 vi.mock('@/lib/research/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/research/api')>()
   return { ...actual, saveResultFromResult: vi.fn() }
@@ -3871,7 +3898,14 @@ describe('ResearchChatPanel · Issue #1013', () => {
     )
     const chips = screen.getAllByTestId('message-selection-chip')
     expect(chips).toHaveLength(2)
-    expect(chips[0]).toHaveTextContent('research.selection.chip')
+    // F03（复审）：真实插值后的文案包含 source/page/1-based 范围/quote；
+    // 缺任一参数会留下 `{{name}}`，下面的断言即失败。
+    expect(chips[0]).toHaveTextContent('src_1 · p.1 · 7–11 · world')
+    expect(chips[0].textContent ?? '').not.toContain('{{')
+    expect(translationMock.t).toHaveBeenCalledWith(
+      'research.selection.chip',
+      expect.objectContaining({ source: 'src_1' }),
+    )
     fireEvent.click(chips[0])
     expect(onSelectionJump).toHaveBeenCalledWith(expect.objectContaining({ visibility: 'visible' }))
     expect(chips[1]).toHaveAttribute('data-selection-visibility', 'restricted')
