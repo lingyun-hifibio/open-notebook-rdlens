@@ -204,6 +204,11 @@ export interface ResearchCapabilities {
   coverage_all_selected?: unknown
   /** PR5（B1）：C-05 能力块（加性；缺失/畸形按不可用处理，不降级） */
   c05?: unknown
+  /**
+   * #1014：搜索历史回访能力位（加性；缺失/非严格 true 一律 fail-closed，
+   * 见 `readSearchHistoryCapability`）。
+   */
+  search_history?: unknown
 }
 
 /** GET models 响应（#358：能力与模型同一次返回，避免两次请求间竞态） */
