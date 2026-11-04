@@ -19,7 +19,7 @@ import {
 import {
   buildSessionReturnTarget,
   planReturnToAnswer,
-  readActiveSessionReturnTarget,
+  readLatestReturnTarget,
   recordCitationReturnTarget,
   type ReturnTargetCitation,
 } from '@/lib/research/conversation-machine'
@@ -737,12 +737,12 @@ describe('Issue #1013 M-02：citation → return target → 返回原回答（�
     expect(writtenKeys.some((key) => key.includes('editor'))).toBe(false)
     setItem.mockRestore()
 
-    // 2) page 打开来源时读取：只在当前活动会话候选内命中（sessionStorage 优先）。
-    const read = readActiveSessionReturnTarget({
-      storages: [window.sessionStorage, window.localStorage],
+    // 2) page 打开来源时读取：按 citation 来源取最近一条（键含 session，但
+    //    读取不要求目标会话已 active；点击返回时再切会话）。
+    const read = readLatestReturnTarget({
+      storages: [window.localStorage, window.sessionStorage],
       projectId: PROJECT_ID_1013,
       citationSourceId: CITATION.sourceId,
-      sessionIds: [GLOBAL_REF.sessionId],
     })
     expect(read?.messageId).toBe('msg-return')
 
@@ -756,11 +756,13 @@ describe('Issue #1013 M-02：citation → return target → 返回原回答（�
       kind: 'navigate',
       surface: 'global',
       sessionId: 'sess_global',
+      sourceId: null,
       messageId: 'msg-return',
+      needsSwitch: false,
     })
   })
 
-  it('跨会话不串用：其它会话读到 null；目标会话与 active 不一致时决策 unavailable（不跳其它会话）', () => {
+  it('目标会话不 active → needsSwitch=true（page 先用 openSession 切会话，不落到其它会话）', () => {
     recordCitationReturnTarget({
       projectId: PROJECT_ID_1013,
       ref: GLOBAL_REF,
@@ -768,31 +770,28 @@ describe('Issue #1013 M-02：citation → return target → 返回原回答（�
       citation: CITATION,
       localStorage: window.localStorage,
     })
-    // 会话 B 打开同一来源：键不同 → 读不到 A 的目标。
-    expect(
-      readActiveSessionReturnTarget({
-        storages: [window.localStorage],
-        projectId: PROJECT_ID_1013,
-        citationSourceId: CITATION.sourceId,
-        sessionIds: ['sess_other'],
-      }),
-    ).toBeNull()
-    // 即使拿到 A 的目标（stale state），决策也拒绝跨会话跳转。
-    const targetA = readActiveSessionReturnTarget({
+    // 会话 B 打开同一来源：读取仍按来源取最近一条（目标自带 session）。
+    const targetA = readLatestReturnTarget({
       storages: [window.localStorage],
       projectId: PROJECT_ID_1013,
       citationSourceId: CITATION.sourceId,
-      sessionIds: ['sess_global'],
     })
-    expect(targetA).not.toBeNull()
+    expect(targetA?.sessionId).toBe('sess_global')
     expect(
       planReturnToAnswer({
         target: targetA,
         globalRef: { ...GLOBAL_REF, sessionId: 'sess_other' },
         sourceRef: null,
       }),
-    ).toEqual({ kind: 'unavailable' })
-    // 目标属于 source 会话时，source/final ref 不匹配同样拒绝。
+    ).toEqual({
+      kind: 'navigate',
+      surface: 'global',
+      sessionId: 'sess_global',
+      sourceId: null,
+      messageId: 'msg-return',
+      needsSwitch: true,
+    })
+    // 目标属于 source 会话：source 未 active 同样返回需要切换的 navigate。
     const targetSource = buildSessionReturnTarget({
       projectId: PROJECT_ID_1013,
       ref: SOURCE_REF,
@@ -805,7 +804,14 @@ describe('Issue #1013 M-02：citation → return target → 返回原回答（�
         globalRef: GLOBAL_REF,
         sourceRef: null,
       }),
-    ).toEqual({ kind: 'unavailable' })
+    ).toEqual({
+      kind: 'navigate',
+      surface: 'source',
+      sessionId: 'sess_source',
+      sourceId: 'src_9',
+      messageId: 'msg_source',
+      needsSwitch: true,
+    })
   })
 
   it('目标缺失 → unavailable（position_unavailable 文案），不跳最新/不落其它会话', () => {
@@ -824,13 +830,12 @@ describe('Issue #1013 M-02：citation → return target → 返回原回答（�
     //    不下发滚动请求、不跳最新）。
     expect(
       planReturnToAnswer({ target: null, globalRef: GLOBAL_REF, sourceRef: SOURCE_REF }),
-    ).toEqual({ kind: 'unavailable' })
+    ).toEqual({ kind: 'unavailable', reason: 'missing_target' })
     expect(
-      readActiveSessionReturnTarget({
+      readLatestReturnTarget({
         storages: [window.sessionStorage, window.localStorage],
         projectId: PROJECT_ID_1013,
         citationSourceId: CITATION.sourceId,
-        sessionIds: [GLOBAL_REF.sessionId, SOURCE_REF.sessionId],
       }),
     ).toBeNull()
   })

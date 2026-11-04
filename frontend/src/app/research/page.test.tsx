@@ -31,6 +31,29 @@ vi.mock('@/lib/embedded/shell', () => ({
   ),
 }))
 
+// Issue #1013 F01：选段讨论载荷（source focus/global target 接线断言）。
+const discussSelectionMock = vi.hoisted(() => ({
+  payload: {
+    selection: {
+      sourceId: 'src_1',
+      documentId: 'doc_1',
+      documentVersion: 'v3',
+      chunkId: 'chunk_1',
+      chunkOrdinal: 0,
+      pageIdx: 0,
+      startOffset: 6,
+      endOffset: 11,
+      quote: 'world',
+      quoteHash: '486ea46224d1bb4fb680f34f7c9ad96a8f24ec88be73ea8e5a6c65260e9cb8a7',
+      contentHash: 'a'.repeat(64),
+    },
+    sourceId: 'src_1',
+    sourceTitle: 'Source 1',
+    pageIdx: 0,
+    chunkOrdinal: 0,
+  },
+}))
+
 interface WorkbenchPropsMock {
   focusedSourceId: string | null
   highlightPageIdx: number | null
@@ -38,6 +61,7 @@ interface WorkbenchPropsMock {
   onOpenSource: (sourceId: string, pageIdx?: number | null) => void
   onExitSourceFocus: () => void
   scopeEditRequest?: number
+  onDiscussSelection?: (payload: typeof discussSelectionMock.payload) => void
 }
 
 // Workbench 测试替身：暴露冻结受控 props 与回调触发按钮
@@ -56,6 +80,10 @@ vi.mock('@/components/research/ResearchWorkbench', () => ({
         onClick={() => props.onOpenSource('src_9', 4)}
       />
       <button data-testid="wb-back" onClick={() => props.onExitSourceFocus()} />
+      <button
+        data-testid="wb-discuss-selection"
+        onClick={() => props.onDiscussSelection?.(discussSelectionMock.payload)}
+      />
     </div>
   ),
 }))
@@ -66,6 +94,9 @@ interface WorkspacePropsMock {
   onActiveActionChange: (action: string) => void
   onCitationJump: (sourceId: string, pageIdx: number | null) => void
   onEditScopeAllStates: () => void
+  pendingSelection?: { target: 'global' | 'source'; sourceId: string } | null
+  selectionChip?: { label: string } | null
+  onSelectionConsumed?: () => void
 }
 
 vi.mock('@/components/research/ResearchWorkspace', () => ({
@@ -74,6 +105,10 @@ vi.mock('@/components/research/ResearchWorkspace', () => ({
       data-testid="workspace"
       data-active-action={props.activeAction}
       data-surface-active={props.surfaceActive ? 'true' : ''}
+      data-pending-target={props.pendingSelection?.target ?? ''}
+      data-pending-source={props.pendingSelection?.sourceId ?? ''}
+      data-has-selection-chip={props.selectionChip === null || props.selectionChip === undefined ? 'false' : 'true'}
+      data-has-selection-consumed={props.onSelectionConsumed === undefined ? 'false' : 'true'}
     >
       <button
         data-testid="ws-run-template"
@@ -84,6 +119,7 @@ vi.mock('@/components/research/ResearchWorkspace', () => ({
         onClick={() => props.onCitationJump('src_9', 7)}
       />
       <button data-testid="ws-edit-scope" onClick={() => props.onEditScopeAllStates()} />
+      <button data-testid="ws-consume-selection" onClick={() => props.onSelectionConsumed?.()} />
     </div>
   ),
 }))
@@ -110,12 +146,31 @@ vi.mock('@/components/research/ResearchSourceChatPanel', () => ({
   ResearchSourceChatPanel: ({
     sourceId,
     onHighlightPage,
+    selectionContext,
+    selectionChip,
+    onSelectionConsumed,
   }: {
     sourceId: string
     onHighlightPage: (pageIdx: number) => void
+    selectionContext?: { sourceId: string; quote: string } | null
+    selectionChip?: { label: string } | null
+    onSelectionConsumed?: () => void
   }) => (
-    <div data-testid="source-chat-panel" data-source-id={sourceId}>
+    <div
+      data-testid="source-chat-panel"
+      data-source-id={sourceId}
+      data-selection-source={selectionContext?.sourceId ?? ''}
+      data-selection-quote={selectionContext?.quote ?? ''}
+      data-has-selection-chip={
+        selectionChip === null || selectionChip === undefined ? 'false' : 'true'
+      }
+      data-has-selection-consumed={onSelectionConsumed === undefined ? 'false' : 'true'}
+    >
       <button data-testid="panel-cite-page" onClick={() => onHighlightPage(7)} />
+      <button
+        data-testid="panel-consume-selection"
+        onClick={() => onSelectionConsumed?.()}
+      />
     </div>
   ),
 }))

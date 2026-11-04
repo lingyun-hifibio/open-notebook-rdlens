@@ -1770,33 +1770,3 @@ export function citationMatchesReturnIdentity(
   }
   return true
 }
-
-/**
- * 无 storage 记录时：按 citation 身份在**已加载**消息里找最近一条命中。
- *
- * `messages` 按阅读顺序（旧→新）；从尾部向前找（确定性：会话消息序列中
- * 最近一条）。返回命中的 message_id；无命中 → null（调用方显示
- * `position_unavailable`，**不跳最新**）。
- */
-export function findReturnTargetMessage<T>(input: {
-  readonly messages: readonly T[]
-  readonly identity: Omit<ReturnTargetCitation, 'sourceId'>
-  readonly messageIdOf: (message: T) => string | null
-  readonly citationsOf: (message: T) => readonly {
-    readonly docId?: string | null
-    readonly docVersion?: string | null
-    readonly chunkId?: string | null
-    readonly pageIdx?: number | null
-  }[]
-}): string | null {
-  for (let index = input.messages.length - 1; index >= 0; index -= 1) {
-    const message = input.messages[index]
-    const messageId = input.messageIdOf(message)
-    if (messageId === null) continue
-    const matched = input.citationsOf(message).some((citation) =>
-      citationMatchesReturnIdentity(citation, input.identity),
-    )
-    if (matched) return messageId
-  }
-  return null
-}

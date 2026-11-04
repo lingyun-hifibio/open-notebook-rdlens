@@ -147,6 +147,7 @@ function renderPanel(
     } | null
     onCitationReturn: (citation: ResearchCitationDisplayItem, messageId: string | null) => void
     scrollToMessage: { readonly sessionId: string; readonly messageId: string; readonly seq: number } | null
+    sessionRef: ResearchSessionRef | null
     onScrollToMessageResult: (found: boolean) => void
     onSelectionJump: (selection: WireSelectionProjection) => void
     onSelectionConsumed: () => void
@@ -170,6 +171,7 @@ function renderPanel(
         onRunAsBackgroundJob={overrides.onRunAsBackgroundJob}
         backgroundJobRequiresSelection={overrides.backgroundJobRequiresSelection ?? false}
         selectionChip={overrides.selectionChip ?? null}
+        sessionRef={overrides.sessionRef ?? null}
         onCitationReturn={overrides.onCitationReturn}
         scrollToMessage={overrides.scrollToMessage ?? null}
         onScrollToMessageResult={overrides.onScrollToMessageResult}
@@ -3958,6 +3960,13 @@ describe('ResearchChatPanel · Issue #1013', () => {
       vi.fn(),
       {
         scrollToMessage: { sessionId: 'sess_x', messageId: 'msg_missing', seq: 7 },
+        sessionRef: {
+          domain: 'research',
+          kind: 'global',
+          projectId: PROJECT_ID,
+          sessionId: 'sess_x',
+          sourceId: null,
+        },
         onScrollToMessageResult,
       },
     )
@@ -3974,6 +3983,13 @@ describe('ResearchChatPanel · Issue #1013', () => {
       vi.fn(),
       {
         scrollToMessage: { sessionId: 'sess_x', messageId: 'msg_1', seq: 8 },
+        sessionRef: {
+          domain: 'research',
+          kind: 'global',
+          projectId: PROJECT_ID,
+          sessionId: 'sess_x',
+          sourceId: null,
+        },
         onScrollToMessageResult,
       },
     )

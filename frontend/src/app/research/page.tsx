@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ResearchWorkspaceShell } from '@/lib/embedded/shell'
 import { isEmbeddedMode } from '@/lib/embedded/config'
@@ -29,8 +29,9 @@ import type { WireSelectionProjection } from '@/lib/research/session-contract'
 import type { ResearchCitationDisplayItem } from '@/lib/research/types'
 import {
   buildSessionReturnTarget,
+  citationMatchesReturnIdentity,
   planReturnToAnswer,
-  readActiveSessionReturnTarget,
+  readLatestReturnTarget,
   recordCitationReturnTarget,
   type ReturnTargetCitation,
   type SessionReturnTarget,
@@ -215,43 +216,34 @@ function ResearchPageContent() {
     setNavScopeKey(identityKey)
   }, [identityKey, navScopeMatches])
 
-  /**
-   * Issue #1013（D1-E-2）§2.10：当前 surface 的候选会话 id。
-   * M-01（复审）：返回目标的 storage 键含 session，读取必须限定在**当前**
-   * 活动会话（global/source）内——否则会话 A 记录的目标会在会话 B 打开同一
-   * 来源时被读出，点击后跳到另一会话（§2.13 fail）。
-   */
-  const returnTargetSessionIds = useMemo(() => {
-    const ids = [navActiveGlobalRef?.sessionId, navActiveSourceRef?.sessionId].filter(
-      (sessionId): sessionId is string => typeof sessionId === 'string' && sessionId.length > 0,
-    )
-    return [...new Set(ids)]
-  }, [navActiveGlobalRef, navActiveSourceRef])
-
-  // 打开来源时读取该来源的「返回原回答」耐久目标（sessionStorage 本 tab 即时
-  // 返回优先；localStorage 跨重开保留）；无当前会话命中 → 不显示入口。
+  // 打开来源时读取该来源的「返回原回答」耐久目标。目标键含 session（M-01），
+  // 读取按项目+来源取**最近一条**（recordedAt 确定性）；点击返回时再切回目标
+  // 会话。重开时优先 localStorage（§2.10），sessionStorage 作为同 tab 兜底。
   useEffect(() => {
-    if (!projectId || navSelectedSourceId === null || returnTargetSessionIds.length === 0) {
+    if (!projectId || navSelectedSourceId === null) {
       setReturnTarget(null)
       setReturnUnavailable(false)
       return
     }
-    const stored = typeof window === 'undefined'
+    // M-01：只允许**当前 active 会话**成为候选，跨会话 target 绝不读出/跳转；
+    // 无候选（尚无会话）时读空，避免枚举该来源下其它会话的旧目标。
+    const candidateSessionIds = [
+      navActiveGlobalRef?.sessionId,
+      navActiveSourceRef?.sessionId,
+    ].filter((value): value is string => typeof value === 'string' && value.length > 0)
+    const stored = typeof window === 'undefined' || candidateSessionIds.length === 0
       ? null
-      : readActiveSessionReturnTarget({
-          storages: [window.sessionStorage, window.localStorage],
+      : readLatestReturnTarget({
+          storages: [window.localStorage, window.sessionStorage],
           projectId,
           citationSourceId: navSelectedSourceId,
-          sessionIds: returnTargetSessionIds,
+          candidateSessionIds,
         })
     setReturnTarget(stored)
     setReturnUnavailable(false)
   }, [
-    projectId,
-    navSelectedSourceId,
-    navSourceFocusActive,
-    sourceOpenRequest,
-    returnTargetSessionIds,
+    projectId, navSelectedSourceId, navSourceFocusActive, sourceOpenRequest,
+    navActiveGlobalRef?.sessionId, navActiveSourceRef?.sessionId,
   ])
 
   // 刷新/重开恢复（§4.5）：只有拿到 cacheScope/cacheAuthority（owner + viewer
@@ -377,38 +369,38 @@ function ResearchPageContent() {
   // project/kind/sourceId 并写 surface 独立指针；只有校验通过（S4）才写
   // display 指针。任一 surface 的切换都不动另一 surface 的活动会话。
   const openSession = useCallback(
-    (ref: ResearchSessionRef) => {
+    (ref: ResearchSessionRef): boolean => {
+      // 复审 F02：返回原回答需要「先切会话再滚动」；无 runtime 时无法真正
+      // 激活/加载目标会话，调用方必须显示 unavailable 而不是静默 no-op。
+      if (!sessionRuntime) return false
       if (ref.kind === 'source') {
-        if (!ref.sourceId) return
+        if (!ref.sourceId) return false
         // 先切 Source focus（页面导航顺序），再激活该 surface 会话（§4.2-1）。
         setSelectedSourceId(ref.sourceId)
         setSourceFocusActive(true)
         setSourceNewSessionFor(null)
         restoredSourceGuardRef.current = null
         syncedSourceRef.current = ref.sourceId
-        if (sessionRuntime) {
-          const accepted = sessionRuntime.activate('source', ref)
-          if (!accepted) return
-          sessionRuntime.setDisplayPointer({
-            version: 1,
-            surface: 'source',
-            sourceId: ref.sourceId,
-            ref,
-          })
-        }
+        const accepted = sessionRuntime.activate('source', ref)
+        if (!accepted) return false
+        sessionRuntime.setDisplayPointer({
+          version: 1,
+          surface: 'source',
+          sourceId: ref.sourceId,
+          ref,
+        })
         setActiveSourceRef(ref)
-        return
+        return true
       }
       setSourceFocusActive(false)
       // R3：返回全局后同一来源再次被打开时必须重新同步 runtime/display。
       syncedSourceRef.current = null
       restoredSourceGuardRef.current = null
-      if (sessionRuntime) {
-        const accepted = sessionRuntime.activate('global', ref)
-        if (!accepted) return
-        sessionRuntime.setDisplayPointer({ version: 1, surface: 'global', ref })
-      }
+      const accepted = sessionRuntime.activate('global', ref)
+      if (!accepted) return false
+      sessionRuntime.setDisplayPointer({ version: 1, surface: 'global', ref })
       setActiveGlobalRef(ref)
+      return true
     },
     [sessionRuntime],
   )
@@ -503,23 +495,11 @@ function ResearchPageContent() {
   }, [])
 
   // 跨区 Citation（Workspace/Activity/Transformation 报告）→ 选源 + 高亮。
-  // Issue #1013 §2.10：同时记录 citation 身份，供「返回原回答」在无
-  // storage 时按身份反查 durable message（不依赖 chat_anchor）。
+  // 复审 F02：这里的 citation 可能**不含 durable message id**（Compare/
+  // Coverage/Activity），因此不得据此启用「返回原回答」；只有会话消息内的
+  // `handleCitationReturn`（携带 message_id）才记录返回目标。
   const handleCitationJump = useCallback(
-    (
-      sourceId: string,
-      pageIdx: number | null,
-      identity?: { docId: string; docVersion: string | null; chunkId: string | null; pageIdx: number | null },
-    ) => {
-      if (identity !== undefined) {
-        setLastCitationIdentity({
-          sourceId,
-          docId: identity.docId,
-          docVersion: identity.docVersion,
-          chunkId: identity.chunkId,
-          pageIdx: identity.pageIdx,
-        })
-      }
+    (sourceId: string, pageIdx: number | null) => {
       if (pageIdx === null) {
         openSource(sourceId)
         return
@@ -530,17 +510,24 @@ function ResearchPageContent() {
   )
 
   // ── Issue #1013（D1-E-2）：选段 / 返回原回答 ──────────────────────────────
-  /** 来源详情「讨论选段」→ 页级 pending chip（当前活跃 surface = source）。 */
+  /**
+   * 来源详情「讨论选段」→ 页级 pending chip。
+   *
+   * 复审 F01：target 必须是**当前活动 surface**（source focus ⇒ source；
+   * 否则 global），不能写死 'source'；否则 global headed body 永远没有入口。
+   */
   const handleDiscussSelection = useCallback((payload: SourceSelectionDiscussPayload) => {
+    const target: 'global' | 'source' =
+      navSourceFocusActive && navSelectedSourceId !== null ? 'source' : 'global'
     setPendingSelection({
       selection: payload.selection,
       sourceId: payload.sourceId,
       sourceTitle: payload.sourceTitle,
       pageIdx: payload.pageIdx,
       chunkOrdinal: payload.chunkOrdinal,
-      target: 'source',
+      target,
     })
-  }, [])
+  }, [navSourceFocusActive, navSelectedSourceId])
 
   /** user turn 选段 chip → 切到来源详情并按 selection 高亮滚动。 */
   const handleSelectionJump = useCallback((selection: WireSelectionProjection) => {
@@ -588,69 +575,75 @@ function ResearchPageContent() {
   )
 
   /**
-   * 无 storage 时按 citation 身份在已渲染 citation 列表中取最近一条。
-   * 同时判定该引用属于哪个 surface（消息 DOM 的容器锚点），避免把全局会话
-   * 的 message_id 当成来源会话目标。
+   * 无 storage 记录时按 citation 身份在**当前活动 surface** 的已渲染消息里
+   * 取最近一条。
+   *
+   * 复审 F02：只扫描当前活动 surface 的容器（并跳过 hidden 保活面板），
+   * 避免 global/source 同时挂载时取到隐藏面板的 message；`citationMatches`
+   * 与纯函数层同一匹配规则（doc 必配，其余身份字段逐项等值）。
    */
   const findMessageIdByCitationIdentity = useCallback(
-    (identity: ReturnTargetCitation): { messageId: string; surface: 'global' | 'source' } | null => {
+    (identity: ReturnTargetCitation, surface: 'global' | 'source'): string | null => {
       if (typeof document === 'undefined') return null
-      const items = Array.from(
-        document.querySelectorAll<HTMLElement>('[data-citation-doc-id]'),
-      )
-      let found: { messageId: string; surface: 'global' | 'source' } | null = null
-      for (const item of items) {
-        if (item.dataset.citationDocId !== identity.docId) continue
-        if (
-          identity.docVersion !== null &&
-          (item.dataset.citationDocVersion ?? null) !== identity.docVersion
-        ) continue
-        if (
-          identity.chunkId !== null &&
-          (item.dataset.citationChunkId ?? null) !== identity.chunkId
-        ) continue
-        if (
-          identity.pageIdx !== null &&
-          item.dataset.citationPageIdx !== undefined &&
-          Number(item.dataset.citationPageIdx) !== identity.pageIdx
-        ) continue
-        const row = item.closest<HTMLElement>('[data-message-id]')
-        const messageId = row?.dataset.messageId
-        if (messageId === undefined) continue
-        found = {
-          messageId,
-          surface: item.closest('[data-testid="srcchat-messages"]') !== null
-            ? 'source'
-            : 'global',
+      const selector = surface === 'source'
+        ? '[data-testid="source-chat-surface"]:not([hidden]) [data-testid="srcchat-messages"]'
+        : '[data-testid="legacy-session-content"] [data-testid="chat-messages"]'
+      const containers = Array.from(document.querySelectorAll<HTMLElement>(selector))
+        .filter((container) => container.closest('[hidden], [aria-hidden="true"]') === null)
+      for (const container of containers) {
+        // 消息 DOM 顺序 = 阅读顺序；从尾部向前取会话消息序列中最近一条。
+        const items = Array.from(
+          container.querySelectorAll<HTMLElement>('[data-citation-doc-id]'),
+        ).reverse()
+        for (const item of items) {
+          const matched = citationMatchesReturnIdentity(
+            {
+              docId: item.dataset.citationDocId ?? null,
+              docVersion: item.dataset.citationDocVersion ?? null,
+              chunkId: item.dataset.citationChunkId ?? null,
+              pageIdx:
+                item.dataset.citationPageIdx === undefined
+                  ? null
+                  : Number(item.dataset.citationPageIdx),
+            },
+            identity,
+          )
+          if (!matched) continue
+          const row = item.closest<HTMLElement>('[data-message-id]')
+          const messageId = row?.dataset.messageId
+          if (messageId !== undefined && messageId.length > 0) return messageId
         }
       }
-      return found
+      return null
     },
     [],
   )
 
-  /** 「返回原回答」：切回目标 surface 并滚动到 durable message（不跳最新）。 */
+  /** 「返回原回答」：切到目标 surface/会话并滚动到 durable message（不跳最新）。 */
   const handleReturnToAnswer = useCallback(() => {
     let target = returnTarget
-    if (target === null && lastCitationIdentity !== null) {
-      // 无 storage 记录：按 citation 身份在已加载消息里取最近一条（确定性）。
-      const found = findMessageIdByCitationIdentity(lastCitationIdentity)
-      const ref = found === null
-        ? null
-        : found.surface === 'source'
-          ? navActiveSourceRef
-          : navActiveGlobalRef
-      if (found !== null && ref !== null) {
+    const activeSurface: 'global' | 'source' =
+      navSourceFocusActive && navSelectedSourceId !== null ? 'source' : 'global'
+    if (
+      target === null &&
+      lastCitationIdentity !== null &&
+      lastCitationIdentity.sourceId === navSelectedSourceId
+    ) {
+      // 无 storage 记录：按 citation 身份在**当前活动 surface** 已加载消息里
+      // 取最近一条（确定性）；只使用该 surface 的 active 会话构造目标。
+      const foundMessageId = findMessageIdByCitationIdentity(lastCitationIdentity, activeSurface)
+      const ref = activeSurface === 'source' ? navActiveSourceRef : navActiveGlobalRef
+      if (foundMessageId !== null && ref !== null) {
         target = buildSessionReturnTarget({
           projectId,
           ref,
-          messageId: found.messageId,
+          messageId: foundMessageId,
           citation: lastCitationIdentity,
         })
       }
     }
-    // M-01（复审）：跳转前用纯函数做会话安全决策——无目标/目标会话已不是当前
-    // 该 surface 的 active 会话 → unavailable（绝不落到其它会话）。
+    // 复审 F02：目标会话不是当前 active 时先切会话（openSession），再滚动；
+    // 绝不在错误的 active 会话里查 message id（不静默 no-op）。
     const plan = planReturnToAnswer({
       target,
       globalRef: navActiveGlobalRef,
@@ -660,13 +653,35 @@ function ResearchPageContent() {
       setReturnUnavailable(true)
       return
     }
-    if (plan.surface === 'source') {
-      setSourceFocusActive(true)
-      if (target !== null && target.sourceSessionSourceId !== null) {
-        setSelectedSourceId(target.sourceSessionSourceId)
+    if (plan.surface === 'source' && (plan.sourceId === null || plan.sourceId.length === 0)) {
+      setReturnUnavailable(true)
+      return
+    }
+    const targetRef: ResearchSessionRef =
+      plan.surface === 'source'
+        ? {
+            domain: 'research',
+            kind: 'source',
+            projectId,
+            sessionId: plan.sessionId,
+            sourceId: plan.sourceId ?? '',
+          }
+        : {
+            domain: 'research',
+            kind: 'global',
+            projectId,
+            sessionId: plan.sessionId,
+            sourceId: null,
+          }
+    const surfaceNeedsOpen =
+      plan.surface === 'source'
+        ? !navSourceFocusActive || navSelectedSourceId !== plan.sourceId
+        : navSourceFocusActive
+    if (plan.needsSwitch || surfaceNeedsOpen) {
+      if (!openSession(targetRef)) {
+        setReturnUnavailable(true)
+        return
       }
-    } else {
-      setSourceFocusActive(false)
     }
     setReturnUnavailable(false)
     setScrollToMessage({
@@ -680,6 +695,9 @@ function ResearchPageContent() {
     lastCitationIdentity,
     navActiveGlobalRef,
     navActiveSourceRef,
+    navSelectedSourceId,
+    navSourceFocusActive,
+    openSession,
     projectId,
     returnTarget,
   ])
@@ -816,7 +834,11 @@ function ResearchPageContent() {
                     chatPrefill={chatPrefill}
                     pendingSelection={pendingSelection}
                     selectionChip={pendingSelection?.target === 'global' ? selectionChip : null}
-                    onSelectionConsumed={() => setPendingSelection(null)}
+                    onSelectionConsumed={
+                      pendingSelection?.target === 'global'
+                        ? () => setPendingSelection(null)
+                        : undefined
+                    }
                     onCitationReturn={(citation, messageId, sourceId) =>
                       handleCitationReturn('global', sourceId, citation, messageId)
                     }
@@ -839,8 +861,25 @@ function ResearchPageContent() {
                       // .../sources/{id}/chat/sessions → activate → display/.source
                       // 指针），刷新/重开可由指针直接恢复，不依赖旧列表。
                       onNewSession={handleNewSourceSession}
-                      selectionChip={pendingSelection?.target === 'source' ? selectionChip : null}
-                      onSelectionConsumed={() => setPendingSelection(null)}
+                      selectionChip={
+                        pendingSelection?.target === 'source' &&
+                        pendingSelection.sourceId === navSelectedSourceId
+                          ? selectionChip
+                          : null
+                      }
+                      selectionContext={
+                        pendingSelection?.target === 'source' &&
+                        pendingSelection.sourceId === navSelectedSourceId &&
+                        pendingSelection.selection.sourceId === navSelectedSourceId
+                          ? pendingSelection.selection
+                          : null
+                      }
+                      onSelectionConsumed={
+                        pendingSelection?.target === 'source' &&
+                        pendingSelection.sourceId === navSelectedSourceId
+                          ? () => setPendingSelection(null)
+                          : undefined
+                      }
                       onCitationReturn={(citation, messageId) =>
                         handleCitationReturn('source', navSelectedSourceId, citation, messageId)
                       }

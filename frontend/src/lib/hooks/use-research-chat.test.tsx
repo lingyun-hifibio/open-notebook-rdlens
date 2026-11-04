@@ -29,7 +29,6 @@ import type {
 import {
   buildSessionReturnTarget,
   citationMatchesReturnIdentity,
-  findReturnTargetMessage,
   readLatestSessionReturnTarget,
   readSessionReturnTarget,
   recordSessionReturnTarget,
@@ -2993,9 +2992,11 @@ function selectionProjectionWire(overrides: Record<string, unknown> = {}) {
   }
 }
 
-function fakeStorage(): ReturnTargetStorage & { map: Map<string, string> } {
+function fakeStorage(options: { enumerable?: boolean } = {}): ReturnTargetStorage & {
+  map: Map<string, string>
+} {
   const map = new Map<string, string>()
-  return {
+  const storage: ReturnTargetStorage & { map: Map<string, string> } = {
     map,
     getItem: (key) => map.get(key) ?? null,
     setItem: (key, value) => {
@@ -3005,6 +3006,11 @@ function fakeStorage(): ReturnTargetStorage & { map: Map<string, string> } {
       map.delete(key)
     },
   }
+  if (options.enumerable === true) {
+    Object.defineProperty(storage, 'length', { get: () => map.size })
+    storage.key = (index: number) => Array.from(map.keys())[index] ?? null
+  }
+  return storage
 }
 
 describe('Issue #1013 F07：消息投影 → 选段 chip（fail-closed）', () => {
@@ -3294,36 +3300,54 @@ describe('Issue #1013 F08/F09：返回原回答目标（citation 身份 + durabl
     expect(citationMatchesReturnIdentity({}, identity)).toBe(false)
   })
 
-  it('无 storage：按 citation 身份在已加载消息取最近一条（确定性，末尾优先）', () => {
-    const messages = [
-      {
-        id: 'msg_1',
-        citations: [{ docId: 'doc_1', docVersion: 'v3', chunkId: 'chunk_1', pageIdx: 2 }],
-      },
-      {
-        id: 'msg_2',
-        citations: [{ docId: 'doc_1', docVersion: 'v3', chunkId: 'chunk_1', pageIdx: 2 }],
-      },
-      {
-        id: 'msg_3',
-        citations: [{ docId: 'doc_2', pageIdx: 2 }],
-      },
-    ]
-    expect(
-      findReturnTargetMessage({
-        messages,
-        identity,
-        messageIdOf: (message) => message.id,
-        citationsOf: (message) => message.citations,
-      }),
-    ).toBe('msg_2')
-    expect(
-      findReturnTargetMessage({
-        messages: [],
-        identity,
-        messageIdOf: (message: { id: string }) => message.id,
-        citationsOf: () => [],
-      }),
-    ).toBeNull()
+  it('读取按 recordedAt 取最新（storage 可枚举时无需预知 session）', () => {
+    const storage = fakeStorage({ enumerable: true })
+    const target = (sessionId: string, messageId: string, recordedAt: string) =>
+      buildSessionReturnTarget({
+        projectId: 'proj_1',
+        ref: { ...ref, sessionId },
+        messageId,
+        citation: identity,
+        recordedAt,
+      })
+    recordSessionReturnTarget({ target: target('sess_a', 'msg_a', '2026-11-04T00:00:00Z'), localStorage: storage })
+    recordSessionReturnTarget({ target: target('sess_b', 'msg_b', '2026-11-04T00:00:02Z'), localStorage: storage })
+    recordSessionReturnTarget({ target: target('sess_c', 'msg_c', '2026-11-04T00:00:01Z'), localStorage: storage })
+    expect(readLatestSessionReturnTarget(storage, 'proj_1', 'src_1')).toEqual(
+      expect.objectContaining({ sessionId: 'sess_b', messageId: 'msg_b' }),
+    )
+    // 其它来源不命中。
+    expect(readLatestSessionReturnTarget(storage, 'proj_1', 'src_other')).toBeNull()
+  })
+
+  it('旧 v1 键（无 session 段）只读兼容：值内 sessionId 必须匹配', () => {
+    const target = buildSessionReturnTarget({
+      projectId: 'proj_1',
+      ref,
+      messageId: 'msg_legacy',
+      citation: identity,
+      recordedAt: '2026-11-04T00:00:00Z',
+    })
+    const storage = fakeStorage({ enumerable: true })
+    storage.setItem(
+      'rdlens.research.return-target.v1/proj_1/src_1',
+      JSON.stringify(target),
+    )
+    expect(readSessionReturnTarget(storage, 'proj_1', 'src_1', 'sess_1')?.messageId).toBe(
+      'msg_legacy',
+    )
+    expect(readSessionReturnTarget(storage, 'proj_1', 'src_1', 'sess_other')).toBeNull()
+    expect(readLatestSessionReturnTarget(storage, 'proj_1', 'src_1')?.messageId).toBe(
+      'msg_legacy',
+    )
+    // 新写入仍使用含 session 的键（旧键不被改写）。
+    if (target === null) throw new Error('target should be built')
+    expect(writeSessionReturnTarget(storage, target)).toBe(true)
+    expect([...storage.map.keys()]).toEqual(
+      expect.arrayContaining([
+        'rdlens.research.return-target.v1/proj_1/src_1',
+        'rdlens.research.return-target.v1/proj_1/sess_1/src_1',
+      ]),
+    )
   })
 })

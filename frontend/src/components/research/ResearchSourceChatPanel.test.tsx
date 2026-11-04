@@ -1417,6 +1417,26 @@ const SOURCE_CHIP_SELECTION: WireSelectionProjection = {
   reasonCode: null,
 }
 
+const SOURCE_SELECTION_CONTEXT: WireSelectionContext = {
+  sourceId: 'src_1',
+  documentId: 'doc_1',
+  documentVersion: 'v3',
+  chunkId: 'chunk_1',
+  chunkOrdinal: 2,
+  pageIdx: 0,
+  startOffset: 6,
+  endOffset: 11,
+  quote: 'world',
+  quoteHash: '486ea46224d1bb4fb680f34f7c9ad96a8f24ec88be73ea8e5a6c65260e9cb8a7',
+  contentHash: 'a'.repeat(64),
+}
+
+/** 面板最近一次传给 hook 的 session 选项（F01 接线断言用）。 */
+function lastSourceSessionOptions(): UseResearchSourceChatSessionOptions | undefined {
+  const calls = vi.mocked(useResearchSourceChat).mock.calls
+  return calls.at(-1)?.[0]?.session
+}
+
 function sourceTurn(overrides: Partial<ResearchSourceChatTurn>): ResearchSourceChatTurn {
   return {
     id: 't1',
@@ -1515,6 +1535,156 @@ describe('ResearchSourceChatPanel · Issue #1013', () => {
     expect(onSelectionJump).toHaveBeenCalledWith(
       expect.objectContaining({ visibility: 'visible', chunkId: 'chunk_1' }),
     )
+  })
+
+  it('F01（复审 BLOCKING）：selectionContext 注入 headed session getter（读取时真值，无 stale closure）', () => {
+    const ref = {
+      domain: 'research' as const,
+      kind: 'source' as const,
+      projectId: 'proj_1',
+      sessionId: 'sess_s1',
+      sourceId: 'src_1',
+    }
+    vi.mocked(useResearchSessionRuntimeOptional).mockReturnValue({
+      active: () => ref,
+    } as never)
+    const view = render(
+      <ResearchSourceChatPanel
+        projectId="proj_1"
+        sourceId="src_1"
+        onHighlightPage={vi.fn()}
+        selectionContext={SOURCE_SELECTION_CONTEXT}
+      />,
+    )
+    expect(lastSourceSessionOptions()?.getSelectionContext?.()).toEqual(
+      SOURCE_SELECTION_CONTEXT,
+    )
+
+    // 更新选段不得被 memo 的旧闭包缓存。
+    const updated = { ...SOURCE_SELECTION_CONTEXT, quote: 'updated' }
+    view.rerender(
+      <ResearchSourceChatPanel
+        projectId="proj_1"
+        sourceId="src_1"
+        onHighlightPage={vi.fn()}
+        selectionContext={updated}
+      />,
+    )
+    expect(lastSourceSessionOptions()?.getSelectionContext?.()).toEqual(updated)
+
+    // 跨来源 pending 绝不误发（target 过滤之外的第二道防线）。
+    view.rerender(
+      <ResearchSourceChatPanel
+        projectId="proj_1"
+        sourceId="src_1"
+        onHighlightPage={vi.fn()}
+        selectionContext={{ ...SOURCE_SELECTION_CONTEXT, sourceId: 'src_2' }}
+      />,
+    )
+    expect(lastSourceSessionOptions()?.getSelectionContext?.()).toBeNull()
+
+    view.rerender(
+      <ResearchSourceChatPanel
+        projectId="proj_1"
+        sourceId="src_1"
+        onHighlightPage={vi.fn()}
+        selectionContext={null}
+      />,
+    )
+    expect(lastSourceSessionOptions()?.getSelectionContext?.()).toBeNull()
+  })
+
+  it('F01（复审 BLOCKING）：受理后仅在实际携带选段时清除 chip（失败/legacy 保留）', async () => {
+    const ref = {
+      domain: 'research' as const,
+      kind: 'source' as const,
+      projectId: 'proj_1',
+      sessionId: 'sess_s1',
+      sourceId: 'src_1',
+    }
+    vi.mocked(useResearchSessionRuntimeOptional).mockReturnValue({
+      active: () => ref,
+    } as never)
+    const snapshot = {
+      ...createEditorState({ ref, writerId: 'w-1', transportAvailable: true }),
+      phase: 'ready' as const,
+      loading: false,
+      revision: 3,
+      intentHash: 'hash-3',
+      draftToken: 'draft_3',
+      baseScope: { mode: 'selected' as const, sourceIds: ['src_1'], singleSourceId: 'src_1' },
+      draftText: 'question',
+      dirty: true,
+    }
+    const conversationSend = vi.fn(async () => ({ status: 'ok' }))
+    vi.mocked(useResearchEditor).mockReturnValue({
+      snapshot,
+      controller: { getSnapshot: () => snapshot },
+      setDraftText: vi.fn(),
+      flush: vi.fn(async () => 'saved'),
+      hold: vi.fn(),
+      release: vi.fn(),
+      clearAfterSubmission: vi.fn(async () => 'cleared'),
+    } as never)
+    vi.mocked(useResearchSourceChat).mockReturnValue(
+      makeChatResult({
+        conversation: {
+          send: conversationSend,
+          getSnapshot: () => ({ turn: null, history: [] }),
+          subscribe: () => () => {},
+          notifyClearSettled: vi.fn(),
+        } as never,
+      }),
+    )
+    const onSelectionConsumed = vi.fn()
+    const view = render(
+      <ResearchSourceChatPanel
+        projectId="proj_1"
+        sourceId="src_1"
+        onHighlightPage={vi.fn()}
+        selectionContext={SOURCE_SELECTION_CONTEXT}
+        onSelectionConsumed={onSelectionConsumed}
+      />,
+    )
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('chat-send'))
+    })
+    expect(conversationSend).toHaveBeenCalledTimes(1)
+    expect(onSelectionConsumed).toHaveBeenCalledTimes(1)
+
+    // 无选段发送：受理成功也不得清除页级 chip。
+    const noSelectionConsumed = vi.fn()
+    view.rerender(
+      <ResearchSourceChatPanel
+        projectId="proj_1"
+        sourceId="src_1"
+        onHighlightPage={vi.fn()}
+        selectionContext={null}
+        onSelectionConsumed={noSelectionConsumed}
+      />,
+    )
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('chat-send'))
+    })
+    expect(conversationSend).toHaveBeenCalledTimes(2)
+    expect(noSelectionConsumed).not.toHaveBeenCalled()
+
+    // legacy（无 controller）路径不携带选段：不得假清除。
+    vi.mocked(useResearchSourceChat).mockReturnValue(makeChatResult())
+    const legacyConsumed = vi.fn()
+    view.rerender(
+      <ResearchSourceChatPanel
+        projectId="proj_1"
+        sourceId="src_1"
+        onHighlightPage={vi.fn()}
+        selectionContext={SOURCE_SELECTION_CONTEXT}
+        onSelectionConsumed={legacyConsumed}
+      />,
+    )
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('chat-send'))
+    })
+    expect(legacyConsumed).not.toHaveBeenCalled()
   })
 
   it('F08 citation 点击：同一次点击同时高亮原文并记录 return target（带 message_id）', () => {

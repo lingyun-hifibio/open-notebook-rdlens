@@ -929,6 +929,11 @@ export function ResearchChatPanel({
   const returnScrollRef = useRef<{ seq: number; attempts: number } | null>(null)
   useEffect(() => {
     if (scrollToMessage === undefined || scrollToMessage === null) return
+    // 复审 F02：只在**目标会话即当前 active 会话**时滚动；page 负责先切会话，
+    // 切换完成后本 effect 因 activeSessionId 变化重跑（绝不把目标 message id
+    // 用于其它会话的已加载消息）。
+    const activeSessionId = sessionRef?.sessionId ?? null
+    if (activeSessionId === null || scrollToMessage.sessionId !== activeSessionId) return
     const current = returnScrollRef.current
     if (current === null || current.seq !== scrollToMessage.seq) {
       returnScrollRef.current = { seq: scrollToMessage.seq, attempts: 0 }
@@ -956,7 +961,7 @@ export function ResearchChatPanel({
     setReturnTargetUnavailable(true)
     onScrollToMessageResult?.(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅响应返回请求/翻页结果
-  }, [scrollToMessage?.seq, renderedTurns, hasEarlierMessages, returnScrollTick, sessionWired])
+  }, [scrollToMessage?.seq, renderedTurns, hasEarlierMessages, returnScrollTick, sessionWired, sessionRef?.sessionId])
 
   // PR-5b（§4.2-4/§4.6）：详情侧可见性投影。当前批次 detail 恒可读 title+
   // record_visibility；不先占位等确认（有 detail 就立即按响应渲染）。
