@@ -217,7 +217,7 @@ export function ResearchSourceChatPanel({
           })
       },
     }
-  }, [sessionRuntime, sourceRef, sourceSessionId, editor])
+  }, [sessionRuntime, sourceRef, sourceSessionId, sourceId, editor])
   const chat = useResearchSourceChat({ projectId, sourceId, session: chatSession })
   sourceControllerRef.current = chat.conversation ?? null
   const editorSnapshot = editorEnabled ? editor.snapshot : null

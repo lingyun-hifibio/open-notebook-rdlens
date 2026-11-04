@@ -1586,7 +1586,23 @@ export function readLatestSessionReturnTarget(
   candidateSessionIds: readonly string[] = [],
 ): SessionReturnTarget | null {
   if (storage === null || storage === undefined) return null
+  const uniqueCandidates = [
+    ...new Set(candidateSessionIds.filter((sessionId) => sessionId.length > 0)),
+  ]
   const candidates: SessionReturnTarget[] = []
+  // M-01（复审）：候选会话非空时**只**读这些 session 的精确键——
+  // 绝不枚举该 project/source 下其它会话的目标（探针：storage 仅 sess_A 且
+  // candidates=['sess_B'] 必须返回 null）。旧 v1 无 session 段键由
+  // `readSessionReturnTarget` 读取并校验其 `sessionId ∈ candidates`。
+  if (uniqueCandidates.length > 0) {
+    for (const sessionId of uniqueCandidates) {
+      const target = readSessionReturnTarget(storage, projectId, citationSourceId, sessionId)
+      if (target !== null) candidates.push(target)
+    }
+    return latestOf(candidates)
+  }
+  // 候选为空：仅在调用方未提供候选（旧调用方/不支持枚举的注入存储）时保留
+  // 枚举兜底（含旧 v1 无 session 键）。
   try {
     const keys = listReturnTargetKeys(storage)
     if (keys !== null) {
@@ -1608,12 +1624,7 @@ export function readLatestSessionReturnTarget(
       }
     }
   } catch {
-    // 枚举失败不阻断候选 session 读取。
-  }
-  for (const sessionId of candidateSessionIds) {
-    if (sessionId.length === 0) continue
-    const target = readSessionReturnTarget(storage, projectId, citationSourceId, sessionId)
-    if (target !== null) candidates.push(target)
+    // 枚举失败不阻断（候选为空时无精确读取可退，直接返回 null）。
   }
   return latestOf(candidates)
 }
@@ -1706,7 +1717,7 @@ export function recordCitationReturnTarget(input: {
   return target
 }
 
-/** 「返回原回答」动作计划（page 只据此切 surface / 会话 / 下发滚动请求）。 */
+/** 「返回原回答」动作计划（page 只据此切 surface / 下发滚动请求）。 */
 export type ReturnToAnswerPlan =
   | {
       readonly kind: 'navigate'
@@ -1715,18 +1726,22 @@ export type ReturnToAnswerPlan =
       /** 目标 source 会话的来源（source surface 切换/校验用；global 为 null）。 */
       readonly sourceId: string | null
       readonly messageId: string
-      /** 目标会话不是当前该 surface 的 active 会话 → page 先 `openSession`。 */
+      /** M-01 后 navigate 恒为 false：目标会话必须已是当前 active 会话。 */
       readonly needsSwitch: boolean
     }
-  | { readonly kind: 'unavailable'; readonly reason: 'missing_target' | 'invalid_target' }
+  | {
+      readonly kind: 'unavailable'
+      readonly reason: 'missing_target' | 'invalid_target' | 'session_mismatch'
+    }
 
 /**
- * 返回原回答的**会话安全**决策（复审 F02）：
+ * 返回原回答的**会话安全**决策（复审 M-01）：
  * - 无目标 / target 缺少 source 绑定 → unavailable（UI 显示
  *   position_unavailable，不跳最新）；
- * - 目标会话不是当前 active → `navigate.needsSwitch=true`（page 用既有
- *   `openSession` 切到目标会话后再滚动，绝不把消息 id 用于其它会话）；
- * - 目标会话已 active → needsSwitch=false（只切 surface + 滚动）。
+ * - 目标会话**不是**当前该 surface 的 active 会话 → unavailable
+ *   （`session_mismatch`）：读侧已按候选会话过滤，这里再防御 stale state，
+ *   **绝不切到其它会话**（计划 §2.13）；
+ * - 目标会话已 active → navigate（只切 surface + 滚动；needsSwitch 恒 false）。
  */
 export function planReturnToAnswer(input: {
   readonly target: SessionReturnTarget | null
@@ -1739,13 +1754,16 @@ export function planReturnToAnswer(input: {
     return { kind: 'unavailable', reason: 'invalid_target' }
   }
   const active = target.kind === 'source' ? input.sourceRef : input.globalRef
+  if (active === null || active.sessionId !== target.sessionId) {
+    return { kind: 'unavailable', reason: 'session_mismatch' }
+  }
   return {
     kind: 'navigate',
     surface: target.kind,
     sessionId: target.sessionId,
     sourceId: target.kind === 'source' ? target.sourceSessionSourceId : null,
     messageId: target.messageId,
-    needsSwitch: active === null || active.sessionId !== target.sessionId,
+    needsSwitch: false,
   }
 }
 

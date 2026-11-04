@@ -762,7 +762,7 @@ describe('Issue #1013 M-02：citation → return target → 返回原回答（�
     })
   })
 
-  it('目标会话不 active → needsSwitch=true（page 先用 openSession 切会话，不落到其它会话）', () => {
+  it('M-01：candidates 只含其它会话 → 读到 null；目标会话不 active → plan=unavailable（不切其它会话）', () => {
     recordCitationReturnTarget({
       projectId: PROJECT_ID_1013,
       ref: GLOBAL_REF,
@@ -770,28 +770,40 @@ describe('Issue #1013 M-02：citation → return target → 返回原回答（�
       citation: CITATION,
       localStorage: window.localStorage,
     })
-    // 会话 B 打开同一来源：读取仍按来源取最近一条（目标自带 session）。
-    const targetA = readLatestReturnTarget({
-      storages: [window.localStorage],
+    // 探针（审查 M-01）：storage 只有 sess_global 的 target，candidates=['其他']：
+    // 候选非空 ⇒ 只读候选的精确键，绝不枚举返回 sess_global 的目标。
+    expect(
+      readLatestReturnTarget({
+        storages: [window.localStorage],
+        projectId: PROJECT_ID_1013,
+        citationSourceId: CITATION.sourceId,
+        candidateSessionIds: ['sess_other'],
+      }),
+    ).toBeNull()
+    // 同一 storage + 正确候选 → 命中（对照，证明不是全空）。
+    expect(
+      readLatestReturnTarget({
+        storages: [window.localStorage],
+        projectId: PROJECT_ID_1013,
+        citationSourceId: CITATION.sourceId,
+        candidateSessionIds: ['sess_global'],
+      })?.messageId,
+    ).toBe('msg-return')
+    // stale state 防御：目标会话不是当前 active → unavailable（不切会话）。
+    const targetA = buildSessionReturnTarget({
       projectId: PROJECT_ID_1013,
-      citationSourceId: CITATION.sourceId,
+      ref: GLOBAL_REF,
+      messageId: 'msg-return',
+      citation: CITATION,
     })
-    expect(targetA?.sessionId).toBe('sess_global')
     expect(
       planReturnToAnswer({
         target: targetA,
         globalRef: { ...GLOBAL_REF, sessionId: 'sess_other' },
         sourceRef: null,
       }),
-    ).toEqual({
-      kind: 'navigate',
-      surface: 'global',
-      sessionId: 'sess_global',
-      sourceId: null,
-      messageId: 'msg-return',
-      needsSwitch: true,
-    })
-    // 目标属于 source 会话：source 未 active 同样返回需要切换的 navigate。
+    ).toEqual({ kind: 'unavailable', reason: 'session_mismatch' })
+    // 目标属于 source 会话、source 未 active：同样 unavailable（不切其它会话）。
     const targetSource = buildSessionReturnTarget({
       projectId: PROJECT_ID_1013,
       ref: SOURCE_REF,
@@ -804,14 +816,7 @@ describe('Issue #1013 M-02：citation → return target → 返回原回答（�
         globalRef: GLOBAL_REF,
         sourceRef: null,
       }),
-    ).toEqual({
-      kind: 'navigate',
-      surface: 'source',
-      sessionId: 'sess_source',
-      sourceId: 'src_9',
-      messageId: 'msg_source',
-      needsSwitch: true,
-    })
+    ).toEqual({ kind: 'unavailable', reason: 'session_mismatch' })
   })
 
   it('目标缺失 → unavailable（position_unavailable 文案），不跳最新/不落其它会话', () => {

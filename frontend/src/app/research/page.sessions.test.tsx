@@ -66,24 +66,16 @@ vi.mock('@/components/research/ResearchWorkbench', () => ({
     highlightPageIdx,
     onOpenSource,
     onExitSourceFocus,
-    returnTargetAvailable,
-    returnUnavailable,
-    onReturnToAnswer,
   }: {
     focusedSourceId: string | null
     highlightPageIdx: number | null
     onOpenSource: (sourceId: string, pageIdx?: number | null) => void
     onExitSourceFocus: () => void
-    returnTargetAvailable?: boolean
-    returnUnavailable?: boolean
-    onReturnToAnswer?: () => void
   }) => (
     <div
       data-testid="workbench"
       data-focused-source={focusedSourceId ?? ''}
       data-highlight-page-idx={highlightPageIdx ?? ''}
-      data-return-target-available={returnTargetAvailable === true ? 'true' : 'false'}
-      data-return-unavailable={returnUnavailable === true ? 'true' : 'false'}
     >
       <button type="button" data-testid="workbench-open-source" onClick={() => onOpenSource('src-1')} />
       <button
@@ -92,11 +84,6 @@ vi.mock('@/components/research/ResearchWorkbench', () => ({
         onClick={() => onOpenSource('src-2')}
       />
       <button type="button" data-testid="workbench-back" onClick={() => onExitSourceFocus()} />
-      <button
-        type="button"
-        data-testid="workbench-return-to-answer"
-        onClick={() => onReturnToAnswer?.()}
-      />
     </div>
   ),
 }))
@@ -106,52 +93,16 @@ vi.mock('@/components/research/ResearchWorkspace', () => ({
     surfaceActive,
     activeAction,
     onActiveActionChange,
-    onCitationReturn,
-    scrollToMessage,
   }: {
     surfaceActive: boolean
     activeAction: string
     onActiveActionChange: (action: string) => void
-    onCitationReturn?: (
-      citation: { citation_id: number; claim: string; doc_id: string; doc_version?: string | null; chunk_id?: string | null; page_idx: number | null },
-      messageId: string | null,
-      sourceId: string,
-    ) => void
-    scrollToMessage?: { sessionId: string; messageId: string; seq: number } | null
   }) => (
     <div
       data-testid="workspace"
       data-surface-active={String(surfaceActive)}
       data-active-action={activeAction}
-      data-scroll-message={scrollToMessage?.messageId ?? ''}
-      data-scroll-session={scrollToMessage?.sessionId ?? ''}
     >
-      <div data-testid="chat-messages">
-        <div data-message-id="msg-global">
-          <button
-            type="button"
-            data-testid="workspace-citation-return"
-            data-citation-doc-id="doc-1"
-            data-citation-doc-version="v1"
-            data-citation-chunk-id="chunk-1"
-            data-citation-page-idx="7"
-            onClick={() =>
-              onCitationReturn?.(
-                {
-                  citation_id: 1,
-                  claim: 'claim',
-                  doc_id: 'doc-1',
-                  doc_version: 'v1',
-                  chunk_id: 'chunk-1',
-                  page_idx: 7,
-                },
-                'msg-global',
-                'src-1',
-              )
-            }
-          />
-        </div>
-      </div>
       <div data-testid="workspace-tabs">
         <button
           type="button"
@@ -191,31 +142,13 @@ vi.mock('@/components/research/ResearchSourceChatPanel', () => ({
     sourceId,
     onHighlightPage,
     onNewSession,
-    scrollToMessage,
   }: {
     projectId: string
     sourceId: string
     onHighlightPage: (pageIdx: number) => void
     onNewSession?: () => void | Promise<void>
-    scrollToMessage?: { sessionId: string; messageId: string; seq: number } | null
   }) => (
-    <div
-      data-testid="source-chat-panel"
-      data-project={projectId}
-      data-source={sourceId}
-      data-scroll-message={scrollToMessage?.messageId ?? ''}
-      data-scroll-session={scrollToMessage?.sessionId ?? ''}
-    >
-      <div data-testid="srcchat-messages">
-        <div data-message-id="msg-source">
-          <span
-            data-citation-doc-id="doc-1"
-            data-citation-doc-version="v1"
-            data-citation-chunk-id="chunk-1"
-            data-citation-page-idx="7"
-          />
-        </div>
-      </div>
+    <div data-testid="source-chat-panel" data-project={projectId} data-source={sourceId}>
       <textarea
         data-testid="srcchat-input"
         onKeyDown={(event) => {
@@ -262,7 +195,6 @@ vi.mock('@/lib/hooks/research-session-runtime', () => ({
 }))
 
 import ResearchPage from './page'
-import { recordCitationReturnTarget } from '@/lib/research/conversation-machine'
 import type { SessionRuntimeSnapshot } from '@/lib/research/session-runtime'
 
 const PROJECT_ID = 'proj-1'
@@ -1172,143 +1104,5 @@ describe('ResearchPage PR-14：Source 指针恢复（不依赖旧列表）与 40
       sourceId: 'src-1',
       ref: expect.objectContaining({ sessionId: 'sess_src_new2', kind: 'source' }),
     })
-  })
-})
-
-// ---------------------------------------------------------------------------
-// Issue #1013 F02（复审 HIGH）：返回原回答 page 级链路——跨会话先切会话、
-// 无 storage 时按 citation 身份只在当前 active surface 反查（隐藏面板不得
-// 命中）。
-// ---------------------------------------------------------------------------
-
-describe('Issue #1013 F02：返回原回答 page 级会话切换与 active-surface 反查', () => {
-  const globalRef = (sessionId: string) => ({
-    domain: 'research' as const,
-    kind: 'global' as const,
-    projectId: PROJECT_ID,
-    sessionId,
-    sourceId: null,
-  })
-  const sourceRef = {
-    domain: 'research' as const,
-    kind: 'source' as const,
-    projectId: PROJECT_ID,
-    sessionId: 'sess_src',
-    sourceId: 'src-1',
-  }
-
-  beforeEach(() => {
-    localStorage.clear()
-    sessionStorage.clear()
-  })
-
-  it('目标会话不是当前 active：先 openSession 切到目标会话再滚动（不静默 no-op）', async () => {
-    recordCitationReturnTarget({
-      projectId: PROJECT_ID,
-      ref: globalRef('sess_global'),
-      messageId: 'msg-return',
-      citation: {
-        sourceId: 'src-1',
-        docId: 'doc-1',
-        docVersion: 'v1',
-        chunkId: 'chunk-1',
-        pageIdx: 7,
-      },
-      localStorage: window.localStorage,
-    })
-    readDisplayPointer.mockReturnValue({
-      version: 1,
-      surface: 'global',
-      ref: globalRef('sess_other'),
-    })
-    renderPage()
-    await waitFor(() =>
-      expect(nav()).toHaveAttribute('data-active-global-session', 'sess_other'),
-    )
-
-    fireEvent.click(screen.getByTestId('workbench-open-source'))
-    await waitFor(() =>
-      expect(screen.getByTestId('workbench')).toHaveAttribute(
-        'data-return-target-available',
-        'true',
-      ),
-    )
-
-    fireEvent.click(screen.getByTestId('workbench-return-to-answer'))
-    await waitFor(() =>
-      expect(nav()).toHaveAttribute('data-active-global-session', 'sess_global'),
-    )
-    // 切回 global surface 并滚动到目标 durable message（目标会话的 message）。
-    expect(screen.getByTestId('workspace')).toHaveAttribute('data-surface-active', 'true')
-    expect(screen.getByTestId('workspace')).toHaveAttribute('data-scroll-session', 'sess_global')
-    expect(screen.getByTestId('workspace')).toHaveAttribute('data-scroll-message', 'msg-return')
-    expect(screen.getByTestId('workbench')).toHaveAttribute('data-focused-source', '')
-    expect(screen.getByTestId('workbench')).toHaveAttribute('data-return-unavailable', 'false')
-  })
-
-  it('无 storage：按 citation 身份反查只扫描当前 active surface（跳过隐藏面板）', async () => {
-    // 让「记录」写失败：目标只在内存/身份里；打开来源后的 storage 读取清空
-    // returnTarget，按钮仍可由 citation 身份推导（DOM 回退）。
-    const setItemSpy = vi
-      .spyOn(Storage.prototype, 'setItem')
-      .mockImplementation((key: string) => {
-        if (String(key).includes('return-target')) throw new Error('quota')
-      })
-    readDisplayPointer.mockReturnValue({
-      version: 1,
-      surface: 'global',
-      ref: globalRef('sess_global'),
-    })
-    // 打开来源时恢复该来源的既有会话，使 fallback 能构造 source 目标。
-    readPointer.mockImplementation(
-      (_scope: unknown, _authority: unknown, surface: string, sourceId: string | null) =>
-        surface === 'source' && sourceId === 'src-1'
-          ? { ref: sourceRef }
-          : null,
-    )
-    try {
-      renderPage()
-      await waitFor(() =>
-        expect(nav()).toHaveAttribute('data-active-global-session', 'sess_global'),
-      )
-      // citation 点击 → 记录 target（写失败但本次内存目标仍建立）。
-      fireEvent.click(screen.getByTestId('workspace-citation-return'))
-      await waitFor(() =>
-        expect(screen.getByTestId('workbench')).toHaveAttribute(
-          'data-return-target-available',
-          'true',
-        ),
-      )
-
-      // 打开来源：storage 无记录 → returnTarget 清空，但 citation 身份仍在。
-      fireEvent.click(screen.getByTestId('workbench-open-source'))
-      await waitFor(() =>
-        expect(screen.getByTestId('source-chat-panel')).toBeInTheDocument(),
-      )
-      await waitFor(() =>
-        expect(nav()).toHaveAttribute('data-active-source-session', 'sess_src'),
-      )
-      expect(screen.getByTestId('workbench')).toHaveAttribute(
-        'data-return-target-available',
-        'true',
-      )
-
-      fireEvent.click(screen.getByTestId('workbench-return-to-answer'))
-      await waitFor(() =>
-        expect(screen.getByTestId('source-chat-panel')).toHaveAttribute(
-          'data-scroll-message',
-          'msg-source',
-        ),
-      )
-      // 隐藏的全局面板里同身份 citation 不得被选中。
-      expect(screen.getByTestId('source-chat-panel')).toHaveAttribute(
-        'data-scroll-session',
-        'sess_src',
-      )
-      expect(screen.getByTestId('workspace')).toHaveAttribute('data-scroll-message', '')
-      expect(screen.getByTestId('workbench')).toHaveAttribute('data-return-unavailable', 'false')
-    } finally {
-      setItemSpy.mockRestore()
-    }
   })
 })

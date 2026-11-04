@@ -1729,6 +1729,50 @@ describe('ResearchSourceChatPanel · Issue #1013', () => {
     )
   })
 
+  it('F52（迁移）：live citation（无 durable message_id）仍高亮来源页并回调 messageId=null（跳转不失效）', () => {
+    const onHighlightPage = vi.fn()
+    const onCitationReturn = vi.fn()
+    vi.mocked(useResearchSourceChat).mockReturnValue(
+      makeChatResult({
+        turns: [
+          sourceTurn({
+            id: 'assistant-live',
+            role: 'assistant',
+            content: 'live answer',
+            serverMessageId: null,
+            citations: [
+              {
+                citation_id: 'c_live',
+                claim: 'live claim',
+                doc_id: 'doc_1',
+                doc_version: 'v3',
+                chunk_id: 'chunk_1',
+                page_idx: 5,
+                confidence: 'high',
+              } satisfies ResearchCitationDisplayItem,
+            ],
+          }),
+        ],
+      }),
+    )
+    render(
+      <ResearchSourceChatPanel
+        projectId="proj_1"
+        sourceId="src_1"
+        onHighlightPage={onHighlightPage}
+        onCitationReturn={onCitationReturn}
+      />,
+    )
+    fireEvent.click(screen.getByTestId('research-citation-click-c_live'))
+    // 页面高亮仍生效（不因缺 message_id 整条点击失效）
+    expect(onHighlightPage).toHaveBeenCalledWith(5)
+    // 上层拿到 messageId=null：可打开来源、但不记录「返回原回答」目标
+    expect(onCitationReturn).toHaveBeenCalledWith(
+      expect.objectContaining({ doc_id: 'doc_1', page_idx: 5 }),
+      null,
+    )
+  })
+
   it('F11 chat_anchor 测量：滚动后写锚点（稳定 message_id/有符号偏移）并 flush(position)', async () => {
     vi.useFakeTimers()
     try {

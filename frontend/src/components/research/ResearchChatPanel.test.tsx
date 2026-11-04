@@ -3953,6 +3953,29 @@ describe('ResearchChatPanel · Issue #1013', () => {
     )
   })
 
+  it('F52（迁移）：live citation（无 durable message_id）仍触发 onCitationReturn(citation, null)，上层可打开/高亮来源但不记录返回目标', () => {
+    const onCitationReturn = vi.fn()
+    renderPanel(
+      [
+        turn({
+          id: 'a-live',
+          role: 'assistant',
+          content: 'answer',
+          // live/流式轮：尚无持久 message_id（citation 点击不得整条失效）
+          serverMessageId: null,
+          citations: [citation],
+        }),
+      ],
+      vi.fn(),
+      { onCitationReturn },
+    )
+    fireEvent.click(screen.getByTestId(`research-citation-click-${citation.citation_id}`))
+    expect(onCitationReturn).toHaveBeenCalledWith(
+      expect.objectContaining({ doc_id: 'doc_1', page_idx: 3 }),
+      null,
+    )
+  })
+
   it('F09 返回原回答目标缺失 → position_unavailable 文案（不跳最新）', () => {
     const onScrollToMessageResult = vi.fn()
     renderPanel(

@@ -3267,6 +3267,29 @@ describe('Issue #1013 F08/F09：返回原回答目标（citation 身份 + durabl
     expect(readLatestSessionReturnTarget(storage, 'proj_1', 'src_1', [])).toBeNull()
   })
 
+  it('M-01 复审探针：候选只含 sess_b 时，storage 中 sess_a 的新键/旧 v1 键都不得读出', () => {
+    const storage = fakeStorage({ enumerable: true })
+    const targetA = buildSessionReturnTarget({
+      projectId: 'proj_1',
+      ref: { ...ref, sessionId: 'sess_a' },
+      messageId: 'msg_a',
+      citation: identity,
+      recordedAt: '2026-11-04T00:00:00Z',
+    })
+    recordSessionReturnTarget({ target: targetA, sessionStorage: storage })
+    // 旧 v1 无 session 段键（值内 sessionId=sess_a）也一并放入。
+    if (targetA === null) throw new Error('target should be built')
+    storage.setItem('rdlens.research.return-target.v1/proj_1/src_1', JSON.stringify(targetA))
+    // 候选 = ['sess_b']：只读 sess_b 的精确键 → null（不枚举其它会话）。
+    expect(
+      readLatestSessionReturnTarget(storage, 'proj_1', 'src_1', ['sess_b']),
+    ).toBeNull()
+    // 候选 = ['sess_a']：精确键命中（旧 v1 键的值 sessionId ∈ candidates 也接受）。
+    expect(
+      readLatestSessionReturnTarget(storage, 'proj_1', 'src_1', ['sess_a'])?.messageId,
+    ).toBe('msg_a')
+  })
+
   it('storage 损坏/缺失/storage 不可用 → null（不抛错、不回退 chat_anchor）', () => {
     const storage = fakeStorage()
     storage.setItem(
