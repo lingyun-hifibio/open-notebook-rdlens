@@ -72,6 +72,12 @@ export const RESEARCH_ERROR_USER_COPY: Record<string, string> = {
   // detail.code——可达用户面（提交路径），非 Job 终态码，见文件头注释。
   coverage_not_enabled: 'research.chatErrorCoverageNotEnabled',
 
+  // ── 搜索历史读面（#1014 D1-F 主单） ──
+  // 两个码是记录域稳定 503 detail.code（flag off / 存储不可用），由搜索
+  // 历史 Dialog 的可达错误态消费；未启用不重试、存储不可用可重试。
+  search_record_not_enabled: 'research.searchHistory.errors.notEnabled',
+  search_record_store_unavailable: 'research.searchHistory.errors.storeUnavailable',
+
   // ── PR-13（F-1）：not_accepted（明确未受理，idle + 稳定码） ──
   // 这 8 个码来自 conversation-machine 的 DEFINITE_NOT_ACCEPTED_CODES；此前
   // 无文案 → 错误卡即便渲染也只剩 generic 兜底，用户拿不到“下一步做什么”。

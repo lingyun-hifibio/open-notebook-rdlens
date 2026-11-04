@@ -30,6 +30,9 @@ import {
 } from '@/lib/research/c05-idempotency-key'
 import { monotonicNow } from '@/lib/research/c05-key-retention'
 import { extractResearchErrorCode, userErrorMessageKey } from '@/lib/research/errors'
+import { useResearchSearchHistoryCapability } from '@/lib/hooks/use-research-search-records'
+import { SearchHistoryDialog } from './SearchHistoryDialog'
+import type { ResearchSource } from '@/lib/types/research'
 import type {
   ResearchContextLevel,
   ResearchContextPreview,
@@ -104,6 +107,8 @@ export function ResearchSearchPanel({
   onContinueResearch,
   onViewInsight,
   onViewNote,
+  onCitationJump,
+  sources = [],
 }: {
   projectId: string
   /**
@@ -118,8 +123,22 @@ export function ResearchSearchPanel({
   /** RWV2-23（AC3）：保存成功后跳转 Results/Insights 或 Materials/Notes */
   onViewInsight?: (insightId: string) => void
   onViewNote?: (noteId: string) => void
+  /**
+   * #1014（D1-F）：搜索历史详情内「打开来源」跳转回调（组合根既有链路：
+   * 选源 + source focus + 高亮目标页）。仅在能力位为 true 的入口可见。
+   */
+  onCitationJump?: (sourceId: string, pageIdx: number | null) => void
+  /**
+   * #1014：工作区来源列表，供历史详情把 wire `source_id` 解析为展示身份并
+   * 复核跳转四闸（可选，默认 []——缺失时显示 document_id/version 且禁用跳转）。
+   */
+  sources?: readonly ResearchSource[]
 }) {
   const { t } = useTranslation()
+  // #1014：搜索历史能力位（加性 /models.capabilities.search_history，严格
+  // true 才显示入口；缺失/非法/false → 无入口，fail-closed）。
+  const searchHistoryEnabled = useResearchSearchHistoryCapability(projectId)
+  const [searchHistoryOpen, setSearchHistoryOpen] = useState(false)
   const {
     confirmedModelId,
     confirmedModel,
@@ -574,6 +593,18 @@ export function ResearchSearchPanel({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="border-b p-3">
+        {searchHistoryEnabled && (
+          <div className="mb-2 flex justify-end">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setSearchHistoryOpen(true)}
+              data-testid="search-history-open"
+            >
+              {t('research.searchHistory.open')}
+            </Button>
+          </div>
+        )}
         <SearchContextSelector
           contextDefault={searchContextDefault}
           supportedLevels={supportedLevels}
@@ -807,6 +838,16 @@ export function ResearchSearchPanel({
           {loading ? t('research.searchRunning') : t('research.searchRun')}
         </Button>
       </div>
+
+      {/* #1014：搜索历史回访 Dialog。入口只在能力位 true 时渲染；实时
+          Search 结果区渲染不变（三可区分由回访详情承担）。 */}
+      <SearchHistoryDialog
+        open={searchHistoryOpen}
+        onOpenChange={setSearchHistoryOpen}
+        projectId={projectId}
+        sources={sources}
+        onCitationJump={onCitationJump}
+      />
     </div>
   )
 }

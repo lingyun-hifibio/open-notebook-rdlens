@@ -113,6 +113,8 @@ vi.mock('@/lib/research/api', () => ({
   getExternalEgressConsent: vi.fn(async () => validConsentResponse),
   acknowledgeExternalEgressConsent: vi.fn(async () => validConsentResponse),
   searchV1: vi.fn(),
+  listSearchRecords: vi.fn(),
+  getSearchRecord: vi.fn(),
   newIdempotencyKey: vi.fn(() => `ui-${++keySeq}`),
 }))
 
@@ -122,6 +124,7 @@ import {
   getExecutionPreferences,
   getExternalEgressConsent,
   listModels,
+  listSearchRecords,
   newIdempotencyKey,
   patchExecutionPreferences,
   saveResultFromResult,
@@ -135,7 +138,14 @@ let keySeq = 0
  *  all 模式；默认 selected ['d1']（保持既有用例语义）。 */
 function renderPanel(
   selection: string[] | null = ['d1'],
-  callbacks: { onContinueResearch?: (text: string) => void } = {},
+  callbacks: {
+    onContinueResearch?: (text: string) => void
+    /**
+     * #1014：搜索历史列表/详情读面要求工作台身份已确认（owner 带 viewer）；
+     * 既有用例不传（沿用无身份渲染），入口用例传 'u1' 以走判别键路径。
+     */
+    userId?: string
+  } = {},
 ) {
   // RWV2-11（K7/W6）：面板直接消费共享 Provider——选择经 localStorage 预置
   // （仿 scope.test.tsx 模式）。
@@ -153,7 +163,7 @@ function renderPanel(
   })
   return render(
     <QueryClientProvider client={queryClient}>
-      <ResearchWorkspaceProvider projectId="p1" role="owner">
+      <ResearchWorkspaceProvider projectId="p1" role="owner" userId={callbacks.userId}>
         <ResearchScopeProvider userId="u1" projectId="p1">
           <ResearchGlobalModelProvider>
             <ResearchSearchPanel
@@ -207,6 +217,13 @@ describe('ResearchSearchPanel（GMOD §6.3 全局模型接线）', () => {
       validConsentResponse,
     )
     vi.mocked(newIdempotencyKey).mockImplementation(() => `ui-${++keySeq}`)
+    // #1014：搜索历史能力位默认关闭（models 响应无 capabilities）——既有
+    // 用例断言实时 Search 行为不变；入口用例单独打开能力位。
+    vi.mocked(listSearchRecords).mockResolvedValue({
+      schema_version: 'd1f-search-record-list-v1',
+      items: [],
+      next_cursor: null,
+    })
   })
 
   it('面板内不再有模型选择器（页面内唯一入口在 Research 顶层）', async () => {
@@ -742,5 +759,87 @@ describe('ResearchSearchPanel RWV2-23 result actions', () => {
     fireEvent.change(screen.getByTestId('search-input'), { target: { value: 'edited question' } })
     fireEvent.click(screen.getByTestId('continue-research'))
     expect(onContinue).toHaveBeenCalledWith('original question')
+  })
+})
+
+describe('ResearchSearchPanel #1014：搜索历史入口（能力位 fail-closed）', () => {
+  // 本 describe 独立于上方既有 describe：重置 mock 并重建默认实现。
+  beforeEach(() => {
+    localStorage.clear()
+    vi.resetAllMocks()
+    keySeq = 0
+    vi.mocked(listModels).mockResolvedValue({ models: MODELS })
+    vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
+    vi.mocked(newIdempotencyKey).mockImplementation(() => `ui-${++keySeq}`)
+    vi.mocked(listSearchRecords).mockResolvedValue({
+      schema_version: 'd1f-search-record-list-v1',
+      items: [],
+      next_cursor: null,
+    })
+  })
+
+  it('capabilities.search_history 严格 true 时显示入口；点击打开列表 Dialog', async () => {
+    vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
+    vi.mocked(listModels).mockResolvedValue({
+      models: MODELS,
+      capabilities: { search_history: true },
+    })
+    renderPanel(['d1'], { userId: 'u1' })
+    const openButton = await screen.findByTestId('search-history-open')
+    expect(openButton.textContent).toBe('research.searchHistory.open')
+    fireEvent.click(openButton)
+    await waitFor(() =>
+      expect(screen.getByTestId('search-history-empty')).toBeTruthy(),
+    )
+    expect(listSearchRecords).toHaveBeenCalledWith('p1', { limit: 20 })
+    // 实时 Search 结果区未被改动：空态提示仍在
+    expect(screen.getByText('research.searchEmpty')).toBeTruthy()
+  })
+
+  it('能力位缺失/非严格 true 时不显示入口（fail-closed）', async () => {
+    vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
+    vi.mocked(listModels).mockResolvedValue({
+      models: MODELS,
+      capabilities: { search_history: 'true' as unknown as boolean },
+    })
+    renderPanel(['d1'], { userId: 'u1' })
+    await waitFor(() => expect(screen.getByTestId('search-context-selector')).toBeTruthy())
+    await waitFor(() => expect(listModels).toHaveBeenCalled())
+    expect(screen.queryByTestId('search-history-open')).toBeNull()
+  })
+
+  it('能力位键缺失（旧后端）时不显示入口（fail-closed）', async () => {
+    vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
+    vi.mocked(listModels).mockResolvedValue({ models: MODELS })
+    renderPanel(['d1'], { userId: 'u1' })
+    await waitFor(() => expect(screen.getByTestId('search-context-selector')).toBeTruthy())
+    await waitFor(() => expect(listModels).toHaveBeenCalled())
+    expect(screen.queryByTestId('search-history-open')).toBeNull()
+  })
+
+  it('既有实时 Search 派发行为不受入口影响（能力位 true 时仍只走 searchV1）', async () => {
+    vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
+    vi.mocked(listModels).mockResolvedValue({
+      models: MODELS,
+      capabilities: { search_history: true },
+    })
+    vi.mocked(searchV1).mockResolvedValue({
+      kind: 'direct',
+      result: {
+        request_id: 'r-entry',
+        resolved_mode: 'direct_context',
+        evidence: [],
+        citations: [],
+        usage: { input_tokens: 1, output_tokens: 1 },
+        degradation_reason: null,
+        conclusion: 'ok',
+      },
+    })
+    renderPanel(['d1'], { userId: 'u1' })
+    await typeAndWaitReady('what is ORR?')
+    fireEvent.click(runButton())
+    await waitFor(() => expect(screen.getByTestId('search-result')).toBeTruthy())
+    expect(searchV1).toHaveBeenCalledTimes(1)
+    expect(listSearchRecords).not.toHaveBeenCalled()
   })
 })
