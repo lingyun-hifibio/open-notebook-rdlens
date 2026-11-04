@@ -976,6 +976,20 @@ export const zhTW = {
     viewDocs: "查看文件",
   },
   research: {
+    selection: {
+      discuss: '討論選段',
+      chip: '{{source}} · 第{{page}}頁 · {{start}}–{{end}} · {{quote}}',
+      summary: '討論選段：{{quote}}（第{{page}}頁，{{start}}–{{end}}）',
+      remove: '移除選段',
+      restricted: '摘錄不可存取',
+      positionUnavailable: '選段位置已失效',
+      unavailable: '選段不可用',
+      captureFailed: '無法在來源中定位所選文字。請縮短選段後重試。',
+    },
+    source: {
+      returnToAnswer: '返回原回答',
+      returnUnavailable: '無法定位原回答，目標可能不在已載入的歷史中。',
+    },
     session: {
       newConversation: '新對話',
       restrictedConversation: '受限會話',
@@ -989,7 +1003,6 @@ export const zhTW = {
       creating: '正在建立對話…',
       draft: '草稿',
       notFound: '該會話已不存在',
-      contentNotReady: '會話內容尚未接線。會話導覽啟用期間舊聊天面板已停用。',
       untitled: '未命名會話',
       shortId: '會話 {{id}}',
       visibility: {
@@ -1070,6 +1083,16 @@ export const zhTW = {
       invalidDraft: 'Draft contains characters that cannot be sent — remove or replace them before sending',
     },
     errors: {
+      selectionContractNotEnabled: '目前工作區不支援選段上下文。請更新用戶端或關閉此能力。',
+      selectionSubmissionRequired: '選段必須隨工作階段提交一起送出。請使用工作階段聊天輸入框。',
+      selectionInvalid: '此選段對目前來源無效，請重新選擇。',
+      selectionPositionUnavailable: '選段位置與來源不再相符，請重新選擇。',
+      selectionVersionUnavailable: '所選來源版本已無法使用，請重新選擇。',
+      selectionSourceUnavailable: '所選來源在目前專案中無法使用，請重新選擇。',
+      sourceAccessRestricted: '來源已無法存取（可能已撤權）。',
+      sourceRefMismatch: '來源版本已變更，請重新整理後重試。',
+      sessionStoreUnavailable: '暫時無法驗證權限，請稍後重試。',
+      selectionUnavailable: '選段能力已無法使用。請移除選段後繼續。',
       acceptanceRetryExhausted: 'Your submission is pending confirmation — its result could not be verified automatically. Retry with the original attempt or review it before sending again.',
       generic: "Something went wrong. Check the message below and try again, or contact an administrator.",
       consentRequired: "External model egress consent is required before sending. Acknowledge it to continue.",

@@ -976,6 +976,20 @@ export const plPL = {
     viewDocs: "Zobacz dokumentację",
   },
   research: {
+    selection: {
+      discuss: 'Omów zaznaczenie',
+      chip: '{{source}} · s. {{page}} · {{start}}–{{end}} · {{quote}}',
+      summary: 'Omów: {{quote}} (strona {{page}}, {{start}}–{{end}})',
+      remove: 'Usuń zaznaczenie',
+      restricted: 'Fragment niedostępny',
+      positionUnavailable: 'Pozycja zaznaczenia nie jest już ważna',
+      unavailable: 'Zaznaczenie niedostępne',
+      captureFailed: 'Nie udało się odnaleźć zaznaczonego tekstu w źródle. Zaznacz krótszy fragment.',
+    },
+    source: {
+      returnToAnswer: 'Wróć do odpowiedzi',
+      returnUnavailable: 'Nie udało się odnaleźć pierwotnej odpowiedzi. Może być poza wczytaną historią.',
+    },
     session: {
       newConversation: 'New conversation',
       restrictedConversation: 'Restricted conversation',
@@ -989,7 +1003,6 @@ export const plPL = {
       creating: 'Starting a conversation…',
       draft: 'Draft',
       notFound: 'This conversation no longer exists',
-      contentNotReady: 'Session content is not wired yet (PR-5a). Legacy chat panels are disabled while session navigation is active.',
       untitled: 'Untitled session',
       shortId: 'Session {{id}}',
       visibility: {
@@ -1070,6 +1083,16 @@ export const plPL = {
       invalidDraft: 'Draft contains characters that cannot be sent — remove or replace them before sending',
     },
     errors: {
+      selectionContractNotEnabled: 'To środowisko nie obsługuje kontekstu zaznaczenia. Zaktualizuj klienta lub wyłącz tę funkcję.',
+      selectionSubmissionRequired: 'Zaznaczenia należy wysyłać wraz z przesłaniem sesji. Użyj pola czatu sesji.',
+      selectionInvalid: 'Zaznaczenie jest nieprawidłowe dla tego źródła. Zaznacz tekst ponownie.',
+      selectionPositionUnavailable: 'Zaznaczona pozycja nie odpowiada już źródłu. Zaznacz tekst ponownie.',
+      selectionVersionUnavailable: 'Wybrana wersja źródła nie jest już dostępna. Zaznacz tekst ponownie.',
+      selectionSourceUnavailable: 'Wybrane źródło nie jest dostępne w tym projekcie. Zaznacz tekst ponownie.',
+      sourceAccessRestricted: 'Dostęp do tego źródła nie jest już możliwy (dostęp mógł zostać odebrany).',
+      sourceRefMismatch: 'Wersja źródła uległa zmianie. Odśwież źródło i spróbuj ponownie.',
+      sessionStoreUnavailable: 'Nie udało się teraz zweryfikować dostępu. Spróbuj ponownie za chwilę.',
+      selectionUnavailable: 'Funkcja zaznaczania nie jest już dostępna. Usuń zaznaczenie, aby kontynuować.',
       acceptanceRetryExhausted: 'Your submission is pending confirmation — its result could not be verified automatically. Retry with the original attempt or review it before sending again.',
       generic: "Something went wrong. Check the message below and try again, or contact an administrator.",
       consentRequired: "External model egress consent is required before sending. Acknowledge it to continue.",

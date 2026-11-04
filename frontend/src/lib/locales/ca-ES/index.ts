@@ -976,6 +976,20 @@ export const caES = {
     viewDocs: "Visualitza la documentació",
   },
   research: {
+    selection: {
+      discuss: 'Comenta la selecció',
+      chip: '{{source}} · pàg. {{page}} · {{start}}–{{end}} · {{quote}}',
+      summary: 'Comenta: {{quote}} (pàgina {{page}}, {{start}}–{{end}})',
+      remove: 'Treu la selecció',
+      restricted: 'Extracte no accessible',
+      positionUnavailable: 'La posició de la selecció ja no és vàlida',
+      unavailable: 'Selecció no disponible',
+      captureFailed: 'No s’ha pogut localitzar el text seleccionat a la font. Selecciona un fragment més curt.',
+    },
+    source: {
+      returnToAnswer: 'Torna a la resposta',
+      returnUnavailable: 'No s’ha pogut localitzar la resposta original. Pot ser fora de l’historial carregat.',
+    },
     session: {
       newConversation: 'New conversation',
       restrictedConversation: 'Restricted conversation',
@@ -989,7 +1003,6 @@ export const caES = {
       creating: 'Starting a conversation…',
       draft: 'Draft',
       notFound: 'This conversation no longer exists',
-      contentNotReady: 'Session content is not wired yet (PR-5a). Legacy chat panels are disabled while session navigation is active.',
       untitled: 'Untitled session',
       shortId: 'Session {{id}}',
       visibility: {
@@ -1070,6 +1083,16 @@ export const caES = {
       invalidDraft: 'Draft contains characters that cannot be sent — remove or replace them before sending',
     },
     errors: {
+      selectionContractNotEnabled: 'Aquest espai de treball no admet context de selecció. Actualitza el client o desactiva la funció.',
+      selectionSubmissionRequired: 'Les seleccions s’han d’enviar amb un enviament de sessió. Utilitza el camp del xat de sessió.',
+      selectionInvalid: 'La selecció no és vàlida per a aquesta font. Torna a seleccionar el text.',
+      selectionPositionUnavailable: 'La posició seleccionada ja no coincideix amb la font. Torna a seleccionar el text.',
+      selectionVersionUnavailable: 'La versió de la font seleccionada ja no està disponible. Torna a seleccionar el text.',
+      selectionSourceUnavailable: 'La font seleccionada no està disponible en aquest projecte. Torna a seleccionar el text.',
+      sourceAccessRestricted: 'Ja no es pot accedir a aquesta font (l’accés pot haver estat revocat).',
+      sourceRefMismatch: 'La versió de la font ha canviat. Actualitza la font i torna-ho a provar.',
+      sessionStoreUnavailable: 'No s’ha pogut verificar l’accés ara mateix. Torna-ho a provar d’aquí a poc.',
+      selectionUnavailable: 'La funció de selecció ja no està disponible. Treu la selecció per continuar.',
       acceptanceRetryExhausted: 'Your submission is pending confirmation — its result could not be verified automatically. Retry with the original attempt or review it before sending again.',
       generic: "Something went wrong. Check the message below and try again, or contact an administrator.",
       consentRequired: "External model egress consent is required before sending. Acknowledge it to continue.",

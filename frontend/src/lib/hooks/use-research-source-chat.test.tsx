@@ -11,7 +11,12 @@ import {
   openResearchChatStream,
 } from '@/lib/research/api'
 import type { ResearchSessionRef } from '@/lib/research/session-contract'
-import type { ConversationController, SessionRuntime } from '@/lib/research/session-runtime'
+import type {
+  ConversationController,
+  ConversationTransport,
+  SessionRuntime,
+} from '@/lib/research/session-runtime'
+import type { WireSelectionContext } from '@/lib/research/session-contract'
 
 /** #243 §6.4：调用方传入的 confirmed 全局模型快照 */
 const MODEL = 'm-local'
@@ -627,10 +632,13 @@ describe('useResearchSourceChat', () => {
 
     // RDLens #892 审查 F1：冷恢复读**尾部窗口**（order=desc + limit=50），
     // 不再读「第一页」（asc）。
-    expect(vi.mocked(getSourceChatSession)).toHaveBeenCalledWith('proj_1', 'src_1', 'sess_old', {
-      order: 'desc',
-      limit: 50,
-    })
+    // Issue #1013：同一请求新增可选响应头观察（onResponseMeta），不改变请求形状。
+    expect(vi.mocked(getSourceChatSession)).toHaveBeenCalledWith(
+      'proj_1',
+      'src_1',
+      'sess_old',
+      expect.objectContaining({ order: 'desc', limit: 50 }),
+    )
     expect(result.current.activeSessionId).toBe('sess_old')
     expect(result.current.turns).toHaveLength(2)
     const [userTurn, assistantTurn] = result.current.turns
@@ -1025,20 +1033,23 @@ describe('RDLens #892：源会话尾部窗口（desc）', () => {
     await act(async () => {
       await capturedOptions?.transport.loadDetail({ cursor: null, order: 'desc', limit: 50 })
     })
-    expect(getSourceChatSession).toHaveBeenLastCalledWith('proj_1', 'src_1', 'sess_src_1', {
-      order: 'desc',
-      limit: 50,
-    })
+    expect(getSourceChatSession).toHaveBeenLastCalledWith(
+      'proj_1',
+      'src_1',
+      'sess_src_1',
+      expect.objectContaining({ order: 'desc', limit: 50 }),
+    )
 
     // 「更早一页」：此前抛 source_detail_pagination_unsupported → 现在必须透传游标。
     await act(async () => {
       await capturedOptions?.transport.loadDetail({ cursor: 'c1', order: 'desc', limit: 50 })
     })
-    expect(getSourceChatSession).toHaveBeenLastCalledWith('proj_1', 'src_1', 'sess_src_1', {
-      cursor: 'c1',
-      order: 'desc',
-      limit: 50,
-    })
+    expect(getSourceChatSession).toHaveBeenLastCalledWith(
+      'proj_1',
+      'src_1',
+      'sess_src_1',
+      expect.objectContaining({ cursor: 'c1', order: 'desc', limit: 50 }),
+    )
   })
 })
 
@@ -1424,5 +1435,111 @@ describe('RDLens #892 审查修复：source 会话详情读取', () => {
     })
     expect(result.current.turns).toHaveLength(1)
     expect(result.current.turns[0]?.content).toBe('最新答案')
+  })
+})
+
+
+// ---------------------------------------------------------------------------
+// Issue #1013（D1-E-2）F05：source headed 提交的选段接线（extra=forbid 形状）
+// ---------------------------------------------------------------------------
+
+const SOURCE_SELECTION: WireSelectionContext = {
+  sourceId: 'src_1',
+  documentId: 'doc_1',
+  documentVersion: 'v3',
+  chunkId: 'chunk_1',
+  chunkOrdinal: 2,
+  pageIdx: 0,
+  startOffset: 6,
+  endOffset: 11,
+  quote: 'world',
+  quoteHash: '486ea46224d1bb4fb680f34f7c9ad96a8f24ec88be73ea8e5a6c65260e9cb8a7',
+  contentHash: 'a'.repeat(64),
+}
+
+describe('Issue #1013 F05：source headed body 携带 selection_context', () => {
+  function renderSourceTransport(getSelectionContext?: () => WireSelectionContext | null) {
+    let captured: ConversationTransport | null = null
+    const controller = {
+      detach: vi.fn(),
+      hasActiveTurn: vi.fn(() => false),
+      load: vi.fn(async () => ({ status: 'blocked' as const })),
+      getSnapshot: vi.fn(() => ({ turn: null, authGeneration: 1 })),
+    } as unknown as ConversationController
+    const runtime = {
+      conversation: (_ref: unknown, options: { transport: ConversationTransport }) => {
+        captured = options.transport
+        return controller
+      },
+      releaseConversation: vi.fn(),
+      getSnapshot: () => ({ authGeneration: 1 }),
+      subscribe: () => () => {},
+    } as unknown as SessionRuntime
+    const ref: ResearchSessionRef = {
+      domain: 'research',
+      kind: 'source',
+      projectId: 'proj_1',
+      sessionId: 'sess_s',
+      sourceId: 'src_1',
+    }
+    const hooks = renderHook(
+      () =>
+        useResearchSourceChat({
+          projectId: 'proj_1',
+          sourceId: 'src_1',
+          session: { runtime, ref, getSelectionContext },
+        }),
+      { wrapper: makeHookWrapper() },
+    )
+    return { hooks, transport: () => captured, ref }
+  }
+
+  function openStreamOn(transport: ConversationTransport, ref: ResearchSessionRef) {
+    const streams = openCapture()
+    act(() => {
+      transport.openStream({
+        sessionRef: ref,
+        editorRevision: 1,
+        draftToken: 'draft_tok',
+        editorIntentHash: 'e'.repeat(64),
+        idempotencyKey: `s1_${'a'.repeat(64)}`,
+        lastEventId: 0,
+        query: 'question',
+        modelId: MODEL,
+        sourceIds: ['src_1'],
+        noteIds: [],
+        scope: null,
+        onEvent: vi.fn(),
+        onEnd: vi.fn(),
+        onHttpError: vi.fn(),
+        onNetworkError: vi.fn(),
+        onProtocolError: vi.fn(),
+      })
+    })
+    return streams
+  }
+
+  it('有选段：source body 只多一个 snake_case selection_context，不含 source_ids/note_ids', () => {
+    const { transport, ref } = renderSourceTransport(() => SOURCE_SELECTION)
+    const streams = openStreamOn(transport() as ConversationTransport, ref)
+    const request = streams[0].opts.request as unknown as Record<string, unknown>
+    expect(request.selection_context).toMatchObject({
+      source_id: 'src_1',
+      document_id: 'doc_1',
+      chunk_ordinal: 2,
+      start_offset: 6,
+      end_offset: 11,
+      quote: 'world',
+    })
+    expect(request.source_ids).toBeUndefined()
+    expect(request.note_ids).toBeUndefined()
+    expect(request.source_scope).toBeUndefined()
+  })
+
+  it('无选段：body 不含 selection_context（旧无头/无选段字节不变）', () => {
+    const { transport, ref } = renderSourceTransport(() => null)
+    const streams = openStreamOn(transport() as ConversationTransport, ref)
+    const request = streams[0].opts.request as unknown as Record<string, unknown>
+    expect(Object.prototype.hasOwnProperty.call(request, 'selection_context')).toBe(false)
   })
 })

@@ -11,6 +11,8 @@ import type {
   WireChatAnchor,
   WireEditorBaseScope,
   WireReaderAnchor,
+  WireSelectionContext,
+  WireSelectionContextBody,
 } from './session-contract'
 
 /** SSE 事件类型（契约 §9.1） */
@@ -51,6 +53,21 @@ export interface ResearchSourceRef {
  * number、page_idx 必有）与持久化 17 字段快照（citation_id: string、
  * page_idx 可空）两种形态，供轻量 Citation 列表统一渲染。
  */
+/**
+ * Issue #1013（D1-E-2）§2.11：页级 pending 选段（来源详情「讨论选段」→
+ * 当前活动会话 composer chip）。`selection` 是 11 键请求对象；chip 展示
+ * 元信息随对象携带（来源名/页码/序号），不参与请求。
+ */
+export interface ResearchPendingSelection {
+  readonly selection: WireSelectionContext
+  readonly sourceId: string
+  readonly sourceTitle: string | null
+  readonly pageIdx: number | null
+  readonly chunkOrdinal: number
+  /** 选段归属 surface：当前活跃会话（global 或 source）。 */
+  readonly target: 'global' | 'source'
+}
+
 export interface ResearchCitationDisplayItem {
   citation_id: number | string
   claim: string
@@ -58,6 +75,14 @@ export interface ResearchCitationDisplayItem {
   /** 0-based；null 时只展示声明不展示页码 */
   page_idx: number | null
   confidence?: string | number | null
+  /**
+   * Issue #1013（D1-E-2）§2.10：citation 身份（return target 匹配用）。
+   * SSE 9 字段与持久化 17 字段快照都携带；展示最小结构此前丢弃，恢复路径
+   * 需要它把「引用 → durable message」反查保持确定性，故加性保留。
+   */
+  doc_version?: string | null
+  chunk_id?: string | null
+  doc_display_name?: string | null
 }
 
 /** 单个 SSE 事件载荷（契约 §9.1；字段按 type 可选） */
@@ -204,6 +229,12 @@ export interface ResearchCapabilities {
   coverage_all_selected?: unknown
   /** PR5（B1）：C-05 能力块（加性；缺失/畸形按不可用处理，不降级） */
   c05?: unknown
+  /**
+   * Issue #1013（D1-E-2）§2.2/§2.11：往返/选段能力键（加性；flag on 才出现）。
+   * 严格读取见 `c05-contract.readD1eCapability`：缺失/畸形/false → 全部选段
+   * UI 不可用（fail-closed），既有 UI 保持现状。
+   */
+  'd1e_roundtrip'?: unknown
 }
 
 /** GET models 响应（#358：能力与模型同一次返回，避免两次请求间竞态） */
@@ -291,6 +322,12 @@ export interface ResearchChatRequest {
     source_ids: string[]
     single_source_id: string | null
   }
+  /**
+   * Issue #1013（D1-E-2）§2.4：本轮显式选段上下文（11 键 wire 形状）。
+   * 仅在 headed 会话提交（`protocol === 'research-session-v1'`）且 d1e 能力
+   * 可用时携带；不是检索范围，不得并入 source_ids/source_scope/note_ids。
+   */
+  selection_context?: WireSelectionContextBody | null
 }
 
 /** COV-08 §12.1：调用方显式选择相关证据回答或覆盖全部所选来源 */
@@ -643,6 +680,12 @@ export type ResearchDraftGateReason =
   | 'invalid_text'
   | 'scope_invalid'
   | 'turn_active'
+  /**
+   * Issue #1013（D1-E-2）§2.11：composer 持有选段 chip 但选段能力已不可用
+   * （capability 翻转/失效）。capability off 时不显示选段 UI，因此该原因只在
+   * 能力翻转的边界出现；不改变其它既有 gate 顺序。
+   */
+  | 'selection_unavailable'
 
 /** 发送门禁结果；`allowed=false` 时 `reason` 必须非空并可映射文案。 */
 export interface ResearchDraftGate {

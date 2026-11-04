@@ -9,12 +9,15 @@ import { AdminReadOnlyBanner } from './AdminReadOnlyBanner'
 import { ResearchScopeEditor } from './ResearchScopeEditor'
 import { SourceListPanel } from './SourceListPanel'
 import { SourceDetailPanel } from './SourceDetailPanel'
+import type { SourceSelectionDiscussPayload } from './SourceDetailPanel'
+export type { SourceSelectionDiscussPayload } from './SourceDetailPanel'
 import { NotesPanel } from './NotesPanel'
 import { InsightsPanel } from './InsightsPanel'
 import { TransformationRunsPanel } from './TransformationRunsPanel'
 import { resolveCitationSource } from './citation-utils'
 import { useResearchSources } from '@/lib/hooks/use-research'
 import type { ResearchCitation } from '@/lib/types/research'
+import type { WireSelectionProjection } from '@/lib/research/session-contract'
 
 /** 左栏数据/插槽子视图：Materials(Sources|Notes) + Results(Insights|Runs)。 */
 export type ResearchWorkbenchPane =
@@ -61,6 +64,15 @@ export interface ResearchWorkbenchProps {
   onOpenResearchChatDraft?: (text: string) => void
   /** RWV2-23：pane reveal 请求（根级 seq 递增；pane 与高亮目标） */
   paneReveal?: { pane: 'notes' | 'insights'; artifactId: string; seq: number } | null
+  /** Issue #1013 §2.11：来源详情选段「讨论选段」→ 页级 pending chip。 */
+  onDiscussSelection?: (payload: SourceSelectionDiscussPayload) => void
+  /** Issue #1013 §2.10：user turn 选段 chip 回跳高亮（含 visibility）。 */
+  highlightSelection?: WireSelectionProjection | null
+  highlightSelectionRequestId?: number
+  /** Issue #1013 §2.10：「返回原回答」入口可用性/点击。 */
+  returnTargetAvailable?: boolean
+  returnUnavailable?: boolean
+  onReturnToAnswer?: () => void
 }
 
 const MATERIALS_ITEMS: readonly { pane: 'sources' | 'notes'; labelKey: string }[] = [
@@ -85,6 +97,12 @@ export function ResearchWorkbench({
   onRevealSavedArtifact,
   onOpenResearchChatDraft,
   paneReveal,
+  onDiscussSelection,
+  highlightSelection,
+  highlightSelectionRequestId,
+  returnTargetAvailable,
+  returnUnavailable,
+  onReturnToAnswer,
 }: ResearchWorkbenchProps) {
   const { t } = useTranslation()
   const { projectId, isAdminReadonly } = useResearchWorkspace()
@@ -131,6 +149,12 @@ export function ResearchWorkbench({
             sourceId={focusedSourceId}
             highlightPageIdx={highlightPageIdx}
             focusRequestId={highlightPageIdx === null ? undefined : highlightRequestId}
+            highlightSelection={highlightSelection ?? null}
+            highlightSelectionRequestId={highlightSelectionRequestId}
+            onDiscussSelection={onDiscussSelection}
+            returnTargetAvailable={returnTargetAvailable}
+            returnUnavailable={returnUnavailable}
+            onReturnToAnswer={onReturnToAnswer}
           />
         </div>
       </div>

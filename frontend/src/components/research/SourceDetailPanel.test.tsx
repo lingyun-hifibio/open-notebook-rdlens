@@ -15,6 +15,8 @@ vi.mock('@/lib/research/api', () => ({
   saveResultFromResult: vi.fn(),
   listSources: vi.fn(),
   getSource: vi.fn(),
+  // Issue #1013 F04：选段能力来自 GET /models（与 useResearchC05 同 query key）。
+  listModels: vi.fn(),
 }))
 
 vi.mock('@/lib/hooks/use-translation', () => ({
@@ -188,6 +190,7 @@ describe('SourceDetailPanel', () => {
 })
 
 describe('SourceDetailPanel · PR-4 来源锚点接线（N3/F3）', () => {
+  const CHUNK_HASH = 'a'.repeat(64)
   const sourcePayload = {
     source_id: 'src_1',
     document_id: 'doc_1',
@@ -198,12 +201,22 @@ describe('SourceDetailPanel · PR-4 来源锚点接线（N3/F3）', () => {
     last_error: null,
     title: 'Paper A',
     markdown_chunks: [
-      { chunk_id: 'chunk_1', page_idx: 1, markdown: '第一章内容' },
+      {
+        chunk_id: 'chunk_1',
+        chunk_ordinal: 1,
+        content_hash: CHUNK_HASH,
+        page_idx: 1,
+        markdown: '第一章内容',
+      },
     ],
   }
 
   beforeEach(() => {
     vi.useRealTimers()
+    vi.mocked(researchApi.listModels).mockResolvedValue({
+      models: [],
+      capabilities: {},
+    } as never)
     sourceAnchorMocks.setReaderAnchor.mockClear()
     sourceAnchorMocks.flush.mockClear()
     sourceAnchorMocks.useRuntimeOptional.mockReturnValue(null)
@@ -322,16 +335,290 @@ describe('SourceDetailPanel · PR-4 来源锚点接线（N3/F3）', () => {
       vi.advanceTimersByTime(1000)
     })
     expect(sourceAnchorMocks.setReaderAnchor).toHaveBeenCalledTimes(1)
+    // Issue #1013 §2.10：锚点 content_hash 必须取逐 chunk hash（不是来源级 'h'）。
     expect(sourceAnchorMocks.setReaderAnchor).toHaveBeenCalledWith(
       expect.objectContaining({
         sourceId: 'src_1',
         documentId: 'doc_1',
         documentVersion: 'v3',
-        contentHash: 'h',
+        chunkOrdinal: 1,
+        contentHash: CHUNK_HASH,
       }),
     )
     unmount()
     vi.useRealTimers()
     expect(sourceAnchorMocks.flush).toHaveBeenCalledWith('position')
+  })
+})
+
+
+// ---------------------------------------------------------------------------
+// Issue #1013（D1-E-2）F03/F04：选段浮层、能力 fail-closed、逐 chunk 锚点、
+// 返回原回答入口、选段回跳高亮
+// ---------------------------------------------------------------------------
+
+const D1E_CAPABILITY = {
+  'd1e_roundtrip': { contract: 'd1e-roundtrip-v1', enabled: true },
+}
+const PER_CHUNK_HASH = 'b'.repeat(64)
+const SELECTION_SOURCE = {
+  source_id: 'src_1',
+  document_id: 'doc_1',
+  document_version: 'v3',
+  status: 'ready' as const,
+  content_hash: 'source-level-hash',
+  synced_at: null,
+  last_error: null,
+  title: 'Paper A',
+  markdown_chunks: [
+    {
+      chunk_id: 'chunk_sel',
+      chunk_ordinal: 3,
+      content_hash: PER_CHUNK_HASH,
+      page_idx: 2,
+      markdown: 'alpha beta gamma',
+    },
+  ],
+}
+
+function textNodeUnder(node: Node): Text | null {
+  if (node.nodeType === Node.TEXT_NODE) return node as Text
+  for (const child of Array.from(node.childNodes)) {
+    const found = textNodeUnder(child)
+    if (found !== null) return found
+  }
+  return null
+}
+
+function selectRange(container: HTMLElement, start: number, end: number): void {
+  // chunk 内还有页码标签文本节点：选区必须落在正文 markdown 容器里。
+  const markdown = container.querySelector('[data-chunk-id] [data-testid="markdown"]')
+  const node = markdown === null ? null : textNodeUnder(markdown)
+  if (node === null) throw new Error('no text node')
+  const range = document.createRange()
+  range.setStart(node, start)
+  range.setEnd(node, end)
+  const selection = window.getSelection()
+  selection?.removeAllRanges()
+  selection?.addRange(range)
+  act(() => {
+    document.dispatchEvent(new MouseEvent('mouseup'))
+  })
+}
+
+function selectionPanelWrapper() {
+  const { wrapper } = makeWrapper()
+  return { wrapper }
+}
+
+describe('SourceDetailPanel · Issue #1013 F04 能力 fail-closed', () => {
+  beforeEach(() => {
+    sourceAnchorMocks.useRuntimeOptional.mockReturnValue(null)
+    sourceAnchorMocks.useEditor.mockReturnValue(sourceAnchorMocks.editor as never)
+    vi.mocked(researchApi.getSource).mockResolvedValue(SELECTION_SOURCE as never)
+  })
+
+  it('capability 缺失/畸形/false → 选段 UI 不出现（且不产生 gate/锚点副作用）', async () => {
+    for (const capabilities of [
+      {},
+      { 'd1e_roundtrip': { contract: 'c05-v1', enabled: true } },
+      { 'd1e_roundtrip': { contract: 'd1e-roundtrip-v1', enabled: false } },
+      { 'd1e_roundtrip': { contract: 'd1e-roundtrip-v1', enabled: 'true' } },
+    ]) {
+      vi.mocked(researchApi.listModels).mockResolvedValue({ models: [], capabilities } as never)
+      const { wrapper } = selectionPanelWrapper()
+      const onDiscuss = vi.fn()
+      const view = render(
+        <SourceDetailPanel sourceId="src_1" onDiscussSelection={onDiscuss} />,
+        { wrapper },
+      )
+      await screen.findByRole('heading', { name: 'Paper A' })
+      await waitFor(() => expect(researchApi.listModels).toHaveBeenCalled())
+      await act(async () => {
+        await Promise.resolve()
+      })
+      selectRange(view.container, 6, 10)
+      await waitFor(() => {
+        expect(screen.queryByTestId('source-selection-discuss')).toBeNull()
+      })
+      expect(onDiscuss).not.toHaveBeenCalled()
+      view.unmount()
+      window.getSelection()?.removeAllRanges()
+    }
+  })
+
+  it('capability=true → 选择文本出现「讨论选段」；点击回调携带逐 chunk 身份的 11 键选段', async () => {
+    vi.mocked(researchApi.listModels).mockResolvedValue({
+      models: [],
+      capabilities: D1E_CAPABILITY,
+    } as never)
+    const { wrapper } = selectionPanelWrapper()
+    const onDiscuss = vi.fn()
+    const view = render(
+      <SourceDetailPanel sourceId="src_1" onDiscussSelection={onDiscuss} />,
+      { wrapper },
+    )
+    await screen.findByRole('heading', { name: 'Paper A' })
+    await waitFor(() => expect(researchApi.listModels).toHaveBeenCalled())
+    // 能力查询解析后 handler 才安装：在 waitFor 内重复派发选区事件。
+    await waitFor(() => {
+      selectRange(view.container, 6, 10) // "beta"
+      expect(screen.queryByTestId('source-selection-discuss')).not.toBeNull()
+    })
+    const action = screen.getByTestId('source-selection-discuss')
+    fireEvent.click(action)
+    expect(onDiscuss).toHaveBeenCalledTimes(1)
+    expect(onDiscuss.mock.calls[0][0]).toMatchObject({
+      sourceId: 'src_1',
+      sourceTitle: 'Paper A',
+      pageIdx: 2,
+      chunkOrdinal: 3,
+      selection: {
+        sourceId: 'src_1',
+        documentId: 'doc_1',
+        documentVersion: 'v3',
+        chunkId: 'chunk_sel',
+        chunkOrdinal: 3,
+        pageIdx: 2,
+        startOffset: 6,
+        endOffset: 10,
+        quote: 'beta',
+        contentHash: PER_CHUNK_HASH,
+      },
+    })
+    expect(onDiscuss.mock.calls[0][0].selection.quoteHash).toMatch(/^[a-f0-9]{64}$/)
+  })
+
+  it('响应缺逐 chunk content_hash → 不产生选段（capture failed 提示，不造伪身份）', async () => {
+    vi.mocked(researchApi.listModels).mockResolvedValue({
+      models: [],
+      capabilities: D1E_CAPABILITY,
+    } as never)
+    vi.mocked(researchApi.getSource).mockResolvedValue({
+      ...SELECTION_SOURCE,
+      markdown_chunks: [
+        { chunk_id: 'chunk_sel', chunk_ordinal: 3, page_idx: 2, markdown: 'alpha beta gamma' },
+      ],
+    } as never)
+    const { wrapper } = selectionPanelWrapper()
+    const onDiscuss = vi.fn()
+    const view = render(
+      <SourceDetailPanel sourceId="src_1" onDiscussSelection={onDiscuss} />,
+      { wrapper },
+    )
+    await screen.findByRole('heading', { name: 'Paper A' })
+    await waitFor(() => expect(researchApi.listModels).toHaveBeenCalled())
+    await waitFor(() => {
+      selectRange(view.container, 6, 10)
+      expect(screen.queryByTestId('source-selection-capture-failed')).not.toBeNull()
+    })
+    expect(screen.queryByTestId('source-selection-discuss')).toBeNull()
+    expect(onDiscuss).not.toHaveBeenCalled()
+  })
+})
+
+describe('SourceDetailPanel · Issue #1013 返回原回答 / 选段高亮 / 撤权状态', () => {
+  beforeEach(() => {
+    sourceAnchorMocks.useRuntimeOptional.mockReturnValue(null)
+    sourceAnchorMocks.useEditor.mockReturnValue(sourceAnchorMocks.editor as never)
+    vi.mocked(researchApi.getSource).mockResolvedValue(SELECTION_SOURCE as never)
+    vi.mocked(researchApi.listModels).mockResolvedValue({ models: [], capabilities: {} } as never)
+  })
+
+  it('returnTargetAvailable → 头部出现「返回原回答」，点击回调切换到目标 message', async () => {
+    const { wrapper } = selectionPanelWrapper()
+    const onReturn = vi.fn()
+    render(
+      <SourceDetailPanel
+        sourceId="src_1"
+        returnTargetAvailable
+        onReturnToAnswer={onReturn}
+      />,
+      { wrapper },
+    )
+    await screen.findByRole('heading', { name: 'Paper A' })
+    const button = await screen.findByTestId('source-return-to-answer')
+    fireEvent.click(button)
+    expect(onReturn).toHaveBeenCalledTimes(1)
+  })
+
+  it('returnUnavailable → 显示 position_unavailable 文案（不跳最新）', async () => {
+    const { wrapper } = selectionPanelWrapper()
+    render(<SourceDetailPanel sourceId="src_1" returnUnavailable />, { wrapper })
+    await screen.findByRole('heading', { name: 'Paper A' })
+    expect(screen.getByTestId('source-return-unavailable')).toBeInTheDocument()
+  })
+
+  it('highlightSelection（visible）→ 命中 chunk 高亮（data-testid=selection-highlight）', async () => {
+    const { wrapper } = selectionPanelWrapper()
+    render(
+      <SourceDetailPanel
+        sourceId="src_1"
+        highlightSelection={{
+          sourceId: 'src_1',
+          documentId: 'doc_1',
+          documentVersion: 'v3',
+          chunkId: 'chunk_sel',
+          chunkOrdinal: 3,
+          pageIdx: 2,
+          startOffset: 6,
+          endOffset: 10,
+          quote: 'beta',
+          quoteHash: 'c'.repeat(64),
+          contentHash: PER_CHUNK_HASH,
+          visibility: 'visible',
+          reasonCode: null,
+        }}
+      />,
+      { wrapper },
+    )
+    await screen.findByRole('heading', { name: 'Paper A' })
+    await screen.findByTestId('selection-highlight')
+  })
+
+  it('highlightSelection（逐 chunk hash 不符）→ position_unavailable 文案，不伪造高亮', async () => {
+    const { wrapper } = selectionPanelWrapper()
+    render(
+      <SourceDetailPanel
+        sourceId="src_1"
+        highlightSelection={{
+          sourceId: 'src_1',
+          documentId: 'doc_1',
+          documentVersion: 'v3',
+          chunkId: 'chunk_sel',
+          chunkOrdinal: 3,
+          pageIdx: 2,
+          startOffset: 6,
+          endOffset: 10,
+          quote: 'beta',
+          quoteHash: 'c'.repeat(64),
+          contentHash: 'd'.repeat(64),
+          visibility: 'visible',
+          reasonCode: null,
+        }}
+      />,
+      { wrapper },
+    )
+    await screen.findByRole('heading', { name: 'Paper A' })
+    await screen.findByTestId('source-selection-unavailable')
+    expect(screen.queryByTestId('selection-highlight')).toBeNull()
+  })
+
+  it('撤权/版本错误：410/422 稳定码分别显示可解释文案', async () => {
+    vi.mocked(researchApi.getSource).mockRejectedValue({
+      response: { status: 410, data: { detail: { code: 'source_access_restricted', message: 'x' } } },
+    })
+    const { wrapper } = selectionPanelWrapper()
+    const view = render(<SourceDetailPanel sourceId="src_1" />, { wrapper })
+    await screen.findByTestId('source-detail-error')
+    expect(screen.getByTestId('source-detail-error-source_access_restricted')).toBeInTheDocument()
+    view.unmount()
+
+    vi.mocked(researchApi.getSource).mockRejectedValue({
+      response: { status: 422, data: { detail: { code: 'source_ref_mismatch', message: 'x' } } },
+    })
+    render(<SourceDetailPanel sourceId="src_1" />, { wrapper })
+    await screen.findByTestId('source-detail-error')
+    expect(screen.getByTestId('source-detail-error-source_ref_mismatch')).toBeInTheDocument()
   })
 })

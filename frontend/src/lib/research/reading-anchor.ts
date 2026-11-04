@@ -55,22 +55,40 @@ export type ScrollRestoreResult =
   | { readonly ok: true; readonly scrollTop: number; readonly clamped: boolean }
   | { readonly ok: false; readonly reason: AnchorRestoreFailure }
 
-/** 来源正文身份（必须来自授权读取，§5.7.2）。 */
+/**
+ * 来源正文身份（必须来自授权读取，§5.7.2）。
+ *
+ * Issue #1013（D1-E-2）§2.10：这里**只表达来源/文档/版本**身份。reader_anchor
+ * 的 `content_hash` 是**逐 chunk** hash（见 `ReaderChunkGeometry.contentHash`），
+ * 不是来源级 `content_hash`——旧实现把来源级 hash 当锚点 hash，与服务端
+ * `validate_reader_anchor` 的逐 chunk 校验口径不同 → 现有写入必被投影 null。
+ */
 export interface ReaderAnchorIdentity {
   readonly sourceId: string
   readonly documentId: string
   readonly documentVersion: string
-  /** 授权正文响应中的 `content_hash`；为 `null` 时不得造锚点。 */
-  readonly contentHash: string | null
 }
 
-/** 来源正文 chunk 几何与定位信息。 */
+/** 来源正文 chunk 几何与定位信息（含服务端逐 chunk 身份，§2.3）。 */
 export interface ReaderChunkGeometry {
   readonly chunkId: string | null
+  /** 服务端 `markdown_chunks[].chunk_ordinal`（不得用前端数组下标）。 */
   readonly chunkOrdinal: number
+  /**
+   * 服务端 `markdown_chunks[].content_hash`（逐 chunk reader hash）；
+   * 为 `null`/非法时不得造锚点（阅读位置只保留内存）。
+   */
+  readonly contentHash?: string | null
   /** chunk 顶沿（视口坐标）。 */
   readonly top: number
   readonly pageIdx?: number | null
+}
+
+/** 恢复前用于校验的 chunk 身份（同一响应里的逐 chunk 列表）。 */
+export interface ReaderChunkIdentity {
+  readonly chunkId: string | null
+  readonly chunkOrdinal: number
+  readonly contentHash?: string | null
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -312,7 +330,9 @@ export function measureReaderAnchor(input: {
 }): WireReaderAnchor | null {
   const { identity, container, chunk } = input
   if (!isMeasurableContainer(container) || chunk === null) return null
-  if (identity.contentHash === null || identity.contentHash.length === 0) return null
+  // Issue #1013（D1-E-2）§2.10：content_hash 必须取**该 chunk** 的逐 chunk hash
+  // （来源级 hash 与服务端校验口径不同，写进去必被投影 null）。
+  if (typeof chunk.contentHash !== 'string' || chunk.contentHash.length === 0) return null
   if (!isFiniteNumber(chunk.top)) return null
   if (!Number.isInteger(chunk.chunkOrdinal) || chunk.chunkOrdinal < 0) return null
 
@@ -326,26 +346,44 @@ export function measureReaderAnchor(input: {
     format: 'normalized_markdown',
     chunkId: chunk.chunkId,
     chunkOrdinal: chunk.chunkOrdinal,
-    contentHash: identity.contentHash,
+    contentHash: chunk.contentHash,
     pageIdx: chunk.pageIdx ?? null,
     offsetPx,
   }
 }
 
 /**
- * 来源正文锚点是否仍可恢复：source/document/version/content_hash 全部一致，
- * 且当前读取的正文带有可校验 hash（§5.7.2）。
+ * 来源正文锚点是否仍可恢复（Issue #1013 §2.10 修复口径）。
+ *
+ * 逐项校验：来源/文档/版本身份一致 + 当前响应的逐 chunk 列表里能找到该
+ * chunk（`chunk_id` 优先、`chunk_ordinal` 兜底）且 `chunk_ordinal` 与逐
+ * chunk `content_hash` 都与锚点相等。旧实现用来源级 `content_hash` 比较，
+ * 与服务端 `validate_reader_anchor` 的逐 chunk 校验不一致。
  */
 export function readerAnchorMatches(
   identity: ReaderAnchorIdentity,
   saved: WireReaderAnchor | null | undefined,
+  chunks: readonly ReaderChunkIdentity[],
 ): saved is WireReaderAnchor {
   if (saved === null || saved === undefined) return false
-  if (identity.contentHash === null || identity.contentHash.length === 0) return false
+  if (
+    saved.sourceId !== identity.sourceId ||
+    saved.documentId !== identity.documentId ||
+    saved.documentVersion !== identity.documentVersion
+  ) {
+    return false
+  }
+  if (saved.format !== 'normalized_markdown') return false
+  const chunk =
+    chunks.find(
+      (candidate) => saved.chunkId !== null && candidate.chunkId === saved.chunkId,
+    )
+    ?? chunks.find((candidate) => candidate.chunkOrdinal === saved.chunkOrdinal)
+  if (!chunk) return false
+  if (chunk.chunkOrdinal !== saved.chunkOrdinal) return false
   return (
-    saved.sourceId === identity.sourceId &&
-    saved.documentId === identity.documentId &&
-    saved.documentVersion === identity.documentVersion &&
-    saved.contentHash === identity.contentHash
+    typeof chunk.contentHash === 'string' &&
+    chunk.contentHash.length > 0 &&
+    chunk.contentHash === saved.contentHash
   )
 }

@@ -38,12 +38,19 @@ import {
 import {
   sessionKey,
   parseSubmissionResponse,
+  parseMessageSelection,
+  selectionContextToWire,
+  MESSAGE_PROJECTION_HEADER,
+  resolveMessageProjectionVersion,
   SESSION_CONTRACT_HEADER,
   SESSION_CONTRACT_VERSION,
+  type MessageProjectionVersion,
   type ResearchAcceptanceState,
   type ResearchContextReportProjection,
   type ResearchSessionRef,
   type ResearchSessionVisibility,
+  type WireSelectionContext,
+  type WireSelectionProjection,
 } from '@/lib/research/session-contract'
 import {
   clearActiveSubmission,
@@ -119,6 +126,16 @@ function clearStoredSessionId(projectId: string): void {
 function normalizeCitation(raw: Record<string, unknown>): ResearchCitationDisplayItem {
   const citationId = raw.citation_id
   const pageIdx = raw.page_idx
+  // Issue #1013（D1-E-2）§2.10：保留 citation 身份（doc_version/chunk_id/
+  // doc_display_name）供「返回原回答」按身份反查 durable message；缺字段
+  // 保持 undefined（toEqual 语义下不引入空键）。
+  const identity: Pick<
+    ResearchCitationDisplayItem,
+    'doc_version' | 'chunk_id' | 'doc_display_name'
+  > = {}
+  if (typeof raw.doc_version === 'string') identity.doc_version = raw.doc_version
+  if (typeof raw.chunk_id === 'string') identity.chunk_id = raw.chunk_id
+  if (typeof raw.doc_display_name === 'string') identity.doc_display_name = raw.doc_display_name
   return {
     citation_id: typeof citationId === 'string' || typeof citationId === 'number'
       ? citationId
@@ -130,6 +147,7 @@ function normalizeCitation(raw: Record<string, unknown>): ResearchCitationDispla
       typeof raw.confidence === 'string' || typeof raw.confidence === 'number'
         ? raw.confidence
         : null,
+    ...identity,
   }
 }
 
@@ -439,6 +457,13 @@ export interface ResearchChatTurn {
    * （legacy 轮从相邻 durable user 行取，controller 轮没有该行）。
    */
   submittedQuery?: string | null
+  /**
+   * Issue #1013（D1-E-2）§2.7：user turn 的选段读投影（13 键；
+   * assistant 恒 null）。缺失/损坏不伪造：损坏时 `selectionContextInvalid`
+   * 为 true，UI 显示「选段不可用」占位而不是猜内容。
+   */
+  selectionContext?: WireSelectionProjection | null
+  selectionContextInvalid?: boolean
 }
 
 /** 持久化消息行 + PR-5a 扩展（服务端可选下发；缺失按 null 处理）。 */
@@ -448,8 +473,45 @@ type DurableMessageRow = ResearchGlobalChatMessage & {
   record_visibility?: string | null
 }
 
+/**
+ * Issue #1013（D1-E-2）§2.3/§2.11：按投影版本解析消息行的 `selection_context`。
+ *
+ * - 键缺失 → 无选段（legacy 行/assistant 行）；
+ * - 键存在：头已知且不是 `d1e-message-v4` → fail-closed（不猜键集）；
+ *   头未知（读取失败/旧传输）→ 仅做 13 键严格解析，不猜测形状；
+ * - 解析失败 → `invalid: true`（调用方显示占位，不展示任何摘录）。
+ */
+function parseRowSelection(
+  row: DurableMessageRow,
+  projectionVersion: MessageProjectionVersion | null,
+): { selection: WireSelectionProjection | null; invalid: boolean } {
+  const hasSelectionKey = Object.prototype.hasOwnProperty.call(row, 'selection_context')
+  // d1e 投影的 user 消息必须带该键（16/18/20 键集）；缺失 = 版本/形状不符。
+  if (projectionVersion === 'd1e' && !hasSelectionKey) {
+    return { selection: null, invalid: true }
+  }
+  if (!hasSelectionKey) {
+    return { selection: null, invalid: false }
+  }
+  if (projectionVersion !== null && projectionVersion !== 'd1e') {
+    return { selection: null, invalid: true }
+  }
+  const parsed = parseMessageSelection(row, 'd1e')
+  if (!parsed.ok) return { selection: null, invalid: true }
+  return { selection: parsed.value, invalid: false }
+}
+
 /** 已持久化消息行 → 展示 turn（阅读顺序重放；completed 轮 status 恒 done） */
-export function messageRowToTurn(row: DurableMessageRow): ResearchChatTurn | null {
+export function messageRowToTurn(
+  row: DurableMessageRow,
+  options?: {
+    /**
+     * Issue #1013：详情响应的 `X-Research-Message-Projection` 版本；只用于
+     * 选段读投影的 fail-closed 判定（缺省 null = 头不可得，严格 13 键解析）。
+     */
+    readonly projectionVersion?: MessageProjectionVersion | null
+  },
+): ResearchChatTurn | null {
   if (row.role !== 'user' && row.role !== 'assistant') {
     return null
   }
@@ -490,7 +552,14 @@ export function messageRowToTurn(row: DurableMessageRow): ResearchChatTurn | nul
   if (row.role === 'user') {
     // PR-5b（Lead 定向复核）：真实 mapper 的 user 行也必须保留持久 message_id
     // （面板依赖它做 durable 身份/定位；此前恒为 null 使真实冷启动缺 data-message-id）。
-    return { ...base, ...extensions, serverMessageId: row.message_id ?? null }
+    const rowSelection = parseRowSelection(row, options?.projectionVersion ?? null)
+    return {
+      ...base,
+      ...extensions,
+      serverMessageId: row.message_id ?? null,
+      selectionContext: rowSelection.selection,
+      ...(rowSelection.invalid ? { selectionContextInvalid: true } : {}),
+    }
   }
   const generationId = parseGenerationIdFromMessageId(row.message_id)
   return {
@@ -647,6 +716,14 @@ export interface UseResearchChatSessionOptions {
     receipt: ResearchAcceptedReceipt,
     operationId: string,
   ) => void
+  /**
+   * Issue #1013（D1-E-2）§2.11：本轮显式选段（读取时刻真值；null = 无选段）。
+   *
+   * 只在 headed 会话提交流上使用：transport 组 wire 请求时读取一次并写入
+   * `selection_context`（同一个冻结请求也进 submission marker，重放/attach
+   * 身份一致）。旧无头路径不调用该 getter（不得携带选段）。
+   */
+  readonly getSelectionContext?: () => WireSelectionContext | null
 }
 
 /** COV-09：all_selected 提交请求载荷（note_ids 恒空数组——Notes 不支持） */
@@ -976,6 +1053,19 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
   const [conversation, setConversation] = useState<ConversationController | null>(null)
   const sessionOptionsRef = useRef<UseResearchChatSessionOptions | undefined>(session)
   sessionOptionsRef.current = session
+  /**
+   * Issue #1013（D1-E-2）§2.11：选段 getter（读取时刻真值）。
+   * 只被 headed transport 的 wire 组装读取；旧无头路径永不读取。
+   */
+  const selectionContextGetterRef = useRef<
+    UseResearchChatSessionOptions['getSelectionContext']
+  >(session?.getSelectionContext)
+  selectionContextGetterRef.current = session?.getSelectionContext
+  /**
+   * Issue #1013 §2.3/§2.11：`X-Research-Message-Projection` 版本（headed 详情
+   * 响应头；缺省 null = 头不可得，解析仍按 13 键严格形状、不猜键集）。
+   */
+  const messageProjectionVersionRef = useRef<MessageProjectionVersion | null>(null)
   const controllerRef = useRef<ConversationController | null>(null)
   /**
    * PR-5b（Codex P2-#8）：runtime 按 sessionKey 复用 controller 但**不替换**
@@ -1255,7 +1345,11 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
       incomingIsOlder: boolean,
     ): void {
       const restored = rows
-        .map((row) => messageRowToTurn(row as DurableMessageRow))
+        .map((row) =>
+          messageRowToTurn(row as DurableMessageRow, {
+            projectionVersion: messageProjectionVersionRef.current,
+          }),
+        )
         .filter((turn): turn is ResearchChatTurn => turn !== null)
       if (isPagedRead) {
         // 「更早一页」：并入更早的行（更早在前）；不覆盖窗口内行。
@@ -1425,6 +1519,14 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
           }
           request.note_ids = [...input.noteIds]
         }
+        // Issue #1013（D1-E-2）§2.11：选段只在 headed 提交携带；范围/检索
+        // 载荷保持完全不变（选段来源允许在 scope 外，但绝不并入 source_ids/
+        // source_scope/note_ids）。marker 与首轮 wire 用同一个冻结请求。
+        const selectionContext = selectionContextGetterRef.current?.() ?? null
+        if (selectionContext !== null) {
+          // 请求 wire 必须是 snake_case 11 键（服务端 extra=forbid/严格键集）。
+          request.selection_context = selectionContextToWire(selectionContext)
+        }
         // DESIGN §6.7 / 裁决 D3：marker 必须在开流**之前**落盘（身份完整
         // 先于写入）；写失败不阻断发送，但 panel 需如实提示可查回。
         persistMarker(
@@ -1510,6 +1612,14 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
             // PR-5b（Codex P1-#4 / §6.7）：新会话协议显式请求 session DTO 扩展
             // （record_visibility/扩展消息/失败卡报告）——仍是同一次响应。
             sessionContract: true,
+            // Issue #1013 §2.3/§2.11：捕获消息投影版本头，供选段读投影
+            // fail-closed（头存在且不是 d1e-message-v4 → 不解析选段键）。
+            onResponseMeta: (headers) => {
+              const version = resolveMessageProjectionVersion(
+                headers.get(MESSAGE_PROJECTION_HEADER),
+              )
+              messageProjectionVersionRef.current = version.ok ? version.value : null
+            },
           },
         ).then((detail) => {
           if (cancelled) return detail
@@ -1996,7 +2106,7 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
       if (cancelled) return
       if (interactedRef.current || activeRef.current) return
       const restored = rows
-        .map(messageRowToTurn)
+        .map((row) => messageRowToTurn(row))
         .filter((turn): turn is ResearchChatTurn => turn !== null)
       if (restored.length === 0 && cards.length === 0) return
       setTurns(restored)

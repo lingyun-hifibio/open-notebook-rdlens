@@ -49,7 +49,16 @@ export function ResearchCitationList({
             </>
           )
           return (
-            <li key={citation.citation_id} className="text-muted-foreground">
+            <li
+              key={citation.citation_id}
+              className="text-muted-foreground"
+              // Issue #1013 §2.10：citation 身份（无 storage 时按身份反查
+              // durable message；DOM 顺序即消息顺序，取最后一条命中）。
+              data-citation-doc-id={citation.doc_id}
+              data-citation-doc-version={citation.doc_version ?? undefined}
+              data-citation-chunk-id={citation.chunk_id ?? undefined}
+              data-citation-page-idx={citation.page_idx ?? undefined}
+            >
               {clickable ? (
                 <button
                   type="button"

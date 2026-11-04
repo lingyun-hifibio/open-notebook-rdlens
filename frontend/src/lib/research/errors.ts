@@ -83,6 +83,20 @@ export const RESEARCH_ERROR_USER_COPY: Record<string, string> = {
   context_limit_exceeded: 'research.errors.contextLimitExceeded',
   invalid_request: 'research.errors.invalidRequest',
   session_context_changed: 'research.errors.sessionContextChanged',
+
+  // ── Issue #1013（D1-E-2）§2.5/§2.9：选段/往返/撤权稳定码 ──
+  // 四类**不得**共用同一文案键（计划 §2.9「可解释错误映射」）：
+  // ① 无权访问（撤权）② 位置失效 ③ 版本变化 ④ 权限校验不可用。
+  d1e_contract_not_enabled: 'research.errors.selectionContractNotEnabled',
+  d1e_submission_required: 'research.errors.selectionSubmissionRequired',
+  selection_invalid: 'research.errors.selectionInvalid',
+  selection_position_unavailable: 'research.errors.selectionPositionUnavailable',
+  selection_version_unavailable: 'research.errors.selectionVersionUnavailable',
+  selection_source_unavailable: 'research.errors.selectionSourceUnavailable',
+  selection_source_restricted: 'research.errors.sourceAccessRestricted',
+  source_access_restricted: 'research.errors.sourceAccessRestricted',
+  source_ref_mismatch: 'research.errors.sourceRefMismatch',
+  session_store_unavailable: 'research.errors.sessionStoreUnavailable',
 }
 
 /** 未知/内部码统一兜底（raw 只作次级诊断，不作主消息——AC8）。 */

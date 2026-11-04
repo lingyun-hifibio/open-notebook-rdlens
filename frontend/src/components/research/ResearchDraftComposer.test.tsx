@@ -57,6 +57,12 @@ function renderComposer(overrides: {
   onSend?: () => void
   onRetrySave?: () => void
   onRestoreDraft?: (writerId: string) => void
+  selectionChip?: {
+    readonly label: string
+    readonly title?: string
+    readonly onRemove: () => void
+    readonly disabled?: boolean
+  } | null
 } = {}) {
   const onDraftChange = overrides.onDraftChange ?? vi.fn()
   const onSend = overrides.onSend ?? vi.fn()
@@ -73,6 +79,7 @@ function renderComposer(overrides: {
       onSend={onSend}
       onRetrySave={onRetrySave}
       onRestoreDraft={overrides.onRestoreDraft}
+      selectionChip={overrides.selectionChip ?? null}
     />,
   )
   return { onDraftChange, onSend, onRetrySave }
@@ -432,5 +439,65 @@ describe('ResearchDraftComposer · PR-6 IME 与焦点（§8.2）', () => {
     screen.getByTestId('chat-send').focus()
     view.rerender(<ResearchDraftComposer {...props} focusRequestToken={1} />)
     expect(screen.getByTestId('chat-send')).toHaveFocus()
+  })
+})
+
+
+// ---------------------------------------------------------------------------
+// Issue #1013（D1-E-2）F06：选段 chip + gate 行为
+// ---------------------------------------------------------------------------
+
+describe('ResearchDraftComposer · Issue #1013 F06 选段 chip', () => {
+  it('chip 显示在 composer 上方；移除回调可清除；不禁用既有发送', () => {
+    const onRemove = vi.fn()
+    renderComposer({
+      selectionChip: {
+        label: 'Paper A · p.3 · 7–10 · beta',
+        title: 'alpha beta gamma',
+        onRemove,
+      },
+    })
+    const chip = screen.getByTestId('selection-chip')
+    expect(chip).toHaveTextContent('Paper A · p.3 · 7–10 · beta')
+    expect(screen.getByTitle('alpha beta gamma')).toBeInTheDocument()
+    expect(screen.getByTestId('chat-send')).toBeEnabled()
+    fireEvent.click(screen.getByTestId('selection-chip-remove'))
+    expect(onRemove).toHaveBeenCalledTimes(1)
+  })
+
+  it('无 chip 时不渲染（capability off/未选段时 UI 完全隐藏）', () => {
+    renderComposer()
+    expect(screen.queryByTestId('selection-chip')).toBeNull()
+  })
+
+  it('gate：持有 chip 不改变既有发送可用性（空草稿仍被拦截）', () => {
+    renderComposer({
+      snapshot: makeSnapshot({ draftText: '' }),
+      gate: deriveResearchDraftGate({
+        editorSnapshot: makeSnapshot({ draftText: '' }),
+        conversationSnapshot: IDLE_CONVERSATION,
+      }),
+      selectionChip: { label: 'x', onRemove: vi.fn() },
+    })
+    expect(screen.getByTestId('chat-send')).toBeDisabled()
+  })
+
+  it('gate：selection_unavailable 原因可映射文案（能力翻转边界）', () => {
+    const gate = deriveResearchDraftGate({
+      editorSnapshot: makeSnapshot({ draftText: 'hello' }),
+      conversationSnapshot: IDLE_CONVERSATION,
+      selectionUnavailable: true,
+    })
+    expect(gate).toEqual({ allowed: false, reason: 'selection_unavailable' })
+    expect(researchDraftGateReasonKey('selection_unavailable')).toBe(
+      'research.errors.selectionUnavailable',
+    )
+    // 缺省/false 不改变既有 gate（允许发送）
+    expect(
+      deriveResearchDraftGate({
+        editorSnapshot: makeSnapshot({ draftText: 'hello' }),
+        conversationSnapshot: IDLE_CONVERSATION,
+      }),
+    ).toEqual({ allowed: true, reason: null })
   })
 })

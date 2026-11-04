@@ -811,6 +811,11 @@ export interface ResearchSourceChatMessage {
   source_ref?: ResearchSourceRef | null
   citations?: ResearchCitationSnapshot[] | null
   usage?: ResearchTokenUsage | null
+  /**
+   * Issue #1013（D1-E-2）§2.7：headed 详情消息的选段读投影
+   * （`d1e-message-v4` 起出现；user 消息对象或 null，assistant 恒 null）。
+   */
+  selection_context?: unknown
 }
 
 /** GET session detail 响应（消息按 created_at ASC, message_id ASC 返回） */
@@ -845,9 +850,11 @@ export async function getSourceChatSession(
     limit?: number
     order?: ResearchChatMessageOrder
     sessionContract?: boolean
+    /** Issue #1013 §2.3/§2.11：消息投影版本头观察（不改变请求/返回形状）。 */
+    onResponseMeta?: (headers: { get(name: string): string | null }) => void
   } = {},
 ): Promise<ResearchSourceChatSessionDetail> {
-  const { cursor, limit, order, sessionContract } = options
+  const { cursor, limit, order, sessionContract, onResponseMeta } = options
   const query: Record<string, string | number> = {}
   if (cursor !== undefined) query.cursor = cursor
   if (limit !== undefined) query.limit = limit
@@ -859,6 +866,18 @@ export async function getSourceChatSession(
       ...(sessionContract === true ? { headers: sessionContractHeaders } : {}),
     },
   )
+  if (onResponseMeta !== undefined) {
+    try {
+      onResponseMeta({
+        get: (name: string) => {
+          const value = response.headers?.[name.toLowerCase()]
+          return typeof value === 'string' ? value : null
+        },
+      })
+    } catch {
+      // 观测失败不得影响详情读取。
+    }
+  }
   return response.data
 }
 
@@ -879,6 +898,12 @@ export interface ResearchGlobalChatMessage {
   resolved_mode?: string | null
   degradation_reasons?: string[] | null
   created_at?: string | null
+  /**
+   * Issue #1013（D1-E-2）§2.7：headed 详情消息的选段读投影
+   * （`d1e-message-v4` 起出现；user 消息对象或 null，assistant 恒 null）。
+   * 形状严格校验在 `session-contract.parseSelectionProjection`。
+   */
+  selection_context?: unknown
 }
 
 /** 后台 Generation 卡（未交付/未完成才出卡；completed 且已 delivered 不出） */
@@ -934,9 +959,15 @@ export async function getResearchChatSession(
     limit?: number
     order?: ResearchChatMessageOrder
     sessionContract?: boolean
+    /**
+     * Issue #1013（D1-E-2）§2.3/§2.11：响应头观察（`X-Research-Message-
+     * Projection` 投影版本）。只在调用方确实需要版本失败关闭时传；不改变
+     * 请求形状/返回体。
+     */
+    onResponseMeta?: (headers: { get(name: string): string | null }) => void
   } = {},
 ): Promise<ResearchGlobalChatSessionDetail> {
-  const { cursor, limit, order, sessionContract } = params
+  const { cursor, limit, order, sessionContract, onResponseMeta } = params
   const query: Record<string, string | number> = {}
   if (cursor !== undefined) query.cursor = cursor
   if (limit !== undefined) query.limit = limit
@@ -950,6 +981,18 @@ export async function getResearchChatSession(
       ...(sessionContract === true ? { headers: sessionContractHeaders } : {}),
     },
   )
+  if (onResponseMeta !== undefined) {
+    try {
+      onResponseMeta({
+        get: (name: string) => {
+          const value = response.headers?.[name.toLowerCase()]
+          return typeof value === 'string' ? value : null
+        },
+      })
+    } catch {
+      // 观测失败不得影响详情读取。
+    }
+  }
   return response.data
 }
 

@@ -45,7 +45,8 @@ import {
 import { canJumpToCitation, resolveCitationCandidate, resolveCitationSource } from './citation-utils'
 import type { ResearchSource } from '@/lib/types/research'
 import type { ResearchScopeBarNoteOption, ResearchScopeBarSourceOption } from '@/lib/research/types'
-import type { ResearchCitationDisplayItem } from '@/lib/research/types'
+import type { ResearchCitationDisplayItem, ResearchPendingSelection } from '@/lib/research/types'
+import type { WireSelectionProjection } from '@/lib/research/session-contract'
 import type { ConversationController } from '@/lib/research/session-runtime'
 import type { ResearchConversationSnapshot } from '@/lib/research/types'
 import type { ResearchCitation } from '@/lib/types/research'
@@ -86,8 +87,12 @@ export interface ResearchWorkspaceProps {
   onActiveActionChange: (action: ResearchMainAction) => void
   /** 全局工作区可见（!sourceFocusActive）；隐藏时 Search preview 停 */
   surfaceActive: boolean
-  /** Citation → 组合根：选源 + source focus + 高亮目标页 */
-  onCitationJump: (sourceId: string, pageIdx: number | null) => void
+  /** Citation → 组合根：选源 + source focus + 高亮目标页（含 citation 身份）。 */
+  onCitationJump: (
+    sourceId: string,
+    pageIdx: number | null,
+    identity?: { docId: string; docVersion: string | null; chunkId: string | null; pageIdx: number | null },
+  ) => void
   /** Edit scope → 组合根统一链路（退 focus/最大化 → 左栏编辑面） */
   onEditScopeAllStates: () => void
   /** RWV2-23（AC4）：Continue research → 打开 Chat 并预填（根级 draft） */
@@ -96,6 +101,26 @@ export interface ResearchWorkspaceProps {
   onRevealSavedArtifact?: (kind: 'note' | 'insight', artifactId: string) => void
   /** RWV2-23（AC4）：Chat composer 预填草稿（seq 递增触发） */
   chatPrefill?: { text: string; seq: number } | null
+  /** Issue #1013 §2.11：页级 pending 选段（只有 target=global 时随全局提交）。 */
+  pendingSelection?: ResearchPendingSelection | null
+  /** Issue #1013 §2.11：composer 选段 chip（渲染与移除）。 */
+  selectionChip?: {
+    readonly label: string
+    readonly title?: string
+    readonly onRemove: () => void
+    readonly disabled?: boolean
+  } | null
+  onSelectionConsumed?: () => void
+  /** Issue #1013 §2.10：assistant citation → 记录 return target 并打开来源。 */
+  onCitationReturn?: (
+    citation: ResearchCitationDisplayItem,
+    messageId: string | null,
+    sourceId: string,
+  ) => void
+  /** Issue #1013 §2.10：「返回原回答」滚动请求（global surface）。 */
+  scrollToMessage?: { readonly sessionId: string; readonly messageId: string; readonly seq: number } | null
+  /** Issue #1013 §2.10：user turn 选段 chip → 来源详情高亮。 */
+  onSelectionJump?: (selection: WireSelectionProjection) => void
 }
 
 export function ResearchWorkspace({
@@ -107,6 +132,12 @@ export function ResearchWorkspace({
   onOpenResearchChatDraft,
   onRevealSavedArtifact,
   chatPrefill,
+  pendingSelection = null,
+  selectionChip = null,
+  onSelectionConsumed,
+  onCitationReturn,
+  scrollToMessage,
+  onSelectionJump,
 }: ResearchWorkspaceProps) {
   const { t } = useTranslation()
   const { toast } = useToast()
@@ -145,10 +176,18 @@ export function ResearchWorkspace({
   const pendingClearControllersRef = useRef(new Map<string, ConversationController>())
   // PR-5b（D1，第 1 处）：把运行时 + 当前会话 ref + editor 持有者回调传给
   // useResearchChat——controller 是 trace 新协议的唯一权威（不再依赖 legacy）。
+  const pendingSelectionRef = useRef(pendingSelection)
+  pendingSelectionRef.current = pendingSelection
   const chatSession = useMemo<UseResearchChatSessionOptions | undefined>(() => {
     if (sessionRuntime === null || activeGlobalRef === null) return undefined
     return {
       runtime: sessionRuntime,
+      // Issue #1013 §2.11：全局 headed 提交读取页级选段（target=global 才携带；
+      // source 选段只属于 source surface）。
+      getSelectionContext: () =>
+        pendingSelectionRef.current?.target === 'global'
+          ? pendingSelectionRef.current.selection
+          : null,
       ref: activeGlobalRef,
       onReleaseHold: (operationId: string) => chatEditor.release(operationId),
       // §9.2/§5.6：editor 的清稿核对需要“提交时的文本快照”（ResearchAcceptedReceipt
@@ -701,9 +740,33 @@ export function ResearchWorkspace({
         denyCitationJump(citation)
         return
       }
-      onCitationJump(source.source_id, citation.page_idx)
+      onCitationJump(source.source_id, citation.page_idx, {
+        docId: citation.doc_id,
+        docVersion: citation.doc_version ?? null,
+        chunkId: citation.chunk_id ?? null,
+        pageIdx: citation.page_idx ?? null,
+      })
     },
     [denyCitationJump, onCitationJump, sources],
+  )
+
+  // Issue #1013 §2.10：全局 Chat citation 列表点击 → 解析来源、打开来源高亮，
+  // 并把 (citation 身份 + durable message_id + 来源 id) 交给组合根记录 return target。
+  const handleChatCitationReturn = useCallback(
+    (citation: ResearchCitationDisplayItem, messageId: string | null) => {
+      if (messageId === null || messageId.length === 0) return
+      // 版本感知解析（与跳转派发同纪律；展示结构只缺未用字段，安全收窄）。
+      const source = resolveCitationSource(sources, citation as unknown as ResearchCitation)
+      if (!source || source.source_id === null) return
+      onCitationJump(source.source_id, citation.page_idx, {
+        docId: citation.doc_id,
+        docVersion: citation.doc_version ?? null,
+        chunkId: citation.chunk_id ?? null,
+        pageIdx: citation.page_idx ?? null,
+      })
+      onCitationReturn?.(citation, messageId, source.source_id)
+    },
+    [onCitationJump, onCitationReturn, sources],
   )
 
   // run-template（TransformationsPanel）Citation → 同一条组合根链路
@@ -714,7 +777,12 @@ export function ResearchWorkspace({
         denyCitationJump(citation as unknown as ResearchCitationDisplayItem)
         return
       }
-      onCitationJump(source.source_id, citation.page_idx)
+      onCitationJump(source.source_id, citation.page_idx, {
+        docId: citation.doc_id,
+        docVersion: citation.doc_version ?? null,
+        chunkId: citation.chunk_id ?? null,
+        pageIdx: citation.page_idx ?? null,
+      })
     },
     [denyCitationJump, onCitationJump, sources],
   )
@@ -794,6 +862,11 @@ export function ResearchWorkspace({
             onRestoreDraft={chatEditor.restoreDraft}
             onChatAnchorChange={chatEditor.setChatAnchor}
             onFlushPosition={() => chatEditor.flush('position')}
+            selectionChip={selectionChip}
+            onSelectionConsumed={onSelectionConsumed}
+            onCitationReturn={handleChatCitationReturn}
+            scrollToMessage={scrollToMessage}
+            onSelectionJump={onSelectionJump}
             surfaceActive={surfaceActive && activeAction === 'research-chat'}
             onViewInsight={
               onRevealSavedArtifact !== undefined

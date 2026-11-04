@@ -976,6 +976,20 @@ export const ruRU = {
     viewDocs: "Документация",
   },
   research: {
+    selection: {
+      discuss: 'Обсудить выделенное',
+      chip: '{{source}} · стр. {{page}} · {{start}}–{{end}} · {{quote}}',
+      summary: 'Обсудить: {{quote}} (стр. {{page}}, {{start}}–{{end}})',
+      remove: 'Убрать выделение',
+      restricted: 'Фрагмент недоступен',
+      positionUnavailable: 'Позиция выделения больше не действительна',
+      unavailable: 'Выделение недоступно',
+      captureFailed: 'Не удалось найти выделенный текст в источнике. Выберите фрагмент короче.',
+    },
+    source: {
+      returnToAnswer: 'Вернуться к ответу',
+      returnUnavailable: 'Не удалось найти исходный ответ. Возможно, он находится вне загруженной истории.',
+    },
     session: {
       newConversation: 'New conversation',
       restrictedConversation: 'Restricted conversation',
@@ -989,7 +1003,6 @@ export const ruRU = {
       creating: 'Starting a conversation…',
       draft: 'Draft',
       notFound: 'This conversation no longer exists',
-      contentNotReady: 'Session content is not wired yet (PR-5a). Legacy chat panels are disabled while session navigation is active.',
       untitled: 'Untitled session',
       shortId: 'Session {{id}}',
       visibility: {
@@ -1070,6 +1083,16 @@ export const ruRU = {
       invalidDraft: 'Draft contains characters that cannot be sent — remove or replace them before sending',
     },
     errors: {
+      selectionContractNotEnabled: 'Это рабочее пространство не поддерживает контекст выделения. Обновите клиент или отключите функцию.',
+      selectionSubmissionRequired: 'Выделение нужно отправлять вместе с отправкой сеанса. Используйте поле чата сеанса.',
+      selectionInvalid: 'Выделение недопустимо для этого источника. Выберите текст заново.',
+      selectionPositionUnavailable: 'Позиция выделения больше не соответствует источнику. Выберите текст заново.',
+      selectionVersionUnavailable: 'Выбранная версия источника больше недоступна. Выберите текст заново.',
+      selectionSourceUnavailable: 'Выбранный источник недоступен в этом проекте. Выберите текст заново.',
+      sourceAccessRestricted: 'Доступ к этому источнику больше невозможен (возможно, доступ отозван).',
+      sourceRefMismatch: 'Версия источника изменилась. Обновите источник и повторите попытку.',
+      sessionStoreUnavailable: 'Не удалось проверить доступ прямо сейчас. Повторите попытку чуть позже.',
+      selectionUnavailable: 'Функция выделения больше недоступна. Удалите выделение, чтобы продолжить.',
       acceptanceRetryExhausted: 'Your submission is pending confirmation — its result could not be verified automatically. Retry with the original attempt or review it before sending again.',
       generic: "Something went wrong. Check the message below and try again, or contact an administrator.",
       consentRequired: "External model egress consent is required before sending. Acknowledge it to continue.",

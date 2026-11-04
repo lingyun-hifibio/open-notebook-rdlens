@@ -989,6 +989,16 @@ export const SESSION_SERVER_ERROR_CODES = [
   'session_store_unavailable',
   'input_snapshot_unavailable',
   'c05_entry_not_ready',
+  // Issue #1013（D1-E-2）：选段载荷 / 往返位置 / 撤权读面稳定码（计划 §2.5）。
+  'd1e_contract_not_enabled',
+  'd1e_submission_required',
+  'selection_invalid',
+  'selection_position_unavailable',
+  'selection_version_unavailable',
+  'selection_source_unavailable',
+  'selection_source_restricted',
+  'source_access_restricted',
+  'source_ref_mismatch',
   'admission_unavailable',
   'admission_capacity',
   'internal',
@@ -1269,4 +1279,475 @@ export function projectRestrictedMessage(
         degraded: true,
       }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Issue #1013（D1-E-2）：选段上下文（wire v1）、消息投影版本、撤权读投影
+//
+// 规范来源：计划 §2.4（选段对象）、§2.5（错误码）、§2.7（消息投影/可见性）、
+// §2.11（fork 交互契约）。解析纪律（session-contract 头注同款）：
+// 形状不符一律 `invalid_response`，**不猜测键集、不做字段级降级**。
+// ---------------------------------------------------------------------------
+
+/** `/models` 能力键（flag on 才出现；加性键，缺失/畸形按不可用处理）。 */
+export const D1E_CAPABILITY_KEY = 'd1e_roundtrip'
+
+/** 能力块契约值（严格相等才算可用）。 */
+export const D1E_CAPABILITY_CONTRACT = 'd1e-roundtrip-v1'
+
+/** 消息投影版本头（headed 详情响应；flag on = `d1e-message-v4`）。 */
+export const MESSAGE_PROJECTION_HEADER = 'X-Research-Message-Projection'
+
+/** flag on（D1-C）消息投影版本：15/17/19 键（无 selection_context）。 */
+export const MESSAGE_PROJECTION_D1C = 'd1c-message-v3'
+
+/** Issue #1013 flag on 消息投影版本：16/18/20 键（含 selection_context）。 */
+export const MESSAGE_PROJECTION_D1E = 'd1e-message-v4'
+
+/**
+ * 消息投影版本。
+ * - `legacy`：头缺失（flag off 的 15 键消息，或旧后端）；
+ * - `d1c`：D1-C 17/19 键；
+ * - `d1e`：D1-E 16/18/20 键（user 消息新增 selection_context）。
+ */
+export type MessageProjectionVersion = 'legacy' | 'd1c' | 'd1e'
+
+/** 各版本允许的消息键数（与 host `MESSAGE_PROJECTION_VERSION` 锁步）。 */
+export const MESSAGE_PROJECTION_KEY_COUNTS: Readonly<
+  Record<MessageProjectionVersion, readonly number[]>
+> = {
+  legacy: [15],
+  d1c: [17, 19],
+  d1e: [16, 18, 20],
+}
+
+/**
+ * 解析 `X-Research-Message-Projection` 头。
+ *
+ * 缺失 → `legacy`（旧后端/flag off 的既有行为）。出现但未知值 → fail-closed
+ * `invalid_response`：不得猜键集、不得按旧键集容忍新投影。
+ */
+export function resolveMessageProjectionVersion(
+  value: string | null | undefined,
+): ParseResult<MessageProjectionVersion> {
+  if (value === null || value === undefined || value === '') return ok('legacy')
+  if (value === MESSAGE_PROJECTION_D1C) return ok('d1c')
+  if (value === MESSAGE_PROJECTION_D1E) return ok('d1e')
+  return invalid('message_projection', `unsupported message projection: ${String(value)}`)
+}
+
+/** 消息键数是否落在该版本的允许集合内（fail-closed）。 */
+export function messageKeyCountMatches(
+  record: unknown,
+  version: MessageProjectionVersion,
+): boolean {
+  if (!isRecord(record)) return false
+  return MESSAGE_PROJECTION_KEY_COUNTS[version].includes(Object.keys(record).length)
+}
+
+/** 读投影可见性（计划 §2.7 表；与 host 枚举逐字一致）。 */
+export type SelectionVisibility = 'visible' | 'restricted' | 'position_unavailable'
+
+/** 读投影原因码（null = 正常/无原因）。 */
+export type SelectionReasonCode = 'content_restricted' | 'position_unavailable' | null
+
+/** 选段对象严格键集（wire v1；请求/input/消息列同一对象）。 */
+export const SELECTION_CONTEXT_KEYS = [
+  'source_id',
+  'document_id',
+  'document_version',
+  'chunk_id',
+  'chunk_ordinal',
+  'page_idx',
+  'start_offset',
+  'end_offset',
+  'quote',
+  'quote_hash',
+  'content_hash',
+] as const
+
+/** 读投影键集（11 键 + visibility/reason_code）。 */
+export const SELECTION_PROJECTION_KEYS = [
+  ...SELECTION_CONTEXT_KEYS,
+  'visibility',
+  'reason_code',
+] as const
+
+/** 限额（与 host `selection_context.py` 同值）。 */
+export const SELECTION_QUOTE_MAX_UTF16_UNITS = 2000
+export const SELECTION_QUOTE_MAX_UTF8_BYTES = 8192
+export const SELECTION_DOCUMENT_VERSION_MAX_CHARS = 64
+const SELECTION_ID_MAX_CHARS = 256
+const SELECTION_OFFSET_MAX = 2_147_483_647
+
+/** 选段对象（camelCase 投影；wire 由 `selectionContextToWire` 构造）。 */
+export interface WireSelectionContext {
+  readonly sourceId: string
+  readonly documentId: string
+  readonly documentVersion: string
+  readonly chunkId: string
+  readonly chunkOrdinal: number
+  readonly pageIdx: number | null
+  readonly startOffset: number
+  readonly endOffset: number
+  readonly quote: string
+  readonly quoteHash: string
+  readonly contentHash: string
+}
+
+/** 选段读投影（消息详情；restricted 时 quote/quote_hash 均为 null）。 */
+export interface WireSelectionProjection {
+  readonly sourceId: string
+  readonly documentId: string
+  readonly documentVersion: string
+  readonly chunkId: string
+  readonly chunkOrdinal: number
+  readonly pageIdx: number | null
+  readonly startOffset: number
+  readonly endOffset: number
+  readonly quote: string | null
+  readonly quoteHash: string | null
+  readonly contentHash: string
+  readonly visibility: SelectionVisibility
+  readonly reasonCode: SelectionReasonCode
+}
+
+const selectionTextEncoder =
+  typeof TextEncoder === 'undefined' ? null : new TextEncoder()
+
+function utf8ByteLength(value: string): number {
+  if (selectionTextEncoder !== null) return selectionTextEncoder.encode(value).length
+  // 环境无 TextEncoder 时按 UTF-8 规则计数（与 encoded length 一致）。
+  let bytes = 0
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index)
+    if (code < 0x80) bytes += 1
+    else if (code < 0x800) bytes += 2
+    else if (code >= 0xd800 && code <= 0xdbff && index + 1 < value.length) {
+      bytes += 4
+      index += 1
+    } else bytes += 3
+  }
+  return bytes
+}
+
+/** 未配对 surrogate（服务端一律 `selection_invalid`，不静默替换）。 */
+function hasLoneSurrogate(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index)
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(index + 1)
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return true
+      index += 1
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      return true
+    }
+  }
+  return false
+}
+
+function isSelectionId(value: unknown, maxLength = SELECTION_ID_MAX_CHARS): value is string {
+  return typeof value === 'string' && value.length >= 1 && value.length <= maxLength
+}
+
+function isSelectionOffset(value: unknown): value is number {
+  return (
+    typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value <= SELECTION_OFFSET_MAX
+  )
+}
+
+function isSelectionOrdinal(value: unknown): value is number {
+  return (
+    typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value <= SELECTION_OFFSET_MAX
+  )
+}
+
+function isSelectionPageIdx(value: unknown): value is number | null {
+  return value === null || isSelectionOrdinal(value)
+}
+
+/** 选段身份/定位/摘录的公共校验（11 键主体）。 */
+function parseSelectionCore(
+  record: JsonObject,
+  options: { readonly quoteNullable: boolean },
+): ParseResult<{
+  sourceId: string
+  documentId: string
+  documentVersion: string
+  chunkId: string
+  chunkOrdinal: number
+  pageIdx: number | null
+  startOffset: number
+  endOffset: number
+  quote: string | null
+  quoteHash: string | null
+  contentHash: string
+  visible: boolean
+}> {
+  const {
+    source_id: sourceId,
+    document_id: documentId,
+    document_version: documentVersion,
+    chunk_id: chunkId,
+    chunk_ordinal: chunkOrdinal,
+    page_idx: pageIdx,
+    start_offset: startOffset,
+    end_offset: endOffset,
+    quote,
+    quote_hash: quoteHash,
+    content_hash: contentHash,
+  } = record
+  if (!isSelectionId(sourceId)) return invalid('source_id', 'source_id must be 1..256 characters')
+  if (!isSelectionId(documentId)) return invalid('document_id', 'document_id must be 1..256 characters')
+  if (!isSelectionId(documentVersion, SELECTION_DOCUMENT_VERSION_MAX_CHARS)) {
+    return invalid('document_version', 'document_version must be 1..64 characters')
+  }
+  if (!isSelectionId(chunkId)) return invalid('chunk_id', 'chunk_id must be 1..256 characters')
+  if (!isSelectionOrdinal(chunkOrdinal)) {
+    return invalid('chunk_ordinal', 'chunk_ordinal must be an integer in 0..2147483647')
+  }
+  if (!isSelectionPageIdx(pageIdx)) {
+    return invalid('page_idx', 'page_idx must be null or an integer in 0..2147483647')
+  }
+  if (!isSelectionOffset(startOffset) || !isSelectionOffset(endOffset)) {
+    return invalid('offsets', 'start_offset/end_offset must be integers in 0..2147483647')
+  }
+  if (endOffset <= startOffset) {
+    return invalid('offsets', 'end_offset must be greater than start_offset')
+  }
+  if (!isHash(contentHash)) return invalid('content_hash', 'content_hash must be 64 lowercase hex characters')
+
+  const quoteNull = quote === null
+  const hashNull = quoteHash === null
+  if (options.quoteNullable) {
+    // 读投影：restricted 时两者都为 null；visible/position_unavailable 时都必须是全量。
+    if (quoteNull !== hashNull) {
+      return invalid('quote', 'quote and quote_hash must both be null or both be present')
+    }
+  } else if (quoteNull || hashNull) {
+    return invalid('quote', 'quote and quote_hash are required')
+  }
+  if (quoteNull) {
+    // restricted：偏移仍表达原位置，但摘录不可展示。
+    return ok({
+      sourceId,
+      documentId,
+      documentVersion,
+      chunkId,
+      chunkOrdinal,
+      pageIdx,
+      startOffset,
+      endOffset,
+      quote: null,
+      quoteHash: null,
+      contentHash,
+      visible: false,
+    })
+  }
+  if (typeof quote !== 'string') return invalid('quote', 'quote must be a string')
+  if (typeof quoteHash !== 'string' || !isHash(quoteHash)) {
+    return invalid('quote_hash', 'quote_hash must be 64 lowercase hex characters')
+  }
+  const quoteUtf16 = quote.length
+  if (quoteUtf16 < 1 || quoteUtf16 > SELECTION_QUOTE_MAX_UTF16_UNITS) {
+    return invalid('quote', 'quote must be 1..2000 UTF-16 code units')
+  }
+  if (endOffset - startOffset !== quoteUtf16) {
+    return invalid('quote', 'end_offset - start_offset must equal the quote UTF-16 length')
+  }
+  if (hasLoneSurrogate(quote)) {
+    return invalid('quote', 'quote must not contain lone surrogates')
+  }
+  if (utf8ByteLength(quote) > SELECTION_QUOTE_MAX_UTF8_BYTES) {
+    return invalid('quote', 'quote must be at most 8192 UTF-8 bytes')
+  }
+  return ok({
+    sourceId,
+    documentId,
+    documentVersion,
+    chunkId,
+    chunkOrdinal,
+    pageIdx,
+    startOffset,
+    endOffset,
+    quote,
+    quoteHash,
+    contentHash,
+    visible: true,
+  })
+}
+
+/** 解析请求/input/消息列使用的选段对象（11 键严格键集）。 */
+export function parseSelectionContext(value: unknown): ParseResult<WireSelectionContext> {
+  if (!isRecord(value)) return invalid('selection_context', 'selection_context must be an object')
+  if (!hasOnlyKeys(value, SELECTION_CONTEXT_KEYS)) {
+    return invalid('selection_context', 'selection_context has unexpected or missing fields')
+  }
+  if (Object.keys(value).length !== SELECTION_CONTEXT_KEYS.length) {
+    return invalid('selection_context', 'selection_context is missing required fields')
+  }
+  const core = parseSelectionCore(value, { quoteNullable: false })
+  if (!core.ok) return core
+  const parsed = core.value
+  if (parsed.quote === null || parsed.quoteHash === null) {
+    return invalid('quote', 'quote and quote_hash are required')
+  }
+  return ok({
+    sourceId: parsed.sourceId,
+    documentId: parsed.documentId,
+    documentVersion: parsed.documentVersion,
+    chunkId: parsed.chunkId,
+    chunkOrdinal: parsed.chunkOrdinal,
+    pageIdx: parsed.pageIdx,
+    startOffset: parsed.startOffset,
+    endOffset: parsed.endOffset,
+    quote: parsed.quote,
+    quoteHash: parsed.quoteHash,
+    contentHash: parsed.contentHash,
+  })
+}
+
+/**
+ * 解析消息读投影的 selection_context（13 键）。
+ *
+ * 可见性/原因码必须自洽：`visible` ↔ reason null；`restricted` ↔
+ * `content_restricted` 且 quote/quote_hash 为 null；`position_unavailable` ↔
+ * `position_unavailable` 且保留 quote。
+ */
+export function parseSelectionProjection(value: unknown): ParseResult<WireSelectionProjection> {
+  if (!isRecord(value)) return invalid('selection_context', 'selection_context must be an object')
+  if (!hasOnlyKeys(value, SELECTION_PROJECTION_KEYS)) {
+    return invalid('selection_context', 'selection_context has unexpected or missing fields')
+  }
+  if (Object.keys(value).length !== SELECTION_PROJECTION_KEYS.length) {
+    return invalid('selection_context', 'selection_context is missing required fields')
+  }
+  const visibility = value.visibility
+  const reasonCode = value.reason_code
+  if (visibility !== 'visible' && visibility !== 'restricted' && visibility !== 'position_unavailable') {
+    return invalid('visibility', 'visibility must be visible|restricted|position_unavailable')
+  }
+  if (
+    reasonCode !== null &&
+    reasonCode !== 'content_restricted' &&
+    reasonCode !== 'position_unavailable'
+  ) {
+    return invalid('reason_code', 'reason_code must be null|content_restricted|position_unavailable')
+  }
+  const core = parseSelectionCore(value, { quoteNullable: true })
+  if (!core.ok) return core
+  const parsed = core.value
+  if (visibility === 'restricted') {
+    if (reasonCode !== 'content_restricted') {
+      return invalid('reason_code', 'restricted selection requires reason_code=content_restricted')
+    }
+    if (parsed.quote !== null || parsed.quoteHash !== null) {
+      return invalid('quote', 'restricted selection must not expose quote or quote_hash')
+    }
+  } else if (visibility === 'position_unavailable') {
+    if (reasonCode !== 'position_unavailable') {
+      return invalid('reason_code', 'position_unavailable requires reason_code=position_unavailable')
+    }
+    if (parsed.quote === null || parsed.quoteHash === null) {
+      return invalid('quote', 'position_unavailable must preserve quote and quote_hash')
+    }
+  } else {
+    if (reasonCode !== null) {
+      return invalid('reason_code', 'visible selection must not carry reason_code')
+    }
+    if (parsed.quote === null || parsed.quoteHash === null) {
+      return invalid('quote', 'visible selection must include quote and quote_hash')
+    }
+  }
+  return ok({
+    sourceId: parsed.sourceId,
+    documentId: parsed.documentId,
+    documentVersion: parsed.documentVersion,
+    chunkId: parsed.chunkId,
+    chunkOrdinal: parsed.chunkOrdinal,
+    pageIdx: parsed.pageIdx,
+    startOffset: parsed.startOffset,
+    endOffset: parsed.endOffset,
+    quote: parsed.quote,
+    quoteHash: parsed.quoteHash,
+    contentHash: parsed.contentHash,
+    visibility,
+    reasonCode: reasonCode as SelectionReasonCode,
+  })
+}
+
+/**
+ * 解析消息对象上的 `selection_context` 键（按投影版本 fail-closed）。
+ *
+ * - `legacy`/`d1c`：不得出现该键（出现 = 版本头缺失/不匹配，拒绝猜键集）；
+ * - `d1e`：键必须存在（缺失 = 不是合法 16/18/20 键投影），值 null 或 13 键对象。
+ */
+export function parseMessageSelection(
+  record: unknown,
+  version: MessageProjectionVersion,
+): ParseResult<WireSelectionProjection | null> {
+  if (!isRecord(record)) return invalid('', 'message must be an object')
+  const hasSelection = Object.prototype.hasOwnProperty.call(record, 'selection_context')
+  if (version !== 'd1e') {
+    if (hasSelection) {
+      return invalid(
+        'selection_context',
+        'selection_context requires projection version d1e-message-v4',
+      )
+    }
+    return ok(null)
+  }
+  if (!hasSelection) {
+    return invalid('selection_context', 'd1e projection requires the selection_context key')
+  }
+  const raw = record.selection_context
+  if (raw === null) return ok(null)
+  return parseSelectionProjection(raw)
+}
+
+/** 请求 wire 形状（snake_case，11 键；服务端 `additionalProperties:false`）。 */
+export interface WireSelectionContextBody {
+  readonly source_id: string
+  readonly document_id: string
+  readonly document_version: string
+  readonly chunk_id: string
+  readonly chunk_ordinal: number
+  readonly page_idx: number | null
+  readonly start_offset: number
+  readonly end_offset: number
+  readonly quote: string
+  readonly quote_hash: string
+  readonly content_hash: string
+}
+
+/** camelCase 选段 → 请求 wire 形状（snake_case，11 键）。 */
+export function selectionContextToWire(
+  selection: WireSelectionContext,
+): WireSelectionContextBody {
+  return {
+    source_id: selection.sourceId,
+    document_id: selection.documentId,
+    document_version: selection.documentVersion,
+    chunk_id: selection.chunkId,
+    chunk_ordinal: selection.chunkOrdinal,
+    page_idx: selection.pageIdx,
+    start_offset: selection.startOffset,
+    end_offset: selection.endOffset,
+    quote: selection.quote,
+    quote_hash: selection.quoteHash,
+    content_hash: selection.contentHash,
+  }
+}
+
+/** 请求选段 → 本地即时展示的可见投影（发送成功后 user turn 直接渲染）。 */
+export function selectionAsVisibleProjection(
+  selection: WireSelectionContext,
+): WireSelectionProjection {
+  return { ...selection, visibility: 'visible', reasonCode: null }
 }

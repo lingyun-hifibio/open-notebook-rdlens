@@ -13,13 +13,17 @@ import { useQuery } from '@tanstack/react-query'
 import { listModels } from '@/lib/research/api'
 import { QUERY_KEYS } from '@/lib/api/query-client'
 import {
+  D1E_CAPABILITY_KEY,
   readC05Capabilities,
+  readD1eCapability,
+  d1eRoundtripReady,
   entryDispatchReady,
   entryUnavailableReason,
   entrySupportsMode,
   type C05Capabilities,
   type C05Entry,
   type C05ScopeMode,
+  type D1eRoundtripCapability,
 } from '@/lib/research/c05-contract'
 
 export interface UseResearchC05Result {
@@ -52,5 +56,37 @@ export function useResearchC05(projectId: string): UseResearchC05Result {
     unavailableReason: (entry) => entryUnavailableReason(caps, entry),
     supportsMode: (entry, mode) => entrySupportsMode(caps, entry, mode),
     previewSupported: caps?.preview_supported ?? false,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Issue #1013（D1-E-2）§2.2/§2.11：D1-E 往返/选段能力消费
+// ---------------------------------------------------------------------------
+
+export interface UseResearchD1eResult {
+  /** 严格解析后的能力块；缺失/畸形 → null（调用方按不可用处理）。 */
+  capability: D1eRoundtripCapability | null
+  /** 只有契约值匹配且 enabled === true 才为 true（fail-closed）。 */
+  ready: boolean
+  loading: boolean
+}
+
+/**
+ * 复用同一个 `researchModelCatalog` query key（与 useResearchC05/global model
+ * 共享缓存、零额外请求）；`refetchOnWindowFocus` 使 flag 翻转后下次聚焦生效。
+ */
+export function useResearchD1e(projectId: string): UseResearchD1eResult {
+  const modelsQuery = useQuery({
+    queryKey: QUERY_KEYS.researchModelCatalog(projectId),
+    queryFn: () => listModels(projectId),
+    enabled: !!projectId,
+    refetchOnWindowFocus: true,
+  })
+  const raw = modelsQuery.data?.capabilities?.[D1E_CAPABILITY_KEY]
+  const capability = useMemo(() => readD1eCapability(raw), [raw])
+  return {
+    capability,
+    ready: d1eRoundtripReady(raw),
+    loading: modelsQuery.isLoading,
   }
 }

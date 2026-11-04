@@ -41,7 +41,17 @@ import {
   type ResearchAcceptedReceipt,
   type ResearchSseState,
 } from '@/lib/research/sse'
-import { sessionKey, type ResearchSessionRef } from '@/lib/research/session-contract'
+import {
+  sessionKey,
+  parseMessageSelection,
+  selectionContextToWire,
+  MESSAGE_PROJECTION_HEADER,
+  resolveMessageProjectionVersion,
+  type MessageProjectionVersion,
+  type ResearchSessionRef,
+  type WireSelectionContext,
+  type WireSelectionProjection,
+} from '@/lib/research/session-contract'
 import type {
   ConversationController,
   ConversationTransport,
@@ -84,6 +94,15 @@ export interface ResearchSourceChatTurn {
   reconnectCount: number
   errorCode: string | null
   errorMessage: string | null
+  /**
+   * Issue #1013（D1-E-2）§2.7：user turn 的选段读投影（13 键；assistant
+   * 恒 null）。损坏/版本不匹配 → `selectionContextInvalid`（显示占位，
+   * 不猜内容）。
+   */
+  selectionContext?: WireSelectionProjection | null
+  selectionContextInvalid?: boolean
+  /** Issue #1013 §2.10：durable service message id（chat_anchor 稳定目标）。 */
+  serverMessageId?: string | null
   /** PR-5b：投影自 controller 的行标记是否冷启动 external 查回（去重证据）。 */
   readonly external?: boolean
 }
@@ -123,6 +142,12 @@ export interface UseResearchSourceChatSessionOptions {
     receipt: ResearchAcceptedReceipt,
     operationId: string,
   ) => void
+  /**
+   * Issue #1013（D1-E-2）§2.11：本轮显式选段（读取时刻真值；null = 无选段）。
+   * 只在 headed source 提交流上使用；wire body 仍保持 `extra=forbid` 形状
+   * （只多一个显式 `selection_context` 字段）。
+   */
+  readonly getSelectionContext?: () => WireSelectionContext | null
 }
 
 interface ActiveTurn {
@@ -245,11 +270,40 @@ function makeUserTurn(turnId: string, content: string): ResearchSourceChatTurn {
     reconnectCount: 0,
     errorCode: null,
     errorMessage: null,
+    serverMessageId: null,
   }
 }
 
+/**
+ * Issue #1013（D1-E-2）§2.3/§2.11：按投影版本解析 source 消息的选段读投影。
+ * 与全局 hook 同纪律：头已知且非 `d1e-message-v4` → fail-closed；头未知 →
+ * 仅做 13 键严格解析；解析失败 → invalid（不展示任何摘录）。
+ */
+function parseSourceRowSelection(
+  message: ResearchSourceChatMessage,
+  projectionVersion: MessageProjectionVersion | null,
+): { selection: WireSelectionProjection | null; invalid: boolean } {
+  const hasSelectionKey = Object.prototype.hasOwnProperty.call(message, 'selection_context')
+  if (projectionVersion === 'd1e' && !hasSelectionKey) {
+    return { selection: null, invalid: true }
+  }
+  if (!hasSelectionKey) {
+    return { selection: null, invalid: false }
+  }
+  if (projectionVersion !== null && projectionVersion !== 'd1e') {
+    return { selection: null, invalid: true }
+  }
+  const parsed = parseMessageSelection(message, 'd1e')
+  if (!parsed.ok) return { selection: null, invalid: true }
+  return { selection: parsed.value, invalid: false }
+}
+
 /** 冷恢复：GET session detail 持久化消息 → 与 live turn 相同展示形态 */
-function mapColdMessage(message: ResearchSourceChatMessage): ResearchSourceChatTurn {
+function mapColdMessage(
+  message: ResearchSourceChatMessage,
+  projectionVersion: MessageProjectionVersion | null = null,
+): ResearchSourceChatTurn {
+  const rowSelection = parseSourceRowSelection(message, projectionVersion)
   return {
     id: message.message_id,
     role: message.role === 'user' ? 'user' : 'assistant',
@@ -264,6 +318,13 @@ function mapColdMessage(message: ResearchSourceChatMessage): ResearchSourceChatT
     reconnectCount: 0,
     errorCode: null,
     errorMessage: null,
+    serverMessageId: message.message_id,
+    ...(message.role === 'user'
+      ? {
+          selectionContext: rowSelection.selection,
+          ...(rowSelection.invalid ? { selectionContextInvalid: true } : {}),
+        }
+      : {}),
   }
 }
 
@@ -367,7 +428,9 @@ export function useResearchSourceChat({
     incomingIsOlder: boolean,
     isPagedRead: boolean,
   ): void => {
-    const restored = rows.map(mapColdMessage)
+    const restored = rows.map((row) =>
+      mapColdMessage(row, messageProjectionVersionRef.current),
+    )
     setTurns((prev) => {
       if (durableSessionRef.current !== sessionId) {
         if (isPagedRead) {
@@ -392,6 +455,13 @@ export function useResearchSourceChat({
   const [conversation, setConversation] = useState<ConversationController | null>(null)
   const sessionOptionsRef = useRef<UseResearchSourceChatSessionOptions | undefined>(session)
   sessionOptionsRef.current = session
+  /** Issue #1013 §2.11：选段 getter（读取时刻真值；旧无头路径永不读取）。 */
+  const selectionContextGetterRef = useRef<
+    UseResearchSourceChatSessionOptions['getSelectionContext']
+  >(session?.getSelectionContext)
+  selectionContextGetterRef.current = session?.getSelectionContext
+  /** Issue #1013 §2.3/§2.11：消息投影版本头（缺省 null = 不可得）。 */
+  const messageProjectionVersionRef = useRef<MessageProjectionVersion | null>(null)
   const projectIdRef = useRef(projectId)
   projectIdRef.current = projectId
   const conversationKey = session === undefined ? null : sessionKey(session.ref)
@@ -429,7 +499,9 @@ export function useResearchSourceChat({
       openStream: (input) => {
         // source 新协议以路径 source_id 定位：不携带 global 的 source_scope/note_ids。
         // PR-7 P0-2：服务端 `SourceSessionSubmission` 是 `extra="forbid"`，
-        // 顶层 `source_ids` 会 422 `extra_forbidden`；wire 只写 query/model_id。
+        // 顶层 `source_ids` 会 422 `extra_forbidden`；wire 只写 query/model_id
+        // （Issue #1013 起可选多一个 `selection_context`，仍是显式允许字段）。
+        const selectionContext = selectionContextGetterRef.current?.() ?? null
         const abort = openResearchChatStream({
           protocol: 'research-session-v1',
           projectId: projectIdRef.current,
@@ -443,6 +515,9 @@ export function useResearchSourceChat({
           request: {
             query: input.query,
             model_id: input.modelId,
+            ...(selectionContext === null
+              ? {}
+              : { selection_context: selectionContextToWire(selectionContext) }),
           },
           onEvent: input.onEvent,
           onEnd: input.onEnd,
@@ -485,6 +560,13 @@ export function useResearchSourceChat({
             ...(cursor === null || cursor === undefined ? {} : { cursor }),
             order: readOrder,
             limit: limit ?? SOURCE_DETAIL_WINDOW_LIMIT,
+            // Issue #1013 §2.3/§2.11：捕获消息投影版本头（选段读投影 fail-closed）。
+            onResponseMeta: (headers) => {
+              const version = resolveMessageProjectionVersion(
+                headers.get(MESSAGE_PROJECTION_HEADER),
+              )
+              messageProjectionVersionRef.current = version.ok ? version.value : null
+            },
           },
         ).then((detail) => {
           if (cancelled) return detail

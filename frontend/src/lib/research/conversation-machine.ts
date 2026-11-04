@@ -1316,3 +1316,244 @@ function syntheticReceipt(
     editorIntentHash: view.editorIntentHash ?? turn.identity.editorIntentHash,
   }
 }
+
+// ---------------------------------------------------------------------------
+// Issue #1013（D1-E-2）§2.10：citation → durable message 的「返回原回答」目标
+//
+// 纯函数层（不直接读 window；storage 由调用方注入，便于测试）。
+// 耐久目标 = citation 身份（doc/doc_version/chunk_id/page_idx）+ durable
+// message_id + 会话身份；写本 tab 的 sessionStorage 与 localStorage（跨重开
+// 保留）。**不写入也不依赖 `chat_anchor`**——滚动锚点仍只表达最后阅读位置，
+// 普通滚动覆盖 chat_anchor 不影响返回目标。
+// ---------------------------------------------------------------------------
+
+/** citation 身份（往返匹配用；缺失字段用 null 表示）。 */
+export interface ReturnTargetCitation {
+  /** citation 指向的公共 Source ID。 */
+  readonly sourceId: string
+  readonly docId: string
+  readonly docVersion: string | null
+  readonly chunkId: string | null
+  readonly pageIdx: number | null
+}
+
+/** 「返回原回答」的耐久目标（localStorage/sessionStorage 同形状）。 */
+export interface SessionReturnTarget {
+  readonly version: 1
+  readonly projectId: string
+  /** `sessionKey(ref)`（含 kind/source，避免跨会话误命中）。 */
+  readonly sessionKey: string
+  readonly sessionId: string
+  readonly kind: 'global' | 'source'
+  /** source 会话的 source_id；global 为 null。 */
+  readonly sourceSessionSourceId: string | null
+  readonly messageId: string
+  readonly citation: ReturnTargetCitation
+  readonly recordedAt: string
+}
+
+/** storage 键前缀（按 project + citation 来源隔离：来源详情按来源读最新目标）。 */
+export const RETURN_TARGET_STORAGE_PREFIX = 'rdlens.research.return-target.v1'
+
+/** 键：`<prefix>/<project>/<citationSourceId>`。 */
+export function returnTargetStorageKey(
+  projectId: string,
+  citationSourceId: string,
+): string {
+  return `${RETURN_TARGET_STORAGE_PREFIX}/${encodeURIComponent(projectId)}/${encodeURIComponent(citationSourceId)}`
+}
+
+/** 可由任意 storage 实现的最小子集（便于测试注入）。 */
+export interface ReturnTargetStorage {
+  getItem(key: string): string | null
+  setItem(key: string, value: string): void
+  removeItem?(key: string): void
+}
+
+function isNonEmpty(value: unknown, max = 512): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= max
+}
+
+/**
+ * 构造返回目标；身份非法（空 message/session/来源）→ null（不得写半条）。
+ */
+export function buildSessionReturnTarget(input: {
+  readonly projectId: string
+  readonly ref: ResearchSessionRef
+  readonly messageId: string
+  readonly citation: ReturnTargetCitation
+  readonly recordedAt?: string
+}): SessionReturnTarget | null {
+  const { projectId, ref, messageId, citation } = input
+  if (!isNonEmpty(projectId) || !isNonEmpty(ref.sessionId) || !isNonEmpty(messageId)) {
+    return null
+  }
+  if (!isNonEmpty(citation.sourceId) || !isNonEmpty(citation.docId)) return null
+  return {
+    version: 1,
+    projectId,
+    sessionKey: sessionKey(ref),
+    sessionId: ref.sessionId,
+    kind: ref.kind,
+    sourceSessionSourceId: ref.kind === 'source' ? ref.sourceId : null,
+    messageId,
+    citation: {
+      sourceId: citation.sourceId,
+      docId: citation.docId,
+      docVersion: citation.docVersion ?? null,
+      chunkId: citation.chunkId ?? null,
+      pageIdx: citation.pageIdx ?? null,
+    },
+    recordedAt: input.recordedAt ?? new Date().toISOString(),
+  }
+}
+
+function parseReturnTarget(raw: string | null, projectId: string): SessionReturnTarget | null {
+  if (raw === null) return null
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null
+  const value = parsed as Record<string, unknown>
+  if (value.version !== 1) return null
+  if (value.projectId !== projectId) return null
+  const citation = value.citation
+  if (typeof citation !== 'object' || citation === null) return null
+  const citationRecord = citation as Record<string, unknown>
+  if (!isNonEmpty(value.sessionKey) || !isNonEmpty(value.sessionId)) return null
+  if (value.kind !== 'global' && value.kind !== 'source') return null
+  if (!isNonEmpty(value.messageId)) return null
+  if (!isNonEmpty(citationRecord.sourceId) || !isNonEmpty(citationRecord.docId)) return null
+  if (!isNonEmpty(value.recordedAt)) return null
+  const pageIdx = citationRecord.pageIdx
+  const chunkId = citationRecord.chunkId
+  const docVersion = citationRecord.docVersion
+  if (pageIdx !== null && !(typeof pageIdx === 'number' && Number.isInteger(pageIdx) && pageIdx >= 0)) {
+    return null
+  }
+  if (chunkId !== null && !isNonEmpty(chunkId)) return null
+  if (docVersion !== null && !isNonEmpty(docVersion)) return null
+  return {
+    version: 1,
+    projectId,
+    sessionKey: value.sessionKey,
+    sessionId: value.sessionId,
+    kind: value.kind,
+    sourceSessionSourceId:
+      typeof value.sourceSessionSourceId === 'string' ? value.sourceSessionSourceId : null,
+    messageId: value.messageId,
+    citation: {
+      sourceId: citationRecord.sourceId,
+      docId: citationRecord.docId,
+      docVersion: docVersion as string | null,
+      chunkId: chunkId as string | null,
+      pageIdx: pageIdx as number | null,
+    },
+    recordedAt: value.recordedAt,
+  }
+}
+
+/** 读最新返回目标（storage 不可用/损坏 → null，不抛错）。 */
+export function readSessionReturnTarget(
+  storage: ReturnTargetStorage | null | undefined,
+  projectId: string,
+  citationSourceId: string,
+): SessionReturnTarget | null {
+  if (storage === null || storage === undefined) return null
+  try {
+    return parseReturnTarget(
+      storage.getItem(returnTargetStorageKey(projectId, citationSourceId)),
+      projectId,
+    )
+  } catch {
+    return null
+  }
+}
+
+/** 写返回目标（失败 → false，不阻断 citation 跳转）。 */
+export function writeSessionReturnTarget(
+  storage: ReturnTargetStorage | null | undefined,
+  target: SessionReturnTarget,
+): boolean {
+  if (storage === null || storage === undefined) return false
+  try {
+    storage.setItem(returnTargetStorageKey(target.projectId, target.citation.sourceId), JSON.stringify(target))
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 同时写 sessionStorage 与 localStorage（本 tab 即时返回 + 跨重开保留）。
+ *
+ * 任一写成功即返回 target；都不可用 → null（UI 仍可本次内存内返回）。
+ */
+export function recordSessionReturnTarget(input: {
+  readonly target: SessionReturnTarget | null
+  readonly sessionStorage?: ReturnTargetStorage | null
+  readonly localStorage?: ReturnTargetStorage | null
+}): SessionReturnTarget | null {
+  const target = input.target
+  if (target === null) return null
+  const wroteSession = writeSessionReturnTarget(input.sessionStorage, target)
+  const wroteLocal = writeSessionReturnTarget(input.localStorage, target)
+  return wroteSession || wroteLocal ? target : null
+}
+
+/** citation 是否匹配给定身份（doc_id 必配；其余可空字段在提供时逐项等值）。 */
+export function citationMatchesReturnIdentity(
+  citation: {
+    readonly docId?: string | null
+    readonly docVersion?: string | null
+    readonly chunkId?: string | null
+    readonly pageIdx?: number | null
+  },
+  identity: Omit<ReturnTargetCitation, 'sourceId'>,
+): boolean {
+  if ((citation.docId ?? null) === null) return false
+  if (citation.docId !== identity.docId) return false
+  if (identity.docVersion !== null && (citation.docVersion ?? null) !== identity.docVersion) {
+    return false
+  }
+  if (identity.chunkId !== null && (citation.chunkId ?? null) !== identity.chunkId) {
+    return false
+  }
+  if (identity.pageIdx !== null && (citation.pageIdx ?? null) !== identity.pageIdx) {
+    return false
+  }
+  return true
+}
+
+/**
+ * 无 storage 记录时：按 citation 身份在**已加载**消息里找最近一条命中。
+ *
+ * `messages` 按阅读顺序（旧→新）；从尾部向前找（确定性：会话消息序列中
+ * 最近一条）。返回命中的 message_id；无命中 → null（调用方显示
+ * `position_unavailable`，**不跳最新**）。
+ */
+export function findReturnTargetMessage<T>(input: {
+  readonly messages: readonly T[]
+  readonly identity: Omit<ReturnTargetCitation, 'sourceId'>
+  readonly messageIdOf: (message: T) => string | null
+  readonly citationsOf: (message: T) => readonly {
+    readonly docId?: string | null
+    readonly docVersion?: string | null
+    readonly chunkId?: string | null
+    readonly pageIdx?: number | null
+  }[]
+}): string | null {
+  for (let index = input.messages.length - 1; index >= 0; index -= 1) {
+    const message = input.messages[index]
+    const messageId = input.messageIdOf(message)
+    if (messageId === null) continue
+    const matched = input.citationsOf(message).some((citation) =>
+      citationMatchesReturnIdentity(citation, input.identity),
+    )
+    if (matched) return messageId
+  }
+  return null
+}

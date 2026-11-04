@@ -976,6 +976,20 @@ export const frFR = {
     viewDocs: "Voir la documentation",
   },
   research: {
+    selection: {
+      discuss: 'Discuter de la sélection',
+      chip: '{{source}} · p. {{page}} · {{start}}–{{end}} · {{quote}}',
+      summary: 'Discuter : {{quote}} (page {{page}}, {{start}}–{{end}})',
+      remove: 'Retirer la sélection',
+      restricted: 'Extrait inaccessible',
+      positionUnavailable: "La position de la sélection n'est plus valide",
+      unavailable: 'Sélection indisponible',
+      captureFailed: 'Impossible de localiser le texte sélectionné dans la source. Sélectionnez un passage plus court.',
+    },
+    source: {
+      returnToAnswer: 'Retour à la réponse',
+      returnUnavailable: "La réponse d'origine est introuvable. Elle se trouve peut-être hors de l'historique chargé.",
+    },
     session: {
       newConversation: 'New conversation',
       restrictedConversation: 'Restricted conversation',
@@ -989,7 +1003,6 @@ export const frFR = {
       creating: 'Starting a conversation…',
       draft: 'Draft',
       notFound: 'This conversation no longer exists',
-      contentNotReady: 'Session content is not wired yet (PR-5a). Legacy chat panels are disabled while session navigation is active.',
       untitled: 'Untitled session',
       shortId: 'Session {{id}}',
       visibility: {
@@ -1070,6 +1083,16 @@ export const frFR = {
       invalidDraft: 'Draft contains characters that cannot be sent — remove or replace them before sending',
     },
     errors: {
+      selectionContractNotEnabled: 'Cet espace de travail ne prend pas en charge le contexte de sélection. Mettez à jour le client ou désactivez la fonction.',
+      selectionSubmissionRequired: 'Les sélections doivent être envoyées avec une soumission de session. Utilisez le champ de saisie du chat de session.',
+      selectionInvalid: 'La sélection est invalide pour cette source. Sélectionnez à nouveau le texte.',
+      selectionPositionUnavailable: 'La position sélectionnée ne correspond plus à la source. Sélectionnez à nouveau le texte.',
+      selectionVersionUnavailable: "La version de la source sélectionnée n'est plus disponible. Sélectionnez à nouveau le texte.",
+      selectionSourceUnavailable: "La source sélectionnée n'est pas disponible dans ce projet. Sélectionnez à nouveau le texte.",
+      sourceAccessRestricted: "Cette source n'est plus accessible (accès éventuellement révoqué).",
+      sourceRefMismatch: 'La version de la source a changé. Actualisez la source et réessayez.',
+      sessionStoreUnavailable: "L'accès n'a pas pu être vérifié pour le moment. Réessayez dans un instant.",
+      selectionUnavailable: 'La fonction de sélection n’est plus disponible. Retirez la sélection pour continuer.',
       acceptanceRetryExhausted: 'Your submission is pending confirmation — its result could not be verified automatically. Retry with the original attempt or review it before sending again.',
       generic: "Something went wrong. Check the message below and try again, or contact an administrator.",
       consentRequired: "External model egress consent is required before sending. Acknowledge it to continue.",

@@ -39,6 +39,18 @@ export interface ResearchDraftComposerProps {
   readonly onRetrySave: () => void
   /** 本机草稿恢复入口（DESIGN §3.5）；PR-5b 完整呈现。 */
   readonly onRestoreDraft?: (writerId: string) => void
+  /**
+   * Issue #1013（D1-E-2）§2.11：选段 chip（composer 上方）。
+   * - 存在时发送可用性**不变**（不额外 gate）；
+   * - `onRemove` 移除后请求不再携带 selection_context；
+   * - capability 不可用时父层不渲染该 chip（UI 全部隐藏）。
+   */
+  readonly selectionChip?: {
+    readonly label: string
+    readonly title?: string
+    readonly onRemove: () => void
+    readonly disabled?: boolean
+  } | null
   /** 仅暴露给后续 PR（本 PR 不渲染按钮）：采纳服务端版本。 */
   readonly onAdoptServerVersion?: () => void
   /** 仅暴露给后续 PR（本 PR 不渲染按钮）：用本机版本覆盖服务端。 */
@@ -74,6 +86,7 @@ const GATE_REASON_KEYS: Record<ResearchDraftGateReason, string> = {
   invalid_text: 'research.editor.invalidDraft',
   scope_invalid: 'research.layout.scope.selectItemRequired',
   turn_active: 'research.errors.generationInProgress',
+  selection_unavailable: 'research.errors.selectionUnavailable',
 }
 
 export function researchDraftGateReasonKey(reason: ResearchDraftGateReason): string {
@@ -113,6 +126,11 @@ export function deriveResearchDraftGate(input: {
    * “Select a source or note…”，`POST …/sources/{id}/chat` 从不发出）。
    */
   readonly kind?: 'global' | 'source'
+  /**
+   * Issue #1013（D1-E-2）§2.11：composer 持有选段 chip 但 d1e 能力已不可用
+   * （能力翻转边界）。缺省/`false` 不改变任何既有 gate 行为。
+   */
+  readonly selectionUnavailable?: boolean
 }): ResearchDraftGate {
   const { editorSnapshot, conversationSnapshot } = input
   if (editorSnapshot === null) return { allowed: false, reason: 'runtime_unavailable' }
@@ -186,6 +204,11 @@ export function deriveResearchDraftGate(input: {
   ) {
     return { allowed: false, reason: 'turn_active' }
   }
+  // Issue #1013 §2.11：选段能力在编写期间失效 → 禁止携带已失效的选段发送
+  // （capability off 时父层本就不渲染选段 UI；此分支只覆盖翻转边界）。
+  if (input.selectionUnavailable === true) {
+    return { allowed: false, reason: 'selection_unavailable' }
+  }
   return { allowed: true, reason: null }
 }
 
@@ -201,6 +224,7 @@ export function ResearchDraftComposer({
   onSend,
   onRetrySave,
   onRestoreDraft,
+  selectionChip = null,
   localDraftMode = false,
   focusRequestToken,
 }: ResearchDraftComposerProps) {
@@ -328,24 +352,48 @@ export function ResearchDraftComposer({
       </div>
 
       <div className="flex min-w-0 items-end gap-2">
-        <textarea
-          ref={textareaRef}
-          value={value}
-          rows={1}
-          className="min-h-[36px] w-full min-w-0 resize-none rounded-md border bg-background px-3 py-2 text-sm"
-          placeholder={t('research.chatPlaceholder')}
-          aria-label={t('research.editor.composerLabel')}
-          aria-describedby={gateReasonText !== null ? 'research-draft-gate-hint' : undefined}
-          onChange={event => handleChange(event.target.value)}
-          onKeyDown={handleKeyDown}
-          onCompositionStart={() => {
-            composingRef.current = true
-          }}
-          onCompositionEnd={() => {
-            composingRef.current = false
-          }}
-          data-testid="chat-input"
-        />
+        <div className="min-w-0 flex-1 space-y-1.5">
+          {selectionChip !== null && (
+            <div
+              className="flex min-w-0 items-center gap-2 rounded-md border border-primary/40 bg-primary/5 px-2 py-1"
+              data-testid="selection-chip"
+              data-selection-disabled={selectionChip.disabled === true ? 'true' : undefined}
+            >
+              <span className="truncate text-xs" title={selectionChip.title}>
+                {selectionChip.label}
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="h-5 shrink-0 px-1 text-xs"
+                data-testid="selection-chip-remove"
+                aria-label={t('research.selection.remove')}
+                onClick={selectionChip.onRemove}
+              >
+                ×
+              </Button>
+            </div>
+          )}
+          <textarea
+            ref={textareaRef}
+            value={value}
+            rows={1}
+            className="min-h-[36px] w-full min-w-0 resize-none rounded-md border bg-background px-3 py-2 text-sm"
+            placeholder={t('research.chatPlaceholder')}
+            aria-label={t('research.editor.composerLabel')}
+            aria-describedby={gateReasonText !== null ? 'research-draft-gate-hint' : undefined}
+            onChange={event => handleChange(event.target.value)}
+            onKeyDown={handleKeyDown}
+            onCompositionStart={() => {
+              composingRef.current = true
+            }}
+            onCompositionEnd={() => {
+              composingRef.current = false
+            }}
+            data-testid="chat-input"
+          />
+        </div>
         <Button
           type="button"
           size="sm"

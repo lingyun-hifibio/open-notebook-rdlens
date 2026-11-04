@@ -976,6 +976,20 @@ export const jaJP = {
     viewDocs: "ドキュメントを見る",
   },
   research: {
+    selection: {
+      discuss: '選択範囲について質問',
+      chip: '{{source}} · {{page}} ページ · {{start}}–{{end}} · {{quote}}',
+      summary: '選択範囲: {{quote}}（{{page}} ページ、{{start}}–{{end}}）',
+      remove: '選択範囲を削除',
+      restricted: '抜粋にアクセスできません',
+      positionUnavailable: '選択位置が無効になりました',
+      unavailable: '選択範囲を利用できません',
+      captureFailed: '選択したテキストをソース内で特定できませんでした。短い範囲を選び直してください。',
+    },
+    source: {
+      returnToAnswer: '回答に戻る',
+      returnUnavailable: '元の回答を特定できませんでした。読み込み済みの履歴に含まれていない可能性があります。',
+    },
     session: {
       newConversation: 'New conversation',
       restrictedConversation: 'Restricted conversation',
@@ -989,7 +1003,6 @@ export const jaJP = {
       creating: 'Starting a conversation…',
       draft: 'Draft',
       notFound: 'This conversation no longer exists',
-      contentNotReady: 'Session content is not wired yet (PR-5a). Legacy chat panels are disabled while session navigation is active.',
       untitled: 'Untitled session',
       shortId: 'Session {{id}}',
       visibility: {
@@ -1070,6 +1083,16 @@ export const jaJP = {
       invalidDraft: 'Draft contains characters that cannot be sent — remove or replace them before sending',
     },
     errors: {
+      selectionContractNotEnabled: 'このワークスペースは選択範囲コンテキストに対応していません。クライアントを更新するか機能を無効にしてください。',
+      selectionSubmissionRequired: '選択範囲はセッション送信と一緒に送る必要があります。セッションチャットの入力欄を使用してください。',
+      selectionInvalid: 'この選択範囲は現在のソースに無効です。選び直してください。',
+      selectionPositionUnavailable: '選択位置がソースと一致しなくなりました。選び直してください。',
+      selectionVersionUnavailable: '選択したソースバージョンは利用できません。選び直してください。',
+      selectionSourceUnavailable: '選択したソースはこのプロジェクトで利用できません。選び直してください。',
+      sourceAccessRestricted: 'このソースにはアクセスできなくなりました（権限が取り消された可能性があります）。',
+      sourceRefMismatch: 'ソースのバージョンが変わりました。更新して再試行してください。',
+      sessionStoreUnavailable: '現在アクセス権を確認できません。しばらくして再試行してください。',
+      selectionUnavailable: '選択範囲機能は利用できなくなりました。選択範囲を削除して続行してください。',
       acceptanceRetryExhausted: 'Your submission is pending confirmation — its result could not be verified automatically. Retry with the original attempt or review it before sending again.',
       generic: "Something went wrong. Check the message below and try again, or contact an administrator.",
       consentRequired: "External model egress consent is required before sending. Acknowledge it to continue.",
