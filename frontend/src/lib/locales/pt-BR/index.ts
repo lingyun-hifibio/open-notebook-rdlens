@@ -1556,6 +1556,8 @@ export const ptBR = {
         retryWithNewKey: "The scope is too large for a single overview. Retry with a new request (a fresh idempotency key is used automatically) or reduce the scope.",
         refreshToConfirm: "The update request may have been applied. Refresh the overview to confirm the current content — the previous overview may not have been kept.",
         staleGenerationIgnored: "A newer overview was already saved. The newer overview was kept and this older generation was not applied.",
+        continueDraft: "Continue the discussion based on this topic overview: ",
+        changesNotice: "Sources changed since the overview scope ({{date}}): {{added}} added, {{versionChanged}} version changed, {{retired}} retired. Update the overview when you are ready — it is never updated automatically.",
       },
       restricted: {
         title: "Overview content is restricted",

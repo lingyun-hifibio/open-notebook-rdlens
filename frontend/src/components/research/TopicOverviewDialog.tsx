@@ -45,7 +45,10 @@ import {
 } from '@/lib/hooks/use-research-topic-overview'
 import { formatScopeLabel, useResearchScope } from '@/lib/research/scope'
 import type { C05RequestScope } from '@/lib/research/c05-request'
-import { topicOverviewDiscussionText } from '@/lib/research/topic-overview'
+import {
+  topicOverviewDiscussionText,
+  topicOverviewSourceChanges,
+} from '@/lib/research/topic-overview'
 import type {
   TopicOverviewCitation,
   TopicOverviewWire,
@@ -350,7 +353,13 @@ export function TopicOverviewDialog({
               onCitationJump={onCitationJump}
               discussion={
                 editorHandle !== null
-                  ? () => editorHandle.setDraftText(topicOverviewDiscussionText(wire))
+                  ? () =>
+                      editorHandle.setDraftText(
+                        topicOverviewDiscussionText(
+                          wire,
+                          t('research.topicOverview.dialog.continueDraft'),
+                        ),
+                      )
                   : null
               }
             />
@@ -516,6 +525,28 @@ function TopicOverviewBody({
   const resolvedMode = processing?.resolved_mode ?? null
   const modelId = wire.model?.model_id ?? null
 
+  // MEDIUM-1（计划 §2.9 :491）：Dialog 就绪态与入口一致地提示「资料变化」。
+  // 规则：仅 `visibility==='ready'` 且有可比较的范围来源时计算/渲染；restricted
+  // 的 `scope.sources=[]` 按设计不参与比较（否则当前全部资料会被误算成 added）。
+  const sourceChanges = useMemo(() => {
+    if (wire.visibility !== 'ready') return null
+    const scopeSources = wire.scope?.sources ?? []
+    if (scopeSources.length === 0) return null
+    return topicOverviewSourceChanges(
+      scopeSources.map((item) => ({
+        document_id: item.document_id,
+        document_version: item.document_version,
+      })),
+      (sources ?? []).map((item) => ({
+        document_id: item.document_id,
+        document_version: item.document_version,
+      })),
+    )
+  }, [sources, wire])
+  const hasSourceChanges =
+    sourceChanges !== null &&
+    sourceChanges.added + sourceChanges.versionChanged + sourceChanges.retired > 0
+
   if (restricted) {
     return (
       <div className="space-y-3">
@@ -550,6 +581,20 @@ function TopicOverviewBody({
   return (
     <div className="space-y-4">
       <OverviewMeta generatedAt={generatedAt} capturedAt={capturedAt} />
+      {hasSourceChanges && sourceChanges !== null && (
+        <p
+          className="text-xs text-muted-foreground"
+          role="status"
+          data-testid="topic-overview-dialog-changes"
+        >
+          {t('research.topicOverview.dialog.changesNotice', {
+            date: capturedAt ?? t('research.searchHistory.notRecorded'),
+            added: sourceChanges.added,
+            versionChanged: sourceChanges.versionChanged,
+            retired: sourceChanges.retired,
+          })}
+        </p>
+      )}
       {wire.focus !== null && wire.focus.length > 0 && (
         <p className="text-xs text-muted-foreground" data-testid="topic-overview-focus-value">
           {t('research.topicOverview.dialog.focusValue', { focus: wire.focus })}

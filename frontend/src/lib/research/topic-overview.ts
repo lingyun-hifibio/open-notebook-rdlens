@@ -573,17 +573,28 @@ function firstQuestionLine(markdown: string | null): string | null {
 }
 
 /**
- * 「继续讨论」草稿文本：固定引导文本 +（`focus` 非空 ? `focus` : 概览首段问题）。
+ * 「继续讨论」草稿文本：引导文本 +（`focus` 非空 ? `focus` : 概览首段问题）。
  * 两者都不可用时只返回引导句（不出现 undefined/null、不依赖组件与 locale）。
  *
- * 说明：冻结签名不接收 locale —— 引导文本按计划 §2.9 固定，概览正文/问题
- * 本身已由 host 按 `response_language` 生成。
+ * 加性可选 `guide`（独立审查 MEDIUM-3）：组件可传入本地化引导句（如
+ * `t('research.topicOverview.dialog.continueDraft')`），避免 en-US 下向
+ * 当前会话写入中文草稿。`guide` 按原样拼接（调用方保证分隔符，通常以
+ * `": "` / `"："` 结尾）；无可用目标时只返回 `guide`（去尾空白）。
+ * **缺省 `guide` 时行为与既有调用/测试逐字节一致**（固定中文引导句，
+ * 概览正文/问题本身由 host 按 `response_language` 生成）。
  */
-export function topicOverviewDiscussionText(overview: TopicOverviewWire): string {
+export function topicOverviewDiscussionText(
+  overview: TopicOverviewWire,
+  guide?: string,
+): string {
   const focus = (overview.focus ?? '').trim()
   const target = focus.length > 0
     ? focus
     : firstQuestionLine(overview.sections?.main_questions ?? null)
+  if (guide !== undefined) {
+    if (target === null) return guide.trimEnd()
+    return `${guide}${target}`
+  }
   if (target === null) return DISCUSSION_GUIDE_ONLY
   return `${DISCUSSION_GUIDE}${target}`
 }

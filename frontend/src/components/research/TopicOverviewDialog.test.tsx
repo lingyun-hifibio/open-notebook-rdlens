@@ -34,10 +34,16 @@ const h = vi.hoisted(() => ({
   useResearchSources: vi.fn(),
 }))
 
+const LOCALIZED_DISCUSSION_GUIDE = 'Continue the discussion based on this topic overview: '
+
 vi.mock('@/lib/hooks/use-translation', () => ({
   useTranslation: () => ({
     t: (key: string, opts?: Record<string, unknown>) =>
-      opts === undefined ? key : `${key}|${JSON.stringify(opts)}`,
+      key === 'research.topicOverview.dialog.continueDraft'
+        ? 'Continue the discussion based on this topic overview: '
+        : opts === undefined
+          ? key
+          : `${key}|${JSON.stringify(opts)}`,
   }),
 }))
 
@@ -249,7 +255,10 @@ beforeEach(() => {
   })
   onCitationJump = vi.fn<(sourceId: string, pageIdx: number | null) => void>()
   setDraftText = vi.fn<(text: string) => void>()
-  h.state.sources = [source()]
+  h.state.sources = [
+    source(),
+    source({ source_id: 'src_2', document_id: 'doc_2' }),
+  ]
   h.getTopicOverview.mockReset()
   h.getTopicOverview.mockResolvedValue(null)
   h.createTopicOverview.mockReset()
@@ -358,6 +367,43 @@ describe('F-04：概览展示（四段/降级/限制/范围与覆盖/模型）',
   })
 })
 
+describe('MEDIUM-1：Dialog 就绪态资料变化提示（计划 §2.9 :491）', () => {
+  it('ready 且当前资料与范围不同 → 显示新增/版本变化/退役计数', async () => {
+    // 概览范围：doc_1/v1 + doc_2/v1；当前：doc_1/v2（版本变化）+ doc_3/v1（新增），
+    // doc_2 退役。
+    h.state.sources = [
+      source({ source_id: 'src_1', document_id: 'doc_1', document_version: 'v2' }),
+      source({ source_id: 'src_3', document_id: 'doc_3', document_version: 'v1' }),
+    ]
+    h.getTopicOverview.mockResolvedValue(readyOverview())
+    renderDialog()
+
+    const notice = await screen.findByTestId('topic-overview-dialog-changes')
+    expect(notice).toHaveTextContent('research.topicOverview.dialog.changesNotice')
+    expect(notice).toHaveTextContent('"added":1')
+    expect(notice).toHaveTextContent('"versionChanged":1')
+    expect(notice).toHaveTextContent('"retired":1')
+  })
+
+  it('范围与当前资料一致 → 不显示提示', async () => {
+    h.getTopicOverview.mockResolvedValue(readyOverview())
+    renderDialog()
+    await screen.findByTestId('topic-overview-sections')
+    expect(screen.queryByTestId('topic-overview-dialog-changes')).toBeNull()
+  })
+
+  it('restricted → 不显示提示（scope.sources=[] 不参与比较）', async () => {
+    h.state.sources = [
+      source({ source_id: 'src_1', document_id: 'doc_1', document_version: 'v9' }),
+      source({ source_id: 'src_9', document_id: 'doc_9', document_version: 'v1' }),
+    ]
+    h.getTopicOverview.mockResolvedValue(restrictedOverview())
+    renderDialog()
+    await screen.findByTestId('topic-overview-restricted')
+    expect(screen.queryByTestId('topic-overview-dialog-changes')).toBeNull()
+  })
+})
+
 describe('F-05：引用跳转（四闸）', () => {
   it('来源可用时点击跳转调用 onCitationJump(sourceId, pageIdx)', async () => {
     h.getTopicOverview.mockResolvedValue(readyOverview())
@@ -418,7 +464,13 @@ describe('F-06：继续讨论（editorHandle.setDraftText）', () => {
     renderDialog({ editorHandle: { setDraftText } })
     fireEvent.click(await screen.findByTestId('topic-overview-discuss'))
     expect(setDraftText).toHaveBeenCalledTimes(1)
-    expect(setDraftText).toHaveBeenCalledWith(topicOverviewDiscussionText(overview))
+    expect(setDraftText).toHaveBeenCalledWith(
+      topicOverviewDiscussionText(overview, LOCALIZED_DISCUSSION_GUIDE),
+    )
+    // en-US 不再向草稿写中文引导句（MEDIUM-3）
+    const draft = setDraftText.mock.calls[0][0]
+    expect(draft.startsWith(LOCALIZED_DISCUSSION_GUIDE)).toBe(true)
+    expect(draft).not.toContain('基于当前主题概览')
   })
 
   it('editorHandle 不可用时不显示动作', async () => {

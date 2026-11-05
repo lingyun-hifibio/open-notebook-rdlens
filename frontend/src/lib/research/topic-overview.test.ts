@@ -696,6 +696,23 @@ describe('topicOverviewDiscussionText', () => {
     expect(text).not.toContain('null')
   })
 
+  it('加性 guide：本地化引导句 + target（不再写中文引导句）', () => {
+    const overview = readyOverview()
+    overview.focus = 'Why A?'
+    const localized = 'Continue the discussion based on this topic overview: '
+    expect(topicOverviewDiscussionText(overview, localized)).toBe(`${localized}Why A?`)
+    expect(topicOverviewDiscussionText(overview, localized)).not.toContain(discussionGuide)
+  })
+
+  it('加性 guide 且无可用 target → 仅本地化引导句（去尾空白，无 undefined）', () => {
+    const overview = readyOverview()
+    overview.focus = '   '
+    overview.sections = null
+    const text = topicOverviewDiscussionText(overview, 'Continue the discussion: ')
+    expect(text).toBe('Continue the discussion:')
+    expect(text).not.toContain('undefined')
+  })
+
   it('sections.main_questions 为纯标题 → 无可用问题，回落引导句', () => {
     const overview = readyOverview()
     overview.focus = null
