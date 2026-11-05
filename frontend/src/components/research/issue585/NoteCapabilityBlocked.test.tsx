@@ -75,6 +75,35 @@ describe('NoteCapabilityBlocked', () => {
     expect(screen.queryByRole('button', { name: /new note|新建/i })).toBeNull()
   })
 
+  it('本地有未保存文本时关闭需二次确认，确认后才回调 onClose（不静默丢弃）', () => {
+    const onClose = vi.fn()
+    render(<NoteCapabilityBlocked reason="note_not_found" onClose={onClose} closeNeedsConfirm />)
+    fireEvent.click(screen.getByTestId('note-capability-close'))
+    expect(onClose).not.toHaveBeenCalled()
+    const confirmPanel = screen.getByTestId('note-capability-close-confirm')
+    expect(confirmPanel).toHaveTextContent('research.notes.leave.discardConfirm')
+    fireEvent.click(screen.getByTestId('note-capability-close-confirm-action'))
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('二次确认可取消（留在阻断态，不丢弃本地文本）', () => {
+    const onClose = vi.fn()
+    render(<NoteCapabilityBlocked reason="note_not_found" onClose={onClose} closeNeedsConfirm />)
+    fireEvent.click(screen.getByTestId('note-capability-close'))
+    fireEvent.click(screen.getByTestId('note-capability-close-confirm-cancel'))
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByTestId('note-capability-close')).toBeInTheDocument()
+    expect(screen.queryByTestId('note-capability-close-confirm')).toBeNull()
+  })
+
+  it('无未保存文本时关闭直接回调（阻断态不是死胡同）', () => {
+    const onClose = vi.fn()
+    render(<NoteCapabilityBlocked reason="note_access_restricted" onClose={onClose} />)
+    fireEvent.click(screen.getByTestId('note-capability-close'))
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(screen.queryByTestId('note-capability-close-confirm')).toBeNull()
+  })
+
   it('阻断态不渲染任何可编辑标题/正文控件', () => {
     render(<NoteCapabilityBlocked reason="note_access_restricted" />)
     expect(screen.queryByRole('textbox')).toBeNull()

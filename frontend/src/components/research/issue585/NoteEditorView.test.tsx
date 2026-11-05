@@ -376,6 +376,83 @@ describe('NoteEditorView', () => {
     expect(screen.getByTestId('note-leave-guard-dialog')).toBeInTheDocument()
   })
 
+  it('阻断态有本地文本：关闭先二次确认，确认后 discardLocal + 关闭（不静默丢弃）', () => {
+    const onRequestClose = vi.fn()
+    const { actions } = renderEditor(
+      { saveStatus: 'blocked', blockReason: 'note_not_found', content: '本地可取回文本' },
+      {},
+      { onRequestClose },
+    )
+    fireEvent.click(screen.getByTestId('note-capability-close'))
+    expect(actions.discardLocal).not.toHaveBeenCalled()
+    expect(onRequestClose).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByTestId('note-capability-close-confirm-action'))
+    expect(actions.discardLocal).toHaveBeenCalledTimes(1)
+    expect(onRequestClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('阻断态无本地文本：关闭直接可用（阻断态不是死胡同）', () => {
+    const onRequestClose = vi.fn()
+    const { actions } = renderEditor(
+      { saveStatus: 'restricted', blockReason: 'note_access_restricted', title: '', content: '' },
+      {},
+      { onRequestClose },
+    )
+    fireEvent.click(screen.getByTestId('note-capability-close'))
+    expect(screen.queryByTestId('note-capability-close-confirm')).toBeNull()
+    expect(actions.discardLocal).toHaveBeenCalledTimes(1)
+    expect(onRequestClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('能力故障阻断态提供重试能力入口（fail-closed 可恢复）', () => {
+    const onRetryCapabilities = vi.fn()
+    renderEditor(
+      { status: 'ready' },
+      {},
+      {
+        capabilities: {
+          ...readyCapabilities,
+          noteEditorExisting: { available: false, reason: 'note_store_unavailable' },
+        },
+        onRetryCapabilities,
+      },
+    )
+    fireEvent.click(screen.getByTestId('note-capability-retry'))
+    expect(onRetryCapabilities).toHaveBeenCalledTimes(1)
+  })
+
+  it('打开失败（可重试网络错误）提供重试打开入口', () => {
+    const onRetryOpen = vi.fn()
+    renderEditor(
+      {
+        status: 'error',
+        note: null,
+        saveStatus: 'failed',
+        error: { code: 'network_error', message: 'down', retryable: true, status: 0 },
+      },
+      {},
+      { onRetryOpen },
+    )
+    fireEvent.click(screen.getByTestId('note-capability-retry'))
+    expect(onRetryOpen).toHaveBeenCalledTimes(1)
+  })
+
+  it('删除（404，不可重试）不提供重试入口，只保留取回与关闭', () => {
+    renderEditor(
+      {
+        status: 'error',
+        note: null,
+        saveStatus: 'failed',
+        blockReason: 'note_not_found',
+        error: { code: 'note_not_found', message: 'gone', retryable: false, status: 404 },
+      },
+      {},
+      { onRetryOpen: vi.fn(), onRetryCapabilities: vi.fn() },
+    )
+    expect(screen.queryByTestId('note-capability-retry')).toBeNull()
+    expect(screen.getByTestId('note-capability-close')).toBeInTheDocument()
+  })
+
   it('关闭按钮调用 onRequestClose（离开保护由 state 驱动）', () => {
     const onRequestClose = vi.fn()
     renderEditor({}, {}, { onRequestClose })

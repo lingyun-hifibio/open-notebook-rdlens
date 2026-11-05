@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useDebounce } from 'use-debounce'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -35,6 +35,7 @@ import { AdminReadOnlyBanner } from './AdminReadOnlyBanner'
 import { NoteCatalog } from './issue585/NoteCatalog'
 import { NoteCapabilityBlocked } from './issue585/NoteCapabilityBlocked'
 import { NoteEditorView } from './issue585/NoteEditorView'
+import { blockReasonLabelKey, noteErrorLabelKey } from './issue585/note-ui-labels'
 
 /**
  * Notes 工作台（UI-02，REQ-SCOPE-04/REQ-API-01/REQ-DIS-01，设计 §4.4）。
@@ -90,6 +91,24 @@ export function NotesPanel({
     isAdminReadonly,
   })
 
+  // 目录行点击后记录目标 note_id：打开失败/能力故障时供编辑器重试打开。
+  const [requestedNoteId, setRequestedNoteId] = useState<string | null>(null)
+  // 最新 editor 状态/动作引用：异步动作返回 null 后（闭包里的 state 已过期）
+  // 仍能拿到真实失败原因；卸载 cleanup 也能触发最后一次 flush。
+  const editorStateRef = useRef(editor.state)
+  editorStateRef.current = editor.state
+  const editorActionsRef = useRef(editor.actions)
+  editorActionsRef.current = editor.actions
+
+  // 审查 A M3（本 PR 最小缓解）：NotesPanel 因切 pane/项目卸载时尽力 flush
+  // 未决保存并持久化草稿。父级导航（ResearchWorkbench.tsx）不在本 PR 白名单，
+  // 无法在此阻断；此 cleanup 只保证不因卸载而丢失已编辑文本。
+  useEffect(() => {
+    return () => {
+      void editorActionsRef.current.flushBeforeLeave()
+    }
+  }, [])
+
   // 旧未保护 Note 的旧表单（行为与 #1045 前一致；仅 edit_schema=null 行走这里）。
   const updateMutation = useUpdateResearchNote(projectId)
   const deleteMutation = useDeleteResearchNote(projectId)
@@ -143,16 +162,28 @@ export function NotesPanel({
     const noteId = await editor.actions.createBlankNote()
     if (noteId !== null) {
       await catalog.refresh()
+      return
     }
+    // 审查 A M2：新建失败不得静默回 idle——给出明确错误反馈（原因取最新
+    // machine 状态：归一化错误码优先，其次阻断原因，最后通用“暂不可用”）。
+    const latest = editorStateRef.current
+    const description = latest.error?.code
+      ? t(noteErrorLabelKey(latest.error.code))
+      : latest.blockReason
+        ? t(blockReasonLabelKey(latest.blockReason))
+        : t('research.notes.catalog.createUnavailable')
+    toast({ title: t('common.error'), description, variant: 'destructive' })
   }
 
   const openD2Note = async (noteId: string): Promise<void> => {
     setShowLegacyForm(false)
+    setRequestedNoteId(noteId)
     await editor.actions.openNote(noteId)
   }
 
   const closeEditor = async (): Promise<void> => {
-    await editor.actions.closeEditor()
+    const closed = await editor.actions.closeEditor()
+    if (closed) setRequestedNoteId(null)
   }
 
   const canCreate = !isAdminReadonly && capabilitiesResult.capabilities?.noteEditor.available === true
@@ -287,6 +318,12 @@ export function NotesPanel({
               isAdminReadonly={isAdminReadonly}
               onRequestClose={() => void closeEditor()}
               onCopySaved={() => void catalog.refresh()}
+              onRetryOpen={
+                requestedNoteId !== null
+                  ? () => void editor.actions.openNote(requestedNoteId)
+                  : undefined
+              }
+              onRetryCapabilities={() => void capabilitiesResult.refresh()}
             />
           </CardContent>
         </Card>
