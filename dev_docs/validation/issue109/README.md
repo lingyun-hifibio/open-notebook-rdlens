@@ -166,7 +166,7 @@ node $VE/harness/capture.js after  http://127.0.0.1:8621/
 ## 修订记录
 
 - **2026-11-05**（round-3 最终）：After 取证修订为 `7b722cc1f2c49906545b7a053c5fb62ce12eac7a`（此前本 ticket 证据轮次：`1338ec8` round-1 → `0fed575` round-2 → `c1e21da`（已被 squash/force-push，未用于交付）→ `7b722cc` 最终）。本目录 22 张截图**全部按 39b456f / 7b722cc 单轮重采**（Before 11 + After 11），不混用旧修订图片。新增覆盖：Source Chat（wired）、Transformations Run 确认框、Activity Center `outcome_unknown` 重试；同时按最终 head 重采既有 8 场景。早期轮次的请求日志存档保留为 `logs/archive-gateway-requests-before-and-after-1338ec8.log`（不再作为交付证据）。
-- **2026-11-05**（round-2）：After=0fed575 的 16 张快照与 README 已提交到 PR 证据目录（`dev_docs/validation/issue109/`，提交 `8660a54`/`8aa4882`）；本 round-3 轮次已用最终 head 数据**覆盖**该目录内容（工作树未提交，见交付去向）。
+- **2026-11-05**（round-2）：After=0fed575 的 16 张快照与 README 已提交到 PR 证据目录（`dev_docs/validation/issue109/`，提交 `8660a54`/`8aa4882`）；本 round-3 轮次已用最终 head 数据**覆盖**该目录内容（已提交，见交付去向）。
 - **2026-11-05**（round-1）：首个 After 采集 1338ec8 的 16 张快照（已被取代）。
 
 ## 交付去向
