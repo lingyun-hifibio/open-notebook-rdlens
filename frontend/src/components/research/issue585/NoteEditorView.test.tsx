@@ -332,6 +332,50 @@ describe('NoteEditorView', () => {
     expect(actions.downloadLocalMarkdown).toHaveBeenCalledTimes(1)
   })
 
+  it('权限受限（saveStatus=restricted）渲染阻断态，不展示编辑表单', () => {
+    renderEditor({
+      saveStatus: 'restricted',
+      blockReason: 'note_access_restricted',
+      content: '',
+    })
+    expect(screen.getByTestId('note-capability-blocked')).toHaveAttribute(
+      'data-reason',
+      'note_access_restricted',
+    )
+    expect(screen.queryByTestId('markdown-editor')).toBeNull()
+    expect(screen.queryByLabelText('research.notes.titleLabel')).toBeNull()
+  })
+
+  it('已打开文档被删除（404 终态）渲染阻断态并保留本地文本取回入口', () => {
+    const { actions } = renderEditor({
+      saveStatus: 'failed',
+      blockReason: 'note_not_found',
+      content: '删除前本地文本',
+    })
+    expect(screen.getByTestId('note-capability-reason')).toHaveTextContent(
+      'research.notes.editor.errors.note_not_found',
+    )
+    fireEvent.click(
+      screen.getByRole('button', { name: 'research.notes.capability.copyLocal' }),
+    )
+    expect(actions.copyLocalContent).toHaveBeenCalledTimes(1)
+  })
+
+  it('冲突与离开阻断同时成立时先展示冲突对话框（不叠加模态框）', () => {
+    renderEditor({
+      status: 'ready',
+      note,
+      saveStatus: 'unknown',
+      conflict: { currentRevision: 9, currentSnapshotHash: 'h9' },
+      leaveBlockReason: 'unknown',
+    })
+    expect(screen.getByTestId('note-conflict-dialog')).toBeInTheDocument()
+    expect(screen.queryByTestId('note-leave-guard-dialog')).toBeNull()
+
+    fireEvent.click(screen.getByTestId('note-conflict-keep-editing'))
+    expect(screen.getByTestId('note-leave-guard-dialog')).toBeInTheDocument()
+  })
+
   it('关闭按钮调用 onRequestClose（离开保护由 state 驱动）', () => {
     const onRequestClose = vi.fn()
     renderEditor({}, {}, { onRequestClose })

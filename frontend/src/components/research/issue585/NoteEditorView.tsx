@@ -20,6 +20,22 @@ import { blockReasonLabelKey } from './note-ui-labels'
 
 type ViewMode = 'edit' | 'split' | 'preview'
 
+/**
+ * 终态阻断原因：出现这些机器码时编辑器不再展示可编辑表单（保留取回入口），
+ * 与 saveStatus 的瞬时态（failed/unknown 可重试）区分。
+ */
+const TERMINAL_BLOCK_REASONS = new Set<string>([
+  'note_not_found',
+  'note_access_restricted',
+  'note_edit_schema_unsupported',
+  'note_dependency_unavailable',
+  'note_snapshot_unavailable',
+  'note_store_unavailable',
+  'capability_unknown',
+  'disabled_by_flag',
+  'not_ready',
+])
+
 const PREVIEW_BY_MODE: Record<ViewMode, 'edit' | 'live' | 'preview'> = {
   edit: 'edit',
   split: 'live',
@@ -105,12 +121,21 @@ export function NoteEditorView({
         ? null
         : (capabilities.noteEditorExisting.reason ?? 'capability_unknown')
 
+  const terminalBlockReason =
+    state.blockReason !== null && TERMINAL_BLOCK_REASONS.has(state.blockReason)
   const isBlocked =
     capabilityBlockReason !== null ||
     state.saveStatus === 'blocked' ||
+    state.saveStatus === 'restricted' ||
+    terminalBlockReason ||
     (state.status === 'error' && state.note === null)
 
-  const blockedReason = state.blockReason ?? capabilityBlockReason ?? state.error?.code ?? null
+  const blockedReason =
+    state.blockReason ??
+    (state.saveStatus === 'restricted' ? 'note_access_restricted' : null) ??
+    capabilityBlockReason ??
+    state.error?.code ??
+    null
 
   async function handleCopyLocal() {
     setCopyState('copying')
@@ -179,6 +204,9 @@ export function NoteEditorView({
     )
   }
 
+  // 冲突与离开保护同时成立时（例如另存失败）先让用户处理冲突，避免两个
+  // 模态框叠加；冲突对话框关闭后再展示离开保护。
+  const conflictDialogOpen = state.conflict !== null && !conflictDismissed
   const revision = state.note?.revision ?? null
 
   return (
@@ -308,7 +336,7 @@ export function NoteEditorView({
       </div>
 
       <NoteConflictDialog
-        open={state.conflict !== null && !conflictDismissed}
+        open={conflictDialogOpen}
         conflict={state.conflict}
         localContent={state.content}
         busy={saveAsCopyBusy}
@@ -321,7 +349,9 @@ export function NoteEditorView({
       />
 
       <NoteLeaveGuardDialog
-        open={state.leaveBlockReason !== null && !leaveDismissed}
+        open={
+          state.leaveBlockReason !== null && !leaveDismissed && !conflictDialogOpen
+        }
         reason={state.leaveBlockReason}
         copyState={leaveCopyState}
         onRetrySave={() => void actions.retrySave()}

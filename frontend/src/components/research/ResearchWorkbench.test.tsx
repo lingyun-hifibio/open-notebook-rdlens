@@ -64,6 +64,75 @@ vi.mock('@/components/ui/markdown-renderer', () => ({
   ),
 }))
 
+// Issue #1046 PR4（D2-B2）：NotesPanel 的目录/能力/编辑器改为 core hooks；
+// 本文件只验证 Workbench 布局与 Scope 联动，用最小 hook 替身隔离 core 行为
+// （产品代码不改；catalog 行由各用例按需注入，见 noteCatalogStub）。
+const noteCatalogStub = vi.hoisted(() => ({ items: [] as unknown[] }))
+
+vi.mock('@/lib/research/issue585/use-note-catalog', () => ({
+  useNoteCatalog: () => ({
+    items: noteCatalogStub.items,
+    isLoading: false,
+    error: null,
+    refresh: async () => undefined,
+  }),
+}))
+
+vi.mock('@/lib/research/issue585/use-note-capabilities', () => ({
+  useNoteCapabilities: () => ({
+    capabilities: {
+      noteEditor: { available: true, reason: null },
+      noteEditorExisting: { available: true, reason: null },
+      markdownExport: { available: false, reason: 'not_ready' },
+      writingLocal: { available: false, reason: 'not_ready' },
+      writingExternal: { available: false, reason: 'not_ready' },
+    },
+    isLoading: false,
+    error: null,
+    refresh: async () => undefined,
+  }),
+}))
+
+vi.mock('@/lib/research/issue585/use-note-editor', () => ({
+  useNoteEditor: () => ({
+    state: {
+      status: 'idle',
+      note: null,
+      title: '',
+      content: '',
+      saveStatus: 'idle',
+      conflict: null,
+      pendingMutationId: null,
+      cacheStatus: 'ok',
+      restoredFromCache: false,
+      canUndo: false,
+      blockReason: null,
+      error: null,
+      authGeneration: 0,
+      leaveBlockReason: null,
+    },
+    actions: {
+      openNote: async () => undefined,
+      createBlankNote: async () => null,
+      closeEditor: async () => true,
+      setTitle: () => undefined,
+      setContent: () => undefined,
+      beginComposition: () => undefined,
+      endComposition: () => undefined,
+      saveNow: async () => undefined,
+      retrySave: async () => undefined,
+      confirmPendingMutation: async () => undefined,
+      undo: () => undefined,
+      copyLocalContent: async () => undefined,
+      downloadLocalMarkdown: () => undefined,
+      saveAsCopy: async () => null,
+      loadLatest: async () => undefined,
+      discardLocal: () => undefined,
+      flushBeforeLeave: async () => null,
+    },
+  }),
+}))
+
 // Insights 面板取用顶层全局模型（automock 提供默认 stub）；本文件被测对象
 // 不是全局模型本身
 vi.mock('@/lib/hooks/use-research-global-model')
@@ -139,12 +208,29 @@ const note = (overrides: Partial<ResearchNote> = {}): ResearchNote => ({
   ...overrides,
 })
 
+/** d2-v1 目录行（与 legacy note() 同 note_id，供 Scope 复选框用例注入）。 */
+const catalogNote = (overrides: Record<string, unknown> = {}) => ({
+  note_id: 'note_1',
+  project_id: 'proj_1',
+  title: '第一篇',
+  content: '正文',
+  note_type: 'human',
+  created_at: null,
+  updated_at: null,
+  revision: 2,
+  snapshot_hash: 'h2',
+  edit_schema: 'd2-v1',
+  access_state: 'visible',
+  ...overrides,
+})
+
 describe('ResearchWorkbench', () => {
   beforeEach(() => {
     localStorage.clear()
     vi.clearAllMocks()
     toastMock.mockClear()
     Element.prototype.scrollIntoView = vi.fn()
+    noteCatalogStub.items = []
   })
 
   it('分组导航：两个 group heading 可见；默认 Sources 子视图渲染 SourceListPanel（复选框可达）', async () => {
@@ -209,6 +295,7 @@ describe('ResearchWorkbench', () => {
   it('RWV2-13：Materials 内 Notes 子视图复选框同样进入 selected（同组切换，单一编辑面）', async () => {
     vi.mocked(researchApi.listSources).mockResolvedValue({ items: [], next_cursor: null })
     vi.mocked(researchApi.listNotes).mockResolvedValue({ items: [note()], next_cursor: null })
+    noteCatalogStub.items = [catalogNote()]
     renderWorkbench()
 
     // Materials 组内切换到 Notes 子视图
@@ -241,6 +328,7 @@ describe('ResearchWorkbench', () => {
     seedScope('selected', ['src_1'])
     vi.mocked(researchApi.listSources).mockResolvedValue({ items: [source()], next_cursor: null })
     vi.mocked(researchApi.listNotes).mockResolvedValue({ items: [note()], next_cursor: null })
+    noteCatalogStub.items = [catalogNote()]
     renderWorkbench()
 
     // 合计 1 项（src_1）：该来源复选框禁用；note 复选框可加入（合计 >1）
@@ -368,6 +456,7 @@ describe('ResearchWorkbench', () => {
   it('窄栏类契约（简化）：唯一编辑面 min-w-0 + 单选 flex-wrap；不随视图切换丢失编辑面', async () => {
     vi.mocked(researchApi.listSources).mockResolvedValue({ items: [source()], next_cursor: null })
     vi.mocked(researchApi.listNotes).mockResolvedValue({ items: [note()], next_cursor: null })
+    noteCatalogStub.items = [catalogNote()]
     renderWorkbench()
 
     const editor = screen.getByTestId('research-scope-editor')
