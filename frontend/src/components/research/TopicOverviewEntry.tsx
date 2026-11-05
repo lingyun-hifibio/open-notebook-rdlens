@@ -70,10 +70,18 @@ export function TopicOverviewEntry({ projectId, onOpen }: TopicOverviewEntryProp
   )
 
   // 资料变化提示：wire 范围快照 vs 当前资料列表；只提示，不触发更新。
+  // 边界：restricted 按 wire 契约 `scope.sources=[]`（denied 来源整条删除，
+  // 不泄露身份），此时与当前资料比较会把**全部当前资料误算成 added**
+  // （视觉证据实测 `4 added, 0 version changed, 0 retired` 与范围摘要
+  // `Selected sources · 2 sources` 自相矛盾）。因此只在 `visibility==='ready'`
+  // 且有可比较的范围来源时计算/渲染提示；restricted 保留受限 badge/范围
+  // 摘要/时间等既有内容，但不显示该提示（不扩 wire/lib 契约）。
   const changes = useMemo(() => {
-    if (overview === null) return null
+    if (overview === null || overview.visibility !== 'ready') return null
+    const scopeSources = overview.scope?.sources ?? []
+    if (scopeSources.length === 0) return null
     return topicOverviewSourceChanges(
-      (overview.scope?.sources ?? []).map((source) => ({
+      scopeSources.map((source) => ({
         document_id: source.document_id,
         document_version: source.document_version,
       })),

@@ -16,6 +16,7 @@ import { beforeEach, afterEach, describe, expect, it, vi, type Mock } from 'vite
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider, useMutation } from '@tanstack/react-query'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useResearchSources } from '@/lib/hooks/use-research'
 import { ResearchWorkspace } from './ResearchWorkspace'
 import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
 import { ResearchJobsProvider } from './ResearchJobsProvider'
@@ -209,6 +210,16 @@ function GeneratingProbe() {
   return null
 }
 
+/** 让测试可观测「当前资料列表已载入」，再断言资料变化提示是否渲染。 */
+function SourcesProbe() {
+  const sourcesQuery = useResearchSources(PROJECT_ID)
+  return (
+    <output data-testid="sources-probe">
+      {String(sourcesQuery.data?.items.length ?? 'loading')}
+    </output>
+  )
+}
+
 function workspaceWrapper({ children }: { children: ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
@@ -386,6 +397,53 @@ describe('F-02：入口状态', () => {
       expect(onOpen).not.toHaveBeenCalled()
       expect(h.refetch).not.toHaveBeenCalled()
     })
+  })
+})
+
+describe('F-02/F-08 边界：受限概览不渲染资料变化提示', () => {
+  it('restricted（scope.sources 按契约恒空）⇒ 不显示资料变化提示；ready ⇒ 仍显示', async () => {
+    h.capability = true
+    // 当前资料与 ready 概览范围不同：doc_1 版本变化 + doc_3 新增 + doc_2 退役
+    h.listSources.mockResolvedValue({
+      items: [
+        source({ source_id: 'src_1', document_id: 'doc_1', document_version: 'v2' }),
+        source({ source_id: 'src_3', document_id: 'doc_3', document_version: 'v1' }),
+      ],
+      next_cursor: null,
+    })
+    const base = readyOverview()
+    // 1) restricted：wire 按设计 scope.sources=[] —— 若仍比较，会把当前全部
+    //    资料误算成 added（视觉证据 LOW）；必须不渲染提示，且既有受限内容仍在。
+    h.overviewData = readyOverview({
+      visibility: 'restricted',
+      content_markdown: null,
+      sections: null,
+      citations: [],
+      scope: { ...base.scope!, sources: [] },
+      limitations: ['content_restricted'],
+      warnings: ['content_restricted'],
+    })
+    const boundary = (
+      <>
+        <TopicOverviewEntry projectId={PROJECT_ID} onOpen={onOpen} />
+        <SourcesProbe />
+      </>
+    )
+    const first = render(boundary, { wrapper: queryWrapper })
+    const probe = await screen.findByTestId('sources-probe')
+    await waitFor(() => expect(probe).toHaveTextContent('2'))
+    expect(screen.queryByTestId('topic-overview-entry-changes')).toBeNull()
+    expect(screen.getByTestId('topic-overview-entry-restricted')).toBeInTheDocument()
+    first.unmount()
+
+    // 2) ready：同一当前资料 → 提示仍按范围快照渲染（added/versionChanged/retired）。
+    h.overviewData = readyOverview()
+    render(boundary, { wrapper: queryWrapper })
+    const changes = await screen.findByTestId('topic-overview-entry-changes')
+    expect(changes).toHaveTextContent('research.topicOverview.entry.changesNotice')
+    expect(changes).toHaveTextContent('"added":1')
+    expect(changes).toHaveTextContent('"versionChanged":1')
+    expect(changes).toHaveTextContent('"retired":1')
   })
 })
 
