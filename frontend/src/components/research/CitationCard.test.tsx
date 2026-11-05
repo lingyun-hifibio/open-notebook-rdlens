@@ -130,3 +130,43 @@ describe('CitationCard', () => {
     expect(screen.getByText(/research.citation.degradedPage:page_missing/)).toBeInTheDocument()
   })
 })
+
+
+// ---------------------------------------------------------------------------
+// Issue #1013（D1-E-2）F13：撤权 citation 由 host 读时过滤（移除元素），
+// 前端只需正常渲染剩余引用；卡片本身不新增"撤权摘录"信号（防伪造）。
+// ---------------------------------------------------------------------------
+
+describe('CitationCard · Issue #1013 F13（撤权过滤后的剩余引用）', () => {
+  it('只剩可读引用时卡片正常展示原文/页码/跳转（host 已移除 denied 元素）', () => {
+    const onJump = vi.fn()
+    render(
+      <CitationCard
+        citation={citation({ citation_id: 'c_keep', doc_id: 'doc_1', page_idx: 3 })}
+        source={readySource()}
+        chunks={chunks()}
+        onJump={onJump}
+      />,
+    )
+    expect(screen.getByTestId('citation-card')).toBeInTheDocument()
+    expect(screen.getByText('原文保留的句子')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /research.citation.jump/ }))
+    expect(onJump).toHaveBeenCalledTimes(1)
+  })
+
+  it('旧快照缺可选身份字段（doc_version/chunk_id）时卡片不崩溃，按缺失降级', () => {
+    render(
+      <CitationCard
+        citation={citation({
+          citation_id: 'c_legacy',
+          doc_version: null,
+          chunk_id: null,
+          original_text: '',
+        })}
+        source={readySource()}
+      />,
+    )
+    expect(screen.getByTestId('citation-card')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /research.citation.jump/ })).toBeNull()
+  })
+})

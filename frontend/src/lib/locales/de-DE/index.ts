@@ -978,6 +978,20 @@ export const deDE = {
     viewDocs: "Dokumentation anzeigen",
   },
   research: {
+    selection: {
+      discuss: 'Auswahl besprechen',
+      chip: '{{source}} · S. {{page}} · {{start}}–{{end}} · {{quote}}',
+      summary: 'Auswahl besprechen: {{quote}} (Seite {{page}}, {{start}}–{{end}})',
+      remove: 'Auswahl entfernen',
+      restricted: 'Auszug nicht zugänglich',
+      positionUnavailable: 'Auswahlposition ist nicht mehr gültig',
+      unavailable: 'Auswahl nicht verfügbar',
+      captureFailed: 'Der ausgewählte Text konnte nicht in der Quelle gefunden werden. Wählen Sie einen kürzeren Abschnitt.',
+    },
+    source: {
+      returnToAnswer: 'Zurück zur Antwort',
+      returnUnavailable: 'Die ursprüngliche Antwort konnte nicht gefunden werden. Sie liegt ggf. außerhalb des geladenen Verlaufs.',
+    },
     session: {
       newConversation: 'New conversation',
       restrictedConversation: 'Restricted conversation',
@@ -1071,6 +1085,16 @@ export const deDE = {
       invalidDraft: 'Draft contains characters that cannot be sent — remove or replace them before sending',
     },
     errors: {
+      selectionContractNotEnabled: 'Dieser Arbeitsbereich unterstützt keinen Auswahlkontext. Aktualisieren Sie den Client oder deaktivieren Sie die Funktion.',
+      selectionSubmissionRequired: 'Auswahlen müssen mit einer Sitzungseinreichung gesendet werden. Verwenden Sie das Sitzungs-Chatfeld.',
+      selectionInvalid: 'Die Auswahl ist für diese Quelle ungültig. Wählen Sie den Text erneut.',
+      selectionPositionUnavailable: 'Die Auswahlposition stimmt nicht mehr mit der Quelle überein. Wählen Sie den Text erneut.',
+      selectionVersionUnavailable: 'Die ausgewählte Quellversion ist nicht mehr verfügbar. Wählen Sie den Text erneut.',
+      selectionSourceUnavailable: 'Die ausgewählte Quelle ist in diesem Projekt nicht verfügbar. Wählen Sie den Text erneut.',
+      sourceAccessRestricted: 'Auf diese Quelle kann nicht mehr zugegriffen werden (Zugriff ggf. widerrufen).',
+      sourceRefMismatch: 'Die Quellversion hat sich geändert. Aktualisieren Sie die Quelle und versuchen Sie es erneut.',
+      sessionStoreUnavailable: 'Der Zugriff konnte derzeit nicht geprüft werden. Versuchen Sie es gleich erneut.',
+      selectionUnavailable: 'Die Auswahlfunktion ist nicht mehr verfügbar. Entfernen Sie die Auswahl, um fortzufahren.',
       acceptanceRetryExhausted: 'Your submission is pending confirmation — its result could not be verified automatically. Retry with the original attempt or review it before sending again.',
       generic: "Something went wrong. Check the message below and try again, or contact an administrator.",
       consentRequired: "External model egress consent is required before sending. Acknowledge it to continue.",

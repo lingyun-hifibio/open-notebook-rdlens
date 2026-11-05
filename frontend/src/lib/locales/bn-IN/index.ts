@@ -977,6 +977,20 @@ export const bnIN = {
     viewDocs: "ডকুমেন্টেশন দেখুন",
   },
   research: {
+    selection: {
+      discuss: 'নির্বাচন নিয়ে আলোচনা',
+      chip: '{{source}} · পৃ. {{page}} · {{start}}–{{end}} · {{quote}}',
+      summary: 'আলোচনা: {{quote}} (পৃষ্ঠা {{page}}, {{start}}–{{end}})',
+      remove: 'নির্বাচন সরান',
+      restricted: 'Excerpt-এ প্রবেশাধিকার নেই',
+      positionUnavailable: 'নির্বাচনের অবস্থান আর বৈধ নয়',
+      unavailable: 'নির্বাচন অনুপলব্ধ',
+      captureFailed: 'নির্বাচিত লেখাটি উৎসে খুঁজে পাওয়া যায়নি। ছোট অংশ নির্বাচন করে আবার চেষ্টা করুন।',
+    },
+    source: {
+      returnToAnswer: 'উত্তরে ফিরে যান',
+      returnUnavailable: 'মূল উত্তর খুঁজে পাওয়া যায়নি। এটি লোড করা ইতিহাসের বাইরে থাকতে পারে।',
+    },
     session: {
       newConversation: 'New conversation',
       restrictedConversation: 'Restricted conversation',
@@ -1070,6 +1084,16 @@ export const bnIN = {
       invalidDraft: 'Draft contains characters that cannot be sent — remove or replace them before sending',
     },
     errors: {
+      selectionContractNotEnabled: 'এই ওয়ার্কস্পেস নির্বাচন প্রসঙ্গ সমর্থন করে না। ক্লায়েন্ট আপডেট করুন বা বৈশিষ্ট্য বন্ধ করুন।',
+      selectionSubmissionRequired: 'নির্বাচন সেশন সাবমিশনের সাথে পাঠাতে হবে। সেশন চ্যাট লেখার ঘর ব্যবহার করুন।',
+      selectionInvalid: 'এই উৎসের জন্য নির্বাচনটি বৈধ নয়। আবার লেখা নির্বাচন করুন।',
+      selectionPositionUnavailable: 'নির্বাচিত অবস্থান আর উৎসের সাথে মেলে না। আবার লেখা নির্বাচন করুন।',
+      selectionVersionUnavailable: 'নির্বাচিত উৎস সংস্করণ আর উপলব্ধ নেই। আবার লেখা নির্বাচন করুন।',
+      selectionSourceUnavailable: 'নির্বাচিত উৎস এই প্রকল্পে উপলব্ধ নেই। আবার লেখা নির্বাচন করুন।',
+      sourceAccessRestricted: 'এই উৎসে আর প্রবেশ করা যাবে না (অ্যাক্সেস প্রত্যাহার হতে পারে)।',
+      sourceRefMismatch: 'উৎস সংস্করণ পরিবর্তিত হয়েছে। উৎস রিফ্রেশ করে আবার চেষ্টা করুন।',
+      sessionStoreUnavailable: 'এখনই অ্যাক্সেস যাচাই করা যায়নি। একটু পরে আবার চেষ্টা করুন।',
+      selectionUnavailable: 'নির্বাচন বৈশিষ্ট্য আর উপলব্ধ নেই। চালিয়ে যেতে নির্বাচন সরান।',
       acceptanceRetryExhausted: 'Your submission is pending confirmation — its result could not be verified automatically. Retry with the original attempt or review it before sending again.',
       generic: "Something went wrong. Check the message below and try again, or contact an administrator.",
       consentRequired: "External model egress consent is required before sending. Acknowledge it to continue.",

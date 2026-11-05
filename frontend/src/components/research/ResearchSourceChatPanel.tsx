@@ -1,12 +1,13 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
 import { ResearchCitationList } from './ResearchCitationList'
+import { SelectionContextChip } from './ResearchChatPanel'
 import {
   ResearchDraftComposer,
   deriveResearchDraftGate,
@@ -31,6 +32,13 @@ import { useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
 import { formatScopeLabel } from '@/lib/research/scope'
 import { userErrorMessageKey } from '@/lib/research/errors'
 import { translateOrFallback } from '@/lib/locales/translate-or-fallback'
+import {
+  measureChatAnchorCandidates,
+  restoreScrollTop,
+  type ScrollContainerMetrics,
+} from '@/lib/research/reading-anchor'
+import type { WireSelectionContext, WireSelectionProjection } from '@/lib/research/session-contract'
+import type { ResearchCitationDisplayItem } from '@/lib/research/types'
 
 /**
  * Source-scoped Chat 面板（Issue #182，/research 下半屏选中 Source 时）。
@@ -85,6 +93,12 @@ export function ResearchSourceChatPanel({
   sourceId,
   onHighlightPage,
   onNewSession,
+  selectionChip = null,
+  selectionContext = null,
+  onSelectionConsumed,
+  onCitationReturn,
+  scrollToMessage,
+  onSelectionJump,
 }: {
   projectId: string
   sourceId: string
@@ -96,6 +110,32 @@ export function ResearchSourceChatPanel({
    * `selectSession(null)` 语义。
    */
   onNewSession?: () => void | Promise<void>
+  /** Issue #1013 §2.11：composer 上方的选段 chip（来源详情选段）。 */
+  selectionChip?: {
+    readonly label: string
+    readonly title?: string
+    readonly onRemove: () => void
+    readonly disabled?: boolean
+  } | null
+  /**
+   * Issue #1013 §2.11：随本轮 source headed 提交的选段上下文（页级 pending
+   * 中归属本来源且 target=source 的那一条）。未提供/来源不匹配 → 不携带。
+   */
+  selectionContext?: WireSelectionContext | null
+  /**
+   * 选段随 headed 提交成功后清除页级 pending（失败不清，可重试）。
+   * 只在本次请求确实携带了 `selectionContext` 时调用。
+   */
+  onSelectionConsumed?: () => void
+  /**
+   * Issue #1013 §2.10：citation 点击 → 记录 return target（citation 身份 +
+   * durable message_id）并打开来源高亮。
+   */
+  onCitationReturn?: (citation: ResearchCitationDisplayItem, messageId: string | null) => void
+  /** Issue #1013 §2.10：「返回原回答」滚动到目标 durable message。 */
+  scrollToMessage?: { readonly sessionId: string; readonly messageId: string; readonly seq: number } | null
+  /** Issue #1013 §2.10：user turn 选段 chip 点击 → 来源详情高亮。 */
+  onSelectionJump?: (selection: WireSelectionProjection) => void
 }) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
@@ -124,6 +164,10 @@ export function ResearchSourceChatPanel({
   // （切换会话后 chatControllerRef 已指向新会话，不能拿“当前”实例结算）。
   const pendingClearControllersRef = useRef(new Map<string, ConversationController>())
   const sourceControllerRef = useRef<ConversationController | null>(null)
+  // Issue #1013 F01（复审 BLOCKING）：选段 getter 必须是读取时刻真值，且不能
+  // 形成 stale closure——ref 每渲染更新，hook 在真正提交时读取。
+  const selectionContextRef = useRef<WireSelectionContext | null>(selectionContext)
+  selectionContextRef.current = selectionContext
   // 仅有可绑定的持久 session_id 时才启用 controller：新会话仍由 legacy
   // 路径创建（PR-6 负责新会话与新协议的统一创建）。
   const chatSession = useMemo<UseResearchSourceChatSessionOptions | undefined>(() => {
@@ -133,6 +177,12 @@ export function ResearchSourceChatPanel({
     return {
       runtime: sessionRuntime,
       ref: sourceRef,
+      // §2.11：只携带**本来源**的选段；跨来源 pending 绝不误发（host 会以
+      // source_ref 不一致拒绝）。
+      getSelectionContext: () => {
+        const selection = selectionContextRef.current
+        return selection !== null && selection.sourceId === sourceId ? selection : null
+      },
       onReleaseHold: (operationId: string) => editor.release(operationId),
       onClearAfterSubmission: (receipt, operationId) => {
         // Lead 核对 P2-7：runtime 存活时重挂后 map 不跨实例；回退到当前
@@ -167,7 +217,7 @@ export function ResearchSourceChatPanel({
           })
       },
     }
-  }, [sessionRuntime, sourceRef, sourceSessionId, editor])
+  }, [sessionRuntime, sourceRef, sourceSessionId, sourceId, editor])
   const chat = useResearchSourceChat({ projectId, sourceId, session: chatSession })
   sourceControllerRef.current = chat.conversation ?? null
   const editorSnapshot = editorEnabled ? editor.snapshot : null
@@ -398,6 +448,15 @@ export function ResearchSourceChatPanel({
    */
   const [loadingEarlierSourceMessages, setLoadingEarlierSourceMessages] = useState(false)
   const sourceMessagesRef = useRef<HTMLDivElement | null>(null)
+  // Issue #1013（D1-E-2）§2.10：Source Chat 复用 source editor 的 chat_anchor。
+  // 消息行写 `data-message-id`（仅 durable serverMessageId）；measure/save 与
+  // 全局面板同源纯函数（16ms 节流 + 1000ms 空闲合并保存 + 离开 flush）。
+  const editorRef = useRef(editor)
+  editorRef.current = editor
+  const chatAnchorRestoringRef = useRef(false)
+  const chatAnchorTimerRef = useRef<number | null>(null)
+  const chatAnchorFrameRef = useRef<number | null>(null)
+  const [chatAnchorUnavailable, setChatAnchorUnavailable] = useState(false)
   /** prepend 补偿意图（按 prepend 事实消费，审查 F2）。 */
   const pendingSourcePrependRef = useRef<{
     scrollHeight: number
@@ -407,6 +466,152 @@ export function ResearchSourceChatPanel({
   /** 是否还有更早的历史（控制器快照的后向游标非空 = 还有更早的一页）。 */
   const hasEarlierSourceMessages =
     sessionConversation !== null && (liveSnapshot?.detailCursor ?? null) !== null
+
+  // Issue #1013（D1-E-2）§2.10：chat_anchor 测量（只持久化稳定 message id）。
+  const measureSourceChatAnchorNow = useCallback((): void => {
+    if (!editorEnabled || chatAnchorRestoringRef.current) return
+    const container = sourceMessagesRef.current
+    if (container === null) return
+    const rect = container.getBoundingClientRect()
+    const metrics: ScrollContainerMetrics = {
+      containerTop: rect.top,
+      scrollTop: container.scrollTop,
+      clientHeight: container.clientHeight,
+      scrollHeight: container.scrollHeight,
+    }
+    const messages = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-message-id]'),
+    ).map((node) => {
+      const nodeRect = node.getBoundingClientRect()
+      return {
+        messageId: node.dataset.messageId ?? '',
+        stableMessageId: node.dataset.messageId ?? null,
+        top: nodeRect.top,
+        height: nodeRect.height,
+      }
+    })
+    const anchor = measureChatAnchorCandidates({ messages, container: metrics })
+    if (anchor !== null) editorRef.current.setChatAnchor(anchor)
+  }, [editorEnabled])
+
+  const scheduleSourceChatAnchor = useCallback((): void => {
+    if (!editorEnabled || chatAnchorRestoringRef.current) return
+    if (chatAnchorFrameRef.current !== null) window.clearTimeout(chatAnchorFrameRef.current)
+    chatAnchorFrameRef.current = window.setTimeout(() => {
+      chatAnchorFrameRef.current = null
+      if (!chatAnchorRestoringRef.current) measureSourceChatAnchorNow()
+    }, 16)
+    if (chatAnchorTimerRef.current !== null) window.clearTimeout(chatAnchorTimerRef.current)
+    chatAnchorTimerRef.current = window.setTimeout(() => {
+      chatAnchorTimerRef.current = null
+      if (!chatAnchorRestoringRef.current) editorRef.current.flush('position')
+    }, 1000)
+  }, [editorEnabled, measureSourceChatAnchorNow])
+
+  // 卸载/切来源：尽力写回最后一次位置（不阻塞 UI）。
+  useLayoutEffect(() => {
+    return () => {
+      if (!editorEnabled) return
+      if (chatAnchorFrameRef.current !== null) {
+        window.clearTimeout(chatAnchorFrameRef.current)
+        chatAnchorFrameRef.current = null
+        measureSourceChatAnchorNow()
+      }
+      if (chatAnchorTimerRef.current !== null) {
+        window.clearTimeout(chatAnchorTimerRef.current)
+        chatAnchorTimerRef.current = null
+      }
+      // 受限测试替身可能只 mock 部分 editor API：尽力 flush，不阻断卸载。
+      editorRef.current.flush?.('position')
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在来源/启用状态变化/卸载时结算
+  }, [sourceId, editorEnabled])
+
+  // 恢复 chat_anchor：position_unavailable → banner（不跳最新、不伪造位置）。
+  const savedChatAnchor = editorEnabled ? editor.snapshot?.chatAnchor ?? null : null
+  useEffect(() => {
+    if (!editorEnabled || savedChatAnchor === null) return
+    if (editor.snapshot?.positionUnavailable === true) return
+    const container = sourceMessagesRef.current
+    if (container === null) return
+    chatAnchorRestoringRef.current = true
+    const rect = container.getBoundingClientRect()
+    const metrics: ScrollContainerMetrics = {
+      containerTop: rect.top,
+      scrollTop: container.scrollTop,
+      clientHeight: container.clientHeight,
+      scrollHeight: container.scrollHeight,
+    }
+    const target = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-message-id]'),
+    ).find((node) => node.dataset.messageId === savedChatAnchor.messageId) ?? null
+    const targetRect = target?.getBoundingClientRect() ?? null
+    const result = restoreScrollTop({
+      container: metrics,
+      savedOffsetPx: savedChatAnchor.offsetPx,
+      followTail: savedChatAnchor.followTail,
+      currentTargetTop: targetRect !== null ? targetRect.top : null,
+      targetHeightPx: targetRect !== null ? targetRect.height : undefined,
+    })
+    if (result.ok) {
+      container.scrollTop = result.scrollTop
+      setChatAnchorUnavailable(false)
+    } else {
+      setChatAnchorUnavailable(true)
+    }
+    const timer = window.setTimeout(() => {
+      chatAnchorRestoringRef.current = false
+    }, 0)
+    return () => window.clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅在锚点/消息变化时恢复
+  }, [
+    editorEnabled,
+    savedChatAnchor?.messageId,
+    savedChatAnchor?.offsetPx,
+    savedChatAnchor?.followTail,
+    renderedSourceTurns,
+  ])
+
+  // Issue #1013（D1-E-2）§2.10：返回原回答滚动（目标不在已加载页时最多 10 页）。
+  const [returnTargetUnavailable, setReturnTargetUnavailable] = useState(false)
+  const [returnScrollTick, setReturnScrollTick] = useState(0)
+  const returnScrollRef = useRef<{ seq: number; attempts: number } | null>(null)
+  useEffect(() => {
+    if (scrollToMessage === undefined || scrollToMessage === null) return
+    if (sourceSessionId === '' || scrollToMessage.sessionId !== sourceSessionId) {
+      // 复审 F53：page 会先切目标会话；切换完成前不滚动。若宽限期内仍未切到
+      // 目标会话（会话不存在/激活失败），显示 position_unavailable，绝不静默
+      // no-op；切换成功时本 effect 重跑并清理定时器。
+      const timer = window.setTimeout(() => setReturnTargetUnavailable(true), 1500)
+      return () => window.clearTimeout(timer)
+    }
+    const current = returnScrollRef.current
+    if (current === null || current.seq !== scrollToMessage.seq) {
+      returnScrollRef.current = { seq: scrollToMessage.seq, attempts: 0 }
+      setReturnTargetUnavailable(false)
+    }
+    const container = sourceMessagesRef.current
+    if (container === null) return
+    const target = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-message-id]'),
+    ).find((node) => node.dataset.messageId === scrollToMessage.messageId)
+    if (target !== undefined) {
+      target.scrollIntoView?.({ block: 'start' })
+      setReturnTargetUnavailable(false)
+      return
+    }
+    const state = returnScrollRef.current
+    if (state === null) return
+    if (hasEarlierSourceMessages && state.attempts < 10) {
+      state.attempts += 1
+      handleLoadEarlierSourceMessages()
+      const timer = window.setTimeout(() => setReturnScrollTick((tick) => tick + 1), 400)
+      return () => window.clearTimeout(timer)
+    }
+    setReturnTargetUnavailable(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅响应返回请求/翻页结果
+  }, [scrollToMessage?.seq, renderedSourceTurns, hasEarlierSourceMessages, returnScrollTick, sourceSessionId])
+
   const handleLoadEarlierSourceMessages = (): void => {
     const controller = sessionConversation
     if (controller === null || loadingEarlierSourceMessages) return
@@ -524,6 +729,11 @@ export function ResearchSourceChatPanel({
         }
         pendingSubmitTextRef.current = text
         pendingClearControllersRef.current.set(operationId, conversation)
+        // Issue #1013 F01（复审）：只有**本次请求确实携带**了本来源选段时才
+        // 在受理后清除页级 chip；legacy（无 controller）路径不携带选段，绝不
+        // 假清除（chip 保留，用户可见未被消费）。
+        const selection = selectionContextRef.current
+        const selectionCarried = selection !== null && selection.sourceId === sourceId
         const result = await conversation.send({
           query: text,
           modelId,
@@ -542,6 +752,12 @@ export function ResearchSourceChatPanel({
           editor.release(operationId)
           return false
         }
+        // Issue #1013 §2.11：已受理且选段已随请求发出 → 清除页级 pending；
+        // 失败/路径未携带 → 保留可重试。
+        if (selectionCarried) onSelectionConsumed?.()
+        // §2.10：发送后 follow_tail（滚动到底部，锚点在后续 scroll 中记录）。
+        const container = sourceMessagesRef.current
+        if (container !== null) container.scrollTop = container.scrollHeight
         return true
       },
       {
@@ -784,7 +1000,30 @@ export function ResearchSourceChatPanel({
         </ul>
       )}
 
-      <div ref={sourceMessagesRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+      <div
+        ref={sourceMessagesRef}
+        className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4"
+        onScroll={scheduleSourceChatAnchor}
+        data-testid="srcchat-messages"
+      >
+        {chatAnchorUnavailable && (
+          <p
+            className="text-xs font-medium text-amber-600"
+            role="status"
+            data-testid="srcchat-anchor-unavailable"
+          >
+            {t('research.editor.positionUnavailable')}
+          </p>
+        )}
+        {returnTargetUnavailable && (
+          <p
+            className="text-xs font-medium text-amber-600"
+            role="status"
+            data-testid="srcchat-return-target-unavailable"
+          >
+            {t('research.source.returnUnavailable')}
+          </p>
+        )}
         {hasEarlierSourceMessages && (
           <div className="flex justify-center pb-1">
             <Button
@@ -806,13 +1045,31 @@ export function ResearchSourceChatPanel({
         )}
         {renderedSourceTurns.map((turn) =>
           turn.role === 'user' ? (
-            <div key={turn.id} className="flex justify-end">
+            <div
+              key={turn.id}
+              className="flex flex-col items-end gap-1"
+              data-message-id={turn.serverMessageId ?? undefined}
+            >
               <div className="max-w-[80%] rounded-lg bg-primary/10 px-3 py-2 text-sm">
                 {turn.content}
               </div>
+              {turn.selectionContextInvalid === true ? (
+                <span
+                  className="text-xs text-amber-700"
+                  role="status"
+                  data-testid="srcchat-selection-unavailable"
+                >
+                  {t('research.selection.unavailable')}
+                </span>
+              ) : turn.selectionContext !== undefined && turn.selectionContext !== null ? (
+                <SelectionContextChip
+                  selection={turn.selectionContext}
+                  onClick={onSelectionJump}
+                />
+              ) : null}
             </div>
           ) : (
-            <div key={turn.id} className="space-y-2">
+            <div key={turn.id} className="space-y-2" data-message-id={turn.serverMessageId ?? undefined}>
               {turn.thinking && (
                 <details className="rounded-lg border px-3 py-2">
                   <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
@@ -868,6 +1125,9 @@ export function ResearchSourceChatPanel({
                   if (typeof citation.page_idx === 'number') {
                     onHighlightPage(citation.page_idx)
                   }
+                  // Issue #1013 §2.10：记录 return target（citation 身份 +
+                  // durable message_id）；不写/不依赖 chat_anchor。
+                  onCitationReturn?.(citation, turn.serverMessageId ?? null)
                 }}
               />
 
@@ -932,6 +1192,7 @@ export function ResearchSourceChatPanel({
             onSend={submitEditorDraft}
             onRetrySave={editor.retrySave}
             onRestoreDraft={editor.restoreDraft}
+            selectionChip={selectionChip}
             focusRequestToken={sourceComposerFocusToken}
           />
         </div>

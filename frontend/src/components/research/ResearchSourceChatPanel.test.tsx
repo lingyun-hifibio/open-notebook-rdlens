@@ -48,7 +48,17 @@ vi.mock('@/components/ui/markdown-renderer', () => ({
   ),
 }))
 
-import type { UseResearchSourceChatResult } from '@/lib/hooks/use-research-source-chat'
+import type {
+  ResearchSourceChatTurn,
+  UseResearchSourceChatResult,
+  UseResearchSourceChatSessionOptions,
+} from '@/lib/hooks/use-research-source-chat'
+import type {
+  WireSelectionContext,
+  WireSelectionProjection,
+} from '@/lib/research/session-contract'
+import { selectionContextToWire } from '@/lib/research/session-contract'
+import type { ResearchCitationDisplayItem } from '@/lib/research/types'
 import { useResearchSessionRuntimeOptional } from '@/lib/hooks/research-session-runtime'
 import { useResearchEditor } from '@/lib/hooks/use-research-editor'
 import { createEditorState } from '@/lib/research/editor-machine'
@@ -1382,5 +1392,511 @@ describe('ResearchSourceChatPanel：加载更早的消息（#892）', () => {
     )
     render(<ResearchSourceChatPanel projectId="proj_1" sourceId="src_1" onHighlightPage={vi.fn()} />)
     expect(screen.queryByRole('button', { name: 'research.pagination.loadMore' })).toBeNull()
+  })
+})
+
+
+// ---------------------------------------------------------------------------
+// Issue #1013（D1-E-2）F07/F08/F11：user turn 选段 chip、citation return、
+// Source Chat chat_anchor（measure/save/restore/flush/失败 banner）
+// ---------------------------------------------------------------------------
+
+const SOURCE_CHIP_SELECTION: WireSelectionProjection = {
+  sourceId: 'src_1',
+  documentId: 'doc_1',
+  documentVersion: 'v3',
+  chunkId: 'chunk_1',
+  chunkOrdinal: 2,
+  pageIdx: 0,
+  startOffset: 6,
+  endOffset: 11,
+  quote: 'world',
+  quoteHash: '486ea46224d1bb4fb680f34f7c9ad96a8f24ec88be73ea8e5a6c65260e9cb8a7',
+  contentHash: 'a'.repeat(64),
+  visibility: 'visible',
+  reasonCode: null,
+}
+
+const SOURCE_SELECTION_CONTEXT: WireSelectionContext = {
+  sourceId: 'src_1',
+  documentId: 'doc_1',
+  documentVersion: 'v3',
+  chunkId: 'chunk_1',
+  chunkOrdinal: 2,
+  pageIdx: 0,
+  startOffset: 6,
+  endOffset: 11,
+  quote: 'world',
+  quoteHash: '486ea46224d1bb4fb680f34f7c9ad96a8f24ec88be73ea8e5a6c65260e9cb8a7',
+  contentHash: 'a'.repeat(64),
+}
+
+/** 面板最近一次传给 hook 的 session 选项（F01 接线断言用）。 */
+function lastSourceSessionOptions(): UseResearchSourceChatSessionOptions | undefined {
+  const calls = vi.mocked(useResearchSourceChat).mock.calls
+  return calls.at(-1)?.[0]?.session
+}
+
+function sourceTurn(overrides: Partial<ResearchSourceChatTurn>): ResearchSourceChatTurn {
+  return {
+    id: 't1',
+    role: 'assistant',
+    content: '',
+    thinking: '',
+    citations: [],
+    usage: null,
+    resolvedMode: null,
+    degradationReasons: [],
+    sourceRef: null,
+    status: 'done',
+    reconnectCount: 0,
+    errorCode: null,
+    errorMessage: null,
+    serverMessageId: null,
+    ...overrides,
+  }
+}
+
+const EDITOR_BASE = {
+  snapshot: null as never,
+  controller: null as never,
+  setDraftText: vi.fn(),
+  setChatAnchor: vi.fn(),
+  setReaderAnchor: vi.fn(),
+  setScope: vi.fn(),
+  flush: vi.fn(async () => 'saved'),
+  hold: vi.fn(),
+  release: vi.fn(),
+  retrySave: vi.fn(),
+  adoptServerVersion: vi.fn(),
+  saveLocalOverServer: vi.fn(),
+  clearAfterSubmission: vi.fn(async () => 'cleared'),
+  markTokenConsumed: vi.fn(),
+  canSubmit: vi.fn(() => ({ allowed: false, reason: 'not_loaded' as const })),
+  restoreDraft: vi.fn(),
+  refreshDraftCandidates: vi.fn(),
+  releaseDocument: vi.fn(),
+}
+
+function renderSourcePanelWith(props: {
+  turns?: ResearchSourceChatTurn[]
+  editorSnapshot?: unknown
+  runtime?: unknown
+} = {}) {
+  vi.mocked(useResearchSourceChat).mockReturnValue(
+    makeChatResult({ turns: props.turns ?? [] }),
+  )
+  vi.mocked(useResearchSessionRuntimeOptional).mockReturnValue(
+    (props.runtime ?? null) as never,
+  )
+  vi.mocked(useResearchEditor).mockReturnValue({
+    ...EDITOR_BASE,
+    snapshot: props.editorSnapshot ?? null,
+  } as never)
+  render(<ResearchSourceChatPanel projectId="proj_1" sourceId="src_1" onHighlightPage={vi.fn()} />)
+}
+
+describe('ResearchSourceChatPanel · Issue #1013', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resetGlobalModelStub()
+    vi.mocked(useResearchSourceChat).mockReturnValue(makeChatResult())
+    vi.mocked(useResearchSessionRuntimeOptional).mockReturnValue(null)
+    vi.mocked(useResearchEditor).mockReturnValue({ ...EDITOR_BASE } as never)
+  })
+
+  it('F07 user turn 选段 chip 渲染并可点击回跳', () => {
+    const onSelectionJump = vi.fn()
+    vi.mocked(useResearchSourceChat).mockReturnValue(
+      makeChatResult({
+        turns: [
+          sourceTurn({
+            id: 'user_1',
+            role: 'user',
+            content: 'q',
+            serverMessageId: 'msg_user',
+            selectionContext: SOURCE_CHIP_SELECTION,
+          }),
+        ],
+      }),
+    )
+    vi.mocked(useResearchSessionRuntimeOptional).mockReturnValue(null)
+    render(
+      <ResearchSourceChatPanel
+        projectId="proj_1"
+        sourceId="src_1"
+        onHighlightPage={vi.fn()}
+        onSelectionJump={onSelectionJump}
+      />,
+    )
+    const chip = screen.getByTestId('message-selection-chip')
+    expect(chip).toHaveTextContent('research.selection.chip')
+    fireEvent.click(chip)
+    expect(onSelectionJump).toHaveBeenCalledWith(
+      expect.objectContaining({ visibility: 'visible', chunkId: 'chunk_1' }),
+    )
+  })
+
+  it('F01（复审 BLOCKING）：selectionContext 注入 headed session getter（读取时真值，无 stale closure）', () => {
+    const ref = {
+      domain: 'research' as const,
+      kind: 'source' as const,
+      projectId: 'proj_1',
+      sessionId: 'sess_s1',
+      sourceId: 'src_1',
+    }
+    vi.mocked(useResearchSessionRuntimeOptional).mockReturnValue({
+      active: () => ref,
+    } as never)
+    const view = render(
+      <ResearchSourceChatPanel
+        projectId="proj_1"
+        sourceId="src_1"
+        onHighlightPage={vi.fn()}
+        selectionContext={SOURCE_SELECTION_CONTEXT}
+      />,
+    )
+    expect(lastSourceSessionOptions()?.getSelectionContext?.()).toEqual(
+      SOURCE_SELECTION_CONTEXT,
+    )
+
+    // 更新选段不得被 memo 的旧闭包缓存。
+    const updated = { ...SOURCE_SELECTION_CONTEXT, quote: 'updated' }
+    view.rerender(
+      <ResearchSourceChatPanel
+        projectId="proj_1"
+        sourceId="src_1"
+        onHighlightPage={vi.fn()}
+        selectionContext={updated}
+      />,
+    )
+    expect(lastSourceSessionOptions()?.getSelectionContext?.()).toEqual(updated)
+
+    // 跨来源 pending 绝不误发（target 过滤之外的第二道防线）。
+    view.rerender(
+      <ResearchSourceChatPanel
+        projectId="proj_1"
+        sourceId="src_1"
+        onHighlightPage={vi.fn()}
+        selectionContext={{ ...SOURCE_SELECTION_CONTEXT, sourceId: 'src_2' }}
+      />,
+    )
+    expect(lastSourceSessionOptions()?.getSelectionContext?.()).toBeNull()
+
+    view.rerender(
+      <ResearchSourceChatPanel
+        projectId="proj_1"
+        sourceId="src_1"
+        onHighlightPage={vi.fn()}
+        selectionContext={null}
+      />,
+    )
+    expect(lastSourceSessionOptions()?.getSelectionContext?.()).toBeNull()
+  })
+
+  it('F01（复审 BLOCKING）：受理后仅在实际携带选段时清除 chip（失败/legacy 保留）', async () => {
+    const ref = {
+      domain: 'research' as const,
+      kind: 'source' as const,
+      projectId: 'proj_1',
+      sessionId: 'sess_s1',
+      sourceId: 'src_1',
+    }
+    vi.mocked(useResearchSessionRuntimeOptional).mockReturnValue({
+      active: () => ref,
+    } as never)
+    const snapshot = {
+      ...createEditorState({ ref, writerId: 'w-1', transportAvailable: true }),
+      phase: 'ready' as const,
+      loading: false,
+      revision: 3,
+      intentHash: 'hash-3',
+      draftToken: 'draft_3',
+      baseScope: { mode: 'selected' as const, sourceIds: ['src_1'], singleSourceId: 'src_1' },
+      draftText: 'question',
+      dirty: true,
+    }
+    const conversationSend = vi.fn(async () => ({ status: 'ok' }))
+    vi.mocked(useResearchEditor).mockReturnValue({
+      snapshot,
+      controller: { getSnapshot: () => snapshot },
+      setDraftText: vi.fn(),
+      flush: vi.fn(async () => 'saved'),
+      hold: vi.fn(),
+      release: vi.fn(),
+      clearAfterSubmission: vi.fn(async () => 'cleared'),
+    } as never)
+    vi.mocked(useResearchSourceChat).mockReturnValue(
+      makeChatResult({
+        conversation: {
+          send: conversationSend,
+          getSnapshot: () => ({ turn: null, history: [] }),
+          subscribe: () => () => {},
+          notifyClearSettled: vi.fn(),
+        } as never,
+      }),
+    )
+    const onSelectionConsumed = vi.fn()
+    const view = render(
+      <ResearchSourceChatPanel
+        projectId="proj_1"
+        sourceId="src_1"
+        onHighlightPage={vi.fn()}
+        selectionContext={SOURCE_SELECTION_CONTEXT}
+        onSelectionConsumed={onSelectionConsumed}
+      />,
+    )
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('chat-send'))
+    })
+    expect(conversationSend).toHaveBeenCalledTimes(1)
+    expect(onSelectionConsumed).toHaveBeenCalledTimes(1)
+
+    // 无选段发送：受理成功也不得清除页级 chip。
+    const noSelectionConsumed = vi.fn()
+    view.rerender(
+      <ResearchSourceChatPanel
+        projectId="proj_1"
+        sourceId="src_1"
+        onHighlightPage={vi.fn()}
+        selectionContext={null}
+        onSelectionConsumed={noSelectionConsumed}
+      />,
+    )
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('chat-send'))
+    })
+    expect(conversationSend).toHaveBeenCalledTimes(2)
+    expect(noSelectionConsumed).not.toHaveBeenCalled()
+
+    // legacy（无 controller）路径不携带选段：不得假清除。
+    vi.mocked(useResearchSourceChat).mockReturnValue(makeChatResult())
+    const legacyConsumed = vi.fn()
+    view.rerender(
+      <ResearchSourceChatPanel
+        projectId="proj_1"
+        sourceId="src_1"
+        onHighlightPage={vi.fn()}
+        selectionContext={SOURCE_SELECTION_CONTEXT}
+        onSelectionConsumed={legacyConsumed}
+      />,
+    )
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('chat-send'))
+    })
+    expect(legacyConsumed).not.toHaveBeenCalled()
+  })
+
+  it('F08 citation 点击：同一次点击同时高亮原文并记录 return target（带 message_id）', () => {
+    const onHighlightPage = vi.fn()
+    const onCitationReturn = vi.fn()
+    vi.mocked(useResearchSourceChat).mockReturnValue(
+      makeChatResult({
+        turns: [
+          sourceTurn({
+            id: 'assistant_1',
+            role: 'assistant',
+            content: 'answer',
+            serverMessageId: 'msg_assistant',
+            citations: [
+              {
+                citation_id: 'c_1',
+                claim: 'claim',
+                doc_id: 'doc_1',
+                doc_version: 'v3',
+                chunk_id: 'chunk_1',
+                page_idx: 3,
+                confidence: 'high',
+              } satisfies ResearchCitationDisplayItem,
+            ],
+          }),
+        ],
+      }),
+    )
+    render(
+      <ResearchSourceChatPanel
+        projectId="proj_1"
+        sourceId="src_1"
+        onHighlightPage={onHighlightPage}
+        onCitationReturn={onCitationReturn}
+      />,
+    )
+    fireEvent.click(screen.getByTestId('research-citation-click-c_1'))
+    expect(onHighlightPage).toHaveBeenCalledWith(3)
+    expect(onCitationReturn).toHaveBeenCalledWith(
+      expect.objectContaining({ doc_id: 'doc_1', page_idx: 3 }),
+      'msg_assistant',
+    )
+  })
+
+  it('F52（迁移）：live citation（无 durable message_id）仍高亮来源页并回调 messageId=null（跳转不失效）', () => {
+    const onHighlightPage = vi.fn()
+    const onCitationReturn = vi.fn()
+    vi.mocked(useResearchSourceChat).mockReturnValue(
+      makeChatResult({
+        turns: [
+          sourceTurn({
+            id: 'assistant-live',
+            role: 'assistant',
+            content: 'live answer',
+            serverMessageId: null,
+            citations: [
+              {
+                citation_id: 'c_live',
+                claim: 'live claim',
+                doc_id: 'doc_1',
+                doc_version: 'v3',
+                chunk_id: 'chunk_1',
+                page_idx: 5,
+                confidence: 'high',
+              } satisfies ResearchCitationDisplayItem,
+            ],
+          }),
+        ],
+      }),
+    )
+    render(
+      <ResearchSourceChatPanel
+        projectId="proj_1"
+        sourceId="src_1"
+        onHighlightPage={onHighlightPage}
+        onCitationReturn={onCitationReturn}
+      />,
+    )
+    fireEvent.click(screen.getByTestId('research-citation-click-c_live'))
+    // 页面高亮仍生效（不因缺 message_id 整条点击失效）
+    expect(onHighlightPage).toHaveBeenCalledWith(5)
+    // 上层拿到 messageId=null：可打开来源、但不记录「返回原回答」目标
+    expect(onCitationReturn).toHaveBeenCalledWith(
+      expect.objectContaining({ doc_id: 'doc_1', page_idx: 5 }),
+      null,
+    )
+  })
+
+  it('F11 chat_anchor 测量：滚动后写锚点（稳定 message_id/有符号偏移）并 flush(position)', async () => {
+    vi.useFakeTimers()
+    try {
+      renderSourcePanelWith({
+        turns: [
+          sourceTurn({ id: 'u1', role: 'user', content: 'q', serverMessageId: 'msg_1' }),
+          sourceTurn({ id: 'a1', content: 'a', serverMessageId: 'msg_2' }),
+        ],
+        editorSnapshot: {
+          ...createEditorState({
+            ref: {
+              domain: 'research',
+              kind: 'source',
+              projectId: 'proj_1',
+              sessionId: 'sess_s',
+              sourceId: 'src_1',
+            },
+            writerId: 'w-anchor',
+            transportAvailable: true,
+          }),
+          chatAnchor: null,
+          positionUnavailable: false,
+          draftText: '',
+          phase: 'ready',
+          loading: false,
+        },
+        runtime: {
+          active: (surface: string) =>
+            surface === 'source'
+              ? {
+                  domain: 'research',
+                  kind: 'source',
+                  projectId: 'proj_1',
+                  sessionId: 'sess_s',
+                  sourceId: 'src_1',
+                }
+              : null,
+        },
+      })
+      const container = screen.getByTestId('srcchat-messages')
+      const rect = (top: number, height = 40) => ({
+        top,
+        bottom: top + height,
+        left: 0,
+        right: 0,
+        width: 0,
+        height,
+        x: 0,
+        y: top,
+        toJSON: () => ({}),
+      }) as DOMRect
+      Object.defineProperty(container, 'clientHeight', { configurable: true, value: 400 })
+      Object.defineProperty(container, 'scrollHeight', { configurable: true, value: 2000 })
+      Object.defineProperty(container, 'scrollTop', {
+        configurable: true,
+        writable: true,
+        value: 0,
+      })
+      container.getBoundingClientRect = () => rect(0, 400)
+      const messageNodes = Array.from(
+        container.querySelectorAll<HTMLElement>('[data-message-id]'),
+      )
+      expect(messageNodes).toHaveLength(2)
+      messageNodes[0].getBoundingClientRect = () => rect(-30, 60)
+      messageNodes[1].getBoundingClientRect = () => rect(40, 60)
+      fireEvent.scroll(container)
+      act(() => {
+        vi.advanceTimersByTime(16)
+      })
+      act(() => {
+        vi.advanceTimersByTime(1000)
+      })
+      const setChatAnchor = vi.mocked(useResearchEditor).mock.results.at(-1)?.value
+        ?.setChatAnchor as ReturnType<typeof vi.fn>
+      // 视口顶沿为 0：msg_1 顶沿 -30 在容器之上 → 锚点取 msg_1（负偏移不钳 0）。
+      expect(setChatAnchor).toHaveBeenCalledWith(
+        expect.objectContaining({
+          messageId: 'msg_1',
+          offsetPx: -30,
+          followTail: false,
+        }),
+      )
+      expect(EDITOR_BASE.flush).toHaveBeenCalledWith('position')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('F11 恢复失败（目标 message 不在已加载页）→ position_unavailable banner（不跳最新）', () => {
+    renderSourcePanelWith({
+      turns: [sourceTurn({ id: 'u1', role: 'user', content: 'q', serverMessageId: 'msg_1' })],
+      editorSnapshot: {
+        ...createEditorState({
+          ref: {
+            domain: 'research',
+            kind: 'source',
+            projectId: 'proj_1',
+            sessionId: 'sess_s',
+            sourceId: 'src_1',
+          },
+          writerId: 'w-anchor',
+          transportAvailable: true,
+        }),
+        chatAnchor: { messageId: 'msg_ghost', offsetPx: 0, followTail: false },
+        positionUnavailable: false,
+        draftText: '',
+        phase: 'ready',
+        loading: false,
+      },
+      runtime: {
+        active: (surface: string) =>
+          surface === 'source'
+            ? {
+                domain: 'research',
+                kind: 'source',
+                projectId: 'proj_1',
+                sessionId: 'sess_s',
+                sourceId: 'src_1',
+              }
+            : null,
+      },
+    })
+    expect(screen.getByTestId('srcchat-anchor-unavailable')).toHaveTextContent(
+      'research.editor.positionUnavailable',
+    )
   })
 })

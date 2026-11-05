@@ -7,6 +7,8 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
 import { ResearchCitationList } from './ResearchCitationList'
+import { selectionDisplayRange } from '@/lib/research/selection-range'
+import type { WireSelectionProjection } from '@/lib/research/session-contract'
 import { ResultActions } from './ResultActions'
 import { COVERAGE_SOURCE_HARD_MAX, CoverageScopeSelector } from './CoverageScopeSelector'
 import { CoverageJobDetails } from './CoverageJobDetails'
@@ -217,6 +219,10 @@ function conversationTurnToTurns(turn: ConversationTurn): ResearchChatTurn[] {
       doc_id: citation.doc_id,
       page_idx: citation.page_idx,
       confidence: citation.confidence,
+      // 复审 F52：controller/流式投影不得丢弃 citation 身份；「返回原回答」
+      // 与 citation 高亮按 doc_version/chunk_id 做确定性匹配。
+      doc_version: citation.doc_version,
+      chunk_id: citation.chunk_id,
     })),
     usage: turn.sse.usage,
     resolvedMode: turn.sse.resolvedMode,
@@ -325,6 +331,12 @@ export function ResearchChatPanel({
   refreshMarkerLookups,
   onSendSession,
   onNewSession,
+  selectionChip = null,
+  onCitationReturn,
+  scrollToMessage,
+  onScrollToMessageResult,
+  onSelectionJump,
+  onSelectionConsumed,
 }: {
   turns: ResearchChatTurn[]
   isStreaming: boolean
@@ -358,6 +370,36 @@ export function ResearchChatPanel({
   onCoverageRetry?: (jobId: string) => Promise<boolean>
   /** COV-09：报告 Citation 跳转到现有授权预览/来源链路 */
   onCitationJump?: (citation: ResearchCitationDisplayItem) => void
+  /**
+   * Issue #1013（D1-E-2）§2.11：选段 chip（来自页级 pending selection）。
+   * 存在时发送可用性不变；移除后请求不再携带 selection_context。
+   */
+  selectionChip?: {
+    readonly label: string
+    readonly title?: string
+    readonly onRemove: () => void
+    readonly disabled?: boolean
+  } | null
+  /**
+   * Issue #1013 §2.10：assistant 消息 citation 点击 → 记录 return target
+   * （citation 身份 + durable message_id）并打开来源。`messageId` 为
+   * service message id；缺失（旧行/未解析）时调用方不记录返回目标。
+   */
+  onCitationReturn?: (citation: ResearchCitationDisplayItem, messageId: string | null) => void
+  /**
+   * Issue #1013 §2.10：「返回原回答」请求：切回本 surface 后滚动到目标
+   * durable message（offset 0）。目标不在已加载页时最多继续取 10 页。
+   */
+  scrollToMessage?: { readonly sessionId: string; readonly messageId: string; readonly seq: number } | null
+  /** 滚动结果回调（found=false → 父层/面板显示 position_unavailable，不跳最新）。 */
+  onScrollToMessageResult?: (found: boolean) => void
+  /**
+   * Issue #1013 §2.10：user turn 选段 chip 点击 → 切到来源详情并按
+   * selection（source/version/chunk/offsets）高亮滚动；restricted 禁用跳转。
+   */
+  onSelectionJump?: (selection: WireSelectionProjection) => void
+  /** Issue #1013 §2.11：headed 提交成功后清除页级 pending 选段（失败不清）。 */
+  onSelectionConsumed?: () => void
   /**
    * Issue #302：刷新恢复后仍在后台/未完成的后台 Generation 提示——静态
    * 如实呈现（绝不渲染为假「进行中」流式态）。
@@ -883,6 +925,52 @@ export function ResearchChatPanel({
     return [...turns, ...controllerRows]
   })()
 
+  // Issue #1013（D1-E-2）§2.10：返回原回答滚动——目标不在已加载页时按既有
+  // 游标继续取（最多 10 页 / 1000 条）；仍找不到 → position_unavailable 文案
+  // （不跳最新、不伪造位置）。
+  const [returnTargetUnavailable, setReturnTargetUnavailable] = useState(false)
+  const [returnScrollTick, setReturnScrollTick] = useState(0)
+  const returnScrollRef = useRef<{ seq: number; attempts: number } | null>(null)
+  useEffect(() => {
+    if (scrollToMessage === undefined || scrollToMessage === null) return
+    // 复审 F02：只在**目标会话即当前 active 会话**时滚动；page 负责先切会话，
+    // 切换完成后本 effect 因 activeSessionId 变化重跑（绝不把目标 message id
+    // 用于其它会话的已加载消息）。
+    const activeSessionId = sessionRef?.sessionId ?? null
+    if (activeSessionId === null || scrollToMessage.sessionId !== activeSessionId) {
+      // 复审 F53：同 source 面板——切会话宽限期后仍未就绪 → position_unavailable。
+      const timer = window.setTimeout(() => setReturnTargetUnavailable(true), 1500)
+      return () => window.clearTimeout(timer)
+    }
+    const current = returnScrollRef.current
+    if (current === null || current.seq !== scrollToMessage.seq) {
+      returnScrollRef.current = { seq: scrollToMessage.seq, attempts: 0 }
+      setReturnTargetUnavailable(false)
+    }
+    const container = chatScrollRef.current
+    if (container === null) return
+    const target = Array.from(
+      container.querySelectorAll<HTMLElement>('[data-message-id]'),
+    ).find((node) => node.dataset.messageId === scrollToMessage.messageId)
+    if (target !== undefined) {
+      target.scrollIntoView?.({ block: 'start' })
+      setReturnTargetUnavailable(false)
+      onScrollToMessageResult?.(true)
+      return
+    }
+    const state = returnScrollRef.current
+    if (state === null) return
+    if (sessionWired && hasEarlierMessages && state.attempts < 10) {
+      state.attempts += 1
+      handleLoadEarlier()
+      const timer = window.setTimeout(() => setReturnScrollTick((tick) => tick + 1), 400)
+      return () => window.clearTimeout(timer)
+    }
+    setReturnTargetUnavailable(true)
+    onScrollToMessageResult?.(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅响应返回请求/翻页结果
+  }, [scrollToMessage?.seq, renderedTurns, hasEarlierMessages, returnScrollTick, sessionWired, sessionRef?.sessionId])
+
   // PR-5b（§4.2-4/§4.6）：详情侧可见性投影。当前批次 detail 恒可读 title+
   // record_visibility；不先占位等确认（有 detail 就立即按响应渲染）。
   const sessionVisibility = projectSessionVisibility(
@@ -1262,7 +1350,11 @@ export function ResearchChatPanel({
     if (sessionWired && onSendSession !== undefined) {
       void onSendSession(rawText, selectionWithScope).then((sent) => {
         // P1-2（§5.7.1）：派发成功后阅读位置固定到最新（follow_tail=true）。
-        if (sent) settleFollowTailRef.current()
+        if (sent) {
+          settleFollowTailRef.current()
+          // Issue #1013 §2.11：已受理才清除选段 chip（失败保留可重试）。
+          onSelectionConsumed?.()
+        }
       })
       return
     }
@@ -1675,6 +1767,15 @@ export function ResearchChatPanel({
             {t('research.editor.positionUnavailable')}
           </p>
         )}
+        {returnTargetUnavailable && (
+          <p
+            className="text-xs font-medium text-amber-600"
+            role="status"
+            data-testid="chat-return-target-unavailable"
+          >
+            {t('research.source.returnUnavailable')}
+          </p>
+        )}
         {hasEarlierMessages && (
           <div className="flex justify-center pb-1">
             <Button
@@ -1720,6 +1821,20 @@ export function ResearchChatPanel({
               <div className="max-w-[80%] rounded-lg bg-primary/10 px-3 py-2 text-sm">
                 {turn.content}
               </div>
+              {turn.selectionContextInvalid === true ? (
+                <span
+                  className="text-xs text-amber-700"
+                  role="status"
+                  data-testid="message-selection-unavailable"
+                >
+                  {t('research.selection.unavailable')}
+                </span>
+              ) : turn.selectionContext !== undefined && turn.selectionContext !== null ? (
+                <SelectionContextChip
+                  selection={turn.selectionContext}
+                  onClick={onSelectionJump}
+                />
+              ) : null}
               {/* RWV2-11：会话内 turn 显示派发 Scope 徽标。PR5（T9/D-01）：
                   刷新恢复的历史 turn 无法证明当时的范围 → 显式标注"范围
                   不可用"，**绝不**回填当前选择冒充历史范围。 */}
@@ -1814,7 +1929,14 @@ export function ResearchChatPanel({
                     </div>
                   )}
 
-                  <ResearchCitationList citations={turn.citations} />
+                  <ResearchCitationList
+                    citations={turn.citations}
+                    onCitationClick={
+                      onCitationReturn === undefined
+                        ? undefined
+                        : (citation) => onCitationReturn(citation, turn.serverMessageId)
+                    }
+                  />
 
                   {/* RWV2-23：已完成 Chat 答案的结果动作（Save/Copy）。
                       - generationId 已解析（恢复行或 live 完成即绑定）→ 直存；
@@ -2131,6 +2253,7 @@ export function ResearchChatPanel({
               }}
               onSend={submit}
               onRetrySave={onRetrySave ?? (() => {})}
+              selectionChip={selectionChip}
               onRestoreDraft={
                 onRestoreDraft === undefined
                   ? undefined
@@ -2172,5 +2295,58 @@ export function ResearchChatPanel({
         )}
       </div>
     </div>
+  )
+}
+
+
+/**
+ * Issue #1013（D1-E-2）§2.11：user turn 选段 chip。
+ *
+ * - `visible`：显示来源身份摘要（page / 1-based 位置 / quote 摘要），可点击
+ *   跳回来源详情高亮；
+ * - `position_unavailable`：显示「选段位置已失效」并允许重选（点击不跳）；
+ * - `restricted`：显示「摘录不可访问」且禁用跳转（不泄露摘录）。
+ */
+export function SelectionContextChip({
+  selection,
+  onClick,
+}: {
+  selection: WireSelectionProjection
+  onClick?: (selection: WireSelectionProjection) => void
+}) {
+  const { t } = useTranslation()
+  const restricted = selection.visibility === 'restricted'
+  const positionUnavailable = selection.visibility === 'position_unavailable'
+  const range = selectionDisplayRange(selection)
+  const quote = selection.quote ?? ''
+  const summary = quote.length > 40 ? `${quote.slice(0, 40)}…` : quote
+  const label = restricted
+    ? t('research.selection.restricted')
+    : positionUnavailable
+      ? t('research.selection.positionUnavailable')
+      : t('research.selection.chip', {
+          // 复审 F03：模板带 `{{source}}`；消息投影没有来源展示名，使用稳定
+          // 的 source_id（绝不让占位符原样出现在用户界面）。
+          source: selection.sourceId,
+          page: selection.pageIdx === null ? '-' : selection.pageIdx + 1,
+          start: range.start,
+          end: range.end,
+          quote: summary,
+        })
+  const disabled = restricted || positionUnavailable || onClick === undefined
+  return (
+    <button
+      type="button"
+      className="max-w-[80%] truncate rounded-full border px-2 py-0.5 text-left text-xs text-muted-foreground disabled:opacity-70"
+      data-testid="message-selection-chip"
+      data-selection-visibility={selection.visibility}
+      title={label}
+      disabled={disabled}
+      onClick={() => {
+        if (!disabled) onClick?.(selection)
+      }}
+    >
+      {label}
+    </button>
   )
 }

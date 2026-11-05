@@ -26,6 +26,19 @@ export interface ResearchChunk {
   /** 0-based 页码（设计 §5.3）；展示用 page_idx + 1 */
   page_idx: number
   markdown: string
+  /**
+   * Issue #1013（D1-E-2）§2.3：reader chunk 序号（`build_reader_chunks` 排序后
+   * 下标）。reader_anchor 的 `chunk_ordinal` 必须取服务端该值，**不得**用
+   * 前端数组下标代替（chunk 集合变化时两者会漂移）。
+   */
+  chunk_ordinal?: number
+  /**
+   * Issue #1013（D1-E-2）§2.3：逐 chunk reader content hash
+   * （`H(["research-session-v1/reader-chunk", doc, version, ordinal, markdown])`）。
+   * reader_anchor 与选段载荷的 `content_hash` 必须取该值，不得用来源级
+   * `content_hash`（口径不同 → 服务端校验必失配）。
+   */
+  content_hash?: string | null
 }
 
 export interface ResearchSourceDetail extends ResearchSource {

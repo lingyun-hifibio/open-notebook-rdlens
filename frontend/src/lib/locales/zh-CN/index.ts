@@ -976,6 +976,20 @@ export const zhCN = {
     viewDocs: "查看文档",
   },
   research: {
+    selection: {
+      discuss: '讨论选段',
+      chip: '{{source}} · 第{{page}}页 · {{start}}–{{end}} · {{quote}}',
+      summary: '讨论选段：{{quote}}（第{{page}}页，{{start}}–{{end}}）',
+      remove: '移除选段',
+      restricted: '摘录不可访问',
+      positionUnavailable: '选段位置已失效',
+      unavailable: '选段不可用',
+      captureFailed: '无法在来源中定位所选文本。请缩短选段后重试。',
+    },
+    source: {
+      returnToAnswer: '返回原回答',
+      returnUnavailable: '无法定位原回答，目标可能不在已加载的历史中。',
+    },
     session: {
       newConversation: '新对话',
       restrictedConversation: '受限会话',
@@ -1069,6 +1083,16 @@ export const zhCN = {
       invalidDraft: 'Draft contains characters that cannot be sent — remove or replace them before sending',
     },
     errors: {
+      selectionContractNotEnabled: '当前工作区不支持选段上下文。请升级客户端或关闭该能力。',
+      selectionSubmissionRequired: '选段必须随会话提交一起发送。请使用会话聊天输入框。',
+      selectionInvalid: '该选段对当前来源无效，请重新选择。',
+      selectionPositionUnavailable: '选段位置与来源不再匹配，请重新选择。',
+      selectionVersionUnavailable: '所选来源版本已不可用，请重新选择。',
+      selectionSourceUnavailable: '所选来源在当前项目中不可用，请重新选择。',
+      sourceAccessRestricted: '来源已不可访问（可能已撤权）。',
+      sourceRefMismatch: '来源版本已变化，请刷新来源后重试。',
+      sessionStoreUnavailable: '暂时无法校验权限，请稍后重试。',
+      selectionUnavailable: '选段能力已不可用。请移除选段后继续。',
       acceptanceRetryExhausted: 'Your submission is pending confirmation — its result could not be verified automatically. Retry with the original attempt or review it before sending again.',
       generic: "Something went wrong. Check the message below and try again, or contact an administrator.",
       consentRequired: "External model egress consent is required before sending. Acknowledge it to continue.",

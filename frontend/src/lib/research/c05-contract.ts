@@ -168,3 +168,43 @@ export function c05RequestHeaders(): Record<string, string> {
 /** fixtures 直接导出，供测试与消费方共享同一份契约数据 */
 export const C05_CONTRACT_SCHEMAS = contractSchemas
 export const C05_CONTRACT_SAMPLES = contractSamples
+
+// ---------------------------------------------------------------------------
+// Issue #1013（D1-E-2）§2.11：D1-E 往返/选段能力键（沿用 C-05 同模式 fail-closed）
+// ---------------------------------------------------------------------------
+
+/** 能力块：只有 `contract === 'd1e-roundtrip-v1'` 且 `enabled === true` 才可用。 */
+export interface D1eRoundtripCapability {
+  readonly contract: 'd1e-roundtrip-v1'
+  readonly enabled: boolean
+}
+
+/** 能力块契约值（与服务端 `D1E_CAPABILITY_CONTRACT` 逐字一致）。 */
+export const D1E_ROUNDTRIP_CONTRACT = 'd1e-roundtrip-v1'
+
+/** `/models` 能力键（与服务端 `D1E_CAPABILITY_KEY` 逐字一致）。 */
+export const D1E_CAPABILITY_KEY = 'd1e_roundtrip'
+
+/**
+ * 解析 `/models`（或 bootstrap）响应中的加性 `capabilities.d1e_roundtrip`。
+ *
+ * fail-closed（与 `readC05Capabilities` 同纪律，计划 §2.11）：
+ * - 缺失/非对象/契约值不符/`enabled` 非 boolean → `null`（调用方按“全部选段
+ *   UI 不可用”处理）；
+ * - 不做字段级降级、不把旧 UI 语义当可用。
+ */
+export function readD1eCapability(candidate: unknown): D1eRoundtripCapability | null {
+  if (typeof candidate !== 'object' || candidate === null || Array.isArray(candidate)) {
+    return null
+  }
+  const cap = candidate as Record<string, unknown>
+  if (cap.contract !== D1E_ROUNDTRIP_CONTRACT) return null
+  if (typeof cap.enabled !== 'boolean') return null
+  return { contract: 'd1e-roundtrip-v1', enabled: cap.enabled }
+}
+
+/** 能力是否就绪：**只有**解析成功且 enabled 为 true 才允许选段 UI/请求字段。 */
+export function d1eRoundtripReady(candidate: unknown): boolean {
+  const cap = readD1eCapability(candidate)
+  return cap !== null && cap.enabled === true
+}

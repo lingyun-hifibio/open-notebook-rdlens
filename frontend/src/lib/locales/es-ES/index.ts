@@ -977,6 +977,20 @@ export const esES = {
     viewDocs: "Ver documentación",
   },
   research: {
+    selection: {
+      discuss: 'Comentar la selección',
+      chip: '{{source}} · pág. {{page}} · {{start}}–{{end}} · {{quote}}',
+      summary: 'Comentar: {{quote}} (página {{page}}, {{start}}–{{end}})',
+      remove: 'Quitar selección',
+      restricted: 'Extracto no accesible',
+      positionUnavailable: 'La posición de la selección ya no es válida',
+      unavailable: 'Selección no disponible',
+      captureFailed: 'No se pudo localizar el texto seleccionado en la fuente. Seleccione un fragmento más corto.',
+    },
+    source: {
+      returnToAnswer: 'Volver a la respuesta',
+      returnUnavailable: 'No se pudo localizar la respuesta original. Puede estar fuera del historial cargado.',
+    },
     session: {
       newConversation: 'New conversation',
       restrictedConversation: 'Restricted conversation',
@@ -1070,6 +1084,16 @@ export const esES = {
       invalidDraft: 'Draft contains characters that cannot be sent — remove or replace them before sending',
     },
     errors: {
+      selectionContractNotEnabled: 'Este espacio de trabajo no admite contexto de selección. Actualice el cliente o desactive la función.',
+      selectionSubmissionRequired: 'Las selecciones deben enviarse con un envío de sesión. Use el campo del chat de sesión.',
+      selectionInvalid: 'La selección no es válida para esta fuente. Vuelva a seleccionar el texto.',
+      selectionPositionUnavailable: 'La posición seleccionada ya no coincide con la fuente. Vuelva a seleccionar el texto.',
+      selectionVersionUnavailable: 'La versión de la fuente seleccionada ya no está disponible. Vuelva a seleccionar el texto.',
+      selectionSourceUnavailable: 'La fuente seleccionada no está disponible en este proyecto. Vuelva a seleccionar el texto.',
+      sourceAccessRestricted: 'Ya no se puede acceder a esta fuente (el acceso puede haber sido revocado).',
+      sourceRefMismatch: 'La versión de la fuente cambió. Actualice la fuente e inténtelo de nuevo.',
+      sessionStoreUnavailable: 'No se pudo verificar el acceso en este momento. Inténtelo de nuevo en breve.',
+      selectionUnavailable: 'La función de selección ya no está disponible. Quite la selección para continuar.',
       acceptanceRetryExhausted: 'Your submission is pending confirmation — its result could not be verified automatically. Retry with the original attempt or review it before sending again.',
       generic: "Something went wrong. Check the message below and try again, or contact an administrator.",
       consentRequired: "External model egress consent is required before sending. Acknowledge it to continue.",

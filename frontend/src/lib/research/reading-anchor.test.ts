@@ -239,21 +239,28 @@ describe('measureReaderAnchor / readerAnchorMatches', () => {
     sourceId: 'src-1',
     documentId: 'doc-1',
     documentVersion: 'v3',
-    contentHash: 'hash-abc',
+  }
+  // Issue #1013（D1-E-2）§2.10：reader_anchor 的 content_hash 是**逐 chunk**
+  // hash（服务端 `markdown_chunks[].content_hash`），不是来源级 content_hash。
+  const chunkIdentity = {
+    chunkId: 'chunk-7',
+    chunkOrdinal: 7,
+    contentHash: 'hash-chunk-7',
   }
 
   it('A5 以 chunk 顶沿测量有符号偏移并携带身份', () => {
     const anchor = measureReaderAnchor({
       identity: baseIdentity,
       container: { containerTop: 60, scrollTop: 500, clientHeight: 700, scrollHeight: 3_000 },
-      chunk: { chunkId: 'chunk-7', chunkOrdinal: 7, top: 260, pageIdx: 3 },
+      chunk: { ...chunkIdentity, top: 260, pageIdx: 3 },
     })
 
     expect(anchor).not.toBeNull()
     expect(anchor?.sourceId).toBe('src-1')
     expect(anchor?.documentId).toBe('doc-1')
     expect(anchor?.documentVersion).toBe('v3')
-    expect(anchor?.contentHash).toBe('hash-abc')
+    // 逐 chunk hash（不是来源级 content_hash）
+    expect(anchor?.contentHash).toBe('hash-chunk-7')
     expect(anchor?.chunkId).toBe('chunk-7')
     expect(anchor?.chunkOrdinal).toBe(7)
     expect(anchor?.pageIdx).toBe(3)
@@ -265,7 +272,7 @@ describe('measureReaderAnchor / readerAnchorMatches', () => {
     const anchor = measureReaderAnchor({
       identity: baseIdentity,
       container: { containerTop: 60, scrollTop: 500, clientHeight: 700, scrollHeight: 3_000 },
-      chunk: { chunkId: null, chunkOrdinal: 2, top: -240, pageIdx: null },
+      chunk: { chunkId: null, chunkOrdinal: 2, contentHash: 'hash-chunk-2', top: -240, pageIdx: null },
     })
 
     expect(anchor?.offsetPx).toBe(-300)
@@ -273,10 +280,18 @@ describe('measureReaderAnchor / readerAnchorMatches', () => {
     expect(anchor?.chunkOrdinal).toBe(2)
   })
 
-  it('A5 content_hash 为空或 chunk 缺失时不得造锚点', () => {
+  it('A5 逐 chunk content_hash 缺失或 chunk 缺失时不得造锚点', () => {
     expect(
       measureReaderAnchor({
-        identity: { ...baseIdentity, contentHash: null },
+        identity: baseIdentity,
+        container: { containerTop: 60, scrollTop: 0, clientHeight: 700, scrollHeight: 3_000 },
+        chunk: { chunkId: 'chunk-1', chunkOrdinal: 1, contentHash: null, top: 10, pageIdx: null },
+      }),
+    ).toBeNull()
+
+    expect(
+      measureReaderAnchor({
+        identity: baseIdentity,
         container: { containerTop: 60, scrollTop: 0, clientHeight: 700, scrollHeight: 3_000 },
         chunk: { chunkId: 'chunk-1', chunkOrdinal: 1, top: 10, pageIdx: null },
       }),
@@ -291,7 +306,18 @@ describe('measureReaderAnchor / readerAnchorMatches', () => {
     ).toBeNull()
   })
 
-  it('A6 身份匹配要求 source/document/version/hash 全部一致', () => {
+  it('F10 锚点使用服务端逐 chunk chunk_ordinal（不用数组下标）', () => {
+    const anchor = measureReaderAnchor({
+      identity: baseIdentity,
+      container: { containerTop: 100, scrollTop: 0, clientHeight: 700, scrollHeight: 3_000 },
+      // 响应数组第 0 条也可能是服务端 ordinal=5 的 chunk。
+      chunk: { chunkId: 'chunk-5', chunkOrdinal: 5, contentHash: 'hash-chunk-5', top: 120, pageIdx: null },
+    })
+    expect(anchor?.chunkOrdinal).toBe(5)
+    expect(anchor?.contentHash).toBe('hash-chunk-5')
+  })
+
+  it('A6/F10 身份匹配要求 source/document/version + 逐 chunk 身份全部一致', () => {
     const saved: WireReaderAnchor = {
       sourceId: 'src-1',
       documentId: 'doc-1',
@@ -299,17 +325,53 @@ describe('measureReaderAnchor / readerAnchorMatches', () => {
       format: 'normalized_markdown',
       chunkId: 'chunk-7',
       chunkOrdinal: 7,
-      contentHash: 'hash-abc',
+      contentHash: 'hash-chunk-7',
       pageIdx: 3,
       offsetPx: 200,
     }
+    const chunks = [chunkIdentity]
 
-    expect(readerAnchorMatches(baseIdentity, saved)).toBe(true)
-    expect(readerAnchorMatches({ ...baseIdentity, documentVersion: 'v4' }, saved)).toBe(false)
-    expect(readerAnchorMatches({ ...baseIdentity, contentHash: 'hash-other' }, saved)).toBe(false)
-    expect(readerAnchorMatches({ ...baseIdentity, documentId: 'doc-2' }, saved)).toBe(false)
-    expect(readerAnchorMatches({ ...baseIdentity, sourceId: 'src-2' }, saved)).toBe(false)
-    expect(readerAnchorMatches({ ...baseIdentity, contentHash: null }, saved)).toBe(false)
+    expect(readerAnchorMatches(baseIdentity, saved, chunks)).toBe(true)
+    expect(readerAnchorMatches({ ...baseIdentity, documentVersion: 'v4' }, saved, chunks)).toBe(false)
+    expect(readerAnchorMatches({ ...baseIdentity, documentId: 'doc-2' }, saved, chunks)).toBe(false)
+    expect(readerAnchorMatches({ ...baseIdentity, sourceId: 'src-2' }, saved, chunks)).toBe(false)
+    // 逐 chunk hash 漂移（chunk 集合/内容变化）→ 失配
+    expect(
+      readerAnchorMatches(baseIdentity, saved, [
+        { ...chunkIdentity, contentHash: 'hash-other' },
+      ]),
+    ).toBe(false)
+    // chunk 缺失（来源正文被重切）
+    expect(readerAnchorMatches(baseIdentity, saved, [])).toBe(false)
+    // 旧口径：来源级 hash 被当成锚点 hash 时必须失配（不得判可恢复）
+    expect(
+      readerAnchorMatches(
+        baseIdentity,
+        { ...saved, contentHash: 'source-level-hash' },
+        chunks,
+      ),
+    ).toBe(false)
+  })
+
+  it('F10 恢复按 chunk_id 优先、chunk_ordinal 兜底（chunk_id 为 null 时）', () => {
+    const chunks = [
+      { chunkId: 'chunk-0', chunkOrdinal: 0, contentHash: 'hash-chunk-0' },
+      { chunkId: 'chunk-7', chunkOrdinal: 7, contentHash: 'hash-chunk-7' },
+    ]
+    const byId: WireReaderAnchor = {
+      sourceId: 'src-1',
+      documentId: 'doc-1',
+      documentVersion: 'v3',
+      format: 'normalized_markdown',
+      chunkId: 'chunk-7',
+      chunkOrdinal: 7,
+      contentHash: 'hash-chunk-7',
+      pageIdx: null,
+      offsetPx: 5,
+    }
+    expect(readerAnchorMatches(baseIdentity, byId, chunks)).toBe(true)
+    const byOrdinal: WireReaderAnchor = { ...byId, chunkId: null }
+    expect(readerAnchorMatches(baseIdentity, byOrdinal, chunks)).toBe(true)
   })
 })
 

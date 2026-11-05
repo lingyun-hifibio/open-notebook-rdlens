@@ -21,7 +21,21 @@ import {
 } from '@/lib/research/session-cache'
 import type { ResearchSseEvent } from '@/lib/research/types'
 import type { ResearchSessionRef } from '@/lib/research/session-contract'
-import type { ConversationController, SessionRuntime } from '@/lib/research/session-runtime'
+import type {
+  ConversationController,
+  ConversationTransport,
+  SessionRuntime,
+} from '@/lib/research/session-runtime'
+import {
+  buildSessionReturnTarget,
+  citationMatchesReturnIdentity,
+  readLatestSessionReturnTarget,
+  readSessionReturnTarget,
+  recordSessionReturnTarget,
+  writeSessionReturnTarget,
+  type ReturnTargetStorage,
+} from '@/lib/research/conversation-machine'
+import type { WireSelectionContext } from '@/lib/research/session-contract'
 
 // UI-03 Red：Chat SSE 流状态机（契约 v0 §9）——乱序/重复事件经由 reducer
 // 去重排序、断线自动按 event_id 重连（Last-Event-ID）、终态恰好一次、
@@ -2932,5 +2946,431 @@ describe('PR-5b（D2/D3）：会话元数据、submission marker 与未结算查
       expect(result.current.turns).toHaveLength(1)
       expect(result.current.turns[0]).toMatchObject({ role: 'user', content: '最新问题' })
     })
+  })
+})
+
+
+// ---------------------------------------------------------------------------
+// Issue #1013（D1-E-2）F05/F07/F08/F09/F14：选段请求接线、消息投影 chip、
+// 返回原回答目标、范围不变。
+// ---------------------------------------------------------------------------
+
+const SELECTION_WIRE = {
+  source_id: 'src_1',
+  document_id: 'doc_1',
+  document_version: 'v3',
+  chunk_id: 'chunk_1',
+  chunk_ordinal: 2,
+  page_idx: 0,
+  start_offset: 6,
+  end_offset: 11,
+  quote: 'world',
+  quote_hash: '486ea46224d1bb4fb680f34f7c9ad96a8f24ec88be73ea8e5a6c65260e9cb8a7',
+  content_hash: 'a'.repeat(64),
+}
+
+const SELECTION_CAMEL: WireSelectionContext = {
+  sourceId: 'src_1',
+  documentId: 'doc_1',
+  documentVersion: 'v3',
+  chunkId: 'chunk_1',
+  chunkOrdinal: 2,
+  pageIdx: 0,
+  startOffset: 6,
+  endOffset: 11,
+  quote: 'world',
+  quoteHash: SELECTION_WIRE.quote_hash,
+  contentHash: 'a'.repeat(64),
+}
+
+function selectionProjectionWire(overrides: Record<string, unknown> = {}) {
+  return {
+    ...SELECTION_WIRE,
+    visibility: 'visible',
+    reason_code: null,
+    ...overrides,
+  }
+}
+
+function fakeStorage(options: { enumerable?: boolean } = {}): ReturnTargetStorage & {
+  map: Map<string, string>
+} {
+  const map = new Map<string, string>()
+  const storage: ReturnTargetStorage & { map: Map<string, string> } = {
+    map,
+    getItem: (key) => map.get(key) ?? null,
+    setItem: (key, value) => {
+      map.set(key, value)
+    },
+    removeItem: (key) => {
+      map.delete(key)
+    },
+  }
+  if (options.enumerable === true) {
+    Object.defineProperty(storage, 'length', { get: () => map.size })
+    storage.key = (index: number) => Array.from(map.keys())[index] ?? null
+  }
+  return storage
+}
+
+describe('Issue #1013 F07：消息投影 → 选段 chip（fail-closed）', () => {
+  it('user 行 13 键读投影 → turn.selectionContext（含 visibility/reason）', () => {
+    const turn = messageRowToTurn({
+      message_id: 'msg_user',
+      role: 'user',
+      content: 'q',
+      selection_context: selectionProjectionWire(),
+    } as never)
+    expect(turn?.selectionContext).toMatchObject({
+      visibility: 'visible',
+      reasonCode: null,
+      quote: 'world',
+      chunkOrdinal: 2,
+    })
+  })
+
+  it('restricted 投影：quote/quote_hash 为 null 且 chip 可识别无权', () => {
+    const turn = messageRowToTurn({
+      message_id: 'msg_user',
+      role: 'user',
+      content: 'q',
+      selection_context: selectionProjectionWire({
+        visibility: 'restricted',
+        reason_code: 'content_restricted',
+        quote: null,
+        quote_hash: null,
+      }),
+    } as never)
+    expect(turn?.selectionContext).toMatchObject({
+      visibility: 'restricted',
+      reasonCode: 'content_restricted',
+      quote: null,
+      quoteHash: null,
+    })
+  })
+
+  it('位置失效投影：保留 quote 且 visibility=position_unavailable', () => {
+    const turn = messageRowToTurn({
+      message_id: 'msg_user',
+      role: 'user',
+      content: 'q',
+      selection_context: selectionProjectionWire({
+        visibility: 'position_unavailable',
+        reason_code: 'position_unavailable',
+      }),
+    } as never)
+    expect(turn?.selectionContext).toMatchObject({
+      visibility: 'position_unavailable',
+      quote: 'world',
+    })
+  })
+
+  it('形状损坏/未知键 → 不猜内容（selectionContextInvalid，selection=null）', () => {
+    const turn = messageRowToTurn({
+      message_id: 'msg_user',
+      role: 'user',
+      content: 'q',
+      selection_context: { ...selectionProjectionWire(), extra: true },
+    } as never)
+    expect(turn?.selectionContext).toBeNull()
+    expect(turn?.selectionContextInvalid).toBe(true)
+  })
+
+  it('版本头不匹配（d1c）却出现 selection 键 → fail-closed', () => {
+    const turn = messageRowToTurn(
+      {
+        message_id: 'msg_user',
+        role: 'user',
+        content: 'q',
+        selection_context: selectionProjectionWire(),
+      } as never,
+      { projectionVersion: 'd1c' },
+    )
+    expect(turn?.selectionContext).toBeNull()
+    expect(turn?.selectionContextInvalid).toBe(true)
+  })
+
+  it('d1e 投影缺 selection_context 键 → fail-closed；显式 null 合法', () => {
+    const missing = messageRowToTurn(
+      { message_id: 'msg_user', role: 'user', content: 'q' } as never,
+      { projectionVersion: 'd1e' },
+    )
+    expect(missing?.selectionContextInvalid).toBe(true)
+    const explicitNull = messageRowToTurn(
+      { message_id: 'msg_user', role: 'user', content: 'q', selection_context: null } as never,
+      { projectionVersion: 'd1e' },
+    )
+    expect(explicitNull?.selectionContext).toBeNull()
+    expect(explicitNull?.selectionContextInvalid).toBeUndefined()
+  })
+})
+
+describe('Issue #1013 F05/F14：global headed 提交的选段接线（extra=forbid 形状）', () => {
+  function renderWithTransport(getSelectionContext?: () => WireSelectionContext | null) {
+    let captured: ConversationTransport | null = null
+    const controller = {
+      detach: vi.fn(),
+      hasActiveTurn: vi.fn(() => false),
+      load: vi.fn(async () => ({ status: 'blocked' as const })),
+      getSnapshot: vi.fn(() => ({ turn: null, authGeneration: 1 })),
+    } as unknown as ConversationController
+    const runtime = {
+      conversation: (_ref: unknown, options: { transport: ConversationTransport }) => {
+        captured = options.transport
+        return controller
+      },
+      releaseConversation: vi.fn(),
+      getSnapshot: () => ({ authGeneration: 1 }),
+      subscribe: () => () => {},
+    } as unknown as SessionRuntime
+    const ref: ResearchSessionRef = {
+      domain: 'research',
+      kind: 'global',
+      projectId: 'proj_1',
+      sessionId: 'sess_1',
+      sourceId: null,
+    }
+    const hooks = renderHook(() =>
+      useResearchChat({
+        projectId: 'proj_1',
+        session: { runtime, ref, getSelectionContext },
+      }),
+    )
+    return { hooks, transport: () => captured, ref }
+  }
+
+  function openStreamOn(transport: ConversationTransport, ref: ResearchSessionRef) {
+    const streams = openCapture()
+    act(() => {
+      transport.openStream({
+        sessionRef: ref,
+        editorRevision: 3,
+        draftToken: 'draft_tok',
+        editorIntentHash: 'e'.repeat(64),
+        idempotencyKey: `s1_${'a'.repeat(64)}`,
+        lastEventId: 0,
+        query: 'question',
+        modelId: MODEL,
+        sourceIds: [],
+        noteIds: [],
+        scope: { mode: 'selected', sourceIds: ['src_scope'], singleSourceId: null },
+        onEvent: vi.fn(),
+        onEnd: vi.fn(),
+        onHttpError: vi.fn(),
+        onNetworkError: vi.fn(),
+        onProtocolError: vi.fn(),
+      })
+    })
+    return streams
+  }
+
+  it('有选段：wire body 携带 snake_case 11 键，source_scope/范围不变', () => {
+    const { transport, ref } = renderWithTransport(() => SELECTION_CAMEL)
+    const streams = openStreamOn(transport() as ConversationTransport, ref)
+    expect(streams).toHaveLength(1)
+    const request = streams[0].opts.request as unknown as Record<string, unknown>
+    expect(request.selection_context).toEqual(SELECTION_WIRE)
+    expect(request.source_scope).toEqual({
+      mode: 'selected',
+      source_ids: ['src_scope'],
+      single_source_id: null,
+    })
+    // 选段来源不得并入范围（F14：范围/检索不变）
+    expect(request.source_scope).not.toMatchObject({ source_ids: ['src_1'] })
+    expect(request.source_ids).toBeUndefined()
+  })
+
+  it('无选段：body 不出现 selection_context 键（旧流程字节不变）', () => {
+    const { transport, ref } = renderWithTransport(() => null)
+    const streams = openStreamOn(transport() as ConversationTransport, ref)
+    const request = streams[0].opts.request as unknown as Record<string, unknown>
+    expect(Object.prototype.hasOwnProperty.call(request, 'selection_context')).toBe(false)
+  })
+})
+
+describe('Issue #1013 F08/F09：返回原回答目标（citation 身份 + durable message）', () => {
+  const ref = {
+    domain: 'research' as const,
+    kind: 'global' as const,
+    projectId: 'proj_1',
+    sessionId: 'sess_1',
+    sourceId: null,
+  }
+  const identity = {
+    sourceId: 'src_1',
+    docId: 'doc_1',
+    docVersion: 'v3',
+    chunkId: 'chunk_1',
+    pageIdx: 2,
+  }
+
+  it('M-01 build/写读：sessionStorage + localStorage 双写，键含 project/session/citation source', () => {
+    const target = buildSessionReturnTarget({
+      projectId: 'proj_1',
+      ref,
+      messageId: 'msg_assistant',
+      citation: identity,
+      recordedAt: '2026-11-04T00:00:00Z',
+    })
+    expect(target).not.toBeNull()
+    const session = fakeStorage()
+    const local = fakeStorage()
+    expect(recordSessionReturnTarget({ target, sessionStorage: session, localStorage: local })).toEqual(
+      target,
+    )
+    expect(readSessionReturnTarget(session, 'proj_1', 'src_1', 'sess_1')).toEqual(target)
+    expect(readSessionReturnTarget(local, 'proj_1', 'src_1', 'sess_1')).toEqual(target)
+    // 键必须含 session（M-01：`<prefix>/<project>/<session>/<source>`）
+    expect([...local.map.keys()]).toEqual([
+      'rdlens.research.return-target.v1/proj_1/sess_1/src_1',
+    ])
+    // 跨项目/其它来源/其它会话不可读（键含 project/session/source）
+    expect(readSessionReturnTarget(local, 'proj_2', 'src_1', 'sess_1')).toBeNull()
+    expect(readSessionReturnTarget(local, 'proj_1', 'src_2', 'sess_1')).toBeNull()
+    expect(readSessionReturnTarget(local, 'proj_1', 'src_1', 'sess_2')).toBeNull()
+  })
+
+  it('M-01 同一 citation 在两会话各自记录 target：互不串用，跨会话读取不命中', () => {
+    const globalA = { ...ref, sessionId: 'sess_a' }
+    const globalB = { ...ref, sessionId: 'sess_b' }
+    const targetA = buildSessionReturnTarget({
+      projectId: 'proj_1',
+      ref: globalA,
+      messageId: 'msg_a',
+      citation: identity,
+      recordedAt: '2026-11-04T00:00:00Z',
+    })
+    const targetB = buildSessionReturnTarget({
+      projectId: 'proj_1',
+      ref: globalB,
+      messageId: 'msg_b',
+      citation: identity,
+      recordedAt: '2026-11-04T00:00:01Z',
+    })
+    const storage = fakeStorage()
+    recordSessionReturnTarget({ target: targetA, sessionStorage: storage })
+    recordSessionReturnTarget({ target: targetB, sessionStorage: storage })
+    // 两会话各自精确命中（不互相覆盖：键不同）
+    expect(readSessionReturnTarget(storage, 'proj_1', 'src_1', 'sess_a')?.messageId).toBe('msg_a')
+    expect(readSessionReturnTarget(storage, 'proj_1', 'src_1', 'sess_b')?.messageId).toBe('msg_b')
+    expect(storage.map.size).toBe(2)
+    // 跨会话读取（sess_c）不命中：绝不把 A/B 的目标当作当前会话目标
+    expect(readSessionReturnTarget(storage, 'proj_1', 'src_1', 'sess_c')).toBeNull()
+    // 只允许在当前活动的候选会话中读；取最新 recordedAt
+    expect(
+      readLatestSessionReturnTarget(storage, 'proj_1', 'src_1', ['sess_a'])?.messageId,
+    ).toBe('msg_a')
+    expect(
+      readLatestSessionReturnTarget(storage, 'proj_1', 'src_1', ['sess_a', 'sess_b'])?.messageId,
+    ).toBe('msg_b')
+    expect(readLatestSessionReturnTarget(storage, 'proj_1', 'src_1', ['sess_c'])).toBeNull()
+    expect(readLatestSessionReturnTarget(storage, 'proj_1', 'src_1', [])).toBeNull()
+  })
+
+  it('M-01 复审探针：候选只含 sess_b 时，storage 中 sess_a 的新键/旧 v1 键都不得读出', () => {
+    const storage = fakeStorage({ enumerable: true })
+    const targetA = buildSessionReturnTarget({
+      projectId: 'proj_1',
+      ref: { ...ref, sessionId: 'sess_a' },
+      messageId: 'msg_a',
+      citation: identity,
+      recordedAt: '2026-11-04T00:00:00Z',
+    })
+    recordSessionReturnTarget({ target: targetA, sessionStorage: storage })
+    // 旧 v1 无 session 段键（值内 sessionId=sess_a）也一并放入。
+    if (targetA === null) throw new Error('target should be built')
+    storage.setItem('rdlens.research.return-target.v1/proj_1/src_1', JSON.stringify(targetA))
+    // 候选 = ['sess_b']：只读 sess_b 的精确键 → null（不枚举其它会话）。
+    expect(
+      readLatestSessionReturnTarget(storage, 'proj_1', 'src_1', ['sess_b']),
+    ).toBeNull()
+    // 候选 = ['sess_a']：精确键命中（旧 v1 键的值 sessionId ∈ candidates 也接受）。
+    expect(
+      readLatestSessionReturnTarget(storage, 'proj_1', 'src_1', ['sess_a'])?.messageId,
+    ).toBe('msg_a')
+  })
+
+  it('storage 损坏/缺失/storage 不可用 → null（不抛错、不回退 chat_anchor）', () => {
+    const storage = fakeStorage()
+    storage.setItem(
+      'rdlens.research.return-target.v1/proj_1/sess_1/src_1',
+      '{not json',
+    )
+    expect(readSessionReturnTarget(storage, 'proj_1', 'src_1', 'sess_1')).toBeNull()
+    expect(readSessionReturnTarget(null, 'proj_1', 'src_1', 'sess_1')).toBeNull()
+    expect(writeSessionReturnTarget(null, null as never)).toBe(false)
+  })
+
+  it('citation 身份匹配：doc 必配；doc_version/chunk/page 在提供时逐项等值', () => {
+    // 只提供 doc_id 时：身份中可空字段必须也为 null 才命中
+    expect(
+      citationMatchesReturnIdentity(
+        { docId: 'doc_1' },
+        { docId: 'doc_1', docVersion: null, chunkId: null, pageIdx: null },
+      ),
+    ).toBe(true)
+    // 身份带 doc_version 时 citation 必须同版本（较旧 citation 不误命中）
+    expect(citationMatchesReturnIdentity({ docId: 'doc_1' }, identity)).toBe(false)
+    expect(
+      citationMatchesReturnIdentity(
+        { docId: 'doc_1', docVersion: 'v3', chunkId: 'chunk_1', pageIdx: 2 },
+        identity,
+      ),
+    ).toBe(true)
+    expect(citationMatchesReturnIdentity({ docId: 'doc_1', docVersion: 'v4' }, identity)).toBe(false)
+    expect(citationMatchesReturnIdentity({ docId: 'doc_1', pageIdx: 3 }, identity)).toBe(false)
+    expect(citationMatchesReturnIdentity({ docId: 'other' }, identity)).toBe(false)
+    expect(citationMatchesReturnIdentity({}, identity)).toBe(false)
+  })
+
+  it('读取按 recordedAt 取最新（storage 可枚举时无需预知 session）', () => {
+    const storage = fakeStorage({ enumerable: true })
+    const target = (sessionId: string, messageId: string, recordedAt: string) =>
+      buildSessionReturnTarget({
+        projectId: 'proj_1',
+        ref: { ...ref, sessionId },
+        messageId,
+        citation: identity,
+        recordedAt,
+      })
+    recordSessionReturnTarget({ target: target('sess_a', 'msg_a', '2026-11-04T00:00:00Z'), localStorage: storage })
+    recordSessionReturnTarget({ target: target('sess_b', 'msg_b', '2026-11-04T00:00:02Z'), localStorage: storage })
+    recordSessionReturnTarget({ target: target('sess_c', 'msg_c', '2026-11-04T00:00:01Z'), localStorage: storage })
+    expect(readLatestSessionReturnTarget(storage, 'proj_1', 'src_1')).toEqual(
+      expect.objectContaining({ sessionId: 'sess_b', messageId: 'msg_b' }),
+    )
+    // 其它来源不命中。
+    expect(readLatestSessionReturnTarget(storage, 'proj_1', 'src_other')).toBeNull()
+  })
+
+  it('旧 v1 键（无 session 段）只读兼容：值内 sessionId 必须匹配', () => {
+    const target = buildSessionReturnTarget({
+      projectId: 'proj_1',
+      ref,
+      messageId: 'msg_legacy',
+      citation: identity,
+      recordedAt: '2026-11-04T00:00:00Z',
+    })
+    const storage = fakeStorage({ enumerable: true })
+    storage.setItem(
+      'rdlens.research.return-target.v1/proj_1/src_1',
+      JSON.stringify(target),
+    )
+    expect(readSessionReturnTarget(storage, 'proj_1', 'src_1', 'sess_1')?.messageId).toBe(
+      'msg_legacy',
+    )
+    expect(readSessionReturnTarget(storage, 'proj_1', 'src_1', 'sess_other')).toBeNull()
+    expect(readLatestSessionReturnTarget(storage, 'proj_1', 'src_1')?.messageId).toBe(
+      'msg_legacy',
+    )
+    // 新写入仍使用含 session 的键（旧键不被改写）。
+    if (target === null) throw new Error('target should be built')
+    expect(writeSessionReturnTarget(storage, target)).toBe(true)
+    expect([...storage.map.keys()]).toEqual(
+      expect.arrayContaining([
+        'rdlens.research.return-target.v1/proj_1/src_1',
+        'rdlens.research.return-target.v1/proj_1/sess_1/src_1',
+      ]),
+    )
   })
 })

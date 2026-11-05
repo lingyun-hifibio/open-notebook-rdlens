@@ -976,6 +976,20 @@ export const trTR = {
     viewDocs: "Belgeleri Görüntüle",
   },
   research: {
+    selection: {
+      discuss: 'Seçimi tartış',
+      chip: '{{source}} · s. {{page}} · {{start}}–{{end}} · {{quote}}',
+      summary: 'Tartış: {{quote}} (sayfa {{page}}, {{start}}–{{end}})',
+      remove: 'Seçimi kaldır',
+      restricted: 'Alıntı erişilebilir değil',
+      positionUnavailable: 'Seçim konumu artık geçerli değil',
+      unavailable: 'Seçim kullanılamıyor',
+      captureFailed: 'Seçilen metin kaynakta bulunamadı. Daha kısa bir bölüm seçin.',
+    },
+    source: {
+      returnToAnswer: 'Yanıta dön',
+      returnUnavailable: 'Özgün yanıt bulunamadı. Yüklenen geçmişin dışında olabilir.',
+    },
     session: {
       newConversation: 'New conversation',
       restrictedConversation: 'Restricted conversation',
@@ -1069,6 +1083,16 @@ export const trTR = {
       invalidDraft: 'Draft contains characters that cannot be sent — remove or replace them before sending',
     },
     errors: {
+      selectionContractNotEnabled: 'Bu çalışma alanı seçim bağlamını desteklemiyor. İstemciyi güncelleyin veya özelliği kapatın.',
+      selectionSubmissionRequired: 'Seçimler oturum gönderimi ile birlikte gönderilmelidir. Oturum sohbeti giriş alanını kullanın.',
+      selectionInvalid: 'Seçim bu kaynak için geçerli değil. Metni yeniden seçin.',
+      selectionPositionUnavailable: 'Seçilen konum artık kaynakla eşleşmiyor. Metni yeniden seçin.',
+      selectionVersionUnavailable: 'Seçilen kaynak sürümü artık kullanılamıyor. Metni yeniden seçin.',
+      selectionSourceUnavailable: 'Seçilen kaynak bu projede kullanılamıyor. Metni yeniden seçin.',
+      sourceAccessRestricted: 'Bu kaynağa artık erişilemiyor (erişim iptal edilmiş olabilir).',
+      sourceRefMismatch: 'Kaynak sürümü değişti. Kaynağı yenileyip tekrar deneyin.',
+      sessionStoreUnavailable: 'Erişim şu anda doğrulanamadı. Kısa süre sonra tekrar deneyin.',
+      selectionUnavailable: 'Seçim özelliği artık kullanılamıyor. Devam etmek için seçimi kaldırın.',
       acceptanceRetryExhausted: 'Your submission is pending confirmation — its result could not be verified automatically. Retry with the original attempt or review it before sending again.',
       generic: "Something went wrong. Check the message below and try again, or contact an administrator.",
       consentRequired: "External model egress consent is required before sending. Acknowledge it to continue.",

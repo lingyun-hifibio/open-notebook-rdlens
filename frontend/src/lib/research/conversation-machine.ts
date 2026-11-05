@@ -1316,3 +1316,477 @@ function syntheticReceipt(
     editorIntentHash: view.editorIntentHash ?? turn.identity.editorIntentHash,
   }
 }
+
+// ---------------------------------------------------------------------------
+// Issue #1013（D1-E-2）§2.10：citation → durable message 的「返回原回答」目标
+//
+// 纯函数层（不直接读 window；storage 由调用方注入，便于测试）。
+// 耐久目标 = citation 身份（doc/doc_version/chunk_id/page_idx）+ durable
+// message_id + 会话身份；写本 tab 的 sessionStorage 与 localStorage（跨重开
+// 保留）。**不写入也不依赖 `chat_anchor`**——滚动锚点仍只表达最后阅读位置，
+// 普通滚动覆盖 chat_anchor 不影响返回目标。
+// ---------------------------------------------------------------------------
+
+/** citation 身份（往返匹配用；缺失字段用 null 表示）。 */
+export interface ReturnTargetCitation {
+  /** citation 指向的公共 Source ID。 */
+  readonly sourceId: string
+  readonly docId: string
+  readonly docVersion: string | null
+  readonly chunkId: string | null
+  readonly pageIdx: number | null
+}
+
+/** 「返回原回答」的耐久目标（localStorage/sessionStorage 同形状）。 */
+export interface SessionReturnTarget {
+  readonly version: 1
+  readonly projectId: string
+  /** `sessionKey(ref)`（含 kind/source，避免跨会话误命中）。 */
+  readonly sessionKey: string
+  readonly sessionId: string
+  readonly kind: 'global' | 'source'
+  /** source 会话的 source_id；global 为 null。 */
+  readonly sourceSessionSourceId: string | null
+  readonly messageId: string
+  readonly citation: ReturnTargetCitation
+  readonly recordedAt: string
+}
+
+/** storage 键前缀（按 project + citation 来源隔离：来源详情按来源读最新目标）。 */
+export const RETURN_TARGET_STORAGE_PREFIX = 'rdlens.research.return-target.v1'
+
+/**
+ * 键：`<prefix>/<project>/<sessionId>/<citationSourceId>`。
+ *
+ * Issue #1013 复审 M-01：键必须含 **session**（计划 §2.10「键含
+ * project/session」）——只按来源共享键会让会话 A 记录的返回目标在会话 B
+ * 打开同一来源时被读出，点击后跳到另一会话（§2.13 fail 判据）。
+ */
+export function returnTargetStorageKey(
+  projectId: string,
+  citationSourceId: string,
+  sessionId: string,
+): string {
+  return [
+    RETURN_TARGET_STORAGE_PREFIX,
+    encodeURIComponent(projectId),
+    encodeURIComponent(sessionId),
+    encodeURIComponent(citationSourceId),
+  ].join('/')
+}
+
+/**
+ * v1 旧键（键不含 session；值里带 sessionId）：只读兼容，不再写入。
+ *
+ * 复审 F02：升级前写入的条目必须仍能被「返回原回答」找到，因此读取路径
+ * 保留旧键回退；新写入一律走含 session 的 `returnTargetStorageKey`。
+ */
+export function legacyReturnTargetStorageKey(
+  projectId: string,
+  citationSourceId: string,
+): string {
+  return [
+    RETURN_TARGET_STORAGE_PREFIX,
+    encodeURIComponent(projectId),
+    encodeURIComponent(citationSourceId),
+  ].join('/')
+}
+
+/** 可由任意 storage 实现的最小子集（便于测试注入）。 */
+export interface ReturnTargetStorage {
+  getItem(key: string): string | null
+  setItem(key: string, value: string): void
+  removeItem?(key: string): void
+  /**
+   * 可选枚举能力（浏览器 `Storage` 原生具备）。返回目标的键含 session，
+   * 「按 citation 来源取最近一条」无法预知全部历史 session，必须能枚举。
+   */
+  readonly length?: number
+  key?(index: number): string | null
+}
+
+function isNonEmpty(value: unknown, max = 512): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= max
+}
+
+/**
+ * 构造返回目标；身份非法（空 message/session/来源）→ null（不得写半条）。
+ */
+export function buildSessionReturnTarget(input: {
+  readonly projectId: string
+  readonly ref: ResearchSessionRef
+  readonly messageId: string
+  readonly citation: ReturnTargetCitation
+  readonly recordedAt?: string
+}): SessionReturnTarget | null {
+  const { projectId, ref, messageId, citation } = input
+  if (!isNonEmpty(projectId) || !isNonEmpty(ref.sessionId) || !isNonEmpty(messageId)) {
+    return null
+  }
+  if (!isNonEmpty(citation.sourceId) || !isNonEmpty(citation.docId)) return null
+  return {
+    version: 1,
+    projectId,
+    sessionKey: sessionKey(ref),
+    sessionId: ref.sessionId,
+    kind: ref.kind,
+    sourceSessionSourceId: ref.kind === 'source' ? ref.sourceId : null,
+    messageId,
+    citation: {
+      sourceId: citation.sourceId,
+      docId: citation.docId,
+      docVersion: citation.docVersion ?? null,
+      chunkId: citation.chunkId ?? null,
+      pageIdx: citation.pageIdx ?? null,
+    },
+    recordedAt: input.recordedAt ?? new Date().toISOString(),
+  }
+}
+
+function parseReturnTarget(raw: string | null, projectId: string): SessionReturnTarget | null {
+  if (raw === null) return null
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null
+  const value = parsed as Record<string, unknown>
+  if (value.version !== 1) return null
+  if (value.projectId !== projectId) return null
+  const citation = value.citation
+  if (typeof citation !== 'object' || citation === null) return null
+  const citationRecord = citation as Record<string, unknown>
+  if (!isNonEmpty(value.sessionKey) || !isNonEmpty(value.sessionId)) return null
+  if (value.kind !== 'global' && value.kind !== 'source') return null
+  if (!isNonEmpty(value.messageId)) return null
+  if (!isNonEmpty(citationRecord.sourceId) || !isNonEmpty(citationRecord.docId)) return null
+  if (!isNonEmpty(value.recordedAt)) return null
+  const pageIdx = citationRecord.pageIdx
+  const chunkId = citationRecord.chunkId
+  const docVersion = citationRecord.docVersion
+  if (pageIdx !== null && !(typeof pageIdx === 'number' && Number.isInteger(pageIdx) && pageIdx >= 0)) {
+    return null
+  }
+  if (chunkId !== null && !isNonEmpty(chunkId)) return null
+  if (docVersion !== null && !isNonEmpty(docVersion)) return null
+  return {
+    version: 1,
+    projectId,
+    sessionKey: value.sessionKey,
+    sessionId: value.sessionId,
+    kind: value.kind,
+    sourceSessionSourceId:
+      typeof value.sourceSessionSourceId === 'string' ? value.sourceSessionSourceId : null,
+    messageId: value.messageId,
+    citation: {
+      sourceId: citationRecord.sourceId,
+      docId: citationRecord.docId,
+      docVersion: docVersion as string | null,
+      chunkId: chunkId as string | null,
+      pageIdx: pageIdx as number | null,
+    },
+    recordedAt: value.recordedAt,
+  }
+}
+
+/** 枚举 storage 的全部键；实现不支持枚举 → null（调用方退回候选 session）。 */
+function listReturnTargetKeys(storage: ReturnTargetStorage): string[] | null {
+  const length = storage.length
+  if (typeof length !== 'number' || typeof storage.key !== 'function') return null
+  const keys: string[] = []
+  for (let index = 0; index < length; index += 1) {
+    const key = storage.key(index)
+    if (typeof key === 'string') keys.push(key)
+  }
+  return keys
+}
+
+/** 按 storage 键读取并解析；来源/项目不匹配 → null（不串用）。 */
+function readTargetAtKey(
+  storage: ReturnTargetStorage,
+  key: string,
+  projectId: string,
+  citationSourceId: string,
+): SessionReturnTarget | null {
+  const parsed = parseReturnTarget(storage.getItem(key), projectId)
+  if (parsed === null || parsed.citation.sourceId !== citationSourceId) return null
+  return parsed
+}
+
+/**
+ * 读某会话在某来源上的返回目标（storage 不可用/损坏 → null，不抛错）。
+ *
+ * M-01：按 `(project, sessionId, citationSourceId)` 精确命中；命中的记录
+ * 还必须与请求的 sessionId 一致（防御键值被旧版本/手工写入错配）。
+ * 旧 v1 键（无 session 段）只读回退：值内 sessionId 必须与请求一致。
+ */
+export function readSessionReturnTarget(
+  storage: ReturnTargetStorage | null | undefined,
+  projectId: string,
+  citationSourceId: string,
+  sessionId: string,
+): SessionReturnTarget | null {
+  if (storage === null || storage === undefined) return null
+  if (sessionId.length === 0) return null
+  try {
+    const direct = readTargetAtKey(
+      storage,
+      returnTargetStorageKey(projectId, citationSourceId, sessionId),
+      projectId,
+      citationSourceId,
+    )
+    if (direct !== null && direct.sessionId === sessionId) return direct
+    const legacy = readTargetAtKey(
+      storage,
+      legacyReturnTargetStorageKey(projectId, citationSourceId),
+      projectId,
+      citationSourceId,
+    )
+    if (legacy !== null && legacy.sessionId === sessionId) return legacy
+    return null
+  } catch {
+    return null
+  }
+}
+
+function latestOf(candidates: readonly SessionReturnTarget[]): SessionReturnTarget | null {
+  let best: SessionReturnTarget | null = null
+  for (const candidate of candidates) {
+    if (best === null) {
+      best = candidate
+      continue
+    }
+    if (candidate.recordedAt > best.recordedAt) {
+      best = candidate
+      continue
+    }
+    // 同 recordedAt 也必须确定性（按 sessionId 字典序稳定选择）。
+    if (candidate.recordedAt === best.recordedAt && candidate.sessionId > best.sessionId) {
+      best = candidate
+    }
+  }
+  return best
+}
+
+/**
+ * 读取同一 citation 来源的**最新**返回目标（按 `recordedAt` 确定性取最新）。
+ *
+ * 目标键含 session（M-01），打开来源时不可能预知全部历史会话，因此优先
+ * 枚举 storage 中 `<prefix>/<project>/.../<citationSourceId>` 键（含旧 v1
+ * 无 session 键）；storage 不支持枚举时退回 `candidateSessionIds` 精确读取。
+ * 返回的目标仍携带其自身 session——page 据此切回目标会话（绝不落到其它
+ * 会话的当前消息）。
+ */
+export function readLatestSessionReturnTarget(
+  storage: ReturnTargetStorage | null | undefined,
+  projectId: string,
+  citationSourceId: string,
+  candidateSessionIds: readonly string[] = [],
+): SessionReturnTarget | null {
+  if (storage === null || storage === undefined) return null
+  const uniqueCandidates = [
+    ...new Set(candidateSessionIds.filter((sessionId) => sessionId.length > 0)),
+  ]
+  const candidates: SessionReturnTarget[] = []
+  // M-01（复审）：候选会话非空时**只**读这些 session 的精确键——
+  // 绝不枚举该 project/source 下其它会话的目标（探针：storage 仅 sess_A 且
+  // candidates=['sess_B'] 必须返回 null）。旧 v1 无 session 段键由
+  // `readSessionReturnTarget` 读取并校验其 `sessionId ∈ candidates`。
+  if (uniqueCandidates.length > 0) {
+    for (const sessionId of uniqueCandidates) {
+      const target = readSessionReturnTarget(storage, projectId, citationSourceId, sessionId)
+      if (target !== null) candidates.push(target)
+    }
+    return latestOf(candidates)
+  }
+  // 候选为空：仅在调用方未提供候选（旧调用方/不支持枚举的注入存储）时保留
+  // 枚举兜底（含旧 v1 无 session 键）。
+  try {
+    const keys = listReturnTargetKeys(storage)
+    if (keys !== null) {
+      const prefix = `${RETURN_TARGET_STORAGE_PREFIX}/${encodeURIComponent(projectId)}/`
+      for (const key of keys) {
+        if (!key.startsWith(prefix)) continue
+        const segments = key.slice(prefix.length).split('/')
+        // 旧 v1：<prefix>/<project>/<source>；新：<prefix>/<project>/<session>/<source>。
+        if (segments.length !== 1 && segments.length !== 2) continue
+        let decodedSource: string
+        try {
+          decodedSource = decodeURIComponent(segments[segments.length - 1] ?? '')
+        } catch {
+          continue
+        }
+        if (decodedSource !== citationSourceId) continue
+        const target = readTargetAtKey(storage, key, projectId, citationSourceId)
+        if (target !== null) candidates.push(target)
+      }
+    }
+  } catch {
+    // 枚举失败不阻断（候选为空时无精确读取可退，直接返回 null）。
+  }
+  return latestOf(candidates)
+}
+
+/** 写返回目标（失败 → false，不阻断 citation 跳转）。 */
+export function writeSessionReturnTarget(
+  storage: ReturnTargetStorage | null | undefined,
+  target: SessionReturnTarget,
+): boolean {
+  if (storage === null || storage === undefined) return false
+  try {
+    storage.setItem(
+      returnTargetStorageKey(target.projectId, target.citation.sourceId, target.sessionId),
+      JSON.stringify(target),
+    )
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 同时写 sessionStorage 与 localStorage（本 tab 即时返回 + 跨重开保留）。
+ *
+ * 任一写成功即返回 target；都不可用 → null（UI 仍可本次内存内返回）。
+ */
+export function recordSessionReturnTarget(input: {
+  readonly target: SessionReturnTarget | null
+  readonly sessionStorage?: ReturnTargetStorage | null
+  readonly localStorage?: ReturnTargetStorage | null
+}): SessionReturnTarget | null {
+  const target = input.target
+  if (target === null) return null
+  const wroteSession = writeSessionReturnTarget(input.sessionStorage, target)
+  const wroteLocal = writeSessionReturnTarget(input.localStorage, target)
+  return wroteSession || wroteLocal ? target : null
+}
+
+/**
+ * 多 storage（按调用方给定优先级）+ 单 citation 来源的「最新目标」读取：
+ * 打开来源时用它恢复链（目标自带 session，page 负责切回该会话）。
+ *
+ * 无 `sessionIds` 时完全依赖 storage 枚举（浏览器 Storage 支持）；不支持
+ * 枚举的注入实现可传候选 session 兜底。
+ */
+export function readLatestReturnTarget(input: {
+  readonly storages: readonly (ReturnTargetStorage | null | undefined)[]
+  readonly projectId: string
+  readonly citationSourceId: string
+  readonly candidateSessionIds?: readonly string[]
+}): SessionReturnTarget | null {
+  for (const storage of input.storages) {
+    const found = readLatestSessionReturnTarget(
+      storage,
+      input.projectId,
+      input.citationSourceId,
+      input.candidateSessionIds ?? [],
+    )
+    if (found !== null) return found
+  }
+  return null
+}
+
+/**
+ * citation 点击 → 构造并**尽力**记录返回目标：message_id 缺失/身份非法 →
+ * null（不写半条）；storage 全部不可用时不伪造“已记录”，但仍返回本次内存
+ * 目标（本页可即时返回；重开由「无 storage → position_unavailable」兜底）。
+ */
+export function recordCitationReturnTarget(input: {
+  readonly projectId: string
+  readonly ref: ResearchSessionRef
+  readonly messageId: string | null
+  readonly citation: ReturnTargetCitation
+  readonly sessionStorage?: ReturnTargetStorage | null
+  readonly localStorage?: ReturnTargetStorage | null
+}): SessionReturnTarget | null {
+  if (input.messageId === null || input.messageId.length === 0) return null
+  const target = buildSessionReturnTarget({
+    projectId: input.projectId,
+    ref: input.ref,
+    messageId: input.messageId,
+    citation: input.citation,
+  })
+  if (target === null) return null
+  recordSessionReturnTarget({
+    target,
+    sessionStorage: input.sessionStorage,
+    localStorage: input.localStorage,
+  })
+  return target
+}
+
+/** 「返回原回答」动作计划（page 只据此切 surface / 下发滚动请求）。 */
+export type ReturnToAnswerPlan =
+  | {
+      readonly kind: 'navigate'
+      readonly surface: 'global' | 'source'
+      readonly sessionId: string
+      /** 目标 source 会话的来源（source surface 切换/校验用；global 为 null）。 */
+      readonly sourceId: string | null
+      readonly messageId: string
+      /** M-01 后 navigate 恒为 false：目标会话必须已是当前 active 会话。 */
+      readonly needsSwitch: boolean
+    }
+  | {
+      readonly kind: 'unavailable'
+      readonly reason: 'missing_target' | 'invalid_target' | 'session_mismatch'
+    }
+
+/**
+ * 返回原回答的**会话安全**决策（复审 M-01）：
+ * - 无目标 / target 缺少 source 绑定 → unavailable（UI 显示
+ *   position_unavailable，不跳最新）；
+ * - 目标会话**不是**当前该 surface 的 active 会话 → unavailable
+ *   （`session_mismatch`）：读侧已按候选会话过滤，这里再防御 stale state，
+ *   **绝不切到其它会话**（计划 §2.13）；
+ * - 目标会话已 active → navigate（只切 surface + 滚动；needsSwitch 恒 false）。
+ */
+export function planReturnToAnswer(input: {
+  readonly target: SessionReturnTarget | null
+  readonly globalRef: ResearchSessionRef | null
+  readonly sourceRef: ResearchSessionRef | null
+}): ReturnToAnswerPlan {
+  const target = input.target
+  if (target === null) return { kind: 'unavailable', reason: 'missing_target' }
+  if (target.kind === 'source' && target.sourceSessionSourceId === null) {
+    return { kind: 'unavailable', reason: 'invalid_target' }
+  }
+  const active = target.kind === 'source' ? input.sourceRef : input.globalRef
+  if (active === null || active.sessionId !== target.sessionId) {
+    return { kind: 'unavailable', reason: 'session_mismatch' }
+  }
+  return {
+    kind: 'navigate',
+    surface: target.kind,
+    sessionId: target.sessionId,
+    sourceId: target.kind === 'source' ? target.sourceSessionSourceId : null,
+    messageId: target.messageId,
+    needsSwitch: false,
+  }
+}
+
+/** citation 是否匹配给定身份（doc_id 必配；其余可空字段在提供时逐项等值）。 */
+export function citationMatchesReturnIdentity(
+  citation: {
+    readonly docId?: string | null
+    readonly docVersion?: string | null
+    readonly chunkId?: string | null
+    readonly pageIdx?: number | null
+  },
+  identity: Omit<ReturnTargetCitation, 'sourceId'>,
+): boolean {
+  if ((citation.docId ?? null) === null) return false
+  if (citation.docId !== identity.docId) return false
+  if (identity.docVersion !== null && (citation.docVersion ?? null) !== identity.docVersion) {
+    return false
+  }
+  if (identity.chunkId !== null && (citation.chunkId ?? null) !== identity.chunkId) {
+    return false
+  }
+  if (identity.pageIdx !== null && (citation.pageIdx ?? null) !== identity.pageIdx) {
+    return false
+  }
+  return true
+}

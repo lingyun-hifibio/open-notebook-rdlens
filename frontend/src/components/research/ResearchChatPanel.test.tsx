@@ -18,7 +18,39 @@ import type { ResearchSessionRef } from '@/lib/research/session-contract'
 import { Profiler, useState } from 'react'
 import { userErrorMessageKey, RESEARCH_GENERIC_ERROR_KEY } from '@/lib/research/errors'
 import type { ResearchBackgroundNotice, ResearchChatSelection, ResearchChatTurn } from '@/lib/hooks/use-research-chat'
-import type { ResearchCitation, ResearchJob } from '@/lib/research/types'
+import type {
+  ResearchCitation,
+  ResearchCitationDisplayItem,
+  ResearchJob,
+} from '@/lib/research/types'
+import type { WireSelectionProjection } from '@/lib/research/session-contract'
+
+// 复审 F03：测试环境的通用 t() 只返回 key，无法发现模板占位符未填充。
+// 本文件对 `research.selection.chip` 使用与 en-US 同形的模板并真实插值；
+// 任何缺失参数都会在 DOM 中留下 `{{name}}`，断言可直接失败。
+const translationMock = vi.hoisted(() => {
+  const CHIP_TEMPLATE = '{{source}} · p.{{page}} · {{start}}–{{end}} · {{quote}}'
+  const interpolate = (opts: Record<string, unknown> | undefined): string => {
+    const values = opts ?? {}
+    return CHIP_TEMPLATE.replace(/\{\{(\w+)\}\}/g, (_match, name: string) => {
+      const value = values[name]
+      return value === undefined || value === null ? `{{${name}}}` : String(value)
+    })
+  }
+  return {
+    t: vi.fn((key: string, opts?: Record<string, unknown>) =>
+      key === 'research.selection.chip' ? interpolate(opts) : key,
+    ),
+  }
+})
+
+vi.mock('@/lib/hooks/use-translation', () => ({
+  useTranslation: () => ({
+    t: translationMock.t,
+    language: 'en-US',
+    setLanguage: vi.fn(),
+  }),
+}))
 
 vi.mock('@/lib/research/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/research/api')>()
@@ -106,6 +138,19 @@ function renderPanel(
     ) => Promise<BackgroundJobSubmitResult>
     /** PR5（D-26）：后台 CTA 所在入口是否要求显式资料集合 */
     backgroundJobRequiresSelection: boolean
+    // Issue #1013：选段 chip / citation return / 返回原回答滚动
+    selectionChip: {
+      readonly label: string
+      readonly title?: string
+      readonly onRemove: () => void
+      readonly disabled?: boolean
+    } | null
+    onCitationReturn: (citation: ResearchCitationDisplayItem, messageId: string | null) => void
+    scrollToMessage: { readonly sessionId: string; readonly messageId: string; readonly seq: number } | null
+    sessionRef: ResearchSessionRef | null
+    onScrollToMessageResult: (found: boolean) => void
+    onSelectionJump: (selection: WireSelectionProjection) => void
+    onSelectionConsumed: () => void
   }> = {},
 ) {
   if (overrides.scope) seedScope(overrides.scope)
@@ -125,6 +170,13 @@ function renderPanel(
         resolveChatOrigin={overrides.resolveChatOrigin}
         onRunAsBackgroundJob={overrides.onRunAsBackgroundJob}
         backgroundJobRequiresSelection={overrides.backgroundJobRequiresSelection ?? false}
+        selectionChip={overrides.selectionChip ?? null}
+        sessionRef={overrides.sessionRef ?? null}
+        onCitationReturn={overrides.onCitationReturn}
+        scrollToMessage={overrides.scrollToMessage ?? null}
+        onScrollToMessageResult={overrides.onScrollToMessageResult}
+        onSelectionJump={overrides.onSelectionJump}
+        onSelectionConsumed={overrides.onSelectionConsumed}
       />
       <SinglePinControl />
     </ResearchScopeProvider>
@@ -3792,5 +3844,179 @@ describe('ResearchChatPanel：加载更早的消息（#892 迭代 2）', () => {
       fireEvent.click(screen.getByTestId('prepend-older'))
     })
     expect((container as HTMLElement).scrollTop).toBe(20)
+  })
+})
+
+
+// ---------------------------------------------------------------------------
+// Issue #1013（D1-E-2）F07/F08/F09：user turn 选段 chip、citation return target、
+// 返回原回答（目标缺失 → position_unavailable 文案，不跳最新）
+// ---------------------------------------------------------------------------
+
+const SELECTION_PROJECTION: WireSelectionProjection = {
+  sourceId: 'src_1',
+  documentId: 'doc_1',
+  documentVersion: 'v3',
+  chunkId: 'chunk_1',
+  chunkOrdinal: 2,
+  pageIdx: 0,
+  startOffset: 6,
+  endOffset: 11,
+  quote: 'world',
+  quoteHash: '486ea46224d1bb4fb680f34f7c9ad96a8f24ec88be73ea8e5a6c65260e9cb8a7',
+  contentHash: 'a'.repeat(64),
+  visibility: 'visible',
+  reasonCode: null,
+}
+
+describe('ResearchChatPanel · Issue #1013', () => {
+  it('F07 user turn 选段 chip：visible 可跳转，restricted 禁用且不泄露摘录', () => {
+    const onSelectionJump = vi.fn()
+    renderPanel(
+      [
+        turn({
+          id: 'user_1',
+          role: 'user',
+          content: 'question',
+          serverMessageId: 'msg_user',
+          selectionContext: SELECTION_PROJECTION,
+        }),
+        turn({
+          id: 'user_2',
+          role: 'user',
+          content: 'question 2',
+          serverMessageId: 'msg_user_2',
+          selectionContext: {
+            ...SELECTION_PROJECTION,
+            visibility: 'restricted',
+            reasonCode: 'content_restricted',
+            quote: null,
+            quoteHash: null,
+          },
+        }),
+      ],
+      vi.fn(),
+      { onSelectionJump },
+    )
+    const chips = screen.getAllByTestId('message-selection-chip')
+    expect(chips).toHaveLength(2)
+    // F03（复审）：真实插值后的文案包含 source/page/1-based 范围/quote；
+    // 缺任一参数会留下 `{{name}}`，下面的断言即失败。
+    expect(chips[0]).toHaveTextContent('src_1 · p.1 · 7–11 · world')
+    expect(chips[0].textContent ?? '').not.toContain('{{')
+    expect(translationMock.t).toHaveBeenCalledWith(
+      'research.selection.chip',
+      expect.objectContaining({ source: 'src_1' }),
+    )
+    fireEvent.click(chips[0])
+    expect(onSelectionJump).toHaveBeenCalledWith(expect.objectContaining({ visibility: 'visible' }))
+    expect(chips[1]).toHaveAttribute('data-selection-visibility', 'restricted')
+    expect(chips[1]).toBeDisabled()
+    expect(chips[1]).toHaveTextContent('research.selection.restricted')
+  })
+
+  it('F07 形状损坏的选段 → 显示不可用占位（不渲染摘录）', () => {
+    renderPanel([
+      turn({
+        id: 'user_1',
+        role: 'user',
+        content: 'q',
+        serverMessageId: 'msg_user',
+        selectionContextInvalid: true,
+      }),
+    ])
+    expect(screen.getByTestId('message-selection-unavailable')).toHaveTextContent(
+      'research.selection.unavailable',
+    )
+    expect(screen.queryByTestId('message-selection-chip')).toBeNull()
+  })
+
+  it('F08 assistant citation 点击：携带 citation 身份 + durable message_id', () => {
+    const onCitationReturn = vi.fn()
+    renderPanel(
+      [
+        turn({
+          id: 'a1',
+          role: 'assistant',
+          content: 'answer',
+          serverMessageId: 'msg_assistant',
+          citations: [citation],
+        }),
+      ],
+      vi.fn(),
+      { onCitationReturn },
+    )
+    fireEvent.click(screen.getByTestId(`research-citation-click-${citation.citation_id}`))
+    expect(onCitationReturn).toHaveBeenCalledWith(
+      expect.objectContaining({ doc_id: 'doc_1', doc_version: 'v3', page_idx: 3 }),
+      'msg_assistant',
+    )
+  })
+
+  it('F52（迁移）：live citation（无 durable message_id）仍触发 onCitationReturn(citation, null)，上层可打开/高亮来源但不记录返回目标', () => {
+    const onCitationReturn = vi.fn()
+    renderPanel(
+      [
+        turn({
+          id: 'a-live',
+          role: 'assistant',
+          content: 'answer',
+          // live/流式轮：尚无持久 message_id（citation 点击不得整条失效）
+          serverMessageId: null,
+          citations: [citation],
+        }),
+      ],
+      vi.fn(),
+      { onCitationReturn },
+    )
+    fireEvent.click(screen.getByTestId(`research-citation-click-${citation.citation_id}`))
+    expect(onCitationReturn).toHaveBeenCalledWith(
+      expect.objectContaining({ doc_id: 'doc_1', page_idx: 3 }),
+      null,
+    )
+  })
+
+  it('F09 返回原回答目标缺失 → position_unavailable 文案（不跳最新）', () => {
+    const onScrollToMessageResult = vi.fn()
+    renderPanel(
+      [turn({ id: 'a1', role: 'assistant', content: 'answer', serverMessageId: 'msg_1' })],
+      vi.fn(),
+      {
+        scrollToMessage: { sessionId: 'sess_x', messageId: 'msg_missing', seq: 7 },
+        sessionRef: {
+          domain: 'research',
+          kind: 'global',
+          projectId: PROJECT_ID,
+          sessionId: 'sess_x',
+          sourceId: null,
+        },
+        onScrollToMessageResult,
+      },
+    )
+    expect(screen.getByTestId('chat-return-target-unavailable')).toHaveTextContent(
+      'research.source.returnUnavailable',
+    )
+    expect(onScrollToMessageResult).toHaveBeenCalledWith(false)
+  })
+
+  it('F09 目标在已加载消息中 → 命中不显示失败 banner', () => {
+    const onScrollToMessageResult = vi.fn()
+    renderPanel(
+      [turn({ id: 'a1', role: 'assistant', content: 'answer', serverMessageId: 'msg_1' })],
+      vi.fn(),
+      {
+        scrollToMessage: { sessionId: 'sess_x', messageId: 'msg_1', seq: 8 },
+        sessionRef: {
+          domain: 'research',
+          kind: 'global',
+          projectId: PROJECT_ID,
+          sessionId: 'sess_x',
+          sourceId: null,
+        },
+        onScrollToMessageResult,
+      },
+    )
+    expect(screen.queryByTestId('chat-return-target-unavailable')).toBeNull()
+    expect(onScrollToMessageResult).toHaveBeenCalledWith(true)
   })
 })
