@@ -78,6 +78,18 @@ export const RESEARCH_ERROR_USER_COPY: Record<string, string> = {
   search_record_not_enabled: 'research.searchHistory.errors.notEnabled',
   search_record_store_unavailable: 'research.searchHistory.errors.storeUnavailable',
 
+  // ── 主题概览（#1016 D1-G 主单；POST/GET .../topic-overview） ──
+  // 6 个稳定 detail.code：未启用（四条件任一未满足 503）/ 无概览（404）/
+  // 超出有界单次（422，同键重放 409）/ 无证据（422）/ 存储不可用（503）/
+  // 输出非法（502）。文案 key 由 WIRE_CONTRACT §4 冻结，locale 内容在 14
+  // locale 中维护（本文件只写映射，未收录码沿用 generic）。
+  topic_overview_not_enabled: 'research.topicOverview.errors.notEnabled',
+  topic_overview_not_found: 'research.topicOverview.errors.notFound',
+  topic_overview_scope_exceeds_limit: 'research.topicOverview.errors.scopeExceedsLimit',
+  topic_overview_insufficient_evidence: 'research.topicOverview.errors.insufficientEvidence',
+  topic_overview_store_unavailable: 'research.topicOverview.errors.storeUnavailable',
+  topic_overview_output_invalid: 'research.topicOverview.errors.outputInvalid',
+
   // ── PR-13（F-1）：not_accepted（明确未受理，idle + 稳定码） ──
   // 这 8 个码来自 conversation-machine 的 DEFINITE_NOT_ACCEPTED_CODES；此前
   // 无文案 → 错误卡即便渲染也只剩 generic 兜底，用户拿不到“下一步做什么”。

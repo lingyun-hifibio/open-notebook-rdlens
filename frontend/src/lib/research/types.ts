@@ -241,6 +241,13 @@ export interface ResearchCapabilities {
    */
   search_history?: unknown
   /**
+   * #1016（D1-G，加性）：主题概览能力位。仅当 contract-v1 ∧ C-05 ∧ D1-C ∧
+   * 概览 flag **四条件全真**时出现且为 `true`；否则键缺席。读取见
+   * `topic-overview.readTopicOverviewCapability`——严格 `=== true` 才渲染
+   * 入口（缺失/false/非法一律 fail-closed，既有 UI 零变化）。
+   */
+  topic_overview?: unknown
+  /**
    * #813（加性）：当前引擎模式下本地模型是否可以执行。三键恒在
    * （`available`/`reason`/`message`；exclusive 下 reason/message 为 null）。
    * 读取见 `localModelCapabilityFrom`——缺失/畸形返回 null（保持既有行为
