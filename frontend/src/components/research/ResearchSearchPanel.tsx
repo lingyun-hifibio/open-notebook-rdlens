@@ -150,6 +150,7 @@ export function ResearchSearchPanel({
     isSavingModel,
     invalidateConsent,
     runGuarded,
+    localModelUnavailableMessage,
   } = useResearchGlobalModel()
   // RWV2-11（K7）：Scope 真源唯一——本面板不再持有/接收独立选择状态
   const { mode, selectedSourceIds, selectedNoteIds, singlePin, getSnapshot } = useResearchScope()
@@ -588,7 +589,7 @@ export function ResearchSearchPanel({
     }
   }, [mode, selectedLevel, supportedLevels])
 
-  const blockedHint = researchModelBlockedHint(blockedReason, t)
+  const blockedHint = researchModelBlockedHint(blockedReason, t, localModelUnavailableMessage)
 
   return (
     <div className="flex h-full min-h-0 flex-col">

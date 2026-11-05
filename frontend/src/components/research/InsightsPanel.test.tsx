@@ -51,7 +51,7 @@ vi.mock('@/lib/hooks/use-toast', () => ({
 }))
 
 // RWV2-42（M7）：覆盖模型态（saving/unavailable）只阻断 AI 生成的锚用例
-import { setGlobalModelStub } from '@/test/global-model-stub'
+import { resetGlobalModelStub, setGlobalModelStub } from '@/test/global-model-stub'
 import { aiInsightRiskMarkerKey } from '@/lib/research/ai-insight-risk'
 
 const insight = (overrides: Partial<ResearchInsight> = {}): ResearchInsight => ({
@@ -95,6 +95,8 @@ describe('InsightsPanel', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    // #813：每个用例从默认模型语义开始（防上一用例 stub 覆盖泄漏）
+    resetGlobalModelStub()
     // 每个用例从干净的持久面开始（Jobs Provider 的 localStorage 登记）
     localStorage.clear()
     // radix Select 在 jsdom 中调用 scrollIntoView（无实现）
@@ -402,5 +404,26 @@ describe('InsightsPanel', () => {
     expect(screen.getByTestId('insight-model-blocked').textContent).toContain(
       'research.globalModel.saving',
     )
+  })
+
+  it('#813：shared 下本地模型被后端能力禁用 → AI 生成禁用并原样渲染后端 message', async () => {
+    vi.mocked(researchApi.listInsights).mockResolvedValue({ items: [], next_cursor: null })
+    // 后端逐字文案（RDLens #820 冻结常量）——前端不得硬编码，只透传渲染
+    const sharedMessage =
+      '当前 GPU 正与其他任务共用，可用显存不足以支撑 Research 使用本地模型，请改用外部 AI 模型。'
+    setGlobalModelStub({
+      confirmedModelId: 'm-local',
+      canExecute: false,
+      blockedReason: 'local-unavailable-shared-gpu',
+      localModelUnavailableMessage: sharedMessage,
+    })
+    const { wrapper } = makeWrapper()
+    render(<InsightsPanel />, { wrapper })
+    await waitFor(() => expect(researchApi.listInsights).toHaveBeenCalled())
+    fireEvent.click(screen.getByRole('button', { name: 'research.insights.newInsight' }))
+    fireEvent.click(screen.getByLabelText('research.insights.typeLabel'))
+    fireEvent.click(await screen.findByRole('option', { name: 'research.insights.typeAi' }))
+    expect(screen.getByRole('button', { name: 'research.notes.save' })).toBeDisabled()
+    expect(screen.getByTestId('insight-model-blocked').textContent).toBe(sharedMessage)
   })
 })

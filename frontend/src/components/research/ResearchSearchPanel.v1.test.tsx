@@ -842,4 +842,50 @@ describe('ResearchSearchPanel #1014：搜索历史入口（能力位 fail-closed
     expect(searchV1).toHaveBeenCalledTimes(1)
     expect(listSearchRecords).not.toHaveBeenCalled()
   })
+
+  // ── #813：shared 模式本地模型禁用（真实 provider + 面板链路） ──
+
+  /** 后端逐字文案（RDLens #820 冻结常量；测试内写死字面量）。 */
+  const SHARED_GPU_MESSAGE =
+    '当前 GPU 正与其他任务共用，可用显存不足以支撑 Research 使用本地模型，请改用外部 AI 模型。'
+
+  it('#813：shared 能力 → 面板显示后端逐字 message 且 Run 禁用（不发请求）', async () => {
+    vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
+    vi.mocked(listModels).mockResolvedValue({
+      models: MODELS,
+      capabilities: {
+        local_model: {
+          available: false,
+          reason: 'shared_gpu',
+          message: SHARED_GPU_MESSAGE,
+        },
+      },
+    })
+    renderPanel(['d1'])
+    await waitFor(() =>
+      expect(screen.getByTestId('model-blocked-hint')).toHaveTextContent(
+        SHARED_GPU_MESSAGE,
+      ),
+    )
+    fireEvent.change(screen.getByTestId('search-input'), {
+      target: { value: 'what is ORR?' },
+    })
+    expect(runButton()).toBeDisabled()
+    fireEvent.click(runButton())
+    expect(searchV1).not.toHaveBeenCalled()
+  })
+
+  it('#813：exclusive 能力（available=true/null/null）→ 无提示且 Run 可用（零回归）', async () => {
+    vi.mocked(getExecutionPreferences).mockResolvedValue(prefs)
+    vi.mocked(listModels).mockResolvedValue({
+      models: MODELS,
+      capabilities: {
+        local_model: { available: true, reason: null, message: null },
+      },
+    })
+    renderPanel(['d1'])
+    await typeAndWaitReady('what is ORR?')
+    expect(screen.queryByTestId('model-blocked-hint')).toBeNull()
+    expect(runButton()).not.toBeDisabled()
+  })
 })

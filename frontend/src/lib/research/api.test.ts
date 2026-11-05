@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { apiClient } from '@/lib/api/client'
 import * as researchApi from './api'
-import { coverageAllSelectedFrom } from './types'
+import { coverageAllSelectedFrom, localModelCapabilityFrom } from './types'
 
 // UI-02 Red：Research Gateway API 模块（契约 v0 §6/§7/§9，REQ-API-01、
 // REQ-DIS-01/02/03、REQ-SRC-04）——全部请求经 UI-01 apiClient（嵌入式
@@ -499,5 +499,57 @@ describe('coverageAllSelectedFrom（#358）', () => {
     expect(coverageAllSelectedFrom({ coverage_all_selected: 'yes' })).toBe(false)
     expect(coverageAllSelectedFrom({ coverage_all_selected: 1 })).toBe(false)
     expect(coverageAllSelectedFrom({ coverage_all_selected: null })).toBe(false)
+  })
+})
+
+// ── #813：shared 模式本地模型能力（后端单源；缺失/畸形 → null） ──
+
+/** 后端逐字文案（RDLens #820 冻结常量；测试内写死字面量，不 import 常量）。 */
+const SHARED_GPU_MESSAGE =
+  '当前 GPU 正与其他任务共用，可用显存不足以支撑 Research 使用本地模型，请改用外部 AI 模型。'
+
+describe('localModelCapabilityFrom（#813）', () => {
+  it('shared：三键原样解析（available=false / reason / message 逐字）', () => {
+    expect(
+      localModelCapabilityFrom({
+        local_model: { available: false, reason: 'shared_gpu', message: SHARED_GPU_MESSAGE },
+      }),
+    ).toEqual({ available: false, reason: 'shared_gpu', message: SHARED_GPU_MESSAGE })
+  })
+
+  it('exclusive：available=true 且 reason/message 为 null（三键恒在）', () => {
+    expect(
+      localModelCapabilityFrom({
+        local_model: { available: true, reason: null, message: null },
+      }),
+    ).toEqual({ available: true, reason: null, message: null })
+  })
+
+  it('旧后端（无 capabilities / 无 local_model）→ null（保持既有行为，不臆造状态）', () => {
+    expect(localModelCapabilityFrom(undefined)).toBeNull()
+    expect(localModelCapabilityFrom({})).toBeNull()
+    expect(localModelCapabilityFrom({ coverage_all_selected: true })).toBeNull()
+    expect(localModelCapabilityFrom({ local_model: null })).toBeNull()
+  })
+
+  it('缺失 reason/message 键按 null 归一（加性容错）；其它加性键不影响', () => {
+    expect(
+      localModelCapabilityFrom({
+        local_model: { available: false },
+        search_history: true,
+      }),
+    ).toEqual({ available: false, reason: null, message: null })
+  })
+
+  it('畸形（非对象 / available 非 boolean / reason 或 message 类型非法）→ null', () => {
+    expect(localModelCapabilityFrom({ local_model: 'shared' })).toBeNull()
+    expect(localModelCapabilityFrom({ local_model: [] })).toBeNull()
+    expect(localModelCapabilityFrom({ local_model: { available: 'false' } })).toBeNull()
+    expect(
+      localModelCapabilityFrom({ local_model: { available: false, reason: 1 } }),
+    ).toBeNull()
+    expect(
+      localModelCapabilityFrom({ local_model: { available: false, message: {} } }),
+    ).toBeNull()
   })
 })

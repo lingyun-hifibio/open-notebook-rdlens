@@ -69,7 +69,8 @@ export function TransformationRunDetail({
   const { t } = useTranslation()
   const { toast } = useToast()
   const { projectId } = useResearchWorkspace()
-  const { canExecute, blockedReason, runGuarded } = useResearchGlobalModel()
+  const { canExecute, blockedReason, runGuarded, localModelUnavailableMessage } =
+    useResearchGlobalModel()
   const { getSnapshot, validate } = useResearchScope()
   const runMutation = useRunResearchTransformation(projectId)
   const [isResolvingRerun, setIsResolvingRerun] = useState(false)
@@ -102,7 +103,7 @@ export function TransformationRunDetail({
     && rerunScopeExpressible
     && !sameIdSet(rerunSnapshot.noteIds, record.note_ids)
   const rerunScopeChanged = rerunScopeDiffers || rerunNoteScopeDiffers
-  const blockedHint = researchModelBlockedHint(blockedReason, t)
+  const blockedHint = researchModelBlockedHint(blockedReason, t, localModelUnavailableMessage)
   // RWV2-43：语言 en/zh → 英文标签；未知非 null → 原码；null → '—'（F4/C-M1）
   const languageKey = researchLanguageLabelKey(record.response_language)
   const languageText = languageKey === null

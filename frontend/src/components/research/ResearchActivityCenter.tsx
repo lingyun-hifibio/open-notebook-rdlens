@@ -52,7 +52,9 @@ export function ResearchActivityCenter({
     cancel,
     retryCoverage,
   } = useResearchJobsController()
-  const { models } = useResearchGlobalModel()
+  // #813：coverage outcome_unknown 重试是新生成入口；canExecute=false（含
+  // shared+本地模型）时省略回调 → 不渲染重试入口，避免真打后端拿 409。
+  const { canExecute, models } = useResearchGlobalModel()
   const [historyVisibleCount, setHistoryVisibleCount] = useState(HISTORY_SLICE_STEP)
 
   // Dialog 打开（本组件挂载）→ 全量刷新（对账 + 富化宿主）
@@ -104,7 +106,9 @@ export function ResearchActivityCenter({
         job={job}
         modelName={job.model_id !== null ? modelNameById[job.model_id] : undefined}
         onCancel={isAdminReadonly ? undefined : cancel}
-        onCoverageRetry={isAdminReadonly ? undefined : retryCoverage}
+        onCoverageRetry={
+          isAdminReadonly || !canExecute ? undefined : retryCoverage
+        }
         onCitationJump={onCitationJump}
       />
     ))

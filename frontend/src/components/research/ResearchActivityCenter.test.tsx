@@ -27,12 +27,16 @@ vi.mock('@/lib/research/api', async (importOriginal) => {
   }
 })
 
+// #813：canExecute 由用例控制（shared+本地模型禁用时 coverage retry 入口必须省略）
+const modelGate = vi.hoisted(() => ({ canExecute: true }))
+
 vi.mock('@/lib/hooks/use-research-global-model', () => ({
   useResearchGlobalModel: () => ({
     models: [
       { model_id: 'm1', display_name: 'Qwen Local', provider_id: null, data_egress: false },
     ],
     confirmedModelId: 'm1',
+    canExecute: modelGate.canExecute,
   }),
 }))
 
@@ -120,6 +124,7 @@ describe('ResearchActivityCenter（RWV2-41）', () => {
     vi.mocked(api.listJobs).mockClear()
     vi.mocked(api.getJob).mockClear()
     vi.mocked(api.cancelJob).mockClear()
+    modelGate.canExecute = true
     setJobs([])
     localStorage.clear()
   })
@@ -266,5 +271,19 @@ describe('ResearchActivityCenter（RWV2-41）', () => {
     render(<ResearchActivityCenter />, { wrapper: wrapper('admin_readonly') })
     await waitFor(() => expect(screen.getByTestId('coverage-outcome-unknown')).toBeInTheDocument())
     expect(screen.queryByTestId('coverage-retry-trigger')).toBeNull()
+  })
+
+  it('#813：模型禁用（shared+本地 canExecute=false）时省略 coverage 重试入口（不产生 409 往返）', async () => {
+    setJobs([
+      job('job_cov_blocked', 'failed', { job_type: 'research_coverage', last_error: 'x' }),
+    ])
+    vi.mocked(api.getJob).mockResolvedValue(failedOutcomeCoverage('job_cov_blocked'))
+    modelGate.canExecute = false
+
+    render(<ResearchActivityCenter />, { wrapper: wrapper('owner') })
+    await waitFor(() => expect(screen.getByTestId('coverage-outcome-unknown')).toBeInTheDocument())
+    // 新生成入口冻结：重试回调在消费层省略 → 不渲染入口，也不可能派发请求
+    expect(screen.queryByTestId('coverage-retry-trigger')).toBeNull()
+    expect(api.retryCoverageJob).not.toHaveBeenCalled()
   })
 })
