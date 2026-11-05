@@ -62,6 +62,7 @@ import type {
   ResearchExport,
   ResearchInsight,
   ResearchNote,
+  ResearchNoteCapabilitiesProjection,
   ResearchPage,
   ResearchSaveFromResultRequest,
   ResearchSaveResultResponse,
@@ -627,10 +628,23 @@ export function researchApiErrorDetail(error: unknown): ResearchApiErrorDetail {
   return { code: null, message: null }
 }
 
+/**
+ * Issue #1046 PR4（D4）：`GET /models` 的 Note 编辑能力加性键（原始
+ * snake_case）。既有调用方仍按 `ResearchModelsResponse` 消费，行为不变；
+ * 只有 Note 能力读取方（`use-note-capabilities.ts`）需要这些键。
+ *
+ * 归一/校验不在本层：原始值保持 `unknown`，由消费方 fail-closed 解析，
+ * 避免把畸形能力值当成可用。
+ */
+export type ResearchModelsWithNoteCapabilities = ResearchModelsResponse & {
+  capabilities?: NonNullable<ResearchModelsResponse['capabilities']> &
+    ResearchNoteCapabilitiesProjection
+}
+
 export async function listModels(
   projectId: string,
-): Promise<ResearchModelsResponse> {
-  const response = await apiClient.get<ResearchModelsResponse>(
+): Promise<ResearchModelsWithNoteCapabilities> {
+  const response = await apiClient.get<ResearchModelsWithNoteCapabilities>(
     researchPath(projectId, 'models'),
   )
   return response.data
