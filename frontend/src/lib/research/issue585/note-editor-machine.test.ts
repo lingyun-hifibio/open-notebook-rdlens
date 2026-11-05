@@ -1050,3 +1050,208 @@ describe('lifecycle / StrictMode safety', () => {
     expect(state().content).toBe('服务端正文')
   })
 })
+// ── ACK 后服务端投影同步（视觉 S2「Revision N」） ──
+
+describe('ACK syncs state.note revision projection', () => {
+  it('updates note.revision/snapshot_hash/updated_at after autosave ACK (header display)', async () => {
+    openReady()
+    await openNote()
+    expect(state().note?.revision).toBe(1)
+    expect(state().note?.snapshot_hash).toBe(HASH_A)
+
+    client.saveNote.mockResolvedValueOnce(
+      receipt({ applied_revision: 4, snapshot_hash: HASH_B }),
+    )
+    actions().setContent('r4 正文')
+    await vi.advanceTimersByTimeAsync(NOTE_SAVE_DEBOUNCE_MS)
+    await settle()
+    expect(state().saveStatus).toBe('saved')
+    expect(state().note).toMatchObject({
+      revision: 4,
+      snapshot_hash: HASH_B,
+      content: 'r4 正文',
+      updated_at: '2026-11-05T00:00:00.000Z',
+    })
+
+    client.saveNote.mockResolvedValueOnce(
+      receipt({ applied_revision: 5, snapshot_hash: HASH_C }),
+    )
+    actions().setContent('r5 正文')
+    await vi.advanceTimersByTimeAsync(NOTE_SAVE_DEBOUNCE_MS)
+    await settle()
+    expect(state().note?.revision).toBe(5)
+    expect(state().note?.snapshot_hash).toBe(HASH_C)
+  })
+
+  it('updates note.revision after unknown-result replay ACK', async () => {
+    openReady()
+    await openNote()
+    client.saveNote.mockRejectedValueOnce(apiError(503, 'note_store_unavailable', true))
+    actions().setContent('未知结果')
+    await vi.advanceTimersByTimeAsync(NOTE_SAVE_DEBOUNCE_MS)
+    await settle()
+    expect(state().saveStatus).toBe('unknown')
+    expect(state().note?.revision).toBe(1)
+
+    client.saveNote.mockResolvedValueOnce(
+      receipt({ applied_revision: 2, snapshot_hash: HASH_B }),
+    )
+    await actions().confirmPendingMutation()
+    await settle()
+    expect(state().note?.revision).toBe(2)
+    expect(state().note?.snapshot_hash).toBe(HASH_B)
+  })
+})
+
+// ── 阻断/受限/失败态的离开与切换（审查 A HIGH-1） ──
+
+describe('leave escape for blocked/restricted/failed states', () => {
+  it('restricted after failed save: close blocked until explicit discard, then close succeeds', async () => {
+    openReady()
+    await openNote()
+    // 另一个标签页的同一 Note 草稿：受限清理必须一并清掉。
+    writeNoteDraft(
+      { ownerId: VIEWER, projectId: PROJECT, noteId: 'n1', tabId: 'tab_other' },
+      {
+        v: 1,
+        ownerId: VIEWER,
+        projectId: PROJECT,
+        noteId: 'n1',
+        title: '原标题',
+        content: '其他标签页草稿',
+        baseRevision: 1,
+        baseSnapshotHash: HASH_A,
+        localSeq: 2,
+        pendingMutation: null,
+        savedAt: '2026-11-05T00:00:00.000Z',
+      },
+      { storage },
+    )
+    client.saveNote.mockRejectedValueOnce(apiError(403, 'note_access_restricted'))
+    actions().setContent('本地未同步正文')
+    await vi.advanceTimersByTimeAsync(NOTE_SAVE_DEBOUNCE_MS)
+    await settle()
+    expect(state()).toMatchObject({
+      saveStatus: 'restricted',
+      blockReason: 'note_access_restricted',
+      content: '本地未同步正文',
+    })
+    // 受限立即清理持久草稿（含其他标签页分支）。
+    expect(readCachedDraft()).toBeNull()
+
+    expect(await actions().closeEditor()).toBe(false)
+    expect(state().leaveBlockReason).toBe('restricted')
+    expect(await actions().flushBeforeLeave()).toBe('restricted')
+
+    actions().discardLocal()
+    expect(state()).toMatchObject({ status: 'idle', content: '', saveStatus: 'idle' })
+    expect(await actions().closeEditor()).toBe(true)
+  })
+
+  it('open failure 503: close succeeds and switching documents is not blocked', async () => {
+    client.getNote.mockRejectedValueOnce(apiError(503, 'note_store_unavailable', true))
+    await openNote('n1')
+    expect(state()).toMatchObject({ status: 'error', saveStatus: 'failed' })
+    // 无已加载 document、无本地文本 → 直接允许切换（不再永久阻断）。
+    client.getNote.mockResolvedValueOnce(note({ note_id: 'n2', content: 'n2 正文' }))
+    await openNote('n2')
+    expect(state().note?.note_id).toBe('n2')
+    expect(state().status).toBe('ready')
+  })
+
+  it('open failure 503: closeEditor returns true (no local text trap)', async () => {
+    client.getNote.mockRejectedValueOnce(apiError(503, 'note_store_unavailable', true))
+    await openNote('n1')
+    expect(await actions().closeEditor()).toBe(true)
+    expect(state().status).toBe('idle')
+    expect(state().note).toBeNull()
+  })
+
+  it('admin readonly: closeEditor returns true (no unsaved local text)', async () => {
+    machine.dispose()
+    machine = buildMachine({ isAdminReadonly: true })
+    openReady()
+    await openNote()
+    expect(state().saveStatus).toBe('restricted')
+    expect(await actions().closeEditor()).toBe(true)
+    expect(state().status).toBe('idle')
+  })
+
+  it('deleted note with retrievable local text: close blocked, discard clears cache, then close/switch work', async () => {
+    seedDraft({ content: '删除后取回的本地文本' })
+    client.getNote.mockRejectedValueOnce(apiError(404, 'note_not_found'))
+    await openNote('n1')
+    expect(state()).toMatchObject({
+      status: 'error',
+      saveStatus: 'failed',
+      blockReason: 'note_not_found',
+      content: '删除后取回的本地文本',
+    })
+    expect(await actions().closeEditor()).toBe(false)
+    expect(state().leaveBlockReason).toBe('failed')
+
+    actions().discardLocal()
+    expect(state().status).toBe('idle')
+    expect(readCachedDraft()).toBeNull()
+    expect(await actions().closeEditor()).toBe(true)
+  })
+
+  it('capability-blocked with retained draft shows read-only local text and allows explicit discard', async () => {
+    machine.dispose()
+    machine = buildMachine({ capabilities: null })
+    seedDraft({ content: '能力阻断前的本地草稿' })
+    openReady()
+    await openNote()
+    expect(state()).toMatchObject({
+      saveStatus: 'blocked',
+      blockReason: 'capability_unknown',
+      content: '能力阻断前的本地草稿',
+      restoredFromCache: true,
+    })
+    expect(await actions().closeEditor()).toBe(false)
+    expect(state().leaveBlockReason).toBe('failed')
+    actions().discardLocal()
+    expect(state().status).toBe('idle')
+    expect(readCachedDraft()).toBeNull()
+    expect(await actions().closeEditor()).toBe(true)
+  })
+
+  it('legacy/schema-blocked note without local text can be closed and switched', async () => {
+    client.getNote.mockResolvedValueOnce(
+      note({ edit_schema: null, revision: null, snapshot_hash: null }),
+    )
+    await openNote('n1')
+    expect(state().saveStatus).toBe('blocked')
+    client.getNote.mockResolvedValueOnce(
+      note({ note_id: 'n2', edit_schema: null, revision: null, snapshot_hash: null }),
+    )
+    await openNote('n2')
+    expect(state().note?.note_id).toBe('n2')
+  })
+
+  it('conflict and unknown results remain blocking (no silent escape)', async () => {
+    openReady()
+    await openNote()
+    client.saveNote.mockRejectedValueOnce(conflictError(9, HASH_B))
+    actions().setContent('冲突文本')
+    await vi.advanceTimersByTimeAsync(NOTE_SAVE_DEBOUNCE_MS)
+    await settle()
+    expect(state().saveStatus).toBe('conflict')
+    expect(await actions().flushBeforeLeave()).toBe('conflict')
+    expect(await actions().closeEditor()).toBe(false)
+    expect(state().leaveBlockReason).toBe('conflict')
+
+    actions().discardLocal()
+    expect(state().status).toBe('ready')
+    expect(state().saveStatus).toBe('saved')
+    client.saveNote.mockRejectedValueOnce(apiError(503, 'note_store_unavailable', true))
+    actions().setContent('未知结果文本')
+    await vi.advanceTimersByTimeAsync(NOTE_SAVE_DEBOUNCE_MS)
+    await settle()
+    expect(state().saveStatus).toBe('unknown')
+    expect(await actions().flushBeforeLeave()).toBe('unknown')
+    expect(await actions().closeEditor()).toBe(false)
+    expect(state().leaveBlockReason).toBe('unknown')
+  })
+})
+

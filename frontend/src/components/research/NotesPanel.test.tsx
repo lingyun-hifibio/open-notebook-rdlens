@@ -517,6 +517,62 @@ describe('NotesPanel', () => {
     expect(screen.queryByText('Old result')).toBeNull()
   })
 
+  it('空白新建失败不静默：以 destructive toast 呈现最新错误原因（审查 A M2）', async () => {
+    stubEditor({
+      status: 'error',
+      note: null,
+      saveStatus: 'failed',
+      error: { code: 'network_error', message: 'down', retryable: true, status: 0 },
+    })
+    const { wrapper } = makeWrapper()
+    render(<NotesPanel />, { wrapper })
+    await waitFor(() => expect(screen.getByTestId('note-catalog-new')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByTestId('note-catalog-new'))
+    await waitFor(() =>
+      expect(toastMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'common.error',
+          description: 'research.notes.editor.errors.network_error',
+          variant: 'destructive',
+        }),
+      ),
+    )
+    expect(refreshCatalog).not.toHaveBeenCalled()
+  })
+
+  it('阻断态（打开失败）可从目录关闭并重试打开当前 note（审查 A HIGH-1/M1）', async () => {
+    const { actions } = stubEditor({
+      status: 'error',
+      note: null,
+      saveStatus: 'failed',
+      error: { code: 'network_error', message: 'down', retryable: true, status: 0 },
+    })
+    const { wrapper } = makeWrapper()
+    render(<NotesPanel />, { wrapper })
+    await waitFor(() => expect(screen.getByTestId('note-open-note_d2')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByTestId('note-open-note_d2'))
+    await waitFor(() => expect(actions.openNote).toHaveBeenCalledWith('note_d2'))
+
+    // 阻断视图提供重试（重试打开当前 note），且关闭出口可用（不是死胡同）
+    fireEvent.click(screen.getByTestId('note-capability-retry'))
+    await waitFor(() => expect(actions.openNote).toHaveBeenCalledTimes(2))
+    expect(actions.openNote).toHaveBeenLastCalledWith('note_d2')
+
+    fireEvent.click(screen.getByTestId('note-capability-close'))
+    await waitFor(() => expect(actions.closeEditor).toHaveBeenCalledTimes(1))
+  })
+
+  it('NotesPanel 卸载时尽力 flush 未决保存/草稿（审查 A M3 最小缓解）', async () => {
+    const { actions } = stubEditor()
+    const { wrapper } = makeWrapper()
+    const { unmount } = render(<NotesPanel />, { wrapper })
+    await waitFor(() => expect(screen.getByTestId('note-catalog')).toBeInTheDocument())
+    unmount()
+    expect(actions.flushBeforeLeave).toHaveBeenCalledTimes(1)
+  })
+
   it('受限成果只显示无标题占位（不泄露标题/正文）', async () => {
     stubCatalog([restrictedNote()])
     const { wrapper } = makeWrapper()

@@ -55,6 +55,10 @@ export interface NoteEditorViewProps {
   onRequestClose: () => void
   /** 受保护另存成功后的新 note_id（父层刷新目录并切换文档）。 */
   onCopySaved?: (noteId: string) => void
+  /** 打开失败（可重试错误）时重试当前 note；父层持有 note_id。 */
+  onRetryOpen?: () => void
+  /** 能力读取失败/能力不可用时刷新服务端能力投影（fail-closed 恢复路径）。 */
+  onRetryCapabilities?: () => void
 }
 
 /**
@@ -73,6 +77,8 @@ export function NoteEditorView({
   isAdminReadonly = false,
   onRequestClose,
   onCopySaved,
+  onRetryOpen,
+  onRetryCapabilities,
 }: NoteEditorViewProps) {
   const { t } = useTranslation()
   const [viewMode, setViewMode] = useState<ViewMode>('split')
@@ -183,22 +189,61 @@ export function NoteEditorView({
   }
 
   if (isBlocked) {
+    // 审查 A HIGH-1：阻断态也必须能离开/切换。
+    // - 本地有未保存文本 → 关闭前二次确认（确认后 discardLocal + closeEditor，
+    //   绝不静默丢弃）；
+    // - 能力故障/打开失败（可重试）→ 提供重试入口（刷新能力或重试打开当前 note）；
+    // - 受限/删除 → 保留 copy/download 取回入口 + 关闭（无本地文本时直接关）。
+    const hasLocalText = state.title.trim().length > 0 || state.content.trim().length > 0
+    const capabilityRelatedBlock =
+      capabilityBlockReason !== null ||
+      state.blockReason === 'capability_unknown' ||
+      state.blockReason === 'note_store_unavailable' ||
+      state.blockReason === 'not_ready'
+    const blockedRetry =
+      capabilityRelatedBlock && onRetryCapabilities !== undefined
+        ? onRetryCapabilities
+        : state.error?.retryable === true && onRetryOpen !== undefined
+          ? onRetryOpen
+          : undefined
+    const handleBlockedClose = () => {
+      // 关闭阻断视图 = 显式放弃本地编辑（二次确认由 NoteCapabilityBlocked 负责）。
+      actions.discardLocal()
+      handleRequestClose()
+    }
     return (
       <div className="space-y-3" data-testid="note-editor">
         <NoteCapabilityBlocked
           reason={blockedReason}
           canEditExisting={capabilities?.noteEditorExisting.available === true}
+          onRetry={blockedRetry}
           onCopyLocal={
-            state.content.trim().length > 0
+            hasLocalText
               ? () => {
                   void actions.copyLocalContent()
                 }
               : undefined
           }
           onDownloadLocalMarkdown={
-            state.content.trim().length > 0 ? () => actions.downloadLocalMarkdown() : undefined
+            hasLocalText ? () => actions.downloadLocalMarkdown() : undefined
           }
-          onClose={handleRequestClose}
+          onClose={handleBlockedClose}
+          closeNeedsConfirm={hasLocalText}
+        />
+        {/* 兜底：即使 machine 仍拒绝关闭（例如并发语义未就绪），也给出
+            离开保护出口，避免阻断态成为死胡同。 */}
+        <NoteLeaveGuardDialog
+          open={state.leaveBlockReason !== null && !leaveDismissed}
+          reason={state.leaveBlockReason}
+          copyState={leaveCopyState}
+          onRetrySave={() => void actions.retrySave()}
+          onCopyLocal={() => void handleLeaveCopyLocal()}
+          onDownloadLocalMarkdown={() => actions.downloadLocalMarkdown()}
+          onDiscardAndLeave={() => {
+            actions.discardLocal()
+            handleRequestClose()
+          }}
+          onStay={() => setLeaveDismissed(true)}
         />
       </div>
     )

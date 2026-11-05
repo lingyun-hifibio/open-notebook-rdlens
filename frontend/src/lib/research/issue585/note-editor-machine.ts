@@ -306,6 +306,27 @@ export function createNoteEditorMachine(
     if (state.cacheStatus !== 'memory_only') state.cacheStatus = 'ok'
   }
 
+  /**
+   * ACK 结算后同步 state.note 的服务端投影（revision/snapshot_hash/updated_at 与
+   * 已确认标题/正文）。否则 NoteEditorView 头部的“Revision N”会停留在保存前值
+   * （真实浏览器 S2：服务端 r4、头部显示 r3）。
+   */
+  function syncNoteFromReceipt(
+    receipt: NoteReceipt,
+    confirmedTitle: string,
+    confirmedContent: string,
+  ): void {
+    if (state.note === null) return
+    state.note = {
+      ...state.note,
+      title: confirmedTitle,
+      content: confirmedContent,
+      revision: receipt.applied_revision,
+      snapshot_hash: receipt.snapshot_hash ?? state.note.snapshot_hash,
+      updated_at: receipt.saved_at,
+    }
+  }
+
   /** 同步写本地草稿（每次编辑/ACK/未知结果后调用；不触网）。 */
   function writeCache(): void {
     const scope = cacheScope()
@@ -551,6 +572,23 @@ export function createNoteEditorMachine(
     return state.saveStatus
   }
 
+  /**
+   * 是否存在“不能静默丢弃”的本地文本：dirty（已确认 revision 之后的编辑）、
+   * 未决 mutation（未知结果）、或当前标题/正文偏离最近一次服务端确认快照
+   * （含 404 删除后的取回文本、能力阻断时只读展示的本地草稿）。
+   *
+   * 用于区分「无本地文本的阻断态可直接关闭/切换」与「有本地文本时必须显式
+   * 放弃才能离开」（方案 §4.4：允许重试、复制/下载、确认放弃）。
+   */
+  function hasUnsyncedLocalText(): boolean {
+    return (
+      state.dirty ||
+      state.pendingMutation !== null ||
+      state.content !== state.baseContent ||
+      state.title !== state.baseTitle
+    )
+  }
+
   /** 新建后打开：保留受限/阻断结果，否则按已保存展示。 */
   function finalStatusAfterLoad(): NoteSaveStatus {
     const current = state.saveStatus
@@ -705,6 +743,19 @@ export function createNoteEditorMachine(
       state.saveStatus = 'blocked'
       state.blockReason = capabilityBlock
       capabilityBlockedAtLoad = true
+      // 能力故障不得显示为已保存/可编辑，但必须保留用户的本地草稿：只读展示并
+      // 允许复制/下载取回（离开保护会要求显式放弃）；绝不据此写服务端。
+      if (optionsBundle.restoreDraft) {
+        const pendingRecord = readDraftForCurrentNote()
+        if (pendingRecord !== null) {
+          state.title = pendingRecord.title
+          state.content = pendingRecord.content
+          state.localSeq = Math.max(pendingRecord.localSeq, 0)
+          state.ackedSeq = 0
+          state.restoredFromCache = true
+          bumpCacheStatusFromRead(pendingRecord)
+        }
+      }
       return
     }
     if (!optionsBundle.restoreDraft) {
@@ -778,6 +829,14 @@ export function createNoteEditorMachine(
     capabilityBlockedAtLoad = false
     state.blockReason = null
     if (record === null) {
+      // 草稿已被其它标签/显式放弃清理：回到服务端已确认基线，避免只读残留的
+      // 本地文本被误当成已保存内容。
+      state.title = state.baseTitle
+      state.content = state.baseContent
+      state.localSeq = 0
+      state.ackedSeq = 0
+      state.dirty = false
+      state.restoredFromCache = false
       state.saveStatus = 'saved'
       return
     }
@@ -911,6 +970,7 @@ export function createNoteEditorMachine(
     state.serverSnapshotHash = receipt.snapshot_hash ?? state.serverSnapshotHash
     state.baseTitle = write.capturedTitle
     state.baseContent = write.capturedContent
+    syncNoteFromReceipt(receipt, write.capturedTitle, write.capturedContent)
     state.pendingMutation = null
     state.pendingMutationId = null
     state.ackedSeq = Math.max(state.ackedSeq, write.capturedSeq)
@@ -1032,6 +1092,7 @@ export function createNoteEditorMachine(
         state.serverSnapshotHash = receipt.snapshot_hash ?? state.serverSnapshotHash
         state.baseTitle = pending.title
         state.baseContent = pending.content
+        syncNoteFromReceipt(receipt, pending.title, pending.content)
         state.pendingMutation = null
         state.pendingMutationId = null
         state.error = null
@@ -1368,6 +1429,28 @@ export function createNoteEditorMachine(
   function discardLocalInternal(): void {
     endCompositionInternal()
     clearDebounce()
+    const noteId = state.noteId
+    // 受限态：必须清理该 Note 的全部持久草稿（方案 §4.2「权限受限后停止展示并
+    // 清理对应持久缓存」）。失败/阻断态的显式放弃则至少清理当前标签页草稿。
+    if (state.saveStatus === 'restricted' && currentViewerUserId.length > 0 && noteId !== null) {
+      removeNoteDraftsForNote(currentViewerUserId, currentProjectId, noteId, cacheOptions())
+    }
+    // 「无已加载 document / 权限受限 / 删除 / 能力或 schema 阻断」的显式放弃：
+    // 清内存文本与持久草稿，状态回 idle（随后 closeEditor/flushBeforeLeave 不再
+    // 被永久阻断；方案 §4.4 允许「确认放弃」）。
+    const fullReset =
+      state.status !== 'ready' ||
+      state.note === null ||
+      state.blockReason !== null ||
+      state.saveStatus === 'restricted' ||
+      state.saveStatus === 'blocked'
+    if (fullReset) {
+      if (noteId !== null) removeCurrentDraftCache()
+      resetState('idle', null)
+      return
+    }
+    // 已加载文档（冲突 / 未知结果 / 普通失败 / 脏文本）：显式放弃 = 回到最近一次
+    // 服务端确认基线并清未决 mutation；文档保持打开，随后可关闭或切换。
     state.title = state.baseTitle
     state.content = state.baseContent
     state.localSeq += 1
@@ -1383,15 +1466,15 @@ export function createNoteEditorMachine(
     discardAfterFlight = false
     queuedAfterFlight = false
     undoStack.clear()
-    if (state.saveStatus !== 'blocked' && state.saveStatus !== 'restricted') {
-      state.saveStatus = 'saved'
-    }
+    state.saveStatus = 'saved'
     removeCurrentDraftCache()
   }
 
   function discardLocal(): void {
     if (disposed) return
-    if (state.status !== 'ready') return
+    // 打开失败（status='error'）也必须允许显式放弃，否则 403/404/503 会把用户
+    // 永久困在编辑器里（审查 A HIGH）。
+    if (state.status !== 'ready' && state.status !== 'error') return
     if (state.inFlight !== null) {
       discardAfterFlight = true
       return
@@ -1519,8 +1602,18 @@ export function createNoteEditorMachine(
     }
     if (state.pendingMutation !== null && state.saveStatus === 'unknown') return 'unknown'
     if (state.saveStatus === 'conflict') return 'conflict'
-    if (state.saveStatus === 'restricted') return 'restricted'
-    if (state.saveStatus === 'blocked') return 'failed'
+    // 受限/阻断/明确失败：只有存在不可静默丢弃的本地文本时才阻挡离开；无本地
+    // 文本的阻断态（Admin 只读、加载失败的空白编辑器、schema/能力阻止但无草稿）
+    // 必须允许直接关闭/切换（方案 §4.4，不得永久阻断）。
+    if (state.saveStatus === 'restricted') {
+      return hasUnsyncedLocalText() ? 'restricted' : null
+    }
+    if (state.saveStatus === 'blocked') {
+      return hasUnsyncedLocalText() ? 'failed' : null
+    }
+    if (state.saveStatus === 'failed') {
+      return hasUnsyncedLocalText() ? 'failed' : null
+    }
     if (state.status === 'ready' && state.dirty) {
       await saveNow()
     }
@@ -1528,10 +1621,14 @@ export function createNoteEditorMachine(
     const finalStatus = readSaveStatus()
     if (finalStatus === 'unknown') return 'unknown'
     if (finalStatus === 'conflict') return 'conflict'
-    if (finalStatus === 'restricted') return 'restricted'
-    if (finalStatus === 'blocked') return 'failed'
-    if (finalStatus === 'failed') return 'failed'
+    if (finalStatus === 'restricted') {
+      return hasUnsyncedLocalText() ? 'restricted' : null
+    }
+    if (finalStatus === 'blocked' || finalStatus === 'failed') {
+      return hasUnsyncedLocalText() ? 'failed' : null
+    }
     if (state.dirty) return 'unsaved'
+    if (hasUnsyncedLocalText()) return 'unsaved'
     return null
   }
 
@@ -1544,8 +1641,12 @@ export function createNoteEditorMachine(
       return false
     }
     clearDebounce()
+    // 仅在确认无本地未同步文本时清理本档持久草稿；阻断/失败态保留草稿供恢复
+    // （受限态已在权限失败处置时清理）。
+    if (!hasUnsyncedLocalText() && state.saveStatus !== 'blocked' && state.saveStatus !== 'failed') {
+      removeCurrentDraftCache()
+    }
     undoStack.clear()
-    removeCurrentDraftCache()
     resetState('idle', null)
     emit()
     return true

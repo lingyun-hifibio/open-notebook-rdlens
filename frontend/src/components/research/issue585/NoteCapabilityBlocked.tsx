@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/lib/hooks/use-translation'
@@ -23,8 +24,15 @@ export interface NoteCapabilityBlockedProps {
   /** 本地文本取回入口（删除/受限/能力故障时保留可取回文本）。 */
   onCopyLocal?: () => void
   onDownloadLocalMarkdown?: () => void
-  /** 关闭编辑器（返回目录）。 */
+  /**
+   * 关闭编辑器（返回目录）。调用方负责在关闭前执行“放弃本地编辑”动作；
+   * 本组件只在 `closeNeedsConfirm` 时先做二次确认。
+   */
   onClose?: () => void
+  /**
+   * 本地存在未保存文本：关闭前必须二次确认，避免静默丢弃（审查 A HIGH-1）。
+   */
+  closeNeedsConfirm?: boolean
   className?: string
 }
 
@@ -33,7 +41,8 @@ export interface NoteCapabilityBlockedProps {
  *
  * 硬约束：阻断态**绝不**渲染可编辑的标题/正文表单，也不退回无 revision 的
  * 旧表单（旧表单只属于 `edit_schema=null` 的旧未保护 Note，由 NotesPanel
- * 决定）。这里只给出原因、重试与本地文本取回入口。
+ * 决定）。这里给出原因、重试、本地文本取回与可关闭出口；本地有未保存文本
+ * 时关闭必须二次确认（不是静默丢弃）。
  */
 export function NoteCapabilityBlocked({
   reason,
@@ -42,11 +51,18 @@ export function NoteCapabilityBlocked({
   onCopyLocal,
   onDownloadLocalMarkdown,
   onClose,
+  closeNeedsConfirm = false,
   className,
 }: NoteCapabilityBlockedProps) {
   const { t } = useTranslation()
+  const [confirmingClose, setConfirmingClose] = useState(false)
   const reasonKey = blockReasonLabelKey(reason)
   const showExistingHint = canEditExisting && reason === 'disabled_by_flag'
+
+  // 阻断原因变化（例如重试后换了一种失败）时复位二次确认。
+  useEffect(() => {
+    setConfirmingClose(false)
+  }, [reason])
 
   return (
     <div className={className} data-testid="note-capability-blocked" data-reason={reason ?? 'unknown'}>
@@ -61,48 +77,82 @@ export function NoteCapabilityBlocked({
           )}
         </AlertDescription>
       </Alert>
-      <div className="mt-2 flex flex-wrap gap-2">
-        {onRetry && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={onRetry}
-            data-testid="note-capability-retry"
-          >
-            {t('research.notes.capability.retry')}
-          </Button>
-        )}
-        {onCopyLocal && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={onCopyLocal}
-            data-testid="note-capability-copy-local"
-          >
-            {t('research.notes.capability.copyLocal')}
-          </Button>
-        )}
-        {onDownloadLocalMarkdown && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={onDownloadLocalMarkdown}
-            data-testid="note-capability-download"
-          >
-            {t('research.notes.capability.downloadMarkdown')}
-          </Button>
-        )}
-        {onClose && (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={onClose}
-            data-testid="note-capability-close"
-          >
-            {t('research.notes.capability.close')}
-          </Button>
-        )}
-      </div>
+
+      {confirmingClose ? (
+        <div
+          className="mt-2 space-y-2 rounded border border-destructive/40 p-2"
+          data-testid="note-capability-close-confirm"
+        >
+          <p className="text-sm">{t('research.notes.leave.discardConfirm')}</p>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={onClose}
+              data-testid="note-capability-close-confirm-action"
+            >
+              {t('research.notes.leave.discardConfirmAction')}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setConfirmingClose(false)}
+              data-testid="note-capability-close-confirm-cancel"
+            >
+              {t('research.notes.leave.stay')}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {onRetry && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onRetry}
+              data-testid="note-capability-retry"
+            >
+              {t('research.notes.capability.retry')}
+            </Button>
+          )}
+          {onCopyLocal && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onCopyLocal}
+              data-testid="note-capability-copy-local"
+            >
+              {t('research.notes.capability.copyLocal')}
+            </Button>
+          )}
+          {onDownloadLocalMarkdown && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onDownloadLocalMarkdown}
+              data-testid="note-capability-download"
+            >
+              {t('research.notes.capability.downloadMarkdown')}
+            </Button>
+          )}
+          {onClose && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                if (closeNeedsConfirm) {
+                  setConfirmingClose(true)
+                  return
+                }
+                onClose()
+              }}
+              data-testid="note-capability-close"
+            >
+              {t('research.notes.capability.close')}
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   )
 }
