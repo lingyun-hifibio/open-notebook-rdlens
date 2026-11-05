@@ -2002,6 +2002,10 @@ export function ResearchChatPanel({
                         修改 Scope 不得影响重试；null（恢复轮）不渲染重试按钮，
                         永不静默以空数组=全项目派发（P1-①）。 */}
                     {turn.errorCode &&
+                      // #109（round-3 N1）：错误卡 Retry 也是重新生成入口——
+                      // 模型禁用/冻结时不渲染（点击会经 onSend→runGuarded 静默
+                      // no-op；隐藏与其它 retry 入口一致）。
+                      !generationBlocked &&
                       (RETRYABLE_SSE_ERROR_CODES.includes(turn.errorCode) ||
                         // PR-13：明确未受理（idle+code）轮只在 wire 动作为
                         // retry_same_key/reconcile_then_retry 时允许 Retry；

@@ -351,6 +351,30 @@ describe('ResearchChatPanel', () => {
     })
   })
 
+  it('#109：模型禁用时错误卡 Retry 不渲染（避免静默 no-op）', () => {
+    const send = vi.fn()
+    renderPanel(
+      [
+        { ...turn({ role: 'user', content: '原问题', id: 'u1' }) },
+        turn({
+          status: 'error',
+          errorCode: 'admission_unavailable',
+          errorMessage: 'x',
+          scopeSnapshot: SCOPE_A,
+        }),
+      ],
+      send,
+      {
+        sendDisabled: true,
+        blockedHint:
+          '当前 GPU 正与其他任务共用，可用显存不足以支撑 Research 使用本地模型，请改用外部 AI 模型。',
+      },
+    )
+    expect(screen.getByTestId('chat-error')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'research.chatRetry' })).toBeNull()
+    expect(screen.queryByText('research.chatRetryable')).toBeNull()
+  })
+
   it('#439：persistent_job_required 不可重试，提供后台任务 CTA 并回显 job id', async () => {
     const onRunAsBackgroundJob = vi.fn(
       async (): Promise<BackgroundJobSubmitResult> => ({

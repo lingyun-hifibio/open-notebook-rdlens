@@ -2,7 +2,7 @@
 
 - **任务**：fork issue #109（`lingyun-hifibio/open-notebook-rdlens`）——shared 模式（GPU 共用）下 Research 的本地模型生成入口禁用，并在既有提示通道渲染**后端下发**的 `capabilities.local_model.message`；exclusive 模式零回归。round-3 收敛后覆盖 **7 个生成入口**：Search、Chat、Compare、Insights AI、Source Chat、Transformations Run 确认框、Activity Center 的 coverage `outcome_unknown` 重试。
 - **Before revision（PR base）**：fork `39b456f5f187525289168384ce4a57c224e1c944`（= `origin/main`；detached worktree `visual-evidence/worktrees/before`）。
-- **After revision（采集时产品 head）**：fork `7b722cc1f2c49906545b7a053c5fb62ce12eac7a`（分支 `agent/fork-shared-gpu-cd906bb85363`；detached worktree `visual-evidence/worktrees/after`）。采集后仅追加**测试/证据**提交（产品代码未变）；最终 PR head 见 PR body「配对与锚点」。
+- **After revision（采集时产品 head）**：fork `7b722cc1f2c49906545b7a053c5fb62ce12eac7a`（分支 `agent/fork-shared-gpu-cd906bb85363`；detached worktree `visual-evidence/worktrees/after`）。采集后追加了 round-3 收口的 **1 行产品门禁**（`ResearchChatPanel` 错误卡 Retry 在 `generationBlocked` 时隐藏——该状态不在本证据集捕获场景内，不影响上述截图）以及测试/README 同步；最终 PR head 见 PR body「配对与锚点」。
 - **视口**：1440×900（主；全部 11 个场景）；Search 主对另加 1024×768。**主题 light**（host 页认证后经 postMessage 下发 `theme=light`；每次采集全新浏览器上下文）。
 - **场景一致性**：同一合成项目 `p1` / owner `u1`、同一资料范围（fixture 预置 selected = `src_1`,`src_2`）、同一模型 fixture（本地模型 `m-local-qwen`, `data_egress=false`）与同一查询文本；Before/After 使用**完全相同的 mock fixture 与 mock 版本**、同一台机器、同一 headless Chromium、`deviceScaleFactor=1`、`--force-color-profile=srgb`。Chat / Source Chat 场景通过 mock 合成会话（`POST /chat/sessions`、`POST /sources/src_1/chat/sessions` + `editor-state` 草稿保存成功）使 composer 可达——Before/After 用同一流程。
 
@@ -17,7 +17,7 @@ Research Gateway 由本地合成 mock server（`harness/gateway_mock.js`）提�
   `capabilities.local_model = {available:false, reason:"shared_gpu", message:"当前 GPU 正与其他任务共用，可用显存不足以支撑 Research 使用本地模型，请改用外部 AI 模型。"}`；
   `exclusive` 下返回 `{available:true, reason:null, message:null}`；`preferred_model_id` 恒为本地模型 `m-local-qwen`。
 - `POST /search`：`shared` → **409** `detail = {code:"local_model_unavailable_shared_gpu", message:"<同上>"}`（Before 点击证据）；`exclusive` → 200 合成检索结果。
-- **每个请求**（时间、方法、路径、状态、模式）同步追加到 `logs/gateway-requests.log`；采集脚本在每个场景边界写入 `kind:"mark"` 行，可按窗口切片核对「After shared 无 POST /search」等断言。
+- **每个请求**（时间、方法、路径、状态、模式）同步追加到本地采集工作区的 `logs/gateway-requests.log`；采集脚本在每个场景边界写入 `kind:"mark"` 行，可按窗口切片核对「After shared 无 POST /search」等断言。**本 PR 提交的为 per-phase `.txt` 副本**（仓库 `.gitignore` 忽略 `*.log`，内容逐字节相同）。
 - 场景内实时断言由 `harness/capture.js` 在浏览器中执行（hint 文案逐字比对、按钮 disabled、触发/不触发请求），结果写入 `logs/capture-<phase>-summary.json`。
 
 **harness-only 本地改动（不进入 PR diff）**：Next.js 仅对静态成员访问的 `NEXT_PUBLIC_*` 做构建期内联，而 `frontend/src/lib/embedded/config.ts` 使用 `process.env[常量]` 动态访问。采集时在两个 worktree 中**临时**把三处访问改为静态成员写法（各 3 行、uncommitted，仅本地）：不改变产品语义；After worktree 在 `7b722cc` 之上仅多这 3 行本地 hack，Before 同理。复现时需重新应用。Dev server 另需 `NEXT_ALLOWED_DEV_ORIGINS=127.0.0.1`。
@@ -91,7 +91,7 @@ e62cc948db31ec7fd99c8766a00c4361d0ab5ca1220873928b6b696f8f100459  before_shared_
 
 ## Mock 请求日志证据（After shared 无 POST /search）
 
-文件：`logs/gateway-requests-before.log`（Before 整轮 150 请求）、`logs/gateway-requests-after.log`（After 整轮 149 请求）、`logs/gateway-requests.log`（两轮拼接）。
+本 PR 提交：`logs/gateway-requests-before.txt`（Before 整轮 150 请求）、`logs/gateway-requests-after.txt`（After 整轮 149 请求）。本地采集工作区另有 `logs/gateway-requests.log`（两轮拼接）与早期存档 `.log`，不随 PR 提交（`.gitignore` 忽略 `*.log`；`.txt` 为同一内容提交副本）。
 
 - **Before 轮**：`POST /search → 409 ×1`（`before_shared_search_click_1440` 的 click_start..click_end 窗口）；其余为确定性 GET 与合成会话/草稿 PUT。
 - **After 轮**：**`POST /search` 0 次（整轮）**；`after_shared_search_click_1440` 的 click_start..click_end 窗口内请求数 **0**（disabled 控件点击零网络往返）。日志同时可见 Source Chat / Chat 场景的合成会话创建与 `PUT .../editor-state` 草稿保存（证明这些场景的 mock 链路真实工作）。
@@ -172,5 +172,5 @@ node $VE/harness/capture.js after  http://127.0.0.1:8621/
 ## 交付去向
 
 - 本目录 `visual-evidence/` 为采集工作区（worktrees、harness、logs、screenshots、README）。
-- 已同步到仓库 PR 证据目录（**工作树，未提交**，由 Lead 复核后提交）：`dev_docs/validation/issue109/screenshots/`（22 张）、`README.md`、`logs/{capture-before-summary.json,capture-after-summary.json,gateway-requests-before.txt,gateway-requests-after.txt,sha256-manifest.txt}`；并按新摘要更新 `dev_docs/validation/secret-scan-allowlist.txt` 中 fork #109 截图摘要块。
+- 已提交到仓库 PR 证据目录（round-3 证据 commit）：`dev_docs/validation/issue109/screenshots/`（22 张）、`README.md`、`logs/{capture-before-summary.json,capture-after-summary.json,gateway-requests-before.txt,gateway-requests-after.txt,sha256-manifest.txt}`；并按新摘要更新 `dev_docs/validation/secret-scan-allowlist.txt` 中 fork #109 截图摘要块。
 - 采集期间服务器运行信息（供复核）：mock `127.0.0.1:8731`、Before dev `127.0.0.1:8600` + host `:8601`、After dev `127.0.0.1:8620` + host `:8621`；模式文件 `/tmp/issue109-local-model-mode`。

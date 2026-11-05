@@ -1435,6 +1435,57 @@ describe('PR-15 source 会话发送门禁（生产实证回归，2026-10-28）',
     fireEvent.click(sendButton)
     expect(conversationSend).not.toHaveBeenCalled()
   })
+
+  it('#109：模型禁用但后端无 message → 不伪造提示（composer 无门禁行、发送仍禁用）', async () => {
+    const ref = { domain: 'research' as const, kind: 'source' as const, projectId: 'proj_1', sessionId: 'sess_src', sourceId: 'src_1' }
+    const snapshot = {
+      ...createEditorState({ ref, writerId: 'w-1', transportAvailable: true }),
+      phase: 'ready' as const,
+      loading: false,
+      revision: 2,
+      intentHash: 'hash-2',
+      draftToken: 'draft_2',
+      baseScope: null,
+      singleSourceId: null,
+      draftText: '只问这个来源的问题',
+      dirty: false,
+    }
+    let activeRef: typeof ref | null = null
+    vi.mocked(useResearchSessionRuntimeOptional).mockReturnValue({
+      active: () => activeRef,
+      activate: vi.fn((_surface: string, next: typeof activeRef) => {
+        activeRef = next
+        return true
+      }),
+    } as never)
+    activeRef = ref
+    vi.mocked(useResearchEditor).mockImplementation((() => ({
+      snapshot,
+      controller: { getSnapshot: () => snapshot },
+      setDraftText: vi.fn(),
+      flush: vi.fn(async () => 'saved'),
+      hold: vi.fn(),
+      release: vi.fn(),
+      clearAfterSubmission: vi.fn(async () => 'cleared'),
+    })) as never)
+    vi.mocked(useResearchSourceChat).mockReturnValue(makeChatResult({
+      conversation: {
+        getSnapshot: () => ({ turn: null, history: [] }),
+        subscribe: () => () => {},
+        send: vi.fn(async () => ({ status: 'ok' })),
+      } as never,
+    }) as never)
+    setGlobalModelStub({
+      canExecute: false,
+      blockedReason: 'local-unavailable-shared-gpu',
+      localModelUnavailableMessage: null,
+    })
+
+    render(<ResearchSourceChatPanel projectId="proj_1" sourceId="src_1" onHighlightPage={vi.fn()} />)
+
+    expect(screen.queryByTestId('research-draft-gate-hint')).toBeNull()
+    expect(screen.getByTestId('chat-send')).toBeDisabled()
+  })
 })
 
 /**
