@@ -1,0 +1,3315 @@
+{
+  "bundle_version": 1,
+  "codec": {
+    "hash": "sha256",
+    "name": "d2-canonical-v1"
+  },
+  "contract": "issue585_d2_contract_v1",
+  "encoding": "utf-8",
+  "vectors": [
+    {
+      "description": "中文、emoji、组合字符、引号/反斜杠与控制字符均按原样编码",
+      "encoded": [
+        "string",
+        "原稿\n é / 😀 \"引号\" \\ 反斜杠 \u0001 控制符"
+      ],
+      "id": "gv-d2-codec-01",
+      "kind": "codec",
+      "namespace": "d2-canonical-vector/v1",
+      "preimage_utf8": "[\"d2-canonical-vector/v1\",[\"string\",\"原稿\\n é / 😀 \\\"引号\\\" \\\\ 反斜杠 \\u0001 控制符\"]]",
+      "sha256": "52d1f39e9297b3cae8fca4a4f3e7678629ef1efdb3f36aa7f0da2dd78f7e8cf7",
+      "value": "原稿\n é / 😀 \"引号\" \\ 反斜杠 \u0001 控制符"
+    },
+    {
+      "description": "嵌套对象键按 UTF-8 字节升序重排（同语义不同插入序得到同一编码）",
+      "encoded": [
+        "object",
+        [
+          [
+            "a",
+            [
+              "array",
+              [
+                [
+                  "object",
+                  [
+                    [
+                      "y",
+                      [
+                        "bool",
+                        true
+                      ]
+                    ],
+                    [
+                      "z",
+                      [
+                        "null",
+                        null
+                      ]
+                    ]
+                  ]
+                ]
+              ]
+            ]
+          ],
+          [
+            "b",
+            [
+              "object",
+              [
+                [
+                  "c",
+                  [
+                    "int",
+                    2
+                  ]
+                ],
+                [
+                  "d",
+                  [
+                    "int",
+                    1
+                  ]
+                ]
+              ]
+            ]
+          ]
+        ]
+      ],
+      "id": "gv-d2-codec-02",
+      "kind": "codec",
+      "namespace": "d2-canonical-vector/v1",
+      "preimage_utf8": "[\"d2-canonical-vector/v1\",[\"object\",[[\"a\",[\"array\",[[\"object\",[[\"y\",[\"bool\",true]],[\"z\",[\"null\",null]]]]]]],[\"b\",[\"object\",[[\"c\",[\"int\",2]],[\"d\",[\"int\",1]]]]]]]]",
+      "sha256": "0c38f4b551fd95fdbf074cd9d856e2d300fe361209b3b6e8cb04cc561037c1fd",
+      "value": {
+        "a": [
+          {
+            "y": true,
+            "z": null
+          }
+        ],
+        "b": {
+          "c": 2,
+          "d": 1
+        }
+      }
+    },
+    {
+      "description": "首尾空白与换行原样保留（不 strip、不替换换行）",
+      "encoded": [
+        "object",
+        [
+          [
+            "content",
+            [
+              "string",
+              "\n\n  a \t\n"
+            ]
+          ],
+          [
+            "title",
+            [
+              "string",
+              "  未命名  "
+            ]
+          ]
+        ]
+      ],
+      "id": "gv-d2-codec-03",
+      "kind": "codec",
+      "namespace": "d2-canonical-vector/v1",
+      "preimage_utf8": "[\"d2-canonical-vector/v1\",[\"object\",[[\"content\",[\"string\",\"\\n\\n  a \\t\\n\"]],[\"title\",[\"string\",\"  未命名  \"]]]]]",
+      "sha256": "763545837945a45c6c50c4df6f5839984630016b8589a6ca285457b178ef9490",
+      "value": {
+        "content": "\n\n  a \t\n",
+        "title": "  未命名  "
+      }
+    },
+    {
+      "description": "null、布尔、空串、空对象与空数组的类型标签互不混淆",
+      "encoded": [
+        "object",
+        [
+          [
+            "empty_array",
+            [
+              "array",
+              []
+            ]
+          ],
+          [
+            "empty_object",
+            [
+              "object",
+              []
+            ]
+          ],
+          [
+            "empty_str",
+            [
+              "string",
+              ""
+            ]
+          ],
+          [
+            "nil",
+            [
+              "null",
+              null
+            ]
+          ],
+          [
+            "no",
+            [
+              "bool",
+              false
+            ]
+          ],
+          [
+            "yes",
+            [
+              "bool",
+              true
+            ]
+          ]
+        ]
+      ],
+      "id": "gv-d2-codec-04",
+      "kind": "codec",
+      "namespace": "d2-canonical-vector/v1",
+      "preimage_utf8": "[\"d2-canonical-vector/v1\",[\"object\",[[\"empty_array\",[\"array\",[]]],[\"empty_object\",[\"object\",[]]],[\"empty_str\",[\"string\",\"\"]],[\"nil\",[\"null\",null]],[\"no\",[\"bool\",false]],[\"yes\",[\"bool\",true]]]]]",
+      "sha256": "344bdcc1f4ddc9df11c17e128143926ab78676e7d1b25d5a8d62e6b583bd2c6f",
+      "value": {
+        "empty_array": [],
+        "empty_object": {},
+        "empty_str": "",
+        "nil": null,
+        "no": false,
+        "yes": true
+      }
+    },
+    {
+      "description": "整数边界：安全整数上下限含端点（超界由拒绝用例覆盖）",
+      "encoded": [
+        "array",
+        [
+          [
+            "int",
+            0
+          ],
+          [
+            "int",
+            1
+          ],
+          [
+            "int",
+            -1
+          ],
+          [
+            "int",
+            9007199254740991
+          ],
+          [
+            "int",
+            -9007199254740991
+          ]
+        ]
+      ],
+      "id": "gv-d2-codec-05",
+      "kind": "codec",
+      "namespace": "d2-canonical-vector/v1",
+      "preimage_utf8": "[\"d2-canonical-vector/v1\",[\"array\",[[\"int\",0],[\"int\",1],[\"int\",-1],[\"int\",9007199254740991],[\"int\",-9007199254740991]]]]",
+      "sha256": "bc93d3babcb73e54d99ac228f637288f5ba2d1b9d95aeced07ce7499b0d3648b",
+      "value": [
+        0,
+        1,
+        -1,
+        9007199254740991,
+        -9007199254740991
+      ]
+    },
+    {
+      "description": "数组顺序保留（不排序）",
+      "encoded": [
+        "array",
+        [
+          [
+            "string",
+            "z"
+          ],
+          [
+            "string",
+            "a"
+          ],
+          [
+            "object",
+            [
+              [
+                "k",
+                [
+                  "string",
+                  "v"
+                ]
+              ]
+            ]
+          ],
+          [
+            "array",
+            [
+              [
+                "int",
+                1
+              ],
+              [
+                "int",
+                2
+              ]
+            ]
+          ]
+        ]
+      ],
+      "id": "gv-d2-codec-06",
+      "kind": "codec",
+      "namespace": "d2-canonical-vector/v1",
+      "preimage_utf8": "[\"d2-canonical-vector/v1\",[\"array\",[[\"string\",\"z\"],[\"string\",\"a\"],[\"object\",[[\"k\",[\"string\",\"v\"]]]],[\"array\",[[\"int\",1],[\"int\",2]]]]]]",
+      "sha256": "04839f8f9b7dc9489f8eac3904589e3125c660c057285dd963e91b31390dc29e",
+      "value": [
+        "z",
+        "a",
+        {
+          "k": "v"
+        },
+        [
+          1,
+          2
+        ]
+      ]
+    },
+    {
+      "description": "非 ASCII 对象键按 UTF-8 字节升序（z < é < 中）",
+      "encoded": [
+        "object",
+        [
+          [
+            "z",
+            [
+              "int",
+              2
+            ]
+          ],
+          [
+            "é",
+            [
+              "int",
+              1
+            ]
+          ],
+          [
+            "中",
+            [
+              "int",
+              3
+            ]
+          ]
+        ]
+      ],
+      "id": "gv-d2-codec-07",
+      "kind": "codec",
+      "namespace": "d2-canonical-vector/v1",
+      "preimage_utf8": "[\"d2-canonical-vector/v1\",[\"object\",[[\"z\",[\"int\",2]],[\"é\",[\"int\",1]],[\"中\",[\"int\",3]]]]]",
+      "sha256": "845b14b0f1ea61523b3502fb108b66638c04a7298f9526c353db8329b178a466",
+      "value": {
+        "z": 2,
+        "é": 1,
+        "中": 3
+      }
+    },
+    {
+      "description": "对象/数组/标量混合的确定性编码",
+      "encoded": [
+        "object",
+        [
+          [
+            "outer",
+            [
+              "object",
+              [
+                [
+                  "a",
+                  [
+                    "string",
+                    "中"
+                  ]
+                ],
+                [
+                  "b",
+                  [
+                    "array",
+                    [
+                      [
+                        "object",
+                        [
+                          [
+                            "m",
+                            [
+                              "int",
+                              1
+                            ]
+                          ],
+                          [
+                            "n",
+                            [
+                              "int",
+                              2
+                            ]
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ]
+              ]
+            ]
+          ]
+        ]
+      ],
+      "id": "gv-d2-codec-08",
+      "kind": "codec",
+      "namespace": "d2-canonical-vector/v1",
+      "preimage_utf8": "[\"d2-canonical-vector/v1\",[\"object\",[[\"outer\",[\"object\",[[\"a\",[\"string\",\"中\"]],[\"b\",[\"array\",[[\"object\",[[\"m\",[\"int\",1]],[\"n\",[\"int\",2]]]]]]]]]]]]]",
+      "sha256": "5c400acaec498b8e2050d2fc1e7085a60fb48b8b1cf2dd5011cefdc9af1b0b3e",
+      "value": {
+        "outer": {
+          "a": "中",
+          "b": [
+            {
+              "m": 1,
+              "n": 2
+            }
+          ]
+        }
+      }
+    },
+    {
+      "description": "空白正文 + 默认标题 + 空元数据的快照摘要",
+      "encoded": [
+        "object",
+        [
+          [
+            "content",
+            [
+              "string",
+              ""
+            ]
+          ],
+          [
+            "metadata",
+            [
+              "object",
+              [
+                [
+                  "citation_bindings",
+                  [
+                    "array",
+                    []
+                  ]
+                ],
+                [
+                  "document_dependencies",
+                  [
+                    "array",
+                    []
+                  ]
+                ],
+                [
+                  "origins",
+                  [
+                    "array",
+                    []
+                  ]
+                ],
+                [
+                  "schema_version",
+                  [
+                    "int",
+                    1
+                  ]
+                ]
+              ]
+            ]
+          ],
+          [
+            "schema",
+            [
+              "string",
+              "d2-v1"
+            ]
+          ],
+          [
+            "title",
+            [
+              "string",
+              "未命名成果"
+            ]
+          ]
+        ]
+      ],
+      "id": "gv-d2-note-01",
+      "kind": "note_snapshot",
+      "namespace": "research-note-d2/snapshot",
+      "normalized_value": {
+        "content": "",
+        "metadata": {
+          "citation_bindings": [],
+          "document_dependencies": [],
+          "origins": [],
+          "schema_version": 1
+        },
+        "schema": "d2-v1",
+        "title": "未命名成果"
+      },
+      "preimage_utf8": "[\"research-note-d2/snapshot\",[\"object\",[[\"content\",[\"string\",\"\"]],[\"metadata\",[\"object\",[[\"citation_bindings\",[\"array\",[]]],[\"document_dependencies\",[\"array\",[]]],[\"origins\",[\"array\",[]]],[\"schema_version\",[\"int\",1]]]]],[\"schema\",[\"string\",\"d2-v1\"]],[\"title\",[\"string\",\"未命名成果\"]]]]]",
+      "sha256": "8198ab7bde2755fad39ecfcf14c0ce3c73da875b40db08b4412d91cbcc4acfd6",
+      "value": {
+        "content": "",
+        "metadata": {
+          "citation_bindings": [],
+          "document_dependencies": [],
+          "origins": [],
+          "schema_version": 1
+        },
+        "title": "未命名成果"
+      }
+    },
+    {
+      "description": "含引用顺序（保留）、origins/依赖集合乱序（排序去重）与未定位引用的快照摘要",
+      "encoded": [
+        "object",
+        [
+          [
+            "content",
+            [
+              "string",
+              "第一行\n\n  indented\t\ttab\n最后一行 "
+            ]
+          ],
+          [
+            "metadata",
+            [
+              "object",
+              [
+                [
+                  "citation_bindings",
+                  [
+                    "array",
+                    [
+                      [
+                        "object",
+                        [
+                          [
+                            "binding_id",
+                            [
+                              "string",
+                              "b1"
+                            ]
+                          ],
+                          [
+                            "locator",
+                            [
+                              "object",
+                              [
+                                [
+                                  "chunk_id",
+                                  [
+                                    "string",
+                                    "chunk_07"
+                                  ]
+                                ],
+                                [
+                                  "page_idx",
+                                  [
+                                    "int",
+                                    3
+                                  ]
+                                ]
+                              ]
+                            ]
+                          ],
+                          [
+                            "source_id",
+                            [
+                              "string",
+                              "src_orR_01"
+                            ]
+                          ],
+                          [
+                            "source_kind",
+                            [
+                              "string",
+                              "source"
+                            ]
+                          ],
+                          [
+                            "source_version",
+                            [
+                              "string",
+                              "docv_2026_11_01"
+                            ]
+                          ],
+                          [
+                            "unresolved",
+                            [
+                              "bool",
+                              false
+                            ]
+                          ]
+                        ]
+                      ],
+                      [
+                        "object",
+                        [
+                          [
+                            "binding_id",
+                            [
+                              "string",
+                              "b2"
+                            ]
+                          ],
+                          [
+                            "locator",
+                            [
+                              "null",
+                              null
+                            ]
+                          ],
+                          [
+                            "source_id",
+                            [
+                              "string",
+                              "note_prev_01"
+                            ]
+                          ],
+                          [
+                            "source_kind",
+                            [
+                              "string",
+                              "note"
+                            ]
+                          ],
+                          [
+                            "source_version",
+                            [
+                              "string",
+                              "3:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+                            ]
+                          ],
+                          [
+                            "unresolved",
+                            [
+                              "bool",
+                              true
+                            ]
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ],
+                [
+                  "document_dependencies",
+                  [
+                    "array",
+                    [
+                      [
+                        "object",
+                        [
+                          [
+                            "document_id",
+                            [
+                              "string",
+                              "doc_02"
+                            ]
+                          ],
+                          [
+                            "document_version",
+                            [
+                              "string",
+                              "v2"
+                            ]
+                          ]
+                        ]
+                      ],
+                      [
+                        "object",
+                        [
+                          [
+                            "note_content_hash",
+                            [
+                              "string",
+                              "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                            ]
+                          ],
+                          [
+                            "note_id",
+                            [
+                              "string",
+                              "note_src_01"
+                            ]
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ],
+                [
+                  "origins",
+                  [
+                    "array",
+                    [
+                      [
+                        "object",
+                        [
+                          [
+                            "locator",
+                            [
+                              "object",
+                              [
+                                [
+                                  "page_idx",
+                                  [
+                                    "int",
+                                    3
+                                  ]
+                                ]
+                              ]
+                            ]
+                          ],
+                          [
+                            "origin_id",
+                            [
+                              "string",
+                              "o1"
+                            ]
+                          ],
+                          [
+                            "source_id",
+                            [
+                              "string",
+                              "src_orR_01"
+                            ]
+                          ],
+                          [
+                            "source_kind",
+                            [
+                              "string",
+                              "source"
+                            ]
+                          ],
+                          [
+                            "source_version",
+                            [
+                              "string",
+                              "docv_2026_11_01"
+                            ]
+                          ]
+                        ]
+                      ],
+                      [
+                        "object",
+                        [
+                          [
+                            "locator",
+                            [
+                              "object",
+                              [
+                                [
+                                  "page_idx",
+                                  [
+                                    "int",
+                                    3
+                                  ]
+                                ]
+                              ]
+                            ]
+                          ],
+                          [
+                            "origin_id",
+                            [
+                              "string",
+                              "o2"
+                            ]
+                          ],
+                          [
+                            "source_id",
+                            [
+                              "string",
+                              "src_orR_02"
+                            ]
+                          ],
+                          [
+                            "source_kind",
+                            [
+                              "string",
+                              "source"
+                            ]
+                          ],
+                          [
+                            "source_version",
+                            [
+                              "string",
+                              "docv_2026_11_01"
+                            ]
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ],
+                [
+                  "schema_version",
+                  [
+                    "int",
+                    1
+                  ]
+                ]
+              ]
+            ]
+          ],
+          [
+            "schema",
+            [
+              "string",
+              "d2-v1"
+            ]
+          ],
+          [
+            "title",
+            [
+              "string",
+              "ORR 分析 📊"
+            ]
+          ]
+        ]
+      ],
+      "id": "gv-d2-note-02",
+      "kind": "note_snapshot",
+      "namespace": "research-note-d2/snapshot",
+      "normalized_value": {
+        "content": "第一行\n\n  indented\t\ttab\n最后一行 ",
+        "metadata": {
+          "citation_bindings": [
+            {
+              "binding_id": "b1",
+              "locator": {
+                "chunk_id": "chunk_07",
+                "page_idx": 3
+              },
+              "source_id": "src_orR_01",
+              "source_kind": "source",
+              "source_version": "docv_2026_11_01",
+              "unresolved": false
+            },
+            {
+              "binding_id": "b2",
+              "locator": null,
+              "source_id": "note_prev_01",
+              "source_kind": "note",
+              "source_version": "3:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "unresolved": true
+            }
+          ],
+          "document_dependencies": [
+            {
+              "document_id": "doc_02",
+              "document_version": "v2"
+            },
+            {
+              "note_content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "note_id": "note_src_01"
+            }
+          ],
+          "origins": [
+            {
+              "locator": {
+                "page_idx": 3
+              },
+              "origin_id": "o1",
+              "source_id": "src_orR_01",
+              "source_kind": "source",
+              "source_version": "docv_2026_11_01"
+            },
+            {
+              "locator": {
+                "page_idx": 3
+              },
+              "origin_id": "o2",
+              "source_id": "src_orR_02",
+              "source_kind": "source",
+              "source_version": "docv_2026_11_01"
+            }
+          ],
+          "schema_version": 1
+        },
+        "schema": "d2-v1",
+        "title": "ORR 分析 📊"
+      },
+      "preimage_utf8": "[\"research-note-d2/snapshot\",[\"object\",[[\"content\",[\"string\",\"第一行\\n\\n  indented\\t\\ttab\\n最后一行 \"]],[\"metadata\",[\"object\",[[\"citation_bindings\",[\"array\",[[\"object\",[[\"binding_id\",[\"string\",\"b1\"]],[\"locator\",[\"object\",[[\"chunk_id\",[\"string\",\"chunk_07\"]],[\"page_idx\",[\"int\",3]]]]],[\"source_id\",[\"string\",\"src_orR_01\"]],[\"source_kind\",[\"string\",\"source\"]],[\"source_version\",[\"string\",\"docv_2026_11_01\"]],[\"unresolved\",[\"bool\",false]]]],[\"object\",[[\"binding_id\",[\"string\",\"b2\"]],[\"locator\",[\"null\",null]],[\"source_id\",[\"string\",\"note_prev_01\"]],[\"source_kind\",[\"string\",\"note\"]],[\"source_version\",[\"string\",\"3:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"]],[\"unresolved\",[\"bool\",true]]]]]]],[\"document_dependencies\",[\"array\",[[\"object\",[[\"document_id\",[\"string\",\"doc_02\"]],[\"document_version\",[\"string\",\"v2\"]]]],[\"object\",[[\"note_content_hash\",[\"string\",\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"]],[\"note_id\",[\"string\",\"note_src_01\"]]]]]]],[\"origins\",[\"array\",[[\"object\",[[\"locator\",[\"object\",[[\"page_idx\",[\"int\",3]]]]],[\"origin_id\",[\"string\",\"o1\"]],[\"source_id\",[\"string\",\"src_orR_01\"]],[\"source_kind\",[\"string\",\"source\"]],[\"source_version\",[\"string\",\"docv_2026_11_01\"]]]],[\"object\",[[\"locator\",[\"object\",[[\"page_idx\",[\"int\",3]]]]],[\"origin_id\",[\"string\",\"o2\"]],[\"source_id\",[\"string\",\"src_orR_02\"]],[\"source_kind\",[\"string\",\"source\"]],[\"source_version\",[\"string\",\"docv_2026_11_01\"]]]]]]],[\"schema_version\",[\"int\",1]]]]],[\"schema\",[\"string\",\"d2-v1\"]],[\"title\",[\"string\",\"ORR 分析 📊\"]]]]]",
+      "sha256": "354ec12e73cc467fc72b3ec90935eac082a847eac003c54af7c89a851960df8b",
+      "value": {
+        "content": "第一行\n\n  indented\t\ttab\n最后一行 ",
+        "metadata": {
+          "citation_bindings": [
+            {
+              "binding_id": "b1",
+              "locator": {
+                "chunk_id": "chunk_07",
+                "page_idx": 3
+              },
+              "source_id": "src_orR_01",
+              "source_kind": "source",
+              "source_version": "docv_2026_11_01",
+              "unresolved": false
+            },
+            {
+              "binding_id": "b2",
+              "locator": null,
+              "source_id": "note_prev_01",
+              "source_kind": "note",
+              "source_version": "3:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "unresolved": true
+            }
+          ],
+          "document_dependencies": [
+            {
+              "document_id": "doc_02",
+              "document_version": "v2"
+            },
+            {
+              "note_content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "note_id": "note_src_01"
+            }
+          ],
+          "origins": [
+            {
+              "locator": {
+                "page_idx": 3
+              },
+              "origin_id": "o2",
+              "source_id": "src_orR_02",
+              "source_kind": "source",
+              "source_version": "docv_2026_11_01"
+            },
+            {
+              "locator": {
+                "page_idx": 3
+              },
+              "origin_id": "o1",
+              "source_id": "src_orR_01",
+              "source_kind": "source",
+              "source_version": "docv_2026_11_01"
+            }
+          ],
+          "schema_version": 1
+        },
+        "title": "ORR 分析 📊"
+      }
+    },
+    {
+      "description": "与 gv-d2-note-02 同语义但集合输入顺序不同：规范化后摘要必须相同",
+      "encoded": [
+        "object",
+        [
+          [
+            "content",
+            [
+              "string",
+              "第一行\n\n  indented\t\ttab\n最后一行 "
+            ]
+          ],
+          [
+            "metadata",
+            [
+              "object",
+              [
+                [
+                  "citation_bindings",
+                  [
+                    "array",
+                    [
+                      [
+                        "object",
+                        [
+                          [
+                            "binding_id",
+                            [
+                              "string",
+                              "b1"
+                            ]
+                          ],
+                          [
+                            "locator",
+                            [
+                              "object",
+                              [
+                                [
+                                  "chunk_id",
+                                  [
+                                    "string",
+                                    "chunk_07"
+                                  ]
+                                ],
+                                [
+                                  "page_idx",
+                                  [
+                                    "int",
+                                    3
+                                  ]
+                                ]
+                              ]
+                            ]
+                          ],
+                          [
+                            "source_id",
+                            [
+                              "string",
+                              "src_orR_01"
+                            ]
+                          ],
+                          [
+                            "source_kind",
+                            [
+                              "string",
+                              "source"
+                            ]
+                          ],
+                          [
+                            "source_version",
+                            [
+                              "string",
+                              "docv_2026_11_01"
+                            ]
+                          ],
+                          [
+                            "unresolved",
+                            [
+                              "bool",
+                              false
+                            ]
+                          ]
+                        ]
+                      ],
+                      [
+                        "object",
+                        [
+                          [
+                            "binding_id",
+                            [
+                              "string",
+                              "b2"
+                            ]
+                          ],
+                          [
+                            "locator",
+                            [
+                              "null",
+                              null
+                            ]
+                          ],
+                          [
+                            "source_id",
+                            [
+                              "string",
+                              "note_prev_01"
+                            ]
+                          ],
+                          [
+                            "source_kind",
+                            [
+                              "string",
+                              "note"
+                            ]
+                          ],
+                          [
+                            "source_version",
+                            [
+                              "string",
+                              "3:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+                            ]
+                          ],
+                          [
+                            "unresolved",
+                            [
+                              "bool",
+                              true
+                            ]
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ],
+                [
+                  "document_dependencies",
+                  [
+                    "array",
+                    [
+                      [
+                        "object",
+                        [
+                          [
+                            "document_id",
+                            [
+                              "string",
+                              "doc_02"
+                            ]
+                          ],
+                          [
+                            "document_version",
+                            [
+                              "string",
+                              "v2"
+                            ]
+                          ]
+                        ]
+                      ],
+                      [
+                        "object",
+                        [
+                          [
+                            "note_content_hash",
+                            [
+                              "string",
+                              "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                            ]
+                          ],
+                          [
+                            "note_id",
+                            [
+                              "string",
+                              "note_src_01"
+                            ]
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ],
+                [
+                  "origins",
+                  [
+                    "array",
+                    [
+                      [
+                        "object",
+                        [
+                          [
+                            "locator",
+                            [
+                              "object",
+                              [
+                                [
+                                  "page_idx",
+                                  [
+                                    "int",
+                                    3
+                                  ]
+                                ]
+                              ]
+                            ]
+                          ],
+                          [
+                            "origin_id",
+                            [
+                              "string",
+                              "o1"
+                            ]
+                          ],
+                          [
+                            "source_id",
+                            [
+                              "string",
+                              "src_orR_01"
+                            ]
+                          ],
+                          [
+                            "source_kind",
+                            [
+                              "string",
+                              "source"
+                            ]
+                          ],
+                          [
+                            "source_version",
+                            [
+                              "string",
+                              "docv_2026_11_01"
+                            ]
+                          ]
+                        ]
+                      ],
+                      [
+                        "object",
+                        [
+                          [
+                            "locator",
+                            [
+                              "object",
+                              [
+                                [
+                                  "page_idx",
+                                  [
+                                    "int",
+                                    3
+                                  ]
+                                ]
+                              ]
+                            ]
+                          ],
+                          [
+                            "origin_id",
+                            [
+                              "string",
+                              "o2"
+                            ]
+                          ],
+                          [
+                            "source_id",
+                            [
+                              "string",
+                              "src_orR_02"
+                            ]
+                          ],
+                          [
+                            "source_kind",
+                            [
+                              "string",
+                              "source"
+                            ]
+                          ],
+                          [
+                            "source_version",
+                            [
+                              "string",
+                              "docv_2026_11_01"
+                            ]
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ],
+                [
+                  "schema_version",
+                  [
+                    "int",
+                    1
+                  ]
+                ]
+              ]
+            ]
+          ],
+          [
+            "schema",
+            [
+              "string",
+              "d2-v1"
+            ]
+          ],
+          [
+            "title",
+            [
+              "string",
+              "ORR 分析 📊"
+            ]
+          ]
+        ]
+      ],
+      "id": "gv-d2-note-03",
+      "kind": "note_snapshot",
+      "namespace": "research-note-d2/snapshot",
+      "normalized_value": {
+        "content": "第一行\n\n  indented\t\ttab\n最后一行 ",
+        "metadata": {
+          "citation_bindings": [
+            {
+              "binding_id": "b1",
+              "locator": {
+                "chunk_id": "chunk_07",
+                "page_idx": 3
+              },
+              "source_id": "src_orR_01",
+              "source_kind": "source",
+              "source_version": "docv_2026_11_01",
+              "unresolved": false
+            },
+            {
+              "binding_id": "b2",
+              "locator": null,
+              "source_id": "note_prev_01",
+              "source_kind": "note",
+              "source_version": "3:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "unresolved": true
+            }
+          ],
+          "document_dependencies": [
+            {
+              "document_id": "doc_02",
+              "document_version": "v2"
+            },
+            {
+              "note_content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "note_id": "note_src_01"
+            }
+          ],
+          "origins": [
+            {
+              "locator": {
+                "page_idx": 3
+              },
+              "origin_id": "o1",
+              "source_id": "src_orR_01",
+              "source_kind": "source",
+              "source_version": "docv_2026_11_01"
+            },
+            {
+              "locator": {
+                "page_idx": 3
+              },
+              "origin_id": "o2",
+              "source_id": "src_orR_02",
+              "source_kind": "source",
+              "source_version": "docv_2026_11_01"
+            }
+          ],
+          "schema_version": 1
+        },
+        "schema": "d2-v1",
+        "title": "ORR 分析 📊"
+      },
+      "preimage_utf8": "[\"research-note-d2/snapshot\",[\"object\",[[\"content\",[\"string\",\"第一行\\n\\n  indented\\t\\ttab\\n最后一行 \"]],[\"metadata\",[\"object\",[[\"citation_bindings\",[\"array\",[[\"object\",[[\"binding_id\",[\"string\",\"b1\"]],[\"locator\",[\"object\",[[\"chunk_id\",[\"string\",\"chunk_07\"]],[\"page_idx\",[\"int\",3]]]]],[\"source_id\",[\"string\",\"src_orR_01\"]],[\"source_kind\",[\"string\",\"source\"]],[\"source_version\",[\"string\",\"docv_2026_11_01\"]],[\"unresolved\",[\"bool\",false]]]],[\"object\",[[\"binding_id\",[\"string\",\"b2\"]],[\"locator\",[\"null\",null]],[\"source_id\",[\"string\",\"note_prev_01\"]],[\"source_kind\",[\"string\",\"note\"]],[\"source_version\",[\"string\",\"3:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"]],[\"unresolved\",[\"bool\",true]]]]]]],[\"document_dependencies\",[\"array\",[[\"object\",[[\"document_id\",[\"string\",\"doc_02\"]],[\"document_version\",[\"string\",\"v2\"]]]],[\"object\",[[\"note_content_hash\",[\"string\",\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"]],[\"note_id\",[\"string\",\"note_src_01\"]]]]]]],[\"origins\",[\"array\",[[\"object\",[[\"locator\",[\"object\",[[\"page_idx\",[\"int\",3]]]]],[\"origin_id\",[\"string\",\"o1\"]],[\"source_id\",[\"string\",\"src_orR_01\"]],[\"source_kind\",[\"string\",\"source\"]],[\"source_version\",[\"string\",\"docv_2026_11_01\"]]]],[\"object\",[[\"locator\",[\"object\",[[\"page_idx\",[\"int\",3]]]]],[\"origin_id\",[\"string\",\"o2\"]],[\"source_id\",[\"string\",\"src_orR_02\"]],[\"source_kind\",[\"string\",\"source\"]],[\"source_version\",[\"string\",\"docv_2026_11_01\"]]]]]]],[\"schema_version\",[\"int\",1]]]]],[\"schema\",[\"string\",\"d2-v1\"]],[\"title\",[\"string\",\"ORR 分析 📊\"]]]]]",
+      "sha256": "354ec12e73cc467fc72b3ec90935eac082a847eac003c54af7c89a851960df8b",
+      "value": {
+        "content": "第一行\n\n  indented\t\ttab\n最后一行 ",
+        "metadata": {
+          "citation_bindings": [
+            {
+              "binding_id": "b1",
+              "locator": {
+                "chunk_id": "chunk_07",
+                "page_idx": 3
+              },
+              "source_id": "src_orR_01",
+              "source_kind": "source",
+              "source_version": "docv_2026_11_01",
+              "unresolved": false
+            },
+            {
+              "binding_id": "b2",
+              "locator": null,
+              "source_id": "note_prev_01",
+              "source_kind": "note",
+              "source_version": "3:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "unresolved": true
+            }
+          ],
+          "document_dependencies": [
+            {
+              "note_content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "note_id": "note_src_01"
+            },
+            {
+              "document_id": "doc_02",
+              "document_version": "v2"
+            }
+          ],
+          "origins": [
+            {
+              "locator": {
+                "page_idx": 3
+              },
+              "origin_id": "o1",
+              "source_id": "src_orR_01",
+              "source_kind": "source",
+              "source_version": "docv_2026_11_01"
+            },
+            {
+              "locator": {
+                "page_idx": 3
+              },
+              "origin_id": "o2",
+              "source_id": "src_orR_02",
+              "source_kind": "source",
+              "source_version": "docv_2026_11_01"
+            }
+          ],
+          "schema_version": 1
+        },
+        "title": "ORR 分析 📊"
+      }
+    },
+    {
+      "description": "正文末尾多一个空格 → 摘要不同（证明不 trim）",
+      "encoded": [
+        "object",
+        [
+          [
+            "content",
+            [
+              "string",
+              "第一行\n\n  indented\t\ttab\n最后一行  "
+            ]
+          ],
+          [
+            "metadata",
+            [
+              "object",
+              [
+                [
+                  "citation_bindings",
+                  [
+                    "array",
+                    [
+                      [
+                        "object",
+                        [
+                          [
+                            "binding_id",
+                            [
+                              "string",
+                              "b1"
+                            ]
+                          ],
+                          [
+                            "locator",
+                            [
+                              "object",
+                              [
+                                [
+                                  "chunk_id",
+                                  [
+                                    "string",
+                                    "chunk_07"
+                                  ]
+                                ],
+                                [
+                                  "page_idx",
+                                  [
+                                    "int",
+                                    3
+                                  ]
+                                ]
+                              ]
+                            ]
+                          ],
+                          [
+                            "source_id",
+                            [
+                              "string",
+                              "src_orR_01"
+                            ]
+                          ],
+                          [
+                            "source_kind",
+                            [
+                              "string",
+                              "source"
+                            ]
+                          ],
+                          [
+                            "source_version",
+                            [
+                              "string",
+                              "docv_2026_11_01"
+                            ]
+                          ],
+                          [
+                            "unresolved",
+                            [
+                              "bool",
+                              false
+                            ]
+                          ]
+                        ]
+                      ],
+                      [
+                        "object",
+                        [
+                          [
+                            "binding_id",
+                            [
+                              "string",
+                              "b2"
+                            ]
+                          ],
+                          [
+                            "locator",
+                            [
+                              "null",
+                              null
+                            ]
+                          ],
+                          [
+                            "source_id",
+                            [
+                              "string",
+                              "note_prev_01"
+                            ]
+                          ],
+                          [
+                            "source_kind",
+                            [
+                              "string",
+                              "note"
+                            ]
+                          ],
+                          [
+                            "source_version",
+                            [
+                              "string",
+                              "3:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+                            ]
+                          ],
+                          [
+                            "unresolved",
+                            [
+                              "bool",
+                              true
+                            ]
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ],
+                [
+                  "document_dependencies",
+                  [
+                    "array",
+                    [
+                      [
+                        "object",
+                        [
+                          [
+                            "document_id",
+                            [
+                              "string",
+                              "doc_02"
+                            ]
+                          ],
+                          [
+                            "document_version",
+                            [
+                              "string",
+                              "v2"
+                            ]
+                          ]
+                        ]
+                      ],
+                      [
+                        "object",
+                        [
+                          [
+                            "note_content_hash",
+                            [
+                              "string",
+                              "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                            ]
+                          ],
+                          [
+                            "note_id",
+                            [
+                              "string",
+                              "note_src_01"
+                            ]
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ],
+                [
+                  "origins",
+                  [
+                    "array",
+                    [
+                      [
+                        "object",
+                        [
+                          [
+                            "locator",
+                            [
+                              "object",
+                              [
+                                [
+                                  "page_idx",
+                                  [
+                                    "int",
+                                    3
+                                  ]
+                                ]
+                              ]
+                            ]
+                          ],
+                          [
+                            "origin_id",
+                            [
+                              "string",
+                              "o1"
+                            ]
+                          ],
+                          [
+                            "source_id",
+                            [
+                              "string",
+                              "src_orR_01"
+                            ]
+                          ],
+                          [
+                            "source_kind",
+                            [
+                              "string",
+                              "source"
+                            ]
+                          ],
+                          [
+                            "source_version",
+                            [
+                              "string",
+                              "docv_2026_11_01"
+                            ]
+                          ]
+                        ]
+                      ],
+                      [
+                        "object",
+                        [
+                          [
+                            "locator",
+                            [
+                              "object",
+                              [
+                                [
+                                  "page_idx",
+                                  [
+                                    "int",
+                                    3
+                                  ]
+                                ]
+                              ]
+                            ]
+                          ],
+                          [
+                            "origin_id",
+                            [
+                              "string",
+                              "o2"
+                            ]
+                          ],
+                          [
+                            "source_id",
+                            [
+                              "string",
+                              "src_orR_02"
+                            ]
+                          ],
+                          [
+                            "source_kind",
+                            [
+                              "string",
+                              "source"
+                            ]
+                          ],
+                          [
+                            "source_version",
+                            [
+                              "string",
+                              "docv_2026_11_01"
+                            ]
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ],
+                [
+                  "schema_version",
+                  [
+                    "int",
+                    1
+                  ]
+                ]
+              ]
+            ]
+          ],
+          [
+            "schema",
+            [
+              "string",
+              "d2-v1"
+            ]
+          ],
+          [
+            "title",
+            [
+              "string",
+              "ORR 分析 📊"
+            ]
+          ]
+        ]
+      ],
+      "id": "gv-d2-note-04",
+      "kind": "note_snapshot",
+      "namespace": "research-note-d2/snapshot",
+      "normalized_value": {
+        "content": "第一行\n\n  indented\t\ttab\n最后一行  ",
+        "metadata": {
+          "citation_bindings": [
+            {
+              "binding_id": "b1",
+              "locator": {
+                "chunk_id": "chunk_07",
+                "page_idx": 3
+              },
+              "source_id": "src_orR_01",
+              "source_kind": "source",
+              "source_version": "docv_2026_11_01",
+              "unresolved": false
+            },
+            {
+              "binding_id": "b2",
+              "locator": null,
+              "source_id": "note_prev_01",
+              "source_kind": "note",
+              "source_version": "3:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "unresolved": true
+            }
+          ],
+          "document_dependencies": [
+            {
+              "document_id": "doc_02",
+              "document_version": "v2"
+            },
+            {
+              "note_content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "note_id": "note_src_01"
+            }
+          ],
+          "origins": [
+            {
+              "locator": {
+                "page_idx": 3
+              },
+              "origin_id": "o1",
+              "source_id": "src_orR_01",
+              "source_kind": "source",
+              "source_version": "docv_2026_11_01"
+            },
+            {
+              "locator": {
+                "page_idx": 3
+              },
+              "origin_id": "o2",
+              "source_id": "src_orR_02",
+              "source_kind": "source",
+              "source_version": "docv_2026_11_01"
+            }
+          ],
+          "schema_version": 1
+        },
+        "schema": "d2-v1",
+        "title": "ORR 分析 📊"
+      },
+      "preimage_utf8": "[\"research-note-d2/snapshot\",[\"object\",[[\"content\",[\"string\",\"第一行\\n\\n  indented\\t\\ttab\\n最后一行  \"]],[\"metadata\",[\"object\",[[\"citation_bindings\",[\"array\",[[\"object\",[[\"binding_id\",[\"string\",\"b1\"]],[\"locator\",[\"object\",[[\"chunk_id\",[\"string\",\"chunk_07\"]],[\"page_idx\",[\"int\",3]]]]],[\"source_id\",[\"string\",\"src_orR_01\"]],[\"source_kind\",[\"string\",\"source\"]],[\"source_version\",[\"string\",\"docv_2026_11_01\"]],[\"unresolved\",[\"bool\",false]]]],[\"object\",[[\"binding_id\",[\"string\",\"b2\"]],[\"locator\",[\"null\",null]],[\"source_id\",[\"string\",\"note_prev_01\"]],[\"source_kind\",[\"string\",\"note\"]],[\"source_version\",[\"string\",\"3:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"]],[\"unresolved\",[\"bool\",true]]]]]]],[\"document_dependencies\",[\"array\",[[\"object\",[[\"document_id\",[\"string\",\"doc_02\"]],[\"document_version\",[\"string\",\"v2\"]]]],[\"object\",[[\"note_content_hash\",[\"string\",\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"]],[\"note_id\",[\"string\",\"note_src_01\"]]]]]]],[\"origins\",[\"array\",[[\"object\",[[\"locator\",[\"object\",[[\"page_idx\",[\"int\",3]]]]],[\"origin_id\",[\"string\",\"o1\"]],[\"source_id\",[\"string\",\"src_orR_01\"]],[\"source_kind\",[\"string\",\"source\"]],[\"source_version\",[\"string\",\"docv_2026_11_01\"]]]],[\"object\",[[\"locator\",[\"object\",[[\"page_idx\",[\"int\",3]]]]],[\"origin_id\",[\"string\",\"o2\"]],[\"source_id\",[\"string\",\"src_orR_02\"]],[\"source_kind\",[\"string\",\"source\"]],[\"source_version\",[\"string\",\"docv_2026_11_01\"]]]]]]],[\"schema_version\",[\"int\",1]]]]],[\"schema\",[\"string\",\"d2-v1\"]],[\"title\",[\"string\",\"ORR 分析 📊\"]]]]]",
+      "sha256": "1cee23ea8d03c73ab3e377fe864a109b371175b79bc9e5b7a6cb79501f44645c",
+      "value": {
+        "content": "第一行\n\n  indented\t\ttab\n最后一行  ",
+        "metadata": {
+          "citation_bindings": [
+            {
+              "binding_id": "b1",
+              "locator": {
+                "chunk_id": "chunk_07",
+                "page_idx": 3
+              },
+              "source_id": "src_orR_01",
+              "source_kind": "source",
+              "source_version": "docv_2026_11_01",
+              "unresolved": false
+            },
+            {
+              "binding_id": "b2",
+              "locator": null,
+              "source_id": "note_prev_01",
+              "source_kind": "note",
+              "source_version": "3:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "unresolved": true
+            }
+          ],
+          "document_dependencies": [
+            {
+              "document_id": "doc_02",
+              "document_version": "v2"
+            },
+            {
+              "note_content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "note_id": "note_src_01"
+            }
+          ],
+          "origins": [
+            {
+              "locator": {
+                "page_idx": 3
+              },
+              "origin_id": "o2",
+              "source_id": "src_orR_02",
+              "source_kind": "source",
+              "source_version": "docv_2026_11_01"
+            },
+            {
+              "locator": {
+                "page_idx": 3
+              },
+              "origin_id": "o1",
+              "source_id": "src_orR_01",
+              "source_kind": "source",
+              "source_version": "docv_2026_11_01"
+            }
+          ],
+          "schema_version": 1
+        },
+        "title": "ORR 分析 📊"
+      }
+    },
+    {
+      "description": "NFC 原始文本基线（与 NFD 反例一起证明不做 Unicode 归一化）",
+      "encoded": [
+        "object",
+        [
+          [
+            "content",
+            [
+              "string",
+              "NFC é"
+            ]
+          ],
+          [
+            "metadata",
+            [
+              "object",
+              [
+                [
+                  "citation_bindings",
+                  [
+                    "array",
+                    []
+                  ]
+                ],
+                [
+                  "document_dependencies",
+                  [
+                    "array",
+                    []
+                  ]
+                ],
+                [
+                  "origins",
+                  [
+                    "array",
+                    []
+                  ]
+                ],
+                [
+                  "schema_version",
+                  [
+                    "int",
+                    1
+                  ]
+                ]
+              ]
+            ]
+          ],
+          [
+            "schema",
+            [
+              "string",
+              "d2-v1"
+            ]
+          ],
+          [
+            "title",
+            [
+              "string",
+              "é 报告"
+            ]
+          ]
+        ]
+      ],
+      "id": "gv-d2-note-05",
+      "kind": "note_snapshot",
+      "namespace": "research-note-d2/snapshot",
+      "normalized_value": {
+        "content": "NFC é",
+        "metadata": {
+          "citation_bindings": [],
+          "document_dependencies": [],
+          "origins": [],
+          "schema_version": 1
+        },
+        "schema": "d2-v1",
+        "title": "é 报告"
+      },
+      "preimage_utf8": "[\"research-note-d2/snapshot\",[\"object\",[[\"content\",[\"string\",\"NFC é\"]],[\"metadata\",[\"object\",[[\"citation_bindings\",[\"array\",[]]],[\"document_dependencies\",[\"array\",[]]],[\"origins\",[\"array\",[]]],[\"schema_version\",[\"int\",1]]]]],[\"schema\",[\"string\",\"d2-v1\"]],[\"title\",[\"string\",\"é 报告\"]]]]]",
+      "sha256": "5c292f37a8c6864033f1fca82e31532bed4e5dd525334179005ed41d671d22d5",
+      "value": {
+        "content": "NFC é",
+        "metadata": {
+          "citation_bindings": [],
+          "document_dependencies": [],
+          "origins": [],
+          "schema_version": 1
+        },
+        "title": "é 报告"
+      }
+    },
+    {
+      "description": "NFD 组合字符 → 与 NFC 向量摘要不同（不做归一化）",
+      "encoded": [
+        "object",
+        [
+          [
+            "content",
+            [
+              "string",
+              "NFD é"
+            ]
+          ],
+          [
+            "metadata",
+            [
+              "object",
+              [
+                [
+                  "citation_bindings",
+                  [
+                    "array",
+                    []
+                  ]
+                ],
+                [
+                  "document_dependencies",
+                  [
+                    "array",
+                    []
+                  ]
+                ],
+                [
+                  "origins",
+                  [
+                    "array",
+                    []
+                  ]
+                ],
+                [
+                  "schema_version",
+                  [
+                    "int",
+                    1
+                  ]
+                ]
+              ]
+            ]
+          ],
+          [
+            "schema",
+            [
+              "string",
+              "d2-v1"
+            ]
+          ],
+          [
+            "title",
+            [
+              "string",
+              "é 报告"
+            ]
+          ]
+        ]
+      ],
+      "id": "gv-d2-note-06",
+      "kind": "note_snapshot",
+      "namespace": "research-note-d2/snapshot",
+      "normalized_value": {
+        "content": "NFD é",
+        "metadata": {
+          "citation_bindings": [],
+          "document_dependencies": [],
+          "origins": [],
+          "schema_version": 1
+        },
+        "schema": "d2-v1",
+        "title": "é 报告"
+      },
+      "preimage_utf8": "[\"research-note-d2/snapshot\",[\"object\",[[\"content\",[\"string\",\"NFD é\"]],[\"metadata\",[\"object\",[[\"citation_bindings\",[\"array\",[]]],[\"document_dependencies\",[\"array\",[]]],[\"origins\",[\"array\",[]]],[\"schema_version\",[\"int\",1]]]]],[\"schema\",[\"string\",\"d2-v1\"]],[\"title\",[\"string\",\"é 报告\"]]]]]",
+      "sha256": "3386595516f8421f48922caeaacc5599248ddf9fbe35aa6a5d7054df6d1aef06",
+      "value": {
+        "content": "NFD é",
+        "metadata": {
+          "citation_bindings": [],
+          "document_dependencies": [],
+          "origins": [],
+          "schema_version": 1
+        },
+        "title": "é 报告"
+      }
+    },
+    {
+      "description": "新建空白 Note 的 request_hash（CREATE，不使用 UPSERT）",
+      "encoded": [
+        "object",
+        [
+          [
+            "expected_revision",
+            [
+              "null",
+              null
+            ]
+          ],
+          [
+            "note_id",
+            [
+              "null",
+              null
+            ]
+          ],
+          [
+            "operation",
+            [
+              "string",
+              "note_create"
+            ]
+          ],
+          [
+            "request",
+            [
+              "object",
+              [
+                [
+                  "content",
+                  [
+                    "string",
+                    ""
+                  ]
+                ],
+                [
+                  "title",
+                  [
+                    "string",
+                    "未命名成果"
+                  ]
+                ]
+              ]
+            ]
+          ]
+        ]
+      ],
+      "id": "gv-d2-mutation-01",
+      "kind": "mutation_request",
+      "namespace": "research-note-d2/mutation-request",
+      "normalized_value": {
+        "expected_revision": null,
+        "note_id": null,
+        "operation": "note_create",
+        "request": {
+          "content": "",
+          "title": "未命名成果"
+        }
+      },
+      "preimage_utf8": "[\"research-note-d2/mutation-request\",[\"object\",[[\"expected_revision\",[\"null\",null]],[\"note_id\",[\"null\",null]],[\"operation\",[\"string\",\"note_create\"]],[\"request\",[\"object\",[[\"content\",[\"string\",\"\"]],[\"title\",[\"string\",\"未命名成果\"]]]]]]]]",
+      "sha256": "65482d84a7bce2eded44de0a87a2dd861dad421a439011525e08a5636985f635",
+      "value": {
+        "expected_revision": null,
+        "note_id": null,
+        "operation": "note_create",
+        "request": {
+          "content": "",
+          "title": "未命名成果"
+        }
+      }
+    },
+    {
+      "description": "直接用可信片段新建 Note（来源身份+摘要+选区，不提交来源全文）",
+      "encoded": [
+        "object",
+        [
+          [
+            "expected_revision",
+            [
+              "null",
+              null
+            ]
+          ],
+          [
+            "note_id",
+            [
+              "null",
+              null
+            ]
+          ],
+          [
+            "operation",
+            [
+              "string",
+              "note_create"
+            ]
+          ],
+          [
+            "request",
+            [
+              "object",
+              [
+                [
+                  "fragment",
+                  [
+                    "object",
+                    [
+                      [
+                        "source",
+                        [
+                          "object",
+                          [
+                            [
+                              "expected_content_hash",
+                              [
+                                "string",
+                                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                              ]
+                            ],
+                            [
+                              "selection",
+                              [
+                                "object",
+                                [
+                                  [
+                                    "end_utf16",
+                                    [
+                                      "int",
+                                      19
+                                    ]
+                                  ],
+                                  [
+                                    "kind",
+                                    [
+                                      "string",
+                                      "range"
+                                    ]
+                                  ],
+                                  [
+                                    "start_utf16",
+                                    [
+                                      "int",
+                                      12
+                                    ]
+                                  ]
+                                ]
+                              ]
+                            ],
+                            [
+                              "source_id",
+                              [
+                                "string",
+                                "src_orR_01"
+                              ]
+                            ],
+                            [
+                              "source_kind",
+                              [
+                                "string",
+                                "source"
+                              ]
+                            ],
+                            [
+                              "source_version",
+                              [
+                                "string",
+                                "docv_2026_11_01"
+                              ]
+                            ]
+                          ]
+                        ]
+                      ]
+                    ]
+                  ]
+                ],
+                [
+                  "title",
+                  [
+                    "string",
+                    "引用片段"
+                  ]
+                ]
+              ]
+            ]
+          ]
+        ]
+      ],
+      "id": "gv-d2-mutation-02",
+      "kind": "mutation_request",
+      "namespace": "research-note-d2/mutation-request",
+      "normalized_value": {
+        "expected_revision": null,
+        "note_id": null,
+        "operation": "note_create",
+        "request": {
+          "fragment": {
+            "source": {
+              "expected_content_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "selection": {
+                "end_utf16": 19,
+                "kind": "range",
+                "start_utf16": 12
+              },
+              "source_id": "src_orR_01",
+              "source_kind": "source",
+              "source_version": "docv_2026_11_01"
+            }
+          },
+          "title": "引用片段"
+        }
+      },
+      "preimage_utf8": "[\"research-note-d2/mutation-request\",[\"object\",[[\"expected_revision\",[\"null\",null]],[\"note_id\",[\"null\",null]],[\"operation\",[\"string\",\"note_create\"]],[\"request\",[\"object\",[[\"fragment\",[\"object\",[[\"source\",[\"object\",[[\"expected_content_hash\",[\"string\",\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"]],[\"selection\",[\"object\",[[\"end_utf16\",[\"int\",19]],[\"kind\",[\"string\",\"range\"]],[\"start_utf16\",[\"int\",12]]]]],[\"source_id\",[\"string\",\"src_orR_01\"]],[\"source_kind\",[\"string\",\"source\"]],[\"source_version\",[\"string\",\"docv_2026_11_01\"]]]]]]]],[\"title\",[\"string\",\"引用片段\"]]]]]]]]",
+      "sha256": "4d3ff1df27e82899d8aa6e1bfd0d3b1cb405291e1746596401c428424fb5a772",
+      "value": {
+        "expected_revision": null,
+        "note_id": null,
+        "operation": "note_create",
+        "request": {
+          "fragment": {
+            "source": {
+              "expected_content_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "selection": {
+                "end_utf16": 19,
+                "kind": "range",
+                "start_utf16": 12
+              },
+              "source_id": "src_orR_01",
+              "source_kind": "source",
+              "source_version": "docv_2026_11_01"
+            }
+          },
+          "title": "引用片段"
+        }
+      }
+    },
+    {
+      "description": "完整编辑快照保存（PATCH 不接受前端提交可信元数据）",
+      "encoded": [
+        "object",
+        [
+          [
+            "expected_revision",
+            [
+              "int",
+              7
+            ]
+          ],
+          [
+            "note_id",
+            [
+              "string",
+              "note_abc123"
+            ]
+          ],
+          [
+            "operation",
+            [
+              "string",
+              "note_save"
+            ]
+          ],
+          [
+            "request",
+            [
+              "object",
+              [
+                [
+                  "content",
+                  [
+                    "string",
+                    "第一行\n最后一行 "
+                  ]
+                ],
+                [
+                  "title",
+                  [
+                    "string",
+                    "ORR 分析 📊"
+                  ]
+                ]
+              ]
+            ]
+          ]
+        ]
+      ],
+      "id": "gv-d2-mutation-03",
+      "kind": "mutation_request",
+      "namespace": "research-note-d2/mutation-request",
+      "normalized_value": {
+        "expected_revision": 7,
+        "note_id": "note_abc123",
+        "operation": "note_save",
+        "request": {
+          "content": "第一行\n最后一行 ",
+          "title": "ORR 分析 📊"
+        }
+      },
+      "preimage_utf8": "[\"research-note-d2/mutation-request\",[\"object\",[[\"expected_revision\",[\"int\",7]],[\"note_id\",[\"string\",\"note_abc123\"]],[\"operation\",[\"string\",\"note_save\"]],[\"request\",[\"object\",[[\"content\",[\"string\",\"第一行\\n最后一行 \"]],[\"title\",[\"string\",\"ORR 分析 📊\"]]]]]]]]",
+      "sha256": "5543ef10e785176c684d6bea2720ae4e9a4b8d20cbb3e35ef5e754982be473a1",
+      "value": {
+        "expected_revision": 7,
+        "note_id": "note_abc123",
+        "operation": "note_save",
+        "request": {
+          "content": "第一行\n最后一行 ",
+          "title": "ORR 分析 📊"
+        }
+      }
+    },
+    {
+      "description": "删除回执的 request_hash（保留技术 revision 结果）",
+      "encoded": [
+        "object",
+        [
+          [
+            "expected_revision",
+            [
+              "int",
+              7
+            ]
+          ],
+          [
+            "note_id",
+            [
+              "string",
+              "note_abc123"
+            ]
+          ],
+          [
+            "operation",
+            [
+              "string",
+              "note_delete"
+            ]
+          ],
+          [
+            "request",
+            [
+              "object",
+              []
+            ]
+          ]
+        ]
+      ],
+      "id": "gv-d2-mutation-04",
+      "kind": "mutation_request",
+      "namespace": "research-note-d2/mutation-request",
+      "normalized_value": {
+        "expected_revision": 7,
+        "note_id": "note_abc123",
+        "operation": "note_delete",
+        "request": {}
+      },
+      "preimage_utf8": "[\"research-note-d2/mutation-request\",[\"object\",[[\"expected_revision\",[\"int\",7]],[\"note_id\",[\"string\",\"note_abc123\"]],[\"operation\",[\"string\",\"note_delete\"]],[\"request\",[\"object\",[]]]]]]",
+      "sha256": "148d53a304276ef70cbaf56a31ff08771a5c519cb42f46a45273b82de6d2329b",
+      "value": {
+        "expected_revision": 7,
+        "note_id": "note_abc123",
+        "operation": "note_delete",
+        "request": {}
+      }
+    },
+    {
+      "description": "旧文档首次启用保护（对完整旧正文/标题/摘要执行 CAS）",
+      "encoded": [
+        "object",
+        [
+          [
+            "expected_revision",
+            [
+              "null",
+              null
+            ]
+          ],
+          [
+            "note_id",
+            [
+              "string",
+              "note_legacy01"
+            ]
+          ],
+          [
+            "operation",
+            [
+              "string",
+              "note_enable_editing"
+            ]
+          ],
+          [
+            "request",
+            [
+              "object",
+              []
+            ]
+          ]
+        ]
+      ],
+      "id": "gv-d2-mutation-05",
+      "kind": "mutation_request",
+      "namespace": "research-note-d2/mutation-request",
+      "normalized_value": {
+        "expected_revision": null,
+        "note_id": "note_legacy01",
+        "operation": "note_enable_editing",
+        "request": {}
+      },
+      "preimage_utf8": "[\"research-note-d2/mutation-request\",[\"object\",[[\"expected_revision\",[\"null\",null]],[\"note_id\",[\"string\",\"note_legacy01\"]],[\"operation\",[\"string\",\"note_enable_editing\"]],[\"request\",[\"object\",[]]]]]]",
+      "sha256": "ec4d29d37a5e3f53d1a2bc365044bd6b7bca4a41871ab59b2168f2aebb8c3405",
+      "value": {
+        "expected_revision": null,
+        "note_id": "note_legacy01",
+        "operation": "note_enable_editing",
+        "request": {}
+      }
+    },
+    {
+      "description": "片段入已有文档（目标替换 + Note 来源，绑定 expected_revision）",
+      "encoded": [
+        "object",
+        [
+          [
+            "expected_revision",
+            [
+              "int",
+              7
+            ]
+          ],
+          [
+            "note_id",
+            [
+              "string",
+              "note_abc123"
+            ]
+          ],
+          [
+            "operation",
+            [
+              "string",
+              "note_fragment"
+            ]
+          ],
+          [
+            "request",
+            [
+              "object",
+              [
+                [
+                  "source",
+                  [
+                    "object",
+                    [
+                      [
+                        "expected_content_hash",
+                        [
+                          "null",
+                          null
+                        ]
+                      ],
+                      [
+                        "selection",
+                        [
+                          "object",
+                          [
+                            [
+                              "kind",
+                              [
+                                "string",
+                                "full"
+                              ]
+                            ]
+                          ]
+                        ]
+                      ],
+                      [
+                        "source_id",
+                        [
+                          "string",
+                          "note_prev_01"
+                        ]
+                      ],
+                      [
+                        "source_kind",
+                        [
+                          "string",
+                          "note"
+                        ]
+                      ],
+                      [
+                        "source_version",
+                        [
+                          "string",
+                          "3:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+                        ]
+                      ]
+                    ]
+                  ]
+                ],
+                [
+                  "target",
+                  [
+                    "object",
+                    [
+                      [
+                        "end_utf16",
+                        [
+                          "int",
+                          9
+                        ]
+                      ],
+                      [
+                        "kind",
+                        [
+                          "string",
+                          "range"
+                        ]
+                      ],
+                      [
+                        "start_utf16",
+                        [
+                          "int",
+                          4
+                        ]
+                      ]
+                    ]
+                  ]
+                ]
+              ]
+            ]
+          ]
+        ]
+      ],
+      "id": "gv-d2-mutation-06",
+      "kind": "mutation_request",
+      "namespace": "research-note-d2/mutation-request",
+      "normalized_value": {
+        "expected_revision": 7,
+        "note_id": "note_abc123",
+        "operation": "note_fragment",
+        "request": {
+          "source": {
+            "expected_content_hash": null,
+            "selection": {
+              "kind": "full"
+            },
+            "source_id": "note_prev_01",
+            "source_kind": "note",
+            "source_version": "3:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          },
+          "target": {
+            "end_utf16": 9,
+            "kind": "range",
+            "start_utf16": 4
+          }
+        }
+      },
+      "preimage_utf8": "[\"research-note-d2/mutation-request\",[\"object\",[[\"expected_revision\",[\"int\",7]],[\"note_id\",[\"string\",\"note_abc123\"]],[\"operation\",[\"string\",\"note_fragment\"]],[\"request\",[\"object\",[[\"source\",[\"object\",[[\"expected_content_hash\",[\"null\",null]],[\"selection\",[\"object\",[[\"kind\",[\"string\",\"full\"]]]]],[\"source_id\",[\"string\",\"note_prev_01\"]],[\"source_kind\",[\"string\",\"note\"]],[\"source_version\",[\"string\",\"3:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"]]]]],[\"target\",[\"object\",[[\"end_utf16\",[\"int\",9]],[\"kind\",[\"string\",\"range\"]],[\"start_utf16\",[\"int\",4]]]]]]]]]]]",
+      "sha256": "dea6e9173939a1a3c1f1ad960226e53ac817426d5ce836a0dae0aca2e483c2e6",
+      "value": {
+        "expected_revision": 7,
+        "note_id": "note_abc123",
+        "operation": "note_fragment",
+        "request": {
+          "source": {
+            "expected_content_hash": null,
+            "selection": {
+              "kind": "full"
+            },
+            "source_id": "note_prev_01",
+            "source_kind": "note",
+            "source_version": "3:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          },
+          "target": {
+            "end_utf16": 9,
+            "kind": "range",
+            "start_utf16": 4
+          }
+        }
+      }
+    },
+    {
+      "description": "冲突另存为副本（源 revision/hash 是本地编辑基线，继承服务端依赖）",
+      "encoded": [
+        "object",
+        [
+          [
+            "expected_revision",
+            [
+              "null",
+              null
+            ]
+          ],
+          [
+            "note_id",
+            [
+              "string",
+              "note_abc123"
+            ]
+          ],
+          [
+            "operation",
+            [
+              "string",
+              "note_copy"
+            ]
+          ],
+          [
+            "request",
+            [
+              "object",
+              [
+                [
+                  "content",
+                  [
+                    "string",
+                    "本地未保存草稿\n"
+                  ]
+                ],
+                [
+                  "source_revision",
+                  [
+                    "int",
+                    7
+                  ]
+                ],
+                [
+                  "source_snapshot_hash",
+                  [
+                    "string",
+                    "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+                  ]
+                ],
+                [
+                  "title",
+                  [
+                    "string",
+                    "另存草稿"
+                  ]
+                ]
+              ]
+            ]
+          ]
+        ]
+      ],
+      "id": "gv-d2-mutation-07",
+      "kind": "mutation_request",
+      "namespace": "research-note-d2/mutation-request",
+      "normalized_value": {
+        "expected_revision": null,
+        "note_id": "note_abc123",
+        "operation": "note_copy",
+        "request": {
+          "content": "本地未保存草稿\n",
+          "source_revision": 7,
+          "source_snapshot_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "title": "另存草稿"
+        }
+      },
+      "preimage_utf8": "[\"research-note-d2/mutation-request\",[\"object\",[[\"expected_revision\",[\"null\",null]],[\"note_id\",[\"string\",\"note_abc123\"]],[\"operation\",[\"string\",\"note_copy\"]],[\"request\",[\"object\",[[\"content\",[\"string\",\"本地未保存草稿\\n\"]],[\"source_revision\",[\"int\",7]],[\"source_snapshot_hash\",[\"string\",\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\"]],[\"title\",[\"string\",\"另存草稿\"]]]]]]]]",
+      "sha256": "d07e9a984223c78895836ba617884aee3af07026af8bc79dc14b7834c0e06235",
+      "value": {
+        "expected_revision": null,
+        "note_id": "note_abc123",
+        "operation": "note_copy",
+        "request": {
+          "content": "本地未保存草稿\n",
+          "source_revision": 7,
+          "source_snapshot_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "title": "另存草稿"
+        }
+      }
+    },
+    {
+      "description": "Markdown 导出 request_hash（绑定 note_id/revision/snapshot_hash/format）",
+      "encoded": [
+        "object",
+        [
+          [
+            "format",
+            [
+              "string",
+              "markdown"
+            ]
+          ],
+          [
+            "note_id",
+            [
+              "string",
+              "note_abc123"
+            ]
+          ],
+          [
+            "note_revision",
+            [
+              "int",
+              7
+            ]
+          ],
+          [
+            "note_snapshot_hash",
+            [
+              "string",
+              "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+            ]
+          ]
+        ]
+      ],
+      "id": "gv-d2-export-01",
+      "kind": "export_request",
+      "namespace": "research-note-d2/export-request",
+      "normalized_value": {
+        "format": "markdown",
+        "note_id": "note_abc123",
+        "note_revision": 7,
+        "note_snapshot_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      },
+      "preimage_utf8": "[\"research-note-d2/export-request\",[\"object\",[[\"format\",[\"string\",\"markdown\"]],[\"note_id\",[\"string\",\"note_abc123\"]],[\"note_revision\",[\"int\",7]],[\"note_snapshot_hash\",[\"string\",\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\"]]]]]",
+      "sha256": "910b787cd6f58048f85d7a72f8370b197df09e3cc11ec654b39dbcdc88c4a2f2",
+      "value": {
+        "format": "markdown",
+        "note_id": "note_abc123",
+        "note_revision": 7,
+        "note_snapshot_hash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      }
+    },
+    {
+      "description": "nex_ + 摘要前 32 hex（由 project/actor/原始幂等键派生，不依赖正文）",
+      "export_id": "nex_3db0ceb64889dab775708e13d6158527",
+      "id": "gv-d2-export-02",
+      "kind": "export_id",
+      "namespace": "research-note-d2/export",
+      "value": {
+        "actor_user_id": 42,
+        "idempotency_key": "export-key-01",
+        "project_id": "p_demo"
+      }
+    },
+    {
+      "content_hash": "d71b9fb3674530b5f259a73d719b3286821f5ad8347142ed8d816d675cecbb94",
+      "description": "导出文件 content_hash = UTF-8 文件字节的 SHA-256（无 BOM）",
+      "id": "gv-d2-export-03",
+      "kind": "file_content_hash",
+      "value": {
+        "file_text": "# 标题\n\n正文 \n\n---\n\n来源附录\n"
+      }
+    },
+    {
+      "description": "document_context sidecar（实际选中文字 + 有效引用 + 最小出处 + 授权依赖）与摘要",
+      "id": "gv-d2-writing-01",
+      "kind": "document_context",
+      "namespace": "research-writing-v4/document-context",
+      "normalized_value": {
+        "citation_bindings": [
+          {
+            "binding_id": "b1",
+            "locator": {
+              "chunk_id": "chunk_07",
+              "page_idx": 3
+            },
+            "source_id": "src_orR_01",
+            "source_kind": "source",
+            "source_version": "docv_2026_11_01",
+            "unresolved": false
+          }
+        ],
+        "document_dependencies": [
+          {
+            "note_content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note_id": "note_src_01"
+          }
+        ],
+        "end_utf16": 7,
+        "note_id": "note_abc123",
+        "origins": [
+          {
+            "locator": {
+              "page_idx": 3
+            },
+            "origin_id": "o1",
+            "source_id": "src_orR_01",
+            "source_kind": "source",
+            "source_version": "docv_2026_11_01"
+          }
+        ],
+        "revision": 7,
+        "selected_text": "ORR 45%",
+        "selected_text_hash": "dc4656731133141960ece27191b3cf46b109e33a3626fbe2185bb8f925ec5777",
+        "selection_kind": "range",
+        "snapshot_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "source_note_content_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "start_utf16": 0
+      },
+      "sha256": "46a5f990ab44c0b95edacb021911b3b2f18a821415b87402a870f14570251cba",
+      "value": {
+        "citation_bindings": [
+          {
+            "binding_id": "b1",
+            "locator": {
+              "chunk_id": "chunk_07",
+              "page_idx": 3
+            },
+            "source_id": "src_orR_01",
+            "source_kind": "source",
+            "source_version": "docv_2026_11_01",
+            "unresolved": false
+          }
+        ],
+        "document_dependencies": [
+          {
+            "note_content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "note_id": "note_src_01"
+          }
+        ],
+        "note_id": "note_abc123",
+        "origins": [
+          {
+            "locator": {
+              "page_idx": 3
+            },
+            "origin_id": "o1",
+            "source_id": "src_orR_01",
+            "source_kind": "source",
+            "source_version": "docv_2026_11_01"
+          }
+        ],
+        "revision": 7,
+        "selected_text": "ORR 45%",
+        "selection": {
+          "end_utf16": 7,
+          "kind": "range",
+          "start_utf16": 0
+        },
+        "snapshot_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "source_note_content_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    {
+      "description": "本次实际采用的有序历史与未采用原因 + 摘要",
+      "id": "gv-d2-writing-02",
+      "kind": "history_turns",
+      "namespace": "research-writing-v4/history",
+      "normalized_value": {
+        "excluded": [
+          {
+            "message_id": "msg_01",
+            "reason": "history_scope_excluded"
+          }
+        ],
+        "mode": "current",
+        "turns": [
+          {
+            "citation_bindings": [
+              {
+                "binding_id": "b1",
+                "locator": {
+                  "page_idx": 3
+                },
+                "source_id": "src_orR_01",
+                "source_kind": "source",
+                "source_version": "docv_2026_11_01",
+                "unresolved": false
+              }
+            ],
+            "document_dependencies": [
+              {
+                "note_content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "note_id": "note_src_01"
+              }
+            ],
+            "message_id": "msg_02",
+            "role": "assistant",
+            "text": "ORR 提升 45% 的结论来自 3 期试验。",
+            "text_hash": "f948fbe9a7488a8a36f792df246bf37b1d645b12986305429c5a8a459e150538"
+          }
+        ]
+      },
+      "sha256": "11903a50a4ecd597a72d04e92975f73fbee0f9c40721a5b9f0586617d155f8c9",
+      "value": {
+        "excluded": [
+          {
+            "message_id": "msg_01",
+            "reason": "history_scope_excluded"
+          }
+        ],
+        "mode": "current",
+        "turns": [
+          {
+            "citation_bindings": [
+              {
+                "binding_id": "b1",
+                "locator": {
+                  "page_idx": 3
+                },
+                "source_id": "src_orR_01",
+                "source_kind": "source",
+                "source_version": "docv_2026_11_01",
+                "unresolved": false
+              }
+            ],
+            "document_dependencies": [
+              {
+                "note_content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "note_id": "note_src_01"
+              }
+            ],
+            "message_id": "msg_02",
+            "role": "assistant",
+            "text": "ORR 提升 45% 的结论来自 3 期试验。"
+          }
+        ]
+      }
+    },
+    {
+      "description": "writing_intent_hash：绑定 composer 身份、query、模型/语言、document_context 与 history_mode",
+      "id": "gv-d2-writing-03",
+      "kind": "writing_intent",
+      "namespace": "research-writing-v4/intent",
+      "sha256": "2199d200889e8f782b712f5698fa7705a84cec8b040cd78884dc7592bcb1e473",
+      "value": {
+        "document_context": {
+          "note_id": "note_abc123",
+          "revision": 7,
+          "selection": {
+            "end_utf16": 7,
+            "kind": "range",
+            "start_utf16": 0
+          },
+          "snapshot_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        },
+        "draft_token": "draft_a",
+        "editor_intent_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "editor_revision": 5,
+        "history_mode": "current",
+        "model_id": "m1",
+        "owner_user_id": 42,
+        "project_id": "p_demo",
+        "query": "请把这段改写为更精炼的表述",
+        "response_language": "zh-CN",
+        "schema_version": 1,
+        "session_id": "sess_a",
+        "session_kind": "global",
+        "source_id": null,
+        "work_purpose": "writing"
+      }
+    },
+    {
+      "description": "range 选区 + current 历史的完整信封：三个摘要与信封摘要",
+      "envelope_hash": "45c547160ff89b78f857e9d037bdfbe21a5bf90a749aec24a9b45ff561724a61",
+      "id": "gv-d2-writing-04",
+      "kind": "writing_envelope",
+      "namespace": "research-writing-v4/input",
+      "normalized_value": {
+        "document_context": {
+          "citation_bindings": [
+            {
+              "binding_id": "b1",
+              "locator": {
+                "chunk_id": "chunk_07",
+                "page_idx": 3
+              },
+              "source_id": "src_orR_01",
+              "source_kind": "source",
+              "source_version": "docv_2026_11_01",
+              "unresolved": false
+            }
+          ],
+          "document_dependencies": [
+            {
+              "note_content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "note_id": "note_src_01"
+            }
+          ],
+          "end_utf16": 7,
+          "note_id": "note_abc123",
+          "origins": [
+            {
+              "locator": {
+                "page_idx": 3
+              },
+              "origin_id": "o1",
+              "source_id": "src_orR_01",
+              "source_kind": "source",
+              "source_version": "docv_2026_11_01"
+            }
+          ],
+          "revision": 7,
+          "selected_text": "ORR 45%",
+          "selected_text_hash": "dc4656731133141960ece27191b3cf46b109e33a3626fbe2185bb8f925ec5777",
+          "selection_kind": "range",
+          "snapshot_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "source_note_content_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "start_utf16": 0
+        },
+        "history_turns": {
+          "excluded": [
+            {
+              "message_id": "msg_01",
+              "reason": "history_scope_excluded"
+            }
+          ],
+          "mode": "current",
+          "turns": [
+            {
+              "citation_bindings": [
+                {
+                  "binding_id": "b1",
+                  "locator": {
+                    "page_idx": 3
+                  },
+                  "source_id": "src_orR_01",
+                  "source_kind": "source",
+                  "source_version": "docv_2026_11_01",
+                  "unresolved": false
+                }
+              ],
+              "document_dependencies": [
+                {
+                  "note_content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "note_id": "note_src_01"
+                }
+              ],
+              "message_id": "msg_02",
+              "role": "assistant",
+              "text": "ORR 提升 45% 的结论来自 3 期试验。",
+              "text_hash": "f948fbe9a7488a8a36f792df246bf37b1d645b12986305429c5a8a459e150538"
+            }
+          ]
+        },
+        "payload": {
+          "budget": {
+            "budget_version": "research-budget-v1",
+            "history_policy_tokens": 8192,
+            "model_id": "m1",
+            "model_input_cap": 65536,
+            "note_inputs": [],
+            "required_input_estimate": 1200,
+            "reserved_tokens": 16384,
+            "tokenizer_profile": "tokenizer-demo-v1"
+          },
+          "client_intent_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "document_context_hash": "46a5f990ab44c0b95edacb021911b3b2f18a821415b87402a870f14570251cba",
+          "document_selection": {
+            "note_id": "note_abc123",
+            "revision": 7,
+            "selection": {
+              "end_utf16": 7,
+              "kind": "range",
+              "start_utf16": 0
+            },
+            "snapshot_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          },
+          "draft_token": "draft_a",
+          "envelope_hash": "45c547160ff89b78f857e9d037bdfbe21a5bf90a749aec24a9b45ff561724a61",
+          "history_hash": "11903a50a4ecd597a72d04e92975f73fbee0f9c40721a5b9f0586617d155f8c9",
+          "history_mode": "current",
+          "input_id": "inp_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "model_id": "m1",
+          "note_ids": [
+            "note_abc123"
+          ],
+          "observed_revision": 5,
+          "project_id": "p_demo",
+          "prompt_template_version": "d2-writing-v1",
+          "query": "请把这段改写为更精炼的表述",
+          "requested_revision": 5,
+          "response_language": "zh-CN",
+          "schema_version": 4,
+          "scope_payload": null,
+          "session_id": "sess_a",
+          "source_id": null,
+          "work_purpose": "writing",
+          "work_purpose_source": "explicit",
+          "writing_intent_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      },
+      "payload_envelope_hash": "45c547160ff89b78f857e9d037bdfbe21a5bf90a749aec24a9b45ff561724a61",
+      "preimage_utf8": "[\"research-writing-v4/input\",[\"object\",[[\"document_context\",[\"object\",[[\"citation_bindings\",[\"array\",[[\"object\",[[\"binding_id\",[\"string\",\"b1\"]],[\"locator\",[\"object\",[[\"chunk_id\",[\"string\",\"chunk_07\"]],[\"page_idx\",[\"int\",3]]]]],[\"source_id\",[\"string\",\"src_orR_01\"]],[\"source_kind\",[\"string\",\"source\"]],[\"source_version\",[\"string\",\"docv_2026_11_01\"]],[\"unresolved\",[\"bool\",false]]]]]]],[\"document_dependencies\",[\"array\",[[\"object\",[[\"note_content_hash\",[\"string\",\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"]],[\"note_id\",[\"string\",\"note_src_01\"]]]]]]],[\"end_utf16\",[\"int\",7]],[\"note_id\",[\"string\",\"note_abc123\"]],[\"origins\",[\"array\",[[\"object\",[[\"locator\",[\"object\",[[\"page_idx\",[\"int\",3]]]]],[\"origin_id\",[\"string\",\"o1\"]],[\"source_id\",[\"string\",\"src_orR_01\"]],[\"source_kind\",[\"string\",\"source\"]],[\"source_version\",[\"string\",\"docv_2026_11_01\"]]]]]]],[\"revision\",[\"int\",7]],[\"selected_text\",[\"string\",\"ORR 45%\"]],[\"selected_text_hash\",[\"string\",\"dc4656731133141960ece27191b3cf46b109e33a3626fbe2185bb8f925ec5777\"]],[\"selection_kind\",[\"string\",\"range\"]],[\"snapshot_hash\",[\"string\",\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\"]],[\"source_note_content_hash\",[\"string\",\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"]],[\"start_utf16\",[\"int\",0]]]]],[\"history_turns\",[\"object\",[[\"excluded\",[\"array\",[[\"object\",[[\"message_id\",[\"string\",\"msg_01\"]],[\"reason\",[\"string\",\"history_scope_excluded\"]]]]]]],[\"mode\",[\"string\",\"current\"]],[\"turns\",[\"array\",[[\"object\",[[\"citation_bindings\",[\"array\",[[\"object\",[[\"binding_id\",[\"string\",\"b1\"]],[\"locator\",[\"object\",[[\"page_idx\",[\"int\",3]]]]],[\"source_id\",[\"string\",\"src_orR_01\"]],[\"source_kind\",[\"string\",\"source\"]],[\"source_version\",[\"string\",\"docv_2026_11_01\"]],[\"unresolved\",[\"bool\",false]]]]]]],[\"document_dependencies\",[\"array\",[[\"object\",[[\"note_content_hash\",[\"string\",\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"]],[\"note_id\",[\"string\",\"note_src_01\"]]]]]]],[\"message_id\",[\"string\",\"msg_02\"]],[\"role\",[\"string\",\"assistant\"]],[\"text\",[\"string\",\"ORR 提升 45% 的结论来自 3 期试验。\"]],[\"text_hash\",[\"string\",\"f948fbe9a7488a8a36f792df246bf37b1d645b12986305429c5a8a459e150538\"]]]]]]]]]],[\"payload\",[\"object\",[[\"budget\",[\"object\",[[\"budget_version\",[\"string\",\"research-budget-v1\"]],[\"history_policy_tokens\",[\"int\",8192]],[\"model_id\",[\"string\",\"m1\"]],[\"model_input_cap\",[\"int\",65536]],[\"note_inputs\",[\"array\",[]]],[\"required_input_estimate\",[\"int\",1200]],[\"reserved_tokens\",[\"int\",16384]],[\"tokenizer_profile\",[\"string\",\"tokenizer-demo-v1\"]]]]],[\"client_intent_hash\",[\"string\",\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"]],[\"document_context_hash\",[\"string\",\"46a5f990ab44c0b95edacb021911b3b2f18a821415b87402a870f14570251cba\"]],[\"document_selection\",[\"object\",[[\"note_id\",[\"string\",\"note_abc123\"]],[\"revision\",[\"int\",7]],[\"selection\",[\"object\",[[\"end_utf16\",[\"int\",7]],[\"kind\",[\"string\",\"range\"]],[\"start_utf16\",[\"int\",0]]]]],[\"snapshot_hash\",[\"string\",\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\"]]]]],[\"draft_token\",[\"string\",\"draft_a\"]],[\"history_hash\",[\"string\",\"11903a50a4ecd597a72d04e92975f73fbee0f9c40721a5b9f0586617d155f8c9\"]],[\"history_mode\",[\"string\",\"current\"]],[\"input_id\",[\"string\",\"inp_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"]],[\"model_id\",[\"string\",\"m1\"]],[\"note_ids\",[\"array\",[[\"string\",\"note_abc123\"]]]],[\"observed_revision\",[\"int\",5]],[\"project_id\",[\"string\",\"p_demo\"]],[\"prompt_template_version\",[\"string\",\"d2-writing-v1\"]],[\"query\",[\"string\",\"请把这段改写为更精炼的表述\"]],[\"requested_revision\",[\"int\",5]],[\"response_language\",[\"string\",\"zh-CN\"]],[\"schema_version\",[\"int\",4]],[\"scope_payload\",[\"null\",null]],[\"session_id\",[\"string\",\"sess_a\"]],[\"source_id\",[\"null\",null]],[\"work_purpose\",[\"string\",\"writing\"]],[\"work_purpose_source\",[\"string\",\"explicit\"]],[\"writing_intent_hash\",[\"string\",\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"]]]]]]]]",
+      "value": {
+        "document_context": {
+          "citation_bindings": [
+            {
+              "binding_id": "b1",
+              "locator": {
+                "chunk_id": "chunk_07",
+                "page_idx": 3
+              },
+              "source_id": "src_orR_01",
+              "source_kind": "source",
+              "source_version": "docv_2026_11_01",
+              "unresolved": false
+            }
+          ],
+          "document_dependencies": [
+            {
+              "note_content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "note_id": "note_src_01"
+            }
+          ],
+          "end_utf16": 7,
+          "note_id": "note_abc123",
+          "origins": [
+            {
+              "locator": {
+                "page_idx": 3
+              },
+              "origin_id": "o1",
+              "source_id": "src_orR_01",
+              "source_kind": "source",
+              "source_version": "docv_2026_11_01"
+            }
+          ],
+          "revision": 7,
+          "selected_text": "ORR 45%",
+          "selected_text_hash": "dc4656731133141960ece27191b3cf46b109e33a3626fbe2185bb8f925ec5777",
+          "selection_kind": "range",
+          "snapshot_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "source_note_content_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "start_utf16": 0
+        },
+        "history_turns": {
+          "excluded": [
+            {
+              "message_id": "msg_01",
+              "reason": "history_scope_excluded"
+            }
+          ],
+          "mode": "current",
+          "turns": [
+            {
+              "citation_bindings": [
+                {
+                  "binding_id": "b1",
+                  "locator": {
+                    "page_idx": 3
+                  },
+                  "source_id": "src_orR_01",
+                  "source_kind": "source",
+                  "source_version": "docv_2026_11_01",
+                  "unresolved": false
+                }
+              ],
+              "document_dependencies": [
+                {
+                  "note_content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "note_id": "note_src_01"
+                }
+              ],
+              "message_id": "msg_02",
+              "role": "assistant",
+              "text": "ORR 提升 45% 的结论来自 3 期试验。",
+              "text_hash": "f948fbe9a7488a8a36f792df246bf37b1d645b12986305429c5a8a459e150538"
+            }
+          ]
+        },
+        "payload_without_envelope_hash": {
+          "budget": {
+            "budget_version": "research-budget-v1",
+            "history_policy_tokens": 8192,
+            "model_id": "m1",
+            "model_input_cap": 65536,
+            "note_inputs": [],
+            "required_input_estimate": 1200,
+            "reserved_tokens": 16384,
+            "tokenizer_profile": "tokenizer-demo-v1"
+          },
+          "client_intent_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "document_context_hash": "46a5f990ab44c0b95edacb021911b3b2f18a821415b87402a870f14570251cba",
+          "document_selection": {
+            "note_id": "note_abc123",
+            "revision": 7,
+            "selection": {
+              "end_utf16": 7,
+              "kind": "range",
+              "start_utf16": 0
+            },
+            "snapshot_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          },
+          "draft_token": "draft_a",
+          "history_hash": "11903a50a4ecd597a72d04e92975f73fbee0f9c40721a5b9f0586617d155f8c9",
+          "history_mode": "current",
+          "input_id": "inp_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "model_id": "m1",
+          "note_ids": [
+            "note_abc123"
+          ],
+          "observed_revision": 5,
+          "project_id": "p_demo",
+          "prompt_template_version": "d2-writing-v1",
+          "query": "请把这段改写为更精炼的表述",
+          "requested_revision": 5,
+          "response_language": "zh-CN",
+          "schema_version": 4,
+          "scope_payload": null,
+          "session_id": "sess_a",
+          "source_id": null,
+          "work_purpose": "writing",
+          "work_purpose_source": "explicit",
+          "writing_intent_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      }
+    },
+    {
+      "description": "full 选区 + history_mode=none 的完整信封（空历史仍冻结）",
+      "envelope_hash": "0b08f6c520bafea4786eecd8575925613e7f5c746bdb7edf89c95d52617bf0e0",
+      "id": "gv-d2-writing-05",
+      "kind": "writing_envelope",
+      "namespace": "research-writing-v4/input",
+      "normalized_value": {
+        "document_context": {
+          "citation_bindings": [],
+          "document_dependencies": [],
+          "end_utf16": null,
+          "note_id": "note_abc123",
+          "origins": [],
+          "revision": 7,
+          "selected_text": "第一行\n最后一行 ",
+          "selected_text_hash": "1dfe001c79ffac8ef694f107bf1e3f098bf44b82fa37b707cc337cc48441f4fd",
+          "selection_kind": "full",
+          "snapshot_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "source_note_content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "start_utf16": null
+        },
+        "history_turns": {
+          "excluded": [],
+          "mode": "none",
+          "turns": []
+        },
+        "payload": {
+          "budget": {
+            "budget_version": "research-budget-v1",
+            "history_policy_tokens": 0,
+            "model_id": "m1",
+            "model_input_cap": 65536,
+            "note_inputs": [],
+            "required_input_estimate": 300,
+            "reserved_tokens": 16384,
+            "tokenizer_profile": "tokenizer-demo-v1"
+          },
+          "client_intent_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "document_context_hash": "a3236a99151f85dc95354f72e6e5ba08d616fc92d65fd778c4ad50952cb74385",
+          "document_selection": {
+            "note_id": "note_abc123",
+            "revision": 7,
+            "selection": {
+              "kind": "full"
+            },
+            "snapshot_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          },
+          "draft_token": "draft_b",
+          "envelope_hash": "0b08f6c520bafea4786eecd8575925613e7f5c746bdb7edf89c95d52617bf0e0",
+          "history_hash": "21d6c119c478dfcbdaaed38a81d9f9940f664abc152ff61e23ce1f7b8a466c4a",
+          "history_mode": "none",
+          "input_id": "inp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "model_id": "m1",
+          "note_ids": [],
+          "observed_revision": 0,
+          "project_id": "p_demo",
+          "prompt_template_version": "d2-writing-v1",
+          "query": "改写",
+          "requested_revision": 0,
+          "response_language": null,
+          "schema_version": 4,
+          "scope_payload": {
+            "mode": "selected",
+            "single_source_id": null,
+            "source_ids": [
+              "src_orR_01"
+            ]
+          },
+          "session_id": "sess_b",
+          "source_id": "src_orR_01",
+          "work_purpose": "writing",
+          "work_purpose_source": "explicit",
+          "writing_intent_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "payload_envelope_hash": "0b08f6c520bafea4786eecd8575925613e7f5c746bdb7edf89c95d52617bf0e0",
+      "preimage_utf8": "[\"research-writing-v4/input\",[\"object\",[[\"document_context\",[\"object\",[[\"citation_bindings\",[\"array\",[]]],[\"document_dependencies\",[\"array\",[]]],[\"end_utf16\",[\"null\",null]],[\"note_id\",[\"string\",\"note_abc123\"]],[\"origins\",[\"array\",[]]],[\"revision\",[\"int\",7]],[\"selected_text\",[\"string\",\"第一行\\n最后一行 \"]],[\"selected_text_hash\",[\"string\",\"1dfe001c79ffac8ef694f107bf1e3f098bf44b82fa37b707cc337cc48441f4fd\"]],[\"selection_kind\",[\"string\",\"full\"]],[\"snapshot_hash\",[\"string\",\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\"]],[\"source_note_content_hash\",[\"string\",\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"]],[\"start_utf16\",[\"null\",null]]]]],[\"history_turns\",[\"object\",[[\"excluded\",[\"array\",[]]],[\"mode\",[\"string\",\"none\"]],[\"turns\",[\"array\",[]]]]]],[\"payload\",[\"object\",[[\"budget\",[\"object\",[[\"budget_version\",[\"string\",\"research-budget-v1\"]],[\"history_policy_tokens\",[\"int\",0]],[\"model_id\",[\"string\",\"m1\"]],[\"model_input_cap\",[\"int\",65536]],[\"note_inputs\",[\"array\",[]]],[\"required_input_estimate\",[\"int\",300]],[\"reserved_tokens\",[\"int\",16384]],[\"tokenizer_profile\",[\"string\",\"tokenizer-demo-v1\"]]]]],[\"client_intent_hash\",[\"string\",\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"]],[\"document_context_hash\",[\"string\",\"a3236a99151f85dc95354f72e6e5ba08d616fc92d65fd778c4ad50952cb74385\"]],[\"document_selection\",[\"object\",[[\"note_id\",[\"string\",\"note_abc123\"]],[\"revision\",[\"int\",7]],[\"selection\",[\"object\",[[\"kind\",[\"string\",\"full\"]]]]],[\"snapshot_hash\",[\"string\",\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\"]]]]],[\"draft_token\",[\"string\",\"draft_b\"]],[\"history_hash\",[\"string\",\"21d6c119c478dfcbdaaed38a81d9f9940f664abc152ff61e23ce1f7b8a466c4a\"]],[\"history_mode\",[\"string\",\"none\"]],[\"input_id\",[\"string\",\"inp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"]],[\"model_id\",[\"string\",\"m1\"]],[\"note_ids\",[\"array\",[]]],[\"observed_revision\",[\"int\",0]],[\"project_id\",[\"string\",\"p_demo\"]],[\"prompt_template_version\",[\"string\",\"d2-writing-v1\"]],[\"query\",[\"string\",\"改写\"]],[\"requested_revision\",[\"int\",0]],[\"response_language\",[\"null\",null]],[\"schema_version\",[\"int\",4]],[\"scope_payload\",[\"object\",[[\"mode\",[\"string\",\"selected\"]],[\"single_source_id\",[\"null\",null]],[\"source_ids\",[\"array\",[[\"string\",\"src_orR_01\"]]]]]]],[\"session_id\",[\"string\",\"sess_b\"]],[\"source_id\",[\"string\",\"src_orR_01\"]],[\"work_purpose\",[\"string\",\"writing\"]],[\"work_purpose_source\",[\"string\",\"explicit\"]],[\"writing_intent_hash\",[\"string\",\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"]]]]]]]]",
+      "value": {
+        "document_context": {
+          "citation_bindings": [],
+          "document_dependencies": [],
+          "end_utf16": null,
+          "note_id": "note_abc123",
+          "origins": [],
+          "revision": 7,
+          "selected_text": "第一行\n最后一行 ",
+          "selected_text_hash": "1dfe001c79ffac8ef694f107bf1e3f098bf44b82fa37b707cc337cc48441f4fd",
+          "selection_kind": "full",
+          "snapshot_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "source_note_content_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "start_utf16": null
+        },
+        "history_turns": {
+          "excluded": [],
+          "mode": "none",
+          "turns": []
+        },
+        "payload_without_envelope_hash": {
+          "budget": {
+            "budget_version": "research-budget-v1",
+            "history_policy_tokens": 0,
+            "model_id": "m1",
+            "model_input_cap": 65536,
+            "note_inputs": [],
+            "required_input_estimate": 300,
+            "reserved_tokens": 16384,
+            "tokenizer_profile": "tokenizer-demo-v1"
+          },
+          "client_intent_hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "document_context_hash": "a3236a99151f85dc95354f72e6e5ba08d616fc92d65fd778c4ad50952cb74385",
+          "document_selection": {
+            "note_id": "note_abc123",
+            "revision": 7,
+            "selection": {
+              "kind": "full"
+            },
+            "snapshot_hash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          },
+          "draft_token": "draft_b",
+          "history_hash": "21d6c119c478dfcbdaaed38a81d9f9940f664abc152ff61e23ce1f7b8a466c4a",
+          "history_mode": "none",
+          "input_id": "inp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "model_id": "m1",
+          "note_ids": [],
+          "observed_revision": 0,
+          "project_id": "p_demo",
+          "prompt_template_version": "d2-writing-v1",
+          "query": "改写",
+          "requested_revision": 0,
+          "response_language": null,
+          "schema_version": 4,
+          "scope_payload": {
+            "mode": "selected",
+            "single_source_id": null,
+            "source_ids": [
+              "src_orR_01"
+            ]
+          },
+          "session_id": "sess_b",
+          "source_id": "src_orR_01",
+          "work_purpose": "writing",
+          "work_purpose_source": "explicit",
+          "writing_intent_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      }
+    }
+  ]
+}
