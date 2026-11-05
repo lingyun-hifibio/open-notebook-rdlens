@@ -1,0 +1,175 @@
+{
+  "phase": "after",
+  "host": "http://127.0.0.1:8621/",
+  "capturedAt": "2026-11-05T02:31:51.770Z",
+  "modeFile": "/tmp/issue109-local-model-mode",
+  "gatewayLog": "/home/lchen/.dsh/state/superagent/work/fork-shared-gpu-cd906bb85363/visual-evidence/logs/gateway-requests.log",
+  "scenarios": [
+    {
+      "name": "after_shared_search_1440",
+      "pass": true,
+      "checks": [
+        {
+          "label": "model-blocked-hint visible",
+          "pass": true,
+          "detail": "count=1"
+        },
+        {
+          "label": "hint text equals backend capabilities.local_model.message",
+          "pass": true,
+          "detail": "当前 GPU 正与其他任务共用，可用显存不足以支撑 Research 使用本地模型，请改用外部 AI 模型。"
+        },
+        {
+          "label": "search-run disabled",
+          "pass": true
+        }
+      ],
+      "screenshot": "/home/lchen/.dsh/state/superagent/work/fork-shared-gpu-cd906bb85363/visual-evidence/screenshots/after_shared_search_1440.png"
+    },
+    {
+      "name": "after_shared_search_click_1440",
+      "pass": true,
+      "checks": [
+        {
+          "label": "disabled search-run click issued zero POST /search",
+          "pass": true,
+          "detail": "count=0"
+        },
+        {
+          "label": "no search-error alert rendered",
+          "pass": true,
+          "detail": "count=0"
+        },
+        {
+          "label": "click was blocked by disabled state",
+          "pass": true,
+          "detail": "playwright click refused/timed out on disabled control"
+        }
+      ],
+      "screenshot": "/home/lchen/.dsh/state/superagent/work/fork-shared-gpu-cd906bb85363/visual-evidence/screenshots/after_shared_search_click_noop_1440.png"
+    },
+    {
+      "name": "after_shared_search_1024",
+      "pass": true,
+      "checks": [
+        {
+          "label": "model-blocked-hint visible",
+          "pass": true,
+          "detail": "count=1"
+        },
+        {
+          "label": "hint text equals backend capabilities.local_model.message",
+          "pass": true,
+          "detail": "当前 GPU 正与其他任务共用，可用显存不足以支撑 Research 使用本地模型，请改用外部 AI 模型。"
+        },
+        {
+          "label": "search-run disabled",
+          "pass": true
+        }
+      ],
+      "screenshot": "/home/lchen/.dsh/state/superagent/work/fork-shared-gpu-cd906bb85363/visual-evidence/screenshots/after_shared_search_1024.png"
+    },
+    {
+      "name": "after_exclusive_search_1440",
+      "pass": true,
+      "checks": [
+        {
+          "label": "no model-blocked-hint",
+          "pass": true,
+          "detail": "count=0"
+        },
+        {
+          "label": "search-run enabled",
+          "pass": true
+        }
+      ],
+      "screenshot": "/home/lchen/.dsh/state/superagent/work/fork-shared-gpu-cd906bb85363/visual-evidence/screenshots/after_exclusive_search_1440.png"
+    },
+    {
+      "name": "after_exclusive_search_1024",
+      "pass": true,
+      "checks": [
+        {
+          "label": "no model-blocked-hint",
+          "pass": true,
+          "detail": "count=0"
+        },
+        {
+          "label": "search-run enabled",
+          "pass": true
+        }
+      ],
+      "screenshot": "/home/lchen/.dsh/state/superagent/work/fork-shared-gpu-cd906bb85363/visual-evidence/screenshots/after_exclusive_search_1024.png"
+    },
+    {
+      "name": "after_shared_chat_1440",
+      "pass": true,
+      "checks": [
+        {
+          "label": "global chat session created (composer reachable)",
+          "pass": true
+        },
+        {
+          "label": "chat-model-blocked-hint visible",
+          "pass": true,
+          "detail": "count=1"
+        },
+        {
+          "label": "hint text equals backend message",
+          "pass": true,
+          "detail": "当前 GPU 正与其他任务共用，可用显存不足以支撑 Research 使用本地模型，请改用外部 AI 模型。"
+        },
+        {
+          "label": "chat-send disabled",
+          "pass": true
+        }
+      ],
+      "screenshot": "/home/lchen/.dsh/state/superagent/work/fork-shared-gpu-cd906bb85363/visual-evidence/screenshots/after_shared_chat_1440.png"
+    },
+    {
+      "name": "after_shared_compare_1440",
+      "pass": true,
+      "checks": [
+        {
+          "label": "scope pre-seeded as selected (no entire-project block)",
+          "pass": true,
+          "detail": "count=0"
+        },
+        {
+          "label": "compare-model-blocked-hint visible",
+          "pass": true,
+          "detail": "count=1"
+        },
+        {
+          "label": "hint text equals backend message",
+          "pass": true,
+          "detail": "当前 GPU 正与其他任务共用，可用显存不足以支撑 Research 使用本地模型，请改用外部 AI 模型。"
+        },
+        {
+          "label": "compare-create disabled",
+          "pass": true
+        }
+      ],
+      "screenshot": "/home/lchen/.dsh/state/superagent/work/fork-shared-gpu-cd906bb85363/visual-evidence/screenshots/after_shared_compare_1440.png"
+    },
+    {
+      "name": "after_shared_insights_ai_1440",
+      "pass": true,
+      "checks": [
+        {
+          "label": "insight-model-blocked visible",
+          "pass": true,
+          "detail": "count=1"
+        },
+        {
+          "label": "hint text equals backend message",
+          "pass": true,
+          "detail": "当前 GPU 正与其他任务共用，可用显存不足以支撑 Research 使用本地模型，请改用外部 AI 模型。"
+        }
+      ],
+      "screenshot": "/home/lchen/.dsh/state/superagent/work/fork-shared-gpu-cd906bb85363/visual-evidence/screenshots/after_shared_insights_ai_1440.png"
+    }
+  ],
+  "failed": [],
+  "notRun": []
+}
