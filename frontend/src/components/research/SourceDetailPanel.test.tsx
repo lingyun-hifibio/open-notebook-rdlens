@@ -863,6 +863,25 @@ describe('SourceDetailPanel · Issue #1011 F08 能力/字段 fail-closed（保�
     )
     expect(screen.queryByTestId('source-open-file')).toBeNull()
   })
+
+  it('能力就绪但 source_type 缺失（file_available=true）→ 不显示打开原文件（F08/NORMATIVE 17 收紧）', async () => {
+    vi.mocked(researchApi.listModels).mockResolvedValue({
+      models: [],
+      capabilities: D1E_READY_CAPABILITY,
+    } as never)
+    const detail = mediaSource({ file_available: true })
+    delete (detail as Record<string, unknown>).source_type
+    vi.mocked(researchApi.getSource).mockResolvedValue(detail as never)
+    const { wrapper } = makeWrapper()
+    render(<SourceDetailPanel sourceId="src_1" />, { wrapper })
+    await screen.findByRole('heading', { name: 'Paper A' })
+    await waitFor(() => expect(researchApi.listModels).toHaveBeenCalled())
+    // 格式字段缺失 → 媒体 UI 整体 fail-closed（即使 file_available=true）
+    expect(screen.queryByTestId('source-open-file')).toBeNull()
+    expect(screen.queryByTestId('source-format-badge')).toBeNull()
+    expect(screen.queryByTestId('source-page-image')).toBeNull()
+    expect(researchApi.getSourceFile).not.toHaveBeenCalled()
+  })
 })
 
 describe('SourceDetailPanel · Issue #1011 F04 页图（仅引用定位页自动加载 / blob 释放）', () => {
@@ -1142,8 +1161,58 @@ describe('SourceDetailPanel · Issue #1011 F06 打开原文件（blob + 下载�
     expect(createdAnchors[0].getAttribute('target')).toBeNull()
   })
 
-  it('打开原文件失败 → 就地错误提示（可重试），不伪造下载', async () => {
-    vi.mocked(researchApi.getSourceFile).mockRejectedValue({ status: 404, code: null, detail: 'Source file is not available' })
+  it('打开原文件非 envelope 404（Source file is not available）→ 不可用 + 仅一次手动重试，再失败停止', async () => {
+    vi.mocked(researchApi.getSourceFile).mockRejectedValue({
+      status: 404,
+      code: null,
+      detail: 'Source file is not available',
+    })
+    const { wrapper } = makeWrapper()
+    render(<SourceDetailPanel sourceId="src_1" />, { wrapper })
+    await screen.findByRole('heading', { name: 'Paper A' })
+    fireEvent.click(screen.getByTestId('source-open-file'))
+    // §2.10：非 envelope 404 = 位置/文件不可用（不是撤权）
+    expect(await screen.findByTestId('source-file-unavailable')).toHaveTextContent(
+      'research.source.pageImageUnavailable',
+    )
+    expect(screen.getByTestId('source-open-file-error')).toBeInTheDocument()
+    expect(screen.queryByTestId('source-file-restricted')).toBeNull()
+    expect(anchorClickSpy).not.toHaveBeenCalled()
+
+    // 手动重试一次；再次失败 → 停止提供重试
+    fireEvent.click(screen.getByTestId('source-file-retry'))
+    await waitFor(() => expect(researchApi.getSourceFile).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.queryByTestId('source-file-retry')).toBeNull())
+    expect(screen.getByTestId('source-file-unavailable')).toBeInTheDocument()
+    expect(anchorClickSpy).not.toHaveBeenCalled()
+  })
+
+  it('打开原文件 410 envelope 撤权 → 显示不可访问、无重试、隐藏打开原文件入口', async () => {
+    vi.mocked(researchApi.getSourceFile).mockRejectedValue({
+      status: 410,
+      code: 'source_access_restricted',
+      detail: null,
+    })
+    const { wrapper } = makeWrapper()
+    render(<SourceDetailPanel sourceId="src_1" />, { wrapper })
+    await screen.findByRole('heading', { name: 'Paper A' })
+    fireEvent.click(screen.getByTestId('source-open-file'))
+    expect(await screen.findByTestId('source-file-restricted')).toHaveTextContent(
+      'research.errors.sourceAccessRestricted',
+    )
+    // 撤权不提供重试，并隐藏媒体控件（open-file 按钮）
+    expect(screen.queryByTestId('source-file-retry')).toBeNull()
+    expect(screen.queryByTestId('source-open-file')).toBeNull()
+    expect(anchorClickSpy).not.toHaveBeenCalled()
+  })
+
+  it('打开原文件 503 envelope store unavailable → 错误 + 重试；重试成功后下载（无自动循环）', async () => {
+    vi.mocked(researchApi.getSourceFile)
+      .mockRejectedValueOnce({ status: 503, code: 'session_store_unavailable', detail: null })
+      .mockResolvedValueOnce({
+        blob: new Blob(['pdf-bytes'], { type: 'application/pdf' }),
+        filename: 'retry-ok.pdf',
+      })
     const { wrapper } = makeWrapper()
     render(<SourceDetailPanel sourceId="src_1" />, { wrapper })
     await screen.findByRole('heading', { name: 'Paper A' })
@@ -1151,9 +1220,27 @@ describe('SourceDetailPanel · Issue #1011 F06 打开原文件（blob + 下载�
     expect(await screen.findByTestId('source-open-file-error')).toHaveTextContent(
       'research.source.openOriginalFailed',
     )
+    expect(researchApi.getSourceFile).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByTestId('source-file-retry'))
+    await waitFor(() => expect(anchorClickSpy).toHaveBeenCalledTimes(1))
+    expect(researchApi.getSourceFile).toHaveBeenCalledTimes(2)
+    await waitFor(() => expect(screen.queryByTestId('source-open-file-error')).toBeNull())
+    // 只做用户点击的单次重试：无自动循环
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(researchApi.getSourceFile).toHaveBeenCalledTimes(2)
+  })
+
+  it('打开原文件网络错误（无 response）→ 可重试（用户点击，单次）', async () => {
+    vi.mocked(researchApi.getSourceFile).mockRejectedValue(new Error('Network Error'))
+    const { wrapper } = makeWrapper()
+    render(<SourceDetailPanel sourceId="src_1" />, { wrapper })
+    await screen.findByRole('heading', { name: 'Paper A' })
+    fireEvent.click(screen.getByTestId('source-open-file'))
+    expect(await screen.findByTestId('source-open-file-error')).toHaveTextContent(
+      'research.source.openOriginalFailed',
+    )
+    expect(screen.getByTestId('source-file-retry')).toBeInTheDocument()
     expect(anchorClickSpy).not.toHaveBeenCalled()
-    // 按钮保留，可再次点击重试
-    expect(screen.getByTestId('source-open-file')).not.toBeDisabled()
   })
 
   it('file_available=false → 不显示打开原文件入口', async () => {

@@ -197,7 +197,7 @@ export function SourceDetailPanel({
   const mediaProfile = useMemo(() => sourceMediaProfile(sourceType), [sourceType])
   const mediaFieldsReady = d1eReady && sourceType !== null
   const canPageImage = mediaFieldsReady && mediaProfile.pageImage
-  const canOpenFile = d1eReady && data?.file_available === true
+  const canOpenFile = mediaFieldsReady && data?.file_available === true
   const documentId = data?.document_id ?? null
   const documentVersion = data?.document_version ?? null
   const chunkLocatorKey = mediaFieldsReady
@@ -216,7 +216,7 @@ export function SourceDetailPanel({
   }, [canPageImage, data?.markdown_chunks, highlightPageIdx])
   const [pageImage, setPageImage] = useState<PageImageViewState>(IDLE_PAGE_IMAGE)
   const [pageImageRetryCount, setPageImageRetryCount] = useState(0)
-  const [openFileStatus, setOpenFileStatus] = useState<'idle' | 'loading' | 'error'>('idle')
+  const [openFileState, setOpenFileState] = useState<OpenFileState>(IDLE_OPEN_FILE)
   const pageImageRequestRef = useRef(0)
   const pageImageObjectUrlRef = useRef<string | null>(null)
 
@@ -234,6 +234,7 @@ export function SourceDetailPanel({
     revokePageImageObjectUrl()
     setPageImage(IDLE_PAGE_IMAGE)
     setPageImageRetryCount(0)
+    setOpenFileState(IDLE_OPEN_FILE)
   }, [revokePageImageObjectUrl, sourceId])
 
   useEffect(() => () => revokePageImageObjectUrl(), [revokePageImageObjectUrl])
@@ -282,33 +283,49 @@ export function SourceDetailPanel({
 
   // 打开原文件（§2.6/§2.8）：全部格式 blob + <a download>（含 PDF，不 inline/
   // 不 window.open）；文件名来自服务端 Content-Disposition，缺失才本地回退。
-  const handleOpenSourceFile = useCallback(async (): Promise<void> => {
-    if (documentId === null || documentVersion === null) return
-    setOpenFileStatus('loading')
-    try {
-      const { blob, filename } = await getSourceFile(projectId, sourceId, {
-        documentId,
-        documentVersion,
-      })
-      const fallbackName = buildSourceFileName(
-        data?.title ?? data?.document_id ?? sourceId,
-        mediaProfile.fileExtension,
-      )
-      triggerBlobDownload(blob, filename ?? fallbackName)
-      setOpenFileStatus('idle')
-    } catch {
-      // §2.10：打开原文件失败只影响媒体区，不阻塞正文/返回入口。
-      setOpenFileStatus('error')
-    }
-  }, [
-    data?.document_id,
-    data?.title,
-    documentId,
-    documentVersion,
-    mediaProfile.fileExtension,
-    projectId,
-    sourceId,
-  ])
+  // 失败走 §2.10 同一分类器（与页图共用 `classifySourceMediaFailure`，不造
+  // 第二套判定）；retryCount = 已发生的**用户手动**重试次数（无自动循环）。
+  const fetchSourceFile = useCallback(
+    async (retryCount: number): Promise<void> => {
+      if (documentId === null || documentVersion === null) return
+      setOpenFileState({ kind: 'loading', retryCount })
+      try {
+        const { blob, filename } = await getSourceFile(projectId, sourceId, {
+          documentId,
+          documentVersion,
+        })
+        const fallbackName = buildSourceFileName(
+          data?.title ?? data?.document_id ?? sourceId,
+          mediaProfile.fileExtension,
+        )
+        triggerBlobDownload(blob, filename ?? fallbackName)
+        setOpenFileState(IDLE_OPEN_FILE)
+      } catch (mediaError) {
+        // §2.10：打开原文件失败只影响媒体区，不阻塞正文/返回入口。
+        setOpenFileState({
+          kind: classifySourceMediaFailure(extractSourceMediaFailure(mediaError)),
+          retryCount,
+        })
+      }
+    },
+    [
+      data?.document_id,
+      data?.title,
+      documentId,
+      documentVersion,
+      mediaProfile.fileExtension,
+      projectId,
+      sourceId,
+    ],
+  )
+
+  const handleOpenSourceFile = useCallback((): void => {
+    void fetchSourceFile(0)
+  }, [fetchSourceFile])
+
+  const retryOpenSourceFile = useCallback((): void => {
+    void fetchSourceFile(openFileState.retryCount + 1)
+  }, [fetchSourceFile, openFileState.retryCount])
 
   useEffect(() => {
     if (
@@ -711,6 +728,17 @@ export function SourceDetailPanel({
   const returnAvailable = returnTargetAvailable === true && onReturnToAnswer !== undefined
   // §2.6：格式 badge 只在能力/字段就绪且声明格式有标签时出现（fail-closed）。
   const formatLabelKey = mediaFieldsReady ? mediaProfile.formatLabelKey : null
+  // §2.10：打开原文件失败分类（与页图同一分类器）；envelope 410 撤权时隐藏
+  // 所有「打开原文件」入口，非 envelope 404 只允许一次手动重试。
+  const openFileFailureKind =
+    openFileState.kind === 'idle' || openFileState.kind === 'loading'
+      ? null
+      : openFileState.kind
+  const canShowOpenFile = canOpenFile && openFileFailureKind !== 'forbidden'
+  const canRetryOpenFile =
+    openFileFailureKind === 'retryable'
+    || ((openFileFailureKind === 'unavailable' || openFileFailureKind === 'unsupported')
+      && openFileState.retryCount < 1)
   return (
     <div ref={rootRef} className="space-y-4">
       <div className="flex items-center justify-between gap-2">
@@ -729,14 +757,15 @@ export function SourceDetailPanel({
               {t(formatLabelKey)}
             </Badge>
           )}
-          {/* §2.8：打开原文件（blob + 下载；所有格式含 PDF，不新标签页） */}
-          {canOpenFile && (
+          {/* §2.8：打开原文件（blob + 下载；所有格式含 PDF，不新标签页）；
+              §2.10：410 撤权后隐藏媒体控件。 */}
+          {canShowOpenFile && (
             <Button
               size="sm"
               variant="outline"
               data-testid="source-open-file"
-              disabled={openFileStatus === 'loading'}
-              onClick={() => void handleOpenSourceFile()}
+              disabled={openFileState.kind === 'loading'}
+              onClick={handleOpenSourceFile}
             >
               {t('research.source.openOriginal')}
             </Button>
@@ -763,14 +792,26 @@ export function SourceDetailPanel({
           {t('research.layout.scope.singleActive', { source: sourceId })}
         </p>
       )}
-      {openFileStatus === 'error' && (
-        <p
-          className="text-sm text-amber-700"
-          role="status"
-          data-testid="source-open-file-error"
-        >
-          {t('research.source.openOriginalFailed')}
-        </p>
+      {openFileFailureKind !== null && (
+        <div className="space-y-2" data-testid="source-open-file-error">
+          <p
+            className="text-sm text-amber-700"
+            role="status"
+            data-testid={openFileFailureStateTestId(openFileFailureKind)}
+          >
+            {t(openFileFailureMessageKey(openFileFailureKind))}
+          </p>
+          {canRetryOpenFile && (
+            <Button
+              size="sm"
+              variant="outline"
+              data-testid="source-file-retry"
+              onClick={retryOpenSourceFile}
+            >
+              {t('research.retry')}
+            </Button>
+          )}
+        </div>
       )}
       {(positionUnavailable || editorPositionUnavailable) && (
         <p className="text-sm text-amber-700" role="status" data-testid="source-anchor-unavailable">
@@ -856,13 +897,13 @@ export function SourceDetailPanel({
                   {t('research.retry')}
                 </Button>
               )}
-              {pageImage.status === 'unsupported' && canOpenFile && (
+              {pageImage.status === 'unsupported' && canShowOpenFile && (
                 <Button
                   size="sm"
                   variant="outline"
                   data-testid="source-open-file"
-                  disabled={openFileStatus === 'loading'}
-                  onClick={() => void handleOpenSourceFile()}
+                  disabled={openFileState.kind === 'loading'}
+                  onClick={handleOpenSourceFile}
                 >
                   {t('research.source.openOriginal')}
                 </Button>
@@ -921,13 +962,13 @@ export function SourceDetailPanel({
                 <p className="text-xs text-amber-700" role="status">
                   {t('research.source.figureUnavailable')}
                 </p>
-                {canOpenFile && (
+                {canShowOpenFile && (
                   <Button
                     size="sm"
                     variant="outline"
                     data-testid="source-open-file"
-                    disabled={openFileStatus === 'loading'}
-                    onClick={() => void handleOpenSourceFile()}
+                    disabled={openFileState.kind === 'loading'}
+                    onClick={handleOpenSourceFile}
                   >
                     {t('research.source.openOriginal')}
                   </Button>
@@ -1095,3 +1136,43 @@ function triggerBlobDownload(blob: Blob, filename: string): void {
 }
 
 const FIGURE_CHUNK_MARKER = '<!-- image_description -->'
+
+/** 打开原文件失败状态（§2.10；retryCount = 已发生的用户手动重试次数）。 */
+type OpenFileStateKind = 'idle' | 'loading' | SourceMediaFailureKind
+
+interface OpenFileState {
+  readonly kind: OpenFileStateKind
+  readonly retryCount: number
+}
+
+const IDLE_OPEN_FILE: OpenFileState = Object.freeze({ kind: 'idle', retryCount: 0 })
+
+/**
+ * 打开原文件失败文案（§2.10）：
+ * - 撤权（410 envelope）复用既有 errors 文案，不造同义双份；
+ * - authority 竞态/版本不一致 → 「来源暂不可用，重新打开来源」；
+ * - 非 envelope 404（文件/位置不可用）→ 「原文件/位置不可用」；
+ * - 500/503/网络 → 通用「打开原文件失败，请重试」。
+ */
+function openFileFailureMessageKey(kind: SourceMediaFailureKind): string {
+  switch (kind) {
+    case 'forbidden':
+      return 'research.errors.sourceAccessRestricted'
+    case 'source_unavailable':
+      return 'research.source.pageImageSourceUnavailable'
+    case 'unavailable':
+    case 'unsupported':
+      return 'research.source.pageImageUnavailable'
+    default:
+      return 'research.source.openOriginalFailed'
+  }
+}
+
+/** 打开原文件失败的状态专属 testid（与页图 `source-media-*` 命名区分）。 */
+function openFileFailureStateTestId(kind: SourceMediaFailureKind): string | undefined {
+  if (kind === 'forbidden') return 'source-file-restricted'
+  if (kind === 'unavailable' || kind === 'unsupported' || kind === 'source_unavailable') {
+    return 'source-file-unavailable'
+  }
+  return undefined
+}
