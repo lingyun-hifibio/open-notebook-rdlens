@@ -1,7 +1,9 @@
 # Issue #585 D2 PR1 共享黄金向量（fork 侧 TypeScript 消费副本，Issue #1045）
 
-主仓：`HiFiBiO-Therapeutics/RDLens`（host PR 号见 ticket `issue-1045-pr1`）
-机器契约：主仓 `deploy/research/issue585_d2_contract_v1.yaml`
+主仓：`HiFiBiO-Therapeutics/RDLens`；host PR
+[#1072](https://github.com/HiFiBiO-Therapeutics/RDLens/pull/1072) **已合并**
+（merge commit `f01ed9be96febdf25db4f34888dfd6de3887c7a1`，2026-11-05）。
+机器契约：主仓 `deploy/research/issue585_d2_contract_v1.yaml`（合并后 main 同内容）
 Python 参考实现：主仓 `src/rdlens/research/issue585/canonical.py` + `vector_cases.py`
 Issue：#1045「PR1：契约与黄金向量」
 
@@ -13,6 +15,29 @@ Issue：#1045「PR1：契约与黄金向量」
 | `golden_vectors.json` | 主仓 bundle 的**逐字节复制**（29 条向量、10 种 kind） |
 | `canonical.test.ts` | bundle 字节摘要锚、全部向量重算、`C` 的拒绝面 |
 | `README.md` | 本文件 |
+
+## 与主仓合并状态的对应关系
+
+| 项 | 值 |
+|---|---|
+| host PR | `HiFiBiO-Therapeutics/RDLens#1072`（已合并） |
+| host merge commit（合并后 main） | `f01ed9be96febdf25db4f34888dfd6de3887c7a1` |
+| 合并后 main 的 `golden_vectors.json` 字节 SHA-256 | `884050b3020e4853f8ee63dbe39e15fac56177fb2f5c69f09fd8eb714e5db358`（与本 README/测试钉住的值相同） |
+| 合并后 main 与 host PR head（`a7b911a`）在 PR1 路径上的树差异 | 空（`git diff --stat` 无输出；即合并未改变契约/向量字节） |
+
+验证命令（2026-11-05，主仓 clone）：
+
+```text
+$ git merge-base --is-ancestor a7b911a origin/main     # exit 0
+$ git diff --stat a7b911a..origin/main -- \
+    src/rdlens/research/issue585 tests/research/issue585 \
+    deploy/research/issue585_d2_contract_v1.yaml dev_docs/progress/issue585_validation.md
+（无输出）
+$ git show origin/main:src/rdlens/research/issue585/golden_vectors.json | sha256sum
+884050b3020e4853f8ee63dbe39e15fac56177fb2f5c69f09fd8eb714e5db358  -
+$ cmp <(git show origin/main:src/rdlens/research/issue585/golden_vectors.json) \
+      frontend/src/lib/research/issue585/golden_vectors.json   # exit 0：bytes identical
+```
 
 ## 同步规则（跨仓库字节锚）
 
