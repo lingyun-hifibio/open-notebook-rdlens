@@ -261,3 +261,59 @@ export interface SavedInsightRecord {
 }
 
 export type ResearchSaveResultResponse = SavedNoteRecord | SavedInsightRecord
+
+// ── Issue #1046 PR4（D2-B2）：d2-v1 受保护 Note 的加性 DTO ──
+//
+// 只描述 d2-v1 契约（`X-Research-Note-Contract: d2-v1`）新增的读取投影与
+// 能力/回执形状；旧 v1 响应没有这些键，因此全部为**加性**类型。编辑器内部
+// 状态类型（ResearchNoteD2/NoteEditorState/…）在
+// `lib/research/issue585/types.ts`，本文件只放 wire 层 DTO。
+
+/** d2-v1 编辑格式标识（受保护 Note）；旧未保护 Note 为 null。 */
+export type ResearchNoteEditSchema = 'd2-v1'
+
+/** 当前权限投影（服务端判定；restricted = 仅返回无标题占位）。 */
+export type ResearchNoteAccessState = 'visible' | 'restricted'
+
+/** d2-v1 Note 读取投影的保护字段（§3.1；旧 v1 响应无这些键）。 */
+export interface ResearchNoteProtection {
+  revision: number | null
+  snapshot_hash: string | null
+  edit_schema: string | null
+  access_state?: ResearchNoteAccessState | null
+}
+
+/** d2-v1 Note 列表/详情行（旧字段 + 保护字段）。 */
+export interface ResearchNoteProtected extends ResearchNote, ResearchNoteProtection {}
+
+/** 能力位原始投影（§8.2；`{available, reason}`，reason 为机器可读码）。 */
+export interface ResearchNoteCapabilityProjection {
+  available: boolean
+  reason: string | null
+}
+
+/**
+ * `GET /models` 的 Note 能力加性键（原始 snake_case wire 形状）。
+ *
+ * 既有 `ResearchCapabilities` 是封闭接口且不在本 PR 白名单内；这里以
+ * 交叉类型的方式记录新增键，供 `lib/research/api.ts::listModels` 返回类型
+ * 加性扩展。解析/归一（camelCase + fail-closed）由
+ * `lib/research/issue585/use-note-capabilities.ts` 负责。
+ */
+export interface ResearchNoteCapabilitiesProjection {
+  note_editor?: unknown
+  note_editor_existing?: unknown
+  markdown_export?: unknown
+  writing_local?: unknown
+  writing_external?: unknown
+}
+
+/** 变更回执（契约 §4；删除的 snapshot_hash 为 null）。 */
+export interface ResearchNoteReceipt {
+  note_id: string
+  mutation_id: string
+  applied_revision: number
+  snapshot_hash: string | null
+  saved_at: string
+  replayed: boolean
+}
