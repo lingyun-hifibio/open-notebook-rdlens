@@ -8,6 +8,7 @@
  */
 
 import type { ResearchCitation, ResearchChunk, ResearchSource } from '@/lib/types/research'
+import type { SourceLocatorKind } from '@/lib/research/source-media'
 import type { PersistedCitationSnapshot } from '@/lib/types/research'
 
 /**
@@ -139,6 +140,85 @@ export function displayPage(pageIdx: number | null): number | null {
   }
   return pageIdx + 1
 }
+
+/** Citation 定位展示类型（声明格式：Page/Slide/Sheet；null = 旧行为）。 */
+export interface CitationLocatorLabel {
+  /** `null` = 无法从 source_path/doc_type 判定（保持旧 "Page N"） */
+  kind: SourceLocatorKind | null
+  /** 展示文案 key（page → research.citation.page 等） */
+  labelKey: string
+}
+
+const CITATION_LOCATOR_LABEL_KEY: Record<SourceLocatorKind, string> = {
+  page: 'research.citation.page',
+  slide: 'research.citation.slide',
+  sheet: 'research.citation.sheet',
+}
+
+const LEGACY_CITATION_LOCATOR: CitationLocatorLabel = {
+  kind: null,
+  labelKey: 'research.citation.page',
+}
+
+/**
+ * Citation 页/slide/sheet 展示映射（Issue #1011 F02，计划 §2.6/§2.8）。
+ *
+ * 优先级（只做**展示**映射，不改跳转逻辑、不改 citation 17 字段快照/身份）：
+ * 1. `source_path` 扩展名：`.pdf` → Page、`.pptx` → Slide、`.xlsx` → Sheet；
+ * 2. `doc_type`：`PDF` → Page、`PPT` → Slide、`Excel` → Sheet（大小写容错）；
+ * 3. 旧行为：`research.citation.page`（"Page N"）。
+ *
+ * 未声明扩展名/未知 `doc_type` 一律回落旧行为——不臆造 slide/sheet。
+ * 判定忽略 query/hash 与尾随空白（source_path 是展示身份，不是 URL 解析）。
+ */
+export function citationLocatorLabel(
+  citation: { source_path?: string | null; doc_type?: string | null },
+): CitationLocatorLabel {
+  const pathKind = locatorKindFromSourcePath(citation.source_path)
+  if (pathKind !== null) {
+    return { kind: pathKind, labelKey: CITATION_LOCATOR_LABEL_KEY[pathKind] }
+  }
+  const docTypeKind = locatorKindFromDocType(citation.doc_type)
+  if (docTypeKind !== null) {
+    return { kind: docTypeKind, labelKey: CITATION_LOCATOR_LABEL_KEY[docTypeKind] }
+  }
+  return LEGACY_CITATION_LOCATOR
+}
+
+/** `source_path` 扩展名 → 定位语义；只认声明表内的 `.pdf/.pptx/.xlsx`。 */
+function locatorKindFromSourcePath(sourcePath: string | null | undefined): SourceLocatorKind | null {
+  if (typeof sourcePath !== 'string') return null
+  // 展示身份可能带 query/hash；扩展名判定前剥离，避免 `.pdf?x` 漏判。
+  const withoutQuery = sourcePath.trim().split(/[?#]/, 1)[0]
+  const match = /\.([a-z0-9]+)$/i.exec(withoutQuery)
+  if (match === null) return null
+  switch (match[1].toLowerCase()) {
+    case 'pdf':
+      return 'page'
+    case 'pptx':
+      return 'slide'
+    case 'xlsx':
+      return 'sheet'
+    default:
+      return null
+  }
+}
+
+/** `doc_type`（citation 展示身份）→ 定位语义；只认声明表内 PDF/PPT/Excel。 */
+function locatorKindFromDocType(docType: string | null | undefined): SourceLocatorKind | null {
+  if (typeof docType !== 'string') return null
+  switch (docType.trim().toLowerCase()) {
+    case 'pdf':
+      return 'page'
+    case 'ppt':
+      return 'slide'
+    case 'excel':
+      return 'sheet'
+    default:
+      return null
+  }
+}
+
 
 /** 在 markdown chunks 中按 0-based page_idx 定位首个匹配 chunk。 */
 export function findChunkForPage(

@@ -1,19 +1,27 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { useResearchScope, type ResearchScopeMode } from '@/lib/research/scope'
+import { useResearchSources } from '@/lib/hooks/use-research'
+import {
+  useResearchWorkspace,
+  useResearchWorkspaceOptional,
+} from '@/lib/embedded/workspace-context'
+import type { ResearchSource } from '@/lib/types/research'
 
 /**
  * 左栏唯一 Scope 编辑面——模式控件（RWV2-13 Issue #34 + PR5 三档）。
  *
  * - `all` 显式可见可点（D2）；selected 需 ≥1 项有效选择（D3：0 选择禁止
  *   执行，不扩大数据范围）；
- * - PR5（C4/D-04）：`single` 不在模式单选里（它是**会话级临时限定**，由
- *   SourceDetailPanel「只问此来源」设置）；生效时本面显示限定条目 +
- *   「取消限定」按钮（`clearSingle` 恢复基础范围），键盘可达（普通按钮）；
+ * - PR5（C4/D-04）：`single` 不在模式单选里（它是**会话级临时限定**）；
+ *   Issue #1011（计划 §2.7）把设置/取消入口统一收敛到本面：
+ *   `SingleSourceLimit` 区块（来源下拉 + 应用限定）→ `setSingle`；生效时本面
+ *   显示既有 pin 条目 + 「取消限定」按钮（`clearSingle` 恢复基础范围）——
+ *   Source focus 不再承载该操作（只读提示）；键盘可达（原生 select + button）；
  * - 模式切换/勾选会清除临时限定（provider 内约束）；UI 在 all 下提示
  *   「选择资料或笔记即切换为仅所选」（D-10 反推规则的用户可见说明）；
  * - `min-w-0 + flex-wrap`：1024px 视口最小栏宽不隐藏标题、不横向滚动。
@@ -63,6 +71,7 @@ export function ResearchScopeEditor({
           <span className="min-w-0">{t('research.layout.scope.selected')}</span>
         </label>
       </RadioGroup>
+      <SingleSourceLimitGate />
       {singlePin !== null && (
         <div
           className="flex min-w-0 flex-wrap items-center gap-2 rounded-md border px-2 py-1.5"
@@ -95,4 +104,98 @@ export function ResearchScopeEditor({
       )}
     </div>
   )
+}
+
+
+/**
+ * 「限定当前对话到单一来源」区块（Issue #1011 §2.7，NORMATIVE 14）。
+ *
+ * - 数据：`useResearchSources(projectId)` 中 **ready/stale 且 source_id
+ *   非 null** 的行（无镜像身份行不可选）；
+ * - 应用：`setSingle(sourceId, null)`——沿用既有待绑/绑定路径（会话首响应
+ *   `bindSession` 绑定；新对话不继承）；取消沿用既有 `scope-single-clear`；
+ * - 只影响当前对话的后续查询（文案明示）；`single` 不占模式单选位；
+ * - projectId 只从既有 workspace context 读取（不给本组件新增 prop，避免
+ *   改动白名单外的 ResearchWorkbench）；无 Provider（孤立渲染）时 fail-closed
+ *   不渲染该区块。
+ */
+function SingleSourceLimit() {
+  const { t } = useTranslation()
+  const { setSingle, singlePin } = useResearchScope()
+  const sourcesQuery = useResearchSources(useResearchWorkspace().projectId)
+  const candidates = useMemo<ResearchSource[]>(() => {
+    const items = sourcesQuery.data?.items ?? []
+    return items.filter(
+      (source) =>
+        source.source_id !== null
+        && (source.status === 'ready' || source.status === 'stale'),
+    )
+  }, [sourcesQuery.data])
+  const activeSourceId = singlePin?.sourceId ?? ''
+  const [selectedSourceId, setSelectedSourceId] = useState(activeSourceId)
+
+  // 单一真源：pin 生效/取消时下拉回显当前限定来源（不在本地维护第二份状态）。
+  useEffect(() => {
+    setSelectedSourceId(activeSourceId)
+  }, [activeSourceId])
+
+  const selectableIds = useMemo(
+    () => candidates.map((source) => source.source_id as string),
+    [candidates],
+  )
+  const canApply = selectedSourceId.length > 0 && selectableIds.includes(selectedSourceId)
+
+  return (
+    <div
+      className="min-w-0 space-y-2 rounded-md border px-2 py-1.5"
+      data-testid="scope-single-limit"
+    >
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {t('research.layout.scope.singleLimitTitle')}
+      </p>
+      <p className="text-xs text-muted-foreground">
+        {t('research.layout.scope.singleLimitHint')}
+      </p>
+      {candidates.length === 0 ? (
+        <p className="text-xs text-muted-foreground" data-testid="scope-single-limit-empty">
+          {t('research.layout.scope.singleLimitEmpty')}
+        </p>
+      ) : (
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <select
+            className="h-7 min-w-0 max-w-full rounded-md border bg-background px-2 text-xs"
+            aria-label={t('research.layout.scope.singleLimitSourceLabel')}
+            data-testid="scope-single-limit-select"
+            value={canApply || selectedSourceId.length === 0 ? selectedSourceId : ''}
+            onChange={(event) => setSelectedSourceId(event.target.value)}
+          >
+            <option value="">{t('research.layout.scope.singleLimitNone')}</option>
+            {candidates.map((source) => (
+              <option key={source.source_id as string} value={source.source_id as string}>
+                {source.source_id as string}
+              </option>
+            ))}
+          </select>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-7 shrink-0 px-2 text-xs"
+            data-testid="scope-single-limit-apply"
+            disabled={!canApply}
+            onClick={() => setSingle(selectedSourceId, null)}
+          >
+            {t('research.layout.scope.singleLimitApply')}
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** 可选 workspace 门禁：无 Provider（单独渲染/回归测试）时不渲染限定区块。 */
+function SingleSourceLimitGate() {
+  const workspace = useResearchWorkspaceOptional()
+  if (workspace === null) return null
+  return <SingleSourceLimit />
 }

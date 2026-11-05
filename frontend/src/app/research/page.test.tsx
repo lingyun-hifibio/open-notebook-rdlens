@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
+import { ResearchScopeProvider, useResearchScope } from '@/lib/research/scope'
 
 // /research 组合层（Issue #182 + RWV2-40 Red）：组合根接线——
 // 分离 selectedSourceId/sourceFocusActive；唯一 keyed Source Chat；
@@ -106,18 +107,24 @@ vi.mock('@/components/research/ExportSection', () => ({
   ExportSection: () => <div data-testid="export-section" />,
 }))
 
+// Issue #1011 F11：记录组合根传给 source chat 的**全部 props**（断言不含
+// global 单篇限定/scope 输入）。
+const sourceChatProps = vi.hoisted(() => ({
+  latest: null as Record<string, unknown> | null,
+}))
+
 vi.mock('@/components/research/ResearchSourceChatPanel', () => ({
-  ResearchSourceChatPanel: ({
-    sourceId,
-    onHighlightPage,
-  }: {
+  ResearchSourceChatPanel: (props: {
     sourceId: string
     onHighlightPage: (pageIdx: number) => void
-  }) => (
-    <div data-testid="source-chat-panel" data-source-id={sourceId}>
-      <button data-testid="panel-cite-page" onClick={() => onHighlightPage(7)} />
-    </div>
-  ),
+  }) => {
+    sourceChatProps.latest = props as unknown as Record<string, unknown>
+    return (
+      <div data-testid="source-chat-panel" data-source-id={props.sourceId}>
+        <button data-testid="panel-cite-page" onClick={() => props.onHighlightPage(7)} />
+      </div>
+    )
+  },
 }))
 
 import ResearchPage from './page'
@@ -284,5 +291,127 @@ describe('/research Source 专注 + Source Chat 组合（Issue #182 + RWV2-40）
     expect(workbenchEl()).toHaveAttribute('data-highlight-page-idx', '7')
     expect(workbenchEl()).toHaveAttribute('data-highlight-request-id', '2')
     expect(workbenchEl()).toBe(originalWorkbench)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Issue #1011 F10/F11（计划 §2.7 I1/I3、NORMATIVE 13/14/15）：
+// 组合根进入/退出 Source focus 不得改变会话 scope provider 快照，也不得
+// 调用 setSingle/clearSingle；source chat surface 不接收 global 单篇限定/
+// scope 输入（source kind 会话 scope 固定绑定 URL source，由 host 强制）。
+// ---------------------------------------------------------------------------
+
+
+/** 把 scope provider 的真实快照渲染成可断言文本（不经 mock）。 */
+function ScopeSnapshotProbe() {
+  const { getSnapshot, singlePin } = useResearchScope()
+  const snapshot = getSnapshot()
+  return (
+    <div
+      data-testid="scope-snapshot"
+      data-mode={snapshot.mode}
+      data-source-ids={snapshot.sourceIds.join(',')}
+      data-note-ids={snapshot.noteIds.join(',')}
+      data-single-source={snapshot.singleSourceId ?? ''}
+      data-single-pin={singlePin?.sourceId ?? ''}
+    />
+  )
+}
+
+/** 只暴露「会话 Scope 编辑面」同款写入口（模拟用户设置单篇限定）。 */
+function ScopeSetter() {
+  const { setSingle } = useResearchScope()
+  return (
+    <button
+      type="button"
+      data-testid="test-set-global-pin"
+      onClick={() => setSingle('src_9', 'sess_g')}
+    >
+      limit
+    </button>
+  )
+}
+
+function renderPageWithScope() {
+  return render(
+    <ResearchScopeProvider userId="u1" projectId="proj_1">
+      <ScopeSetter />
+      <ScopeSnapshotProbe />
+      <ResearchPage />
+    </ResearchScopeProvider>,
+  )
+}
+
+function snapshotEl(): HTMLElement {
+  return screen.getByTestId('scope-snapshot')
+}
+
+describe('/research · Issue #1011 F10 Source focus 进出不改 scope 快照', () => {
+  beforeEach(() => {
+    mediaQueryMocks.hasUsableHeight.mockReturnValue(true)
+    mediaQueryMocks.isDesktop.mockReturnValue(true)
+    localStorage.clear()
+  })
+
+  it('进入/退出 Source focus 不改变 scope snapshot（mode/sourceIds/noteIds/singleSourceId）', () => {
+    renderPageWithScope()
+    const before = snapshotEl().dataset
+    const beforeSnapshot = `${before.mode}|${before.sourceIds}|${before.noteIds}|${before.singleSource}`
+
+    fireEvent.click(screen.getByTestId('wb-open'))
+    expect(screen.getByTestId('source-chat-panel')).toBeInTheDocument()
+    const focused = snapshotEl().dataset
+    expect(`${focused.mode}|${focused.sourceIds}|${focused.noteIds}|${focused.singleSource}`).toBe(
+      beforeSnapshot,
+    )
+
+    fireEvent.click(screen.getByTestId('wb-open-at-page'))
+    fireEvent.click(screen.getByTestId('wb-back'))
+    const after = snapshotEl().dataset
+    expect(`${after.mode}|${after.sourceIds}|${after.noteIds}|${after.singleSource}`).toBe(
+      beforeSnapshot,
+    )
+  })
+
+  it('已生效的全局单篇限定在进入/退出 Source focus 后仍保留（不被 clearSingle/setSingle 改写）', () => {
+    renderPageWithScope()
+    fireEvent.click(screen.getByTestId('test-set-global-pin'))
+    expect(snapshotEl()).toHaveAttribute('data-single-source', 'src_9')
+    expect(snapshotEl()).toHaveAttribute('data-single-pin', 'src_9')
+
+    fireEvent.click(screen.getByTestId('wb-open'))
+    expect(snapshotEl()).toHaveAttribute('data-mode', 'single')
+    expect(snapshotEl()).toHaveAttribute('data-single-source', 'src_9')
+
+    fireEvent.click(screen.getByTestId('wb-back'))
+    expect(snapshotEl()).toHaveAttribute('data-single-source', 'src_9')
+  })
+})
+
+describe('/research · Issue #1011 F11 source chat 不接收 global 单篇限定/scope', () => {
+  beforeEach(() => {
+    mediaQueryMocks.hasUsableHeight.mockReturnValue(true)
+    mediaQueryMocks.isDesktop.mockReturnValue(true)
+    localStorage.clear()
+    sourceChatProps.latest = null
+  })
+
+  it('source chat surface 的 props 不含 scope/singleSourceId/单篇限定输入', () => {
+    renderPageWithScope()
+    fireEvent.click(screen.getByTestId('test-set-global-pin'))
+    fireEvent.click(screen.getByTestId('wb-open'))
+
+    expect(screen.getByTestId('source-chat-panel')).toBeInTheDocument()
+    const props = sourceChatProps.latest
+    expect(props).not.toBeNull()
+    const keys = Object.keys(props ?? {})
+    // 组合根不向 source surface 传任何 scope 输入：source kind 会话的
+    // scope 由 host 固定绑定 URL source（editor_state base_scope=null）
+    for (const key of keys) {
+      expect(key).not.toMatch(/scope|single|pin|sourceIds|noteIds/i)
+    }
+    expect(props?.sourceId).toBe('src_1')
+    // 全局限定仍是全局的：未被消费、未被带入 source surface
+    expect(snapshotEl()).toHaveAttribute('data-single-source', 'src_9')
   })
 })

@@ -553,3 +553,202 @@ describe('localModelCapabilityFrom（#813）', () => {
     ).toBeNull()
   })
 })
+
+// ── Issue #1011 F12（计划 §2.8）：来源媒体 blob 读路径 ──
+//
+// 页图/原文件都经既有 apiClient（自动 Bearer = Research Token）以
+// `responseType: 'blob'` 获取；URL 只用 researchPath + encodeURIComponent，
+// token 不得出现在 URL/查询串；document_id/document_version 成对作为查询
+// 参数；错误（410 envelope / 404 纯 detail / 503 envelope / 网络）归一化为
+// 可分类的 ResearchMediaError（§2.10 矩阵的唯一输入）。
+
+describe('source media（F12：blob 请求 / URL / 参数 / 错误透传）', () => {
+  interface MediaCaptured {
+    url: string
+    params?: Record<string, unknown>
+    responseType?: unknown
+    headers?: Record<string, string>
+  }
+
+  const mediaCalls: MediaCaptured[] = []
+  const DOC_REF = { documentId: 'doc_1', documentVersion: 'v3' }
+
+  function installBlobAdapter(
+    data: unknown,
+    headers: Record<string, string> = {},
+  ): void {
+    apiClient.defaults.adapter = async (config) => {
+      mediaCalls.push({
+        url: String(config.url),
+        params: config.params as Record<string, unknown> | undefined,
+        responseType: config.responseType,
+        headers: (config.headers ?? {}) as Record<string, string>,
+      })
+      return { data, status: 200, statusText: 'OK', headers, config }
+    }
+  }
+
+  function rejectAdapter(status: number, data: unknown, headers: Record<string, string> = {}): void {
+    apiClient.defaults.adapter = async (config) => {
+      mediaCalls.push({
+        url: String(config.url),
+        params: config.params as Record<string, unknown> | undefined,
+        responseType: config.responseType,
+        headers: (config.headers ?? {}) as Record<string, string>,
+      })
+      const error = Object.assign(new Error(`Request failed with status code ${status}`), {
+        isAxiosError: true,
+        response: { status, data, headers, config },
+      })
+      throw error
+    }
+  }
+
+  function envelopeBlob(code: string, message = 'x'): Blob {
+    return new Blob([JSON.stringify({ detail: { code, message } })], {
+      type: 'application/json',
+    })
+  }
+
+  function plainDetailBlob(detail: string): Blob {
+    return new Blob([JSON.stringify({ detail })], { type: 'application/json' })
+  }
+
+  beforeEach(() => {
+    mediaCalls.length = 0
+    installBlobAdapter(new Blob(['jpeg-bytes'], { type: 'image/jpeg' }))
+  })
+
+  afterEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('getSourcePageImage → GET .../sources/{id}/pages/{idx}/image，blob + 成对版本参数', async () => {
+    const blob = await researchApi.getSourcePageImage('proj_1', 'src_1', 3, DOC_REF)
+    expect(blob).toBeInstanceOf(Blob)
+    expect(mediaCalls).toHaveLength(1)
+    const call = mediaCalls[0]
+    expect(call.url).toBe('/v1/research/projects/proj_1/sources/src_1/pages/3/image')
+    expect(call.params).toEqual({ document_id: 'doc_1', document_version: 'v3' })
+    expect(call.responseType).toBe('blob')
+    // Bearer 由 apiClient 注入（嵌入式 = 内存 Research Token）
+    expect(call.headers?.Authorization).toBe('Bearer memory-token')
+    // token 不出现在 URL/查询串（NORMATIVE 16）
+    expect(call.url).not.toMatch(/token|bearer|authorization/i)
+    expect(JSON.stringify(call.params)).not.toMatch(/token|bearer/i)
+  })
+
+  it('getSourcePageImage → source_id 用 encodeURIComponent，page_idx 0-based 原样传递', async () => {
+    await researchApi.getSourcePageImage('proj_1', 'src/1', 0, DOC_REF)
+    expect(mediaCalls[0].url).toBe('/v1/research/projects/proj_1/sources/src%2F1/pages/0/image')
+  })
+
+  it('getSourceFile → GET .../sources/{id}/file，blob + 成对版本参数', async () => {
+    installBlobAdapter(new Blob(['pptx-bytes']), {
+      'content-disposition': 'attachment; filename="B01 slides.pptx"',
+    })
+    const result = await researchApi.getSourceFile('proj_1', 'src_1', DOC_REF)
+    expect(result.blob).toBeInstanceOf(Blob)
+    expect(result.filename).toBe('B01 slides.pptx')
+    expect(mediaCalls[0].url).toBe('/v1/research/projects/proj_1/sources/src_1/file')
+    expect(mediaCalls[0].params).toEqual({
+      document_id: 'doc_1',
+      document_version: 'v3',
+    })
+    expect(mediaCalls[0].responseType).toBe('blob')
+    expect(mediaCalls[0].headers?.Authorization).toBe('Bearer memory-token')
+    expect(mediaCalls[0].url).not.toMatch(/token|bearer/i)
+  })
+
+  it('getSourceFile → 文件名优先 RFC 5987 filename*（UTF-8），回落 ASCII filename', async () => {
+    installBlobAdapter(new Blob(['x']), {
+      'content-disposition':
+        "attachment; filename=\"fallback.pdf\"; filename*=UTF-8''B05%20paper.pdf",
+    })
+    expect((await researchApi.getSourceFile('proj_1', 'src_1', DOC_REF)).filename).toBe(
+      'B05 paper.pdf',
+    )
+
+    installBlobAdapter(new Blob(['x']), {
+      'content-disposition': 'attachment; filename="plain.xlsx"',
+    })
+    expect((await researchApi.getSourceFile('proj_1', 'src_1', DOC_REF)).filename).toBe(
+      'plain.xlsx',
+    )
+
+    installBlobAdapter(new Blob(['x']))
+    expect((await researchApi.getSourceFile('proj_1', 'src_1', DOC_REF)).filename).toBeNull()
+  })
+
+  it('410 envelope source_access_restricted → ResearchMediaError(status 410, code)', async () => {
+    rejectAdapter(410, envelopeBlob('source_access_restricted', 'revoked'))
+    await expect(
+      researchApi.getSourcePageImage('proj_1', 'src_1', 3, DOC_REF),
+    ).rejects.toMatchObject({
+      name: 'ResearchMediaError',
+      status: 410,
+      code: 'source_access_restricted',
+      detail: null,
+    })
+    // 只有 envelope 码表示撤权；调用方据 code 分类，不得据 status 单独判定
+    expect(researchApi.isResearchMediaError).toBeTypeOf('function')
+  })
+
+  it('404 纯 detail（unsupported / 位置不可用）→ code=null + detail 逐字保留', async () => {
+    rejectAdapter(404, plainDetailBlob('Source file is not available'))
+    await expect(
+      researchApi.getSourceFile('proj_1', 'src_1', DOC_REF),
+    ).rejects.toMatchObject({
+      name: 'ResearchMediaError',
+      status: 404,
+      code: null,
+      detail: 'Source file is not available',
+    })
+
+    rejectAdapter(
+      404,
+      plainDetailBlob('Preview not supported for xlsx; open source file directly'),
+    )
+    await expect(
+      researchApi.getSourcePageImage('proj_1', 'src_1', 0, DOC_REF),
+    ).rejects.toMatchObject({
+      status: 404,
+      code: null,
+      detail: 'Preview not supported for xlsx; open source file directly',
+    })
+  })
+
+  it('503 envelope session_store_unavailable → status 503 + code（可重试语义由调用方判定）', async () => {
+    rejectAdapter(503, envelopeBlob('session_store_unavailable', 'store down'))
+    await expect(
+      researchApi.getSourcePageImage('proj_1', 'src_1', 3, DOC_REF),
+    ).rejects.toMatchObject({
+      status: 503,
+      code: 'session_store_unavailable',
+    })
+  })
+
+  it('网络错误（无 response）→ status/code/detail 全 null（§2.10 网络错误可重试）', async () => {
+    apiClient.defaults.adapter = async (config) => {
+      mediaCalls.push({
+        url: String(config.url),
+        params: config.params as Record<string, unknown> | undefined,
+        responseType: config.responseType,
+        headers: (config.headers ?? {}) as Record<string, string>,
+      })
+      throw new Error('Network Error')
+    }
+    const error = await researchApi
+      .getSourcePageImage('proj_1', 'src_1', 3, DOC_REF)
+      .then(() => null)
+      .catch((caught: unknown) => caught)
+    expect(error).toMatchObject({
+      name: 'ResearchMediaError',
+      status: null,
+      code: null,
+      detail: null,
+    })
+    expect(researchApi.isResearchMediaError(error)).toBe(true)
+    expect(researchApi.isResearchMediaError(new Error('other'))).toBe(false)
+  })
+})

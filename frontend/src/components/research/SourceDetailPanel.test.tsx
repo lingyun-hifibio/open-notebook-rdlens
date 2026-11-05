@@ -4,7 +4,7 @@ import { act } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { SourceDetailPanel } from './SourceDetailPanel'
 import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
-import { ResearchScopeProvider } from '@/lib/research/scope'
+import { ResearchScopeProvider, useResearchScope } from '@/lib/research/scope'
 import * as researchApi from '@/lib/research/api'
 
 // UI-02 Red：来源内容面板（REQ-SRC-04/REQ-DATA-04，契约 §6）——规范
@@ -17,6 +17,9 @@ vi.mock('@/lib/research/api', () => ({
   getSource: vi.fn(),
   // Issue #1013 F04：选段能力来自 GET /models（与 useResearchC05 同 query key）。
   listModels: vi.fn(),
+  // Issue #1011 F04/F06：来源媒体读路径（页图/原文件 blob；§2.8）。
+  getSourcePageImage: vi.fn(),
+  getSourceFile: vi.fn(),
 }))
 
 vi.mock('@/lib/hooks/use-translation', () => ({
@@ -620,5 +623,620 @@ describe('SourceDetailPanel · Issue #1013 返回原回答 / 选段高亮 / 撤�
     render(<SourceDetailPanel sourceId="src_1" />, { wrapper })
     await screen.findByTestId('source-detail-error')
     expect(screen.getByTestId('source-detail-error-source_ref_mismatch')).toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Issue #1011（D1-E 主单）F03–F08：声明格式 badge / 打开原文件（下载）/
+// 页图区（仅引用定位页）/ 图表不可读声明 / §2.10 媒体重试矩阵 /
+// 能力与字段 fail-closed；以及 Source focus 与会话单篇限定分离
+// （不渲染 source-ask-only、不写 scope、只读 pin 提示）。
+//
+// 固定 hooks（与 fork-visual harness 对齐，勿改）：
+//   source-format-badge / source-open-file / source-page-image /
+//   source-page-image-img / source-media-error / source-media-restricted /
+//   source-media-retry / source-figure-unavailable / source-ask-only(absent)
+// ---------------------------------------------------------------------------
+
+const D1E_READY_CAPABILITY = {
+  'd1e_roundtrip': { contract: 'd1e-roundtrip-v1', enabled: true },
+}
+
+const MEDIA_SOURCE = {
+  source_id: 'src_1',
+  document_id: 'doc_1',
+  document_version: 'v3',
+  status: 'ready' as const,
+  content_hash: 'h',
+  synced_at: null,
+  last_error: null,
+  title: 'Paper A',
+  source_type: 'pdf',
+  file_available: true,
+  markdown_chunks: [
+    { chunk_id: 'chunk_2', chunk_ordinal: 2, content_hash: 'a'.repeat(64), page_idx: 2, markdown: 'page three content' },
+  ],
+}
+
+function mediaSource(overrides: Record<string, unknown> = {}) {
+  return { ...MEDIA_SOURCE, ...overrides }
+}
+
+function d1eReady() {
+  vi.mocked(researchApi.listModels).mockResolvedValue({
+    models: [],
+    capabilities: D1E_READY_CAPABILITY,
+  } as never)
+  vi.mocked(researchApi.getSource).mockResolvedValue(mediaSource() as never)
+}
+
+const originalCreateObjectURL = URL.createObjectURL
+const originalRevokeObjectURL = URL.revokeObjectURL
+
+function stubObjectUrls(): { create: ReturnType<typeof vi.fn>; revoke: ReturnType<typeof vi.fn> } {
+  const create = vi.fn(() => 'blob:mock-object-url')
+  const revoke = vi.fn()
+  Object.defineProperty(URL, 'createObjectURL', { configurable: true, writable: true, value: create })
+  Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, writable: true, value: revoke })
+  return { create, revoke }
+}
+
+function restoreObjectUrls(): void {
+  Object.defineProperty(URL, 'createObjectURL', {
+    configurable: true,
+    writable: true,
+    value: originalCreateObjectURL,
+  })
+  Object.defineProperty(URL, 'revokeObjectURL', {
+    configurable: true,
+    writable: true,
+    value: originalRevokeObjectURL,
+  })
+}
+
+function blobResponse(): Blob {
+  return new Blob(['jpeg-bytes'], { type: 'image/jpeg' })
+}
+
+function mediaFailure(status: number, code: string | null, detail: string | null) {
+  return Promise.reject({ status, code, detail })
+}
+
+describe('SourceDetailPanel · Issue #1011 F03 单篇限定分离（不渲染 source-ask-only / 不写 scope）', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    sourceAnchorMocks.useRuntimeOptional.mockReturnValue(null)
+    sourceAnchorMocks.useEditor.mockReturnValue(sourceAnchorMocks.editor as never)
+    stubObjectUrls()
+    d1eReady()
+  })
+  afterEach(() => {
+    restoreObjectUrls()
+  })
+
+  it('不渲染 source-ask-only 操作控件；只读 pin 提示显示当前会话限定（无操作按钮）', async () => {
+    const { wrapper } = makeWrapper()
+    // 先经会话 Scope 编辑面同款入口设置限定（模拟 ResearchScopeEditor 的 setSingle）
+    function ScopeSetter() {
+      const { setSingle } = useResearchScope()
+      return (
+        <button type="button" data-testid="test-set-pin" onClick={() => setSingle('src_1', 'sess_1')}>
+          set
+        </button>
+      )
+    }
+    render(
+      <>
+        <ScopeSetter />
+        <SourceDetailPanel sourceId="src_1" />
+      </>,
+      { wrapper },
+    )
+    await screen.findByRole('heading', { name: 'Paper A' })
+    // 未限定：无任何会话范围操作
+    expect(screen.queryByTestId('source-ask-only')).toBeNull()
+    expect(screen.queryByTestId('source-single-pin-hint')).toBeNull()
+
+    fireEvent.click(screen.getByTestId('test-set-pin'))
+    const hint = await screen.findByTestId('source-single-pin-hint')
+    expect(hint).toHaveTextContent('research.layout.scope.singleActive')
+    // 只读提示：内部没有按钮（不可在来源面板取消/设置限定）
+    expect(hint.querySelector('button')).toBeNull()
+    // 仍无 source-ask-only
+    expect(screen.queryByTestId('source-ask-only')).toBeNull()
+  })
+
+  it('面板挂载/卸载/交互不改变 scope provider 快照（I1/I2：进出 source focus 不写 scope）', async () => {
+    const { wrapper } = makeWrapper()
+    let snapshotBefore: unknown = null
+    let snapshotAfter: unknown = null
+    function ScopeProbe({ which }: { which: 'before' | 'after' }) {
+      const { getSnapshot } = useResearchScope()
+      if (which === 'before') snapshotBefore = getSnapshot()
+      else snapshotAfter = getSnapshot()
+      return null
+    }
+    const view = render(
+      <>
+        <ScopeProbe which="before" />
+        <SourceDetailPanel sourceId="src_1" highlightPageIdx={2} />
+        <ScopeProbe which="after" />
+      </>,
+      { wrapper },
+    )
+    await screen.findByRole('heading', { name: 'Paper A' })
+    await waitFor(() => expect(researchApi.getSourcePageImage).toHaveBeenCalled())
+    expect(snapshotAfter).toEqual(snapshotBefore)
+    view.unmount()
+
+    // 具名限定存在时卸载也不得清除（SourceDetailPanel 不调用 clearSingle）
+    const second = makeWrapper()
+    function ScopeSetter() {
+      const { setSingle, getSnapshot } = useResearchScope()
+      return (
+        <button
+          type="button"
+          data-testid="test-set-pin"
+          onClick={() => {
+            setSingle('src_9', 'sess_9')
+            window.sessionStorage.setItem('probe-snap', JSON.stringify(getSnapshot()))
+          }}
+        >
+          set
+        </button>
+      )
+    }
+    const view2 = render(
+      <>
+        <ScopeSetter />
+        <SourceDetailPanel sourceId="src_1" />
+      </>,
+      { wrapper: second.wrapper },
+    )
+    await screen.findByRole('heading', { name: 'Paper A' })
+    fireEvent.click(screen.getByTestId('test-set-pin'))
+    view2.unmount()
+    expect(JSON.parse(window.sessionStorage.getItem('probe-snap') ?? '{}')).toMatchObject({
+      singleSourceId: 'src_9',
+    })
+  })
+})
+
+describe('SourceDetailPanel · Issue #1011 F08 能力/字段 fail-closed（保持 pin 基线 UI）', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    sourceAnchorMocks.useRuntimeOptional.mockReturnValue(null)
+    sourceAnchorMocks.useEditor.mockReturnValue(sourceAnchorMocks.editor as never)
+    stubObjectUrls()
+  })
+  afterEach(() => {
+    restoreObjectUrls()
+  })
+
+  it('D1-E 能力缺失（/models 无能力键）→ 不显示格式 badge/打开原文件/页图，chunk 保持旧标签', async () => {
+    vi.mocked(researchApi.listModels).mockResolvedValue({ models: [], capabilities: {} } as never)
+    vi.mocked(researchApi.getSource).mockResolvedValue(mediaSource() as never)
+    const { wrapper } = makeWrapper()
+    render(<SourceDetailPanel sourceId="src_1" highlightPageIdx={2} />, { wrapper })
+    await screen.findByRole('heading', { name: 'Paper A' })
+    await waitFor(() => expect(researchApi.listModels).toHaveBeenCalled())
+    expect(screen.queryByTestId('source-format-badge')).toBeNull()
+    expect(screen.queryByTestId('source-open-file')).toBeNull()
+    expect(screen.queryByTestId('source-page-image')).toBeNull()
+    expect(screen.getByText(/research.sources.chunkPage:3/)).toBeInTheDocument()
+    expect(researchApi.getSourcePageImage).not.toHaveBeenCalled()
+  })
+
+  it('旧 host：source_type/file_available 缺失 → 不显示任何新媒体/格式 UI（逐字节基线语义）', async () => {
+    vi.mocked(researchApi.listModels).mockResolvedValue({
+      models: [],
+      capabilities: D1E_READY_CAPABILITY,
+    } as never)
+    const legacy = mediaSource()
+    delete (legacy as Record<string, unknown>).source_type
+    delete (legacy as Record<string, unknown>).file_available
+    vi.mocked(researchApi.getSource).mockResolvedValue(legacy as never)
+    const { wrapper } = makeWrapper()
+    render(<SourceDetailPanel sourceId="src_1" highlightPageIdx={2} />, { wrapper })
+    await screen.findByRole('heading', { name: 'Paper A' })
+    await waitFor(() => expect(researchApi.listModels).toHaveBeenCalled())
+    expect(screen.queryByTestId('source-format-badge')).toBeNull()
+    expect(screen.queryByTestId('source-open-file')).toBeNull()
+    expect(screen.queryByTestId('source-page-image')).toBeNull()
+    expect(screen.getByText(/research.sources.chunkPage:3/)).toBeInTheDocument()
+    expect(screen.getByTestId('markdown')).toHaveTextContent('page three content')
+  })
+
+  it('能力就绪 + source_type=pdf + file_available 缺失 → 只显示声明格式 UI，不显示打开原文件', async () => {
+    vi.mocked(researchApi.listModels).mockResolvedValue({
+      models: [],
+      capabilities: D1E_READY_CAPABILITY,
+    } as never)
+    const detail = mediaSource()
+    delete (detail as Record<string, unknown>).file_available
+    vi.mocked(researchApi.getSource).mockResolvedValue(detail as never)
+    const { wrapper } = makeWrapper()
+    render(<SourceDetailPanel sourceId="src_1" />, { wrapper })
+    await screen.findByRole('heading', { name: 'Paper A' })
+    expect(screen.getByTestId('source-format-badge')).toHaveTextContent(
+      'research.source.formatPdf',
+    )
+    expect(screen.queryByTestId('source-open-file')).toBeNull()
+  })
+})
+
+describe('SourceDetailPanel · Issue #1011 F04 页图（仅引用定位页自动加载 / blob 释放）', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    sourceAnchorMocks.useRuntimeOptional.mockReturnValue(null)
+    sourceAnchorMocks.useEditor.mockReturnValue(sourceAnchorMocks.editor as never)
+    stubObjectUrls()
+    d1eReady()
+  })
+  afterEach(() => {
+    restoreObjectUrls()
+  })
+
+  it('citation 跳转 highlightPageIdx → 自动加载对应 0-based 页并渲染 blob 图', async () => {
+    vi.mocked(researchApi.getSourcePageImage).mockResolvedValue(blobResponse())
+    const { wrapper } = makeWrapper()
+    render(<SourceDetailPanel sourceId="src_1" highlightPageIdx={2} />, { wrapper })
+    await screen.findByRole('heading', { name: 'Paper A' })
+    await screen.findByTestId('source-page-image-img')
+    expect(researchApi.getSourcePageImage).toHaveBeenCalledWith(
+      'proj_1',
+      'src_1',
+      2,
+      { documentId: 'doc_1', documentVersion: 'v3' },
+    )
+    expect(screen.getByTestId('source-page-image-img')).toHaveAttribute(
+      'src',
+      'blob:mock-object-url',
+    )
+    // 页图区是 region，img 只在页图区内
+    expect(screen.getByTestId('source-page-image').contains(
+      screen.getByTestId('source-page-image-img'),
+    )).toBe(true)
+  })
+
+  it('无 citation 定位页时不自动请求；点击页图入口才请求首个 chunk 页', async () => {
+    vi.mocked(researchApi.getSourcePageImage).mockResolvedValue(blobResponse())
+    const { wrapper } = makeWrapper()
+    render(<SourceDetailPanel sourceId="src_1" />, { wrapper })
+    await screen.findByRole('heading', { name: 'Paper A' })
+    expect(researchApi.getSourcePageImage).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByTestId('source-page-image-load'))
+    await screen.findByTestId('source-page-image-img')
+    expect(researchApi.getSourcePageImage).toHaveBeenCalledWith(
+      'proj_1',
+      'src_1',
+      2,
+      { documentId: 'doc_1', documentVersion: 'v3' },
+    )
+  })
+
+  it('对象 URL 在卸载时释放；页图加载失败不阻塞来源正文/返回入口', async () => {
+    vi.mocked(researchApi.getSourcePageImage).mockResolvedValue(blobResponse())
+    const { wrapper } = makeWrapper()
+    const view = render(
+      <SourceDetailPanel sourceId="src_1" highlightPageIdx={2} returnTargetAvailable onReturnToAnswer={vi.fn()} />,
+      { wrapper },
+    )
+    await screen.findByTestId('source-page-image-img')
+    view.unmount()
+    expect(URL.revokeObjectURL).toHaveBeenCalled()
+  })
+
+  it('ppt 使用 slide 页图入口文案；xlsx 不显示页图区（sheet 级 + 打开原文件）', async () => {
+    vi.mocked(researchApi.getSourcePageImage).mockResolvedValue(blobResponse())
+    const { wrapper } = makeWrapper()
+    vi.mocked(researchApi.getSource).mockResolvedValue(mediaSource({ source_type: 'ppt' }) as never)
+    const pptView = render(<SourceDetailPanel sourceId="src_1" />, { wrapper })
+    await screen.findByRole('heading', { name: 'Paper A' })
+    expect(screen.getByTestId('source-page-image-load')).toHaveTextContent(
+      'research.source.slideImage',
+    )
+    pptView.unmount()
+
+    const { wrapper: xlsxWrapper } = makeWrapper()
+    vi.mocked(researchApi.getSource).mockResolvedValue(
+      mediaSource({ source_type: 'xlsx' }) as never,
+    )
+    render(<SourceDetailPanel sourceId="src_1" highlightPageIdx={2} />, { wrapper: xlsxWrapper })
+    await screen.findByRole('heading', { name: 'Paper A' })
+    expect(screen.queryByTestId('source-page-image')).toBeNull()
+    expect(researchApi.getSourcePageImage).not.toHaveBeenCalled()
+    expect(screen.getByTestId('source-format-badge')).toHaveTextContent(
+      'research.source.formatXlsx',
+    )
+    expect(screen.getByTestId('source-open-file')).toBeInTheDocument()
+  })
+})
+
+describe('SourceDetailPanel · Issue #1011 F05 媒体错误矩阵（§2.10）', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    sourceAnchorMocks.useRuntimeOptional.mockReturnValue(null)
+    sourceAnchorMocks.useEditor.mockReturnValue(sourceAnchorMocks.editor as never)
+    stubObjectUrls()
+    d1eReady()
+  })
+  afterEach(() => {
+    restoreObjectUrls()
+  })
+
+  it('410 envelope source_access_restricted → 显示不可访问，且不提供重试', async () => {
+    vi.mocked(researchApi.getSourcePageImage).mockImplementation(() =>
+      mediaFailure(410, 'source_access_restricted', null),
+    )
+    const { wrapper } = makeWrapper()
+    render(<SourceDetailPanel sourceId="src_1" highlightPageIdx={2} />, { wrapper })
+    await screen.findByRole('heading', { name: 'Paper A' })
+    await screen.findByTestId('source-media-restricted')
+    expect(screen.getByTestId('source-media-error')).toHaveTextContent(
+      'research.errors.sourceAccessRestricted',
+    )
+    expect(screen.queryByTestId('source-media-retry')).toBeNull()
+    expect(screen.queryByTestId('source-page-image-img')).toBeNull()
+    // 无自动循环：一次请求就停
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(researchApi.getSourcePageImage).toHaveBeenCalledTimes(1)
+  })
+
+  it('非 envelope 410 不得显示为撤权（按可重试普通失败处理）', async () => {
+    vi.mocked(researchApi.getSourcePageImage).mockImplementation(() =>
+      mediaFailure(410, null, null),
+    )
+    const { wrapper } = makeWrapper()
+    render(<SourceDetailPanel sourceId="src_1" highlightPageIdx={2} />, { wrapper })
+    await screen.findByTestId('source-media-retryable')
+    expect(screen.queryByTestId('source-media-restricted')).toBeNull()
+    expect(screen.getByTestId('source-media-retry')).toBeInTheDocument()
+  })
+
+  it('unsupported 404 → 提示该格式无页图 + 打开原文件入口（不重试）', async () => {
+    vi.mocked(researchApi.getSourcePageImage).mockImplementation(() =>
+      mediaFailure(404, null, 'Preview not supported for xlsx; open source file directly'),
+    )
+    const { wrapper } = makeWrapper()
+    render(<SourceDetailPanel sourceId="src_1" highlightPageIdx={2} />, { wrapper })
+    await screen.findByTestId('source-media-unsupported')
+    expect(screen.getByTestId('source-media-error')).toHaveTextContent(
+      'research.source.pageImageNotSupported',
+    )
+    expect(screen.queryByTestId('source-media-retry')).toBeNull()
+    // 打开原文件入口（未限定在 header 时仍可用）
+    expect(screen.getAllByTestId('source-open-file').length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('非 envelope 404（位置/文件不可用）→ 手动重试一次；持续失败后停止重试', async () => {
+    vi.mocked(researchApi.getSourcePageImage).mockImplementation(() =>
+      mediaFailure(404, null, 'Page source file is not available'),
+    )
+    const { wrapper } = makeWrapper()
+    render(<SourceDetailPanel sourceId="src_1" highlightPageIdx={2} />, { wrapper })
+    await screen.findByTestId('source-media-unavailable')
+    const retry = screen.getByTestId('source-media-retry')
+    fireEvent.click(retry)
+    await waitFor(() => expect(researchApi.getSourcePageImage).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(screen.queryByTestId('source-media-retry')).toBeNull())
+    expect(screen.getByTestId('source-media-unavailable')).toHaveTextContent(
+      'research.source.pageImageUnavailable',
+    )
+  })
+
+  it('authority 行竞态缺失（404 纯 detail "Source not found"）→ 无 UI 重试按钮', async () => {
+    vi.mocked(researchApi.getSourcePageImage).mockImplementation(() =>
+      mediaFailure(404, null, 'Source not found'),
+    )
+    const { wrapper } = makeWrapper()
+    render(<SourceDetailPanel sourceId="src_1" highlightPageIdx={2} />, { wrapper })
+    await screen.findByTestId('source-media-source-unavailable')
+    expect(screen.queryByTestId('source-media-retry')).toBeNull()
+    expect(screen.getByTestId('source-media-source-unavailable')).toHaveTextContent(
+      'research.source.pageImageSourceUnavailable',
+    )
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(researchApi.getSourcePageImage).toHaveBeenCalledTimes(1)
+  })
+
+  it('503 envelope → 失败 + 重试；点击重试成功后替换为页图（无自动循环）', async () => {
+    vi.mocked(researchApi.getSourcePageImage)
+      .mockImplementationOnce(() => mediaFailure(503, 'session_store_unavailable', null))
+      .mockResolvedValueOnce(blobResponse())
+    const { wrapper } = makeWrapper()
+    render(<SourceDetailPanel sourceId="src_1" highlightPageIdx={2} />, { wrapper })
+    await screen.findByTestId('source-media-retryable')
+    expect(researchApi.getSourcePageImage).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByTestId('source-media-retry'))
+    await screen.findByTestId('source-page-image-img')
+    expect(researchApi.getSourcePageImage).toHaveBeenCalledTimes(2)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(researchApi.getSourcePageImage).toHaveBeenCalledTimes(2)
+  })
+
+  it('网络错误（无 response）→ 可重试；页图失败不影响标题/返回原回答入口', async () => {
+    vi.mocked(researchApi.getSourcePageImage).mockImplementation(() =>
+      Promise.reject(new Error('Network Error')),
+    )
+    const { wrapper } = makeWrapper()
+    render(
+      <SourceDetailPanel sourceId="src_1" highlightPageIdx={2} returnTargetAvailable onReturnToAnswer={vi.fn()} />,
+      { wrapper },
+    )
+    await screen.findByTestId('source-media-retryable')
+    expect(screen.getByTestId('source-media-retry')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Paper A' })).toBeInTheDocument()
+    expect(screen.getByTestId('source-return-to-answer')).toBeInTheDocument()
+  })
+
+  it('来源详情加载失败 → 错误块提供「重试」refetch（410 撤权不提供）', async () => {
+    vi.mocked(researchApi.getSource).mockRejectedValueOnce({
+      response: { status: 503 },
+    } as never)
+    const { wrapper } = makeWrapper()
+    render(<SourceDetailPanel sourceId="src_1" />, { wrapper })
+    await screen.findByTestId('source-detail-error')
+    fireEvent.click(screen.getByTestId('source-detail-retry'))
+    await screen.findByRole('heading', { name: 'Paper A' })
+
+    vi.mocked(researchApi.getSource).mockRejectedValue({
+      response: {
+        status: 410,
+        data: { detail: { code: 'source_access_restricted', message: 'x' } },
+      },
+    } as never)
+    const { wrapper: revokedWrapper } = makeWrapper()
+    render(<SourceDetailPanel sourceId="src_1" />, { wrapper: revokedWrapper })
+    await screen.findByTestId('source-detail-error')
+    expect(screen.queryByTestId('source-detail-retry')).toBeNull()
+  })
+})
+
+describe('SourceDetailPanel · Issue #1011 F06 打开原文件（blob + 下载，PDF 不 inline）', () => {
+  let windowOpenSpy: ReturnType<typeof vi.spyOn>
+  let anchorClickSpy: ReturnType<typeof vi.spyOn>
+  let createElementSpy: ReturnType<typeof vi.spyOn>
+
+  beforeEach(() => {
+    vi.resetAllMocks()
+    sourceAnchorMocks.useRuntimeOptional.mockReturnValue(null)
+    sourceAnchorMocks.useEditor.mockReturnValue(sourceAnchorMocks.editor as never)
+    stubObjectUrls()
+    d1eReady()
+    windowOpenSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+    anchorClickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    createElementSpy = vi.spyOn(document, 'createElement')
+  })
+  afterEach(() => {
+    restoreObjectUrls()
+    windowOpenSpy.mockRestore()
+    anchorClickSpy.mockRestore()
+    createElementSpy.mockRestore()
+  })
+
+  it('所有格式均 blob + <a download>：文件名来自 Content-Disposition，不 window.open/新标签页', async () => {
+    vi.mocked(researchApi.getSourceFile).mockResolvedValue({
+      blob: new Blob(['pdf-bytes'], { type: 'application/pdf' }),
+      filename: 'B05 paper.pdf',
+    })
+    const { wrapper } = makeWrapper()
+    render(<SourceDetailPanel sourceId="src_1" />, { wrapper })
+    await screen.findByRole('heading', { name: 'Paper A' })
+    fireEvent.click(screen.getByTestId('source-open-file'))
+    await waitFor(() => expect(anchorClickSpy).toHaveBeenCalledTimes(1))
+    expect(researchApi.getSourceFile).toHaveBeenCalledWith('proj_1', 'src_1', {
+      documentId: 'doc_1',
+      documentVersion: 'v3',
+    })
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1)
+    expect(windowOpenSpy).not.toHaveBeenCalled()
+
+    // 实现 click 后即移除 anchor（避免 DOM 残留）：从 createElement 捕获实例。
+    const createdAnchors = createElementSpy.mock.results
+      .map((result: { value: unknown }) => result.value as HTMLElement)
+      .filter((element: HTMLElement) => element.tagName === 'A')
+    expect(createdAnchors.length).toBeGreaterThanOrEqual(1)
+    expect(createdAnchors[0].getAttribute('download')).toBe('B05 paper.pdf')
+    // PDF 也走下载（不 inline 声明/新标签页）
+    expect(createdAnchors[0].getAttribute('target')).toBeNull()
+  })
+
+  it('打开原文件失败 → 就地错误提示（可重试），不伪造下载', async () => {
+    vi.mocked(researchApi.getSourceFile).mockRejectedValue({ status: 404, code: null, detail: 'Source file is not available' })
+    const { wrapper } = makeWrapper()
+    render(<SourceDetailPanel sourceId="src_1" />, { wrapper })
+    await screen.findByRole('heading', { name: 'Paper A' })
+    fireEvent.click(screen.getByTestId('source-open-file'))
+    expect(await screen.findByTestId('source-open-file-error')).toHaveTextContent(
+      'research.source.openOriginalFailed',
+    )
+    expect(anchorClickSpy).not.toHaveBeenCalled()
+    // 按钮保留，可再次点击重试
+    expect(screen.getByTestId('source-open-file')).not.toBeDisabled()
+  })
+
+  it('file_available=false → 不显示打开原文件入口', async () => {
+    vi.mocked(researchApi.getSource).mockResolvedValue(
+      mediaSource({ file_available: false }) as never,
+    )
+    const { wrapper } = makeWrapper()
+    render(<SourceDetailPanel sourceId="src_1" />, { wrapper })
+    await screen.findByRole('heading', { name: 'Paper A' })
+    expect(screen.queryByTestId('source-open-file')).toBeNull()
+    expect(researchApi.getSourceFile).not.toHaveBeenCalled()
+  })
+})
+
+describe('SourceDetailPanel · Issue #1011 F07 图表不可读声明（诚实声明，不标已验证）', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    sourceAnchorMocks.useRuntimeOptional.mockReturnValue(null)
+    sourceAnchorMocks.useEditor.mockReturnValue(sourceAnchorMocks.editor as never)
+    stubObjectUrls()
+    d1eReady()
+  })
+  afterEach(() => {
+    restoreObjectUrls()
+  })
+
+  it('figure/image chunk（含 image_description 标记）→ 可见声明 + 打开原文件入口', async () => {
+    vi.mocked(researchApi.getSource).mockResolvedValue(
+      mediaSource({
+        markdown_chunks: [
+          {
+            chunk_id: 'chunk_fig',
+            chunk_ordinal: 0,
+            content_hash: 'c'.repeat(64),
+            page_idx: 4,
+            markdown: 'Figure: overall survival\n<!-- image_description -->',
+          },
+          {
+            chunk_id: 'chunk_text',
+            chunk_ordinal: 1,
+            content_hash: 'd'.repeat(64),
+            page_idx: 5,
+            markdown: 'ordinary paragraph',
+          },
+        ],
+      }) as never,
+    )
+    const { wrapper } = makeWrapper()
+    render(<SourceDetailPanel sourceId="src_1" />, { wrapper })
+    await screen.findByRole('heading', { name: 'Paper A' })
+    const statement = await screen.findByTestId('source-figure-unavailable')
+    expect(statement).toHaveTextContent('research.source.figureUnavailable')
+    // 声明落在 figure chunk section 内
+    const figureSection = statement.closest('[data-chunk-id]')
+    expect(figureSection?.getAttribute('data-chunk-id')).toBe('chunk_fig')
+    // 打开原文件入口在声明内（header 之外）
+    expect(statement.querySelector('[data-testid="source-open-file"]')).not.toBeNull()
+    // 普通 chunk 不显示声明
+    const textSection = document.querySelector('[data-chunk-id="chunk_text"]')
+    expect(textSection?.querySelector('[data-testid="source-figure-unavailable"]')).toBeNull()
+    // 不得标为已验证
+    expect(statement.textContent ?? '').not.toMatch(/verified|verification/i)
+  })
+
+  it('能力缺失（d1e off）→ 不显示图表声明（fail-closed 保持旧 UI）', async () => {
+    vi.mocked(researchApi.listModels).mockResolvedValue({ models: [], capabilities: {} } as never)
+    vi.mocked(researchApi.getSource).mockResolvedValue(
+      mediaSource({
+        markdown_chunks: [
+          {
+            chunk_id: 'chunk_fig',
+            chunk_ordinal: 0,
+            content_hash: 'c'.repeat(64),
+            page_idx: 4,
+            markdown: 'Figure\n<!-- image_description -->',
+          },
+        ],
+      }) as never,
+    )
+    const { wrapper } = makeWrapper()
+    render(<SourceDetailPanel sourceId="src_1" />, { wrapper })
+    await screen.findByRole('heading', { name: 'Paper A' })
+    await waitFor(() => expect(researchApi.listModels).toHaveBeenCalled())
+    expect(screen.queryByTestId('source-figure-unavailable')).toBeNull()
   })
 })
