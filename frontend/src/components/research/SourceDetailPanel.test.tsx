@@ -1327,3 +1327,108 @@ describe('SourceDetailPanel · Issue #1011 F07 图表不可读声明（诚实声
     expect(screen.queryByTestId('source-figure-unavailable')).toBeNull()
   })
 })
+
+// ---------------------------------------------------------------------------
+// Issue #1011 PR #115 Reviewer A round-1 MEDIUM 修复（红→绿）。
+// MEDIUM-1：in-flight 页图请求在卸载后 resolve 不得再创建对象 URL / 写状态。
+// MEDIUM-2：页图 410 撤权必须隐藏所有「打开原文件」入口（header/figure/unsupported
+//           fallback 共用一个 flag）。
+// MEDIUM-3：highlightPageIdx 数字→null 时定位页变化必须重置页图状态，避免
+//           标签（新定位页）与图片（旧页）不一致。
+// ---------------------------------------------------------------------------
+
+describe('SourceDetailPanel · PR #115 MEDIUM 修复（round 1）', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    sourceAnchorMocks.useRuntimeOptional.mockReturnValue(null)
+    sourceAnchorMocks.useEditor.mockReturnValue(sourceAnchorMocks.editor as never)
+    stubObjectUrls()
+    d1eReady()
+  })
+  afterEach(() => {
+    restoreObjectUrls()
+  })
+
+  it('MEDIUM-1：页图请求 in-flight 时卸载 → resolve 后不再创建对象 URL（不写已卸载组件）', async () => {
+    let resolveBlob: ((blob: Blob) => void) | null = null
+    vi.mocked(researchApi.getSourcePageImage).mockImplementation(
+      () => new Promise<Blob>((resolve) => {
+        resolveBlob = resolve
+      }),
+    )
+    const { wrapper } = makeWrapper()
+    const view = render(<SourceDetailPanel sourceId="src_1" highlightPageIdx={2} />, { wrapper })
+    await screen.findByRole('heading', { name: 'Paper A' })
+    await waitFor(() => expect(researchApi.getSourcePageImage).toHaveBeenCalledTimes(1))
+    expect(resolveBlob).not.toBeNull()
+
+    // 卸载发生在请求 resolve 之前：cleanup 必须 bump request id 使 inflight 早退。
+    view.unmount()
+    await act(async () => {
+      resolveBlob?.(blobResponse())
+      await Promise.resolve()
+    })
+    expect(URL.createObjectURL).not.toHaveBeenCalled()
+  })
+
+  it('MEDIUM-2：页图 410 撤权 → 隐藏 header/figure 的全部打开原文件入口，仅保留 restricted 文案、无重试', async () => {
+    vi.mocked(researchApi.getSourcePageImage).mockImplementation(() =>
+      mediaFailure(410, 'source_access_restricted', null),
+    )
+    vi.mocked(researchApi.getSource).mockResolvedValue(
+      mediaSource({
+        markdown_chunks: [
+          {
+            chunk_id: 'chunk_fig',
+            chunk_ordinal: 0,
+            content_hash: 'c'.repeat(64),
+            page_idx: 2,
+            markdown: 'Figure\n<!-- image_description -->',
+          },
+        ],
+      }) as never,
+    )
+    const { wrapper } = makeWrapper()
+    render(<SourceDetailPanel sourceId="src_1" highlightPageIdx={2} />, { wrapper })
+    await screen.findByRole('heading', { name: 'Paper A' })
+    expect(await screen.findByTestId('source-media-restricted')).toBeInTheDocument()
+    // header + figure chunk + unsupported fallback 共用一个 canShowOpenFile flag
+    expect(screen.queryAllByTestId('source-open-file')).toHaveLength(0)
+    // 图表声明仍在（诚实声明不依赖媒体控件），但声明内无 open-file 入口
+    const statement = screen.getByTestId('source-figure-unavailable')
+    expect(statement.querySelector('[data-testid="source-open-file"]')).toBeNull()
+    expect(screen.queryByTestId('source-file-retry')).toBeNull()
+  })
+
+  it('MEDIUM-2：无 figure chunk 时页图 410 同样隐藏 header 打开原文件入口', async () => {
+    vi.mocked(researchApi.getSourcePageImage).mockImplementation(() =>
+      mediaFailure(410, 'source_access_restricted', null),
+    )
+    const { wrapper } = makeWrapper()
+    render(<SourceDetailPanel sourceId="src_1" highlightPageIdx={2} />, { wrapper })
+    await screen.findByRole('heading', { name: 'Paper A' })
+    await screen.findByTestId('source-media-restricted')
+    expect(screen.queryAllByTestId('source-open-file')).toHaveLength(0)
+  })
+
+  it('MEDIUM-3：highlightPageIdx 数字→null → 旧页图不残留，回到页图入口且标签为定位页', async () => {
+    vi.mocked(researchApi.getSourcePageImage).mockResolvedValue(blobResponse())
+    const { wrapper } = makeWrapper()
+    const { rerender } = render(
+      <SourceDetailPanel sourceId="src_1" highlightPageIdx={0} />,
+      { wrapper },
+    )
+    await screen.findByTestId('source-page-image-img')
+    expect(researchApi.getSourcePageImage).toHaveBeenCalledTimes(1)
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1)
+
+    rerender(<SourceDetailPanel sourceId="src_1" highlightPageIdx={null} />)
+    // 旧页图（page 0）被丢弃：不残留 img，回到 load 按钮（定位页 = 首个 chunk 页 2 → page 3）
+    await waitFor(() => expect(screen.queryByTestId('source-page-image-img')).toBeNull())
+    const load = await screen.findByTestId('source-page-image-load')
+    expect(load).toHaveTextContent('research.source.pageImage:3')
+    // 旧对象 URL 释放；不因重置而自动重新请求（数字→null 不再自动加载）
+    expect(URL.revokeObjectURL).toHaveBeenCalled()
+    expect(researchApi.getSourcePageImage).toHaveBeenCalledTimes(1)
+  })
+})

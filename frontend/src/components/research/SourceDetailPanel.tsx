@@ -237,7 +237,25 @@ export function SourceDetailPanel({
     setOpenFileState(IDLE_OPEN_FILE)
   }, [revokePageImageObjectUrl, sourceId])
 
-  useEffect(() => () => revokePageImageObjectUrl(), [revokePageImageObjectUrl])
+  // 评审 MEDIUM-1：卸载时先 bump request id 再 revoke——in-flight 页图请求在
+  // 卸载后 resolve 时 requestId 不匹配会早退，不再 createObjectURL/写已卸载组件。
+  useEffect(
+    () => () => {
+      pageImageRequestRef.current += 1
+      revokePageImageObjectUrl()
+    },
+    [revokePageImageObjectUrl],
+  )
+
+  // 评审 MEDIUM-3：定位页变化（含 `highlightPageIdx` 数字→null / 换页 / chunk
+  // 集合变化）→ 丢弃旧页图状态，避免标签（新定位页）与图片（旧页）不一致。
+  // 声明在 auto-load effect 之前：先重置、再由 auto-load 发起新定位页请求。
+  useEffect(() => {
+    pageImageRequestRef.current += 1
+    revokePageImageObjectUrl()
+    setPageImage(IDLE_PAGE_IMAGE)
+    setPageImageRetryCount(0)
+  }, [pageImageTarget, revokePageImageObjectUrl])
 
   const loadPageImage = useCallback(
     async (pageIdx: number): Promise<void> => {
@@ -734,7 +752,12 @@ export function SourceDetailPanel({
     openFileState.kind === 'idle' || openFileState.kind === 'loading'
       ? null
       : openFileState.kind
-  const canShowOpenFile = canOpenFile && openFileFailureKind !== 'forbidden'
+  // 评审 MEDIUM-2：页图 410 撤权同样意味着媒体不可用——隐藏所有 open-file
+  // 入口（header/figure chunk/unsupported fallback 共用本 flag）。
+  const canShowOpenFile =
+    canOpenFile
+    && openFileFailureKind !== 'forbidden'
+    && pageImage.status !== 'forbidden'
   const canRetryOpenFile =
     openFileFailureKind === 'retryable'
     || ((openFileFailureKind === 'unavailable' || openFileFailureKind === 'unsupported')
