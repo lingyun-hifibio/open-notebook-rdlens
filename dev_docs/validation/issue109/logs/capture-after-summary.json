@@ -1,7 +1,7 @@
 {
   "phase": "after",
   "host": "http://127.0.0.1:8621/",
-  "capturedAt": "2026-11-05T02:31:51.770Z",
+  "capturedAt": "2026-11-05T03:52:43.288Z",
   "modeFile": "/tmp/issue109-local-model-mode",
   "gatewayLog": "/home/lchen/.dsh/state/superagent/work/fork-shared-gpu-cd906bb85363/visual-evidence/logs/gateway-requests.log",
   "scenarios": [
@@ -110,14 +110,14 @@
           "pass": true
         },
         {
-          "label": "chat-model-blocked-hint visible",
-          "pass": true,
-          "detail": "count=1"
-        },
-        {
-          "label": "hint text equals backend message",
+          "label": "composer gate hint shows backend message",
           "pass": true,
           "detail": "当前 GPU 正与其他任务共用，可用显存不足以支撑 Research 使用本地模型，请改用外部 AI 模型。"
+        },
+        {
+          "label": "no duplicate panel-level hint on wired path",
+          "pass": true,
+          "detail": "count=0"
         },
         {
           "label": "chat-send disabled",
@@ -168,6 +168,74 @@
         }
       ],
       "screenshot": "/home/lchen/.dsh/state/superagent/work/fork-shared-gpu-cd906bb85363/visual-evidence/screenshots/after_shared_insights_ai_1440.png"
+    },
+    {
+      "name": "after_shared_source_chat_1440",
+      "pass": true,
+      "checks": [
+        {
+          "label": "wired source-session composer reached (production path)",
+          "pass": true
+        },
+        {
+          "label": "blocked hint text equals backend message",
+          "pass": true,
+          "detail": "当前 GPU 正与其他任务共用，可用显存不足以支撑 Research 使用本地模型，请改用外部 AI 模型。"
+        },
+        {
+          "label": "source chat send disabled",
+          "pass": true
+        }
+      ],
+      "screenshot": "/home/lchen/.dsh/state/superagent/work/fork-shared-gpu-cd906bb85363/visual-evidence/screenshots/after_shared_source_chat_1440.png"
+    },
+    {
+      "name": "after_shared_transformations_run_1440",
+      "pass": true,
+      "checks": [
+        {
+          "label": "transformation-run-blocked-hint visible",
+          "pass": true,
+          "detail": "count=1"
+        },
+        {
+          "label": "hint text equals backend message",
+          "pass": true,
+          "detail": "当前 GPU 正与其他任务共用，可用显存不足以支撑 Research 使用本地模型，请改用外部 AI 模型。"
+        },
+        {
+          "label": "run confirm disabled",
+          "pass": true
+        }
+      ],
+      "screenshot": "/home/lchen/.dsh/state/superagent/work/fork-shared-gpu-cd906bb85363/visual-evidence/screenshots/after_shared_transformations_run_1440.png"
+    },
+    {
+      "name": "after_shared_activity_1440",
+      "pass": true,
+      "checks": [
+        {
+          "label": "synthetic outcome_unknown coverage job rendered",
+          "pass": true,
+          "detail": "count=1"
+        },
+        {
+          "label": "coverage retry trigger absent (canExecute=false)",
+          "pass": true,
+          "detail": "count=0"
+        },
+        {
+          "label": "activity-model-blocked-hint visible",
+          "pass": true,
+          "detail": "count=1"
+        },
+        {
+          "label": "hint text equals backend message",
+          "pass": true,
+          "detail": "当前 GPU 正与其他任务共用，可用显存不足以支撑 Research 使用本地模型，请改用外部 AI 模型。"
+        }
+      ],
+      "screenshot": "/home/lchen/.dsh/state/superagent/work/fork-shared-gpu-cd906bb85363/visual-evidence/screenshots/after_shared_activity_1440.png"
     }
   ],
   "failed": [],

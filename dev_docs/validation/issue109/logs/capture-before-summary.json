@@ -1,7 +1,7 @@
 {
   "phase": "before",
   "host": "http://127.0.0.1:8601/",
-  "capturedAt": "2026-11-05T02:27:34.899Z",
+  "capturedAt": "2026-11-05T03:51:17.164Z",
   "modeFile": "/tmp/issue109-local-model-mode",
   "gatewayLog": "/home/lchen/.dsh/state/superagent/work/fork-shared-gpu-cd906bb85363/visual-evidence/logs/gateway-requests.log",
   "scenarios": [
@@ -99,9 +99,9 @@
           "pass": true
         },
         {
-          "label": "no chat-model-blocked-hint",
+          "label": "no blocked hint (gate or panel)",
           "pass": true,
-          "detail": "count=0"
+          "detail": "gate=\"\" panel=\"\""
         },
         {
           "label": "chat-send enabled",
@@ -142,6 +142,64 @@
         }
       ],
       "screenshot": "/home/lchen/.dsh/state/superagent/work/fork-shared-gpu-cd906bb85363/visual-evidence/screenshots/before_shared_insights_ai_1440.png"
+    },
+    {
+      "name": "before_shared_source_chat_1440",
+      "pass": true,
+      "checks": [
+        {
+          "label": "wired source-session composer reached (production path)",
+          "pass": true
+        },
+        {
+          "label": "no backend blocked message",
+          "pass": true,
+          "detail": "hint=\"\""
+        },
+        {
+          "label": "source chat send enabled",
+          "pass": true
+        }
+      ],
+      "screenshot": "/home/lchen/.dsh/state/superagent/work/fork-shared-gpu-cd906bb85363/visual-evidence/screenshots/before_shared_source_chat_1440.png"
+    },
+    {
+      "name": "before_shared_transformations_run_1440",
+      "pass": true,
+      "checks": [
+        {
+          "label": "no transformation-run-blocked-hint",
+          "pass": true,
+          "detail": "count=0"
+        },
+        {
+          "label": "run confirm enabled",
+          "pass": true
+        }
+      ],
+      "screenshot": "/home/lchen/.dsh/state/superagent/work/fork-shared-gpu-cd906bb85363/visual-evidence/screenshots/before_shared_transformations_run_1440.png"
+    },
+    {
+      "name": "before_shared_activity_1440",
+      "pass": true,
+      "checks": [
+        {
+          "label": "synthetic outcome_unknown coverage job rendered",
+          "pass": true,
+          "detail": "count=1"
+        },
+        {
+          "label": "coverage retry trigger visible",
+          "pass": true,
+          "detail": "count=1"
+        },
+        {
+          "label": "no activity-model-blocked-hint",
+          "pass": true,
+          "detail": "count=0"
+        }
+      ],
+      "screenshot": "/home/lchen/.dsh/state/superagent/work/fork-shared-gpu-cd906bb85363/visual-evidence/screenshots/before_shared_activity_1440.png"
     }
   ],
   "failed": [],
