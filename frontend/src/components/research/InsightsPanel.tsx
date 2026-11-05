@@ -50,8 +50,14 @@ export function InsightsPanel({
   const { t } = useTranslation()
   const { toast } = useToast()
   const { projectId, userId, isAdminReadonly } = useResearchWorkspace()
-  const { canExecute, runGuarded, blockedReason, confirmedModelId, invalidateConsent } =
-    useResearchGlobalModel()
+  const {
+    canExecute,
+    runGuarded,
+    blockedReason,
+    confirmedModelId,
+    invalidateConsent,
+    localModelUnavailableMessage,
+  } = useResearchGlobalModel()
   const { data, isLoading, isError } = useResearchInsights(projectId)
   const createMutation = useCreateResearchInsight(projectId)
   const { registerJob } = useResearchJobsController()
@@ -271,7 +277,7 @@ export function InsightsPanel({
                   「请先选择模型」 */}
               {insightType === 'ai' && !canExecute && (
                 <p className="text-xs text-muted-foreground" data-testid="insight-model-blocked">
-                  {researchModelBlockedHint(blockedReason, t)}
+                  {researchModelBlockedHint(blockedReason, t, localModelUnavailableMessage)}
                 </p>
               )}
             </div>

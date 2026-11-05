@@ -60,6 +60,26 @@ describe('ComparePanel', () => {
     localStorage.clear()
   })
 
+  it('#109：shared 下本地模型禁用 → 显示后端 message 且创建禁用', () => {
+    const msg =
+      '当前 GPU 正与其他任务共用，可用显存不足以支撑 Research 使用本地模型，请改用外部 AI 模型。'
+    seedScope('selected', ['src_0', 'src_1'])
+    render(
+      <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+        <ComparePanel
+          sources={sources(2)}
+          isCreating={false}
+          error={null}
+          modelBlocked
+          blockedHint={msg}
+          onCreate={vi.fn(async () => true)}
+        />
+      </ResearchScopeProvider>,
+    )
+    expect(screen.getByTestId('compare-model-blocked-hint')).toHaveTextContent(msg)
+    expect(screen.getByTestId('compare-create')).toBeDisabled()
+  })
+
   it('all 模式：明确英文消息并禁用创建（不落入通用 empty）', () => {
     renderPanel(sources(5), [], 'all')
     expect(screen.getByRole('button', { name: /compare/ })).toBeDisabled()

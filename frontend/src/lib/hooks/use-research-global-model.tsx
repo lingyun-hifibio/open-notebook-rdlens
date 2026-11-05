@@ -60,7 +60,10 @@ import type {
   ResearchEgressConsentResponse,
   ResearchModelOption,
 } from '@/lib/research/types'
-import { coverageAllSelectedFrom } from '@/lib/research/types'
+import {
+  coverageAllSelectedFrom,
+  localModelCapabilityFrom,
+} from '@/lib/research/types'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
 
 export type ResearchModelAvailability = 'available' | 'unavailable' | 'none'
@@ -77,6 +80,8 @@ export type ResearchModelBlockedReason =
   | 'no-model'
   | 'unavailable'
   | 'admin-readonly'
+  /** #813：shared 模式下已确认的本地模型不可执行（后端能力声明） */
+  | 'local-unavailable-shared-gpu'
 
 /** §6.8 受保护的执行体：接收调用时刻捕获的 confirmed model 快照。 */
 export type GuardedOperation<T> = (modelId: string) => T | Promise<T>
@@ -123,6 +128,12 @@ export interface UseResearchGlobalModelResult {
   canExecute: boolean
   /** 禁用原因（'none' 表示可用）；用于引导文案，不做隐式回退 */
   blockedReason: ResearchModelBlockedReason
+  /**
+   * #813：`capabilities.local_model.message`（仅 `available=false` 时非空）。
+   * 由 `researchModelBlockedHint` 原样渲染；后端未下发文案时为 null——
+   * 前端不硬编码、不伪造提示。
+   */
+  localModelUnavailableMessage: string | null
   /**
    * §6.8 统一执行闸门。本地模型直接执行；外部模型且 consent 未生效时
    * 只登记操作并打开确认弹窗，确认完成后用捕获的快照执行。返回
@@ -281,6 +292,20 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
     () => coverageAllSelectedFrom(modelsQuery.data?.capabilities),
     [modelsQuery.data],
   )
+  // #813：本地模型能力协商——与模型目录同一次 GET models 返回（不新增
+  // 请求），随 refetchOnWindowFocus 刷新（请求时刻真值）。判据只在后端
+  // 一处（mode == shared），前端不复制；缺失/畸形 → null（旧后端零回归）。
+  const localModelCapability = useMemo(
+    () => localModelCapabilityFrom(modelsQuery.data?.capabilities),
+    [modelsQuery.data],
+  )
+  const localModelUnavailable = localModelCapability?.available === false
+  const localModelUnavailableMessage =
+    localModelUnavailable &&
+    localModelCapability.message !== null &&
+    localModelCapability.message.trim() !== ''
+      ? localModelCapability.message
+      : null
 
   const preferencesQuery = useQuery({
     queryKey: preferencesKey,
@@ -449,7 +474,11 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
           ? 'no-model'
           : confirmedModelAvailability === 'unavailable'
             ? 'unavailable'
-            : 'none'
+            // #813：shared 下已确认本地模型 → 禁用且展示后端文案；外部模型
+            // 在 shared 下仍可用（产品目标），不得误拦。
+            : localModelUnavailable && !confirmedModelIsExternal
+              ? 'local-unavailable-shared-gpu'
+              : 'none'
   const canExecute = blockedReason === 'none'
 
   // consent 是否需要：以服务端 valid 为准（§6.8 第 7 步：后端 dispatch gate
@@ -703,6 +732,7 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
     confirmedModelAvailability,
     canExecute,
     blockedReason,
+    localModelUnavailableMessage,
     runGuarded,
     pendingScopeLabel,
     pendingModelId,
@@ -735,6 +765,7 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
     isLoadingModel,
     isSavingModel,
     isAdminReadonly,
+    localModelUnavailableMessage,
     models,
     needsConsent,
     pendingScopeLabel,
@@ -768,10 +799,15 @@ export function useResearchGlobalModel(): UseResearchGlobalModelResult {
  * blockedReason → 引导文案（各生成入口共用同一映射，避免文案漂移）。
  * 'none' / 'loading' 返回空串——可用或尚在加载（loading 由骨架/禁用表达，
  * 不需要额外提示行）。
+ *
+ * #813：`local-unavailable-shared-gpu` 原样渲染后端下发的
+ * `capabilities.local_model.message`（`localModelUnavailableMessage`）——
+ * 不在 fork 硬编码文案、不逐字对齐两端；未下发文案时返回空串（不伪造提示）。
  */
 export function researchModelBlockedHint(
   reason: ResearchModelBlockedReason,
   t: (key: string) => string,
+  localModelUnavailableMessage?: string | null,
 ): string {
   switch (reason) {
     case 'no-model':
@@ -782,6 +818,8 @@ export function researchModelBlockedHint(
       return t('research.globalModel.saving')
     case 'admin-readonly':
       return t('research.globalModel.adminReadonly')
+    case 'local-unavailable-shared-gpu':
+      return localModelUnavailableMessage ?? ''
     default:
       return ''
   }

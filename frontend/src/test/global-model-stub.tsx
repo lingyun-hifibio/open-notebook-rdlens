@@ -39,6 +39,8 @@ interface StubOverrides {
   models?: ResearchModelOption[]
   /** #358：后端 Coverage 能力（默认 false=fail-closed；用例可覆盖） */
   coverageAllSelected?: boolean
+  /** #813：后端下发的 shared 本地模型不可用文案（用例可覆盖） */
+  localModelUnavailableMessage?: string | null
   /** 以下字段供 ModelBar/ConsentDialog 组件测试覆盖（默认语义见 useResearchGlobalModel） */
   draftModelId?: string | null
   isSavingModel?: boolean
@@ -85,10 +87,11 @@ export function setGlobalModelStub(next: StubOverrides): void {
   overrides = { ...overrides, ...next }
 }
 
-/** 与真实实现同语义：'none'/'loading' 无提示行 */
+/** 与真实实现同语义：'none'/'loading' 无提示行；#813 原样渲染后端文案 */
 export function researchModelBlockedHint(
   reason: string,
   t: (key: string) => string,
+  localModelUnavailableMessage?: string | null,
 ): string {
   switch (reason) {
     case 'no-model':
@@ -99,6 +102,8 @@ export function researchModelBlockedHint(
       return t('research.globalModel.saving')
     case 'admin-readonly':
       return t('research.globalModel.adminReadonly')
+    case 'local-unavailable-shared-gpu':
+      return localModelUnavailableMessage ?? ''
     default:
       return ''
   }
@@ -175,6 +180,7 @@ export function useResearchGlobalModel(): UseResearchGlobalModelResult {
     confirmedModelAvailability,
     canExecute,
     blockedReason,
+    localModelUnavailableMessage: overrides.localModelUnavailableMessage ?? null,
     runGuarded,
     // RWV2-11（F5 同步）：接口新增字段，stub 必须提供（防 tsc 失败）
     pendingScopeLabel: overrides.pendingScopeLabel ?? null,

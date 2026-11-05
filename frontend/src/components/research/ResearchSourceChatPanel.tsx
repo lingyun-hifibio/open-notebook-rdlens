@@ -28,7 +28,10 @@ import { sessionKey } from '@/lib/research/session-contract'
 import type { ResearchConversationSnapshot } from '@/lib/research/types'
 import type { ConversationController, ConversationSnapshot } from '@/lib/research/session-runtime'
 import type { ConversationTurn } from '@/lib/research/conversation-machine'
-import { useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
+import {
+  researchModelBlockedHint,
+  useResearchGlobalModel,
+} from '@/lib/hooks/use-research-global-model'
 import { formatScopeLabel } from '@/lib/research/scope'
 import { userErrorMessageKey } from '@/lib/research/errors'
 import { translateOrFallback } from '@/lib/locales/translate-or-fallback'
@@ -141,7 +144,12 @@ export function ResearchSourceChatPanel({
   const [query, setQuery] = useState('')
   // #243 §6.4：模型来自顶层全局设置；外部模型需确认时由守卫登记并弹窗，
   // 未确认不发请求（不变量 9）。
-  const { canExecute, runGuarded } = useResearchGlobalModel()
+  const {
+    canExecute,
+    runGuarded,
+    blockedReason,
+    localModelUnavailableMessage,
+  } = useResearchGlobalModel()
   const canExecuteModel = canExecute
   // PR-5b（D5 / Codex P1-#3）：Source 面板补编辑器草稿 + composer。运行时
   // 存在时草稿、发送与提交身份统一由该 source 会话 controller 承担；否则
@@ -670,14 +678,25 @@ export function ResearchSourceChatPanel({
   const baseGate = deriveResearchDraftGate({
     editorSnapshot, conversationSnapshot, kind: 'source',
   })
-  const draftGate =
-    baseGate.allowed && !canExecuteModel
-      ? { allowed: false as const, reason: 'submission_not_ready' as const }
-      : baseGate
+  // #109（round-3）：模型被禁用（含 shared+本地）时，composer 门禁直接显示
+  // 同一后端下发文案，而不是通用 admissionUnavailable；其它门禁原因不变。
+  const modelBlockedGate = baseGate.allowed && !canExecuteModel
+  const draftGate = modelBlockedGate
+    ? { allowed: false as const, reason: 'submission_not_ready' as const }
+    : baseGate
+  const modelBlockedHint = researchModelBlockedHint(
+    blockedReason,
+    t,
+    localModelUnavailableMessage,
+  )
   const draftGateReasonText =
     draftGate.allowed || draftGate.reason === null || draftGate.reason === undefined
       ? null
-      : t(researchDraftGateReasonKey(draftGate.reason))
+      : modelBlockedGate
+        // #109（round-3 F-9）：模型被禁但后端未下发 message → 不伪造通用文案
+        //（契约下不可达；与 legacy 分支「无文案」一致）。
+        ? (modelBlockedHint !== '' ? modelBlockedHint : null)
+        : t(researchDraftGateReasonKey(draftGate.reason))
 
   /**
    * PR-5b（D5 / Codex P1-#3）：session 模式发送——正文来自 editor 草稿，
@@ -1152,7 +1171,10 @@ export function ResearchSourceChatPanel({
                       {turn.errorMessage || turn.errorCode}
                     </p>
                   )}
-                  {chat.retryableQuery !== null && (
+                  {/* #109（round-3 F-4）：Retry 是重新生成入口——模型禁用时
+                      与其它入口一致不渲染（retry 直发 openResearchChatStream，
+                      不经 runGuarded；shared+陈旧能力下点击会再拿 409）。 */}
+                  {chat.retryableQuery !== null && canExecute && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -1197,6 +1219,18 @@ export function ResearchSourceChatPanel({
           />
         </div>
       ) : (
+      <>
+      {/* #109（round-3）：legacy（未接线宿主）路径同样显示模型禁用原因——入口
+          已由 canExecute 禁用，这里只补同一 blockedHint 文案，不新造文案。 */}
+      {!canExecute && modelBlockedHint !== '' && (
+        <p
+          className="border-t px-3 py-2 text-xs text-amber-700"
+          role="alert"
+          data-testid="srcchat-model-blocked-hint"
+        >
+          {modelBlockedHint}
+        </p>
+      )}
       <div className="flex gap-2 border-t p-3">
         <Input
           value={query}
@@ -1216,6 +1250,7 @@ export function ResearchSourceChatPanel({
           {t('research.sourceChat.send')}
         </Button>
       </div>
+      </>
       )}
     </div>
   )

@@ -352,8 +352,15 @@ export function ResearchWorkspace({
   // #243 §6.4：Chat/Compare 统一走顶层执行守卫（invariant 9）
   // #358：models 响应顶层能力——覆盖全部所选来源只在后端
   // coverage_all_selected 为 true 时允许提交（false/缺失/加载中 fail-closed）。
-  const { runGuarded, canExecute, blockedReason, coverageAllSelected, confirmedModelId } = useResearchGlobalModel()
-  const blockedHint = researchModelBlockedHint(blockedReason, t)
+  const {
+    runGuarded,
+    canExecute,
+    blockedReason,
+    coverageAllSelected,
+    confirmedModelId,
+    localModelUnavailableMessage,
+  } = useResearchGlobalModel()
+  const blockedHint = researchModelBlockedHint(blockedReason, t, localModelUnavailableMessage)
 
   // ── keep-alive visited 集合：渲染期并集保证新动作首帧即挂载 ──
   const [visited, setVisited] = useState<ResearchMainAction[]>(() => [activeAction])
@@ -852,6 +859,9 @@ export function ResearchWorkspace({
               />
             )
       case 'research-chat':
+        // #813：coverage outcome_unknown 重试也是新生成入口——模型禁用/冻结
+        // 期间同样不派发（否则 shared+本地会真打后端拿 409）；隐藏入口与
+        // Admin 只读既有语义一致。
         return (
           <ResearchChatPanel
             turns={turns}
@@ -862,7 +872,9 @@ export function ResearchWorkspace({
             blockedHint={blockedHint}
             coverageEnabled={coverageAllSelected}
             coverageJobs={jobs}
-            onCoverageRetry={isAdminReadonly ? undefined : retryCoverage}
+            onCoverageRetry={
+              isAdminReadonly || !canExecute ? undefined : retryCoverage
+            }
             onCitationJump={handleCitationJump}
             backgroundNotice={backgroundNotice}
             onRunAsBackgroundJob={runChatAsBackgroundJob}

@@ -5,7 +5,10 @@ import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
 import { useResearchJobsController } from './ResearchJobsProvider'
-import { useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
+import {
+  researchModelBlockedHint,
+  useResearchGlobalModel,
+} from '@/lib/hooks/use-research-global-model'
 import { partitionAndSortJobs } from '@/lib/research/jobs'
 import { readStoredJobIds } from '@/lib/hooks/use-research-jobs'
 import { ResearchJobCard } from './ResearchJobList'
@@ -52,7 +55,21 @@ export function ResearchActivityCenter({
     cancel,
     retryCoverage,
   } = useResearchJobsController()
-  const { models } = useResearchGlobalModel()
+  // #813：coverage outcome_unknown 重试是新生成入口；canExecute=false（含
+  // shared+本地模型）时省略回调 → 不渲染重试入口，避免真打后端拿 409。
+  // #109（round-3）：入口被隐藏时在同一 blockedHint 通道显示原因（后端文案），
+  // 避免「为什么没有重试」成为静默缺口。
+  const {
+    canExecute,
+    models,
+    blockedReason: modelBlockedReason,
+    localModelUnavailableMessage,
+  } = useResearchGlobalModel()
+  const modelBlockedHint = researchModelBlockedHint(
+    modelBlockedReason,
+    t,
+    localModelUnavailableMessage,
+  )
   const [historyVisibleCount, setHistoryVisibleCount] = useState(HISTORY_SLICE_STEP)
 
   // Dialog 打开（本组件挂载）→ 全量刷新（对账 + 富化宿主）
@@ -104,7 +121,9 @@ export function ResearchActivityCenter({
         job={job}
         modelName={job.model_id !== null ? modelNameById[job.model_id] : undefined}
         onCancel={isAdminReadonly ? undefined : cancel}
-        onCoverageRetry={isAdminReadonly ? undefined : retryCoverage}
+        onCoverageRetry={
+          isAdminReadonly || !canExecute ? undefined : retryCoverage
+        }
         onCitationJump={onCitationJump}
       />
     ))
@@ -113,6 +132,15 @@ export function ResearchActivityCenter({
 
   return (
     <div className="space-y-4 p-4" data-testid="activity-center">
+      {!canExecute && modelBlockedHint !== '' && (
+        <p
+          className="text-xs text-muted-foreground"
+          role="status"
+          data-testid="activity-model-blocked-hint"
+        >
+          {modelBlockedHint}
+        </p>
+      )}
       {isCreating && (
         <p className="text-sm text-muted-foreground">{t('research.compareCreating')}</p>
       )}

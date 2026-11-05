@@ -23,6 +23,7 @@ import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
 import type { ResearchModelOption } from '@/lib/research/types'
 import {
   ResearchGlobalModelProvider,
+  researchModelBlockedHint,
   useResearchGlobalModel,
 } from './use-research-global-model'
 
@@ -666,5 +667,159 @@ describe('useResearchGlobalModel（GMOD §6.1 draft/confirmed）', () => {
     const { result } = renderGlobalModel()
     await waitFor(() => expect(result.current.isLoadingModel).toBe(false))
     expect(result.current.coverageAllSelected).toBe(false)
+  })
+})
+
+// ── #813：shared 模式本地模型禁用（后端 capabilities.local_model 单源） ──
+
+/** 后端逐字文案（RDLens #820 冻结常量；测试内写死字面量，不 import 常量）。 */
+const SHARED_GPU_MESSAGE =
+  '当前 GPU 正与其他任务共用，可用显存不足以支撑 Research 使用本地模型，请改用外部 AI 模型。'
+
+const SHARED_LOCAL_MODEL_CAPABILITY = {
+  available: false,
+  reason: 'shared_gpu',
+  message: SHARED_GPU_MESSAGE,
+}
+
+describe('#813 shared 模式本地模型禁用（capabilities.local_model）', () => {
+  beforeEach(() => {
+    // 与文件顶部 describe 同款基线（并列 describe 不继承外层 beforeEach）：
+    // 默认 listModels=MODELS、prefs=m-local（本地）、consent 有效。
+    vi.resetAllMocks()
+    vi.mocked(useResearchWorkspace).mockReturnValue({
+      projectId: 'proj_1',
+      role: 'owner',
+      isOwner: true,
+      isAdminReadonly: false,
+    })
+    vi.mocked(listModels).mockResolvedValue({ models: MODELS })
+    vi.mocked(getExecutionPreferences).mockResolvedValue(PREFS_M_LOCAL)
+    vi.mocked(getExternalEgressConsent).mockResolvedValue(CONSENT_VALID)
+    vi.mocked(acknowledgeExternalEgressConsent).mockResolvedValue(CONSENT_VALID)
+  })
+
+  it('shared + 本地模型 → blockedReason=local-unavailable-shared-gpu、canExecute=false、文案原样下发', async () => {
+    vi.mocked(listModels).mockResolvedValue({
+      models: MODELS,
+      capabilities: { local_model: SHARED_LOCAL_MODEL_CAPABILITY },
+    })
+    const { result } = renderGlobalModel()
+    await waitFor(() => expect(result.current.isLoadingModel).toBe(false))
+    expect(result.current.confirmedModelId).toBe('m-local')
+    expect(result.current.blockedReason).toBe('local-unavailable-shared-gpu')
+    expect(result.current.canExecute).toBe(false)
+    expect(result.current.localModelUnavailableMessage).toBe(SHARED_GPU_MESSAGE)
+
+    // 生成入口被闸门挡住：不发请求（避免 409 往返）。
+    const operation = vi.fn(async () => 'ok')
+    await act(async () => {
+      expect(await result.current.runGuarded(operation)).toBeUndefined()
+    })
+    expect(operation).not.toHaveBeenCalled()
+  })
+
+  it('shared + 外部模型 → 不误拦（外部模型仍可执行；提示仅对本地模型生效）', async () => {
+    vi.mocked(getExecutionPreferences).mockResolvedValue({
+      ...PREFS_M_LOCAL,
+      preferred_model_id: 'm-ext',
+    })
+    vi.mocked(listModels).mockResolvedValue({
+      models: MODELS,
+      capabilities: { local_model: SHARED_LOCAL_MODEL_CAPABILITY },
+    })
+    const { result } = renderGlobalModel()
+    await waitFor(() => expect(result.current.isLoadingModel).toBe(false))
+    expect(result.current.blockedReason).toBe('none')
+    expect(result.current.canExecute).toBe(true)
+    expect(
+      researchModelBlockedHint(
+        result.current.blockedReason,
+        (key) => key,
+        result.current.localModelUnavailableMessage,
+      ),
+    ).toBe('')
+  })
+
+  it('exclusive（available=true、reason/message 为 null）→ 零回归：本地模型可执行、无提示', async () => {
+    vi.mocked(listModels).mockResolvedValue({
+      models: MODELS,
+      capabilities: {
+        local_model: { available: true, reason: null, message: null },
+      },
+    })
+    const { result } = renderGlobalModel()
+    await waitFor(() => expect(result.current.isLoadingModel).toBe(false))
+    expect(result.current.blockedReason).toBe('none')
+    expect(result.current.canExecute).toBe(true)
+    expect(result.current.localModelUnavailableMessage).toBeNull()
+    expect(
+      researchModelBlockedHint(
+        result.current.blockedReason,
+        (key) => key,
+        result.current.localModelUnavailableMessage,
+      ),
+    ).toBe('')
+  })
+
+  it('旧后端缺失 local_model → 零回归（可执行、无文案）', async () => {
+    vi.mocked(listModels).mockResolvedValue({ models: MODELS })
+    const { result } = renderGlobalModel()
+    await waitFor(() => expect(result.current.isLoadingModel).toBe(false))
+    expect(result.current.blockedReason).toBe('none')
+    expect(result.current.canExecute).toBe(true)
+    expect(result.current.localModelUnavailableMessage).toBeNull()
+  })
+
+  it('available=false 但后端未下发 message → 仍禁用，但不伪造提示（hint 空串）', async () => {
+    vi.mocked(listModels).mockResolvedValue({
+      models: MODELS,
+      capabilities: {
+        local_model: { available: false, reason: 'shared_gpu', message: null },
+      },
+    })
+    const { result } = renderGlobalModel()
+    await waitFor(() => expect(result.current.isLoadingModel).toBe(false))
+    expect(result.current.blockedReason).toBe('local-unavailable-shared-gpu')
+    expect(result.current.canExecute).toBe(false)
+    expect(result.current.localModelUnavailableMessage).toBeNull()
+    expect(
+      researchModelBlockedHint('local-unavailable-shared-gpu', (key) => key, null),
+    ).toBe('')
+  })
+
+  it('available=false + 空白 message → 不渲染空白提示（message 归一 null）', async () => {
+    vi.mocked(listModels).mockResolvedValue({
+      models: MODELS,
+      capabilities: {
+        local_model: { available: false, reason: 'shared_gpu', message: '   ' },
+      },
+    })
+    const { result } = renderGlobalModel()
+    await waitFor(() => expect(result.current.isLoadingModel).toBe(false))
+    expect(result.current.blockedReason).toBe('local-unavailable-shared-gpu')
+    expect(result.current.canExecute).toBe(false)
+    expect(result.current.localModelUnavailableMessage).toBeNull()
+  })
+
+  it('能力缺失/畸形 → 不阻断（旧后端零回归；判定不在前端复制）', async () => {
+    vi.mocked(listModels).mockResolvedValue({
+      models: MODELS,
+      capabilities: { local_model: { available: 'false' } },
+    })
+    const { result } = renderGlobalModel()
+    await waitFor(() => expect(result.current.isLoadingModel).toBe(false))
+    expect(result.current.blockedReason).toBe('none')
+    expect(result.current.canExecute).toBe(true)
+    expect(result.current.localModelUnavailableMessage).toBeNull()
+  })
+
+  it('researchModelBlockedHint：shared 文案原样渲染后端 message；既有 reason 映射不变', () => {
+    const t = (key: string) => key
+    expect(
+      researchModelBlockedHint('local-unavailable-shared-gpu', t, SHARED_GPU_MESSAGE),
+    ).toBe(SHARED_GPU_MESSAGE)
+    expect(researchModelBlockedHint('saving', t)).toBe('research.globalModel.saving')
+    expect(researchModelBlockedHint('none', t)).toBe('')
   })
 })

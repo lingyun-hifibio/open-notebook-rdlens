@@ -1,0 +1,207 @@
+{
+  "phase": "before",
+  "host": "http://127.0.0.1:8601/",
+  "capturedAt": "2026-11-05T03:51:17.164Z",
+  "modeFile": "/tmp/issue109-local-model-mode",
+  "gatewayLog": "/home/lchen/.dsh/state/superagent/work/fork-shared-gpu-cd906bb85363/visual-evidence/logs/gateway-requests.log",
+  "scenarios": [
+    {
+      "name": "before_shared_search_1440",
+      "pass": true,
+      "checks": [
+        {
+          "label": "no model-blocked-hint",
+          "pass": true,
+          "detail": "count=0"
+        },
+        {
+          "label": "search-run enabled",
+          "pass": true
+        }
+      ],
+      "screenshot": "/home/lchen/.dsh/state/superagent/work/fork-shared-gpu-cd906bb85363/visual-evidence/screenshots/before_shared_search_1440.png"
+    },
+    {
+      "name": "before_shared_search_click_1440",
+      "pass": true,
+      "checks": [
+        {
+          "label": "POST /search was issued",
+          "pass": true,
+          "detail": "count=1"
+        },
+        {
+          "label": "POST /search answered 409",
+          "pass": true
+        },
+        {
+          "label": "generic error alert visible (no backend message)",
+          "pass": true,
+          "detail": "Something went wrong. Check the message below and try again, or contact an administrator. | Request failed with status code 409 | Check your connection and the selected scope, then run the search agai"
+        }
+      ],
+      "screenshot": "/home/lchen/.dsh/state/superagent/work/fork-shared-gpu-cd906bb85363/visual-evidence/screenshots/before_shared_search_click_error_1440.png"
+    },
+    {
+      "name": "before_shared_search_1024",
+      "pass": true,
+      "checks": [
+        {
+          "label": "no model-blocked-hint",
+          "pass": true,
+          "detail": "count=0"
+        },
+        {
+          "label": "search-run enabled",
+          "pass": true
+        }
+      ],
+      "screenshot": "/home/lchen/.dsh/state/superagent/work/fork-shared-gpu-cd906bb85363/visual-evidence/screenshots/before_shared_search_1024.png"
+    },
+    {
+      "name": "before_exclusive_search_1440",
+      "pass": true,
+      "checks": [
+        {
+          "label": "no model-blocked-hint",
+          "pass": true,
+          "detail": "count=0"
+        },
+        {
+          "label": "search-run enabled",
+          "pass": true
+        }
+      ],
+      "screenshot": "/home/lchen/.dsh/state/superagent/work/fork-shared-gpu-cd906bb85363/visual-evidence/screenshots/before_exclusive_search_1440.png"
+    },
+    {
+      "name": "before_exclusive_search_1024",
+      "pass": true,
+      "checks": [
+        {
+          "label": "no model-blocked-hint",
+          "pass": true,
+          "detail": "count=0"
+        },
+        {
+          "label": "search-run enabled",
+          "pass": true
+        }
+      ],
+      "screenshot": "/home/lchen/.dsh/state/superagent/work/fork-shared-gpu-cd906bb85363/visual-evidence/screenshots/before_exclusive_search_1024.png"
+    },
+    {
+      "name": "before_shared_chat_1440",
+      "pass": true,
+      "checks": [
+        {
+          "label": "global chat session created (composer reachable)",
+          "pass": true
+        },
+        {
+          "label": "no blocked hint (gate or panel)",
+          "pass": true,
+          "detail": "gate=\"\" panel=\"\""
+        },
+        {
+          "label": "chat-send enabled",
+          "pass": true
+        }
+      ],
+      "screenshot": "/home/lchen/.dsh/state/superagent/work/fork-shared-gpu-cd906bb85363/visual-evidence/screenshots/before_shared_chat_1440.png"
+    },
+    {
+      "name": "before_shared_compare_1440",
+      "pass": true,
+      "checks": [
+        {
+          "label": "scope pre-seeded as selected (no entire-project block)",
+          "pass": true,
+          "detail": "count=0"
+        },
+        {
+          "label": "no compare-model-blocked-hint",
+          "pass": true,
+          "detail": "count=0"
+        },
+        {
+          "label": "compare-create enabled",
+          "pass": true
+        }
+      ],
+      "screenshot": "/home/lchen/.dsh/state/superagent/work/fork-shared-gpu-cd906bb85363/visual-evidence/screenshots/before_shared_compare_1440.png"
+    },
+    {
+      "name": "before_shared_insights_ai_1440",
+      "pass": true,
+      "checks": [
+        {
+          "label": "no insight-model-blocked hint",
+          "pass": true,
+          "detail": "count=0"
+        }
+      ],
+      "screenshot": "/home/lchen/.dsh/state/superagent/work/fork-shared-gpu-cd906bb85363/visual-evidence/screenshots/before_shared_insights_ai_1440.png"
+    },
+    {
+      "name": "before_shared_source_chat_1440",
+      "pass": true,
+      "checks": [
+        {
+          "label": "wired source-session composer reached (production path)",
+          "pass": true
+        },
+        {
+          "label": "no backend blocked message",
+          "pass": true,
+          "detail": "hint=\"\""
+        },
+        {
+          "label": "source chat send enabled",
+          "pass": true
+        }
+      ],
+      "screenshot": "/home/lchen/.dsh/state/superagent/work/fork-shared-gpu-cd906bb85363/visual-evidence/screenshots/before_shared_source_chat_1440.png"
+    },
+    {
+      "name": "before_shared_transformations_run_1440",
+      "pass": true,
+      "checks": [
+        {
+          "label": "no transformation-run-blocked-hint",
+          "pass": true,
+          "detail": "count=0"
+        },
+        {
+          "label": "run confirm enabled",
+          "pass": true
+        }
+      ],
+      "screenshot": "/home/lchen/.dsh/state/superagent/work/fork-shared-gpu-cd906bb85363/visual-evidence/screenshots/before_shared_transformations_run_1440.png"
+    },
+    {
+      "name": "before_shared_activity_1440",
+      "pass": true,
+      "checks": [
+        {
+          "label": "synthetic outcome_unknown coverage job rendered",
+          "pass": true,
+          "detail": "count=1"
+        },
+        {
+          "label": "coverage retry trigger visible",
+          "pass": true,
+          "detail": "count=1"
+        },
+        {
+          "label": "no activity-model-blocked-hint",
+          "pass": true,
+          "detail": "count=0"
+        }
+      ],
+      "screenshot": "/home/lchen/.dsh/state/superagent/work/fork-shared-gpu-cd906bb85363/visual-evidence/screenshots/before_shared_activity_1440.png"
+    }
+  ],
+  "failed": [],
+  "notRun": []
+}

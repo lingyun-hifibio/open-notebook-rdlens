@@ -579,6 +579,7 @@ describe('ResearchWorkspace（RWV2-40 五动作主区；#445）', () => {
 
     expect(await screen.findByTestId('chat-input')).toBeDisabled()
     expect(screen.getByRole('button', { name: 'research.chatSend' })).toBeDisabled()
+    // #109（round-3 F-5）：legacy 路径无 composer 门禁 → 保留面板级提示
     expect(screen.getByTestId('chat-model-blocked-hint')).toHaveTextContent(
       'research.globalModel.selectModelHint',
     )

@@ -27,13 +27,26 @@ vi.mock('@/lib/research/api', async (importOriginal) => {
   }
 })
 
+// #813：canExecute 由用例控制（shared+本地模型禁用时 coverage retry 入口必须省略）
+// #109（round-3）：同时覆盖禁用原因/文案（入口隐藏时在同一通道显示）。
+const modelGate = vi.hoisted(() => ({
+  canExecute: true,
+  blockedReason: 'none' as string,
+  localModelUnavailableMessage: null as string | null,
+}))
+
 vi.mock('@/lib/hooks/use-research-global-model', () => ({
   useResearchGlobalModel: () => ({
     models: [
       { model_id: 'm1', display_name: 'Qwen Local', provider_id: null, data_egress: false },
     ],
     confirmedModelId: 'm1',
+    canExecute: modelGate.canExecute,
+    blockedReason: modelGate.blockedReason,
+    localModelUnavailableMessage: modelGate.localModelUnavailableMessage,
   }),
+  researchModelBlockedHint: (reason: string, t: (k: string) => string, message?: string | null) =>
+    reason === 'local-unavailable-shared-gpu' ? message ?? '' : '',
 }))
 
 const jobsByIdRef: { current: Map<string, ResearchJob> } = { current: new Map() }
@@ -120,6 +133,9 @@ describe('ResearchActivityCenter（RWV2-41）', () => {
     vi.mocked(api.listJobs).mockClear()
     vi.mocked(api.getJob).mockClear()
     vi.mocked(api.cancelJob).mockClear()
+    modelGate.canExecute = true
+    modelGate.blockedReason = 'none'
+    modelGate.localModelUnavailableMessage = null
     setJobs([])
     localStorage.clear()
   })
@@ -265,6 +281,40 @@ describe('ResearchActivityCenter（RWV2-41）', () => {
     // Admin：同内容，无 cancel/retry 回调 → 不渲染可点的重试入口
     render(<ResearchActivityCenter />, { wrapper: wrapper('admin_readonly') })
     await waitFor(() => expect(screen.getByTestId('coverage-outcome-unknown')).toBeInTheDocument())
+    expect(screen.queryByTestId('coverage-retry-trigger')).toBeNull()
+  })
+
+  it('#813：模型禁用（shared+本地 canExecute=false）时省略 coverage 重试入口（不产生 409 往返）', async () => {
+    setJobs([
+      job('job_cov_blocked', 'failed', { job_type: 'research_coverage', last_error: 'x' }),
+    ])
+    vi.mocked(api.getJob).mockResolvedValue(failedOutcomeCoverage('job_cov_blocked'))
+    modelGate.canExecute = false
+
+    render(<ResearchActivityCenter />, { wrapper: wrapper('owner') })
+    await waitFor(() => expect(screen.getByTestId('coverage-outcome-unknown')).toBeInTheDocument())
+    // 新生成入口冻结：重试回调在消费层省略 → 不渲染入口，也不可能派发请求
+    expect(screen.queryByTestId('coverage-retry-trigger')).toBeNull()
+    expect(api.retryCoverageJob).not.toHaveBeenCalled()
+  })
+
+  it('#109：shared 模型禁用 → Activity 显示同一后端 message（入口隐藏不静默）', async () => {
+    const sharedMessage =
+      '当前 GPU 正与其他任务共用，可用显存不足以支撑 Research 使用本地模型，请改用外部 AI 模型。'
+    setJobs([
+      job('job_cov_shared', 'failed', { job_type: 'research_coverage', last_error: 'x' }),
+    ])
+    vi.mocked(api.getJob).mockResolvedValue(failedOutcomeCoverage('job_cov_shared'))
+    modelGate.canExecute = false
+    modelGate.blockedReason = 'local-unavailable-shared-gpu'
+    modelGate.localModelUnavailableMessage = sharedMessage
+
+    render(<ResearchActivityCenter />, { wrapper: wrapper('owner') })
+    await waitFor(() =>
+      expect(screen.getByTestId('activity-model-blocked-hint').textContent).toBe(
+        sharedMessage,
+      ),
+    )
     expect(screen.queryByTestId('coverage-retry-trigger')).toBeNull()
   })
 })

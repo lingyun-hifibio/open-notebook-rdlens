@@ -240,6 +240,13 @@ export interface ResearchCapabilities {
    * 见 `readSearchHistoryCapability`）。
    */
   search_history?: unknown
+  /**
+   * #813（加性）：当前引擎模式下本地模型是否可以执行。三键恒在
+   * （`available`/`reason`/`message`；exclusive 下 reason/message 为 null）。
+   * 读取见 `localModelCapabilityFrom`——缺失/畸形返回 null（保持既有行为
+   * 零回归，不臆造状态）；后端 fail-closed 仍是安全权威。
+   */
+  local_model?: unknown
 }
 
 /** GET models 响应（#358：能力与模型同一次返回，避免两次请求间竞态） */
@@ -257,6 +264,44 @@ export function coverageAllSelectedFrom(
   capabilities: ResearchCapabilities | undefined,
 ): boolean {
   return capabilities?.coverage_all_selected === true
+}
+
+/**
+ * #813：`capabilities.local_model` 的稳定形状（三键恒在，后端契约见
+ * RDLens #820 / `local_model_capability`）。
+ */
+export interface ResearchLocalModelCapability {
+  /** 当前模式下本地模型是否允许执行（不是「目录里是否存在本地模型」） */
+  available: boolean
+  /** 稳定原因码（当前只可能为 'shared_gpu'；可空） */
+  reason: string | null
+  /** 后端下发的用户可见文案（可空——缺失时不伪造提示） */
+  message: string | null
+}
+
+/**
+ * #813：从 models 响应解析本地模型能力。
+ *
+ * 只认后端单源（不在前端复制 `mode == shared` 判定）：`available === false`
+ * 即「当前模式下本地模型不可执行」。判据只在后端一处，前端缺失/畸形时
+ * 返回 null（旧后端无该能力时保持既有行为零回归；后端 fail-closed 仍是
+ * 最终安全权威）。`reason`/`message` 缺失按 null 归一，类型非法整块按缺失
+ * 处理——绝不根据猜测补文案或状态。
+ */
+export function localModelCapabilityFrom(
+  capabilities: ResearchCapabilities | undefined,
+): ResearchLocalModelCapability | null {
+  const raw = capabilities?.local_model
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const { available, reason, message } = raw as Record<string, unknown>
+  if (typeof available !== 'boolean') return null
+  if (reason != null && typeof reason !== 'string') return null
+  if (message != null && typeof message !== 'string') return null
+  return {
+    available,
+    reason: reason ?? null,
+    message: message ?? null,
+  }
 }
 
 /** Search 交互式上下文档位（服务端能力声明子集） */
