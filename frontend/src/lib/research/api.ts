@@ -25,6 +25,11 @@ import { getResearchToken } from '@/lib/embedded/token-store'
 import { parseSseFrame } from './sse'
 import { parseSearchRecordDetail, parseSearchRecordListPage } from './search-records'
 import {
+  parseTopicOverviewResponse,
+  type TopicOverviewCreateBody,
+  type TopicOverviewWire,
+} from './topic-overview'
+import {
   STREAM_IDLE_TIMEOUT_MS,
   createAttemptSettlement,
   hasRetrySemanticsStatus,
@@ -851,6 +856,77 @@ export async function getSearchRecord(
     researchPath(projectId, 'search-records', recordId),
   )
   return parseSearchRecordDetail(response.data)
+}
+
+// ── 主题概览（Issue #1016 / D1-G 主单；POST 生成/更新，GET 回访） ──
+//
+// 两个端点同路径 `/v1/research/projects/{project_id}/topic-overview`：
+// - POST 是**有界单次**执行（无 202/Job 分支），成功只有 200 JSON；
+// - GET 是 Owner 专属回访，无概览时 404 `topic_overview_not_found` 属空态；
+// - 错误 envelope 沿用既有 `{detail:{code,message}}`，由 `researchApiErrorDetail`
+//   与既有错误对象消费（未启用/存储不可用等照常抛出，不降级为空态）。
+
+/**
+ * 回访主题概览（`GET .../topic-overview`）。
+ *
+ * - 404 + `topic_overview_not_found` → `null`（**空态，不算 error**）；
+ * - 其它 404（项目不可见/非 Owner）、503（未启用/存储不可用）、403 等照常
+ *   抛出——不把故障伪装成「未生成」；
+ * - 200 畸形体（缺核心身份键）→ 抛错（fail-closed）：解析器返回 `null`
+ *   只用于「非响应形状」，`getTopicOverview` 的 `null` 只表示服务端明确说
+ *   「没有概览」。
+ */
+export async function getTopicOverview(
+  projectId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<TopicOverviewWire | null> {
+  try {
+    const response = await apiClient.get<unknown>(
+      researchPath(projectId, 'topic-overview'),
+      options.signal ? { signal: options.signal } : {},
+    )
+    const overview = parseTopicOverviewResponse(response.data)
+    if (overview === null) throw new Error('invalid_topic_overview_response')
+    return overview
+  } catch (error) {
+    const status = (error as { response?: { status?: unknown } } | null)
+      ?.response?.status
+    if (status === 404 && researchApiErrorDetail(error).code === 'topic_overview_not_found') {
+      return null
+    }
+    throw error
+  }
+}
+
+/**
+ * 生成/更新主题概览（`POST .../topic-overview`）。
+ *
+ * - 必须携带 `X-Research-Contract: c05-v1` 与 `Idempotency-Key`（键由调用方
+ *   每次新生成；409 `topic_overview_scope_exceeds_limit` 后用户手动重试时
+ *   必须换新键——不自动重试）；
+ * - 无 202/Job 分支：成功即 200 JSON wire；畸形/非法体 fail-closed 抛错；
+ * - 请求体由 `topic-overview.buildTopicOverviewRequest` 构造（含 `focus`、
+ *   不含 `query`，`source_scope` 唯一真源来自 `useResearchScope()`）。
+ */
+export async function createTopicOverview(
+  projectId: string,
+  body: TopicOverviewCreateBody,
+  options: { idempotencyKey: string; signal?: AbortSignal },
+): Promise<TopicOverviewWire> {
+  const response = await apiClient.post<unknown>(
+    researchPath(projectId, 'topic-overview'),
+    body,
+    {
+      headers: {
+        'X-Research-Contract': 'c05-v1',
+        'Idempotency-Key': options.idempotencyKey,
+      },
+      ...(options.signal ? { signal: options.signal } : {}),
+    },
+  )
+  const overview = parseTopicOverviewResponse(response.data)
+  if (overview === null) throw new Error('invalid_topic_overview_response')
+  return overview
 }
 
 export async function createCompare(

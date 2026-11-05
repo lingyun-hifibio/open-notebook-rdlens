@@ -46,6 +46,11 @@ const D11_INVENTORY: ReadonlyArray<{
   { entry: 'background-cta', file: 'components/research/ResearchWorkspace.tsx', signals: ["'blocked_scope'"] },
   { entry: 'background-cta-ui', file: 'components/research/ResearchChatPanel.tsx', signals: ['backgroundJobBlockedScope'] },
   { entry: 'search', file: 'components/research/ResearchSearchPanel.tsx', signals: ['buildC05GeneratedRequest'] },
+  // #1016（D1-G）§2.9：概览是新增 C-05 生成派发点（POST topic-overview）。
+  // 它支持 `all`（有界 all），但请求体必须经专用 builder 的
+  // `buildSourceScope` 组装 `source_scope` —— 空 selected 在构造层
+  // fail-closed，绝不发"空 ID 集冒充 all"。登记 = 新增派发点不得静默加入。
+  { entry: 'topic-overview', file: 'lib/research/topic-overview.ts', signals: ['buildSourceScope('] },
 ]
 
 function readComponent(relative: string): string {

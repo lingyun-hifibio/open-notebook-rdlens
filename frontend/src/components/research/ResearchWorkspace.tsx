@@ -35,6 +35,10 @@ import {
   ResearchChatPanel,
   type BackgroundJobSubmitResult,
 } from './ResearchChatPanel'
+// Issue #1016（D1-G）§2.9：research-chat 分支项目开始位置的轻量入口卡 +
+// 回访/生成 Dialog（独立兄弟节点；不触碰 ChatPanel 内部与主区动作枚举）。
+import { TopicOverviewEntry } from './TopicOverviewEntry'
+import { TopicOverviewDialog } from './TopicOverviewDialog'
 import { ComparePanel } from './ComparePanel'
 import { MindMapPlaceholder } from './MindMapPlaceholder'
 import { TransformationsPanel } from './TransformationsPanel'
@@ -358,9 +362,14 @@ export function ResearchWorkspace({
     blockedReason,
     coverageAllSelected,
     confirmedModelId,
+    confirmedModelIsExternal,
     localModelUnavailableMessage,
   } = useResearchGlobalModel()
   const blockedHint = researchModelBlockedHint(blockedReason, t, localModelUnavailableMessage)
+
+  // Issue #1016（D1-G）§2.9：主题概览入口/Dialog 的本地开关（不新增路由/
+  // 左栏 pane/主区动作；只看 research-chat 分支的兄弟卡片）。
+  const [topicOverviewOpen, setTopicOverviewOpen] = useState(false)
 
   // ── keep-alive visited 集合：渲染期并集保证新动作首帧即挂载 ──
   const [visited, setVisited] = useState<ResearchMainAction[]>(() => [activeAction])
@@ -862,67 +871,90 @@ export function ResearchWorkspace({
         // #813：coverage outcome_unknown 重试也是新生成入口——模型禁用/冻结
         // 期间同样不派发（否则 shared+本地会真打后端拿 409）；隐藏入口与
         // Admin 只读既有语义一致。
+        //
+        // Issue #1016（D1-G）§2.9：项目开始位置的轻量「主题概览」入口是
+        // 独立 `shrink-0 border-b` 兄弟卡片，位于 ChatPanel 之上；Dialog 挂
+        // 在本分支（本地 open state）。不改 ChatPanel 内部/主区动作/pane/路由。
         return (
-          <ResearchChatPanel
-            turns={turns}
-            isStreaming={isStreaming}
-            onSend={sendChat}
-            onSendCoverage={sendCoverageChat}
-            sendDisabled={!canExecute}
-            blockedHint={blockedHint}
-            coverageEnabled={coverageAllSelected}
-            coverageJobs={jobs}
-            onCoverageRetry={
-              isAdminReadonly || !canExecute ? undefined : retryCoverage
-            }
-            onCitationJump={handleCitationJump}
-            backgroundNotice={backgroundNotice}
-            onRunAsBackgroundJob={runChatAsBackgroundJob}
-            backgroundJobRequiresSelection={!c05.dispatchReady('search')}
-            resolveChatOrigin={resolveChatOrigin}
-            prefill={chatPrefill}
-            editorSnapshot={chatEditorSnapshot}
-            submissionReady={chatSubmissionReady}
-            editorHandle={chatEditor}
-            conversation={chatConversation ?? null}
-            sessionRef={activeGlobalRef}
-            sessionMeta={sessionMeta}
-            sessionCards={sessionCards}
-            submissionLookup={submissionLookup}
-            markerWriteFailed={markerWriteFailed}
-            refreshMarkerLookups={refreshMarkerLookups}
-            onSendSession={sendSessionChat}
-            conversationSnapshot={{
-              isBusy: isStreaming,
-              isStreaming,
-              activeTurnId: null,
-              phase: isStreaming ? 'streaming' : 'idle',
-            }}
-            scopeSources={scopeBarSources}
-            scopeNotes={scopeBarNotes}
-            onChangeScope={chatEditor.setScope}
-            onDraftChange={chatEditor.setDraftText}
-            onRetrySave={chatEditor.retrySave}
-            onRestoreDraft={chatEditor.restoreDraft}
-            onChatAnchorChange={chatEditor.setChatAnchor}
-            onFlushPosition={() => chatEditor.flush('position')}
-            selectionChip={selectionChip}
-            onSelectionConsumed={onSelectionConsumed}
-            onCitationReturn={handleChatCitationReturn}
-            scrollToMessage={scrollToMessage}
-            onSelectionJump={onSelectionJump}
-            surfaceActive={surfaceActive && activeAction === 'research-chat'}
-            onViewInsight={
-              onRevealSavedArtifact !== undefined
-                ? (insightId) => onRevealSavedArtifact('insight', insightId)
-                : undefined
-            }
-            onViewNote={
-              onRevealSavedArtifact !== undefined
-                ? (noteId) => onRevealSavedArtifact('note', noteId)
-                : undefined
-            }
-          />
+          <div className="flex h-full min-h-0 flex-col">
+            <TopicOverviewEntry
+              projectId={projectId ?? ''}
+              onOpen={() => setTopicOverviewOpen(true)}
+            />
+            <TopicOverviewDialog
+              projectId={projectId ?? ''}
+              open={topicOverviewOpen}
+              onOpenChange={setTopicOverviewOpen}
+              onCitationJump={onCitationJump}
+              editorHandle={chatEditor}
+              canExecute={canExecute}
+              blockedHint={blockedHint}
+              isAdminReadonly={isAdminReadonly}
+              confirmedModelIsExternal={confirmedModelIsExternal}
+            />
+            <div className="min-h-0 flex-1">
+              <ResearchChatPanel
+                turns={turns}
+                isStreaming={isStreaming}
+                onSend={sendChat}
+                onSendCoverage={sendCoverageChat}
+                sendDisabled={!canExecute}
+                blockedHint={blockedHint}
+                coverageEnabled={coverageAllSelected}
+                coverageJobs={jobs}
+                onCoverageRetry={
+                  isAdminReadonly || !canExecute ? undefined : retryCoverage
+                }
+                onCitationJump={handleCitationJump}
+                backgroundNotice={backgroundNotice}
+                onRunAsBackgroundJob={runChatAsBackgroundJob}
+                backgroundJobRequiresSelection={!c05.dispatchReady('search')}
+                resolveChatOrigin={resolveChatOrigin}
+                prefill={chatPrefill}
+                editorSnapshot={chatEditorSnapshot}
+                submissionReady={chatSubmissionReady}
+                editorHandle={chatEditor}
+                conversation={chatConversation ?? null}
+                sessionRef={activeGlobalRef}
+                sessionMeta={sessionMeta}
+                sessionCards={sessionCards}
+                submissionLookup={submissionLookup}
+                markerWriteFailed={markerWriteFailed}
+                refreshMarkerLookups={refreshMarkerLookups}
+                onSendSession={sendSessionChat}
+                conversationSnapshot={{
+                  isBusy: isStreaming,
+                  isStreaming,
+                  activeTurnId: null,
+                  phase: isStreaming ? 'streaming' : 'idle',
+                }}
+                scopeSources={scopeBarSources}
+                scopeNotes={scopeBarNotes}
+                onChangeScope={chatEditor.setScope}
+                onDraftChange={chatEditor.setDraftText}
+                onRetrySave={chatEditor.retrySave}
+                onRestoreDraft={chatEditor.restoreDraft}
+                onChatAnchorChange={chatEditor.setChatAnchor}
+                onFlushPosition={() => chatEditor.flush('position')}
+                selectionChip={selectionChip}
+                onSelectionConsumed={onSelectionConsumed}
+                onCitationReturn={handleChatCitationReturn}
+                scrollToMessage={scrollToMessage}
+                onSelectionJump={onSelectionJump}
+                surfaceActive={surfaceActive && activeAction === 'research-chat'}
+                onViewInsight={
+                  onRevealSavedArtifact !== undefined
+                    ? (insightId) => onRevealSavedArtifact('insight', insightId)
+                    : undefined
+                }
+                onViewNote={
+                  onRevealSavedArtifact !== undefined
+                    ? (noteId) => onRevealSavedArtifact('note', noteId)
+                    : undefined
+                }
+              />
+            </div>
+          </div>
         )
       case 'compare':
         // M1 修复：Compare 只消费 sources（document_ids），失败/加载守卫仅

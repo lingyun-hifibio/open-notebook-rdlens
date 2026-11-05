@@ -54,6 +54,9 @@ export const QUERY_KEYS = {
   // 工作台内实际查询键另加身份段（见下方 identity 判别键）。
   researchSearchRecords: (projectId: string) => ['research', projectId, 'search-records'] as const,
   researchSearchRecord: (projectId: string, recordId: string) => ['research', projectId, 'search-records', recordId] as const,
+  // #1016 D1-G：主题概览回访（Owner 专属只读面；POST 生成同域）。工作台内
+  // 实际查询键另加身份段（见下方 identity 判别键）。
+  researchTopicOverview: (projectId: string) => ['research', projectId, 'topic-overview'] as const,
 }
 
 /**
@@ -210,6 +213,17 @@ export function researchSearchRecordIdentityKey(
   recordId: string,
 ): readonly unknown[] {
   return researchQueryKey(identity, 'search-records', recordId)
+}
+
+/**
+ * 判别键：主题概览（#1016 D1-G）。身份段追加在尾部——沿用
+ * `['research', projectId, 'topic-overview']` 前缀失效/刷新仍能命中全部代际；
+ * 不同 viewer/认证代际不会串读概览正文与现行权限投影。
+ */
+export function researchTopicOverviewIdentityKey(
+  identity: ResearchQueryIdentity,
+): readonly unknown[] {
+  return researchQueryKey(identity, 'topic-overview')
 }
 
 function identityFromQuery(query: Query): ResearchQueryIdentity | null {
