@@ -1890,6 +1890,9 @@ describe('ResearchChatPanel · PR-4 修复轮（P1-1/P1-2/F3/F4）', () => {
     fireEvent.change(screen.getByTestId('chat-input'), { target: { value: 'coverage 问题' } })
     expect(screen.getByTestId('chat-send')).toBeDisabled()
     expect(screen.getByTestId('research-draft-gate-hint')).toHaveTextContent('模型不可用')
+    // #109（round-3 F-5）：wired 路径同一 blockedHint 只由 composer 门禁渲染，
+    // 不再重复渲染面板级提示（legacy 路径保留面板级，见 Workspace 用例）。
+    expect(screen.queryByTestId('chat-model-blocked-hint')).toBeNull()
   })
 
   it('P1-3 服务端净化锚点（position_unavailable）不恢复、不伪装，并显示提示', () => {
