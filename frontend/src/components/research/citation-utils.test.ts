@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  citationLocatorLabel,
   displayPage,
   findChunkForPage,
   canJumpToCitation,
@@ -168,5 +169,84 @@ describe('normalizePersistedCitations（RWV2-21 耐久快照展示）', () => {
     expect(normalized).toHaveLength(2)
     expect(normalized.map((item) => item.claim)).toEqual(['first claim', 'second claim'])
     expect(new Set(normalized.map((item) => item.key)).size).toBe(2)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Issue #1011 F02（计划 §2.6/§2.8）：Citation 页/slide/sheet 展示映射。
+// 只做**展示**映射：优先级 source_path 扩展名（.pdf/.pptx/.xlsx）→
+// doc_type（PDF/PPT/Excel）→ 旧 "Page N"。不读取/不修改 citation 身份字段，
+// 不改变 canJumpToCitation/跳转逻辑。
+// ---------------------------------------------------------------------------
+
+describe('citationLocatorLabel（F02：source_path → doc_type → 旧标签）', () => {
+  it('source_path 扩展名 .pdf → Page 标签', () => {
+    expect(
+      citationLocatorLabel({ source_path: '/data/B05 paper.pdf', doc_type: null }),
+    ).toEqual({ kind: 'page', labelKey: 'research.citation.page' })
+  })
+
+  it('source_path 扩展名 .pptx → Slide 标签', () => {
+    expect(
+      citationLocatorLabel({ source_path: '/data/B01 slides.PPTX', doc_type: null }),
+    ).toEqual({ kind: 'slide', labelKey: 'research.citation.slide' })
+  })
+
+  it('source_path 扩展名 .xlsx → Sheet 标签（含仓库外 fixture 的空格名）', () => {
+    expect(
+      citationLocatorLabel({ source_path: '/data/excel_test/cell lines.xlsx', doc_type: null }),
+    ).toEqual({ kind: 'sheet', labelKey: 'research.citation.sheet' })
+  })
+
+  it('source_path 扩展名优先于 doc_type（扩展名可判定 → 不读 doc_type）', () => {
+    expect(
+      citationLocatorLabel({ source_path: 'book.xlsx', doc_type: 'PDF' }),
+    ).toEqual({ kind: 'sheet', labelKey: 'research.citation.sheet' })
+    expect(
+      citationLocatorLabel({ source_path: 'slides.pptx', doc_type: 'PDF' }),
+    ).toEqual({ kind: 'slide', labelKey: 'research.citation.slide' })
+  })
+
+  it('source_path 未知扩展名 → 回落 doc_type（PDF/PPT/Excel，大小写容错）', () => {
+    expect(citationLocatorLabel({ source_path: 'archive.docx', doc_type: 'PDF' })).toEqual({
+      kind: 'page',
+      labelKey: 'research.citation.page',
+    })
+    expect(citationLocatorLabel({ source_path: null, doc_type: 'PPT' })).toEqual({
+      kind: 'slide',
+      labelKey: 'research.citation.slide',
+    })
+    expect(citationLocatorLabel({ source_path: null, doc_type: 'Excel' })).toEqual({
+      kind: 'sheet',
+      labelKey: 'research.citation.sheet',
+    })
+    // 既有测试替身的 doc_type 是小写 'pdf' → 同一 Page 语义（保持旧标签文案）
+    expect(citationLocatorLabel({ source_path: null, doc_type: 'pdf' })).toEqual({
+      kind: 'page',
+      labelKey: 'research.citation.page',
+    })
+  })
+
+  it('source_path 与 doc_type 均不可判定 → 旧 "Page N" 行为（不臆造 slide/sheet）', () => {
+    for (const citation of [
+      { source_path: null, doc_type: null },
+      { source_path: undefined, doc_type: undefined },
+      { source_path: '/x/notes', doc_type: 'DOCX' },
+      { source_path: '/x/notes', doc_type: 'html' },
+    ]) {
+      expect(citationLocatorLabel(citation)).toEqual({
+        kind: null,
+        labelKey: 'research.citation.page',
+      })
+    }
+  })
+
+  it('扩展名判定忽略 query/hash 与尾随空白（source_path 是展示身份，不是 URL 解析）', () => {
+    expect(
+      citationLocatorLabel({ source_path: '/x/a.pdf?download=1#p2', doc_type: null }).kind,
+    ).toBe('page')
+    expect(citationLocatorLabel({ source_path: '/x/b.xlsx ', doc_type: null }).kind).toBe(
+      'sheet',
+    )
   })
 })

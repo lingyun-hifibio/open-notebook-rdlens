@@ -3,7 +3,12 @@
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/lib/hooks/use-translation'
-import { canJumpToCitation, displayPage, type JumpDenyReason } from './citation-utils'
+import {
+  canJumpToCitation,
+  citationLocatorLabel,
+  displayPage,
+  type JumpDenyReason,
+} from './citation-utils'
 import type { ResearchCitation, ResearchChunk, ResearchSource } from '@/lib/types/research'
 
 /**
@@ -40,6 +45,10 @@ export function CitationCard({
 }: CitationCardProps) {
   const { t } = useTranslation()
   const page = displayPage(citation.page_idx)
+  // Issue #1011（计划 §2.6/§2.8）：页/slide/sheet 只做**展示**映射
+  // （source_path 扩展名 → doc_type → 旧 "Page N"）；跳转判定/降级与
+  // citation 身份字段保持不变。
+  const locator = citationLocatorLabel(citation)
   const evaluation = canJumpToCitation(citation, source, chunks)
   const degradedKey = evaluation.canJump
     ? null
@@ -51,8 +60,8 @@ export function CitationCard({
       <div className="flex items-center justify-between gap-2">
         <span className="truncate text-sm font-medium">{displayName}</span>
         {page !== null && (
-          <Badge variant="secondary" className="shrink-0">
-            {t('research.citation.page', { page })}
+          <Badge variant="secondary" className="shrink-0" data-testid="citation-locator">
+            {t(locator.labelKey, { page })}
           </Badge>
         )}
       </div>

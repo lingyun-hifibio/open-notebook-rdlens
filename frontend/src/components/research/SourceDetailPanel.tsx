@@ -13,6 +13,13 @@ import { useResearchSessionRuntimeOptional } from '@/lib/hooks/research-session-
 import { useResearchEditor } from '@/lib/hooks/use-research-editor'
 import { useResearchD1e } from '@/lib/hooks/use-research-c05'
 import { extractResearchErrorCode, userErrorMessageKey } from '@/lib/research/errors'
+import { getSourceFile, getSourcePageImage } from '@/lib/research/api'
+import {
+  classifySourceMediaFailure,
+  sourceMediaProfile,
+  type SourceMediaFailureInput,
+  type SourceMediaFailureKind,
+} from '@/lib/research/source-media'
 import {
   measureReaderAnchor,
   readerAnchorMatches,
@@ -105,13 +112,14 @@ export function SourceDetailPanel({
 }) {
   const { t } = useTranslation()
   const { projectId } = useResearchWorkspace()
-  const { data, isLoading, isError, error } = useResearchSource(projectId, sourceId)
+  const { data, isLoading, isError, error, refetch } = useResearchSource(projectId, sourceId)
   // Issue #1013 §2.11：能力键 fail-closed（缺失/畸形/false → 选段 UI 全部不可用）。
   const d1e = useResearchD1e(projectId)
   const selectionEnabled = d1e.ready && onDiscussSelection !== undefined
-  // PR5/R1-H4：「只问此来源」——会话级临时限定（D-04）。sessionId 未知时
-  // 入待绑态（bindSession 在 Chat 首响应时绑定）。
-  const { setSingle, mode, singlePin, clearSingle } = useResearchScope()
+  // Issue #1011（计划 §2.7 I1/I2）：Source focus **只读**当前会话单篇限定，
+  // 不再渲染 `source-ask-only`、不调用 setSingle/clearSingle（设置/取消只在
+  // ResearchScopeEditor 的会话 Scope 面发生）。
+  const { mode, singlePin } = useResearchScope()
   const pinnedHere = mode === 'single' && singlePin?.sourceId === sourceId
   const headingRef = useRef<HTMLHeadingElement>(null)
   const handledFocusRequestIdRef = useRef<number | null>(null)
@@ -180,6 +188,162 @@ export function SourceDetailPanel({
   // 服务端净化坏锚点后只会置 positionUnavailable；仍要可见说明（§5.7.2/§7.2）。
   const editorPositionUnavailable =
     sourceEditorEnabled && sourceEditor.snapshot?.positionUnavailable === true
+
+  // ── Issue #1011（D1-E 主单 §2.6/§2.8/§2.10）：声明格式 / 页图 / 打开原文件 ──
+  // 全部媒体 UI 的 fail-closed 门禁：既有 `useResearchD1e` 能力就绪 **且**
+  // 来源详情含加性格式字段（旧 host 缺失 → 保持 pin 基线 UI）。
+  const d1eReady = d1e.ready
+  const sourceType = typeof data?.source_type === 'string' ? data.source_type : null
+  const mediaProfile = useMemo(() => sourceMediaProfile(sourceType), [sourceType])
+  const mediaFieldsReady = d1eReady && sourceType !== null
+  const canPageImage = mediaFieldsReady && mediaProfile.pageImage
+  const canOpenFile = mediaFieldsReady && data?.file_available === true
+  const documentId = data?.document_id ?? null
+  const documentVersion = data?.document_version ?? null
+  const chunkLocatorKey = mediaFieldsReady
+    ? mediaProfile.chunkLocatorKey
+    : 'research.sources.chunkPage'
+  // 页图只覆盖「引用/当前 chunk 的定位页」：citation 跳转页优先，否则首个
+  // chunk 页（手动点击入口；无自由翻页/页选择器，§2.8）。
+  const highlightIsLocator = typeof highlightPageIdx === 'number' && highlightPageIdx >= 0
+  const pageImageTarget = useMemo<number | null>(() => {
+    if (!canPageImage) return null
+    if (typeof highlightPageIdx === 'number' && highlightPageIdx >= 0) return highlightPageIdx
+    const first = (data?.markdown_chunks ?? []).find(
+      (chunk) => typeof chunk.page_idx === 'number' && chunk.page_idx >= 0,
+    )
+    return first === undefined ? null : first.page_idx
+  }, [canPageImage, data?.markdown_chunks, highlightPageIdx])
+  const [pageImage, setPageImage] = useState<PageImageViewState>(IDLE_PAGE_IMAGE)
+  const [pageImageRetryCount, setPageImageRetryCount] = useState(0)
+  const [openFileState, setOpenFileState] = useState<OpenFileState>(IDLE_OPEN_FILE)
+  const pageImageRequestRef = useRef(0)
+  const pageImageObjectUrlRef = useRef<string | null>(null)
+
+  // 对象 URL 释放（R01：替换/切来源/卸载时必须 revoke，避免 blob 泄漏）。
+  const revokePageImageObjectUrl = useCallback(() => {
+    const current = pageImageObjectUrlRef.current
+    if (current === null) return
+    pageImageObjectUrlRef.current = null
+    if (typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(current)
+  }, [])
+
+  // 切来源/能力关闭：丢弃旧来源页图状态（不保留上一来源字节）。
+  useEffect(() => {
+    pageImageRequestRef.current += 1
+    revokePageImageObjectUrl()
+    setPageImage(IDLE_PAGE_IMAGE)
+    setPageImageRetryCount(0)
+    setOpenFileState(IDLE_OPEN_FILE)
+  }, [revokePageImageObjectUrl, sourceId])
+
+  // 评审 MEDIUM-1：卸载时先 bump request id 再 revoke——in-flight 页图请求在
+  // 卸载后 resolve 时 requestId 不匹配会早退，不再 createObjectURL/写已卸载组件。
+  useEffect(
+    () => () => {
+      pageImageRequestRef.current += 1
+      revokePageImageObjectUrl()
+    },
+    [revokePageImageObjectUrl],
+  )
+
+  // 评审 MEDIUM-3：定位页变化（含 `highlightPageIdx` 数字→null / 换页 / chunk
+  // 集合变化）→ 丢弃旧页图状态，避免标签（新定位页）与图片（旧页）不一致。
+  // 声明在 auto-load effect 之前：先重置、再由 auto-load 发起新定位页请求。
+  useEffect(() => {
+    pageImageRequestRef.current += 1
+    revokePageImageObjectUrl()
+    setPageImage(IDLE_PAGE_IMAGE)
+    setPageImageRetryCount(0)
+  }, [pageImageTarget, revokePageImageObjectUrl])
+
+  const loadPageImage = useCallback(
+    async (pageIdx: number): Promise<void> => {
+      if (documentId === null || documentVersion === null) return
+      const requestId = pageImageRequestRef.current + 1
+      pageImageRequestRef.current = requestId
+      revokePageImageObjectUrl()
+      setPageImage({ status: 'loading', pageIdx, url: null })
+      try {
+        const blob = await getSourcePageImage(projectId, sourceId, pageIdx, {
+          documentId,
+          documentVersion,
+        })
+        if (pageImageRequestRef.current !== requestId) return
+        const url = typeof URL.createObjectURL === 'function' ? URL.createObjectURL(blob) : null
+        pageImageObjectUrlRef.current = url
+        setPageImage({ status: 'ready', pageIdx, url })
+      } catch (mediaError) {
+        if (pageImageRequestRef.current !== requestId) return
+        setPageImage({
+          status: classifySourceMediaFailure(extractSourceMediaFailure(mediaError)),
+          pageIdx,
+          url: null,
+        })
+      }
+    },
+    [documentId, documentVersion, projectId, revokePageImageObjectUrl, sourceId],
+  )
+
+  // citation 跳转定位页自动加载（同一页重复请求由 highlightRequestId 触发重跑）。
+  useEffect(() => {
+    if (!canPageImage || !highlightIsLocator || typeof highlightPageIdx !== 'number') return
+    setPageImageRetryCount(0)
+    void loadPageImage(highlightPageIdx)
+  }, [canPageImage, highlightIsLocator, highlightPageIdx, loadPageImage, sourceId])
+
+  const retryPageImage = useCallback(() => {
+    const target = pageImage.pageIdx
+    if (target === null) return
+    setPageImageRetryCount((count) => count + 1)
+    void loadPageImage(target)
+  }, [loadPageImage, pageImage.pageIdx])
+
+  // 打开原文件（§2.6/§2.8）：全部格式 blob + <a download>（含 PDF，不 inline/
+  // 不 window.open）；文件名来自服务端 Content-Disposition，缺失才本地回退。
+  // 失败走 §2.10 同一分类器（与页图共用 `classifySourceMediaFailure`，不造
+  // 第二套判定）；retryCount = 已发生的**用户手动**重试次数（无自动循环）。
+  const fetchSourceFile = useCallback(
+    async (retryCount: number): Promise<void> => {
+      if (documentId === null || documentVersion === null) return
+      setOpenFileState({ kind: 'loading', retryCount })
+      try {
+        const { blob, filename } = await getSourceFile(projectId, sourceId, {
+          documentId,
+          documentVersion,
+        })
+        const fallbackName = buildSourceFileName(
+          data?.title ?? data?.document_id ?? sourceId,
+          mediaProfile.fileExtension,
+        )
+        triggerBlobDownload(blob, filename ?? fallbackName)
+        setOpenFileState(IDLE_OPEN_FILE)
+      } catch (mediaError) {
+        // §2.10：打开原文件失败只影响媒体区，不阻塞正文/返回入口。
+        setOpenFileState({
+          kind: classifySourceMediaFailure(extractSourceMediaFailure(mediaError)),
+          retryCount,
+        })
+      }
+    },
+    [
+      data?.document_id,
+      data?.title,
+      documentId,
+      documentVersion,
+      mediaProfile.fileExtension,
+      projectId,
+      sourceId,
+    ],
+  )
+
+  const handleOpenSourceFile = useCallback((): void => {
+    void fetchSourceFile(0)
+  }, [fetchSourceFile])
+
+  const retryOpenSourceFile = useCallback((): void => {
+    void fetchSourceFile(openFileState.retryCount + 1)
+  }, [fetchSourceFile, openFileState.retryCount])
 
   useEffect(() => {
     if (
@@ -563,11 +727,41 @@ export function SourceDetailPanel({
             {t('research.errors.sourceAccessRestricted')}
           </p>
         )}
+        {/* §2.10：详情加载失败提供用户点击的「重试」（refetch）；撤权 410
+            不提供（权限已变，重试无意义）。 */}
+        {code !== 'source_access_restricted' && (
+          <Button
+            size="sm"
+            variant="outline"
+            data-testid="source-detail-retry"
+            onClick={() => void refetch()}
+          >
+            {t('research.retry')}
+          </Button>
+        )}
       </div>
     )
   }
 
   const returnAvailable = returnTargetAvailable === true && onReturnToAnswer !== undefined
+  // §2.6：格式 badge 只在能力/字段就绪且声明格式有标签时出现（fail-closed）。
+  const formatLabelKey = mediaFieldsReady ? mediaProfile.formatLabelKey : null
+  // §2.10：打开原文件失败分类（与页图同一分类器）；envelope 410 撤权时隐藏
+  // 所有「打开原文件」入口，非 envelope 404 只允许一次手动重试。
+  const openFileFailureKind =
+    openFileState.kind === 'idle' || openFileState.kind === 'loading'
+      ? null
+      : openFileState.kind
+  // 评审 MEDIUM-2：页图 410 撤权同样意味着媒体不可用——隐藏所有 open-file
+  // 入口（header/figure chunk/unsupported fallback 共用本 flag）。
+  const canShowOpenFile =
+    canOpenFile
+    && openFileFailureKind !== 'forbidden'
+    && pageImage.status !== 'forbidden'
+  const canRetryOpenFile =
+    openFileFailureKind === 'retryable'
+    || ((openFileFailureKind === 'unavailable' || openFileFailureKind === 'unsupported')
+      && openFileState.retryCount < 1)
   return (
     <div ref={rootRef} className="space-y-4">
       <div className="flex items-center justify-between gap-2">
@@ -576,6 +770,29 @@ export function SourceDetailPanel({
         </h2>
         <div className="flex shrink-0 items-center gap-2">
           <Badge variant="secondary">{data.document_version}</Badge>
+          {/* §2.6：格式 badge 仅 pdf/ppt/xlsx（声明外/未知不新增标签） */}
+          {formatLabelKey !== null && (
+            <Badge
+              variant="outline"
+              data-testid="source-format-badge"
+              data-format={mediaProfile.format ?? undefined}
+            >
+              {t(formatLabelKey)}
+            </Badge>
+          )}
+          {/* §2.8：打开原文件（blob + 下载；所有格式含 PDF，不新标签页）；
+              §2.10：410 撤权后隐藏媒体控件。 */}
+          {canShowOpenFile && (
+            <Button
+              size="sm"
+              variant="outline"
+              data-testid="source-open-file"
+              disabled={openFileState.kind === 'loading'}
+              onClick={handleOpenSourceFile}
+            >
+              {t('research.source.openOriginal')}
+            </Button>
+          )}
           {returnAvailable && (
             <Button
               size="sm"
@@ -586,18 +803,39 @@ export function SourceDetailPanel({
               {t('research.source.returnToAnswer')}
             </Button>
           )}
-          {/* PR5/R1-H4：「只问此来源」——会话级临时限定（D-04）；
-              sessionId 未知时入待绑态（Chat 首响应 bindSession 绑定） */}
-          <Button
-            size="sm"
-            variant={pinnedHere ? 'secondary' : 'outline'}
-            data-testid="source-ask-only"
-            onClick={() => (pinnedHere ? clearSingle() : setSingle(sourceId, null))}
-          >
-            {pinnedHere ? t('research.sources.stopAskOnly') : t('research.sources.askOnlyThis')}
-          </Button>
         </div>
       </div>
+      {/* §2.7 I2：只读提示当前会话已限定到本来源（设置/取消只在 Scope 面） */}
+      {pinnedHere && (
+        <p
+          className="text-xs text-muted-foreground"
+          role="status"
+          data-testid="source-single-pin-hint"
+        >
+          {t('research.layout.scope.singleActive', { source: sourceId })}
+        </p>
+      )}
+      {openFileFailureKind !== null && (
+        <div className="space-y-2" data-testid="source-open-file-error">
+          <p
+            className="text-sm text-amber-700"
+            role="status"
+            data-testid={openFileFailureStateTestId(openFileFailureKind)}
+          >
+            {t(openFileFailureMessageKey(openFileFailureKind))}
+          </p>
+          {canRetryOpenFile && (
+            <Button
+              size="sm"
+              variant="outline"
+              data-testid="source-file-retry"
+              onClick={retryOpenSourceFile}
+            >
+              {t('research.retry')}
+            </Button>
+          )}
+        </div>
+      )}
       {(positionUnavailable || editorPositionUnavailable) && (
         <p className="text-sm text-amber-700" role="status" data-testid="source-anchor-unavailable">
           {t('research.editor.positionUnavailable')}
@@ -617,6 +855,85 @@ export function SourceDetailPanel({
         <p className="text-sm text-amber-700" role="status" data-testid="source-selection-capture-failed">
           {t('research.selection.captureFailed')}
         </p>
+      )}
+      {/* §2.8 页图区：仅 pdf/ppt 且能力/字段就绪；只覆盖引用/当前 chunk 的
+          定位页（无自由翻页/页选择器）。整篇原文走「打开原文件（下载）」。 */}
+      {canPageImage && pageImageTarget !== null && (
+        <section className="space-y-2 rounded-md border p-3" data-testid="source-page-image">
+          {pageImage.status !== 'idle' && (
+            <p className="text-xs font-medium text-muted-foreground">
+              {t(mediaProfile.pageImageLabelKey ?? 'research.source.pageImage', {
+                page: pageImageTarget + 1,
+              })}
+            </p>
+          )}
+          {pageImage.status === 'idle' && (
+            <Button
+              size="sm"
+              variant="outline"
+              data-testid="source-page-image-load"
+              onClick={() => void loadPageImage(pageImageTarget)}
+            >
+              {t(mediaProfile.pageImageLabelKey ?? 'research.source.pageImage', {
+                page: pageImageTarget + 1,
+              })}
+            </Button>
+          )}
+          {pageImage.status === 'loading' && (
+            <p className="text-sm text-muted-foreground" data-testid="source-page-image-loading">
+              {t('research.source.pageImageLoading')}
+            </p>
+          )}
+          {pageImage.status === 'ready' && pageImage.url !== null && (
+            // 页图是经 Bearer 获取的 blob: URL（不能直连端点/不能进 URL），
+            // next/image 无法优化 blob 对象 URL。
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              data-testid="source-page-image-img"
+              src={pageImage.url}
+              alt={t(mediaProfile.pageImageLabelKey ?? 'research.source.pageImage', {
+                page: pageImageTarget + 1,
+              })}
+              className="max-h-[520px] w-full object-contain"
+            />
+          )}
+          {isMediaFailureStatus(pageImage.status) && (
+            <div className="space-y-2" data-testid="source-media-error">
+              <p
+                className="text-sm text-amber-700"
+                role="status"
+                data-testid={mediaFailureTestId(pageImage.status)}
+              >
+                {t(mediaFailureMessageKey(pageImage.status))}
+              </p>
+              {/* §2.10：非 envelope 404 只允许一次手动重试；5xx/503/网络错误
+                  可重试（仅用户点击，无自动循环）；410 撤权与 authority 竞态
+                  404 不提供重试。 */}
+              {(pageImage.status === 'retryable'
+                || (pageImage.status === 'unavailable' && pageImageRetryCount < 1)) && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  data-testid="source-media-retry"
+                  onClick={retryPageImage}
+                >
+                  {t('research.retry')}
+                </Button>
+              )}
+              {pageImage.status === 'unsupported' && canShowOpenFile && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  data-testid="source-open-file"
+                  disabled={openFileState.kind === 'loading'}
+                  onClick={handleOpenSourceFile}
+                >
+                  {t('research.source.openOriginal')}
+                </Button>
+              )}
+            </div>
+          )}
+        </section>
       )}
       {data.markdown_chunks.length === 0 && (
         <p className="text-sm text-muted-foreground">{t('research.sources.empty')}</p>
@@ -641,12 +958,46 @@ export function SourceDetailPanel({
               (highlighted || selectionHighlighted) && 'border-primary ring-1 ring-primary',
             )}
           >
+            {/* §2.6：定位标签按声明格式 Page/Slide/Sheet（0-based+1 展示），
+                未知/缺失格式保持旧 `research.sources.chunkPage`。 */}
             {page !== null && (
-              <p className="mb-2 text-xs font-medium text-muted-foreground">
-                {t('research.sources.chunkPage', { page })}
+              <p
+                className="mb-2 text-xs font-medium text-muted-foreground"
+                data-testid="source-chunk-locator"
+                data-locator-kind={mediaFieldsReady ? (mediaProfile.locatorKind ?? 'page') : 'page'}
+              >
+                {t(chunkLocatorKey, { page })}
+              </p>
+            )}
+            {/* XLSX：sheet 序号 = 按 sheet 名排序序号（不是工作簿顺序） */}
+            {page !== null && mediaFieldsReady && mediaProfile.sheetOrderNote && (
+              <p className="mb-2 text-[11px] text-muted-foreground" data-testid="source-sheet-order-note">
+                {t('research.sources.sheetOrderNote')}
               </p>
             )}
             <MarkdownRenderer>{chunk.markdown}</MarkdownRenderer>
+            {/* §2.9：图表 chunk 的可见诚实声明（不标已验证）+ 打开原文件入口 */}
+            {d1eReady && chunk.markdown.includes(FIGURE_CHUNK_MARKER) && (
+              <div
+                className="mt-2 space-y-2 rounded-md border border-dashed p-2"
+                data-testid="source-figure-unavailable"
+              >
+                <p className="text-xs text-amber-700" role="status">
+                  {t('research.source.figureUnavailable')}
+                </p>
+                {canShowOpenFile && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    data-testid="source-open-file"
+                    disabled={openFileState.kind === 'loading'}
+                    onClick={handleOpenSourceFile}
+                  >
+                    {t('research.source.openOriginal')}
+                  </Button>
+                )}
+              </div>
+            )}
           </section>
         )
       })}
@@ -685,4 +1036,166 @@ function selectionActionTitle(
     end: range.end,
     quote: summary,
   })
+}
+
+// ---------------------------------------------------------------------------
+// Issue #1011 媒体读路径本地状态与纯辅助（页图/原文件）
+// ---------------------------------------------------------------------------
+
+/** 页图区状态：§2.10 分类结果直接作为 status（便于 UI 分派与测试断言）。 */
+type PageImageStatus = 'idle' | 'loading' | 'ready' | SourceMediaFailureKind
+
+interface PageImageViewState {
+  readonly status: PageImageStatus
+  readonly pageIdx: number | null
+  readonly url: string | null
+}
+
+const IDLE_PAGE_IMAGE: PageImageViewState = Object.freeze({
+  status: 'idle',
+  pageIdx: null,
+  url: null,
+})
+
+const MEDIA_FAILURE_STATUSES: readonly PageImageStatus[] = [
+  'forbidden',
+  'unsupported',
+  'source_unavailable',
+  'unavailable',
+  'retryable',
+]
+
+function isMediaFailureStatus(status: PageImageStatus): boolean {
+  return MEDIA_FAILURE_STATUSES.includes(status)
+}
+
+/** §2.10 分类 → 用户可见文案 key（撤权复用既有 errors 文案，不造同义双份）。 */
+function mediaFailureMessageKey(status: PageImageStatus): string {
+  switch (status) {
+    case 'forbidden':
+      return 'research.errors.sourceAccessRestricted'
+    case 'unsupported':
+      return 'research.source.pageImageNotSupported'
+    case 'source_unavailable':
+      return 'research.source.pageImageSourceUnavailable'
+    case 'unavailable':
+      return 'research.source.pageImageUnavailable'
+    default:
+      return 'research.source.pageImageError'
+  }
+}
+
+/** §2.10 分类 → 状态专属 testid（fork-visual 钩子，勿改）。 */
+function mediaFailureTestId(status: PageImageStatus): string {
+  switch (status) {
+    case 'forbidden':
+      return 'source-media-restricted'
+    case 'unsupported':
+      return 'source-media-unsupported'
+    case 'source_unavailable':
+      return 'source-media-source-unavailable'
+    case 'unavailable':
+      return 'source-media-unavailable'
+    default:
+      return 'source-media-retryable'
+  }
+}
+
+/**
+ * 媒体读错误 → §2.10 分类输入。
+ *
+ * 结构化读取（不依赖具体 error 类）：`api.ts` 的 `ResearchMediaError` 暴露
+ * `status/code/detail`；测试替身可直接给同形对象。只有 envelope code
+ * `source_access_restricted` 的 410 表示撤权（NORMATIVE 30）。
+ */
+function extractSourceMediaFailure(error: unknown): SourceMediaFailureInput {
+  if (error === null || typeof error !== 'object') {
+    return { status: null, code: null, detail: null }
+  }
+  const record = error as {
+    status?: unknown
+    code?: unknown
+    detail?: unknown
+    response?: { status?: unknown; data?: unknown }
+  }
+  let status = typeof record.status === 'number' ? record.status : null
+  if (status === null && typeof record.response?.status === 'number') {
+    status = record.response.status
+  }
+  const code = typeof record.code === 'string' && record.code.length > 0 ? record.code : null
+  const detail = typeof record.detail === 'string' ? record.detail : null
+  return { status, code, detail }
+}
+
+/** 本地回退文件名：净化标题（不允许路径穿越）+ 声明格式扩展名。 */
+export function buildSourceFileName(title: string, extension: string | null): string {
+  const base = title
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .slice(0, 120)
+  const safeBase = base.length > 0 ? base : 'source'
+  if (extension === null || safeBase.toLowerCase().endsWith(`.${extension}`)) return safeBase
+  return `${safeBase}.${extension}`
+}
+
+/**
+ * blob → 浏览器下载（`<a download>`）。所有格式（含 PDF）一律下载：
+ * fork 运行在 host iframe 内（sandbox 无 allow-popups），**不**调用
+ * `window.open`/`target=_blank`（§2.6/NORMATIVE 16）。
+ */
+function triggerBlobDownload(blob: Blob, filename: string): void {
+  if (typeof URL.createObjectURL !== 'function') return
+  const objectUrl = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = objectUrl
+  anchor.download = filename
+  anchor.rel = 'noopener'
+  anchor.style.display = 'none'
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  if (typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(objectUrl)
+}
+
+const FIGURE_CHUNK_MARKER = '<!-- image_description -->'
+
+/** 打开原文件失败状态（§2.10；retryCount = 已发生的用户手动重试次数）。 */
+type OpenFileStateKind = 'idle' | 'loading' | SourceMediaFailureKind
+
+interface OpenFileState {
+  readonly kind: OpenFileStateKind
+  readonly retryCount: number
+}
+
+const IDLE_OPEN_FILE: OpenFileState = Object.freeze({ kind: 'idle', retryCount: 0 })
+
+/**
+ * 打开原文件失败文案（§2.10）：
+ * - 撤权（410 envelope）复用既有 errors 文案，不造同义双份；
+ * - authority 竞态/版本不一致 → 「来源暂不可用，重新打开来源」；
+ * - 非 envelope 404（文件/位置不可用）→ 「原文件/位置不可用」；
+ * - 500/503/网络 → 通用「打开原文件失败，请重试」。
+ */
+function openFileFailureMessageKey(kind: SourceMediaFailureKind): string {
+  switch (kind) {
+    case 'forbidden':
+      return 'research.errors.sourceAccessRestricted'
+    case 'source_unavailable':
+      return 'research.source.pageImageSourceUnavailable'
+    case 'unavailable':
+    case 'unsupported':
+      return 'research.source.pageImageUnavailable'
+    default:
+      return 'research.source.openOriginalFailed'
+  }
+}
+
+/** 打开原文件失败的状态专属 testid（与页图 `source-media-*` 命名区分）。 */
+function openFileFailureStateTestId(kind: SourceMediaFailureKind): string | undefined {
+  if (kind === 'forbidden') return 'source-file-restricted'
+  if (kind === 'unavailable' || kind === 'unsupported' || kind === 'source_unavailable') {
+    return 'source-file-unavailable'
+  }
+  return undefined
 }

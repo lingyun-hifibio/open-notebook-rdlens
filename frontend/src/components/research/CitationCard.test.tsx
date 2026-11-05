@@ -170,3 +170,93 @@ describe('CitationCard · Issue #1013 F13（撤权过滤后的剩余引用）', 
     expect(screen.queryByRole('button', { name: /research.citation.jump/ })).toBeNull()
   })
 })
+
+// ---------------------------------------------------------------------------
+// Issue #1011 F02（计划 §2.6/§2.8）：页/slide/sheet 展示映射。
+// 只改标签文案：跳转/降级/citation 身份字段与既有 data-testid 不变。
+// ---------------------------------------------------------------------------
+
+describe('CitationCard · Issue #1011 F02（Page/Slide/Sheet 展示映射）', () => {
+  it('source_path .pptx → Slide 标签（page_idx+1 展示）', () => {
+    render(
+      <CitationCard
+        citation={citation({
+          doc_type: null,
+          source_path: '/data/B01 slides.pptx',
+          page_idx: 4,
+        })}
+        source={readySource()}
+        chunks={[{ chunk_id: 'chunk_4', page_idx: 4, markdown: 'slide 5 content' }]}
+      />,
+    )
+    expect(screen.getByTestId('citation-locator')).toHaveTextContent(
+      'research.citation.slide:5',
+    )
+    expect(screen.queryByText(/research.citation.page/)).toBeNull()
+  })
+
+  it('source_path .xlsx → Sheet 标签（page_idx+1 展示）', () => {
+    render(
+      <CitationCard
+        citation={citation({
+          doc_type: null,
+          source_path: '/data/excel_test/cell lines.xlsx',
+          page_idx: 0,
+        })}
+        source={readySource()}
+        chunks={[{ chunk_id: 'chunk_0', page_idx: 0, markdown: 'sheet 1 content' }]}
+      />,
+    )
+    expect(screen.getByTestId('citation-locator')).toHaveTextContent(
+      'research.citation.sheet:1',
+    )
+  })
+
+  it('doc_type=PDF（无扩展名）→ 保持 Page 标签（旧行为不变）', () => {
+    render(
+      <CitationCard
+        citation={citation({ doc_type: 'PDF', source_path: null })}
+        source={readySource()}
+        chunks={chunks()}
+      />,
+    )
+    expect(screen.getByTestId('citation-locator')).toHaveTextContent(
+      'research.citation.page:4',
+    )
+  })
+
+  it('未知格式（doc_type=DOCX，无扩展名）→ 旧标签 + 跳转能力不变', () => {
+    const onJump = vi.fn()
+    render(
+      <CitationCard
+        citation={citation({ doc_type: 'DOCX', source_path: '/x/notes' })}
+        source={readySource()}
+        chunks={chunks()}
+        onJump={onJump}
+      />,
+    )
+    expect(screen.getByTestId('citation-locator')).toHaveTextContent(
+      'research.citation.page:4',
+    )
+    fireEvent.click(screen.getByRole('button', { name: /research.citation.jump/ }))
+    expect(onJump).toHaveBeenCalledTimes(1)
+  })
+
+  it('Slide/Sheet 映射不影响失效降级：source 缺失仍禁用跳转并保留原文', () => {
+    render(
+      <CitationCard
+        citation={citation({ source_path: 'slides.pptx', doc_type: null })}
+        source={null}
+        chunks={[]}
+      />,
+    )
+    expect(screen.getByTestId('citation-locator')).toHaveTextContent(
+      'research.citation.slide:4',
+    )
+    expect(screen.queryByRole('button', { name: /research.citation.jump/ })).toBeNull()
+    expect(
+      screen.getByText(/research.citation.degradedSource:source_unavailable/),
+    ).toBeInTheDocument()
+    expect(screen.getByText('原文保留的句子')).toBeInTheDocument()
+  })
+})

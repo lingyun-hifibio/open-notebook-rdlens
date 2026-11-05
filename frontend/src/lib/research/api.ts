@@ -106,6 +106,216 @@ export async function getSource(
   return response.data
 }
 
+// ── 来源媒体读路径（Issue #1011 D1-E 主单 §2.8；NORMATIVE 16） ──
+//
+// 页图/原文件都经既有 `apiClient`（自动 Bearer = 内存 Research Token）以
+// `responseType: 'blob'` 获取：
+// - URL 只用 `researchPath` + `encodeURIComponent`，**token 不得进入
+//   URL/查询串**（评审 P-07/R01）；不使用第二套 axios 实例；
+// - `document_id`/`document_version` 必须**成对**作为 query 参数（精确版本；
+//   服务端不成对/不一致 → 422 source_ref_mismatch）；
+// - 错误归一化为 `ResearchMediaError`（blob 响应体无法被通用 interceptor
+//   解析，故在此读回 detail/code），供 §2.10 重试矩阵分类；
+// - 所有格式均通过 blob + `<a download>` 打开（含 PDF；不 inline/不新标签页）。
+
+/** 来源精确版本引用（两媒体端点的成对 query 参数，§2.3）。 */
+export interface SourceDocumentRef {
+  documentId: string
+  documentVersion: string
+}
+
+/** 原文件 blob + 服务端 Content-Disposition 给出的文件名（可能缺失）。 */
+export interface SourceFileBlob {
+  blob: Blob
+  filename: string | null
+}
+
+/**
+ * 媒体读取错误（页图/原文件）：只暴露分类所需字段，原始响应体不外泄。
+ *
+ * `status === null` 表示网络错误/无响应；`code` 只来自服务端 error envelope
+ * 的 `detail.code`（纯 detail 响应为 null）——**只有 410 + code
+ * `source_access_restricted` 才表示撤权**（计划 §2.10/§2.12）。
+ */
+export class ResearchMediaError extends Error {
+  readonly status: number | null
+  readonly code: string | null
+  readonly detail: string | null
+
+  constructor(status: number | null, code: string | null, detail: string | null) {
+    super(`research media request failed (status=${status ?? 'none'})`)
+    this.name = 'ResearchMediaError'
+    this.status = status
+    this.code = code
+    this.detail = detail
+  }
+}
+
+/** 类型守卫：区分媒体读错误与其它异常（调用方按 §2.10 分类）。 */
+export function isResearchMediaError(value: unknown): value is ResearchMediaError {
+  return value instanceof ResearchMediaError
+}
+
+/** 读取 blob 响应体文本（jsdom 的 Blob 无 `.text()`：回退 FileReader）。 */
+async function readBlobText(blob: Blob): Promise<string> {
+  const withText = blob as Blob & { text?: () => Promise<string> }
+  if (typeof withText.text === 'function') {
+    return withText.text()
+  }
+  if (typeof FileReader !== 'undefined') {
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '')
+      reader.onerror = () => reject(reader.error ?? new Error('blob read failed'))
+      reader.readAsText(blob)
+    })
+  }
+  return ''
+}
+
+function parseEnvelopeDetail(detail: unknown): { code: string | null; detail: string | null } {
+  if (detail === null || detail === undefined) return { code: null, detail: null }
+  if (typeof detail === 'string') return { code: null, detail }
+  if (typeof detail === 'object' && !Array.isArray(detail)) {
+    const record = detail as { code?: unknown; message?: unknown }
+    const code = typeof record.code === 'string' && record.code.length > 0 ? record.code : null
+    // envelope 的 message 是人类可读文案，不是分类依据：只有纯 detail
+    // 响应才把文案交给 §2.10 分类（避免 envelope 文案被当成位置/格式判定）。
+    const text = code === null && typeof record.message === 'string' && record.message.length > 0
+      ? record.message
+      : null
+    return { code, detail: text }
+  }
+  return { code: null, detail: null }
+}
+
+/** 从（可能是 blob 的）错误响应体解析 `detail.code` / 纯字符串 `detail`。 */
+async function readMediaErrorPayload(
+  data: unknown,
+): Promise<{ code: string | null; detail: string | null }> {
+  let payload: unknown = data
+  if (typeof Blob !== 'undefined' && data instanceof Blob) {
+    try {
+      const text = await readBlobText(data)
+      payload = text.length > 0 ? JSON.parse(text) : null
+    } catch {
+      return { code: null, detail: null }
+    }
+  } else if (typeof data === 'string') {
+    try {
+      payload = JSON.parse(data)
+    } catch {
+      return { code: null, detail: null }
+    }
+  }
+  if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
+    return { code: null, detail: null }
+  }
+  return parseEnvelopeDetail((payload as { detail?: unknown }).detail)
+}
+
+/** axios 错误（含 blob 响应体）→ ResearchMediaError（不吞掉 code/detail）。 */
+async function toResearchMediaError(error: unknown): Promise<ResearchMediaError> {
+  if (error instanceof ResearchMediaError) return error
+  const response = (error as { response?: { status?: unknown; data?: unknown } } | null)
+    ?.response
+  if (response === undefined || response === null) {
+    return new ResearchMediaError(null, null, null)
+  }
+  const status = typeof response.status === 'number' ? response.status : null
+  const { code, detail } = await readMediaErrorPayload(response.data)
+  return new ResearchMediaError(status, code, detail)
+}
+
+/** Content-Disposition → 文件名（优先 RFC 5987 `filename*`，回落 ASCII `filename`）。 */
+export function parseContentDispositionFilename(
+  header: string | null | undefined,
+): string | null {
+  if (typeof header !== 'string' || header.length === 0) return null
+  const extended = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(header)
+  if (extended !== null) {
+    try {
+      return decodeURIComponent(extended[1].trim())
+    } catch {
+      // 非法百分号编码：回落到 ASCII filename（不猜测文件名）
+    }
+  }
+  const plain = /filename\s*=\s*"([^"]*)"/i.exec(header) ?? /filename\s*=\s*([^;]+)/i.exec(header)
+  if (plain === null) return null
+  const value = plain[1].trim()
+  return value.length > 0 ? value : null
+}
+
+/**
+ * 来源页图（仅 pdf/ppt；§2.6）。返回 blob（`image/jpeg`）；调用方创建对象
+ * URL 用于 `<img>` 并在替换/卸载时 `URL.revokeObjectURL`。
+ */
+export async function getSourcePageImage(
+  projectId: string,
+  sourceId: string,
+  pageIdx: number,
+  ref: SourceDocumentRef,
+): Promise<Blob> {
+  try {
+    const response = await apiClient.get<Blob>(
+      researchPath(
+        projectId,
+        'sources',
+        encodeURIComponent(sourceId),
+        'pages',
+        String(pageIdx),
+        'image',
+      ),
+      {
+        params: {
+          document_id: ref.documentId,
+          document_version: ref.documentVersion,
+        },
+        responseType: 'blob',
+      },
+    )
+    return response.data
+  } catch (error) {
+    throw await toResearchMediaError(error)
+  }
+}
+
+/**
+ * 来源原文件（§2.6：全部格式均 attachment/下载，含 PDF）。
+ *
+ * 文件名来自服务端 Content-Disposition（RFC 5987 优先）；缺失时由调用方用
+ * `source_type` 推导扩展名回退（不伪造路径）。
+ */
+export async function getSourceFile(
+  projectId: string,
+  sourceId: string,
+  ref: SourceDocumentRef,
+): Promise<SourceFileBlob> {
+  try {
+    const response = await apiClient.get<Blob>(
+      researchPath(projectId, 'sources', encodeURIComponent(sourceId), 'file'),
+      {
+        params: {
+          document_id: ref.documentId,
+          document_version: ref.documentVersion,
+        },
+        responseType: 'blob',
+      },
+    )
+    const headers = response.headers as Record<string, unknown> | undefined
+    const disposition = headers?.['content-disposition']
+    return {
+      blob: response.data,
+      filename: parseContentDispositionFilename(
+        typeof disposition === 'string' ? disposition : null,
+      ),
+    }
+  } catch (error) {
+    throw await toResearchMediaError(error)
+  }
+}
+
+
 // ── Notes（契约 §7.1；Owner 写 / Admin 403 服务端强制） ──
 
 export interface CreateNoteInput {

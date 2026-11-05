@@ -44,7 +44,20 @@ export interface ResearchChunk {
 export interface ResearchSourceDetail extends ResearchSource {
   title: string | null
   markdown_chunks: ResearchChunk[]
+  /**
+   * Issue #1011（D1-E 主单）§2.4：技术格式（`pdf`/`ppt`/`xlsx`/`docx`/`csv`/
+   * 其他或 null）。**加性可选**——旧 host 无此键（`undefined`）→ 来源详情
+   * 保持 pin 基线 UI（不显示格式 badge/页图/打开原文件，fail-closed）。
+   * 仅在 `useResearchD1e(projectId).ready === true` 且该键存在时消费。
+   */
+  source_type?: string | null
+  /**
+   * Issue #1011 §2.4：documents 行是否含可解析文件引用（`minio_uri` 或
+   * `source_path`）。加性可选；仅 `true` 且 D1-E 能力就绪时显示「打开原文件」。
+   */
+  file_available?: boolean
 }
+
 
 export interface ResearchNote {
   note_id: string
