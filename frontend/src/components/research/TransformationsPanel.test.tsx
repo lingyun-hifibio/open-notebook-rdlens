@@ -786,6 +786,33 @@ describe('TransformationsPanel（RWV2-12 共享 Scope）', () => {
     await waitFor(() => expect(screen.getByTestId('run-all-blocked')).toBeInTheDocument())
     expect(researchApi.runTransformation).not.toHaveBeenCalled()
   })
+
+  it('#109：shared 下本地模型被后端能力禁用 → 运行确认框显示后端 message 且 Confirm 禁用', async () => {
+    seedScope('selected', ['src_1'], [])
+    const sharedMessage =
+      '当前 GPU 正与其他任务共用，可用显存不足以支撑 Research 使用本地模型，请改用外部 AI 模型。'
+    setGlobalModelStub({
+      canExecute: false,
+      blockedReason: 'local-unavailable-shared-gpu',
+      localModelUnavailableMessage: sharedMessage,
+    })
+    const { wrapper } = makeWrapper()
+    render(<TransformationsPanel />, { wrapper })
+    await waitFor(() => expect(screen.getByText('总结模板')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: 'research.transformations.run' }))
+    await waitFor(() => expect(screen.getByTestId('run-scope-summary')).toBeInTheDocument())
+    // 同一 blockedHint 通道显示后端逐字文案；入口禁用且不派发
+    expect(screen.getByTestId('transformation-run-blocked-hint').textContent).toBe(
+      sharedMessage,
+    )
+    const confirm = screen.getByRole('button', {
+      name: 'research.transformations.confirmRun',
+    })
+    expect(confirm).toBeDisabled()
+    fireEvent.click(confirm)
+    expect(researchApi.runTransformation).not.toHaveBeenCalled()
+  })
 })
 
 function deferred<T>() {

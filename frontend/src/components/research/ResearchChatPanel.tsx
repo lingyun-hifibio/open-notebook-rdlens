@@ -2052,6 +2052,7 @@ export function ResearchChatPanel({
                         <Button
                           size="sm"
                           disabled={
+                            generationBlocked ||
                             scopeUnavailableFor(turn) ||
                             jobSubmittingTurn === turn.id ||
                             jobQueuedByTurn[turn.id] !== undefined ||
@@ -2151,7 +2152,9 @@ export function ResearchChatPanel({
         )}
       </div>
 
-      {generationBlocked && blockedHint && (
+      {/* #109（round-3 F-5）：wired 路径的同一 blockedHint 已由 composer 门禁行
+          渲染（防双呈现）；legacy/未接线路径无 composer 门禁，保留面板级提示。 */}
+      {!wired && generationBlocked && blockedHint && (
         <p
           className="border-t px-3 pt-2 text-xs text-muted-foreground"
           data-testid="chat-model-blocked-hint"

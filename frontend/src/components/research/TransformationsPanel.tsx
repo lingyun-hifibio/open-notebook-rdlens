@@ -25,7 +25,10 @@ import {
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useToast } from '@/lib/hooks/use-toast'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
-import { useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
+import {
+  researchModelBlockedHint,
+  useResearchGlobalModel,
+} from '@/lib/hooks/use-research-global-model'
 import { useResearchScope, type ResearchScopeSnapshot } from '@/lib/research/scope'
 import { formatScopeLabel } from '@/lib/research/scope'
 import { detectResponseLanguage } from '@/lib/research/scope-utils'
@@ -88,8 +91,21 @@ export function TransformationsPanel({
   const { t } = useTranslation()
   const { toast } = useToast()
   const { projectId, isAdminReadonly } = useResearchWorkspace()
-  const { confirmedModelId, canExecute, runGuarded } = useResearchGlobalModel()
+  const {
+    confirmedModelId,
+    canExecute,
+    runGuarded,
+    blockedReason: modelBlockedReason,
+    localModelUnavailableMessage,
+  } = useResearchGlobalModel()
   const { mode, selectedSourceIds, selectedNoteIds, validate, getSnapshot } = useResearchScope()
+  // #109（round-3）：模型禁用原因（含 shared+本地）在同一 blockedHint 通道
+  // 显示后端下发文案；覆盖 Run 确认框（新建运行入口）。
+  const modelBlockedHint = researchModelBlockedHint(
+    modelBlockedReason,
+    t,
+    localModelUnavailableMessage,
+  )
   const { data, isLoading, isError } = useResearchTransformations(projectId)
   const createMutation = useCreateResearchTransformation(projectId)
   const runMutation = useRunResearchTransformation(projectId)
@@ -478,6 +494,16 @@ export function TransformationsPanel({
               data-testid="run-empty-scope-blocked"
             >
               {t('research.transformations.emptyScopeBlocked')}
+            </p>
+          )}
+
+          {!canExecute && modelBlockedHint !== '' && (
+            <p
+              className="text-xs text-muted-foreground"
+              role="status"
+              data-testid="transformation-run-blocked-hint"
+            >
+              {modelBlockedHint}
             </p>
           )}
 

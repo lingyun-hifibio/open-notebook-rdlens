@@ -138,6 +138,9 @@ function renderPanel(
     ) => Promise<BackgroundJobSubmitResult>
     /** PR5（D-26）：后台 CTA 所在入口是否要求显式资料集合 */
     backgroundJobRequiresSelection: boolean
+    /** #109（round-3 F-6/F-5）：全局生成门禁（sendDisabled + 外部稳定原因） */
+    sendDisabled: boolean
+    blockedHint: string
     // Issue #1013：选段 chip / citation return / 返回原回答滚动
     selectionChip: {
       readonly label: string
@@ -163,6 +166,8 @@ function renderPanel(
         turns={turns}
         isStreaming={false}
         onSend={send}
+        sendDisabled={overrides.sendDisabled ?? false}
+        blockedHint={overrides.blockedHint}
         onSendCoverage={overrides.onSendCoverage ?? vi.fn(async () => ACCEPTED_OUTCOME)}
         coverageEnabled={overrides.coverageEnabled ?? true}
         coverageJobs={overrides.coverageJobs}
@@ -416,6 +421,33 @@ describe('ResearchChatPanel', () => {
     // not_dispatched（确认弹窗取消）→ 不报失败、按钮保持可用
     expect(screen.queryByTestId('chat-persistent-job-error')).toBeNull()
     expect(screen.getByTestId('chat-persistent-job-submit')).not.toBeDisabled()
+  })
+
+  it('#109：模型禁用（shared+本地）时后台任务 CTA 视觉禁用（不再静默 no-op）', () => {
+    const onRunAsBackgroundJob = vi.fn(
+      async (): Promise<BackgroundJobSubmitResult> => ({ status: 'queued', jobId: 'job_x' }),
+    )
+    renderPanel(
+      [
+        turn({ id: 'u1', role: 'user', content: '原问题', scopeSnapshot: SCOPE_A }),
+        turn({
+          id: 'a1',
+          status: 'error',
+          errorCode: 'persistent_job_required',
+          scopeSnapshot: SCOPE_A,
+        }),
+      ],
+      vi.fn(),
+      {
+        onRunAsBackgroundJob,
+        sendDisabled: true,
+        blockedHint:
+          '当前 GPU 正与其他任务共用，可用显存不足以支撑 Research 使用本地模型，请改用外部 AI 模型。',
+      },
+    )
+    expect(screen.getByTestId('chat-persistent-job-submit')).toBeDisabled()
+    fireEvent.click(screen.getByTestId('chat-persistent-job-submit'))
+    expect(onRunAsBackgroundJob).not.toHaveBeenCalled()
   })
 
   it('#439 评审修复：job_id 缺失仍按已受理展示，且成功后禁止重复提交', async () => {

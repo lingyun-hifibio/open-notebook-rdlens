@@ -203,6 +203,20 @@ describe('ResearchSourceChatPanel', () => {
     expect(screen.queryByTestId('research-citation-click-c_2')).toBeNull()
   })
 
+  it('#109：shared 下本地模型被后端能力禁用 → legacy 发送入口显示后端 message 且禁用', () => {
+    const sharedMessage =
+      '当前 GPU 正与其他任务共用，可用显存不足以支撑 Research 使用本地模型，请改用外部 AI 模型。'
+    setGlobalModelStub({
+      canExecute: false,
+      blockedReason: 'local-unavailable-shared-gpu',
+      localModelUnavailableMessage: sharedMessage,
+    })
+    renderPanel()
+    expect(screen.getByTestId('srcchat-model-blocked-hint').textContent).toBe(sharedMessage)
+    expect(screen.getByTestId('srcchat-input')).toBeDisabled()
+    expect(screen.getByTestId('srcchat-send')).toBeDisabled()
+  })
+
   it('streaming 中输入与发送按钮禁用；结束后恢复', () => {
     const chat = makeChatResult({ isStreaming: true })
     vi.mocked(useResearchSourceChat).mockReturnValue(chat)
@@ -265,6 +279,38 @@ describe('ResearchSourceChatPanel', () => {
     expect(screen.getByText('research.sourceChat.conflictBusy')).toBeInTheDocument()
     fireEvent.click(screen.getByTestId('srcchat-error-retry'))
     expect(chat.retry).toHaveBeenCalledTimes(1)
+  })
+
+  it('#109：模型禁用时错误卡 Retry 不渲染（shared 下不产生第二次 409）', () => {
+    const chat = makeChatResult({
+      turns: [{
+        id: 'a1',
+        role: 'assistant',
+        content: '',
+        thinking: '',
+        citations: [],
+        usage: null,
+        resolvedMode: null,
+        degradationReasons: [],
+        sourceRef: null,
+        status: 'error',
+        reconnectCount: 0,
+        errorCode: 'conflict_busy',
+        errorMessage: 'another active turn',
+      }],
+      retryableQuery: 'q',
+    })
+    vi.mocked(useResearchSourceChat).mockReturnValue(chat)
+    setGlobalModelStub({
+      canExecute: false,
+      blockedReason: 'local-unavailable-shared-gpu',
+      localModelUnavailableMessage:
+        '当前 GPU 正与其他任务共用，可用显存不足以支撑 Research 使用本地模型，请改用外部 AI 模型。',
+    })
+    renderPanel()
+    // retry 直发 openResearchChatStream、不经 runGuarded → 入口必须随 canExecute 隐藏
+    expect(screen.queryByTestId('srcchat-error-retry')).toBeNull()
+    expect(chat.retry).not.toHaveBeenCalled()
   })
 
   it('Gateway 不可用终态：展示 errorGatewayUnavailable 文案', () => {
@@ -1329,6 +1375,65 @@ describe('PR-15 source 会话发送门禁（生产实证回归，2026-10-28）',
     expect(sendButton).not.toBeDisabled()
     await act(async () => { fireEvent.click(sendButton) })
     expect(conversationSend).toHaveBeenCalledTimes(1)
+  })
+
+  it('#109：shared 下本地模型被后端能力禁用 → composer 显示后端 message 且发送禁用', async () => {
+    const ref = { domain: 'research' as const, kind: 'source' as const, projectId: 'proj_1', sessionId: 'sess_src', sourceId: 'src_1' }
+    const snapshot = {
+      ...createEditorState({ ref, writerId: 'w-1', transportAvailable: true }),
+      phase: 'ready' as const,
+      loading: false,
+      revision: 2,
+      intentHash: 'hash-2',
+      draftToken: 'draft_2',
+      baseScope: null,
+      singleSourceId: null,
+      draftText: '只问这个来源的问题',
+      dirty: false,
+    }
+    let activeRef: typeof ref | null = null
+    vi.mocked(useResearchSessionRuntimeOptional).mockReturnValue({
+      active: () => activeRef,
+      activate: vi.fn((_surface: string, next: typeof activeRef) => {
+        activeRef = next
+        return true
+      }),
+    } as never)
+    activeRef = ref
+    const conversationSend = vi.fn(async () => ({ status: 'ok' }))
+    vi.mocked(useResearchEditor).mockImplementation((() => ({
+      snapshot,
+      controller: { getSnapshot: () => snapshot },
+      setDraftText: vi.fn(),
+      flush: vi.fn(async () => 'saved'),
+      hold: vi.fn(),
+      release: vi.fn(),
+      clearAfterSubmission: vi.fn(async () => 'cleared'),
+    })) as never)
+    vi.mocked(useResearchSourceChat).mockReturnValue(makeChatResult({
+      conversation: {
+        getSnapshot: () => ({ turn: null, history: [] }),
+        subscribe: () => () => {},
+        send: conversationSend,
+      } as never,
+    }) as never)
+
+    const sharedMessage =
+      '当前 GPU 正与其他任务共用，可用显存不足以支撑 Research 使用本地模型，请改用外部 AI 模型。'
+    setGlobalModelStub({
+      canExecute: false,
+      blockedReason: 'local-unavailable-shared-gpu',
+      localModelUnavailableMessage: sharedMessage,
+    })
+
+    render(<ResearchSourceChatPanel projectId="proj_1" sourceId="src_1" onHighlightPage={vi.fn()} />)
+
+    // composer 门禁直接显示后端逐字文案（不再是通用 admissionUnavailable）
+    expect(screen.getByTestId('research-draft-gate-hint').textContent).toBe(sharedMessage)
+    const sendButton = screen.getByTestId('chat-send')
+    expect(sendButton).toBeDisabled()
+    fireEvent.click(sendButton)
+    expect(conversationSend).not.toHaveBeenCalled()
   })
 })
 
