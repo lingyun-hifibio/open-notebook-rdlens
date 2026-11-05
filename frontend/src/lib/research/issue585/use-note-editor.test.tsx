@@ -6,13 +6,19 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, renderHook, waitFor } from '@testing-library/react'
-import type { ReactNode } from 'react'
+import { act, render, renderHook, waitFor } from '@testing-library/react'
+import { StrictMode, type ReactNode } from 'react'
 import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
 import { noteApiClient } from './note-client'
 import { useNoteEditor } from './use-note-editor'
 import { NOTE_DRAFT_CACHE_PREFIX } from './note-draft-cache'
-import type { NoteCapabilities, NoteReceipt, ResearchNoteD2 } from './types'
+import type {
+  NoteCapabilities,
+  NoteEditorActions,
+  NoteEditorState,
+  NoteReceipt,
+  ResearchNoteD2,
+} from './types'
 
 vi.mock('./note-client', async (importOriginal) => {
   const original = await importOriginal<typeof import('./note-client')>()
@@ -30,6 +36,7 @@ vi.mock('./note-client', async (importOriginal) => {
 
 const mockedGet = vi.mocked(noteApiClient.getNote)
 const mockedSave = vi.mocked(noteApiClient.saveNote)
+const mockedCreate = vi.mocked(noteApiClient.createNote)
 const PROJECT = 'proj_1'
 const HASH = 'a'.repeat(64)
 const HASH2 = 'b'.repeat(64)
@@ -83,6 +90,41 @@ function Wrapper({ children }: { children: ReactNode }): ReactNode {
     >
       {children}
     </ResearchWorkspaceProvider>
+  )
+}
+
+/**
+ * StrictMode 回归 Harness：StrictMode 必须是渲染根元素的直接子树才会触发
+ * effect 的 setup→cleanup→setup 双调用（嵌套在普通 wrapper 内不会触发）。
+ */
+function StrictHarness({
+  bind,
+}: {
+  bind: (value: { state: NoteEditorState; actions: NoteEditorActions }) => void
+}): ReactNode {
+  const result = useNoteEditor({
+    projectId: PROJECT,
+    capabilities: CAPS_READY,
+    isAdminReadonly: false,
+  })
+  bind(result)
+  return <div data-testid="editor-content">{result.state.content}</div>
+}
+
+function strictRoot(
+  bind: (value: { state: NoteEditorState; actions: NoteEditorActions }) => void,
+): ReactNode {
+  return (
+    <StrictMode>
+      <ResearchWorkspaceProvider
+        projectId={PROJECT}
+        role="owner"
+        userId="7"
+        authGeneration={generation}
+      >
+        <StrictHarness bind={bind} />
+      </ResearchWorkspaceProvider>
+    </StrictMode>
   )
 }
 
@@ -247,5 +289,57 @@ describe('useNoteEditor', () => {
     expect(keys.length).toBeGreaterThan(0)
     const raw = window.localStorage.getItem(keys[0])
     expect(raw).toContain('pagehide 草稿')
+  })
+
+  it('stays fully usable after StrictMode setup→cleanup→setup (no permanent dispose)', async () => {
+    mockedGet.mockResolvedValue(note())
+    mockedSave.mockResolvedValue(receipt())
+    let latest: { state: NoteEditorState; actions: NoteEditorActions } | null = null
+    render(strictRoot((value) => {
+      latest = value
+    }))
+    // 若 cleanup 永久 dispose 了同一 machine，openNote 会静默 no-op、不发 GET。
+    await act(async () => {
+      await latest!.actions.openNote('n1')
+    })
+    expect(mockedGet).toHaveBeenCalledTimes(1)
+    expect(latest!.state).toMatchObject({
+      status: 'ready',
+      content: '服务端正文',
+      saveStatus: 'saved',
+    })
+    act(() => {
+      latest!.actions.setContent('StrictMode 后仍可编辑')
+    })
+    await act(async () => {
+      await latest!.actions.saveNow()
+    })
+    expect(mockedSave).toHaveBeenCalledTimes(1)
+    expect(mockedSave.mock.calls[0][2]).toMatchObject({
+      expected_revision: 1,
+      content: 'StrictMode 后仍可编辑',
+    })
+    expect(latest!.state.saveStatus).toBe('saved')
+  })
+
+  it('createBlankNote still POSTs after StrictMode setup→cleanup→setup', async () => {
+    mockedCreate.mockResolvedValue(
+      receipt({ note_id: 'new_1', applied_revision: 1 }),
+    )
+    mockedGet.mockResolvedValue(
+      note({ note_id: 'new_1', title: '未命名成果', content: '' }),
+    )
+    let latest: { state: NoteEditorState; actions: NoteEditorActions } | null = null
+    render(strictRoot((value) => {
+      latest = value
+    }))
+    let noteId: string | null = null
+    await act(async () => {
+      noteId = await latest!.actions.createBlankNote()
+    })
+    expect(noteId).toBe('new_1')
+    expect(mockedCreate).toHaveBeenCalledTimes(1)
+    expect(mockedCreate.mock.calls[0][1]).toEqual({ mutation_id: expect.any(String) })
+    expect(latest!.state).toMatchObject({ status: 'ready', saveStatus: 'saved' })
   })
 })

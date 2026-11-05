@@ -113,6 +113,18 @@ export interface NoteEditorMachine {
   persistLocalDraft(): void
   /** 是否存在未完成保存（beforeunload 提示条件）。 */
   hasUnfinishedWork(): boolean
+  /**
+   * 非永久停止（StrictMode 安全）：只清除已排定的定时器，不销毁状态机。
+   * 组件 effect 的 cleanup（含 StrictMode 的 setup→cleanup→setup 双调用）
+   * 必须调用本方法而不是 `dispose()`；重挂载后同一 machine 继续可用。
+   */
+  stop(): void
+  /** 是否已永久销毁（仅供测试/诊断；destroy 后一切动作 no-op）。 */
+  isDisposed(): boolean
+  /**
+   * 永久销毁：仅用于身份/项目真正替换（旧 machine 不再复用）。销毁后
+   * 所有动作 no-op、监听器清空、挂起 Promise resolve；不可重挂载复用。
+   */
   dispose(): void
 }
 
@@ -1672,6 +1684,17 @@ export function createNoteEditorMachine(
     )
   }
 
+  function stop(): void {
+    if (disposed) return
+    // 只清定时器；不置 disposed、不清 listeners、不改 state——StrictMode
+    // cleanup 后同一 machine 必须继续可用（remount 不会重建 machine）。
+    clearDebounce()
+  }
+
+  function isDisposed(): boolean {
+    return disposed
+  }
+
   function dispose(): void {
     if (disposed) return
     disposed = true
@@ -1698,6 +1721,8 @@ export function createNoteEditorMachine(
     updateCapabilities,
     persistLocalDraft,
     hasUnfinishedWork,
+    stop,
+    isDisposed,
     dispose,
   }
 }

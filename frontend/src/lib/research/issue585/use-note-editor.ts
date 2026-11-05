@@ -12,7 +12,7 @@
  * - capabilities/isAdminReadonly 变化同步进状态机（能力恢复可解除阻断态，
  *   能力丢失停止自动保存但保留本地草稿）；
  * - 注册 `beforeunload`（仅未完成保存时提示）与 `pagehide`（同步持久化草稿）；
- * - 组件卸载时释放状态机（不写服务端）。
+ * - 组件卸载/StrictMode 双调用 cleanup 只做非永久 stop（不销毁可重挂载状态机）。
  */
 
 import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
@@ -82,8 +82,18 @@ export function useNoteEditor(options: UseNoteEditorOptions): {
     [machine],
   )
 
-  // 组件卸载：释放状态机（不写服务端；草稿已在每次编辑时持久化）。
-  useEffect(() => () => machine.dispose(), [machine])
+  // 组件卸载 / React StrictMode effect 双调用（setup→cleanup→setup）的 cleanup：
+  // 只做非永久停止（清 debounce + 同步落本地草稿），**绝不永久 dispose**——同一
+  // machine 在 StrictMode remount 后必须继续 open/create/save（#1046 视觉阻塞根因：
+  // 曾在此处 dispose，StrictMode cleanup 把 machine 永久销毁导致所有动作静默 no-op）。
+  // 永久销毁只发生在身份/项目真正替换时（见上方渲染分支）。
+  useEffect(
+    () => () => {
+      machine.persistLocalDraft()
+      machine.stop()
+    },
+    [machine],
+  )
 
   // 离开保护：beforeunload 仅在存在未完成保存时提示；pagehide 只做同步持久化。
   useEffect(() => {

@@ -1007,3 +1007,46 @@ describe('leave protection', () => {
     expect(state().saveStatus).toBe('saved')
   })
 })
+
+// ── 生命周期（React StrictMode 安全） ──
+
+describe('lifecycle / StrictMode safety', () => {
+  it('stop() is non-permanent and clears scheduled autosave only', async () => {
+    openReady()
+    await openNote()
+    expect(machine.isDisposed()).toBe(false)
+    actions().setContent('stop 前输入')
+    machine.stop()
+    await vi.advanceTimersByTimeAsync(NOTE_SAVE_DEBOUNCE_MS * 2)
+    expect(client.saveNote).not.toHaveBeenCalled()
+    expect(machine.isDisposed()).toBe(false)
+
+    client.saveNote.mockResolvedValueOnce(receipt())
+    actions().setContent('stop 后继续编辑')
+    await vi.advanceTimersByTimeAsync(NOTE_SAVE_DEBOUNCE_MS)
+    expect(client.saveNote).toHaveBeenCalledTimes(1)
+    expect(client.saveNote.mock.calls[0][2].content).toBe('stop 后继续编辑')
+    expect(state().saveStatus).toBe('saved')
+  })
+
+  it('stop() before first open does not block later open (mount cleanup semantics)', async () => {
+    openReady()
+    machine.stop()
+    await openNote()
+    expect(client.getNote).toHaveBeenCalledTimes(1)
+    expect(state().status).toBe('ready')
+  })
+
+  it('dispose() is permanent: actions become no-ops and no further requests are sent', async () => {
+    openReady()
+    await openNote()
+    machine.dispose()
+    expect(machine.isDisposed()).toBe(true)
+    await actions().openNote('n2')
+    actions().setContent('dispose 后输入')
+    await vi.advanceTimersByTimeAsync(NOTE_SAVE_DEBOUNCE_MS * 2)
+    expect(client.getNote).toHaveBeenCalledTimes(1)
+    expect(client.saveNote).not.toHaveBeenCalled()
+    expect(state().content).toBe('服务端正文')
+  })
+})
