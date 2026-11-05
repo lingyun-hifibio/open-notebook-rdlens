@@ -224,8 +224,11 @@ export function TopicOverviewDialog({
     resetGenerate()
   }, [open, resetGenerate])
 
-  // 展示源：本次生成结果优先（生成成功即替换），否则读面权威数据。
-  const wire: TopicOverviewWire | null = generate.data ?? overviewQuery.data ?? null
+  // 展示源（LOW-A2）：**GET 权威优先**——生成成功后若来源被撤权/其他标签页
+  // 更新，读面（含现行权限投影）必须覆盖本次 POST 结果，不能继续显示旧
+  // ready 正文；仅当读面尚无数据（如刚生成、GET 尚未回）时回退本次结果。
+  const wire: TopicOverviewWire | null =
+    overviewQuery.data ?? generate.data ?? null
   const snapshot = getSnapshot()
   // Note 不参与概览；selected 下没有 source 即 fail-closed（不扩大为 all）。
   const emptySelected = snapshot.mode === 'selected' && snapshot.sourceIds.length === 0
@@ -350,6 +353,7 @@ export function TopicOverviewDialog({
             <TopicOverviewBody
               wire={wire}
               sources={sources}
+              sourcesReady={sourcesQuery.isSuccess}
               onCitationJump={onCitationJump}
               discussion={
                 editorHandle !== null
@@ -494,11 +498,14 @@ export function TopicOverviewDialog({
 function TopicOverviewBody({
   wire,
   sources,
+  sourcesReady,
   onCitationJump,
   discussion,
 }: {
   wire: TopicOverviewWire
   sources: readonly ResearchSource[] | undefined
+  /** 当前资料查询是否成功（MEDIUM-A2：loading/error 不做变化比较）。 */
+  sourcesReady: boolean
   onCitationJump: (sourceId: string, pageIdx: number | null) => void
   discussion: (() => void) | null
 }) {
@@ -530,7 +537,15 @@ function TopicOverviewBody({
   // 的 `scope.sources=[]` 按设计不参与比较（否则当前全部资料会被误算成 added）。
   const sourceChanges = useMemo(() => {
     if (wire.visibility !== 'ready') return null
-    const scopeSources = wire.scope?.sources ?? []
+    const scope = wire.scope
+    if (scope === null) return null
+    // MEDIUM-A2：loading/error/无数据时不比较（否则 scope 来源会被误算 retired）。
+    if (!sourcesReady) return null
+    // 成功但列表为空同样不比较（空列表不能证明范围来源全部退役）。
+    if ((sources ?? []).length === 0) return null
+    // LOW-A1：refs_truncated 时 scope.sources 是截断子集，比较会误报 added。
+    if (scope.refs_truncated) return null
+    const scopeSources = scope.sources
     if (scopeSources.length === 0) return null
     return topicOverviewSourceChanges(
       scopeSources.map((item) => ({
@@ -542,7 +557,7 @@ function TopicOverviewBody({
         document_version: item.document_version,
       })),
     )
-  }, [sources, wire])
+  }, [sources, sourcesReady, wire])
   const hasSourceChanges =
     sourceChanges !== null &&
     sourceChanges.added + sourceChanges.versionChanged + sourceChanges.retired > 0

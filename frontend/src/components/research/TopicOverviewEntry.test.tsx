@@ -213,11 +213,14 @@ function GeneratingProbe() {
 /** 让测试可观测「当前资料列表已载入」，再断言资料变化提示是否渲染。 */
 function SourcesProbe() {
   const sourcesQuery = useResearchSources(PROJECT_ID)
-  return (
-    <output data-testid="sources-probe">
-      {String(sourcesQuery.data?.items.length ?? 'loading')}
-    </output>
-  )
+  const status = sourcesQuery.data
+    ? String(sourcesQuery.data.items.length)
+    : sourcesQuery.isError
+      ? 'error'
+      : sourcesQuery.isLoading
+        ? 'loading'
+        : 'idle'
+  return <output data-testid="sources-probe">{status}</output>
 }
 
 function workspaceWrapper({ children }: { children: ReactNode }) {
@@ -229,6 +232,17 @@ function workspaceWrapper({ children }: { children: ReactNode }) {
             {children}
           </ResearchScopeProvider>
         </ResearchJobsProvider>
+      </ResearchWorkspaceProvider>
+    </QueryClientProvider>
+  )
+}
+
+/** Admin 只读工作区（MEDIUM-A1：host 端点 Owner 专属，入口必须隐藏）。 */
+function adminWrapper({ children }: { children: ReactNode }) {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <ResearchWorkspaceProvider userId="u1" projectId={PROJECT_ID} role="admin_readonly">
+        {children}
       </ResearchWorkspaceProvider>
     </QueryClientProvider>
   )
@@ -444,6 +458,104 @@ describe('F-02/F-08 边界：受限概览不渲染资料变化提示', () => {
     expect(changes).toHaveTextContent('"added":1')
     expect(changes).toHaveTextContent('"versionChanged":1')
     expect(changes).toHaveTextContent('"retired":1')
+  })
+})
+
+describe('MEDIUM-A1：Admin 只读不渲染入口', () => {
+  it('admin_readonly + capability true ⇒ 不渲染且不发起概览 GET；owner ⇒ 渲染', () => {
+    h.capability = true
+    h.overviewData = readyOverview()
+
+    const admin = render(<TopicOverviewEntry projectId={PROJECT_ID} onOpen={onOpen} />, {
+      wrapper: adminWrapper,
+    })
+    expect(admin.container.firstChild).toBeNull()
+    expect(screen.queryByTestId('topic-overview-entry')).toBeNull()
+    // Admin 下无意义 GET（必然 403）不发出
+    expect(h.enabledCalls.at(-1)).toEqual({ enabled: false })
+    admin.unmount()
+
+    renderEntry()
+    expect(screen.getByTestId('topic-overview-entry')).toBeInTheDocument()
+    expect(h.enabledCalls.at(-1)).toEqual({ enabled: true })
+  })
+})
+
+describe('MEDIUM-A2/LOW-A1：资料变化提示的数据可信度守卫（Entry）', () => {
+  it('sources 加载中（无 data）⇒ 不显示提示（不把 scope 来源误算 retired）', async () => {
+    h.capability = true
+    h.overviewData = readyOverview()
+    h.listSources.mockReturnValue(new Promise(() => {}))
+    render(
+      <>
+        <TopicOverviewEntry projectId={PROJECT_ID} onOpen={onOpen} />
+        <SourcesProbe />
+      </>,
+      { wrapper: queryWrapper },
+    )
+    await waitFor(() => expect(h.listSources).toHaveBeenCalledTimes(1))
+    expect(await screen.findByTestId('sources-probe')).toHaveTextContent('loading')
+    expect(screen.queryByTestId('topic-overview-entry-changes')).toBeNull()
+  })
+
+  it('sources 查询失败 ⇒ 不显示提示', async () => {
+    h.capability = true
+    h.overviewData = readyOverview()
+    h.listSources.mockRejectedValue(new Error('sources down'))
+    render(
+      <>
+        <TopicOverviewEntry projectId={PROJECT_ID} onOpen={onOpen} />
+        <SourcesProbe />
+      </>,
+      { wrapper: queryWrapper },
+    )
+    await waitFor(() =>
+      expect(screen.getByTestId('sources-probe')).toHaveTextContent('error'),
+    )
+    expect(screen.queryByTestId('topic-overview-entry-changes')).toBeNull()
+  })
+
+  it('sources 成功但为空数组 ⇒ 不显示提示（不声称全部范围来源退役）', async () => {
+    h.capability = true
+    h.overviewData = readyOverview()
+    h.listSources.mockResolvedValue({ items: [], next_cursor: null })
+    render(
+      <>
+        <TopicOverviewEntry projectId={PROJECT_ID} onOpen={onOpen} />
+        <SourcesProbe />
+      </>,
+      { wrapper: queryWrapper },
+    )
+    await waitFor(() =>
+      expect(screen.getByTestId('sources-probe')).toHaveTextContent('0'),
+    )
+    expect(screen.queryByTestId('topic-overview-entry-changes')).toBeNull()
+  })
+
+  it('scope.refs_truncated=true ⇒ 不做比较、不显示提示（LOW-A1）', async () => {
+    h.capability = true
+    const base = readyOverview()
+    h.overviewData = readyOverview({
+      scope: { ...base.scope!, refs_truncated: true },
+    })
+    h.listSources.mockResolvedValue({
+      items: [
+        source({ source_id: 'src_1', document_id: 'doc_1', document_version: 'v2' }),
+        source({ source_id: 'src_3', document_id: 'doc_3', document_version: 'v1' }),
+      ],
+      next_cursor: null,
+    })
+    render(
+      <>
+        <TopicOverviewEntry projectId={PROJECT_ID} onOpen={onOpen} />
+        <SourcesProbe />
+      </>,
+      { wrapper: queryWrapper },
+    )
+    await waitFor(() =>
+      expect(screen.getByTestId('sources-probe')).toHaveTextContent('2'),
+    )
+    expect(screen.queryByTestId('topic-overview-entry-changes')).toBeNull()
   })
 })
 

@@ -27,7 +27,11 @@ import {
 } from './TopicOverviewDialog'
 
 const h = vi.hoisted(() => ({
-  state: { sources: [] as unknown[] },
+  state: {
+    sources: [] as unknown[],
+    sourcesLoading: false,
+    sourcesError: false,
+  },
   getTopicOverview: vi.fn(),
   createTopicOverview: vi.fn(),
   listSources: vi.fn(),
@@ -259,18 +263,26 @@ beforeEach(() => {
     source(),
     source({ source_id: 'src_2', document_id: 'doc_2' }),
   ]
+  h.state.sourcesLoading = false
+  h.state.sourcesError = false
   h.getTopicOverview.mockReset()
   h.getTopicOverview.mockResolvedValue(null)
   h.createTopicOverview.mockReset()
   h.listSources.mockReset()
   h.listSources.mockResolvedValue({ items: [source()], next_cursor: null })
   h.useResearchSources.mockReset()
-  h.useResearchSources.mockImplementation(() => ({
-    data: { items: h.state.sources },
-    isLoading: false,
-    isError: false,
-    error: null,
-  }))
+  h.useResearchSources.mockImplementation(() => {
+    const loading = h.state.sourcesLoading
+    const error = h.state.sourcesError
+    const hasData = !loading && !error
+    return {
+      data: hasData ? { items: h.state.sources } : undefined,
+      isLoading: loading,
+      isError: error,
+      isSuccess: hasData,
+      error: error ? new Error('sources down') : null,
+    }
+  })
   resetGlobalModelStub()
 })
 
@@ -481,6 +493,68 @@ describe('F-06：继续讨论（editorHandle.setDraftText）', () => {
   })
 })
 
+describe('MEDIUM-A2/LOW-A1：Dialog 变化提示的数据可信度守卫', () => {
+  it('sources 加载中 ⇒ 不显示提示', async () => {
+    h.state.sourcesLoading = true
+    h.getTopicOverview.mockResolvedValue(readyOverview())
+    renderDialog()
+    await screen.findByTestId('topic-overview-sections')
+    expect(screen.queryByTestId('topic-overview-dialog-changes')).toBeNull()
+  })
+
+  it('sources 查询失败 ⇒ 不显示提示', async () => {
+    h.state.sourcesError = true
+    h.getTopicOverview.mockResolvedValue(readyOverview())
+    renderDialog()
+    await screen.findByTestId('topic-overview-sections')
+    expect(screen.queryByTestId('topic-overview-dialog-changes')).toBeNull()
+  })
+
+  it('sources 成功但为空数组 ⇒ 不显示提示（不声称范围来源全部退役）', async () => {
+    h.state.sources = []
+    h.getTopicOverview.mockResolvedValue(readyOverview())
+    renderDialog()
+    await screen.findByTestId('topic-overview-sections')
+    expect(screen.queryByTestId('topic-overview-dialog-changes')).toBeNull()
+  })
+
+  it('scope.refs_truncated=true ⇒ 不做比较、不显示提示（LOW-A1）', async () => {
+    const base = readyOverview()
+    h.state.sources = [
+      source({ source_id: 'src_1', document_id: 'doc_1', document_version: 'v2' }),
+      source({ source_id: 'src_3', document_id: 'doc_3', document_version: 'v1' }),
+    ]
+    h.getTopicOverview.mockResolvedValue(
+      readyOverview({ scope: { ...base.scope!, refs_truncated: true } }),
+    )
+    renderDialog()
+    await screen.findByTestId('topic-overview-sections')
+    expect(screen.queryByTestId('topic-overview-dialog-changes')).toBeNull()
+  })
+})
+
+describe('LOW-A2：Dialog 展示以 GET（现行权限投影）优先', () => {
+  it('POST 成功返回 ready 但 GET 随后返回 restricted ⇒ 显示受限投影，不保留旧 ready 正文', async () => {
+    const initial = readyOverview()
+    h.getTopicOverview.mockResolvedValue(initial)
+    const posted = readyOverview({ generation_id: 'gen_2' })
+    h.createTopicOverview.mockResolvedValue(posted)
+    renderDialog()
+
+    // 初始读面 ready
+    await screen.findByTestId('topic-overview-section-findings')
+    // 生成成功后读面权威重读：来源已被撤权 → restricted
+    h.getTopicOverview.mockResolvedValue(restrictedOverview({ generation_id: 'gen_2' }))
+    fireEvent.click(screen.getByTestId('topic-overview-update'))
+    fireEvent.click(screen.getByTestId('topic-overview-submit'))
+
+    expect(await screen.findByTestId('topic-overview-restricted')).toBeInTheDocument()
+    // 旧 ready 正文/四段不再显示（不允许「POST 结果压过权限投影」）
+    expect(screen.queryByTestId('topic-overview-section-findings')).toBeNull()
+    expect(screen.queryByTestId('topic-overview-sections')).toBeNull()
+  })
+})
+
 describe('F-08：受限概览', () => {
   it('restricted 不渲染正文/引用/来源身份，显示受限说明，不显示「无命中」空态', async () => {
     h.getTopicOverview.mockResolvedValue(restrictedOverview())
@@ -599,6 +673,9 @@ describe('F-07：更新概览（新幂等键/失败保留旧概览/409/换键提
     renderDialog()
 
     fireEvent.click(await screen.findByTestId('topic-overview-update'))
+    // GET 优先语义（LOW-A2）：生成成功后读面会权威重读，mock 的读面也随之为
+    // 更新后的概览。
+    h.getTopicOverview.mockResolvedValue(updated)
     fireEvent.click(screen.getByTestId('topic-overview-submit'))
     await waitFor(() => expect(h.createTopicOverview).toHaveBeenCalledTimes(1))
     expect(screen.getByTestId('topic-overview-section-findings')).toHaveTextContent(

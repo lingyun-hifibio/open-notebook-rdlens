@@ -13,7 +13,10 @@
  *   显示进行中；读失败 → 内联错误 + **手动**重试（不自动重试）；受限 →
  *   仍可打开（Dialog 显示受限占位）。
  * - 资料变化提示只**提示**（新增/版本变化/已退役计数 + 范围日期），不自动
- *   更新概览、不修改 GET 内容。
+ *   更新概览、不修改 GET 内容；仅在 sources 查询成功、`visibility==='ready'`
+ *   且 `scope.refs_truncated!==true` 时比较（修复 MEDIUM-A2/LOW-A1）。
+ * - Admin 只读（`role==='admin_readonly'`）不渲染入口（MEDIUM-A1，host 端
+ *   Owner 专属；能力位对 Admin 可能仍为 true）。
  */
 
 import { useMemo } from 'react'
@@ -21,6 +24,7 @@ import { useIsMutating } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import { useResearchWorkspaceOptional } from '@/lib/embedded/workspace-context'
 import { useResearchSources } from '@/lib/hooks/use-research'
 import {
   topicOverviewGenerateMutationKey,
@@ -54,9 +58,17 @@ function scopeModeLabelKey(mode: string | null | undefined): string {
 
 export function TopicOverviewEntry({ projectId, onOpen }: TopicOverviewEntryProps) {
   const { t } = useTranslation()
+  // MEDIUM-A1（审查）：host GET/POST 是 Owner 专属（Admin 403），而
+  // `/models.capabilities.topic_overview` 对 Admin 也可能为 true。入口因此
+  // 显式按工作区角色 fail-closed 隐藏，且在 Admin 下不发起概览 GET（避免
+  // 必然 403 的错误/重试态）。不改冻结 props、不改后端。
+  const workspace = useResearchWorkspaceOptional()
+  const isAdminReadonly = workspace?.role === 'admin_readonly'
   // fail-closed：能力位缺失/false/非法一律 false（NORMATIVE 19）。
   const capability = useResearchTopicOverviewCapability(projectId)
-  const overviewQuery = useResearchTopicOverview(projectId, { enabled: capability })
+  const overviewQuery = useResearchTopicOverview(projectId, {
+    enabled: capability && !isAdminReadonly,
+  })
   const sourcesQuery = useResearchSources(projectId)
   const generatingCount = useIsMutating({
     mutationKey: topicOverviewGenerateMutationKey(projectId),
@@ -78,7 +90,20 @@ export function TopicOverviewEntry({ projectId, onOpen }: TopicOverviewEntryProp
   // 摘要/时间等既有内容，但不显示该提示（不扩 wire/lib 契约）。
   const changes = useMemo(() => {
     if (overview === null || overview.visibility !== 'ready') return null
-    const scopeSources = overview.scope?.sources ?? []
+    const scope = overview.scope
+    if (scope === null) return null
+    // MEDIUM-A2：sources 首次加载/失败/空数据时不得比较（否则全部 scope
+    // 来源都会被误算成 retired）。只有查询成功（`isSuccess`）才有可信的
+    // 当前资料列表。
+    if (!sourcesQuery.isSuccess) return null
+    // 成功但列表为空同样不比较：空列表不能证明「全部范围来源已退役」
+    // （可能是临时/边界态），报 retired 会误导。
+    if (currentSources.length === 0) return null
+    // LOW-A1：`refs_truncated===true` 时 `scope.sources` 是截断后的子集
+    // （host 只保留前 200 条），用它比较会误报 added——直接不显示提示
+    // （不声称「有变化」，也不追加新文案）。
+    if (scope.refs_truncated) return null
+    const scopeSources = scope.sources
     if (scopeSources.length === 0) return null
     return topicOverviewSourceChanges(
       scopeSources.map((source) => ({
@@ -90,12 +115,12 @@ export function TopicOverviewEntry({ projectId, onOpen }: TopicOverviewEntryProp
         document_version: source.document_version,
       })),
     )
-  }, [currentSources, overview])
+  }, [currentSources, overview, sourcesQuery.isSuccess])
   const hasChanges =
     changes !== null && changes.added + changes.versionChanged + changes.retired > 0
 
-  // 能力位未 true：入口完全不渲染（既有 UI 逐字节不变）。
-  if (!capability) return null
+  // 能力位未 true 或 Admin 只读：入口完全不渲染（既有 UI 不变）。
+  if (!capability || isAdminReadonly) return null
 
   const errorCode = extractResearchErrorCode(overviewQuery.error)
   const errorText = t(userErrorMessageKey(errorCode))
