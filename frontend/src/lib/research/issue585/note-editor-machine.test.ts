@@ -1254,4 +1254,3 @@ describe('leave escape for blocked/restricted/failed states', () => {
     expect(state().leaveBlockReason).toBe('unknown')
   })
 })
-
