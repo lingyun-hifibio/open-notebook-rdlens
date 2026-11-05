@@ -1,4 +1,4 @@
-> **PR 证据副本说明**：本目录随 PR 提交 fork #109 的 Before/After 截图、采集说明与关键原始日志。采集 harness（fixtures / gateway mock / host / capture）、worktrees 与完整运行日志保留在本地采集工作区 `visual-evidence/`（不随 PR 提交，避免把 harness/依赖带入产品树）；复现步骤、方法与限制见下方 README 原文。截图 SHA-256 清单见 `logs/sha256-manifest.txt`（本目录 16/16 已逐项核验一致）。
+> **PR 证据副本说明**：本目录随 PR 提交 fork #109 的 Before/After 截图、采集说明与关键原始日志。**gateway 请求日志以 `.txt` 提交**（仓库 `.gitignore` 忽略 `*.log`，故按内容扩展名改名；与本地采集工作区内容逐字节相同）；`logs/capture-*-summary.json` 含本机绝对路径（`/home/lchen/...`、`/tmp/...`，非凭证/非私有内容），仅用于本次采集溯源。采集 harness（fixtures / gateway mock / host / capture）、worktrees 与完整运行日志保留在本地采集工作区 `visual-evidence/`（不随 PR 提交，避免把 harness/依赖带入产品树）；复现步骤、方法与限制见下方 README 原文。截图 SHA-256 清单见 `logs/sha256-manifest.txt`（本目录 16/16 已逐项核验一致）。
 
 # Fork #109 视觉证据：shared 模式 Research 本地模型禁用提示（Before / After）
 
@@ -19,7 +19,7 @@ Research Gateway 由本地合成 mock server（`harness/gateway_mock.js`）提�
   `capabilities.local_model = {available:false, reason:"shared_gpu", message:"当前 GPU 正与其他任务共用，可用显存不足以支撑 Research 使用本地模型，请改用外部 AI 模型。"}`；
   `exclusive` 下返回 `{available:true, reason:null, message:null}`。同一份响应里 `preferred_model_id` 恒为本地模型 `m-local-qwen`。
 - `POST /search`：`shared` 下返回 **409** `detail = {code:"local_model_unavailable_shared_gpu", message:"<同上>"}`（用于 Before 点击证据）；`exclusive` 下返回 200 合成检索结果。
-- **每个请求**（含状态、方法、路径、模式）同步追加到 `logs/gateway-requests.log`；采集脚本在每个场景边界写入 `kind:"mark"` 行，因此「After shared 无 POST /search」可按窗口切片逐字节核对（见下）。
+- **每个请求**（含状态、方法、路径、模式）同步追加到本地采集工作区的 `logs/gateway-requests.log`；采集脚本在每个场景边界写入 `kind:"mark"` 行，因此「After shared 无 POST /search」可按窗口切片逐字节核对（本 PR 提交的 per-phase `.txt` 副本见下）。
 - Chat 场景需要可达的 composer：mock 提供一次性的全局会话创建（`POST /chat/sessions`）与 `PUT/GET .../editor-state` 合成响应（草稿保存成功）；Before/After 使用同一 mock 与同一流程，差异只在 blocked hint 与 send 禁用。
 
 **harness-only 本地改动（不进入 PR diff）**：Next.js 只对静态成员访问的 `NEXT_PUBLIC_*` 做构建期内联，而 `frontend/src/lib/embedded/config.ts` 使用 `process.env[常量]` 动态访问，浏览器端读不到 dev server 环境变量。采集时在两个 worktree 中**临时**把三处访问改为静态成员写法（`frontend/src/lib/embedded/config.ts`，各 3 行、uncommitted，仅本地）：该改动不改变任何产品语义；After worktree 仍在 `0fed575` 之上只多了这 3 行本地 hack（`git status` 仅 `M config.ts`），Before worktree 同理。复现时需重新应用（见下）。Dev server 另需 `NEXT_ALLOWED_DEV_ORIGINS=127.0.0.1`。
@@ -81,7 +81,7 @@ e4f246dfd4b40583366415d370bebacbcaf6a7de72200f1e3300b54c7eff919a  before_shared_
 
 ## Mock 请求日志证据（After shared 无 POST /search）
 
-文件：`logs/gateway-requests-before.log`（Before 整轮，103 请求）、`logs/gateway-requests-after.log`（After 整轮，102 请求）、`logs/gateway-requests.log`（两轮拼接）、`logs/archive-gateway-requests-before-and-after-1338ec8.log`（早期 After 修订的存档）。
+本 PR 提交：`logs/gateway-requests-before.txt`（Before 整轮，103 请求）、`logs/gateway-requests-after.txt`（After 整轮，102 请求）。本地采集工作区另有 `logs/gateway-requests.log`（两轮拼接）与 `logs/archive-gateway-requests-before-and-after-1338ec8.log`（早期 After 修订存档），不随 PR 提交（`.gitignore` 忽略 `*.log`；`.txt` 为同一内容的提交副本）。
 
 - **Before 轮**：`GET 200 ×92`，`POST 200 ×9`（context-preview / chat-sessions 创建等），`PUT 200 ×1`（草稿保存），**`POST /search → 409 ×1`**。该 409 位于 `scenario=before_shared_search_click_1440` 的 `click_start..click_end` 窗口内（窗口内唯一请求）。
 - **After 轮**：`GET 200 ×92`，`POST 200 ×9`，`PUT 200 ×1`，**`POST /search` 0 次（整轮）**。在 `after_shared_search_click_1440` 的 `click_start..click_end` 窗口内请求数 = **0**（对 disabled 控件的点击不产生任何网络请求）。两轮除 Before 那 1 个 409 外，请求分项计数一致（GET 92 / POST 200 9 / PUT 200 1；同一 mock、同一 fixture、同一页面流程）。
