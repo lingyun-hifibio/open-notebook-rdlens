@@ -7,6 +7,25 @@
  * 及其所在 origin 固定使用 en-US，不跟随浏览器/本地存储语言；非嵌入式
  * standalone 构建保持原有多语言（LanguageDetector 生效）。
  */
+import type { HostLanguage } from './messages'
+
 export function resolveInitialLanguage(embedded: boolean): string | undefined {
   return embedded ? 'en-US' : undefined
+}
+
+/**
+ * W1 契约 v1（D-UI-02）：宿主语言消息落地后的生效语言。
+ *
+ * - 收到可应用的 language 消息（authenticated 后）→ 以宿主值为准；
+ * - 未收到 → 嵌入式构建保持既有默认 en-US（`resolveInitialLanguage`），
+ *   standalone 构建返回 `null` 表示不覆盖 LanguageDetector。
+ *
+ * 纯函数：不触碰 i18n 单例，shell 与单测共用同一判定。
+ */
+export function resolveAppliedLanguage(
+  embedded: boolean,
+  hostLanguage: HostLanguage | null | undefined,
+): HostLanguage | null {
+  if (hostLanguage === 'zh-CN' || hostLanguage === 'en-US') return hostLanguage
+  return embedded ? 'en-US' : null
 }

@@ -149,3 +149,79 @@ describe('validateIncomingMessage（REQ-EMB-01 伪造消息全拒绝）', () => 
     )
   })
 })
+
+// ── W1 宿主契约 v1（#1104）：language 消息与 token/refresh 可选 project ──
+
+describe('W1 契约 v1：language 消息（D-UI-02）', () => {
+  it('接受 zh-CN / en-US 两种语言', () => {
+    expect(validateIncomingMessage(message({ type: 'language', language: 'zh-CN' }), ctx()))
+      .toEqual({ type: 'language', language: 'zh-CN' })
+    expect(validateIncomingMessage(message({ type: 'language', language: 'en-US' }), ctx()))
+      .toEqual({ type: 'language', language: 'en-US' })
+  })
+
+  it('越界/缺失/非字符串语言一律静默拒绝（只有两值合法）', () => {
+    for (const language of ['zh', 'zh-TW', 'fr-FR', 'EN-US', '', 1, null]) {
+      expectRejected(message({ type: 'language', language }), ctx())
+    }
+    expectRejected(omit(message({ type: 'language' }), 'language'), ctx())
+  })
+
+  it('language 消息同样必须满足五要素绑定', () => {
+    expectRejected(
+      message({ type: 'language', language: 'zh-CN' }),
+      ctx({ nonce: 'n_forged', channel: 'ch_forged' }),
+    )
+    expectRejected(
+      message({ type: 'language', language: 'zh-CN' }),
+      ctx({ origin: 'https://evil.example.com', sourceMatches: false }),
+    )
+  })
+})
+
+describe('W1 契约 v1：token/refresh 可选 project 字段（D-UI-01）', () => {
+  it('接受携带合法 project.name 的 token/refresh 消息', () => {
+    expect(
+      validateIncomingMessage(message({ project: { name: 'CAR-T 研究' } }), ctx()),
+    ).toEqual({
+      type: 'token',
+      token: 'research.jwt.payload',
+      expiresAt: 1754460300,
+      project: { name: 'CAR-T 研究' },
+    })
+    expect(
+      validateIncomingMessage(
+        message({ type: 'refresh', project: { name: 'Project A' } }),
+        ctx(),
+      ),
+    ).toEqual({
+      type: 'refresh',
+      token: 'research.jwt.payload',
+      expiresAt: 1754460300,
+      project: { name: 'Project A' },
+    })
+  })
+
+  it('缺失 project 字段合法（refresh 由会话层保留已有项目名）', () => {
+    const result = validateIncomingMessage(message(), ctx())
+    expect(result).not.toBeNull()
+    expect(result !== null && 'project' in result).toBe(false)
+  })
+
+  it('project 边界：1..200 字符合法，超界/空白/非对象一律整条拒绝', () => {
+    expect(
+      validateIncomingMessage(message({ project: { name: 'A'.repeat(200) } }), ctx()),
+    ).not.toBeNull()
+    expectRejected(message({ project: { name: '' } }), ctx())
+    expectRejected(message({ project: { name: '   ' } }), ctx())
+    expectRejected(message({ project: { name: 'A'.repeat(201) } }), ctx())
+    expectRejected(message({ project: { name: 42 } }), ctx())
+    expectRejected(message({ project: { name: null } }), ctx())
+    expectRejected(message({ project: 'Project A' }), ctx())
+    expectRejected(message({ project: ['Project A'] }), ctx())
+  })
+
+  it('project 字段非法时整条 token 消息被丢弃（不降级成通用项目名）', () => {
+    expectRejected(message({ project: { name: '' } }), ctx())
+  })
+})

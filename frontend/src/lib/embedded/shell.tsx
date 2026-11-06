@@ -14,6 +14,7 @@ export function useRequestIngest(): (() => void) | null {
   return useContext(IngestRequestContext)
 }
 import { getEmbeddedParentOrigins } from './config'
+import { ResearchHostProvider } from './host-context'
 import { ResearchWorkspaceProvider } from './workspace-context'
 import { ResearchSessionRuntimeProvider } from '@/lib/hooks/research-session-runtime'
 import { ResearchGlobalModelProvider } from '@/lib/hooks/use-research-global-model'
@@ -51,7 +52,7 @@ export function ResearchWorkspaceShell({
    */
   transport?: SessionRuntimeTransport | null
 }) {
-  const { t } = useTranslation()
+  const { t, setLanguage } = useTranslation()
   const [state, setState] = useState<SessionState | null>(null)
   const sessionRef = useRef<EmbeddedSession | null>(null)
   // 生产传输的稳定实例：useMemo 空依赖，每次挂载只创建一次，
@@ -72,6 +73,17 @@ export function ResearchWorkspaceShell({
     setEmbeddedTheme(embeddedTheme)
   }, [embeddedTheme, setEmbeddedTheme])
   useEffect(() => () => setEmbeddedTheme(null), [setEmbeddedTheme])
+
+  // W1 契约 v1（D-UI-02）：宿主语言消息 → i18next 立即切换（保留当前状态）。
+  // 只在 authenticated 后应用（与 theme 同一 fail-closed 语义）；同值由
+  // useTranslation().setLanguage 去重，宿主重放不触发冗余切换。
+  // 离开 authenticated 不还原语言：语言是宿主级偏好而非会话资源。
+  const embeddedLanguage =
+    state?.status === 'authenticated' ? (state.embeddedLanguage ?? null) : null
+  useEffect(() => {
+    if (embeddedLanguage === null) return
+    void setLanguage(embeddedLanguage)
+  }, [embeddedLanguage, setLanguage])
 
   useEffect(() => {
     const allowedOrigins = getEmbeddedParentOrigins()
@@ -205,7 +217,14 @@ export function ResearchWorkspaceShell({
         >
           <ResearchScopeProvider userId={identity.userId} projectId={identity.projectId}>
             <ResearchGlobalModelProvider>
-              {errorPanel ?? children}
+              {/* W1 契约 v1：宿主语言/项目名（D-UI-01/02）只在认证后向子树提供；
+                  目标壳顶栏/标题消费，缺失时调用方回退通用文案。 */}
+              <ResearchHostProvider
+                language={embeddedLanguage}
+                projectName={state.embeddedProjectName ?? null}
+              >
+                {errorPanel ?? children}
+              </ResearchHostProvider>
             </ResearchGlobalModelProvider>
           </ResearchScopeProvider>
         </ResearchSessionRuntimeProvider>
