@@ -1,0 +1,477 @@
+{
+  "ticket": "#1104",
+  "phase": "after",
+  "generated_at": "2026-11-06T18:55:22.191Z",
+  "host_base_url": "http://127.0.0.1:5175/",
+  "evidence_level": "synthetic network real-app rendering — NOT an L2 deployment acceptance (synthetic does not close L2)",
+  "browser": "Playwright-core 1.62.1 / Chromium 151 (chromium-1243), headless, deviceScaleFactor=1",
+  "verdict": "PASS",
+  "checks": [
+    {
+      "id": "KB-01",
+      "label": "Tab 顺序：宿主页头先于 iframe 工作台；页头内 返回→旧版切换→语言→退出 均可达",
+      "status": "PASS",
+      "details": "hostSteps=Back to RDLens | Legacy workspace (currently target workspace, activate to switch) | Language | Sign out firstChildStep=5"
+    },
+    {
+      "id": "KB-02",
+      "label": "工作台内 Tab 顺序：skip link → 顶栏 → 左资料栏 → 对话 → composer（单调不倒退）",
+      "status": "PASS",
+      "details": "skip-link → topbar → topbar → topbar → sources → sources → sources → sources → sources → sources → sources → conversation → conversation → composer → composer → composer"
+    },
+    {
+      "id": "KB-03",
+      "label": "五类焦点区域均可达（skip link / 顶栏 / 资料栏 / 对话 / composer）",
+      "status": "PASS",
+      "details": "skip-link, topbar, sources, conversation, composer"
+    },
+    {
+      "id": "KB-04",
+      "label": "skip link 指向 composer 且 Enter 后焦点进入 composer 区域",
+      "status": "PASS",
+      "details": "href=#rdlens-target-composer focused=true | afterEnter=composer/rdlens-target-composer"
+    },
+    {
+      "id": "KB-05",
+      "label": "焦点环可见（键盘聚焦控件 :focus-visible 且 ring/outline 非 none）",
+      "status": "PASS",
+      "details": "global-model-summary-trigger focusVisible=true shadow=rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484401) 0px 0px  outline=2px"
+    },
+    {
+      "id": "KB-06",
+      "label": "右栏打开时焦点进入面板；Esc 关闭后焦点返回触发控件",
+      "status": "PASS",
+      "details": "openFocus=right-pane/rdlens-target-right-pane-close closed=true closedFocus=rdlens-target-outcomes-trigger"
+    },
+    {
+      "id": "KB-07",
+      "label": "1440 无横向页面滚动（默认两栏 + 右栏打开三栏）",
+      "status": "PASS",
+      "details": "default host=1440/1440 fork=1440/1440; open fork=1440/1440"
+    },
+    {
+      "id": "KB-08",
+      "label": "1024 无横向页面滚动（默认两栏 + 右栏替代左栏；中央列 ≥640px）",
+      "status": "PASS",
+      "details": "default fork=1024/1024; open fork=1024/1024 main=669"
+    },
+    {
+      "id": "KB-09",
+      "label": "1024 右栏打开时左栏临时收起、右栏 355px、composer 显示范围紧凑标签",
+      "status": "PASS",
+      "details": "{\"asideWidth\":0,\"asideHidden\":true,\"rightWidth\":355,\"mainWidth\":669,\"chipVisible\":true}"
+    }
+  ],
+  "tab_sequence": [
+    {
+      "step": 1,
+      "frame": "host",
+      "tag": "BUTTON",
+      "testid": null,
+      "aria": "Back to RDLens",
+      "text": "",
+      "zone": "host-header",
+      "focusRing": null
+    },
+    {
+      "step": 2,
+      "frame": "host",
+      "tag": "BUTTON",
+      "testid": "research-workspace-legacy-toggle",
+      "aria": "Legacy workspace (currently target workspace, activate to switch)",
+      "text": "Legacy workspace",
+      "zone": "host-header",
+      "focusRing": null
+    },
+    {
+      "step": 3,
+      "frame": "host",
+      "tag": "SELECT",
+      "testid": null,
+      "aria": "Language",
+      "text": "中文English",
+      "zone": "host-header",
+      "focusRing": null
+    },
+    {
+      "step": 4,
+      "frame": "host",
+      "tag": "BUTTON",
+      "testid": null,
+      "aria": null,
+      "text": "Sign out",
+      "zone": "host-header",
+      "focusRing": null
+    },
+    {
+      "step": 5,
+      "frame": "child",
+      "tag": "NEXTJS-PORTAL",
+      "testid": null,
+      "aria": null,
+      "text": "",
+      "href": null,
+      "zone": "other",
+      "focusVisible": false,
+      "outlineWidth": "3px",
+      "outlineStyle": "none",
+      "boxShadow": "none",
+      "focusRing": {
+        "focusVisible": false,
+        "outlineWidth": "3px",
+        "outlineStyle": "none",
+        "boxShadow": "none"
+      }
+    },
+    {
+      "step": 6,
+      "frame": "child",
+      "tag": "A",
+      "testid": "rdlens-target-skip-link",
+      "aria": null,
+      "text": "Skip to the question input",
+      "href": "#rdlens-target-composer",
+      "zone": "skip-link",
+      "focusVisible": true,
+      "outlineWidth": "2px",
+      "outlineStyle": "solid",
+      "boxShadow": "none",
+      "focusRing": {
+        "focusVisible": true,
+        "outlineWidth": "2px",
+        "outlineStyle": "solid",
+        "boxShadow": "none"
+      }
+    },
+    {
+      "step": 7,
+      "frame": "child",
+      "tag": "BUTTON",
+      "testid": "global-model-summary-trigger",
+      "aria": null,
+      "text": "Local Qwen (synthetic)· Local",
+      "href": null,
+      "zone": "topbar",
+      "focusVisible": true,
+      "outlineWidth": "2px",
+      "outlineStyle": "solid",
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484401) 0px 0px ",
+      "focusRing": {
+        "focusVisible": true,
+        "outlineWidth": "2px",
+        "outlineStyle": "solid",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484401) 0px 0px "
+      }
+    },
+    {
+      "step": 8,
+      "frame": "child",
+      "tag": "BUTTON",
+      "testid": "rdlens-target-tasks-trigger",
+      "aria": "Tasks",
+      "text": "Tasks",
+      "href": null,
+      "zone": "topbar",
+      "focusVisible": true,
+      "outlineWidth": "2px",
+      "outlineStyle": "solid",
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.48443) 0px 0px 0",
+      "focusRing": {
+        "focusVisible": true,
+        "outlineWidth": "2px",
+        "outlineStyle": "solid",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.48443) 0px 0px 0"
+      }
+    },
+    {
+      "step": 9,
+      "frame": "child",
+      "tag": "BUTTON",
+      "testid": "rdlens-target-outcomes-trigger",
+      "aria": "Outcomes",
+      "text": "Outcomes",
+      "href": null,
+      "zone": "topbar",
+      "focusVisible": true,
+      "outlineWidth": "2px",
+      "outlineStyle": "solid",
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460388) 0px 0px ",
+      "focusRing": {
+        "focusVisible": true,
+        "outlineWidth": "2px",
+        "outlineStyle": "solid",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460388) 0px 0px "
+      }
+    },
+    {
+      "step": 10,
+      "frame": "child",
+      "tag": "BUTTON",
+      "testid": "rdlens-target-sources-add",
+      "aria": null,
+      "text": "Add sources",
+      "href": null,
+      "zone": "sources",
+      "focusVisible": true,
+      "outlineWidth": "2px",
+      "outlineStyle": "solid",
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.48443) 0px 0px 0",
+      "focusRing": {
+        "focusVisible": true,
+        "outlineWidth": "2px",
+        "outlineStyle": "solid",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.48443) 0px 0px 0"
+      }
+    },
+    {
+      "step": 11,
+      "frame": "child",
+      "tag": "INPUT",
+      "testid": "rdlens-target-sources-search",
+      "aria": null,
+      "text": "",
+      "href": null,
+      "zone": "sources",
+      "focusVisible": true,
+      "outlineWidth": "2px",
+      "outlineStyle": "solid",
+      "boxShadow": "none",
+      "focusRing": {
+        "focusVisible": true,
+        "outlineWidth": "2px",
+        "outlineStyle": "solid",
+        "boxShadow": "none"
+      }
+    },
+    {
+      "step": 12,
+      "frame": "child",
+      "tag": "BUTTON",
+      "testid": "rdlens-target-scope-all",
+      "aria": null,
+      "text": "",
+      "href": null,
+      "zone": "sources",
+      "focusVisible": true,
+      "outlineWidth": "2px",
+      "outlineStyle": "solid",
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.48443) 0px 0px 0",
+      "focusRing": {
+        "focusVisible": true,
+        "outlineWidth": "2px",
+        "outlineStyle": "solid",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.48443) 0px 0px 0"
+      }
+    },
+    {
+      "step": 13,
+      "frame": "child",
+      "tag": "BUTTON",
+      "testid": "rdlens-target-source-select-src_1",
+      "aria": "Include doc_a in the research scope",
+      "text": "",
+      "href": null,
+      "zone": "sources",
+      "focusVisible": true,
+      "outlineWidth": "2px",
+      "outlineStyle": "solid",
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484391) 0px 0px ",
+      "focusRing": {
+        "focusVisible": true,
+        "outlineWidth": "2px",
+        "outlineStyle": "solid",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484391) 0px 0px "
+      }
+    },
+    {
+      "step": 14,
+      "frame": "child",
+      "tag": "BUTTON",
+      "testid": "rdlens-target-source-open",
+      "aria": "Preview source doc_a",
+      "text": "doc_a",
+      "href": null,
+      "zone": "sources",
+      "focusVisible": true,
+      "outlineWidth": "2px",
+      "outlineStyle": "solid",
+      "boxShadow": "none",
+      "focusRing": {
+        "focusVisible": true,
+        "outlineWidth": "2px",
+        "outlineStyle": "solid",
+        "boxShadow": "none"
+      }
+    },
+    {
+      "step": 15,
+      "frame": "child",
+      "tag": "BUTTON",
+      "testid": "rdlens-target-source-select-src_2",
+      "aria": "Include doc_b in the research scope",
+      "text": "",
+      "href": null,
+      "zone": "sources",
+      "focusVisible": true,
+      "outlineWidth": "2px",
+      "outlineStyle": "solid",
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484391) 0px 0px ",
+      "focusRing": {
+        "focusVisible": true,
+        "outlineWidth": "2px",
+        "outlineStyle": "solid",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484391) 0px 0px "
+      }
+    },
+    {
+      "step": 16,
+      "frame": "child",
+      "tag": "BUTTON",
+      "testid": "rdlens-target-source-open",
+      "aria": "Preview source doc_b",
+      "text": "doc_b",
+      "href": null,
+      "zone": "sources",
+      "focusVisible": true,
+      "outlineWidth": "2px",
+      "outlineStyle": "solid",
+      "boxShadow": "none",
+      "focusRing": {
+        "focusVisible": true,
+        "outlineWidth": "2px",
+        "outlineStyle": "solid",
+        "boxShadow": "none"
+      }
+    },
+    {
+      "step": 17,
+      "frame": "child",
+      "tag": "BUTTON",
+      "testid": "rdlens-target-history-trigger",
+      "aria": null,
+      "text": "History",
+      "href": null,
+      "zone": "conversation",
+      "focusVisible": true,
+      "outlineWidth": "2px",
+      "outlineStyle": "solid",
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484301) 0px 0px ",
+      "focusRing": {
+        "focusVisible": true,
+        "outlineWidth": "2px",
+        "outlineStyle": "solid",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484301) 0px 0px "
+      }
+    },
+    {
+      "step": 18,
+      "frame": "child",
+      "tag": "BUTTON",
+      "testid": "rdlens-target-new-conversation",
+      "aria": null,
+      "text": "New conversation",
+      "href": null,
+      "zone": "conversation",
+      "focusVisible": true,
+      "outlineWidth": "2px",
+      "outlineStyle": "solid",
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460517) 0px 0px ",
+      "focusRing": {
+        "focusVisible": true,
+        "outlineWidth": "2px",
+        "outlineStyle": "solid",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460517) 0px 0px "
+      }
+    },
+    {
+      "step": 19,
+      "frame": "child",
+      "tag": "TEXTAREA",
+      "testid": "chat-input",
+      "aria": "Message input",
+      "text": "",
+      "href": null,
+      "zone": "composer",
+      "focusVisible": true,
+      "outlineWidth": "2px",
+      "outlineStyle": "solid",
+      "boxShadow": "none",
+      "focusRing": {
+        "focusVisible": true,
+        "outlineWidth": "2px",
+        "outlineStyle": "solid",
+        "boxShadow": "none"
+      }
+    },
+    {
+      "step": 20,
+      "frame": "child",
+      "tag": "BUTTON",
+      "testid": "rdlens-target-secondary-search",
+      "aria": null,
+      "text": "Evidence search",
+      "href": null,
+      "zone": "composer",
+      "focusVisible": true,
+      "outlineWidth": "2px",
+      "outlineStyle": "solid",
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460213) 0px 0px ",
+      "focusRing": {
+        "focusVisible": true,
+        "outlineWidth": "2px",
+        "outlineStyle": "solid",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460213) 0px 0px "
+      }
+    },
+    {
+      "step": 21,
+      "frame": "child",
+      "tag": "BUTTON",
+      "testid": "rdlens-target-secondary-compare",
+      "aria": null,
+      "text": "Compare sources",
+      "href": null,
+      "zone": "composer",
+      "focusVisible": true,
+      "outlineWidth": "2px",
+      "outlineStyle": "solid",
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484466) 0px 0px ",
+      "focusRing": {
+        "focusVisible": true,
+        "outlineWidth": "2px",
+        "outlineStyle": "solid",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484466) 0px 0px "
+      }
+    },
+    {
+      "step": 22,
+      "frame": "host",
+      "tag": "BODY",
+      "testid": null,
+      "aria": null,
+      "text": "Legacy workspace中文Englishsynthetic-ownerSign out",
+      "zone": "host-other",
+      "focusRing": null
+    },
+    {
+      "step": 23,
+      "frame": "host",
+      "tag": "BUTTON",
+      "testid": null,
+      "aria": "Back to RDLens",
+      "text": "",
+      "zone": "host-header",
+      "focusRing": null
+    }
+  ],
+  "screenshots": [
+    "after_keyboard_focus_ring_1440x900_en-US.png",
+    "after_keyboard_right_pane_focus_1440x900_en-US.png",
+    "after_keyboard_1024_right_pane_1024x768_en-US.png"
+  ],
+  "limitations": [
+    "键盘走查在合成 mock 网络与真实应用渲染下完成，不是 L2 部署验收。",
+    "Tab 顺序断言基于 headless Chromium 的浏览器默认 Tab 序；跨 iframe 焦点由浏览器处理。",
+    "屏幕阅读器人工走查（O-UI-04）不在本轮范围。"
+  ]
+}
