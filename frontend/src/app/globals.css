@@ -438,3 +438,98 @@
     content: none !important;
   }
 }
+
+/* ============================================================================
+   RDLens Research 目标工作台（W1 #1104）：UI 规格 v1 §4 视觉 token。
+
+   全部变量 scoped 到 `.rdlens-target-shell` 命名空间，**不改全局 token**：
+   旧壳（五 Tab 组合根）与仓库其它页面继续使用原主题变量，互不影响。
+   dark 只覆盖本作用域内的变量值（§4.1 dark 列）。
+   ========================================================================== */
+.rdlens-target-shell {
+  /* §4.1 light */
+  --rdlens-paper: #fbfcfb;
+  --rdlens-surface: #ffffff;
+  --rdlens-surface-subtle: #f7faf9;
+  --rdlens-field: #f0f4f4;
+  --rdlens-ink: #20383f;
+  --rdlens-ink-muted: #566a6d;
+  --rdlens-evidence: #176f6f;
+  --rdlens-on-evidence: #ffffff;
+  --rdlens-line: #ccd8d8;
+  --rdlens-line-control: #748b89;
+  --rdlens-warning: #8f5728;
+  --rdlens-warning-field: #fcf4e9;
+  --rdlens-cite-field: #e4f0ee;
+  --rdlens-cite-field-hover: #cfe5e1;
+  --rdlens-caution: #445f62;
+  --rdlens-overlay: rgba(20, 43, 49, 0.42);
+  --rdlens-disabled-opacity: 0.46;
+
+  /* §4.2 字体栈 */
+  --rdlens-font-ui: "Noto Sans CJK SC", "Source Han Sans SC", "PingFang SC",
+    "Microsoft YaHei", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --rdlens-font-serif: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC",
+    SimSun, Georgia, "Times New Roman", serif;
+  --rdlens-font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas,
+    "Liberation Mono", monospace;
+
+  /* §4.4 动效 */
+  --rdlens-motion-fast: 120ms;
+  --rdlens-motion-base: 150ms;
+  --rdlens-motion-slow: 250ms;
+
+  background-color: var(--rdlens-paper);
+  color: var(--rdlens-ink);
+  font-family: var(--rdlens-font-ui);
+  /* §3.3：页面本身不出现横向滚动（内层滚动容器各自处理横向内容） */
+  overflow-x: clip;
+}
+
+.dark .rdlens-target-shell {
+  --rdlens-paper: #12181a;
+  --rdlens-surface: #171f21;
+  --rdlens-surface-subtle: #141b1d;
+  --rdlens-field: #1d2729;
+  --rdlens-ink: #e4eceb;
+  --rdlens-ink-muted: #9fb2b1;
+  --rdlens-evidence: #4fb3a7;
+  --rdlens-on-evidence: #06201d;
+  --rdlens-line: #2b383a;
+  --rdlens-line-control: #6d8a87;
+  --rdlens-warning: #e0a26a;
+  --rdlens-warning-field: #2d241c;
+  --rdlens-cite-field: #16302c;
+  --rdlens-cite-field-hover: #1d3d38;
+  --rdlens-caution: #b9cbc9;
+  --rdlens-overlay: rgba(0, 0, 0, 0.55);
+}
+
+.rdlens-target-shell .rdlens-serif {
+  font-family: var(--rdlens-font-serif);
+}
+
+.rdlens-target-shell .rdlens-mono {
+  font-family: var(--rdlens-font-mono);
+}
+
+/* §4.1 校准说明 / §7 A11Y-02：焦点色＝evidence，2px + offset 3px。
+   滚动容器统一留 4px 内边距（见各面板 p-1），焦点环不被 overflow 裁切。 */
+.rdlens-target-shell :focus-visible {
+  outline: 2px solid var(--rdlens-evidence);
+  outline-offset: 3px;
+}
+
+.rdlens-target-shell [data-rdlens-focus-inset]:focus-visible {
+  outline-offset: -2px;
+}
+
+/* §4.4：prefers-reduced-motion 生效（只用于显隐/状态过渡） */
+@media (prefers-reduced-motion: reduce) {
+  .rdlens-target-shell *,
+  .rdlens-target-shell *::before,
+  .rdlens-target-shell *::after {
+    transition-duration: 0ms !important;
+    animation-duration: 0ms !important;
+  }
+}

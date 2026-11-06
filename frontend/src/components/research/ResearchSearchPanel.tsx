@@ -109,6 +109,7 @@ export function ResearchSearchPanel({
   onViewNote,
   onCitationJump,
   sources = [],
+  showSearchContext = true,
 }: {
   projectId: string
   /**
@@ -133,6 +134,12 @@ export function ResearchSearchPanel({
    * 复核跳转四闸（可选，默认 []——缺失时显示 document_id/version 且禁用跳转）。
    */
   sources?: readonly ResearchSource[]
+  /**
+   * W1 #1104（目标壳 D-UI-06）：隐藏显式 Search context 控件——目标壳不暴露
+   * 独立检索上下文，实际范围随操作声明并受左栏/当前对话范围约束。
+   * 默认 true：旧壳行为不变。
+   */
+  showSearchContext?: boolean
 }) {
   const { t } = useTranslation()
   // #1014：搜索历史能力位（加性 /models.capabilities.search_history，严格
@@ -606,21 +613,23 @@ export function ResearchSearchPanel({
             </Button>
           </div>
         )}
-        <SearchContextSelector
-          contextDefault={searchContextDefault}
-          supportedLevels={supportedLevels}
-          selectedLevel={selectedLevel}
-          onSelectLevel={(level) => {
-            interactedRef.current = true
-            setAdjustedFrom(null)
-            setDocumentLevelAdjusted(false)
-            setSelectedLevel(level)
-          }}
-          onSaveContext={(level) => void handleSaveContext(level)}
-          saving={savingContext}
-          disabled={isSavingModel}
-        />
-        {adjustedFrom !== null && (
+        {showSearchContext && (
+          <SearchContextSelector
+            contextDefault={searchContextDefault}
+            supportedLevels={supportedLevels}
+            selectedLevel={selectedLevel}
+            onSelectLevel={(level) => {
+              interactedRef.current = true
+              setAdjustedFrom(null)
+              setDocumentLevelAdjusted(false)
+              setSelectedLevel(level)
+            }}
+            onSaveContext={(level) => void handleSaveContext(level)}
+            saving={savingContext}
+            disabled={isSavingModel}
+          />
+        )}
+        {showSearchContext && adjustedFrom !== null && (
           <p className="mt-1 text-xs text-amber-600" data-testid="context-auto-adjusted">
             {t('research.searchContext.autoAdjusted', { level: adjustedFrom })}
           </p>

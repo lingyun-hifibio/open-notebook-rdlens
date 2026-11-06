@@ -130,6 +130,9 @@ function renderPage() {
 }
 
 beforeEach(() => {
+  // W1 #1104：默认 /research 已是目标壳；本文件断言旧壳的 session Provider
+  // 组合，统一以 `?legacy=1` 渲染旧壳。
+  window.history.replaceState(null, '', '/research?legacy=1')
   cleanup()
   apiMocks.listChatSessions.mockReset().mockResolvedValue(listResponse())
   apiMocks.listSourceChatSessions.mockReset().mockResolvedValue({ items: [], total: 0 })

@@ -337,6 +337,10 @@ export function ResearchChatPanel({
   onScrollToMessageResult,
   onSelectionJump,
   onSelectionConsumed,
+  hideComposer = false,
+  showCoverageScopeSelector = true,
+  showSessionScopeBar = true,
+  showSessionHeader = true,
 }: {
   turns: ResearchChatTurn[]
   isStreaming: boolean
@@ -475,6 +479,20 @@ export function ResearchChatPanel({
   onSendSession?: (query: string, selection: ResearchChatSelection) => Promise<boolean>
   /** §7.3：用户在新会话保护本机稿（调整范围/缩短问题/新建会话动作）。 */
   onNewSession?: () => void
+  /**
+   * W1 #1104（目标壳）：隐藏面板内部 composer——目标壳在中央列底部固定渲染
+   * composer（UI-10），面板只承担消息内容面。默认 false：旧壳行为不变。
+   */
+  hideComposer?: boolean
+  /**
+   * W1 #1104：隐藏面板内 Coverage 范围选择器。目标壳范围权威只在左栏
+   * （D-UI-06/D-UI-07），面板不再提供第二套范围控件。默认 true 保持旧壳。
+   */
+  showCoverageScopeSelector?: boolean
+  /** W1 #1104：隐藏面板内会话范围条（第二套范围控件同样由左栏承担）。 */
+  showSessionScopeBar?: boolean
+  /** W1 #1104：隐藏面板内会话标题条（目标壳 UI-07 自己渲染标题/历史/新对话）。 */
+  showSessionHeader?: boolean
 }) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
@@ -1647,7 +1665,7 @@ export function ResearchChatPanel({
       onFocusCapture={handlePanelFocusCapture}
       onBlurCapture={handlePanelBlurCapture}
     >
-      {sessionWired && (
+      {showSessionHeader && sessionWired && (
         <div
           ref={sessionHeaderRef}
           tabIndex={-1}
@@ -1738,7 +1756,7 @@ export function ResearchChatPanel({
           />
         </div>
       )}
-      {wired && !noActiveSession && (
+      {showSessionScopeBar && wired && !noActiveSession && (
         <div className="shrink-0 border-b px-3 py-2">
           <ResearchSessionScopeBar
             editorSnapshot={editorSnapshot ?? null}
@@ -2200,7 +2218,9 @@ export function ResearchChatPanel({
           )}
         </p>
       )}
+      {!hideComposer && (
       <div className="space-y-2 border-t p-3">
+        {showCoverageScopeSelector && (
         <CoverageScopeSelector
           value={scope}
           onChange={setScope}
@@ -2209,6 +2229,7 @@ export function ResearchChatPanel({
           selectedSourceCount={dispatchSnapshot.sourceIds.length}
           selectedNoteCount={dispatchSnapshot.noteIds.length}
         />
+        )}
         {wired ? (
           scope === 'all_selected' ? (
             <ResearchDraftComposer
@@ -2301,6 +2322,7 @@ export function ResearchChatPanel({
           </div>
         )}
       </div>
+      )}
     </div>
   )
 }

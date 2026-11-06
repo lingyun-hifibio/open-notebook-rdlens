@@ -1,0 +1,575 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+
+import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
+import { ResearchHostProvider } from '@/lib/embedded/host-context'
+import { ResearchScopeProvider } from '@/lib/research/scope'
+import { TargetShell } from './TargetShell'
+import type { TargetConversationState } from './use-target-conversation'
+import type { UseResearchSessionsResult } from '@/lib/hooks/use-research-sessions'
+import type { ResearchJob } from '@/lib/research/types'
+
+// W1 #1104（UI 规格 v1 §3/§5/§7）：目标工作台壳。
+// 被测边界：TargetShell 的布局/顶栏入口/右栏开关与焦点/左栏收起与恢复/
+// composer 交互。对话数据接线（session/editor/SSE）在 use-target-conversation
+// 单测与集成层验证；本文件对其替身化。
+
+const fixtureRows = vi.hoisted(() => ({
+  sources: [
+    { source_id: 'src_ready', document_id: 'doc_ready', document_version: 'v1', status: 'ready', content_hash: null, synced_at: null, last_error: null },
+    { source_id: 'src_stale', document_id: 'doc_stale', document_version: 'v2', status: 'stale', content_hash: null, synced_at: null, last_error: null },
+    { source_id: 'src_pending', document_id: 'doc_pending', document_version: 'v1', status: 'pending', content_hash: null, synced_at: null, last_error: null },
+    { source_id: 'src_failed', document_id: 'doc_failed', document_version: 'v1', status: 'failed', content_hash: null, synced_at: null, last_error: 'boom' },
+  ],
+  notes: [
+    {
+      note_id: 'note_1',
+      project_id: 'proj_1',
+      title: 'Outcome note',
+      content: 'content',
+      note_type: 'human',
+      created_at: '2026-11-01T00:00:00Z',
+      updated_at: '2026-11-02T00:00:00Z',
+    },
+  ],
+}))
+
+const media = vi.hoisted(() => ({ wide: false }))
+const conversationFixture = vi.hoisted(() => ({
+  send: vi.fn(async () => true),
+  openSession: vi.fn(),
+  newSession: vi.fn(async () => {}),
+  pinSingleSource: vi.fn(),
+  editor: {
+    snapshot: null,
+    controller: null,
+    transportWired: false,
+    setDraftText: vi.fn(),
+    setScope: vi.fn(),
+    setChatAnchor: vi.fn(),
+    setReaderAnchor: vi.fn(),
+    flush: vi.fn(async () => 'skipped' as const),
+    hold: vi.fn(),
+    release: vi.fn(),
+    retrySave: vi.fn(async () => 'skipped' as const),
+    adoptServerVersion: vi.fn(async () => 'skipped' as const),
+    saveLocalOverServer: vi.fn(async () => 'skipped' as const),
+    clearAfterSubmission: vi.fn(async () => 'cleared' as const),
+    markTokenConsumed: vi.fn(),
+    canSubmit: vi.fn(() => ({ allowed: true as const })),
+    restoreDraft: vi.fn(),
+    refreshDraftCandidates: vi.fn(),
+    releaseDocument: vi.fn(),
+  },
+  sessions: null as UseResearchSessionsResult | null,
+}))
+
+const ingest = vi.hoisted(() => vi.fn())
+
+vi.mock('@/lib/hooks/use-media-query', () => ({
+  useMediaQuery: () => media.wide,
+  useIsDesktop: () => true,
+}))
+
+vi.mock('@/lib/hooks/use-research', () => ({
+  useResearchSources: () => ({
+    data: { items: fixtureRows.sources, total: fixtureRows.sources.length },
+    isLoading: false,
+    isError: false,
+    isSuccess: true,
+    refetch: vi.fn(),
+  }),
+  useResearchNotes: () => ({
+    data: { items: fixtureRows.notes, total: fixtureRows.notes.length },
+    isLoading: false,
+    isError: false,
+    isSuccess: true,
+    refetch: vi.fn(),
+  }),
+}))
+
+vi.mock('@/lib/hooks/use-research-global-model', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/hooks/use-research-global-model')>()
+  return {
+    ...actual,
+    useResearchGlobalModel: () => ({
+      runGuarded: async (operation: (modelId: string) => Promise<boolean> | boolean) => {
+        const result = await operation('model_1')
+        return result === true
+      },
+      canExecute: true,
+      blockedReason: null,
+      confirmedModelId: 'model_1',
+      localModelUnavailableMessage: null,
+    }),
+  }
+})
+
+vi.mock('@/components/research/ResearchGlobalModelBar', () => ({
+  ResearchGlobalModelBar: () => <div data-testid="model-bar" />,
+}))
+
+const jobsFixture = vi.hoisted(() => ({
+  jobs: [
+    {
+      job_id: 'job_1',
+      project_id: 'proj_1',
+      job_type: 'deep_compare',
+      status: 'running',
+      stage: null,
+      progress: 0,
+      model_id: 'model_1',
+      generation_epoch: 1,
+      retry_count: 0,
+      last_error: null,
+      result_ref: null,
+      created_at: '2026-11-06T10:00:00Z',
+      updated_at: '2026-11-06T10:00:00Z',
+    },
+    {
+      job_id: 'job_2',
+      project_id: 'proj_1',
+      job_type: 'deep_compare',
+      status: 'completed',
+      stage: null,
+      progress: 100,
+      model_id: 'model_1',
+      generation_epoch: 1,
+      retry_count: 0,
+      last_error: null,
+      result_ref: null,
+      created_at: '2026-11-05T10:00:00Z',
+      updated_at: '2026-11-05T10:05:00Z',
+    },
+  ] as ResearchJob[],
+  isCreating: false,
+  error: null as string | null,
+  errorCode: null as string | null,
+  createCompare: vi.fn(),
+}))
+
+vi.mock('@/components/research/ResearchJobsProvider', () => ({
+  ResearchJobsProvider: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+  useResearchJobsController: () => jobsFixture,
+}))
+
+vi.mock('@/lib/embedded/shell', () => ({
+  useRequestIngest: () => ingest,
+}))
+
+vi.mock('@/components/research/ResearchChatPanel', () => ({
+  ResearchChatPanel: (props: {
+    onCitationReturn?: (citation: Record<string, unknown>, messageId: string | null) => void
+    hideComposer?: boolean
+    showSessionScopeBar?: boolean
+    showCoverageScopeSelector?: boolean
+    showSessionHeader?: boolean
+  }) => (
+    <div
+      data-testid="chat-panel"
+      data-hide-composer={props.hideComposer === true ? 'true' : undefined}
+      data-show-scope-bar={props.showSessionScopeBar === true ? 'true' : undefined}
+      data-show-coverage={props.showCoverageScopeSelector === true ? 'true' : undefined}
+    >
+      <button
+        type="button"
+        data-testid="simulate-citation"
+        onClick={() =>
+          props.onCitationReturn?.(
+            {
+              citation_id: 1,
+              claim: 'Evidence claim text',
+              doc_id: 'doc_ready',
+              page_idx: 2,
+              doc_version: 'v1',
+            },
+            'msg_1',
+          )
+        }
+      />
+    </div>
+  ),
+}))
+
+vi.mock('./use-target-conversation', () => ({
+  useTargetConversation: (): TargetConversationState => {
+    const sessions = conversationFixture.sessions
+    return {
+      sessionWired: false,
+      runtimeAvailable: sessions !== null,
+      sessions,
+      activeRef: null,
+      turns: [],
+      isStreaming: false,
+      backgroundNotice: null,
+      resolveChatOrigin: async () => null,
+      conversation: null,
+      sessionMeta: null,
+      sessionCards: [],
+      submissionLookup: null,
+      markerWriteFailed: false,
+      refreshMarkerLookups: undefined,
+      editor: conversationFixture.editor as unknown as TargetConversationState['editor'],
+      editorSnapshot: null,
+      submissionReady: undefined,
+      canExecute: true,
+      blockedHint: '',
+      scopeBlockedText: null,
+      send: conversationFixture.send,
+      openSession: conversationFixture.openSession,
+      newSession: conversationFixture.newSession,
+      pinSingleSource: conversationFixture.pinSingleSource,
+    }
+  },
+}))
+
+function sessionFixture(): UseResearchSessionsResult {
+  return {
+    sessions: [
+      {
+        ref: { domain: 'research', kind: 'global', projectId: 'proj_1', sessionId: 'sess_1', sourceId: null },
+        title: 'Conversation A',
+        createdAt: '2026-11-01T00:00:00Z',
+        updatedAt: '2026-11-02T00:00:00Z',
+        visibility: 'visible',
+        hasDraft: null,
+        legacy: false,
+        visibilityDegraded: false,
+      },
+      {
+        ref: { domain: 'research', kind: 'global', projectId: 'proj_1', sessionId: 'sess_2', sourceId: null },
+        title: null,
+        createdAt: '2026-11-01T00:00:00Z',
+        updatedAt: '2026-11-01T00:00:00Z',
+        visibility: 'visible',
+        hasDraft: null,
+        legacy: false,
+        visibilityDegraded: false,
+      },
+    ],
+    loading: false,
+    loadingMore: false,
+    error: null,
+    loadMoreError: null,
+    unauthorized: false,
+    sourceUnavailable: false,
+    hasMore: false,
+    capabilitiesReady: true,
+    canList: true,
+    canCreate: true,
+    listDisabledReason: null,
+    createDisabledReason: null,
+    creating: false,
+    createError: null,
+    created: null,
+    refresh: vi.fn(),
+    loadMore: vi.fn(),
+    create: vi.fn(async () => null),
+  } as unknown as UseResearchSessionsResult
+}
+
+function renderShell(projectName: string | null = 'Project Alpha') {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <ResearchWorkspaceProvider projectId="proj_1" role="owner" userId="user_1">
+        <ResearchScopeProvider userId="user_1" projectId="proj_1">
+          <ResearchHostProvider projectName={projectName}>
+            <TargetShell />
+          </ResearchHostProvider>
+        </ResearchScopeProvider>
+      </ResearchWorkspaceProvider>
+    </QueryClientProvider>,
+  )
+}
+
+beforeEach(() => {
+  cleanup()
+  window.localStorage.clear()
+  media.wide = false
+  conversationFixture.sessions = sessionFixture()
+  conversationFixture.send.mockClear()
+  conversationFixture.openSession.mockClear()
+  conversationFixture.newSession.mockClear()
+  conversationFixture.pinSingleSource.mockClear()
+  ingest.mockClear()
+})
+
+afterEach(() => {
+  cleanup()
+})
+
+describe('目标壳布局与地标（§3）', () => {
+  it('渲染顶栏/左资料栏/中央对话与 skip link', () => {
+    renderShell()
+    expect(screen.getByTestId('rdlens-target-topbar')).toBeInTheDocument()
+    expect(screen.getByTestId('rdlens-target-sources-aside')).toBeInTheDocument()
+    expect(screen.getByTestId('rdlens-target-main')).toBeInTheDocument()
+    expect(screen.getByTestId('rdlens-target-conversation')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'research.target.a11y.skipToComposer' })).toHaveAttribute(
+      'href',
+      '#rdlens-target-composer',
+    )
+    // 右栏默认收起
+    expect(screen.queryByTestId('rdlens-target-right-pane')).toBeNull()
+  })
+
+  it('1024–1279 + 右栏打开：左栏临时收起但不卸载；关闭后恢复且状态保留', async () => {
+    media.wide = false
+    renderShell()
+    expect(screen.getByTestId('rdlens-target-shell')).toHaveAttribute('data-breakpoint', 'compact')
+
+    const search = screen.getByTestId('rdlens-target-sources-search')
+    fireEvent.change(search, { target: { value: 'doc_ready' } })
+    expect(search).toHaveValue('doc_ready')
+
+    fireEvent.click(screen.getByTestId('rdlens-target-tasks-trigger'))
+    await waitFor(() => expect(screen.getByTestId('rdlens-target-right-pane')).toBeInTheDocument())
+    expect(screen.getByTestId('rdlens-target-shell')).toHaveAttribute('data-left-pane-collapsed', 'true')
+    // 保持挂载（display:none），搜索状态不丢
+    expect(screen.getByTestId('rdlens-target-sources-aside')).toHaveClass('hidden')
+    expect(screen.getByTestId('rdlens-target-sources-search')).toHaveValue('doc_ready')
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByTestId('rdlens-target-right-pane')).toBeNull())
+    expect(screen.getByTestId('rdlens-target-sources-aside')).toHaveClass('flex')
+    expect(screen.getByTestId('rdlens-target-sources-search')).toHaveValue('doc_ready')
+  })
+
+  it('≥1280 + 右栏打开：三栏并排，左栏不收起', async () => {
+    media.wide = true
+    renderShell()
+    expect(screen.getByTestId('rdlens-target-shell')).toHaveAttribute('data-breakpoint', 'wide')
+    fireEvent.click(screen.getByTestId('rdlens-target-tasks-trigger'))
+    await waitFor(() => expect(screen.getByTestId('rdlens-target-right-pane')).toBeInTheDocument())
+    expect(screen.getByTestId('rdlens-target-shell')).not.toHaveAttribute('data-left-pane-collapsed')
+    expect(screen.getByTestId('rdlens-target-sources-aside')).toHaveClass('flex')
+  })
+})
+
+describe('UI-02 顶栏（§5.2 / D-UI-01）', () => {
+  it('宿主项目名显示为唯一项目身份：1 行省略 + 完整 aria-label', () => {
+    renderShell('Project Alpha')
+    const name = screen.getByTestId('rdlens-target-project-name')
+    expect(name).toHaveTextContent('Project Alpha')
+    expect(name).toHaveAttribute('title', 'Project Alpha')
+    expect(name).toHaveAttribute('aria-label', 'research.target.topbar.projectLabel')
+    expect(name).toHaveAttribute('data-project-source', 'host')
+  })
+
+  it('宿主未提供项目名：回退通用 Research，不伪造项目身份', () => {
+    renderShell(null)
+    const name = screen.getByTestId('rdlens-target-project-name')
+    expect(name).toHaveTextContent('research.target.topbar.projectFallback')
+    expect(name).toHaveAttribute('data-project-source', 'fallback')
+  })
+
+  it('任务入口显示未完成计数并打开任务历史；成果入口打开成果目录', async () => {
+    renderShell()
+    const tasks = screen.getByTestId('rdlens-target-tasks-trigger')
+    // 未完成计数：queued/running/cancelling（completed 不计）
+    expect(screen.getByTestId('rdlens-target-tasks-badge')).toHaveTextContent('1')
+    expect(tasks).toHaveAttribute('aria-expanded', 'false')
+    expect(tasks).toHaveAttribute('aria-controls', 'rdlens-target-right-pane')
+
+    fireEvent.click(tasks)
+    await waitFor(() =>
+      expect(screen.getByTestId('rdlens-target-right-pane')).toHaveAttribute('data-pane-kind', 'tasks'),
+    )
+    expect(screen.getByTestId('rdlens-target-tasks-trigger')).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getAllByTestId('rdlens-target-task-item')).toHaveLength(2)
+
+    fireEvent.click(screen.getByTestId('rdlens-target-outcomes-trigger'))
+    await waitFor(() =>
+      expect(screen.getByTestId('rdlens-target-right-pane')).toHaveAttribute('data-pane-kind', 'outcomes'),
+    )
+    expect(screen.getByTestId('rdlens-target-outcome-item')).toBeInTheDocument()
+    expect(screen.getByText('research.target.rightPane.outcomesReadOnly')).toBeInTheDocument()
+  })
+})
+
+describe('UI-12 右栏焦点与 Esc（§5.6 / A11Y-02）', () => {
+  it('打开时焦点进入面板关闭按钮；Esc 关闭后焦点回到触发控件', async () => {
+    renderShell()
+    const trigger = screen.getByTestId('rdlens-target-tasks-trigger')
+    trigger.focus()
+    fireEvent.click(trigger)
+    const close = await screen.findByTestId('rdlens-target-right-pane-close')
+    await waitFor(() => expect(document.activeElement).toBe(close))
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByTestId('rdlens-target-right-pane')).toBeNull())
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it('关闭按钮同样把焦点还给触发控件', async () => {
+    renderShell()
+    const trigger = screen.getByTestId('rdlens-target-outcomes-trigger')
+    fireEvent.click(trigger)
+    const close = await screen.findByTestId('rdlens-target-right-pane-close')
+    fireEvent.click(close)
+    await waitFor(() => expect(screen.queryByTestId('rdlens-target-right-pane')).toBeNull())
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it('同一时刻只承担一项辅助内容：打开另一项即替换', async () => {
+    renderShell()
+    fireEvent.click(screen.getByTestId('rdlens-target-tasks-trigger'))
+    await waitFor(() => expect(screen.getByTestId('rdlens-target-tasks-panel')).toBeInTheDocument())
+    fireEvent.click(screen.getByTestId('rdlens-target-outcomes-trigger'))
+    await waitFor(() => expect(screen.getByTestId('rdlens-target-outcomes-panel')).toBeInTheDocument())
+    expect(screen.queryByTestId('rdlens-target-tasks-panel')).toBeNull()
+  })
+})
+
+describe('UI-07 对话标题区与历史入口（§5.4 / UI-16）', () => {
+  it('历史打开右栏对话历史；点击会话/新对话调用既有 session 能力', async () => {
+    renderShell()
+    const history = screen.getByTestId('rdlens-target-history-trigger')
+    expect(history).not.toBeDisabled()
+    fireEvent.click(history)
+    await waitFor(() =>
+      expect(screen.getByTestId('rdlens-target-right-pane')).toHaveAttribute('data-pane-kind', 'conversations'),
+    )
+    const items = screen.getAllByTestId('rdlens-target-conversation-item')
+    expect(items).toHaveLength(2)
+    // 未命名会话渲染占位（真实 i18n 下为 research.session.unnamed 译文）
+    expect(items[1]).toHaveTextContent('Untitled conversation')
+    fireEvent.click(items[0])
+    expect(conversationFixture.openSession).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByTestId('rdlens-target-conversation-new'))
+    expect(conversationFixture.newSession).toHaveBeenCalledTimes(1)
+  })
+
+  it('会话能力缺失时历史/新对话为明确不可用（disabled + 原因），不造假控件', () => {
+    conversationFixture.sessions = null
+    renderShell()
+    expect(screen.getByTestId('rdlens-target-history-trigger')).toBeDisabled()
+    expect(screen.getByTestId('rdlens-target-new-conversation')).toBeDisabled()
+    expect(screen.getByTestId('rdlens-target-history-unavailable')).toBeInTheDocument()
+  })
+})
+
+describe('引用点击 → 右栏引用预览（W1 最小可用）', () => {
+  it('citation 点击打开引用预览并显示来源/定位/摘录', async () => {
+    renderShell()
+    fireEvent.click(screen.getByTestId('simulate-citation'))
+    await waitFor(() =>
+      expect(screen.getByTestId('rdlens-target-right-pane')).toHaveAttribute('data-pane-kind', 'citation'),
+    )
+    expect(screen.getByTestId('rdlens-target-citation-source')).toHaveTextContent('doc_ready')
+    expect(screen.getByTestId('rdlens-target-citation-locator')).toHaveTextContent(
+      'research.target.rightPane.locatorPage',
+    )
+    expect(screen.getByTestId('rdlens-target-citation-excerpt')).toHaveTextContent('Evidence claim text')
+    // W2 前原文阅读明确不可用
+    expect(screen.getByTestId('rdlens-target-open-original')).toBeDisabled()
+    expect(screen.getByText('research.target.rightPane.openOriginalUnavailable')).toBeInTheDocument()
+  })
+
+  it('只问此来源：调用既有 single-pin 能力并关闭右栏', async () => {
+    renderShell()
+    fireEvent.click(screen.getByTestId('simulate-citation'))
+    const ask = await screen.findByTestId('rdlens-target-ask-this-source')
+    fireEvent.click(ask)
+    expect(conversationFixture.pinSingleSource).toHaveBeenCalledWith('src_ready')
+    await waitFor(() => expect(screen.queryByTestId('rdlens-target-right-pane')).toBeNull())
+  })
+})
+
+describe('composer（UI-10，§5.5）', () => {
+  it('空输入不可提交；输入后 Ctrl/Cmd+Enter 提交，Enter 仅换行', async () => {
+    renderShell()
+    const textarea = screen.getByTestId('chat-input')
+    const send = screen.getByTestId('chat-send')
+    expect(send).toBeDisabled()
+
+    fireEvent.change(textarea, { target: { value: 'What changed?' } })
+    expect(send).not.toBeDisabled()
+
+    // Enter 不提交（目标壳快捷键为 Ctrl/Cmd+Enter）
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    expect(conversationFixture.send).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(textarea, { key: 'Enter', ctrlKey: true })
+    expect(conversationFixture.send).toHaveBeenCalledWith('What changed?')
+  })
+
+  it('次级操作行：证据搜索/比较资料可用，深入研究明确不可用', () => {
+    renderShell()
+    expect(screen.getByTestId('rdlens-target-secondary-search')).not.toBeDisabled()
+    expect(screen.getByTestId('rdlens-target-secondary-compare')).not.toBeDisabled()
+    expect(screen.getByTestId('rdlens-target-secondary-deep-research')).toBeDisabled()
+    expect(screen.getByTestId('rdlens-target-deep-research-reason')).toHaveTextContent(
+      'research.target.secondary.deepResearchUnavailable',
+    )
+  })
+
+  it('证据搜索打开既有面板作为中央次级视图并可返回对话', async () => {
+    renderShell()
+    fireEvent.click(screen.getByTestId('rdlens-target-secondary-search'))
+    await waitFor(() =>
+      expect(screen.getByTestId('rdlens-target-secondary-evidence-search')).toBeInTheDocument(),
+    )
+    // 对话保持挂载（隐藏不卸载）
+    expect(screen.getByTestId('rdlens-target-conversation')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('rdlens-target-secondary-back'))
+    await waitFor(() =>
+      expect(screen.queryByTestId('rdlens-target-secondary-evidence-search')).toBeNull(),
+    )
+  })
+})
+
+describe('左资料栏（UI-04，§5.3）', () => {
+  it('搜索过滤资料；无匹配显示空态与清除搜索', () => {
+    renderShell()
+    const search = screen.getByTestId('rdlens-target-sources-search')
+    fireEvent.change(search, { target: { value: 'doc_ready' } })
+    expect(screen.getAllByTestId('rdlens-target-source-row')).toHaveLength(1)
+
+    fireEvent.change(search, { target: { value: 'nothing-matches' } })
+    expect(screen.getByTestId('rdlens-target-sources-search-empty')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('rdlens-target-sources-search-empty-clear'))
+    expect(search).toHaveValue('')
+    expect(screen.getAllByTestId('rdlens-target-source-row')).toHaveLength(4)
+  })
+
+  it('状态六值映射为文字（不只靠颜色），不可选状态复选框 disabled 且有原因', () => {
+    renderShell()
+    expect(screen.getAllByTestId('rdlens-target-source-status').length).toBeGreaterThan(0)
+    const pendingCheckbox = screen.getByTestId('rdlens-target-source-select-src_pending')
+    expect(pendingCheckbox).toBeDisabled()
+    expect(pendingCheckbox).toHaveAttribute('title', 'research.target.sources.notSelectable')
+    const failedCheckbox = screen.getByTestId('rdlens-target-source-select-src_failed')
+    expect(failedCheckbox).toBeDisabled()
+  })
+
+  it('勾选资料切换到 selected 范围（唯一范围权威仍是既有 provider）', () => {
+    renderShell()
+    // 默认 all
+    expect(screen.getByTestId('rdlens-target-scope-all')).toHaveAttribute('data-state', 'checked')
+    fireEvent.click(screen.getByTestId('rdlens-target-source-select-src_ready'))
+    expect(screen.getByTestId('rdlens-target-scope-selected')).toHaveAttribute(
+      'data-state',
+      'checked',
+    )
+    // 底部范围摘要反映既有 scope 语义
+    expect(screen.getByTestId('rdlens-target-scope-summary')).toHaveTextContent(
+      'research.scopeSummary.sourceMany',
+    )
+  })
+
+  it('打开资料预览（UI-17）显示版本/状态，原文阅读明确 W2 不可用', async () => {
+    renderShell()
+    fireEvent.click(screen.getAllByTestId('rdlens-target-source-open')[0])
+    await waitFor(() =>
+      expect(screen.getByTestId('rdlens-target-right-pane')).toHaveAttribute('data-pane-kind', 'source'),
+    )
+    expect(screen.getByTestId('rdlens-target-source-preview-name')).toHaveTextContent('doc_ready')
+    expect(screen.getByTestId('rdlens-target-source-open-original')).toBeDisabled()
+  })
+})

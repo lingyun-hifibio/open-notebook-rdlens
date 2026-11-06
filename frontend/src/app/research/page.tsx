@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ResearchWorkspaceShell } from '@/lib/embedded/shell'
 import { isEmbeddedMode } from '@/lib/embedded/config'
+import { currentLegacyShellRequest } from '@/lib/embedded/page-mode'
+import { TargetShell } from '@/components/research/target/TargetShell'
 import { getResearchProjectId } from '@/lib/research/project'
 import { useIsDesktop } from '@/lib/hooks/use-media-query'
 import { ResearchJobsProvider } from '@/components/research/ResearchJobsProvider'
@@ -68,9 +70,16 @@ import type { ResearchPendingSelection } from '@/lib/research/types'
  * 位于 Shell 内部（`src/lib/embedded/shell.tsx`），页面自身在其之上。
  * 因此导航 hooks 全部放进 `ResearchPageContent`（Shell children 内），
  * 否则 `useResearchSessionRuntimeOptional()` 恒为 null（Codex review B1）。
+ *
+ * W1 #1104（UI 规格 v1 §5.10/BEH-13）：`/research` **默认渲染目标壳**
+ * （`TargetShell`）；旧壳只在 iframe URL 带 `legacy=1` 时渲染（D-UI-05：
+ * 过渡/回归入口，不新增能力）。`legacy=1` 是 client-only 判定：shell 在
+ * 认证前只渲染加载态，服务端/水合首帧不渲染任一壳，因此不产生水合差异。
  */
 export default function ResearchPage() {
   const router = useRouter()
+  // client-only：SSR/首帧（无 window）按目标壳处理，认证后按 URL 决定。
+  const [legacyShell] = useState(() => currentLegacyShellRequest())
 
   useEffect(() => {
     if (!isEmbeddedMode()) {
@@ -87,10 +96,16 @@ export default function ResearchPage() {
     // ResearchLayout min-h-0 flex-1——不产生双滚动。
     <div className="flex h-screen flex-col">
       <ResearchWorkspaceShell>
-        {/* Jobs 控制器唯一实例化点：Header Activity + 主区 Chat coverage/
-            Compare 共享同一 3s 轮询与 localStorage 登记 */}
+        {/* Jobs 控制器唯一实例化点：顶栏任务计数/右栏任务历史 + 老壳
+            Header Activity/主区 Chat coverage/Compare 共享同一 3s 轮询 */}
         <ResearchJobsProvider>
-          <ResearchPageContent />
+          <div
+            className="flex h-full min-h-0 flex-col"
+            data-testid="research-page-mode"
+            data-mode={legacyShell ? 'legacy' : 'target'}
+          >
+            {legacyShell ? <ResearchPageContent /> : <TargetShell />}
+          </div>
         </ResearchJobsProvider>
       </ResearchWorkspaceShell>
     </div>

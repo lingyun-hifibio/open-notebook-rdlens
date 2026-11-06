@@ -67,6 +67,23 @@ export interface ResearchDraftComposerProps {
    * 加载完成后把焦点还给 textarea；其它情况不抢焦点。
    */
   readonly focusRequestToken?: number
+  /**
+   * W1 #1104（目标壳 UI-10）：提交快捷键。
+   * - `enter`（默认，旧壳行为不变）：Enter 发送、Shift+Enter 换行；
+   * - `mod-enter`：Ctrl/Cmd+Enter 发送、Enter 换行（目标壳规格 §5.5）。
+   */
+  readonly submitShortcut?: 'enter' | 'mod-enter'
+  /** W1 #1104：textarea 最小高度（px，默认 36；目标壳 52，§3.4）。 */
+  readonly minHeightPx?: number
+  /** W1 #1104：textarea 自动增高上限（px，默认 160；目标壳 170，§3.4）。 */
+  readonly maxHeightPx?: number
+  /**
+   * W1 #1104：composer 下方附加区（目标壳次级操作行：证据搜索/比较/深入研究）。
+   * 渲染在 gate 原因之前；不改变任何发送门禁。
+   */
+  readonly footerSlot?: React.ReactNode
+  /** W1 #1104：textarea 的额外 `aria-describedby`（如快捷键说明）。 */
+  readonly describedById?: string
 }
 
 /** 门禁原因 → 既有 i18n 键（不使用 `defaultValue` 兜底）。 */
@@ -227,6 +244,11 @@ export function ResearchDraftComposer({
   selectionChip = null,
   localDraftMode = false,
   focusRequestToken,
+  submitShortcut = 'enter',
+  minHeightPx = 36,
+  maxHeightPx = TEXTAREA_MAX_HEIGHT_PX,
+  footerSlot,
+  describedById,
 }: ResearchDraftComposerProps) {
   const { t } = useTranslation()
   const [localDraft, setLocalDraft] = useState('')
@@ -242,10 +264,10 @@ export function ResearchDraftComposer({
     const textarea = textareaRef.current
     if (textarea === null) return
     textarea.style.height = 'auto'
-    const next = Math.min(textarea.scrollHeight, TEXTAREA_MAX_HEIGHT_PX)
+    const next = Math.min(textarea.scrollHeight, maxHeightPx)
     textarea.style.height = `${next}px`
-    textarea.style.overflowY = textarea.scrollHeight > TEXTAREA_MAX_HEIGHT_PX ? 'auto' : 'hidden'
-  }, [value])
+    textarea.style.overflowY = textarea.scrollHeight > maxHeightPx ? 'auto' : 'hidden'
+  }, [value, maxHeightPx])
 
   // §8.2：切换会话后把焦点还给输入框（仅父层明确请求时；不抢锚点恢复/其它焦点）。
   const lastFocusRequestRef = useRef<number | undefined>(undefined)
@@ -286,7 +308,14 @@ export function ResearchDraftComposer({
   }
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>): void => {
-    if (event.key !== 'Enter' || event.shiftKey) return
+    if (event.key !== 'Enter') return
+    // W1 #1104（UI-10）：目标壳用 Ctrl/Cmd+Enter 提交、Enter 换行；
+    // 旧壳默认 Enter 提交、Shift+Enter 换行（默认行为保持不变）。
+    const isSubmit =
+      submitShortcut === 'mod-enter'
+        ? (event.ctrlKey || event.metaKey) && !event.shiftKey
+        : !event.shiftKey
+    if (!isSubmit) return
     if (
       composingRef.current ||
       event.nativeEvent.isComposing ||
@@ -379,10 +408,16 @@ export function ResearchDraftComposer({
             ref={textareaRef}
             value={value}
             rows={1}
-            className="min-h-[36px] w-full min-w-0 resize-none rounded-md border bg-background px-3 py-2 text-sm"
+            style={{ minHeight: `${minHeightPx}px` }}
+            className="w-full min-w-0 resize-none rounded-md border bg-background px-3 py-2 text-sm"
             placeholder={t('research.chatPlaceholder')}
             aria-label={t('research.editor.composerLabel')}
-            aria-describedby={gateReasonText !== null ? 'research-draft-gate-hint' : undefined}
+            aria-describedby={
+              [
+                ...(describedById === undefined ? [] : [describedById]),
+                ...(gateReasonText !== null ? ['research-draft-gate-hint'] : []),
+              ].join(' ') || undefined
+            }
             onChange={event => handleChange(event.target.value)}
             onKeyDown={handleKeyDown}
             onCompositionStart={() => {
@@ -408,6 +443,8 @@ export function ResearchDraftComposer({
           {connectionBusy ? t('research.chatStreaming') : t('research.chatSend')}
         </Button>
       </div>
+
+      {footerSlot}
 
       {gateReasonText !== null && (
         <p
