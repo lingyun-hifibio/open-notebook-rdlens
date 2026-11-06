@@ -338,6 +338,7 @@ export function ResearchChatPanel({
   onSelectionJump,
   onSelectionConsumed,
   hideComposer = false,
+  suppressColdStartLookup = false,
   showCoverageScopeSelector = true,
   showSessionScopeBar = true,
   showSessionHeader = true,
@@ -484,6 +485,15 @@ export function ResearchChatPanel({
    * composer（UI-10），面板只承担消息内容面。默认 false：旧壳行为不变。
    */
   hideComposer?: boolean
+  /**
+   * W1 #1104（真实 harness 缺陷修复）：目标壳 composer 由 shell 拥有
+   * （`hideComposer`），面板收不到自身 composer 的 `markDraftUserAuthored`
+   * 事件，导致用户输入被误判为"冷启动外部草稿"并触发 submissions 查回，
+   * 生成 `external_lookup` turn（state=unknown）→ 真实发送被
+   * `session_busy` 阻断。true 时禁用该冷启动查回（目标壳 W1 不做外部提交
+   * 恢复；旧壳默认 false 行为不变）。
+   */
+  suppressColdStartLookup?: boolean
   /**
    * W1 #1104：隐藏面板内 Coverage 范围选择器。目标壳范围权威只在左栏
    * （D-UI-06/D-UI-07），面板不再提供第二套范围控件。默认 true 保持旧壳。
@@ -799,6 +809,8 @@ export function ResearchChatPanel({
   }
   useEffect(() => {
     if (!sessionWired || refreshMarkerLookups === undefined) return
+    // 目标壳：外部 composer 拥有的草稿不参与冷启动查回（见 prop 注释）。
+    if (suppressColdStartLookup) return
     const key = currentSessionIdentity
     if (key === null) return
     // 只处理“当前会话自己的” editor 快照：切换瞬间可能仍拿到上一会话的快照，
@@ -845,6 +857,7 @@ export function ResearchChatPanel({
     editorSnapshot?.loading,
     editorSnapshotIdentity,
     currentSessionIdentity,
+    suppressColdStartLookup,
   ])
   const surfaceActiveRef = useRef(surfaceActive)
   surfaceActiveRef.current = surfaceActive

@@ -179,12 +179,14 @@ vi.mock('@/components/research/ResearchChatPanel', () => ({
     showSessionScopeBar?: boolean
     showCoverageScopeSelector?: boolean
     showSessionHeader?: boolean
+    suppressColdStartLookup?: boolean
   }) => (
     <div
       data-testid="chat-panel"
       data-hide-composer={props.hideComposer === true ? 'true' : undefined}
       data-show-scope-bar={props.showSessionScopeBar === true ? 'true' : undefined}
       data-show-coverage={props.showCoverageScopeSelector === true ? 'true' : undefined}
+      data-suppress-cold-start={props.suppressColdStartLookup === true ? 'true' : undefined}
     >
       <button
         type="button"
@@ -933,5 +935,48 @@ describe('审查 B 附条件修复（I18N/数量/说明/搜索档位/内边距�
     fireEvent.click(screen.getByTestId('rdlens-target-tasks-trigger'))
     const body = await screen.findByTestId('rdlens-target-right-pane-body')
     expect(body.className).toContain('p-[6px]')
+  })
+})
+
+describe('第 2 轮重审修复（N3 notes-only / N4 正文对齐）', () => {
+  it('N3：notes-only 项目（sources 为空、notes 非空）仍渲染笔记区并可选择', () => {
+    const hoisted = fixtureRows as { sources: unknown[] }
+    const original = hoisted.sources
+    hoisted.sources = []
+    try {
+      renderShell()
+      expect(screen.getByTestId('rdlens-target-notes-title')).toBeInTheDocument()
+      const checkbox = screen.getByTestId('rdlens-target-note-select-note_1')
+      fireEvent.click(checkbox)
+      expect(screen.getByTestId('scope-probe-mode')).toHaveTextContent('selected')
+      expect(screen.getByTestId('scope-probe-note-count')).toHaveTextContent('1')
+      expect(screen.getByTestId('rdlens-target-scope-summary')).toHaveTextContent(
+        'research.scopeSummary.noteOne',
+      )
+    } finally {
+      hoisted.sources = original
+    }
+  })
+
+  it('N4：正文列与 header/composer 使用同一 clamp padding + 850 内宽', () => {
+    renderShell()
+    const padded = screen.getByTestId('rdlens-target-message-area-padded')
+    expect(padded.getAttribute('style') ?? '').toContain('clamp(28px, 5vw, 84px)')
+    const inner = screen.getByTestId('rdlens-target-message-area')
+    expect(inner.getAttribute('style') ?? '').toContain('850px')
+    // header 的内宽容器同样是 850（左缘与正文一致）
+    const header = screen.getByTestId('rdlens-target-conversation-header')
+    const innerHeader = header.firstElementChild as HTMLElement | null
+    expect(innerHeader?.getAttribute('style') ?? '').toContain('850px')
+  })
+})
+
+describe('真实 harness 发送缺陷回归（冷启动查回阻断发送）', () => {
+  it('目标壳把 suppressColdStartLookup 传给消息面（外部 composer 草稿不查回）', () => {
+    renderShell()
+    expect(screen.getByTestId('chat-panel')).toHaveAttribute(
+      'data-suppress-cold-start',
+      'true',
+    )
   })
 })

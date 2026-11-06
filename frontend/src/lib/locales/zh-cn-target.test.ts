@@ -75,6 +75,10 @@ describe('zh-CN 目标壳文案（I18N-01）', () => {
       'research.sources.scopeSelect',
       'research.sources.staleSelectionWarning',
       'research.searchContext.autoAdjusted',
+      'research.searchErrorBudgetExceeded',
+      'research.searchErrorPreviewChecksUnavailable',
+      'research.searchErrorRecoveryExhausted',
+      'research.resultProvider',
     ]
     const englishOnly = reused.filter((key) => {
       const value = get(zhCN, key)

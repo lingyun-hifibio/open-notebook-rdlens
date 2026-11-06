@@ -450,8 +450,15 @@ export function useTargetConversation(): TargetConversationState {
           const freshScope: ResearchScopeSnapshot =
             fresh.singleSourceId !== null
               ? {
+                  // N1：single 叠加在 selected 基础范围上时，frozenScope 保留
+                  // provider 的 base sourceIds（deriveScopeSnapshot 同形），
+                  // freshScope 也必须保留同一组 base IDs 才能通过一致性复核
+                  // （此前强制 [] 导致「先选资料再只问此来源」永远 sendError）。
                   mode: 'single',
-                  sourceIds: [],
+                  sourceIds:
+                    fresh.baseScope?.mode === 'selected'
+                      ? [...fresh.baseScope.sourceIds]
+                      : [],
                   noteIds: [...fresh.noteIds],
                   singleSourceId: fresh.singleSourceId,
                 }

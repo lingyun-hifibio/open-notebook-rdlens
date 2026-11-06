@@ -112,6 +112,8 @@ export function TargetConversation({
         }}
         data-testid="rdlens-target-conversation-header"
       >
+        {/* N4：标题区与正文列使用同一内宽容器（850 居中），左缘一致 */}
+        <div style={{ maxWidth: '850px', width: '100%', marginInline: 'auto' }}>
         <div className="flex min-w-0 items-start justify-between gap-3">
           <div className="min-w-0">
             <p
@@ -217,15 +219,21 @@ export function TargetConversation({
             </Button>
           </div>
         )}
+        </div>
       </div>
 
       {/* 消息内容面：复用既有 ChatPanel；关闭其会话标题/范围条/composer，
           避免重复范围权威与重复标题（目标壳 composer 在中央列底部）。 */}
       <div
         className="min-h-0 flex-1"
-        data-testid="rdlens-target-message-area"
-        style={{ maxWidth: '850px', width: '100%', marginInline: 'auto' }}
+        style={{ paddingInline: CENTER_INLINE_PADDING }}
+        data-testid="rdlens-target-message-area-padded"
       >
+        <div
+          className="h-full min-h-0"
+          data-testid="rdlens-target-message-area"
+          style={{ maxWidth: '850px', width: '100%', marginInline: 'auto' }}
+        >
         <ResearchChatPanel
           turns={conversation.turns}
           isStreaming={conversation.isStreaming}
@@ -253,10 +261,14 @@ export function TargetConversation({
           onDraftChange={(text) => conversation.editor.setDraftText(text)}
           onRetrySave={() => void conversation.editor.retrySave()}
           hideComposer
+          // 目标壳 composer 由 shell 拥有：面板不得把用户输入当作“冷启动
+          // 外部草稿”去查回 submissions（真实 harness 缺陷，见 prop 注释）。
+          suppressColdStartLookup
           showCoverageScopeSelector={false}
           showSessionScopeBar={false}
           showSessionHeader={false}
         />
+        </div>
       </div>
 
       <div

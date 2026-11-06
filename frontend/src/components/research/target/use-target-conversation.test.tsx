@@ -483,6 +483,36 @@ describe('useTargetConversation · F1/F12 selected/single 真实发送', () => {
     expect((payload.scope as Record<string, unknown>).singleSourceId).toBe('src_2')
   })
 
+  it('N1：selected 基础上 pin 单篇 → 真实派发成功（不再 scopeChanged）', async () => {
+    displayFixture.display = { surface: 'global', ref: SESSION_REF }
+    const { result } = renderHook(useTargetHarness, { wrapper })
+    await waitFor(() => expect(result.current.conversation.sessionWired).toBe(true))
+
+    act(() => {
+      result.current.scope.toggleSource('src_1')
+      result.current.scope.toggleSource('src_2')
+    })
+    await waitFor(() =>
+      expect(editorFixture.snapshot.baseScope.sourceIds).toEqual(['src_1', 'src_2']),
+    )
+    act(() => {
+      expect(result.current.conversation.pinSingleSource('src_2')).toBe(true)
+    })
+    await waitFor(() => expect(editorFixture.snapshot.singleSourceId).toBe('src_2'))
+
+    let sent = false
+    await act(async () => {
+      sent = await result.current.conversation.send('Question')
+    })
+    expect(sent).toBe(true)
+    expect(result.current.conversation.sendError).toBeNull()
+    expect(controllerFixture.send).toHaveBeenCalledTimes(1)
+    const payload = controllerFixture.send.mock.calls[0][0] as Record<string, unknown>
+    expect((payload.scope as Record<string, unknown>).mode).toBe('single')
+    expect((payload.scope as Record<string, unknown>).singleSourceId).toBe('src_2')
+    expect(payload.sourceIds).toEqual(['src_1', 'src_2'])
+  })
+
   it('F12：capabilities 缺失时 submissionReady=false（仅 === true 放行）', async () => {
     displayFixture.display = { surface: 'global', ref: SESSION_REF }
     runtimeFixture.snapshot.capabilities = null

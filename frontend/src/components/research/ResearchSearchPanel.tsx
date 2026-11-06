@@ -539,9 +539,11 @@ export function ResearchSearchPanel({
     if (!gate.canSubmit) {
       setError({
         code: gate.blockedReason,
-        message: gate.blockedReason === 'budget_exceeded'
-          ? 'Preview budget exceeded for the selected path — narrow or split the task.'
-          : 'Required preview checks are unavailable — retry after they complete.',
+        message: t(
+          gate.blockedReason === 'budget_exceeded'
+            ? 'research.searchErrorBudgetExceeded'
+            : 'research.searchErrorPreviewChecksUnavailable',
+        ),
       })
       return
     }
@@ -552,7 +554,7 @@ export function ResearchSearchPanel({
     if ('blocked' in prepared) {
       setError({
         code: 'key_retry_exhausted',
-        message: 'Recovery window for the previous attempt is exhausted; review the pending result before retrying.',
+        message: t('research.searchErrorRecoveryExhausted'),
       })
       return
     }
@@ -757,7 +759,7 @@ export function ResearchSearchPanel({
               )}
               {result.provider_id && (
                 <Badge variant="outline" data-testid="search-provider">
-                  provider: {result.provider_id}
+                  {t('research.resultProvider')}: {result.provider_id}
                 </Badge>
               )}
               {result.context_level && (

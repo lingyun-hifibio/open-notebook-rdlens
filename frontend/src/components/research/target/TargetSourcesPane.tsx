@@ -403,7 +403,7 @@ export function TargetSourcesPane({
         {/* 笔记区：UI-04「选用笔记或草稿继续讨论」——入口标题/提示/
             列表 + 复选 + 空态；写入同一 Scope provider，不新建范围权威（F10）。
             草稿（成果编辑形态）属 W3，PR 欠项登记。 */}
-        {!notesQuery.isLoading && !notesQuery.isError && items.length > 0 && (
+        {!notesQuery.isLoading && !notesQuery.isError && (items.length > 0 || notes.length > 0) && (
           <section className="mt-3 min-w-0" aria-label={t('research.target.sources.notesTitle')}>
             <h3
               className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wide"
