@@ -8,14 +8,14 @@
 - **ticket**：[#1104](https://github.com/HiFiBiO-Therapeutics/RDLens/issues/1104)（W1 目标两栏骨架与按需右栏）
 - **PR**：RDLens #1118（host，draft）；fork `agent/wave-one-shell-bddcfc523569`
 - **规格依据**：`dev_docs/设计方案/Research/Research_UI规格_v1_20261106.md` §2–§9（1024×768 / 1440×900、light/dark token、zh-CN/en-US、Before/After 证据规则）；`Research_对齐实施计划_v2_20261106.md` §2 W1、§3（两栏骨架 + 按需右栏）
-- **采集时间**：2026-11-06T21:04:03.229Z
+- **采集时间**：2026-11-06T21:35:02.219Z
 
 ## 1. 结论摘要
 
 | 项 | 结果 |
 |-|-|
 | Before（fork main + host main）| 31 张：**19 PASS / 0 FAIL / 12 NOT_APPLICABLE / 0 NOT RUN** |
-| After（fork 目标壳 + host 新页头）| 77 场景 / 78 PNG（另有 1 张 single 范围恢复辅助图）：**77 PASS / 0 FAIL / 0 NOT_APPLICABLE / 0 NOT RUN** |
+| After（fork 目标壳 + host 新页头）| 78 场景 / 79 PNG：**78 PASS / 0 FAIL / 0 NOT_APPLICABLE / 0 NOT RUN** |
 | 键盘走查（After）| **PASS**（11 项，Tab 序/Esc 回焦/skip link/焦点环/资料预览触发回焦/空 selected「选择资料」聚焦/无横向滚动） |
 | 预跑发现 F1 | 空 selected UI 清空路径不可达 → 已报 Lead → fork-shell 修复 `476b1b2` → 正式 After 断言 PASS（发现记录见 `logs/prerun-F1-empty-selected-finding.md`） |
 | 宿主失败/验证页（补双语证据）| Before：失败页 en（workspace_status_unreachable，可重试）；After：失败页 en、失败页 zh、验证中 zh（`after_host_*`）。合成故障：mock 对 `/v1/research/workspace-status` 返回 503 或延迟 12s。 |
@@ -36,7 +36,7 @@
 |-|-|-|-|-|
 | Before fork | lingyun-hifibio/open-notebook-rdlens | `origin/main` | `2db87a8e2ccbed82acd321529f70a7b150c8d398` | `evidence/worktrees/fork-before (git worktree add --detach)` |
 | Before host | HiFiBiO-Therapeutics/RDLens | `origin/main` | `53e9b87b73fb12b60bf01d7fd217b9c7e57c657e` | `evidence/worktrees/host-before (git worktree add --detach)` |
-| After fork | lingyun-hifibio/open-notebook-rdlens | `agent/wave-one-shell-bddcfc523569` | `61b250760ee6ce23c55001bbdc7e191f2238f1a6` | `evidence/worktrees/fork-after (git worktree add --detach)` |
+| After fork | lingyun-hifibio/open-notebook-rdlens | `agent/wave-one-shell-bddcfc523569` | `b1638b4d55adbfea992e3960e1e888dc73446125` | `evidence/worktrees/fork-after (git worktree add --detach)` |
 | After host | HiFiBiO-Therapeutics/RDLens | `agent/wave-one-shell-bddcfc523569` | `c96643e837f04ee523ee8c2388d25de4c79a6edd` | `evidence/worktrees/host-after (git worktree add --detach)` |
 
 ## 3. 环境与依赖（Before/After 同一依赖集）
@@ -195,6 +195,9 @@ Playwright → host 页面（真实 RDLens Vite 应用，:5174/:5175）
 | `after_conversation_send_selected_1440x900_en-US.png` | conversation send with selected scope (Ctrl/Cmd+Enter dispatches chat, composer clears, message visible) | 1440x900 | en-US | light | PASS | ✓ draft autosaved before send (All changes saved); ✓ chat-send enabled before send (gate open) (disabled=false); ✓ chat dispatch occurred (POST /chat recorded) (posts=1); ✓ request carries selected scope (source_scope.mode=selected, src_1) ({"mode":"selecte… |
 | `after_conversation_send_selected_1440x900_zh-CN.png` | conversation send with selected scope (Ctrl/Cmd+Enter dispatches chat, composer clears, message visible) | 1440x900 | zh-CN | light | PASS | ✓ draft autosaved before send (所有更改已保存); ✓ chat-send enabled before send (gate open) (disabled=false); ✓ chat dispatch occurred (POST /chat recorded) (posts=1); ✓ request carries selected scope (source_scope.mode=selected, src_1) ({"mode":"selected","source… |
 | `after_conversation_send_single_1440x900_zh-CN.png` | conversation send limited to a single source (ask-this-source → chip → send → cancel restores scope) | 1440x900 | zh-CN | light | PASS | ✓ ask-this-source chip visible before send (仅问此来源：src_1 ×); ✓ draft autosaved before send (所有更改已保存); ✓ chat dispatch occurred (POST /chat recorded) (posts=1); ✓ request carries single-source scope ({"mode":"single","source_ids":[],"single_source_id":"src_1"… |
+| `after_conversation_send_single_over_selected_1440x900_zh-CN.png` | conversation send single-over-selected (selected src_1+src_2 → pin src_2 single → wire source_scope mutually exclusive) | 1440x900 | zh-CN | light | PASS | ✓ selected scope has two sources before pin (当前范围
+
+已选 2 份资料); ✓ single chip visible for src_2 (仅问此来源：src_2 ×); ✓ draft autosaved before send (所有更改已保存); ✓ chat-send enabled before send (gate open) (disabled=false); ✓ exactly one POST /chat dispatched (posts=… |
 | `after_scope_empty_search_blocked_1440x900_zh-CN.png` | empty selected scope — evidence search entry blocked with same reason, zero POST /search | 1440x900 | zh-CN | light | PASS | ✓ empty selected blocked block visible; ✓ evidence-search entry disabled under empty selected; ✓ blocked reason shown on secondary actions (same source as composer) (secondary=请至少选择一份资料后再就资料提问，或切回全部可用资料。 gate=请至少选择一份资料后再就资料提问，); ✓ zero POST /search dispatch… |
 | `after_no_model_composer_blocked_1440x900_en-US.png` | no available model — composer send disabled with visible reason, no clickable silent failure | 1440x900 | en-US | light | PASS | ✓ chat-send disabled under unavailable model; ✓ visible blocked reason (composer or model status) (gate=Create or open a conversation before asking a question.); ✓ no silent dispatch attempt (0 POST /chat|/search) (count=0); ✓ no horizontal page scroll |
 | `after_refresh_restore_before_1440x900_zh-CN.png` | refresh restore — state before page reload (active session + draft + selected scope) | 1440x900 | zh-CN | light | PASS | ✓ synthetic global session created (composer wired) (所有更改已保存); ✓ persisted synthetic message visible before reload (seeded detail) (rows=2); ✓ composer draft autosaved before reload (PUT editor-state settled) (所有更改已保存); ✓ local session display pointer persi… |
@@ -221,6 +224,7 @@ Playwright → host 页面（真实 RDLens Vite 应用，:5174/:5175）
 | `refresh_restore`（After 1440 zh） | 整页刷新恢复：合成会话 + 草稿 PUT → `page.reload()` → 本机 display 指针 + GET session/editor-state → 草稿/selected 范围恢复 |
 | `conversation_send_selected`（After 1440 en/zh） | selected 范围 + Ctrl/Cmd+Enter：POST /chat 派发、请求体 source_scope=selected(src_1)、composer 清稿、消息可见、无 send-error |
 | `conversation_send_single`（After 1440 zh） | 右栏资料预览「只问此来源」→ chip → 发送：请求体 source_scope=single(src_1)；取消 chip 恢复 all |
+| `conversation_send_single_over_selected`（After 1440 zh） | selected 勾选 src_1+src_2 → 右栏预览 pin src_2（single）→ 发送：wire `source_scope` 互斥（`source_ids=[]`、`single_source_id=src_2`、mode=single），1 次 POST /chat、200、清稿、消息可见、无 send-error |
 | `scope_empty_search_blocked`（After 1440 zh） | 空 selected：证据搜索入口 disabled + 同源阻断文案 + 0 次 POST /search |
 | `no_model_composer_blocked`（After 1440 en） | mock /models unavailable：chat-send disabled + 可见原因 + 0 次派发 |
 | `*_residual_*`（仅断言、无截图） | zh-CN 目标壳可见英文残留扫描（空 selected 阻断块；目标壳 PASS）；legacy 旧壳 zh 英文残留登记为既有双语欠项（非本 PR 验收对象） |
@@ -235,7 +239,7 @@ Playwright → host 页面（真实 RDLens Vite 应用，:5174/:5175）
 | KB-02 | 工作台内 Tab 顺序：skip link → 顶栏 → 左资料栏 → 对话 → composer（单调不倒退） | **PASS** | skip-link → topbar → topbar → topbar → sources → sources → sources → sources → sources → sources → sources → conversation → conversation → conversation → composer → composer → composer |
 | KB-03 | 五类焦点区域均可达（skip link / 顶栏 / 资料栏 / 对话 / composer） | **PASS** | skip-link, topbar, sources, conversation, composer |
 | KB-04 | skip link 指向 composer 且 Enter 后焦点进入 composer 区域 | **PASS** | href=#rdlens-target-composer focused=true / afterEnter=composer/rdlens-target-composer |
-| KB-05 | 焦点环可见（键盘聚焦控件 :focus-visible 且 ring/outline 非 none） | **PASS** | global-model-summary-trigger focusVisible=true shadow=rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.496422) 0px 0px  outline=2px |
+| KB-05 | 焦点环可见（键盘聚焦控件 :focus-visible 且 ring/outline 非 none） | **PASS** | global-model-summary-trigger focusVisible=true shadow=rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.496439) 0px 0px  outline=2px |
 | KB-06 | 右栏打开时焦点进入面板；Esc 关闭后焦点返回触发控件 | **PASS** | openFocus=right-pane/rdlens-target-right-pane-close closed=true closedFocus=rdlens-target-outcomes-trigger |
 | KB-07 | 1440 无横向页面滚动（默认两栏 + 右栏打开三栏） | **PASS** | default host=1440/1440 fork=1440/1440; open fork=1440/1440 |
 | KB-08 | 1024 无横向页面滚动（默认两栏 + 右栏替代左栏；中央列 ≥640px） | **PASS** | default fork=1024/1024; open fork=1024/1024 main=669 |
@@ -300,8 +304,8 @@ python3 $VE/harness/gen_readme.py
 - legacy 旧壳（legacy=1）在 zh-CN 下仍有既有英文残留（五 Tab/Results/Activity/范围控件等旧壳文案与既有双语欠项）；按 Lead 口径**旧壳不作为 #1104 目标壳双语验收对象**，残留清单已记录在 logs/capture-after-summary.json 的 after_legacy_old_shell_residual_* 检查中。
 - 开发态指示器：fork 以 `next dev` 运行，截图左下角的 Next.js 开发指示器（N 徽标）为开发态 UI，不属于产品界面；生产构建不出现，不作为视觉验收对象。
 - host 最终 head b7551f227 的审查修复（project trim/语言时序/a11y/测试）声明无视觉变化；本轮重采用于确认同场景视觉断言与键盘走查结论不变。
-- 最终 head 重跑：host c96643e8 / fork 61b2507；预跑 99c088e 上的发送 0 派发与 refresh 消息缺失已由 61b2507 修复（suppressColdStartLookup），最终场景全部 PASS；预跑 FAIL 记录保留在 logs/capture-after-run.log（99c088e 历史）与 logs/send-failure-diagnosis.md，仅作发现记录，不进入最终 manifest。
 - W1 目标壳不提供“冷启动提交恢复”能力（fork 61b2507 说明的欠项登记）：目标壳草稿由外部 composer 拥有，面板不做冷启动 submission 查回；旧壳保留该能力。本证据不将该能力计为 W1 验收项。
+- 最终 head 重跑：host c96643e8 / fork b1638b4；After 矩阵 + 新增 single-over-selected 场景全部 PASS；预跑 99c088e/61b2507 的发送 FAIL（冷启动查回、wire source_ids 非空）已分别在 61b2507/b1638b4 修复，历史 FAIL 仅保留 logs/ 作为发现记录。
 - **屏幕阅读器人工走查**（O-UI-04）不在本轮范围（NOT RUN）。
 - **dark 冒烟**仅 1440（默认/页头/右栏/资料/对话/legacy 全场景同 light，但未采 1024 dark）。
 - **真实网络/部署**：无真实 Gateway/DB/模型/外发；bootstrap token 未签名；本证据不构成 L2 验收，synthetic 不单独关闭 L2。
@@ -318,7 +322,7 @@ python3 $VE/harness/gen_readme.py
 - fork 证据目录（完整 Before/After）：https://raw.githubusercontent.com/lingyun-hifibio/open-notebook-rdlens/evidence/wave-one-shell-bddcfc523569/dev_docs/validation/issue1104
 - 同一份证据在 RDLens 私有证据分支 `evidence/wave-one-shell-bddcfc523569` 的 `dev_docs/validation/issue1104/` 另有完整版本（该仓库为 private，raw 需登录权限；fork 分支已复制全部 Before/After 图以便 fork PR 匿名渲染）。
 
-raw 清单（本地 `logs/`，113 行 = 4 文档 + 109 PNG）：`raw-urls-host.txt` / `blob-urls-host.txt`（RDLens private，blob?raw=true 形式）/ `raw-urls-fork.txt`（fork public，31 Before + 78 After）。
+raw 清单（本地 `logs/`，114 行 = 4 文档 + 110 PNG）：`raw-urls-host.txt` / `blob-urls-host.txt`（RDLens private，blob?raw=true 形式）/ `raw-urls-fork.txt`（fork public，31 Before + 79 After）。
 
 | 截图 | RDLens raw | fork raw |
 |-|-|-|
@@ -418,6 +422,7 @@ raw 清单（本地 `logs/`，113 行 = 4 文档 + 109 PNG）：`raw-urls-host.t
 | `after_conversation_send_selected_1440x900_en-US.png` | https://raw.githubusercontent.com/lingyun-hifibio/open-notebook-rdlens/evidence/wave-one-shell-bddcfc523569/dev_docs/validation/issue1104/screenshots/after_conversation_send_selected_1440x900_en-US.png | https://raw.githubusercontent.com/lingyun-hifibio/open-notebook-rdlens/evidence/wave-one-shell-bddcfc523569/dev_docs/validation/issue1104/screenshots/after_conversation_send_selected_1440x900_en-US.png |
 | `after_conversation_send_selected_1440x900_zh-CN.png` | https://raw.githubusercontent.com/lingyun-hifibio/open-notebook-rdlens/evidence/wave-one-shell-bddcfc523569/dev_docs/validation/issue1104/screenshots/after_conversation_send_selected_1440x900_zh-CN.png | https://raw.githubusercontent.com/lingyun-hifibio/open-notebook-rdlens/evidence/wave-one-shell-bddcfc523569/dev_docs/validation/issue1104/screenshots/after_conversation_send_selected_1440x900_zh-CN.png |
 | `after_conversation_send_single_1440x900_zh-CN.png` | https://raw.githubusercontent.com/lingyun-hifibio/open-notebook-rdlens/evidence/wave-one-shell-bddcfc523569/dev_docs/validation/issue1104/screenshots/after_conversation_send_single_1440x900_zh-CN.png | https://raw.githubusercontent.com/lingyun-hifibio/open-notebook-rdlens/evidence/wave-one-shell-bddcfc523569/dev_docs/validation/issue1104/screenshots/after_conversation_send_single_1440x900_zh-CN.png |
+| `after_conversation_send_single_over_selected_1440x900_zh-CN.png` | https://raw.githubusercontent.com/lingyun-hifibio/open-notebook-rdlens/evidence/wave-one-shell-bddcfc523569/dev_docs/validation/issue1104/screenshots/after_conversation_send_single_over_selected_1440x900_zh-CN.png | https://raw.githubusercontent.com/lingyun-hifibio/open-notebook-rdlens/evidence/wave-one-shell-bddcfc523569/dev_docs/validation/issue1104/screenshots/after_conversation_send_single_over_selected_1440x900_zh-CN.png |
 | `after_scope_empty_search_blocked_1440x900_zh-CN.png` | https://raw.githubusercontent.com/lingyun-hifibio/open-notebook-rdlens/evidence/wave-one-shell-bddcfc523569/dev_docs/validation/issue1104/screenshots/after_scope_empty_search_blocked_1440x900_zh-CN.png | https://raw.githubusercontent.com/lingyun-hifibio/open-notebook-rdlens/evidence/wave-one-shell-bddcfc523569/dev_docs/validation/issue1104/screenshots/after_scope_empty_search_blocked_1440x900_zh-CN.png |
 | `after_no_model_composer_blocked_1440x900_en-US.png` | https://raw.githubusercontent.com/lingyun-hifibio/open-notebook-rdlens/evidence/wave-one-shell-bddcfc523569/dev_docs/validation/issue1104/screenshots/after_no_model_composer_blocked_1440x900_en-US.png | https://raw.githubusercontent.com/lingyun-hifibio/open-notebook-rdlens/evidence/wave-one-shell-bddcfc523569/dev_docs/validation/issue1104/screenshots/after_no_model_composer_blocked_1440x900_en-US.png |
 | `after_refresh_restore_before_1440x900_zh-CN.png` | https://raw.githubusercontent.com/lingyun-hifibio/open-notebook-rdlens/evidence/wave-one-shell-bddcfc523569/dev_docs/validation/issue1104/screenshots/after_refresh_restore_before_1440x900_zh-CN.png | https://raw.githubusercontent.com/lingyun-hifibio/open-notebook-rdlens/evidence/wave-one-shell-bddcfc523569/dev_docs/validation/issue1104/screenshots/after_refresh_restore_before_1440x900_zh-CN.png |
@@ -431,7 +436,7 @@ raw 清单（本地 `logs/`，113 行 = 4 文档 + 109 PNG）：`raw-urls-host.t
 | 路径 | 内容 |
 |-|-|
 | `screenshots/before_*.png` | 31 张 Before（1024/1440 × en/zh + 1440 dark） |
-| `screenshots/after_*.png` | 77 张 After（5 上下文 × 12 场景 + 语言切换 + 新增 send/refresh/门禁场景 + 键盘走查截图） |
+| `screenshots/after_*.png` | 78 场景 / 79 张 After PNG（5 上下文 × 12 场景 + 语言切换 + 新增 send/refresh/门禁场景 + 键盘走查截图） |
 | `manifest.json` | 每场景 revision/视口/请求语言/实际语言/主题/断言/状态/sha256；含 keyboard_walkthrough 与 Before/After pairing |
 | `keyboard-walkthrough.md` / `.json` | Tab 序、Esc 回焦、skip link、焦点环、无横向滚动逐项 PASS/FAIL |
 | `logs/capture-before-summary.json` / `capture-after-summary.json` | 采集时实时断言 + 控制台 |
@@ -448,10 +453,11 @@ raw 清单（本地 `logs/`，113 行 = 4 文档 + 109 PNG）：`raw-urls-host.t
 - **2026-11-07（GO）**：fork-shell 提交 F1 修复 `476b1b2`（取消最后一份可用 + `rdlens-target-scope-blocked` 阻断块 + 提交门禁同源）；Before 在统一依赖集（lock `e802ac73…`，Next 16.3.2）下重采，结果不变（18 PASS / 12 N/A）。
 - **2026-11-07（正式 After 迭代）**：host 最终 `c96643e8`（theme 门控 + focus ring offset 3px）；fork 依次 `476b1b2`→`4a007a2`→`6c79421`（F1–F22）→`99c088e`→**`61b2507`**（最终，含 N1/N3/N4/N6 与真实 harness 发送阻断修复）。每轮 After 均在对应 head 重采。
 - **2026-11-07（预跑 99c088e 发现）**：`send_selected`/`send_single` 在真实渲染中出现 **POST /chat 0 次**（面板把外部 composer 草稿当冷启动外部草稿→`GET submissions/:token` 查回→external_lookup unknown turn→`session_busy`），UI 仅显示通用 sendFailed；`refresh_restore` 因发送失败缺“消息可见”。已写 `logs/send-failure-diagnosis.md` 并交 fork-shell；**61b2507 修复后同一 harness 复采 PASS**（send_selected 请求体 `source_scope.mode=selected&source_ids=[src_1]`；send_single `mode=single&single_source_id=src_1`；refresh detail=2 / editor=1，草稿/selected/消息恢复）。预跑 FAIL 日志保留在 `logs/` 作为发现记录，最终 manifest 只含最终 head 的场景结果。
+- **2026-11-07（最终 head b1638b4）**：第 3 轮 delta 终验发现 single-over-selected wire `source_scope.source_ids` 非空（违反 §5.3 互斥 schema）；fork-shell 修复（`normalizeSelectionForWire` + wire 防御层）后新增场景 `after_conversation_send_single_over_selected_1440x900_zh-CN`：selected(2)→pin src_2→发送，POST /chat 1 次 200，body `source_scope={"mode":"single","source_ids":[],"single_source_id":"src_2"}`，清稿、消息可见、无 send-error/marker 失败。
 - **2026-11-07（最终场景扩充）**：After 新增 6 类断言场景（send_selected ×2、send_single、empty_selected_search_blocked、no_model_composer_blocked、refresh_restore）与键盘 KB-10（资料预览触发右栏 + Esc 回焦）/KB-11（空 selected「选择资料」聚焦首个可用 checkbox）；键盘最终 11/11 PASS。
 - **基线说明**：fork main 既有 25 个失败（NotesPanel / SourceListPanel 等）为既有基线，与本次产品改动无关，不纳入本证据验收。
 
 ---
 
-_生成：2026-11-07 05:04 CST · [synthetic] · 非 L2 部署验收_
+_生成：2026-11-07 05:35 CST · [synthetic] · 非 L2 部署验收_
 

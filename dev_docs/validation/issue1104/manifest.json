@@ -1,7 +1,7 @@
 {
   "ticket": "#1104",
   "title": "W1 目标两栏骨架与按需右栏 — Before/After 视觉证据（[synthetic] 网络）",
-  "generated_at": "2026-11-06T21:04:03.229Z",
+  "generated_at": "2026-11-06T21:35:02.219Z",
   "evidence_level": {
     "kind": "synthetic-network real-app rendering",
     "statement": "真实应用渲染（RDLens 宿主 Vite 应用 + fork Next.js 嵌入式工作台）+ 本地合成 API；无真实后端/数据库/模型/凭据/私有数据。synthetic 证据只能作为 smoke，不单独关闭 L2；L2（真实 host + DB + 部署）仍待部署验收（UI 规格 v1 §9.2）。",
@@ -50,10 +50,10 @@
       "fork": {
         "repo": "lingyun-hifibio/open-notebook-rdlens",
         "ref": "agent/wave-one-shell-bddcfc523569",
-        "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-        "short": "61b2507",
+        "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+        "short": "b1638b4",
         "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-        "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+        "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
       },
       "host": {
         "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -98,8 +98,8 @@
       "legacy 旧壳（legacy=1）在 zh-CN 下仍有既有英文残留（五 Tab/Results/Activity/范围控件等旧壳文案与既有双语欠项）；按 Lead 口径**旧壳不作为 #1104 目标壳双语验收对象**，残留清单已记录在 logs/capture-after-summary.json 的 after_legacy_old_shell_residual_* 检查中。",
       "开发态指示器：fork 以 `next dev` 运行，截图左下角的 Next.js 开发指示器（N 徽标）为开发态 UI，不属于产品界面；生产构建不出现，不作为视觉验收对象。",
       "host 最终 head b7551f227 的审查修复（project trim/语言时序/a11y/测试）声明无视觉变化；本轮重采用于确认同场景视觉断言与键盘走查结论不变。",
-      "最终 head 重跑：host c96643e8 / fork 61b2507；预跑 99c088e 上的发送 0 派发与 refresh 消息缺失已由 61b2507 修复（suppressColdStartLookup），最终场景全部 PASS；预跑 FAIL 记录保留在 logs/capture-after-run.log（99c088e 历史）与 logs/send-failure-diagnosis.md，仅作发现记录，不进入最终 manifest。",
-      "W1 目标壳不提供“冷启动提交恢复”能力（fork 61b2507 说明的欠项登记）：目标壳草稿由外部 composer 拥有，面板不做冷启动 submission 查回；旧壳保留该能力。本证据不将该能力计为 W1 验收项。"
+      "W1 目标壳不提供“冷启动提交恢复”能力（fork 61b2507 说明的欠项登记）：目标壳草稿由外部 composer 拥有，面板不做冷启动 submission 查回；旧壳保留该能力。本证据不将该能力计为 W1 验收项。",
+      "最终 head 重跑：host c96643e8 / fork b1638b4；After 矩阵 + 新增 single-over-selected 场景全部 PASS；预跑 99c088e/61b2507 的发送 FAIL（冷启动查回、wire source_ids 非空）已分别在 61b2507/b1638b4 修复，历史 FAIL 仅保留 logs/ 作为发现记录。"
     ]
   },
   "dependencies": {
@@ -119,8 +119,8 @@
     }
   },
   "totals": {
-    "screenshots": 108,
-    "pass": 96,
+    "screenshots": 109,
+    "pass": 97,
     "fail": 0,
     "not_applicable": 12,
     "not_run": 0
@@ -1726,7 +1726,7 @@
       "phase": "after",
       "scene": "target shell default two-column (host header + topbar + sources + conversation + composer)",
       "screenshot": "after_default_two_column_1440x900_en-US.png",
-      "sha256": "bccdca81e3415d4097a6efa156ada760ac89842fffdbe225146a88e4f9a70698",
+      "sha256": "4d602cf74875f11a11106eac9db246816508587d2d79ddbbd618488589401e9c",
       "viewport": "1440x900",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -1809,10 +1809,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -1874,10 +1874,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -1949,10 +1949,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2009,10 +2009,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2064,10 +2064,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2119,10 +2119,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2189,10 +2189,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2234,10 +2234,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2294,10 +2294,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2354,10 +2354,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2381,7 +2381,7 @@
       "phase": "after",
       "scene": "legacy=1 old shell via host header secondary entry (D-UI-05)",
       "screenshot": "after_legacy_old_shell_1440x900_en-US.png",
-      "sha256": "2159ce72bbb09933dc207985967c09e26f7ff8227e39ed059aaa4d1cecfcc171",
+      "sha256": "ec95d038bcd41c2192122a44a428807fe020651b1f1b9d4025ece386113d8a03",
       "viewport": "1440x900",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -2414,10 +2414,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2441,7 +2441,7 @@
       "phase": "after",
       "scene": "return from legacy to target shell (D-UI-05)",
       "screenshot": "after_legacy_return_target_1440x900_en-US.png",
-      "sha256": "2cf06672bdd2e363c8142b9169bf4466bc6039d384844516328470ff45405b10",
+      "sha256": "e90dc02f417fd53ee3da7f21d2d584b1732d74f081cff7b728d5cc600d472545",
       "viewport": "1440x900",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -2474,10 +2474,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2501,7 +2501,7 @@
       "phase": "after",
       "scene": "target shell default two-column (host header + topbar + sources + conversation + composer)",
       "screenshot": "after_default_two_column_1440x900_zh-CN.png",
-      "sha256": "8241829e1e9be1bfb3a72997934394678713c2c86e3cee26ebca21e4195eb4a8",
+      "sha256": "014f5284f022087e5193940194ae4f4b1c18fa7d341d338eb00381dee75c58c6",
       "viewport": "1440x900",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -2589,10 +2589,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2654,10 +2654,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2729,10 +2729,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2789,10 +2789,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2844,10 +2844,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2899,10 +2899,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2969,10 +2969,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3014,10 +3014,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3059,10 +3059,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3119,10 +3119,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3179,10 +3179,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3239,10 +3239,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3284,10 +3284,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3311,7 +3311,7 @@
       "phase": "after",
       "scene": "return from legacy to target shell (D-UI-05)",
       "screenshot": "after_legacy_return_target_1440x900_zh-CN.png",
-      "sha256": "36ac6fef7c1671029f96261165b2c7b80603ad009fd881774ecb90fdc9fc4b16",
+      "sha256": "f30fb384b38b9c0f72f8488f440908932dc4fa54b17e4811b43f84b1fe7fdd85",
       "viewport": "1440x900",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -3344,10 +3344,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3371,7 +3371,7 @@
       "phase": "after",
       "scene": "target shell default two-column (host header + topbar + sources + conversation + composer)",
       "screenshot": "after_default_two_column_1024x768_en-US.png",
-      "sha256": "dd2a3415a80dd71bba911ffe9a12530fe6a9b4b00aa0d32f8d79f149bf2986c2",
+      "sha256": "0409e5c8208115354d0d989716edd3512eab38ee0a6b3b29dd8c95078295dc1a",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -3454,10 +3454,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3481,7 +3481,7 @@
       "phase": "after",
       "scene": "host Research page header (language switch + legacy entry, no project name)",
       "screenshot": "after_host_header_1024x768_en-US.png",
-      "sha256": "22027c95a54caf89bdd1f71863affaf2ce8250e9cee257010ba3babc1419cee9",
+      "sha256": "6e6156c5a0437b3281e48c32429c7b8740992ac1e0c243f77ddec98c4fe533dd",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -3519,10 +3519,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3546,7 +3546,7 @@
       "phase": "after",
       "scene": "side panel open (outcomes catalog) — 1440 three columns / 1024 right pane replaces left pane",
       "screenshot": "after_right_pane_open_1024x768_en-US.png",
-      "sha256": "664b41bf2b321364962bf05156eaf38e052ff0f5e8a966b880a120cfb07e801f",
+      "sha256": "9524f897a9105a91892611bd934adfc3574f35c70baeae6cb5296a8ca3fda754",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -3594,10 +3594,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3621,7 +3621,7 @@
       "phase": "after",
       "scene": "side panel closed with Esc — focus returns to trigger, left pane restored (compact)",
       "screenshot": "after_right_pane_closed_1024x768_en-US.png",
-      "sha256": "56a75b2fb523780adf8eb639d3b87be992ba7a7cd56d7e38d23e247d06c554a4",
+      "sha256": "af59fb7c7cf3ee6bf10a61eda262724e32dff0f16aa2b25e3a7099045238d7f3",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -3654,10 +3654,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3681,7 +3681,7 @@
       "phase": "after",
       "scene": "side panel open (task history)",
       "screenshot": "after_right_pane_tasks_1024x768_en-US.png",
-      "sha256": "c5a1a57a1ac00910688eb172373b9bd77a488bff8a2784928922784cf3370144",
+      "sha256": "05b936fcf310442cd0874463f61f846c7585cb74c786c7e63b5b0a66cc55c115",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -3709,10 +3709,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3736,7 +3736,7 @@
       "phase": "after",
       "scene": "sources pane — selected scope (one source checked)",
       "screenshot": "after_sources_selected_1024x768_en-US.png",
-      "sha256": "233978ec5b31d756f92e33315537aadf91c23733f7fafa2c4423e04949b05cf3",
+      "sha256": "c5850f758f87102ee851e35c78fd26978997bb5095e33f289ed36539293b5751",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -3764,10 +3764,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3791,7 +3791,7 @@
       "phase": "after",
       "scene": "sources pane — empty selected scope (blocked data query, BEH-03)",
       "screenshot": "after_sources_selected_empty_1024x768_en-US.png",
-      "sha256": "3c866cc4678d51868ba0136dcc55ec632db4cdd3e820899b9c75080847f7926c",
+      "sha256": "3813d60594a04904da7c17a0e8de8f2398b6fc6cf9590084b67024571f7d95d2",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -3834,10 +3834,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3861,7 +3861,7 @@
       "phase": "after",
       "scene": "sources pane — clear selection via UI (BEH-03 / §9.3-2 walkthrough path)",
       "screenshot": "after_sources_clear_via_ui_1024x768_en-US.png",
-      "sha256": "3c866cc4678d51868ba0136dcc55ec632db4cdd3e820899b9c75080847f7926c",
+      "sha256": "3813d60594a04904da7c17a0e8de8f2398b6fc6cf9590084b67024571f7d95d2",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -3879,10 +3879,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3906,7 +3906,7 @@
       "phase": "after",
       "scene": "sources pane — all available sources scope (default)",
       "screenshot": "after_sources_scope_all_1024x768_en-US.png",
-      "sha256": "c2db8a2cb4b31d17f09e6a779d9f48ac2bffabe76169f90e08af4b55a8c24e8f",
+      "sha256": "9886141a22840677d9fddf591aa19f08d70e97fbbd1d5efdd3a0ee18858d3e97",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -3939,10 +3939,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3966,7 +3966,7 @@
       "phase": "after",
       "scene": "empty conversation (target shell)",
       "screenshot": "after_empty_conversation_1024x768_en-US.png",
-      "sha256": "c2db8a2cb4b31d17f09e6a779d9f48ac2bffabe76169f90e08af4b55a8c24e8f",
+      "sha256": "9886141a22840677d9fddf591aa19f08d70e97fbbd1d5efdd3a0ee18858d3e97",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -3999,10 +3999,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4026,7 +4026,7 @@
       "phase": "after",
       "scene": "legacy=1 old shell via host header secondary entry (D-UI-05)",
       "screenshot": "after_legacy_old_shell_1024x768_en-US.png",
-      "sha256": "fd1b47809faca14f7b606a4a4c4fa4ca8042f07f604f5203226cb548dcba24e8",
+      "sha256": "2079ec9a0ba335e0da9448bde4b69ee42aea8e01d3886667ecb1eb1c4e323715",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -4059,10 +4059,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4086,7 +4086,7 @@
       "phase": "after",
       "scene": "return from legacy to target shell (D-UI-05)",
       "screenshot": "after_legacy_return_target_1024x768_en-US.png",
-      "sha256": "507f7ac3ea42a8fc56c25ce450231326c916a6717e12cf58c5f31bf509865f70",
+      "sha256": "3753cdc79737fd63d9635b308c171c594c1441194741d3a1baa6c1da33649749",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -4119,10 +4119,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4146,7 +4146,7 @@
       "phase": "after",
       "scene": "target shell default two-column (host header + topbar + sources + conversation + composer)",
       "screenshot": "after_default_two_column_1024x768_zh-CN.png",
-      "sha256": "ce7b6b2535b3026cd03670ea96634c90bd3bb798e4c1f939aa48f14b367cda51",
+      "sha256": "e494f41452e95d29fb154c3ecb78223ab11766fc49ee0886710fa9f91a859f42",
       "viewport": "1024x768",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -4234,10 +4234,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4299,10 +4299,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4374,10 +4374,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4434,10 +4434,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4489,10 +4489,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4544,10 +4544,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4614,10 +4614,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4659,10 +4659,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4704,10 +4704,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4764,10 +4764,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4824,10 +4824,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4851,7 +4851,7 @@
       "phase": "after",
       "scene": "legacy=1 old shell via host header secondary entry (D-UI-05)",
       "screenshot": "after_legacy_old_shell_1024x768_zh-CN.png",
-      "sha256": "a6b89ea42fa0e0c9ee054b0421676a44b550e423566fc16396ce38dace613529",
+      "sha256": "15efc1a12edc9d0276ece71950ea09891c5cabbe624acefc63380161b22084de",
       "viewport": "1024x768",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -4884,10 +4884,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4929,10 +4929,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4956,7 +4956,7 @@
       "phase": "after",
       "scene": "return from legacy to target shell (D-UI-05)",
       "screenshot": "after_legacy_return_target_1024x768_zh-CN.png",
-      "sha256": "e561f1f5af8c9d691fee1754f1cacb945d42b877c57538bf9a2f9a23722bdd4e",
+      "sha256": "992210ffee019617e64cbb5bea26f57f57c865fe366fc5a9048db0e7d165d450",
       "viewport": "1024x768",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -4989,10 +4989,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -5099,10 +5099,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -5164,10 +5164,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -5239,10 +5239,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -5299,10 +5299,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -5354,10 +5354,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -5409,10 +5409,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -5479,10 +5479,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -5524,10 +5524,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -5584,10 +5584,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -5644,10 +5644,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -5671,7 +5671,7 @@
       "phase": "after",
       "scene": "legacy=1 old shell via host header secondary entry (D-UI-05)",
       "screenshot": "after_legacy_old_shell_1440x900_en-US_dark.png",
-      "sha256": "46a4dafad57c97a18729724e70bc86edc0faadbb7f18bf03bc460bd56b76eb9c",
+      "sha256": "ed927a3cd1a6a092698db97ed3c6fd4822ddf5d65c87637ad154c3ccbf12d39b",
       "viewport": "1440x900",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -5704,10 +5704,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -5764,10 +5764,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -5791,7 +5791,7 @@
       "phase": "after",
       "scene": "language switch — en-US loaded (state to preserve: draft + selected scope)",
       "screenshot": "after_language_switch_before_1440x900_en-US.png",
-      "sha256": "d821f7fc746f83434a2973a9bdb4f29b31d0a838f21aee8b30b4b7aeaee15b05",
+      "sha256": "47d6e26d38411d0b964d1f7a241c2099954a613961321a8767b35f75007cbbaa",
       "viewport": "1440x900",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -5819,10 +5819,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -5884,10 +5884,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -5934,10 +5934,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -5955,7 +5955,7 @@
       "phase": "after",
       "scene": "conversation send with selected scope (Ctrl/Cmd+Enter dispatches chat, composer clears, message visible)",
       "screenshot": "after_conversation_send_selected_1440x900_en-US.png",
-      "sha256": "f71d14736add0d0ce19b1f4f8d70cfb344bf086ce07ca16849eb5e573f4b4b27",
+      "sha256": "90cac678a26bb536606f50ce9d8599a8c5db6c14efc6d5e854104aebd5017f19",
       "viewport": "1440x900",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -6008,10 +6008,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -6035,7 +6035,7 @@
       "phase": "after",
       "scene": "conversation send with selected scope (Ctrl/Cmd+Enter dispatches chat, composer clears, message visible)",
       "screenshot": "after_conversation_send_selected_1440x900_zh-CN.png",
-      "sha256": "61deeb268ae3719f70a6ce21a8295fcfe44ce7c2e4ee97b0a23f86616a13b4cf",
+      "sha256": "b62975b731fa648d352be07a7832646db24f0e4a3c3d3fa1075906540e12001c",
       "viewport": "1440x900",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -6088,10 +6088,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -6158,10 +6158,105 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
+        },
+        "host": {
+          "repo": "HiFiBiO-Therapeutics/RDLens",
+          "ref": "agent/wave-one-shell-bddcfc523569",
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
+        }
+      },
+      "pairs_with": [
+        "before_chat_1440x900_en-US",
+        "before_chat_1440x900_zh-CN",
+        "before_chat_1024x768_en-US",
+        "before_chat_1024x768_zh-CN",
+        "before_chat_1440x900_en-US_dark"
+      ]
+    },
+    {
+      "id": "after_conversation_send_single_over_selected_1440x900_zh-CN",
+      "phase": "after",
+      "scene": "conversation send single-over-selected (selected src_1+src_2 → pin src_2 single → wire source_scope mutually exclusive)",
+      "screenshot": "after_conversation_send_single_over_selected_1440x900_zh-CN.png",
+      "sha256": "241fc04e22e75917ac636e8c2b12ace21867d2cee78baf869923e7e333269655",
+      "viewport": "1440x900",
+      "language_requested": "zh-CN",
+      "ui_language_actual": "zh-CN",
+      "theme": "light",
+      "status": "PASS",
+      "checks": [
+        {
+          "label": "selected scope has two sources before pin",
+          "pass": true,
+          "detail": "当前范围\n\n已选 2 份资料"
+        },
+        {
+          "label": "single chip visible for src_2",
+          "pass": true,
+          "detail": "仅问此来源：src_2 ×"
+        },
+        {
+          "label": "draft autosaved before send",
+          "pass": true,
+          "detail": "所有更改已保存"
+        },
+        {
+          "label": "chat-send enabled before send (gate open)",
+          "pass": true,
+          "detail": "disabled=false"
+        },
+        {
+          "label": "exactly one POST /chat dispatched",
+          "pass": true,
+          "detail": "posts=1 status=200"
+        },
+        {
+          "label": "wire source_scope is mutually exclusive: source_ids=[] and single_source_id=src_2",
+          "pass": true,
+          "detail": "{\"mode\":\"single\",\"source_ids\":[],\"single_source_id\":\"src_2\"}"
+        },
+        {
+          "label": "HTTP 200 (no 422)",
+          "pass": true,
+          "detail": "status=200"
+        },
+        {
+          "label": "composer cleared after accepted receipt",
+          "pass": true,
+          "detail": null
+        },
+        {
+          "label": "message visible after send",
+          "pass": true,
+          "detail": "rows=1"
+        },
+        {
+          "label": "no send-error alert",
+          "pass": true,
+          "detail": "sendError=0 "
+        },
+        {
+          "label": "no marker write failure surfaced",
+          "pass": true,
+          "detail": "markerFailed=0"
+        }
+      ],
+      "note": "single-over-selected：provider selected 两份 + 单篇 pin；请求体应满足 §5.3 互斥 schema（source_ids=[]，single_source_id=src_2）。",
+      "revisions": {
+        "fork": {
+          "repo": "lingyun-hifibio/open-notebook-rdlens",
+          "ref": "agent/wave-one-shell-bddcfc523569",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -6185,7 +6280,7 @@
       "phase": "after",
       "scene": "empty selected scope — evidence search entry blocked with same reason, zero POST /search",
       "screenshot": "after_scope_empty_search_blocked_1440x900_zh-CN.png",
-      "sha256": "f46f0a40bafee287394cfb6a49f082a18bfecbed3bd3fc9091028da4f3c7f3e2",
+      "sha256": "ba0884dc4bc2c827971f69f0768f07d23f985f012703df814f01077cf1e1c0ca",
       "viewport": "1440x900",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -6223,10 +6318,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -6250,7 +6345,7 @@
       "phase": "after",
       "scene": "no available model — composer send disabled with visible reason, no clickable silent failure",
       "screenshot": "after_no_model_composer_blocked_1440x900_en-US.png",
-      "sha256": "708699cb5fc598e5a56c4ebf3d468436457fbc7f53e5151033161d271e99e1d0",
+      "sha256": "147bcefce109e4f73a59eef65f00569b9db21454cedf4c434a28b24273102a25",
       "viewport": "1440x900",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -6283,10 +6378,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -6310,7 +6405,7 @@
       "phase": "after",
       "scene": "refresh restore — state before page reload (active session + draft + selected scope)",
       "screenshot": "after_refresh_restore_before_1440x900_zh-CN.png",
-      "sha256": "1be6333ce58f9ea0638ef9a55c6dc0aec5da8bce469a34dc6ad1c3a39b647da0",
+      "sha256": "f7740e843866e8fcd19fbdfd6d90f32a85a92569709949c90a29466eb36c34eb",
       "viewport": "1440x900",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -6348,10 +6443,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -6369,7 +6464,7 @@
       "phase": "after",
       "scene": "refresh restore — page reload restored active session, composer draft and selected scope",
       "screenshot": "after_refresh_restore_1440x900_zh-CN.png",
-      "sha256": "13b0c759a846ff578d9e1af633ec3ca8595168094f753aeca4c9e4cff0023c22",
+      "sha256": "17f26d9cef0eb7c70b808a8b816a3aba8e901e39d6382c5bdd4774b08df9e039",
       "viewport": "1440x900",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -6412,10 +6507,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -6531,10 +6626,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -6597,10 +6692,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -6648,10 +6743,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
-          "short": "61b2507",
+          "commit": "b1638b4d55adbfea992e3960e1e888dc73446125",
+          "short": "b1638b4",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+          "note": "最终 fork head：61b2507 上 1 commit（6 files +148/−21）——N1 H1 wire 归一：normalizeSelectionForWire 使 single 派发时 wire `source_scope.source_ids=[]`、`note_ids=[]`、保留 singleSourceId；use-research-chat 防御层同样强制；真机验证 POST /chat 1 次 200、body 互斥、无 marker 失败/422、清稿、消息可见。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -6668,7 +6763,7 @@
   "keyboard_walkthrough": {
     "ticket": "#1104",
     "phase": "after",
-    "generated_at": "2026-11-06T21:03:57.719Z",
+    "generated_at": "2026-11-06T21:34:39.636Z",
     "host_base_url": "http://127.0.0.1:5175/",
     "evidence_level": "synthetic network real-app rendering — NOT an L2 deployment acceptance (synthetic does not close L2)",
     "browser": "Playwright-core 1.62.1 / Chromium 151 (chromium-1243), headless, deviceScaleFactor=1",
@@ -6702,7 +6797,7 @@
         "id": "KB-05",
         "label": "焦点环可见（键盘聚焦控件 :focus-visible 且 ring/outline 非 none）",
         "status": "PASS",
-        "details": "global-model-summary-trigger focusVisible=true shadow=rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.496422) 0px 0px  outline=2px"
+        "details": "global-model-summary-trigger focusVisible=true shadow=rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.496439) 0px 0px  outline=2px"
       },
       {
         "id": "KB-06",
@@ -6834,12 +6929,12 @@
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.496422) 0px 0px ",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.496439) 0px 0px ",
         "focusRing": {
           "focusVisible": true,
           "outlineWidth": "2px",
           "outlineStyle": "solid",
-          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.496422) 0px 0px "
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.496439) 0px 0px "
         }
       },
       {
@@ -6874,12 +6969,12 @@
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.48443) 0px 0px 0",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484326) 0px 0px ",
         "focusRing": {
           "focusVisible": true,
           "outlineWidth": "2px",
           "outlineStyle": "solid",
-          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.48443) 0px 0px 0"
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484326) 0px 0px "
         }
       },
       {
@@ -6934,12 +7029,12 @@
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484397) 0px 0px ",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.48443) 0px 0px 0",
         "focusRing": {
           "focusVisible": true,
           "outlineWidth": "2px",
           "outlineStyle": "solid",
-          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484397) 0px 0px "
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.48443) 0px 0px 0"
         }
       },
       {
@@ -6954,12 +7049,12 @@
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460384) 0px 0px ",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.46038) 0px 0px 0",
         "focusRing": {
           "focusVisible": true,
           "outlineWidth": "2px",
           "outlineStyle": "solid",
-          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460384) 0px 0px "
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.46038) 0px 0px 0"
         }
       },
       {
@@ -6994,12 +7089,12 @@
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484395) 0px 0px ",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.46038) 0px 0px 0",
         "focusRing": {
           "focusVisible": true,
           "outlineWidth": "2px",
           "outlineStyle": "solid",
-          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484395) 0px 0px "
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.46038) 0px 0px 0"
         }
       },
       {
@@ -7034,12 +7129,12 @@
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484391) 0px 0px ",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460403) 0px 0px ",
         "focusRing": {
           "focusVisible": true,
           "outlineWidth": "2px",
           "outlineStyle": "solid",
-          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484391) 0px 0px "
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460403) 0px 0px "
         }
       },
       {
@@ -7054,12 +7149,12 @@
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484405) 0px 0px ",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460392) 0px 0px ",
         "focusRing": {
           "focusVisible": true,
           "outlineWidth": "2px",
           "outlineStyle": "solid",
-          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484405) 0px 0px "
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460392) 0px 0px "
         }
       },
       {
@@ -7074,12 +7169,12 @@
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460392) 0px 0px ",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484391) 0px 0px ",
         "focusRing": {
           "focusVisible": true,
           "outlineWidth": "2px",
           "outlineStyle": "solid",
-          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460392) 0px 0px "
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484391) 0px 0px "
         }
       },
       {
@@ -7114,12 +7209,12 @@
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460392) 0px 0px ",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.46038) 0px 0px 0",
         "focusRing": {
           "focusVisible": true,
           "outlineWidth": "2px",
           "outlineStyle": "solid",
-          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460392) 0px 0px "
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.46038) 0px 0px 0"
         }
       },
       {
@@ -7193,7 +7288,7 @@
     "legacy 旧壳（legacy=1）在 zh-CN 下仍有既有英文残留（五 Tab/Results/Activity/范围控件等旧壳文案与既有双语欠项）；按 Lead 口径**旧壳不作为 #1104 目标壳双语验收对象**，残留清单已记录在 logs/capture-after-summary.json 的 after_legacy_old_shell_residual_* 检查中。",
     "开发态指示器：fork 以 `next dev` 运行，截图左下角的 Next.js 开发指示器（N 徽标）为开发态 UI，不属于产品界面；生产构建不出现，不作为视觉验收对象。",
     "host 最终 head b7551f227 的审查修复（project trim/语言时序/a11y/测试）声明无视觉变化；本轮重采用于确认同场景视觉断言与键盘走查结论不变。",
-    "最终 head 重跑：host c96643e8 / fork 61b2507；预跑 99c088e 上的发送 0 派发与 refresh 消息缺失已由 61b2507 修复（suppressColdStartLookup），最终场景全部 PASS；预跑 FAIL 记录保留在 logs/capture-after-run.log（99c088e 历史）与 logs/send-failure-diagnosis.md，仅作发现记录，不进入最终 manifest。",
-    "W1 目标壳不提供“冷启动提交恢复”能力（fork 61b2507 说明的欠项登记）：目标壳草稿由外部 composer 拥有，面板不做冷启动 submission 查回；旧壳保留该能力。本证据不将该能力计为 W1 验收项。"
+    "W1 目标壳不提供“冷启动提交恢复”能力（fork 61b2507 说明的欠项登记）：目标壳草稿由外部 composer 拥有，面板不做冷启动 submission 查回；旧壳保留该能力。本证据不将该能力计为 W1 验收项。",
+    "最终 head 重跑：host c96643e8 / fork b1638b4；After 矩阵 + 新增 single-over-selected 场景全部 PASS；预跑 99c088e/61b2507 的发送 FAIL（冷启动查回、wire source_ids 非空）已分别在 61b2507/b1638b4 修复，历史 FAIL 仅保留 logs/ 作为发现记录。"
   ]
 }
