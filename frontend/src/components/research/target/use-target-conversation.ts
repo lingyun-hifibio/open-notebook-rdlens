@@ -82,12 +82,14 @@ export function scopeSnapshotToEditorEdits(
 /**
  * W1 #1104（第 `3` 轮审查 H1）：wire 选择归一化。
  *
- * §5.3 / C-05 冻结 schema 要求 `mode==='single'` 时 `source_ids=[]` 且
- * `single_source_id` 非空（互斥形态）；而 provider 快照在 single 态会同时
- * 携带 base（仅 selected）的 sourceIds/noteIds。**raw 快照**用于 editor 同步
- * 与 frozen/fresh 一致性比较；**wire 选择**必须归一成合法互斥形态，否则
- * `writeSubmissionMarker` sanitize 失败（markerWriteFailed），严格后端还可能
- * 422。
+ * 后端 §5.3 对 `mode==='single'` 只要求 `source_ids=[]`（禁止 source 集合），
+ * **不禁止 note_ids**（scope.py 只拒绝 legacy_source_ids/legacy_note_ids 字段）；
+ * C-05 builder 也只构造 source_scope、不归一 note_ids。而 provider 快照在
+ * single 态会同时携带 base（selected）的 sourceIds/noteIds。**raw 快照**用于
+ * editor 同步与 frozen/fresh 一致性比较；**wire 选择**只把 source_ids 归一为
+ * `[]`，note_ids 原样保留——否则用户显式选择的 Note 上下文会被静默删除
+ * （M04「不静默删必要上下文」），且写坏 marker（sanitize 仅拒绝 single 的
+ * 非空 source_ids）。
  */
 export interface WireChatSelection {
   readonly mode: ResearchScopeMode
@@ -111,8 +113,9 @@ export function normalizeSelectionForWire(
   }
   return {
     mode: 'single',
+    // 只归一 source 集合；note_ids 属于显式用户上下文，single 下保留。
     sourceIds: [],
-    noteIds: [],
+    noteIds: [...(selection.noteIds ?? [])],
     singleSourceId: selection.singleSourceId ?? null,
   }
 }

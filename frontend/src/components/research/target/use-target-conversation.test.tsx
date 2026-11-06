@@ -317,7 +317,19 @@ vi.mock('@/lib/hooks/use-research', () => ({
     refetch: vi.fn(),
   }),
   useResearchNotes: () => ({
-    data: { items: [] },
+    data: {
+      items: [
+        {
+          note_id: 'note_1',
+          project_id: 'proj_1',
+          title: 'Note One',
+          content: 'synthetic note',
+          note_type: 'human',
+          created_at: null,
+          updated_at: null,
+        },
+      ],
+    },
     isLoading: false,
     isError: false,
     isSuccess: true,
@@ -468,6 +480,10 @@ describe('useTargetConversation · F1/F12 selected/single 真实发送', () => {
     const { result } = renderHook(useTargetHarness, { wrapper })
     await waitFor(() => expect(result.current.conversation.sessionWired).toBe(true))
 
+    // MEDIUM-1：single 不得静默丢 note_ids——先带一个显式 Note 上下文。
+    act(() => result.current.scope.toggleNote('note_1'))
+    await waitFor(() => expect(editorFixture.snapshot.noteIds).toEqual(['note_1']))
+
     act(() => {
       expect(result.current.conversation.pinSingleSource('src_2')).toBe(true)
     })
@@ -479,9 +495,9 @@ describe('useTargetConversation · F1/F12 selected/single 真实发送', () => {
     })
     expect(sent).toBe(true)
     const payload = controllerFixture.send.mock.calls[0][0] as Record<string, unknown>
-    // H1：wire 必须为互斥形态（single → source_ids=[] / note_ids=[]）
+    // H1 + MEDIUM-1：source_ids 归一为 []；note_ids 是显式上下文，必须保留。
     expect(payload.sourceIds).toEqual([])
-    expect(payload.noteIds).toEqual([])
+    expect(payload.noteIds).toEqual(['note_1'])
     expect((payload.scope as Record<string, unknown>).mode).toBe('single')
     expect((payload.scope as Record<string, unknown>).sourceIds).toEqual([])
     expect((payload.scope as Record<string, unknown>).singleSourceId).toBe('src_2')
@@ -495,10 +511,12 @@ describe('useTargetConversation · F1/F12 selected/single 真实发送', () => {
     act(() => {
       result.current.scope.toggleSource('src_1')
       result.current.scope.toggleSource('src_2')
+      result.current.scope.toggleNote('note_1')
     })
     await waitFor(() =>
       expect(editorFixture.snapshot.baseScope.sourceIds).toEqual(['src_1', 'src_2']),
     )
+    await waitFor(() => expect(editorFixture.snapshot.noteIds).toEqual(['note_1']))
     act(() => {
       expect(result.current.conversation.pinSingleSource('src_2')).toBe(true)
     })
@@ -518,7 +536,35 @@ describe('useTargetConversation · F1/F12 selected/single 真实发送', () => {
     expect((payload.scope as Record<string, unknown>).singleSourceId).toBe('src_2')
     expect((payload.scope as Record<string, unknown>).sourceIds).toEqual([])
     expect(payload.sourceIds).toEqual([])
-    expect(payload.noteIds).toEqual([])
+    // MEDIUM-1：single 下 note 上下文原样保留（M04 不静默删上下文）。
+    expect(payload.noteIds).toEqual(['note_1'])
+  })
+
+  it('MEDIUM-1：notes-only（selected 无 source）→ pin → send 保留 note_ids', async () => {
+    displayFixture.display = { surface: 'global', ref: SESSION_REF }
+    const { result } = renderHook(useTargetHarness, { wrapper })
+    await waitFor(() => expect(result.current.conversation.sessionWired).toBe(true))
+
+    act(() => result.current.scope.toggleNote('note_1'))
+    await waitFor(() => expect(editorFixture.snapshot.noteIds).toEqual(['note_1']))
+
+    act(() => {
+      expect(result.current.conversation.pinSingleSource('note_1')).toBe(true)
+    })
+    await waitFor(() => expect(editorFixture.snapshot.singleSourceId).toBe('note_1'))
+
+    let sent = false
+    await act(async () => {
+      sent = await result.current.conversation.send('Question')
+    })
+    expect(sent).toBe(true)
+    expect(result.current.conversation.sendError).toBeNull()
+    const payload = controllerFixture.send.mock.calls[0][0] as Record<string, unknown>
+    expect((payload.scope as Record<string, unknown>).mode).toBe('single')
+    expect((payload.scope as Record<string, unknown>).sourceIds).toEqual([])
+    expect(payload.sourceIds).toEqual([])
+    expect(payload.noteIds).toEqual(['note_1'])
+    expect((payload.scope as Record<string, unknown>).singleSourceId).toBe('note_1')
   })
 
   it('F12：capabilities 缺失时 submissionReady=false（仅 === true 放行）', async () => {

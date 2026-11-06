@@ -1092,7 +1092,7 @@ describe('PR-5a（D2）：显式 session 接线', () => {
     })
   })
 
-  it('H1：single-over-selected 的 wire source_scope 为互斥形态（source_ids=[]，note_ids=[]）', () => {
+  it('H1 + MEDIUM-1：single-over-selected 只归一 source_ids，note_ids 原样保留', () => {
     const captures = openCapture()
     const controller = {
       detach: vi.fn(),
@@ -1148,7 +1148,8 @@ describe('PR-5a（D2）：显式 session 接线', () => {
       source_ids: [],
       single_source_id: 'src_2',
     })
-    expect(request.note_ids).toEqual([])
+    // MEDIUM-1：后端 single 只禁止 source_ids，note_ids 是显式上下文须保留。
+    expect(request.note_ids).toEqual(['note_1'])
     expect(request.source_ids).toBeUndefined()
   })
 
