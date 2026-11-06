@@ -514,7 +514,8 @@
 }
 
 /* §4.1 校准说明 / §7 A11Y-02：焦点色＝evidence，2px + offset 3px。
-   滚动容器统一留 4px 内边距（见各面板 p-1），焦点环不被 overflow 裁切。 */
+   滚动容器统一留 ≥6px 内边距（见各面板 p-[6px]/py-[6px]；2px outline +
+   3px offset 不被 overflow 裁切），不使用内缩死规则。 */
 .rdlens-target-shell :focus-visible {
   outline: 2px solid var(--rdlens-evidence);
   outline-offset: 3px;

@@ -82,15 +82,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function parseHostProject(value: unknown): HostProject | undefined | null {
   if (value === undefined) return undefined
   if (!isRecord(value) || typeof value.name !== 'string') return null
-  const name = value.name
+  // W1 契约（host #1118 §B）：子页面与宿主统一按 **trim 后** 1..200 校验，
+  // 并存储 trim 后的值（顶栏不显示前后空格；也避免 201 原始/199 trim 名字
+  // 被 fail-closed 误丢弃导致认证空白错误页）。
+  const name = value.name.trim()
   if (
     name.length < HOST_PROJECT_NAME_MIN_LENGTH ||
     name.length > HOST_PROJECT_NAME_MAX_LENGTH
   ) {
     return null
   }
-  // 纯空白名不承载项目身份：按非法载荷处理，避免顶栏渲染空项目壳。
-  if (name.trim().length === 0) return null
   return { name }
 }
 

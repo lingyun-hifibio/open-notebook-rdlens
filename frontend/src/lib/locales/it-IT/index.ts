@@ -1007,6 +1007,8 @@ export const itIT = {
         notesTitle: "Notes",
         notesEmpty: "No notes yet. Notes are used as research context when selected.",
         notesHint: "Select notes to include them in the research scope.",
+        count: "{{count}} sources",
+        countFiltered: "{{visible}} of {{total}}",
         noteSelectAria: "Include note {{name}} in the research scope",
         scopeBlockedChoose: "Select sources",
         scopeBlockedAll: "Use all available sources",
@@ -1016,6 +1018,7 @@ export const itIT = {
       conversation: {
         loading: "Loading conversation…",
         kicker: "Research conversation",
+        description: "Answers use the sources in scope; the model and scope are set by the top bar and the sources panel.",
         titleFallback: "Conversation",
         noActiveSession: "No conversation is open. Create or select one to ask questions.",
         history: "History",
@@ -1026,6 +1029,11 @@ export const itIT = {
       },
       secondary: {
         label: "Other actions",
+        searchLevel: "Search level: {{level}}",
+        searchLevelHint: "Determined by the selected model and the current source scope.",
+        levelFocused: "Focused",
+        levelDocument: "Whole document",
+        levelWorkspace: "Workspace",
         search: "Evidence search",
         compare: "Compare sources",
         deepResearch: "Deep research",

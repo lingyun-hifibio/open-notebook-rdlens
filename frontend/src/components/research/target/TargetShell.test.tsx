@@ -426,13 +426,18 @@ describe('UI-02 顶栏（§5.2 / D-UI-01）', () => {
     // 未完成计数：queued/running/cancelling（completed 不计）
     expect(screen.getByTestId('rdlens-target-tasks-badge')).toHaveTextContent('1')
     expect(tasks).toHaveAttribute('aria-expanded', 'false')
-    expect(tasks).toHaveAttribute('aria-controls', 'rdlens-target-right-pane')
+    // A11Y-03：面板未渲染时不输出 aria-controls（不悬空）
+    expect(tasks).not.toHaveAttribute('aria-controls')
 
     fireEvent.click(tasks)
     await waitFor(() =>
       expect(screen.getByTestId('rdlens-target-right-pane')).toHaveAttribute('data-pane-kind', 'tasks'),
     )
     expect(screen.getByTestId('rdlens-target-tasks-trigger')).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByTestId('rdlens-target-tasks-trigger')).toHaveAttribute(
+      'aria-controls',
+      'rdlens-target-right-pane',
+    )
     expect(screen.getAllByTestId('rdlens-target-task-item')).toHaveLength(2)
 
     fireEvent.click(screen.getByTestId('rdlens-target-outcomes-trigger'))
@@ -881,5 +886,52 @@ describe('审查第 1 轮 LOW 修复（F8/F17/F22）', () => {
     } finally {
       hoisted.sources = original
     }
+  })
+})
+
+describe('审查 B 附条件修复（I18N/数量/说明/搜索档位/内边距）', () => {
+  it('UI-04：资料列表显示数量，过滤时显示 visible/total', () => {
+    renderShell()
+    const count = screen.getByTestId('rdlens-target-sources-count')
+    expect(count).toHaveAttribute('data-total', '4')
+    expect(count).toHaveAttribute('data-visible', '4')
+    expect(count).toHaveTextContent('research.target.sources.count')
+    fireEvent.change(screen.getByTestId('rdlens-target-sources-search'), {
+      target: { value: 'doc_ready' },
+    })
+    expect(count).toHaveAttribute('data-visible', '1')
+    expect(count).toHaveAttribute('data-total', '4')
+    expect(count).toHaveTextContent('research.target.sources.countFiltered')
+  })
+
+  it('UI-07：标题区有一句说明（muted，i18n）', () => {
+    renderShell()
+    expect(screen.getByTestId('rdlens-target-conversation-description')).toHaveTextContent(
+      'research.target.conversation.description',
+    )
+  })
+
+  it('笔记区入口（选用笔记继续讨论）常显标题/提示 + 空态', () => {
+    renderShell()
+    expect(screen.getByTestId('rdlens-target-notes-title')).toBeInTheDocument()
+    expect(screen.getByTestId('rdlens-target-notes-entry-hint')).toBeInTheDocument()
+  })
+
+  it('证据搜索：隐藏可编辑档位但显示本次检索级别只读摘要（不静默）', async () => {
+    renderShell()
+    fireEvent.click(screen.getByTestId('rdlens-target-secondary-search'))
+    const summary = await screen.findByTestId('search-context-summary')
+    expect(summary).toHaveAttribute('data-context-level')
+    expect(summary).toHaveTextContent('research.target.secondary.searchLevel')
+    // 可编辑档位控件在目标壳不渲染
+    expect(screen.queryByTestId('search-context-selector')).toBeNull()
+  })
+
+  it('F10：资料栏/右栏滚动容器留 ≥6px 焦点环空间', async () => {
+    renderShell()
+    expect(screen.getByTestId('rdlens-target-sources-list').className).toContain('py-[6px]')
+    fireEvent.click(screen.getByTestId('rdlens-target-tasks-trigger'))
+    const body = await screen.findByTestId('rdlens-target-right-pane-body')
+    expect(body.className).toContain('p-[6px]')
   })
 })

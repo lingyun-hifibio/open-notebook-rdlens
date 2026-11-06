@@ -127,6 +127,14 @@ export function TargetConversation({
             >
               {title}
             </h2>
+            {/* §5.4 UI-07「一句说明」：解释本对话的用途边界 */}
+            <p
+              className="mt-1 text-sm leading-relaxed"
+              style={{ color: 'var(--rdlens-ink-muted)' }}
+              data-testid="rdlens-target-conversation-description"
+            >
+              {t('research.target.conversation.description')}
+            </p>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
             <Button
@@ -138,7 +146,8 @@ export function TargetConversation({
               title={historyAvailable ? undefined : historyUnavailableReason ?? undefined}
               aria-describedby={historyAvailable ? undefined : 'rdlens-target-history-reason'}
               aria-expanded={rightPane === 'conversations'}
-              aria-controls="rdlens-target-right-pane"
+              // A11Y-03：仅在面板真实渲染时输出 aria-controls（关闭时不悬空）
+              aria-controls={rightPane !== null ? 'rdlens-target-right-pane' : undefined}
               onClick={(event) => {
                 if (rightPane !== 'conversations') {
                   onOpenRightPane('conversations', event.currentTarget)

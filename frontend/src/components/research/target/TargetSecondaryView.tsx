@@ -91,9 +91,11 @@ export function TargetSecondaryView({
             active
             onCitationJump={onCitationJump}
             sources={sources}
-            // D-UI-06：目标壳不暴露独立 Search context；范围随操作声明并受
-            // 左栏/当前对话范围约束（唯一权威仍是 ResearchScopeProvider）。
+            // D-UI-06：目标壳不暴露可编辑 Search context 控件；范围随操作
+            // 声明并受左栏/当前对话范围约束（唯一权威仍是 ResearchScopeProvider）。
+            // 审查 B F3：必须显式呈现本次实际档位并保留自动收敛提示。
             showSearchContext={false}
+            showSearchContextSummary
           />
           </div>
         ) : (

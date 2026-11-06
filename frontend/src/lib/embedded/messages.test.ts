@@ -224,4 +224,26 @@ describe('W1 契约 v1：token/refresh 可选 project 字段（D-UI-01）', () =
   it('project 字段非法时整条 token 消息被丢弃（不降级成通用项目名）', () => {
     expectRejected(message({ project: { name: '' } }), ctx())
   })
+
+  it('project 名按先 trim 后 1..200 校验，并存储 trim 后值（B F11）', () => {
+    // 前后空格：校验与存储都使用 trim 后的值
+    expect(
+      validateIncomingMessage(message({ project: { name: '  Project A  ' } }), ctx()),
+    ).toEqual({
+      type: 'token',
+      token: 'research.jwt.payload',
+      expiresAt: 1754460300,
+      project: { name: 'Project A' },
+    })
+    // 原始 201、trim 后 199 → 合法（不能因未 trim 长度被误丢）
+    const padded199 = `  ${'A'.repeat(199)}  `
+    expect(padded199.length).toBe(203)
+    expect(
+      validateIncomingMessage(message({ project: { name: padded199 } }), ctx()),
+    ).not.toBeNull()
+    // trim 后仍超 200 → 非法
+    expectRejected(message({ project: { name: `  ${'A'.repeat(201)}  ` } }), ctx())
+    // 纯空白 trim 后为空 → 非法
+    expectRejected(message({ project: { name: '   ' } }), ctx())
+  })
 })

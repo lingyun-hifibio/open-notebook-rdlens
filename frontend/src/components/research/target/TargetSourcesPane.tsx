@@ -119,9 +119,28 @@ export function TargetSourcesPane({
     <div className="flex h-full min-h-0 flex-col" data-testid="rdlens-target-sources-pane">
       <div className="shrink-0 px-6 pb-2 pt-5">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold" data-testid="rdlens-target-sources-title">
-            {t('research.target.sources.title')}
-          </h2>
+          <div className="flex min-w-0 items-baseline gap-2">
+            <h2 className="text-sm font-semibold" data-testid="rdlens-target-sources-title">
+              {t('research.target.sources.title')}
+            </h2>
+            {/* UI-04 §5.3「项目资料列表（含数量）」 */}
+            {!isLoading && !isError && (
+              <span
+                className="text-xs"
+                style={{ color: 'var(--rdlens-ink-muted)' }}
+                data-testid="rdlens-target-sources-count"
+                data-visible={filteredSources.length}
+                data-total={items.length}
+              >
+                {query.length > 0
+                  ? t('research.target.sources.countFiltered', {
+                      visible: filteredSources.length,
+                      total: items.length,
+                    })
+                  : t('research.target.sources.count', { count: items.length })}
+              </span>
+            )}
+          </div>
           {requestIngest !== null && (
             <Button
               type="button"
@@ -246,7 +265,7 @@ export function TargetSourcesPane({
       </div>
 
       {/* 列表：独立滚动；行最小高度 44px（§3.4） */}
-      <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-1" data-testid="rdlens-target-sources-list">
+      <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-[6px]" data-testid="rdlens-target-sources-list">
         {isLoading && (
           <p
             className="px-3 py-2 text-sm"
@@ -381,9 +400,10 @@ export function TargetSourcesPane({
           </ul>
         )}
 
-        {/* 笔记区：UI-04「选用笔记或草稿继续讨论」——列表 + 复选 + 空态；
-            写入同一 Scope provider，不新建范围权威（F10）。 */}
-        {!notesQuery.isLoading && !notesQuery.isError && filteredNotes.length > 0 && (
+        {/* 笔记区：UI-04「选用笔记或草稿继续讨论」——入口标题/提示/
+            列表 + 复选 + 空态；写入同一 Scope provider，不新建范围权威（F10）。
+            草稿（成果编辑形态）属 W3，PR 欠项登记。 */}
+        {!notesQuery.isLoading && !notesQuery.isError && items.length > 0 && (
           <section className="mt-3 min-w-0" aria-label={t('research.target.sources.notesTitle')}>
             <h3
               className="px-2 pb-1 text-[11px] font-medium uppercase tracking-wide"
@@ -392,6 +412,9 @@ export function TargetSourcesPane({
             >
               {t('research.target.sources.notesTitle')}
             </h3>
+            <p className="px-2 pb-1 text-xs" style={{ color: 'var(--rdlens-ink-muted)' }} data-testid="rdlens-target-notes-entry-hint">
+              {t('research.target.sources.notesHint')}
+            </p>
             <ul className="min-w-0" data-testid="rdlens-target-notes-rows">
               {filteredNotes.map((note) => {
                 const selected = selectedNoteIds.includes(note.note_id)
@@ -459,11 +482,6 @@ export function TargetSourcesPane({
         <p className="mt-1 text-sm" role="status" aria-live="polite">
           {summaryText}
         </p>
-        {notes.length > 0 && (
-          <p className="mt-1 text-xs" style={{ color: 'var(--rdlens-ink-muted)' }} data-testid="rdlens-target-notes-hint">
-            {t('research.target.sources.notesHint')}
-          </p>
-        )}
       </div>
     </div>
   )

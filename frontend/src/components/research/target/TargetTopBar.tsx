@@ -85,7 +85,8 @@ export function TargetTopBar({
               : t('research.target.topbar.tasks')
           }
           aria-expanded={rightPane === 'tasks'}
-          aria-controls="rdlens-target-right-pane"
+          // A11Y-03：仅在面板真实渲染时输出 aria-controls（关闭时不悬空）
+          aria-controls={rightPane !== null ? 'rdlens-target-right-pane' : undefined}
           onClick={(event) => onOpenPane('tasks', event.currentTarget)}
         >
           <ListChecks aria-hidden="true" className="h-4 w-4" />
@@ -113,7 +114,7 @@ export function TargetTopBar({
           data-testid="rdlens-target-outcomes-trigger"
           aria-label={t('research.target.topbar.outcomes')}
           aria-expanded={rightPane === 'outcomes'}
-          aria-controls="rdlens-target-right-pane"
+          aria-controls={rightPane !== null ? 'rdlens-target-right-pane' : undefined}
           onClick={(event) => onOpenPane('outcomes', event.currentTarget)}
         >
           <FolderOpen aria-hidden="true" className="h-4 w-4" />
