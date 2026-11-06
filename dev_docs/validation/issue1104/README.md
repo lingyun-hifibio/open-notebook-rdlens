@@ -8,16 +8,17 @@
 - **ticket**：[#1104](https://github.com/HiFiBiO-Therapeutics/RDLens/issues/1104)（W1 目标两栏骨架与按需右栏）
 - **PR**：RDLens #1118（host，draft）；fork `agent/wave-one-shell-bddcfc523569`
 - **规格依据**：`dev_docs/设计方案/Research/Research_UI规格_v1_20261106.md` §2–§9（1024×768 / 1440×900、light/dark token、zh-CN/en-US、Before/After 证据规则）；`Research_对齐实施计划_v2_20261106.md` §2 W1、§3（两栏骨架 + 按需右栏）
-- **采集时间**：2026-11-06T18:55:47.838Z
+- **采集时间**：2026-11-06T19:16:00.460Z
 
 ## 1. 结论摘要
 
 | 项 | 结果 |
 |-|-|
-| Before（fork main + host main）| 30 张：**18 PASS / 0 FAIL / 12 NOT_APPLICABLE / 0 NOT RUN** |
-| After（fork 目标壳 + host 新页头）| 63 张：**63 PASS / 0 FAIL / 0 NOT_APPLICABLE / 0 NOT RUN** |
+| Before（fork main + host main）| 31 张：**19 PASS / 0 FAIL / 12 NOT_APPLICABLE / 0 NOT RUN** |
+| After（fork 目标壳 + host 新页头）| 70 张：**70 PASS / 0 FAIL / 0 NOT_APPLICABLE / 0 NOT RUN** |
 | 键盘走查（After）| **PASS**（9 项，Tab 序/Esc 回焦/skip link/焦点环/无横向滚动） |
 | 预跑发现 F1 | 空 selected UI 清空路径不可达 → 已报 Lead → fork-shell 修复 `476b1b2` → 正式 After 断言 PASS（发现记录见 `logs/prerun-F1-empty-selected-finding.md`） |
+| 宿主失败/验证页（补双语证据）| Before：失败页 en（workspace_status_unreachable，可重试）；After：失败页 en、失败页 zh、验证中 zh（`after_host_*`）。合成故障：mock 对 `/v1/research/workspace-status` 返回 503 或延迟 12s。 |
 | 证据层 | **synthetic**：真实应用 + 合成网络；**非 L2**，不单独关闭 L2；产品单测由实现 PR 负责，不在本证据范围 |
 
 **Before → After 关键变化（视觉/交互断言）**：
@@ -34,7 +35,7 @@
 |-|-|-|-|-|
 | Before fork | lingyun-hifibio/open-notebook-rdlens | `origin/main` | `2db87a8e2ccbed82acd321529f70a7b150c8d398` | `evidence/worktrees/fork-before (git worktree add --detach)` |
 | Before host | HiFiBiO-Therapeutics/RDLens | `origin/main` | `53e9b87b73fb12b60bf01d7fd217b9c7e57c657e` | `evidence/worktrees/host-before (git worktree add --detach)` |
-| After fork | lingyun-hifibio/open-notebook-rdlens | `agent/wave-one-shell-bddcfc523569` | `476b1b26a1312fd143662ec28001de3244963e87` | `evidence/worktrees/fork-after (git worktree add --detach)` |
+| After fork | lingyun-hifibio/open-notebook-rdlens | `agent/wave-one-shell-bddcfc523569` | `4a007a2719e6c81f2c47eedc6afc76679ad6137f` | `evidence/worktrees/fork-after (git worktree add --detach)` |
 | After host | HiFiBiO-Therapeutics/RDLens | `agent/wave-one-shell-bddcfc523569` | `d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb` | `evidence/worktrees/host-after (git worktree add --detach)` |
 
 ## 3. 环境与依赖（Before/After 同一依赖集）
@@ -113,6 +114,7 @@ Playwright → host 页面（真实 RDLens Vite 应用，:5174/:5175）
 | `before_chat_1440x900_en-US_dark.png` | central conversation (old shell Evidence/Research Chat tab) | 1440x900 | en-US | dark | PASS | ✓ Research Chat tab became active (Research Chat); ✓ synthetic global session created (composer reachable); ✓ chat composer rendered (empty conversation); ✓ synthetic draft typed into composer ([synthetic] Which synthetic sources support the D1 cohort OR); … |
 | `before_results_panel_1440x900_en-US_dark.png` | old shell Results group / Insights outcomes pane | 1440x900 | en-US | dark | PASS | ✓ old shell Results group nav rendered |
 | `before_activity_panel_1440x900_en-US_dark.png` | old shell Activity Center / tasks panel (synthetic job) | 1440x900 | en-US | dark | PASS | ✓ activity center opened; ✓ synthetic job card rendered (count=5) |
+| `before_host_failure_1440x900_en-US.png` | host Research page — workspace access verification failure (retryable, synthetic) | 1440x900 | en-US | light | PASS | ✓ failure page rendered (not blank) (Unable to reach the Research workspace status service. It ma); ✓ retryable category: Retry + Back present (retry=1 back=1); ✓ failure code is workspace_status_unreachable (workspace_status_unreachable); ✓ failure text/co… |
 
 **Before 口径**：5 个上下文（1440/1024 × en-US/zh-CN + 1440 dark）× 6 场景。`default_two_column`=宿主页头+旧壳默认工作台（五 Tab）；`host_header`=宿主页头特写；`sources_panel`=左资料栏；`chat`=中央对话（空会话 + composer 草稿）；`results_panel`=旧壳 Results/Insights；`activity_panel`=旧壳 Activity Center/任务面板。
 
@@ -139,12 +141,14 @@ Playwright → host 页面（真实 RDLens Vite 应用，:5174/:5175）
 | `after_right_pane_open_1440x900_zh-CN.png` | side panel open (outcomes catalog) — 1440 three columns / 1024 right pane replaces left pane | 1440x900 | zh-CN | light | PASS | ✓ right pane visible (outcomes panel) (width=355); ✓ wide: left pane stays visible (three columns) (asideHidden=false width=282); ✓ compact: left pane temporarily collapsed (right replaces left) (collapsed=false hidden=false); ✓ compact: composer shows comp… |
 | `after_right_pane_closed_1440x900_zh-CN.png` | side panel closed with Esc — focus returns to trigger, left pane restored (compact) | 1440x900 | zh-CN | light | PASS | ✓ Esc closed the right pane; ✓ left pane restored after close (hidden=false width=282); ✓ focus returned to triggering control (outcomes trigger) (active=rdlens-target-outcomes-trigger); ✓ no horizontal page scroll (1440/1440) |
 | `after_right_pane_tasks_1440x900_zh-CN.png` | side panel open (task history) | 1440x900 | zh-CN | light | PASS | ✓ right pane visible (task history) (open=true); ✓ task history panel rendered; ✓ no horizontal page scroll |
-| `after_sources_selected_1440x900_zh-CN.png` | sources pane — selected scope (one source checked) | 1440x900 | zh-CN | light | PASS | ✓ checking a source switched scope to selected ({"selectedChecked":true,"allChecked":false,"summary":"当前范围 1); ✓ scope summary reflects selection (当前范围 1 sources); ✓ no horizontal page scroll |
+| `after_sources_selected_1440x900_zh-CN.png` | sources pane — selected scope (one source checked) | 1440x900 | zh-CN | light | PASS | ✓ checking a source switched scope to selected ({"selectedChecked":true,"allChecked":false,"summary":"当前范围 已); ✓ scope summary reflects selection (当前范围 已选 1 份资料); ✓ no horizontal page scroll |
 | `after_sources_selected_empty_1440x900_zh-CN.png` | sources pane — empty selected scope (blocked data query, BEH-03) | 1440x900 | zh-CN | light | PASS | ✓ selected scope cleared to empty via UI (gateHint=请至少选择一份资料后再就资料提问，或切回全部可用资料。); ✓ blocked block visible (rdlens-target-scope-blocked); ✓ block offers next steps (choose sources / switch to all); ✓ blocked reason shown before submit (请至少选择一份资料后再就资料提问，或切回全部可… |
+| `(no screenshot: assertion-only scene)` | sources pane — zh-CN residual string scan for empty-selected block | 1440x900 | zh-CN | light | PASS | ✓ empty-selected block has no untranslated UI strings |
 | `after_sources_clear_via_ui_1440x900_zh-CN.png` | sources pane — clear selection via UI (BEH-03 / §9.3-2 walkthrough path) | 1440x900 | zh-CN | light | PASS | ✓ UI clear path reachable (can uncheck the last selected source) (remaining=src_2 disabled=false :: empty selected reached and) |
 | `after_sources_scope_all_1440x900_zh-CN.png` | sources pane — all available sources scope (default) | 1440x900 | zh-CN | light | PASS | ✓ scope=all checked, no selected rows ({"allChecked":true,"selectedChecked":false,"checkedRows":0,"); ✓ no blocked state under all scope; ✓ scope summary reflects all-available scope (当前范围 全部可用资料); ✓ no horizontal page scroll |
 | `after_empty_conversation_1440x900_zh-CN.png` | empty conversation (target shell) | 1440x900 | zh-CN | light | PASS | ✓ conversation title fallback shown (对话); ✓ message area empty (no turns) (就选中的来源与笔记提问。); ✓ composer present with empty-draft hint (就你的来源提问…); ✓ no horizontal page scroll |
 | `after_legacy_old_shell_1440x900_zh-CN.png` | legacy=1 old shell via host header secondary entry (D-UI-05) | 1440x900 | zh-CN | light | PASS | ✓ page mode is legacy (mode=legacy); ✓ iframe src carries legacy=1 (http://127.0.0.1:3011/research?legacy=1); ✓ old shell five main-action tabs rendered (count=5); ✓ host header now offers target-workspace return (目标版工作台 aria=目标版工作台（当前为旧版，点击返回）) |
+| `(no screenshot: assertion-only scene)` | legacy old shell — zh-CN residual English (pre-existing bilingual debt, NOT this PR acceptance target) | 1440x900 | zh-CN | light | PASS | ✓ legacy old shell zh-CN residual English registered as pre-existing debt (not a PR acceptance target) (Activity, SCOPE, MATERIALS, RESULTS, Runs, Add, materials, f) |
 | `after_legacy_return_target_1440x900_zh-CN.png` | return from legacy to target shell (D-UI-05) | 1440x900 | zh-CN | light | PASS | ✓ page mode back to target (mode=target); ✓ iframe src no longer carries legacy=1; ✓ host header back to legacy entry (旧版工作台 aria=旧版工作台（当前为目标版，点击切换）); ✓ target shell states preserved (sources rows + composer) (rows=2) |
 | `after_default_two_column_1024x768_en-US.png` | target shell default two-column (host header + topbar + sources + conversation + composer) | 1024x768 | en-US | light | PASS | ✓ host header has NO project name (D-UI-01) (Legacy workspace 中文 English synthetic-owner Sign out); ✓ host header has zh-CN/en-US language select (count=1 value=en-US); ✓ host header has legacy-workspace secondary entry (D-UI-05) (Legacy workspace aria=Lega… |
 | `after_host_header_1024x768_en-US.png` | host Research page header (language switch + legacy entry, no project name) | 1024x768 | en-US | light | PASS | ✓ host header does NOT repeat project name or generic brand (D-UI-01) (Legacy workspace 中文 English synthetic-owner Sign out); ✓ host header language select present with persisted value (value=en-US); ✓ host header legacy entry visible with mode-describing a… |
@@ -163,12 +167,14 @@ Playwright → host 页面（真实 RDLens Vite 应用，:5174/:5175）
 | `after_right_pane_open_1024x768_zh-CN.png` | side panel open (outcomes catalog) — 1440 three columns / 1024 right pane replaces left pane | 1024x768 | zh-CN | light | PASS | ✓ right pane visible (outcomes panel) (width=355); ✓ wide: left pane stays visible (three columns) (asideHidden=true width=0); ✓ compact: left pane temporarily collapsed (right replaces left) (collapsed=true hidden=true); ✓ compact: composer shows compact s… |
 | `after_right_pane_closed_1024x768_zh-CN.png` | side panel closed with Esc — focus returns to trigger, left pane restored (compact) | 1024x768 | zh-CN | light | PASS | ✓ Esc closed the right pane; ✓ left pane restored after close (hidden=false width=282); ✓ focus returned to triggering control (outcomes trigger) (active=rdlens-target-outcomes-trigger); ✓ no horizontal page scroll (1024/1024) |
 | `after_right_pane_tasks_1024x768_zh-CN.png` | side panel open (task history) | 1024x768 | zh-CN | light | PASS | ✓ right pane visible (task history) (open=true); ✓ task history panel rendered; ✓ no horizontal page scroll |
-| `after_sources_selected_1024x768_zh-CN.png` | sources pane — selected scope (one source checked) | 1024x768 | zh-CN | light | PASS | ✓ checking a source switched scope to selected ({"selectedChecked":true,"allChecked":false,"summary":"当前范围 1); ✓ scope summary reflects selection (当前范围 1 sources); ✓ no horizontal page scroll |
+| `after_sources_selected_1024x768_zh-CN.png` | sources pane — selected scope (one source checked) | 1024x768 | zh-CN | light | PASS | ✓ checking a source switched scope to selected ({"selectedChecked":true,"allChecked":false,"summary":"当前范围 已); ✓ scope summary reflects selection (当前范围 已选 1 份资料); ✓ no horizontal page scroll |
 | `after_sources_selected_empty_1024x768_zh-CN.png` | sources pane — empty selected scope (blocked data query, BEH-03) | 1024x768 | zh-CN | light | PASS | ✓ selected scope cleared to empty via UI (gateHint=请至少选择一份资料后再就资料提问，或切回全部可用资料。); ✓ blocked block visible (rdlens-target-scope-blocked); ✓ block offers next steps (choose sources / switch to all); ✓ blocked reason shown before submit (请至少选择一份资料后再就资料提问，或切回全部可… |
+| `(no screenshot: assertion-only scene)` | sources pane — zh-CN residual string scan for empty-selected block | 1024x768 | zh-CN | light | PASS | ✓ empty-selected block has no untranslated UI strings |
 | `after_sources_clear_via_ui_1024x768_zh-CN.png` | sources pane — clear selection via UI (BEH-03 / §9.3-2 walkthrough path) | 1024x768 | zh-CN | light | PASS | ✓ UI clear path reachable (can uncheck the last selected source) (remaining=src_2 disabled=false :: empty selected reached and) |
 | `after_sources_scope_all_1024x768_zh-CN.png` | sources pane — all available sources scope (default) | 1024x768 | zh-CN | light | PASS | ✓ scope=all checked, no selected rows ({"allChecked":true,"selectedChecked":false,"checkedRows":0,"); ✓ no blocked state under all scope; ✓ scope summary reflects all-available scope (当前范围 全部可用资料); ✓ no horizontal page scroll |
 | `after_empty_conversation_1024x768_zh-CN.png` | empty conversation (target shell) | 1024x768 | zh-CN | light | PASS | ✓ conversation title fallback shown (对话); ✓ message area empty (no turns) (就选中的来源与笔记提问。); ✓ composer present with empty-draft hint (就你的来源提问…); ✓ no horizontal page scroll |
 | `after_legacy_old_shell_1024x768_zh-CN.png` | legacy=1 old shell via host header secondary entry (D-UI-05) | 1024x768 | zh-CN | light | PASS | ✓ page mode is legacy (mode=legacy); ✓ iframe src carries legacy=1 (http://127.0.0.1:3011/research?legacy=1); ✓ old shell five main-action tabs rendered (count=5); ✓ host header now offers target-workspace return (目标版工作台 aria=目标版工作台（当前为旧版，点击返回）) |
+| `(no screenshot: assertion-only scene)` | legacy old shell — zh-CN residual English (pre-existing bilingual debt, NOT this PR acceptance target) | 1024x768 | zh-CN | light | PASS | ✓ legacy old shell zh-CN residual English registered as pre-existing debt (not a PR acceptance target) (Activity, SCOPE, MATERIALS, RESULTS, Runs, Add, materials, f) |
 | `after_legacy_return_target_1024x768_zh-CN.png` | return from legacy to target shell (D-UI-05) | 1024x768 | zh-CN | light | PASS | ✓ page mode back to target (mode=target); ✓ iframe src no longer carries legacy=1; ✓ host header back to legacy entry (旧版工作台 aria=旧版工作台（当前为目标版，点击切换）); ✓ target shell states preserved (sources rows + composer) (rows=2) |
 | `after_default_two_column_1440x900_en-US_dark.png` | target shell default two-column (host header + topbar + sources + conversation + composer) | 1440x900 | en-US | dark | PASS | ✓ host header has NO project name (D-UI-01) (Legacy workspace 中文 English synthetic-owner Sign out); ✓ host header has zh-CN/en-US language select (count=1 value=en-US); ✓ host header has legacy-workspace secondary entry (D-UI-05) (Legacy workspace aria=Lega… |
 | `after_host_header_1440x900_en-US_dark.png` | host Research page header (language switch + legacy entry, no project name) | 1440x900 | en-US | dark | PASS | ✓ host header does NOT repeat project name or generic brand (D-UI-01) (Legacy workspace 中文 English synthetic-owner Sign out); ✓ host header language select present with persisted value (value=en-US); ✓ host header legacy entry visible with mode-describing a… |
@@ -185,6 +191,9 @@ Playwright → host 页面（真实 RDLens Vite 应用，:5174/:5175）
 | `after_language_switch_before_1440x900_en-US.png` | language switch — en-US loaded (state to preserve: draft + selected scope) | 1440x900 | en-US | light | PASS | ✓ loaded in en-US (en-US); ✓ draft typed before switch; ✓ selected-source scope set before switch |
 | `after_language_switch_after_1440x900_zh-CN.png` | language switch — host zh-CN selected, workbench text immediately zh-CN, state retained | 1440x900 | zh-CN | light | PASS | ✓ workbench text switched to zh-CN (zh-CN); ✓ host header switched to zh-CN (select=zh-CN legacy=旧版工作台); ✓ composer draft retained across switch ([synthetic] Which synthetic sources support the D1 cohort OR); ✓ scope selection retained across switch (null);… |
 | `(no screenshot: assertion-only scene)` | language switch — back to en-US | 1440x900 | en-US | light | PASS | ✓ workbench text switched back to en-US (en-US); ✓ composer draft retained across second switch ([synthetic] Which synthetic sources support the D1 cohort OR) |
+| `after_host_failure_1440x900_en-US.png` | host Research page — workspace access verification failure (retryable, synthetic) | 1440x900 | en-US | light | PASS | ✓ failure page rendered (not blank) (Unable to reach the Research workspace status service. It ma); ✓ retryable category: Retry + Back present (retry=1 back=1); ✓ failure code is workspace_status_unreachable (workspace_status_unreachable); ✓ failure text/co… |
+| `after_host_failure_1440x900_zh-CN.png` | host Research page — workspace access verification failure (retryable, synthetic) | 1440x900 | zh-CN | light | PASS | ✓ failure page rendered (not blank) (无法连接 Research 工作台状态服务。该服务可能暂时不可达。 失败码：workspace_status_unrea); ✓ retryable category: Retry + Back present (retry=1 back=1); ✓ failure code is workspace_status_unreachable (workspace_status_unreachable); ✓ failure text/co… |
+| `after_host_verifying_1440x900_zh-CN.png` | host Research page — verifying state (zh-CN, synthetic slow status probe) | 1440x900 | zh-CN | light | PASS | ✓ verifying page rendered in zh-CN (正在验证工作台访问权限…); ✓ host header language select is zh-CN; ✓ host header visible above verifying page (Research 工作台 中文 English synthetic-owner 退出) |
 
 **After 口径**：5 个上下文（1440/1024 × en-US/zh-CN + 1440 dark）× 12 场景 + 语言切换 3 张：
 
@@ -199,6 +208,9 @@ Playwright → host 页面（真实 RDLens Vite 应用，:5174/:5175）
 | `empty_conversation` | 空对话（标题 fallback + 空消息区 + composer 空输入提示） |
 | `legacy_old_shell` / `legacy_return_target` | 宿主「旧版工作台」→ iframe `legacy=1` 旧壳（五 Tab）；再点「目标版工作台」恢复目标壳（D-UI-05） |
 | `language_switch_before` / `language_switch_after` | en-US 载入（composer 草稿 + selected 范围）→ 宿主页头切 zh-CN → 工作台文案即时中文、草稿/范围保留；再切回 en-US 仍保留 |
+| `host_failure`（Before en / After en / After zh） | 宿主 Research 失败页（workspace_status_unreachable，可重试）：宿主页头 + 失败文案 + Retry/Back；Before 仅英文，After 支持 zh-CN |
+| `host_verifying`（After zh） | 宿主 Research 验证中页（status 探测延迟）：中文验证文案 + 宿主页头 |
+| `*_residual_*`（仅断言、无截图） | zh-CN 目标壳可见英文残留扫描（空 selected 阻断块；目标壳 PASS）；legacy 旧壳 zh 英文残留登记为既有双语欠项（非本 PR 验收对象） |
 
 ## 7. 键盘可达走查（After）
 
@@ -210,7 +222,7 @@ Playwright → host 页面（真实 RDLens Vite 应用，:5174/:5175）
 | KB-02 | 工作台内 Tab 顺序：skip link → 顶栏 → 左资料栏 → 对话 → composer（单调不倒退） | **PASS** | skip-link → topbar → topbar → topbar → sources → sources → sources → sources → sources → sources → sources → conversation → conversation → composer → composer → composer |
 | KB-03 | 五类焦点区域均可达（skip link / 顶栏 / 资料栏 / 对话 / composer） | **PASS** | skip-link, topbar, sources, conversation, composer |
 | KB-04 | skip link 指向 composer 且 Enter 后焦点进入 composer 区域 | **PASS** | href=#rdlens-target-composer focused=true / afterEnter=composer/rdlens-target-composer |
-| KB-05 | 焦点环可见（键盘聚焦控件 :focus-visible 且 ring/outline 非 none） | **PASS** | global-model-summary-trigger focusVisible=true shadow=rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484401) 0px 0px  outline=2px |
+| KB-05 | 焦点环可见（键盘聚焦控件 :focus-visible 且 ring/outline 非 none） | **PASS** | global-model-summary-trigger focusVisible=true shadow=rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.496439) 0px 0px  outline=2px |
 | KB-06 | 右栏打开时焦点进入面板；Esc 关闭后焦点返回触发控件 | **PASS** | openFocus=right-pane/rdlens-target-right-pane-close closed=true closedFocus=rdlens-target-outcomes-trigger |
 | KB-07 | 1440 无横向页面滚动（默认两栏 + 右栏打开三栏） | **PASS** | default host=1440/1440 fork=1440/1440; open fork=1440/1440 |
 | KB-08 | 1024 无横向页面滚动（默认两栏 + 右栏替代左栏；中央列 ≥640px） | **PASS** | default fork=1024/1024; open fork=1024/1024 main=669 |
@@ -268,8 +280,11 @@ python3 $VE/harness/gen_readme.py
 - 1024 旧壳五 Tab 行在 Before 出现既有横向滚动（Custom Analysis 截断），属旧壳行为；页面本身无横向滚动（已断言）。不判为 #1104 回归。
 - 截图 SHA-256 仅用于本次交付溯源，不作跨环境像素基线；headless Chromium 字体栅格化会造成字节级差异。
 - Before 场景中的 Results（Insights）为空态（mock 返回空列表），未构造非空洞察/运行结果；不把空态表述为真实数据。
-- F1 预跑发现（空 selected UI 清空路径不可达）如实上报后由 fork-shell 修复（476b1b2）；最终 manifest 只含修复后 head 的 PASS 记录，预跑 FAIL 记录保留在 logs/prerun-F1-empty-selected-finding.md，不作为最终场景证据。
 - 合成数据非真实 DB/宿主观测：本证据不能替代真实 host+DB 的 L2 验收，也不能作为 #1104 完成声明。
+- 宿主失败/验证页证据为 synthetic：mock 将 GET /v1/research/workspace-status 置为 503（failure code=workspace_status_unreachable，可重试）或延迟 12s（verifying 态）；不是真实网络故障。
+- legacy 旧壳（legacy=1）在 zh-CN 下仍有既有英文残留（五 Tab/Results/Activity/范围控件等旧壳文案与既有双语欠项）；按 Lead 口径**旧壳不作为 #1104 目标壳双语验收对象**，残留清单已记录在 logs/capture-after-summary.json 的 after_legacy_old_shell_residual_* 检查中。
+- 目标壳 zh-CN 已做可见文本英文残留扫描（允许 [synthetic] 项目名/资料名与 Ctrl/Cmd+Enter 等快捷键字形）：4a007a2 下目标壳全部场景 PASS；宿主页头失败/验证页中文文案也已采集（after_host_failure_zh / after_host_verifying_zh）。
+- 开发态指示器：fork 以 `next dev` 运行，截图左下角的 Next.js 开发指示器（N 徽标）为开发态 UI，不属于产品界面；生产构建不出现，不作为视觉验收对象。
 - **屏幕阅读器人工走查**（O-UI-04）不在本轮范围（NOT RUN）。
 - **dark 冒烟**仅 1440（默认/页头/右栏/资料/对话/legacy 全场景同 light，但未采 1024 dark）。
 - **真实网络/部署**：无真实 Gateway/DB/模型/外发；bootstrap token 未签名；本证据不构成 L2 验收，synthetic 不单独关闭 L2。
@@ -280,8 +295,6 @@ python3 $VE/harness/gen_readme.py
   - RDLens：`evidence/wave-one-shell-bddcfc523569` → `dev_docs/validation/issue1104/`（Before+After 全量截图、manifest、README、keyboard）
   - fork（open-notebook-rdlens）：`evidence/wave-one-shell-bddcfc523569` → `dev_docs/validation/issue1104/`（After 截图、manifest、README、keyboard）
 - 提交 message：`evidence(#1104): ...`。
-
-> **raw URL 形态**：RDLens 仓库为 **private**，`raw.githubusercontent.com` 匿名访问会返回 404；登录且有仓库权限时 GitHub 页面内的 `blob/...?raw=true` 链接可渲染。host PR 描述建议使用 `https://github.com/HiFiBiO-Therapeutics/RDLens/blob/evidence/wave-one-shell-bddcfc523569/dev_docs/validation/issue1104/screenshots/<file>?raw=true`（或直接用仓库内相对路径）。fork 仓库为 public，raw URL 可直接嵌入 fork PR。
 
 **raw.githubusercontent.com 清单**：
 
@@ -319,6 +332,7 @@ python3 $VE/harness/gen_readme.py
 | `before_chat_1440x900_en-US_dark.png` | — | — |
 | `before_results_panel_1440x900_en-US_dark.png` | — | — |
 | `before_activity_panel_1440x900_en-US_dark.png` | — | — |
+| `before_host_failure_1440x900_en-US.png` | — | — |
 | `after_default_two_column_1440x900_en-US.png` | — | https://raw.githubusercontent.com/lingyun-hifibio/open-notebook-rdlens/evidence/wave-one-shell-bddcfc523569/dev_docs/validation/issue1104/screenshots/after_default_two_column_1440x900_en-US.png |
 | `after_host_header_1440x900_en-US.png` | — | https://raw.githubusercontent.com/lingyun-hifibio/open-notebook-rdlens/evidence/wave-one-shell-bddcfc523569/dev_docs/validation/issue1104/screenshots/after_host_header_1440x900_en-US.png |
 | `after_right_pane_open_1440x900_en-US.png` | — | https://raw.githubusercontent.com/lingyun-hifibio/open-notebook-rdlens/evidence/wave-one-shell-bddcfc523569/dev_docs/validation/issue1104/screenshots/after_right_pane_open_1440x900_en-US.png |
@@ -381,13 +395,16 @@ python3 $VE/harness/gen_readme.py
 | `after_legacy_return_target_1440x900_en-US_dark.png` | — | https://raw.githubusercontent.com/lingyun-hifibio/open-notebook-rdlens/evidence/wave-one-shell-bddcfc523569/dev_docs/validation/issue1104/screenshots/after_legacy_return_target_1440x900_en-US_dark.png |
 | `after_language_switch_before_1440x900_en-US.png` | — | https://raw.githubusercontent.com/lingyun-hifibio/open-notebook-rdlens/evidence/wave-one-shell-bddcfc523569/dev_docs/validation/issue1104/screenshots/after_language_switch_before_1440x900_en-US.png |
 | `after_language_switch_after_1440x900_zh-CN.png` | — | https://raw.githubusercontent.com/lingyun-hifibio/open-notebook-rdlens/evidence/wave-one-shell-bddcfc523569/dev_docs/validation/issue1104/screenshots/after_language_switch_after_1440x900_zh-CN.png |
+| `after_host_failure_1440x900_en-US.png` | — | https://raw.githubusercontent.com/lingyun-hifibio/open-notebook-rdlens/evidence/wave-one-shell-bddcfc523569/dev_docs/validation/issue1104/screenshots/after_host_failure_1440x900_en-US.png |
+| `after_host_failure_1440x900_zh-CN.png` | — | https://raw.githubusercontent.com/lingyun-hifibio/open-notebook-rdlens/evidence/wave-one-shell-bddcfc523569/dev_docs/validation/issue1104/screenshots/after_host_failure_1440x900_zh-CN.png |
+| `after_host_verifying_1440x900_zh-CN.png` | — | https://raw.githubusercontent.com/lingyun-hifibio/open-notebook-rdlens/evidence/wave-one-shell-bddcfc523569/dev_docs/validation/issue1104/screenshots/after_host_verifying_1440x900_zh-CN.png |
 
 ## 11. 产物清单
 
 | 路径 | 内容 |
 |-|-|
-| `screenshots/before_*.png` | 30 张 Before（1024/1440 × en/zh + 1440 dark） |
-| `screenshots/after_*.png` | 63 张 After（5 上下文 × 12 场景 + 语言切换 + 键盘走查截图） |
+| `screenshots/before_*.png` | 31 张 Before（1024/1440 × en/zh + 1440 dark） |
+| `screenshots/after_*.png` | 70 张 After（5 上下文 × 12 场景 + 语言切换 + 键盘走查截图） |
 | `manifest.json` | 每场景 revision/视口/请求语言/实际语言/主题/断言/状态/sha256；含 keyboard_walkthrough 与 Before/After pairing |
 | `keyboard-walkthrough.md` / `.json` | Tab 序、Esc 回焦、skip link、焦点环、无横向滚动逐项 PASS/FAIL |
 | `logs/capture-before-summary.json` / `capture-after-summary.json` | 采集时实时断言 + 控制台 |
@@ -406,5 +423,5 @@ python3 $VE/harness/gen_readme.py
 
 ---
 
-_生成：2026-11-07 02:59 CST · [synthetic] · 非 L2 部署验收_
+_生成：2026-11-07 03:16 CST · [synthetic] · 非 L2 部署验收_
 

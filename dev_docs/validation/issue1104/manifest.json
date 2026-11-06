@@ -1,7 +1,7 @@
 {
   "ticket": "#1104",
   "title": "W1 目标两栏骨架与按需右栏 — Before/After 视觉证据（[synthetic] 网络）",
-  "generated_at": "2026-11-06T18:55:47.838Z",
+  "generated_at": "2026-11-06T19:16:00.460Z",
   "evidence_level": {
     "kind": "synthetic-network real-app rendering",
     "statement": "真实应用渲染（RDLens 宿主 Vite 应用 + fork Next.js 嵌入式工作台）+ 本地合成 API；无真实后端/数据库/模型/凭据/私有数据。synthetic 证据只能作为 smoke，不单独关闭 L2；L2（真实 host + DB + 部署）仍待部署验收（UI 规格 v1 §9.2）。",
@@ -50,9 +50,10 @@
       "fork": {
         "repo": "lingyun-hifibio/open-notebook-rdlens",
         "ref": "agent/wave-one-shell-bddcfc523569",
-        "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-        "short": "476b1b2",
-        "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+        "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+        "short": "4a007a2",
+        "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+        "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
       },
       "host": {
         "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -91,8 +92,11 @@
       "1024 旧壳五 Tab 行在 Before 出现既有横向滚动（Custom Analysis 截断），属旧壳行为；页面本身无横向滚动（已断言）。不判为 #1104 回归。",
       "截图 SHA-256 仅用于本次交付溯源，不作跨环境像素基线；headless Chromium 字体栅格化会造成字节级差异。",
       "Before 场景中的 Results（Insights）为空态（mock 返回空列表），未构造非空洞察/运行结果；不把空态表述为真实数据。",
-      "F1 预跑发现（空 selected UI 清空路径不可达）如实上报后由 fork-shell 修复（476b1b2）；最终 manifest 只含修复后 head 的 PASS 记录，预跑 FAIL 记录保留在 logs/prerun-F1-empty-selected-finding.md，不作为最终场景证据。",
-      "合成数据非真实 DB/宿主观测：本证据不能替代真实 host+DB 的 L2 验收，也不能作为 #1104 完成声明。"
+      "合成数据非真实 DB/宿主观测：本证据不能替代真实 host+DB 的 L2 验收，也不能作为 #1104 完成声明。",
+      "宿主失败/验证页证据为 synthetic：mock 将 GET /v1/research/workspace-status 置为 503（failure code=workspace_status_unreachable，可重试）或延迟 12s（verifying 态）；不是真实网络故障。",
+      "legacy 旧壳（legacy=1）在 zh-CN 下仍有既有英文残留（五 Tab/Results/Activity/范围控件等旧壳文案与既有双语欠项）；按 Lead 口径**旧壳不作为 #1104 目标壳双语验收对象**，残留清单已记录在 logs/capture-after-summary.json 的 after_legacy_old_shell_residual_* 检查中。",
+      "目标壳 zh-CN 已做可见文本英文残留扫描（允许 [synthetic] 项目名/资料名与 Ctrl/Cmd+Enter 等快捷键字形）：4a007a2 下目标壳全部场景 PASS；宿主页头失败/验证页中文文案也已采集（after_host_failure_zh / after_host_verifying_zh）。",
+      "开发态指示器：fork 以 `next dev` 运行，截图左下角的 Next.js 开发指示器（N 徽标）为开发态 UI，不属于产品界面；生产构建不出现，不作为视觉验收对象。"
     ]
   },
   "dependencies": {
@@ -112,8 +116,8 @@
     }
   },
   "totals": {
-    "screenshots": 93,
-    "pass": 81,
+    "screenshots": 101,
+    "pass": 89,
     "fail": 0,
     "not_applicable": 12,
     "not_run": 0
@@ -189,7 +193,13 @@
           "worktree": "evidence/worktrees/host-before (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "after_default_two_column_1440x900_en-US",
+        "after_default_two_column_1440x900_zh-CN",
+        "after_default_two_column_1024x768_en-US",
+        "after_default_two_column_1024x768_zh-CN",
+        "after_default_two_column_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "before_host_header_1440x900_en-US",
@@ -241,7 +251,13 @@
           "worktree": "evidence/worktrees/host-before (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "after_host_header_1440x900_en-US",
+        "after_host_header_1440x900_zh-CN",
+        "after_host_header_1024x768_en-US",
+        "after_host_header_1024x768_zh-CN",
+        "after_host_header_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "before_sources_panel_1440x900_en-US",
@@ -496,7 +512,13 @@
           "worktree": "evidence/worktrees/host-before (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "after_default_two_column_1440x900_en-US",
+        "after_default_two_column_1440x900_zh-CN",
+        "after_default_two_column_1024x768_en-US",
+        "after_default_two_column_1024x768_zh-CN",
+        "after_default_two_column_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "before_host_header_1440x900_zh-CN",
@@ -548,7 +570,13 @@
           "worktree": "evidence/worktrees/host-before (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "after_host_header_1440x900_en-US",
+        "after_host_header_1440x900_zh-CN",
+        "after_host_header_1024x768_en-US",
+        "after_host_header_1024x768_zh-CN",
+        "after_host_header_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "before_sources_panel_1440x900_zh-CN",
@@ -803,7 +831,13 @@
           "worktree": "evidence/worktrees/host-before (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "after_default_two_column_1440x900_en-US",
+        "after_default_two_column_1440x900_zh-CN",
+        "after_default_two_column_1024x768_en-US",
+        "after_default_two_column_1024x768_zh-CN",
+        "after_default_two_column_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "before_host_header_1024x768_en-US",
@@ -855,7 +889,13 @@
           "worktree": "evidence/worktrees/host-before (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "after_host_header_1440x900_en-US",
+        "after_host_header_1440x900_zh-CN",
+        "after_host_header_1024x768_en-US",
+        "after_host_header_1024x768_zh-CN",
+        "after_host_header_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "before_sources_panel_1024x768_en-US",
@@ -1110,7 +1150,13 @@
           "worktree": "evidence/worktrees/host-before (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "after_default_two_column_1440x900_en-US",
+        "after_default_two_column_1440x900_zh-CN",
+        "after_default_two_column_1024x768_en-US",
+        "after_default_two_column_1024x768_zh-CN",
+        "after_default_two_column_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "before_host_header_1024x768_zh-CN",
@@ -1162,7 +1208,13 @@
           "worktree": "evidence/worktrees/host-before (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "after_host_header_1440x900_en-US",
+        "after_host_header_1440x900_zh-CN",
+        "after_host_header_1024x768_en-US",
+        "after_host_header_1024x768_zh-CN",
+        "after_host_header_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "before_sources_panel_1024x768_zh-CN",
@@ -1417,7 +1469,13 @@
           "worktree": "evidence/worktrees/host-before (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "after_default_two_column_1440x900_en-US",
+        "after_default_two_column_1440x900_zh-CN",
+        "after_default_two_column_1024x768_en-US",
+        "after_default_two_column_1024x768_zh-CN",
+        "after_default_two_column_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "before_host_header_1440x900_en-US_dark",
@@ -1469,7 +1527,13 @@
           "worktree": "evidence/worktrees/host-before (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "after_host_header_1440x900_en-US",
+        "after_host_header_1440x900_zh-CN",
+        "after_host_header_1024x768_en-US",
+        "after_host_header_1024x768_zh-CN",
+        "after_host_header_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "before_sources_panel_1440x900_en-US_dark",
@@ -1659,7 +1723,7 @@
       "phase": "after",
       "scene": "target shell default two-column (host header + topbar + sources + conversation + composer)",
       "screenshot": "after_default_two_column_1440x900_en-US.png",
-      "sha256": "0a261bd7e1f731e25ba985d741ab5255da51703c94dd7b853189959082400c3a",
+      "sha256": "4bcec18fc2b70adf45dcc79442480095b494829981092b79ba6567fbd941bdd2",
       "viewport": "1440x900",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -1742,9 +1806,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -1754,7 +1819,13 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_default_two_column_1440x900_en-US",
+        "before_default_two_column_1440x900_zh-CN",
+        "before_default_two_column_1024x768_en-US",
+        "before_default_two_column_1024x768_zh-CN",
+        "before_default_two_column_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_host_header_1440x900_en-US",
@@ -1799,9 +1870,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -1811,14 +1883,20 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_host_header_1440x900_en-US",
+        "before_host_header_1440x900_zh-CN",
+        "before_host_header_1024x768_en-US",
+        "before_host_header_1024x768_zh-CN",
+        "before_host_header_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_right_pane_open_1440x900_en-US",
       "phase": "after",
       "scene": "side panel open (outcomes catalog) — 1440 three columns / 1024 right pane replaces left pane",
       "screenshot": "after_right_pane_open_1440x900_en-US.png",
-      "sha256": "5eb37682903fcf2272364383c57c172837a1ca9ff5632b95d0aa62f85c0b58aa",
+      "sha256": "d12e0568972513bd1c121bda4701f150dcdeed4e8bfc2175b6db5604692c1dbc",
       "viewport": "1440x900",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -1866,9 +1944,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -1878,7 +1957,13 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_results_panel_1440x900_en-US",
+        "before_results_panel_1440x900_zh-CN",
+        "before_results_panel_1024x768_en-US",
+        "before_results_panel_1024x768_zh-CN",
+        "before_results_panel_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_right_pane_closed_1440x900_en-US",
@@ -1918,9 +2003,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -1930,7 +2016,13 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_default_two_column_1440x900_en-US",
+        "before_default_two_column_1440x900_zh-CN",
+        "before_default_two_column_1024x768_en-US",
+        "before_default_two_column_1024x768_zh-CN",
+        "before_default_two_column_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_right_pane_tasks_1440x900_en-US",
@@ -1965,9 +2057,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -1977,7 +2070,13 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_activity_panel_1440x900_en-US",
+        "before_activity_panel_1440x900_zh-CN",
+        "before_activity_panel_1024x768_en-US",
+        "before_activity_panel_1024x768_zh-CN",
+        "before_activity_panel_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_sources_selected_1440x900_en-US",
@@ -2012,9 +2111,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2024,7 +2124,13 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_sources_panel_1440x900_en-US",
+        "before_sources_panel_1440x900_zh-CN",
+        "before_sources_panel_1024x768_en-US",
+        "before_sources_panel_1024x768_zh-CN",
+        "before_sources_panel_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_sources_selected_empty_1440x900_en-US",
@@ -2074,9 +2180,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2086,7 +2193,13 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_sources_panel_1440x900_en-US",
+        "before_sources_panel_1440x900_zh-CN",
+        "before_sources_panel_1024x768_en-US",
+        "before_sources_panel_1024x768_zh-CN",
+        "before_sources_panel_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_sources_clear_via_ui_1440x900_en-US",
@@ -2111,9 +2224,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2123,7 +2237,13 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_sources_panel_1440x900_en-US",
+        "before_sources_panel_1440x900_zh-CN",
+        "before_sources_panel_1024x768_en-US",
+        "before_sources_panel_1024x768_zh-CN",
+        "before_sources_panel_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_sources_scope_all_1440x900_en-US",
@@ -2163,9 +2283,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2175,7 +2296,13 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_sources_panel_1440x900_en-US",
+        "before_sources_panel_1440x900_zh-CN",
+        "before_sources_panel_1024x768_en-US",
+        "before_sources_panel_1024x768_zh-CN",
+        "before_sources_panel_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_empty_conversation_1440x900_en-US",
@@ -2215,9 +2342,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2227,7 +2355,13 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_chat_1440x900_en-US",
+        "before_chat_1440x900_zh-CN",
+        "before_chat_1024x768_en-US",
+        "before_chat_1024x768_zh-CN",
+        "before_chat_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_legacy_old_shell_1440x900_en-US",
@@ -2267,9 +2401,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2279,14 +2414,20 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_default_two_column_1440x900_en-US",
+        "before_default_two_column_1440x900_zh-CN",
+        "before_default_two_column_1024x768_en-US",
+        "before_default_two_column_1024x768_zh-CN",
+        "before_default_two_column_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_legacy_return_target_1440x900_en-US",
       "phase": "after",
       "scene": "return from legacy to target shell (D-UI-05)",
       "screenshot": "after_legacy_return_target_1440x900_en-US.png",
-      "sha256": "67d039e6c39d4a5a037dc6ace9c87df3ca3e2b93548835d18aa67cafaf3acf31",
+      "sha256": "60dc267a1cfcd0fc7a85f1c2484f914c64516c97175747f3966cdeaf30d3c1c7",
       "viewport": "1440x900",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -2319,9 +2460,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2331,14 +2473,20 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_default_two_column_1440x900_en-US",
+        "before_default_two_column_1440x900_zh-CN",
+        "before_default_two_column_1024x768_en-US",
+        "before_default_two_column_1024x768_zh-CN",
+        "before_default_two_column_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_default_two_column_1440x900_zh-CN",
       "phase": "after",
       "scene": "target shell default two-column (host header + topbar + sources + conversation + composer)",
       "screenshot": "after_default_two_column_1440x900_zh-CN.png",
-      "sha256": "ec2886adfaf23196783a7ac62c0724a4bdd25c4d3941755216f2f80d97e486ef",
+      "sha256": "8796c6ae6ee5dde3841c5da728ad0354fc5108d5f8f3891d581dbc8137bb5b31",
       "viewport": "1440x900",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -2406,6 +2554,11 @@
           "detail": "actual=zh-CN"
         },
         {
+          "label": "zh-CN target shell: no untranslated UI strings (project name/shortcut glyphs excepted)",
+          "pass": true,
+          "detail": ""
+        },
+        {
           "label": "no horizontal page scroll (host + fork iframe)",
           "pass": true,
           "detail": "host=1440/1440 fork=1440/1440"
@@ -2421,9 +2574,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2433,7 +2587,13 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_default_two_column_1440x900_en-US",
+        "before_default_two_column_1440x900_zh-CN",
+        "before_default_two_column_1024x768_en-US",
+        "before_default_two_column_1024x768_zh-CN",
+        "before_default_two_column_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_host_header_1440x900_zh-CN",
@@ -2478,9 +2638,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2490,14 +2651,20 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_host_header_1440x900_en-US",
+        "before_host_header_1440x900_zh-CN",
+        "before_host_header_1024x768_en-US",
+        "before_host_header_1024x768_zh-CN",
+        "before_host_header_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_right_pane_open_1440x900_zh-CN",
       "phase": "after",
       "scene": "side panel open (outcomes catalog) — 1440 three columns / 1024 right pane replaces left pane",
       "screenshot": "after_right_pane_open_1440x900_zh-CN.png",
-      "sha256": "c7bba167e5875d04b2ea60483cd8f8665d8d67a6d58045a51753caae78b6c1ab",
+      "sha256": "8fbea2d5768cffe2f29058412f3f59736288e690c6abb978cc4407d918548e0c",
       "viewport": "1440x900",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -2545,9 +2712,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2557,14 +2725,20 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_results_panel_1440x900_en-US",
+        "before_results_panel_1440x900_zh-CN",
+        "before_results_panel_1024x768_en-US",
+        "before_results_panel_1024x768_zh-CN",
+        "before_results_panel_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_right_pane_closed_1440x900_zh-CN",
       "phase": "after",
       "scene": "side panel closed with Esc — focus returns to trigger, left pane restored (compact)",
       "screenshot": "after_right_pane_closed_1440x900_zh-CN.png",
-      "sha256": "8ed9a2b04abbd48932502fe5eaf51033f0ba6c915d18aaf46ead250493b4ff2c",
+      "sha256": "5583d3adaeaa58b846b5e31a654eb34a52f630566d687dcfc5dd357accf437fd",
       "viewport": "1440x900",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -2597,9 +2771,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2609,14 +2784,20 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_default_two_column_1440x900_en-US",
+        "before_default_two_column_1440x900_zh-CN",
+        "before_default_two_column_1024x768_en-US",
+        "before_default_two_column_1024x768_zh-CN",
+        "before_default_two_column_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_right_pane_tasks_1440x900_zh-CN",
       "phase": "after",
       "scene": "side panel open (task history)",
       "screenshot": "after_right_pane_tasks_1440x900_zh-CN.png",
-      "sha256": "cbdd23fc22e0c9fb70f858ddef936063671300ae6e2cc959a71bfd13070fc80a",
+      "sha256": "0a971d6df20c7981901003b12672cee67d949fba795f0225f73d791c7191832e",
       "viewport": "1440x900",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -2644,9 +2825,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2656,14 +2838,20 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_activity_panel_1440x900_en-US",
+        "before_activity_panel_1440x900_zh-CN",
+        "before_activity_panel_1024x768_en-US",
+        "before_activity_panel_1024x768_zh-CN",
+        "before_activity_panel_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_sources_selected_1440x900_zh-CN",
       "phase": "after",
       "scene": "sources pane — selected scope (one source checked)",
       "screenshot": "after_sources_selected_1440x900_zh-CN.png",
-      "sha256": "78cdcc9490c7cc94b7c39bfafaa971e2856be85a05b4f801597cd51cffb44323",
+      "sha256": "b9980da131c9311cd01de06b1aed14bbb34629b9cba19199cfd3ba24af65ffbe",
       "viewport": "1440x900",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -2673,12 +2861,12 @@
         {
           "label": "checking a source switched scope to selected",
           "pass": true,
-          "detail": "{\"selectedChecked\":true,\"allChecked\":false,\"summary\":\"当前范围 1 sources\",\"checkedRows\":1}"
+          "detail": "{\"selectedChecked\":true,\"allChecked\":false,\"summary\":\"当前范围 已选 1 份资料\",\"checkedRows\":1}"
         },
         {
           "label": "scope summary reflects selection",
           "pass": true,
-          "detail": "当前范围 1 sources"
+          "detail": "当前范围 已选 1 份资料"
         },
         {
           "label": "no horizontal page scroll",
@@ -2691,9 +2879,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2703,7 +2892,13 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_sources_panel_1440x900_en-US",
+        "before_sources_panel_1440x900_zh-CN",
+        "before_sources_panel_1024x768_en-US",
+        "before_sources_panel_1024x768_zh-CN",
+        "before_sources_panel_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_sources_selected_empty_1440x900_zh-CN",
@@ -2753,9 +2948,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2765,7 +2961,57 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_sources_panel_1440x900_en-US",
+        "before_sources_panel_1440x900_zh-CN",
+        "before_sources_panel_1024x768_en-US",
+        "before_sources_panel_1024x768_zh-CN",
+        "before_sources_panel_1440x900_en-US_dark"
+      ]
+    },
+    {
+      "id": "after_sources_selected_empty_residual_1440x900_zh-CN",
+      "phase": "after",
+      "scene": "sources pane — zh-CN residual string scan for empty-selected block",
+      "screenshot": null,
+      "sha256": null,
+      "viewport": "1440x900",
+      "language_requested": "zh-CN",
+      "ui_language_actual": "zh-CN",
+      "theme": "light",
+      "status": "PASS",
+      "checks": [
+        {
+          "label": "empty-selected block has no untranslated UI strings",
+          "pass": true,
+          "detail": ""
+        }
+      ],
+      "note": "仅断言文本（无独立截图，复用 sources_selected_empty 截图）。",
+      "revisions": {
+        "fork": {
+          "repo": "lingyun-hifibio/open-notebook-rdlens",
+          "ref": "agent/wave-one-shell-bddcfc523569",
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+        },
+        "host": {
+          "repo": "HiFiBiO-Therapeutics/RDLens",
+          "ref": "agent/wave-one-shell-bddcfc523569",
+          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
+          "short": "d6da1a64b",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+        }
+      },
+      "pairs_with": [
+        "before_sources_panel_1440x900_en-US",
+        "before_sources_panel_1440x900_zh-CN",
+        "before_sources_panel_1024x768_en-US",
+        "before_sources_panel_1024x768_zh-CN",
+        "before_sources_panel_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_sources_clear_via_ui_1440x900_zh-CN",
@@ -2790,9 +3036,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2802,14 +3049,20 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_sources_panel_1440x900_en-US",
+        "before_sources_panel_1440x900_zh-CN",
+        "before_sources_panel_1024x768_en-US",
+        "before_sources_panel_1024x768_zh-CN",
+        "before_sources_panel_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_sources_scope_all_1440x900_zh-CN",
       "phase": "after",
       "scene": "sources pane — all available sources scope (default)",
       "screenshot": "after_sources_scope_all_1440x900_zh-CN.png",
-      "sha256": "1672bbfb9c4dc87df7e1a7c49087229adc4b83f6a5f0e8f2d23c3a5d44196394",
+      "sha256": "8b2c39ee5634f439c2967d9959bac52fbec16b132b74dbd4120ddf39da60bfcf",
       "viewport": "1440x900",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -2842,9 +3095,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2854,14 +3108,20 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_sources_panel_1440x900_en-US",
+        "before_sources_panel_1440x900_zh-CN",
+        "before_sources_panel_1024x768_en-US",
+        "before_sources_panel_1024x768_zh-CN",
+        "before_sources_panel_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_empty_conversation_1440x900_zh-CN",
       "phase": "after",
       "scene": "empty conversation (target shell)",
       "screenshot": "after_empty_conversation_1440x900_zh-CN.png",
-      "sha256": "283f99361711845f91d1289f2413274643b101248777c35e20bb7254530b500a",
+      "sha256": "3a6d81ef0a7977e30479c92baa661c7a9c887a7a818ac3f04ae6dcad847487e0",
       "viewport": "1440x900",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -2894,9 +3154,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2906,14 +3167,20 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_chat_1440x900_en-US",
+        "before_chat_1440x900_zh-CN",
+        "before_chat_1024x768_en-US",
+        "before_chat_1024x768_zh-CN",
+        "before_chat_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_legacy_old_shell_1440x900_zh-CN",
       "phase": "after",
       "scene": "legacy=1 old shell via host header secondary entry (D-UI-05)",
       "screenshot": "after_legacy_old_shell_1440x900_zh-CN.png",
-      "sha256": "c8b94563018b8bbedfe9dd548d759833ab85b2450c755af14ed0f7c712a14a00",
+      "sha256": "93d69888c24aab0f34838a278ecd7b3bf712bcfea8a66a8b93ef7f8ed3afe6ef",
       "viewport": "1440x900",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -2941,14 +3208,15 @@
           "detail": "目标版工作台 aria=目标版工作台（当前为旧版，点击返回）"
         }
       ],
-      "note": "旧壳仅作 W1 过渡/回归入口；旧壳不作为目标壳验收对象。",
+      "note": "旧壳仅作 W1 过渡/回归入口；旧壳不作为目标壳验收对象。旧壳 zh-CN 仍有既有英文残留（旧壳双语欠项，见 checks 记录）。",
       "revisions": {
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -2958,14 +3226,64 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_default_two_column_1440x900_en-US",
+        "before_default_two_column_1440x900_zh-CN",
+        "before_default_two_column_1024x768_en-US",
+        "before_default_two_column_1024x768_zh-CN",
+        "before_default_two_column_1440x900_en-US_dark"
+      ]
+    },
+    {
+      "id": "after_legacy_old_shell_residual_1440x900_zh-CN",
+      "phase": "after",
+      "scene": "legacy old shell — zh-CN residual English (pre-existing bilingual debt, NOT this PR acceptance target)",
+      "screenshot": null,
+      "sha256": null,
+      "viewport": "1440x900",
+      "language_requested": "zh-CN",
+      "ui_language_actual": "zh-CN",
+      "theme": "light",
+      "status": "PASS",
+      "checks": [
+        {
+          "label": "legacy old shell zh-CN residual English registered as pre-existing debt (not a PR acceptance target)",
+          "pass": true,
+          "detail": "Activity, SCOPE, MATERIALS, RESULTS, Runs, Add, materials, focused, document, workspace"
+        }
+      ],
+      "note": "旧壳既有双语欠项：legacy 五 Tab/Results/Activity 等文案仍有英文；按 Lead 口径不作为 #1104 目标壳验收对象。",
+      "revisions": {
+        "fork": {
+          "repo": "lingyun-hifibio/open-notebook-rdlens",
+          "ref": "agent/wave-one-shell-bddcfc523569",
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+        },
+        "host": {
+          "repo": "HiFiBiO-Therapeutics/RDLens",
+          "ref": "agent/wave-one-shell-bddcfc523569",
+          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
+          "short": "d6da1a64b",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+        }
+      },
+      "pairs_with": [
+        "before_default_two_column_1440x900_en-US",
+        "before_default_two_column_1440x900_zh-CN",
+        "before_default_two_column_1024x768_en-US",
+        "before_default_two_column_1024x768_zh-CN",
+        "before_default_two_column_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_legacy_return_target_1440x900_zh-CN",
       "phase": "after",
       "scene": "return from legacy to target shell (D-UI-05)",
       "screenshot": "after_legacy_return_target_1440x900_zh-CN.png",
-      "sha256": "5320adc8f44f216a24e2c4363e12deecdd4d5d072296f79c6611edae40e819e3",
+      "sha256": "b60eeea671ba314650e4b348662b60be28b510eba8b758a0a234d0056f392375",
       "viewport": "1440x900",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -2998,9 +3316,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3010,14 +3329,20 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_default_two_column_1440x900_en-US",
+        "before_default_two_column_1440x900_zh-CN",
+        "before_default_two_column_1024x768_en-US",
+        "before_default_two_column_1024x768_zh-CN",
+        "before_default_two_column_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_default_two_column_1024x768_en-US",
       "phase": "after",
       "scene": "target shell default two-column (host header + topbar + sources + conversation + composer)",
       "screenshot": "after_default_two_column_1024x768_en-US.png",
-      "sha256": "2aa576eba29fe355d76b69f3ed6222a8a257373e1bd019ad8e7cac8e38497f22",
+      "sha256": "8989d73db47b689914ae190c16f2f195374d25b1a877e4ffb0d4df6bfc89c0c9",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -3100,9 +3425,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3112,14 +3438,20 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_default_two_column_1440x900_en-US",
+        "before_default_two_column_1440x900_zh-CN",
+        "before_default_two_column_1024x768_en-US",
+        "before_default_two_column_1024x768_zh-CN",
+        "before_default_two_column_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_host_header_1024x768_en-US",
       "phase": "after",
       "scene": "host Research page header (language switch + legacy entry, no project name)",
       "screenshot": "after_host_header_1024x768_en-US.png",
-      "sha256": "22027c95a54caf89bdd1f71863affaf2ce8250e9cee257010ba3babc1419cee9",
+      "sha256": "6e6156c5a0437b3281e48c32429c7b8740992ac1e0c243f77ddec98c4fe533dd",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -3157,9 +3489,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3169,14 +3502,20 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_host_header_1440x900_en-US",
+        "before_host_header_1440x900_zh-CN",
+        "before_host_header_1024x768_en-US",
+        "before_host_header_1024x768_zh-CN",
+        "before_host_header_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_right_pane_open_1024x768_en-US",
       "phase": "after",
       "scene": "side panel open (outcomes catalog) — 1440 three columns / 1024 right pane replaces left pane",
       "screenshot": "after_right_pane_open_1024x768_en-US.png",
-      "sha256": "2e41f8f6c77a6d8b9ff73c14d8d53a781e729ed96166acdabe152e5aa3844beb",
+      "sha256": "98318b89ea8f3ff5ad5d9bb1d0e092d449448fad211abe897dcfee9218ed3383",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -3224,9 +3563,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3236,14 +3576,20 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_results_panel_1440x900_en-US",
+        "before_results_panel_1440x900_zh-CN",
+        "before_results_panel_1024x768_en-US",
+        "before_results_panel_1024x768_zh-CN",
+        "before_results_panel_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_right_pane_closed_1024x768_en-US",
       "phase": "after",
       "scene": "side panel closed with Esc — focus returns to trigger, left pane restored (compact)",
       "screenshot": "after_right_pane_closed_1024x768_en-US.png",
-      "sha256": "405ca9c204430991e87a519711332cf39877232dea16e3795cf7c83bfff39702",
+      "sha256": "20d1c8be8e12eeb94a225e4c56f044539679db07263c58036ea84682f4e2b649",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -3276,9 +3622,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3288,14 +3635,20 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_default_two_column_1440x900_en-US",
+        "before_default_two_column_1440x900_zh-CN",
+        "before_default_two_column_1024x768_en-US",
+        "before_default_two_column_1024x768_zh-CN",
+        "before_default_two_column_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_right_pane_tasks_1024x768_en-US",
       "phase": "after",
       "scene": "side panel open (task history)",
       "screenshot": "after_right_pane_tasks_1024x768_en-US.png",
-      "sha256": "c0dc34214ec86c1b30c3f8f049f115a4e27c486074bf722b0a9d87349bcf2651",
+      "sha256": "3d52539f86359bfbaa1807fb946c06e081439b96745cae7ff77e050949149f4c",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -3323,9 +3676,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3335,14 +3689,20 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_activity_panel_1440x900_en-US",
+        "before_activity_panel_1440x900_zh-CN",
+        "before_activity_panel_1024x768_en-US",
+        "before_activity_panel_1024x768_zh-CN",
+        "before_activity_panel_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_sources_selected_1024x768_en-US",
       "phase": "after",
       "scene": "sources pane — selected scope (one source checked)",
       "screenshot": "after_sources_selected_1024x768_en-US.png",
-      "sha256": "d71e2761baffff517e91a4e2ba093a851d1ad045ccfe1c4f318788f742f69493",
+      "sha256": "38985be010304ec83ef244f89d1b2f720c27a92c235c72c393dcc2f8ead74d97",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -3370,9 +3730,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3382,14 +3743,20 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_sources_panel_1440x900_en-US",
+        "before_sources_panel_1440x900_zh-CN",
+        "before_sources_panel_1024x768_en-US",
+        "before_sources_panel_1024x768_zh-CN",
+        "before_sources_panel_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_sources_selected_empty_1024x768_en-US",
       "phase": "after",
       "scene": "sources pane — empty selected scope (blocked data query, BEH-03)",
       "screenshot": "after_sources_selected_empty_1024x768_en-US.png",
-      "sha256": "4fc38da194a73ecd56986400cb6c9fb9a6f6e8bf4fd74ec85c4413313c27963a",
+      "sha256": "7817104a1c856f2f1b06d6a23ce4fd14f6ef9bbc8a3700e139018bcb583e1427",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -3432,9 +3799,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3444,14 +3812,20 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_sources_panel_1440x900_en-US",
+        "before_sources_panel_1440x900_zh-CN",
+        "before_sources_panel_1024x768_en-US",
+        "before_sources_panel_1024x768_zh-CN",
+        "before_sources_panel_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_sources_clear_via_ui_1024x768_en-US",
       "phase": "after",
       "scene": "sources pane — clear selection via UI (BEH-03 / §9.3-2 walkthrough path)",
       "screenshot": "after_sources_clear_via_ui_1024x768_en-US.png",
-      "sha256": "4fc38da194a73ecd56986400cb6c9fb9a6f6e8bf4fd74ec85c4413313c27963a",
+      "sha256": "7817104a1c856f2f1b06d6a23ce4fd14f6ef9bbc8a3700e139018bcb583e1427",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -3469,9 +3843,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3481,14 +3856,20 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_sources_panel_1440x900_en-US",
+        "before_sources_panel_1440x900_zh-CN",
+        "before_sources_panel_1024x768_en-US",
+        "before_sources_panel_1024x768_zh-CN",
+        "before_sources_panel_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_sources_scope_all_1024x768_en-US",
       "phase": "after",
       "scene": "sources pane — all available sources scope (default)",
       "screenshot": "after_sources_scope_all_1024x768_en-US.png",
-      "sha256": "71e31376b1798d56180cf4de7f3641a2fd5f313a03d490f8615c13a36a16a254",
+      "sha256": "78711db036e0e17501815d35383d9f094f8f01caa75ac742bda063c748e088d8",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -3521,9 +3902,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3533,14 +3915,20 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_sources_panel_1440x900_en-US",
+        "before_sources_panel_1440x900_zh-CN",
+        "before_sources_panel_1024x768_en-US",
+        "before_sources_panel_1024x768_zh-CN",
+        "before_sources_panel_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_empty_conversation_1024x768_en-US",
       "phase": "after",
       "scene": "empty conversation (target shell)",
       "screenshot": "after_empty_conversation_1024x768_en-US.png",
-      "sha256": "ac87166841fb8b88f156a20882b0ee126754d280ec8138190df813d9ce652ef4",
+      "sha256": "c3e4790d50be8ecfd5cfebf82e6639e1b47bd7e22198ab7e93f09c1b2d792c76",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -3573,9 +3961,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3585,14 +3974,20 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_chat_1440x900_en-US",
+        "before_chat_1440x900_zh-CN",
+        "before_chat_1024x768_en-US",
+        "before_chat_1024x768_zh-CN",
+        "before_chat_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_legacy_old_shell_1024x768_en-US",
       "phase": "after",
       "scene": "legacy=1 old shell via host header secondary entry (D-UI-05)",
       "screenshot": "after_legacy_old_shell_1024x768_en-US.png",
-      "sha256": "2c578ff02f56a20f3fc00b30aba8d7e7b5f11057987175c7aa1ef4e602a08de3",
+      "sha256": "c975c9e1bb1f7d9f2a4621ec7f3e100dc3588665d0702607f1136d33b5e61e10",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -3625,9 +4020,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3637,14 +4033,20 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_default_two_column_1440x900_en-US",
+        "before_default_two_column_1440x900_zh-CN",
+        "before_default_two_column_1024x768_en-US",
+        "before_default_two_column_1024x768_zh-CN",
+        "before_default_two_column_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_legacy_return_target_1024x768_en-US",
       "phase": "after",
       "scene": "return from legacy to target shell (D-UI-05)",
       "screenshot": "after_legacy_return_target_1024x768_en-US.png",
-      "sha256": "f3b402dc008ae814a8a2d58692c994c46f8b955c4573410931a955016e81a327",
+      "sha256": "6a1343af7dffe4da49499bd8c59df150e5f85bcd8a489f95707aa7dc562da2bb",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -3677,9 +4079,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3689,14 +4092,20 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_default_two_column_1440x900_en-US",
+        "before_default_two_column_1440x900_zh-CN",
+        "before_default_two_column_1024x768_en-US",
+        "before_default_two_column_1024x768_zh-CN",
+        "before_default_two_column_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_default_two_column_1024x768_zh-CN",
       "phase": "after",
       "scene": "target shell default two-column (host header + topbar + sources + conversation + composer)",
       "screenshot": "after_default_two_column_1024x768_zh-CN.png",
-      "sha256": "5ee8bd9c924b5e9c86685be84a00e4bb185f1a1cbd153f485bc24c779e9a07cc",
+      "sha256": "11c1ec265715f6dff7939d961e87a93c7b0a966625d637c003847cebcb91737b",
       "viewport": "1024x768",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -3764,6 +4173,11 @@
           "detail": "actual=zh-CN"
         },
         {
+          "label": "zh-CN target shell: no untranslated UI strings (project name/shortcut glyphs excepted)",
+          "pass": true,
+          "detail": ""
+        },
+        {
           "label": "no horizontal page scroll (host + fork iframe)",
           "pass": true,
           "detail": "host=1024/1024 fork=1024/1024"
@@ -3779,9 +4193,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3791,7 +4206,13 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_default_two_column_1440x900_en-US",
+        "before_default_two_column_1440x900_zh-CN",
+        "before_default_two_column_1024x768_en-US",
+        "before_default_two_column_1024x768_zh-CN",
+        "before_default_two_column_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_host_header_1024x768_zh-CN",
@@ -3836,9 +4257,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3848,7 +4270,13 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_host_header_1440x900_en-US",
+        "before_host_header_1440x900_zh-CN",
+        "before_host_header_1024x768_en-US",
+        "before_host_header_1024x768_zh-CN",
+        "before_host_header_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_right_pane_open_1024x768_zh-CN",
@@ -3903,9 +4331,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3915,14 +4344,20 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_results_panel_1440x900_en-US",
+        "before_results_panel_1440x900_zh-CN",
+        "before_results_panel_1024x768_en-US",
+        "before_results_panel_1024x768_zh-CN",
+        "before_results_panel_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_right_pane_closed_1024x768_zh-CN",
       "phase": "after",
       "scene": "side panel closed with Esc — focus returns to trigger, left pane restored (compact)",
       "screenshot": "after_right_pane_closed_1024x768_zh-CN.png",
-      "sha256": "7c7addf9348b9bedac98ea13e8431c3a3788258395888c4cc9c20565e6e67dea",
+      "sha256": "c7ba55f304a69fc76dfba370d552caf8819a76141b661aa37e46bbf2cd0958d7",
       "viewport": "1024x768",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -3955,9 +4390,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -3967,7 +4403,13 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_default_two_column_1440x900_en-US",
+        "before_default_two_column_1440x900_zh-CN",
+        "before_default_two_column_1024x768_en-US",
+        "before_default_two_column_1024x768_zh-CN",
+        "before_default_two_column_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_right_pane_tasks_1024x768_zh-CN",
@@ -4002,9 +4444,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4014,14 +4457,20 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_activity_panel_1440x900_en-US",
+        "before_activity_panel_1440x900_zh-CN",
+        "before_activity_panel_1024x768_en-US",
+        "before_activity_panel_1024x768_zh-CN",
+        "before_activity_panel_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_sources_selected_1024x768_zh-CN",
       "phase": "after",
       "scene": "sources pane — selected scope (one source checked)",
       "screenshot": "after_sources_selected_1024x768_zh-CN.png",
-      "sha256": "e37af94d9ba65c20d31a7e2697e9036755d81b7cc17f9d047e43d4cb93fa447c",
+      "sha256": "7a01ffb08e7c08056ea675c0f6cbbed8f488803cff1abaa70410b728afe8cb5f",
       "viewport": "1024x768",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -4031,12 +4480,12 @@
         {
           "label": "checking a source switched scope to selected",
           "pass": true,
-          "detail": "{\"selectedChecked\":true,\"allChecked\":false,\"summary\":\"当前范围 1 sources\",\"checkedRows\":1}"
+          "detail": "{\"selectedChecked\":true,\"allChecked\":false,\"summary\":\"当前范围 已选 1 份资料\",\"checkedRows\":1}"
         },
         {
           "label": "scope summary reflects selection",
           "pass": true,
-          "detail": "当前范围 1 sources"
+          "detail": "当前范围 已选 1 份资料"
         },
         {
           "label": "no horizontal page scroll",
@@ -4049,9 +4498,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4061,7 +4511,13 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_sources_panel_1440x900_en-US",
+        "before_sources_panel_1440x900_zh-CN",
+        "before_sources_panel_1024x768_en-US",
+        "before_sources_panel_1024x768_zh-CN",
+        "before_sources_panel_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_sources_selected_empty_1024x768_zh-CN",
@@ -4111,9 +4567,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4123,7 +4580,57 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_sources_panel_1440x900_en-US",
+        "before_sources_panel_1440x900_zh-CN",
+        "before_sources_panel_1024x768_en-US",
+        "before_sources_panel_1024x768_zh-CN",
+        "before_sources_panel_1440x900_en-US_dark"
+      ]
+    },
+    {
+      "id": "after_sources_selected_empty_residual_1024x768_zh-CN",
+      "phase": "after",
+      "scene": "sources pane — zh-CN residual string scan for empty-selected block",
+      "screenshot": null,
+      "sha256": null,
+      "viewport": "1024x768",
+      "language_requested": "zh-CN",
+      "ui_language_actual": "zh-CN",
+      "theme": "light",
+      "status": "PASS",
+      "checks": [
+        {
+          "label": "empty-selected block has no untranslated UI strings",
+          "pass": true,
+          "detail": ""
+        }
+      ],
+      "note": "仅断言文本（无独立截图，复用 sources_selected_empty 截图）。",
+      "revisions": {
+        "fork": {
+          "repo": "lingyun-hifibio/open-notebook-rdlens",
+          "ref": "agent/wave-one-shell-bddcfc523569",
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+        },
+        "host": {
+          "repo": "HiFiBiO-Therapeutics/RDLens",
+          "ref": "agent/wave-one-shell-bddcfc523569",
+          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
+          "short": "d6da1a64b",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+        }
+      },
+      "pairs_with": [
+        "before_sources_panel_1440x900_en-US",
+        "before_sources_panel_1440x900_zh-CN",
+        "before_sources_panel_1024x768_en-US",
+        "before_sources_panel_1024x768_zh-CN",
+        "before_sources_panel_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_sources_clear_via_ui_1024x768_zh-CN",
@@ -4148,9 +4655,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4160,14 +4668,20 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_sources_panel_1440x900_en-US",
+        "before_sources_panel_1440x900_zh-CN",
+        "before_sources_panel_1024x768_en-US",
+        "before_sources_panel_1024x768_zh-CN",
+        "before_sources_panel_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_sources_scope_all_1024x768_zh-CN",
       "phase": "after",
       "scene": "sources pane — all available sources scope (default)",
       "screenshot": "after_sources_scope_all_1024x768_zh-CN.png",
-      "sha256": "18a83800e5a81ab355ce5eb0412f92ed2db9b62065227d8e0681e09fa842ccea",
+      "sha256": "7ab734f412aa5c7ceead1960efcb51152874d7834568784e946571460a8969e0",
       "viewport": "1024x768",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -4200,9 +4714,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4212,14 +4727,20 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_sources_panel_1440x900_en-US",
+        "before_sources_panel_1440x900_zh-CN",
+        "before_sources_panel_1024x768_en-US",
+        "before_sources_panel_1024x768_zh-CN",
+        "before_sources_panel_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_empty_conversation_1024x768_zh-CN",
       "phase": "after",
       "scene": "empty conversation (target shell)",
       "screenshot": "after_empty_conversation_1024x768_zh-CN.png",
-      "sha256": "1a57fe093077b4071c6e90a98e89165d5ef634d8e137e302ae33e5c7f21a6835",
+      "sha256": "a2875fac2a42cfb4ef30916a59a239a5a0dfa11a63903200ddabc313b00e0fc4",
       "viewport": "1024x768",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -4252,9 +4773,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4264,14 +4786,20 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_chat_1440x900_en-US",
+        "before_chat_1440x900_zh-CN",
+        "before_chat_1024x768_en-US",
+        "before_chat_1024x768_zh-CN",
+        "before_chat_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_legacy_old_shell_1024x768_zh-CN",
       "phase": "after",
       "scene": "legacy=1 old shell via host header secondary entry (D-UI-05)",
       "screenshot": "after_legacy_old_shell_1024x768_zh-CN.png",
-      "sha256": "76548cca1776ff99960e8a728333b24642ae3e8a5532aa0155f00d6b90087e78",
+      "sha256": "7263078c3363db0d00086ca40f9dc7883f2e169d243e733a351e67c6bbe53206",
       "viewport": "1024x768",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -4299,14 +4827,15 @@
           "detail": "目标版工作台 aria=目标版工作台（当前为旧版，点击返回）"
         }
       ],
-      "note": "旧壳仅作 W1 过渡/回归入口；旧壳不作为目标壳验收对象。",
+      "note": "旧壳仅作 W1 过渡/回归入口；旧壳不作为目标壳验收对象。旧壳 zh-CN 仍有既有英文残留（旧壳双语欠项，见 checks 记录）。",
       "revisions": {
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4316,14 +4845,64 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_default_two_column_1440x900_en-US",
+        "before_default_two_column_1440x900_zh-CN",
+        "before_default_two_column_1024x768_en-US",
+        "before_default_two_column_1024x768_zh-CN",
+        "before_default_two_column_1440x900_en-US_dark"
+      ]
+    },
+    {
+      "id": "after_legacy_old_shell_residual_1024x768_zh-CN",
+      "phase": "after",
+      "scene": "legacy old shell — zh-CN residual English (pre-existing bilingual debt, NOT this PR acceptance target)",
+      "screenshot": null,
+      "sha256": null,
+      "viewport": "1024x768",
+      "language_requested": "zh-CN",
+      "ui_language_actual": "zh-CN",
+      "theme": "light",
+      "status": "PASS",
+      "checks": [
+        {
+          "label": "legacy old shell zh-CN residual English registered as pre-existing debt (not a PR acceptance target)",
+          "pass": true,
+          "detail": "Activity, SCOPE, MATERIALS, RESULTS, Runs, Add, materials, focused, document, workspace"
+        }
+      ],
+      "note": "旧壳既有双语欠项：legacy 五 Tab/Results/Activity 等文案仍有英文；按 Lead 口径不作为 #1104 目标壳验收对象。",
+      "revisions": {
+        "fork": {
+          "repo": "lingyun-hifibio/open-notebook-rdlens",
+          "ref": "agent/wave-one-shell-bddcfc523569",
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+        },
+        "host": {
+          "repo": "HiFiBiO-Therapeutics/RDLens",
+          "ref": "agent/wave-one-shell-bddcfc523569",
+          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
+          "short": "d6da1a64b",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+        }
+      },
+      "pairs_with": [
+        "before_default_two_column_1440x900_en-US",
+        "before_default_two_column_1440x900_zh-CN",
+        "before_default_two_column_1024x768_en-US",
+        "before_default_two_column_1024x768_zh-CN",
+        "before_default_two_column_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_legacy_return_target_1024x768_zh-CN",
       "phase": "after",
       "scene": "return from legacy to target shell (D-UI-05)",
       "screenshot": "after_legacy_return_target_1024x768_zh-CN.png",
-      "sha256": "c8001e8ef06fe43b229d919eaac0dae52b55c54b4f6665aad6145c33ab306693",
+      "sha256": "3d45bf18524670149aa7e0f81ec19479d34b0a0b35f2a36ea0adee5990512d02",
       "viewport": "1024x768",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -4356,9 +4935,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4368,7 +4948,13 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_default_two_column_1440x900_en-US",
+        "before_default_two_column_1440x900_zh-CN",
+        "before_default_two_column_1024x768_en-US",
+        "before_default_two_column_1024x768_zh-CN",
+        "before_default_two_column_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_default_two_column_1440x900_en-US_dark",
@@ -4458,9 +5044,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4470,7 +5057,13 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_default_two_column_1440x900_en-US",
+        "before_default_two_column_1440x900_zh-CN",
+        "before_default_two_column_1024x768_en-US",
+        "before_default_two_column_1024x768_zh-CN",
+        "before_default_two_column_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_host_header_1440x900_en-US_dark",
@@ -4515,9 +5108,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4527,7 +5121,13 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_host_header_1440x900_en-US",
+        "before_host_header_1440x900_zh-CN",
+        "before_host_header_1024x768_en-US",
+        "before_host_header_1024x768_zh-CN",
+        "before_host_header_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_right_pane_open_1440x900_en-US_dark",
@@ -4582,9 +5182,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4594,7 +5195,13 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_results_panel_1440x900_en-US",
+        "before_results_panel_1440x900_zh-CN",
+        "before_results_panel_1024x768_en-US",
+        "before_results_panel_1024x768_zh-CN",
+        "before_results_panel_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_right_pane_closed_1440x900_en-US_dark",
@@ -4634,9 +5241,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4646,7 +5254,13 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_default_two_column_1440x900_en-US",
+        "before_default_two_column_1440x900_zh-CN",
+        "before_default_two_column_1024x768_en-US",
+        "before_default_two_column_1024x768_zh-CN",
+        "before_default_two_column_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_right_pane_tasks_1440x900_en-US_dark",
@@ -4681,9 +5295,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4693,7 +5308,13 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_activity_panel_1440x900_en-US",
+        "before_activity_panel_1440x900_zh-CN",
+        "before_activity_panel_1024x768_en-US",
+        "before_activity_panel_1024x768_zh-CN",
+        "before_activity_panel_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_sources_selected_1440x900_en-US_dark",
@@ -4728,9 +5349,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4740,7 +5362,13 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_sources_panel_1440x900_en-US",
+        "before_sources_panel_1440x900_zh-CN",
+        "before_sources_panel_1024x768_en-US",
+        "before_sources_panel_1024x768_zh-CN",
+        "before_sources_panel_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_sources_selected_empty_1440x900_en-US_dark",
@@ -4790,9 +5418,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4802,7 +5431,13 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_sources_panel_1440x900_en-US",
+        "before_sources_panel_1440x900_zh-CN",
+        "before_sources_panel_1024x768_en-US",
+        "before_sources_panel_1024x768_zh-CN",
+        "before_sources_panel_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_sources_clear_via_ui_1440x900_en-US_dark",
@@ -4827,9 +5462,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4839,7 +5475,13 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_sources_panel_1440x900_en-US",
+        "before_sources_panel_1440x900_zh-CN",
+        "before_sources_panel_1024x768_en-US",
+        "before_sources_panel_1024x768_zh-CN",
+        "before_sources_panel_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_sources_scope_all_1440x900_en-US_dark",
@@ -4879,9 +5521,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4891,7 +5534,13 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_sources_panel_1440x900_en-US",
+        "before_sources_panel_1440x900_zh-CN",
+        "before_sources_panel_1024x768_en-US",
+        "before_sources_panel_1024x768_zh-CN",
+        "before_sources_panel_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_empty_conversation_1440x900_en-US_dark",
@@ -4931,9 +5580,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4943,7 +5593,13 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_chat_1440x900_en-US",
+        "before_chat_1440x900_zh-CN",
+        "before_chat_1024x768_en-US",
+        "before_chat_1024x768_zh-CN",
+        "before_chat_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_legacy_old_shell_1440x900_en-US_dark",
@@ -4983,9 +5639,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -4995,7 +5652,13 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_default_two_column_1440x900_en-US",
+        "before_default_two_column_1440x900_zh-CN",
+        "before_default_two_column_1024x768_en-US",
+        "before_default_two_column_1024x768_zh-CN",
+        "before_default_two_column_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_legacy_return_target_1440x900_en-US_dark",
@@ -5035,9 +5698,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -5047,7 +5711,13 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_default_two_column_1440x900_en-US",
+        "before_default_two_column_1440x900_zh-CN",
+        "before_default_two_column_1024x768_en-US",
+        "before_default_two_column_1024x768_zh-CN",
+        "before_default_two_column_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_language_switch_before_1440x900_en-US",
@@ -5082,9 +5752,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -5094,14 +5765,20 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_host_header_1440x900_en-US",
+        "before_host_header_1440x900_zh-CN",
+        "before_host_header_1024x768_en-US",
+        "before_host_header_1024x768_zh-CN",
+        "before_host_header_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_language_switch_after_1440x900_zh-CN",
       "phase": "after",
       "scene": "language switch — host zh-CN selected, workbench text immediately zh-CN, state retained",
       "screenshot": "after_language_switch_after_1440x900_zh-CN.png",
-      "sha256": "dccdf66fff478176275a6738bad79f120010adf67f21d30d8852ff17a9ce95c5",
+      "sha256": "2395d1b31e13a9339eb34f23acdcf4c40b1fb32c03cb26bc45dc0cd147429657",
       "viewport": "1440x900",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -5139,9 +5816,10 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -5151,7 +5829,13 @@
           "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
         }
       },
-      "pairs_with": []
+      "pairs_with": [
+        "before_host_header_1440x900_en-US",
+        "before_host_header_1440x900_zh-CN",
+        "before_host_header_1024x768_en-US",
+        "before_host_header_1024x768_zh-CN",
+        "before_host_header_1440x900_en-US_dark"
+      ]
     },
     {
       "id": "after_language_switch_back_1440x900_en-US",
@@ -5181,9 +5865,243 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "476b1b26a1312fd143662ec28001de3244963e87",
-          "short": "476b1b2",
-          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)"
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+        },
+        "host": {
+          "repo": "HiFiBiO-Therapeutics/RDLens",
+          "ref": "agent/wave-one-shell-bddcfc523569",
+          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
+          "short": "d6da1a64b",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+        }
+      },
+      "pairs_with": []
+    },
+    {
+      "id": "before_host_failure_1440x900_en-US",
+      "phase": "before",
+      "scene": "host Research page — workspace access verification failure (retryable, synthetic)",
+      "screenshot": "before_host_failure_1440x900_en-US.png",
+      "sha256": "a6c66734b1771de4b81db54ef2fe67037d4776b473a13ca60d3e9700c467c01c",
+      "viewport": "1440x900",
+      "language_requested": "en-US",
+      "ui_language_actual": "en-US",
+      "theme": "light",
+      "status": "PASS",
+      "checks": [
+        {
+          "label": "failure page rendered (not blank)",
+          "pass": true,
+          "detail": "Unable to reach the Research workspace status service. It may be temporarily unreachable. Failure code: workspace_status_unreachable Retry Back to RDLens"
+        },
+        {
+          "label": "retryable category: Retry + Back present",
+          "pass": true,
+          "detail": "retry=1 back=1"
+        },
+        {
+          "label": "failure code is workspace_status_unreachable",
+          "pass": true,
+          "detail": "workspace_status_unreachable"
+        },
+        {
+          "label": "failure text/copy is en-US",
+          "pass": true,
+          "detail": "Unable to reach the Research workspace status service. It may be temporarily unreachable. Failure code: workspace_status_unreachable Retry Back to RDLens"
+        },
+        {
+          "label": "host header visible above failure page",
+          "pass": true,
+          "detail": "Research workspace RDLens synthetic-owner Sign out"
+        }
+      ],
+      "note": "synthetic status 503；重试入口可用（未点击，避免依赖网络恢复）。",
+      "revisions": {
+        "fork": {
+          "repo": "lingyun-hifibio/open-notebook-rdlens",
+          "ref": "origin/main",
+          "commit": "2db87a8e2ccbed82acd321529f70a7b150c8d398",
+          "short": "2db87a8",
+          "worktree": "evidence/worktrees/fork-before (git worktree add --detach)"
+        },
+        "host": {
+          "repo": "HiFiBiO-Therapeutics/RDLens",
+          "ref": "origin/main",
+          "commit": "53e9b87b73fb12b60bf01d7fd217b9c7e57c657e",
+          "short": "53e9b87b7",
+          "worktree": "evidence/worktrees/host-before (git worktree add --detach)"
+        }
+      },
+      "pairs_with": [
+        "after_host_failure_1440x900_en-US",
+        "after_host_failure_1440x900_zh-CN"
+      ]
+    },
+    {
+      "id": "after_host_failure_1440x900_en-US",
+      "phase": "after",
+      "scene": "host Research page — workspace access verification failure (retryable, synthetic)",
+      "screenshot": "after_host_failure_1440x900_en-US.png",
+      "sha256": "b8159079b88714da2c181b16cd29c4718e67fea72f52ff2737f9ee3565af019c",
+      "viewport": "1440x900",
+      "language_requested": "en-US",
+      "ui_language_actual": "en-US",
+      "theme": "light",
+      "status": "PASS",
+      "checks": [
+        {
+          "label": "failure page rendered (not blank)",
+          "pass": true,
+          "detail": "Unable to reach the Research workspace status service. It may be temporarily unreachable. Failure code: workspace_status_unreachable Retry Back to RDLens"
+        },
+        {
+          "label": "retryable category: Retry + Back present",
+          "pass": true,
+          "detail": "retry=1 back=1"
+        },
+        {
+          "label": "failure code is workspace_status_unreachable",
+          "pass": true,
+          "detail": "workspace_status_unreachable"
+        },
+        {
+          "label": "failure text/copy is en-US",
+          "pass": true,
+          "detail": "Unable to reach the Research workspace status service. It may be temporarily unreachable. Failure code: workspace_status_unreachable Retry Back to RDLens"
+        },
+        {
+          "label": "host header visible above failure page",
+          "pass": true,
+          "detail": "Research workspace 中文 English synthetic-owner Sign out"
+        }
+      ],
+      "note": "synthetic status 503；重试入口可用（未点击，避免依赖网络恢复）。",
+      "revisions": {
+        "fork": {
+          "repo": "lingyun-hifibio/open-notebook-rdlens",
+          "ref": "agent/wave-one-shell-bddcfc523569",
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+        },
+        "host": {
+          "repo": "HiFiBiO-Therapeutics/RDLens",
+          "ref": "agent/wave-one-shell-bddcfc523569",
+          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
+          "short": "d6da1a64b",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+        }
+      },
+      "pairs_with": [
+        "before_host_failure_1440x900_en-US"
+      ]
+    },
+    {
+      "id": "after_host_failure_1440x900_zh-CN",
+      "phase": "after",
+      "scene": "host Research page — workspace access verification failure (retryable, synthetic)",
+      "screenshot": "after_host_failure_1440x900_zh-CN.png",
+      "sha256": "c3a077a5c6db866bf5c3a2d0e8f650c8770971e1e59751fd5665360be1b3f337",
+      "viewport": "1440x900",
+      "language_requested": "zh-CN",
+      "ui_language_actual": "zh-CN",
+      "theme": "light",
+      "status": "PASS",
+      "checks": [
+        {
+          "label": "failure page rendered (not blank)",
+          "pass": true,
+          "detail": "无法连接 Research 工作台状态服务。该服务可能暂时不可达。 失败码：workspace_status_unreachable 重试 返回 RDLens"
+        },
+        {
+          "label": "retryable category: Retry + Back present",
+          "pass": true,
+          "detail": "retry=1 back=1"
+        },
+        {
+          "label": "failure code is workspace_status_unreachable",
+          "pass": true,
+          "detail": "workspace_status_unreachable"
+        },
+        {
+          "label": "failure text/copy is zh-CN",
+          "pass": true,
+          "detail": "无法连接 Research 工作台状态服务。该服务可能暂时不可达。 失败码：workspace_status_unreachable 重试 返回 RDLens"
+        },
+        {
+          "label": "host header visible above failure page",
+          "pass": true,
+          "detail": "Research 工作台 中文 English synthetic-owner 退出"
+        },
+        {
+          "label": "host header language select is zh-CN",
+          "pass": true,
+          "detail": null
+        }
+      ],
+      "note": "synthetic status 503；重试入口可用（未点击，避免依赖网络恢复）。",
+      "revisions": {
+        "fork": {
+          "repo": "lingyun-hifibio/open-notebook-rdlens",
+          "ref": "agent/wave-one-shell-bddcfc523569",
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+        },
+        "host": {
+          "repo": "HiFiBiO-Therapeutics/RDLens",
+          "ref": "agent/wave-one-shell-bddcfc523569",
+          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
+          "short": "d6da1a64b",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+        }
+      },
+      "pairs_with": [
+        "before_host_failure_1440x900_en-US"
+      ]
+    },
+    {
+      "id": "after_host_verifying_1440x900_zh-CN",
+      "phase": "after",
+      "scene": "host Research page — verifying state (zh-CN, synthetic slow status probe)",
+      "screenshot": "after_host_verifying_1440x900_zh-CN.png",
+      "sha256": "60f8a9ba78daec6eddd97f03959e460a419a9ea292e922c5ee6164704a5daf02",
+      "viewport": "1440x900",
+      "language_requested": "zh-CN",
+      "ui_language_actual": "zh-CN",
+      "theme": "light",
+      "status": "PASS",
+      "checks": [
+        {
+          "label": "verifying page rendered in zh-CN",
+          "pass": true,
+          "detail": "正在验证工作台访问权限…"
+        },
+        {
+          "label": "host header language select is zh-CN",
+          "pass": true,
+          "detail": null
+        },
+        {
+          "label": "host header visible above verifying page",
+          "pass": true,
+          "detail": "Research 工作台 中文 English synthetic-owner 退出"
+        }
+      ],
+      "note": "synthetic workspace-status 延迟 12s，仅截取验证中状态；未等待其完成。",
+      "revisions": {
+        "fork": {
+          "repo": "lingyun-hifibio/open-notebook-rdlens",
+          "ref": "agent/wave-one-shell-bddcfc523569",
+          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
+          "short": "4a007a2",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
@@ -5199,7 +6117,7 @@
   "keyboard_walkthrough": {
     "ticket": "#1104",
     "phase": "after",
-    "generated_at": "2026-11-06T18:55:22.191Z",
+    "generated_at": "2026-11-06T19:15:47.156Z",
     "host_base_url": "http://127.0.0.1:5175/",
     "evidence_level": "synthetic network real-app rendering — NOT an L2 deployment acceptance (synthetic does not close L2)",
     "browser": "Playwright-core 1.62.1 / Chromium 151 (chromium-1243), headless, deviceScaleFactor=1",
@@ -5233,7 +6151,7 @@
         "id": "KB-05",
         "label": "焦点环可见（键盘聚焦控件 :focus-visible 且 ring/outline 非 none）",
         "status": "PASS",
-        "details": "global-model-summary-trigger focusVisible=true shadow=rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484401) 0px 0px  outline=2px"
+        "details": "global-model-summary-trigger focusVisible=true shadow=rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.496439) 0px 0px  outline=2px"
       },
       {
         "id": "KB-06",
@@ -5353,12 +6271,12 @@
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484401) 0px 0px ",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.496439) 0px 0px ",
         "focusRing": {
           "focusVisible": true,
           "outlineWidth": "2px",
           "outlineStyle": "solid",
-          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484401) 0px 0px "
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.496439) 0px 0px "
         }
       },
       {
@@ -5373,12 +6291,12 @@
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.48443) 0px 0px 0",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460198) 0px 0px ",
         "focusRing": {
           "focusVisible": true,
           "outlineWidth": "2px",
           "outlineStyle": "solid",
-          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.48443) 0px 0px 0"
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460198) 0px 0px "
         }
       },
       {
@@ -5393,12 +6311,12 @@
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460388) 0px 0px ",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.48443) 0px 0px 0",
         "focusRing": {
           "focusVisible": true,
           "outlineWidth": "2px",
           "outlineStyle": "solid",
-          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460388) 0px 0px "
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.48443) 0px 0px 0"
         }
       },
       {
@@ -5413,12 +6331,12 @@
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.48443) 0px 0px 0",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460388) 0px 0px ",
         "focusRing": {
           "focusVisible": true,
           "outlineWidth": "2px",
           "outlineStyle": "solid",
-          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.48443) 0px 0px 0"
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460388) 0px 0px "
         }
       },
       {
@@ -5453,12 +6371,12 @@
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.48443) 0px 0px 0",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484464) 0px 0px ",
         "focusRing": {
           "focusVisible": true,
           "outlineWidth": "2px",
           "outlineStyle": "solid",
-          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.48443) 0px 0px 0"
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484464) 0px 0px "
         }
       },
       {
@@ -5473,12 +6391,12 @@
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484391) 0px 0px ",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460388) 0px 0px ",
         "focusRing": {
           "focusVisible": true,
           "outlineWidth": "2px",
           "outlineStyle": "solid",
-          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484391) 0px 0px "
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460388) 0px 0px "
         }
       },
       {
@@ -5513,12 +6431,12 @@
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484391) 0px 0px ",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.46038) 0px 0px 0",
         "focusRing": {
           "focusVisible": true,
           "outlineWidth": "2px",
           "outlineStyle": "solid",
-          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484391) 0px 0px "
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.46038) 0px 0px 0"
         }
       },
       {
@@ -5553,12 +6471,12 @@
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484301) 0px 0px ",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460449) 0px 0px ",
         "focusRing": {
           "focusVisible": true,
           "outlineWidth": "2px",
           "outlineStyle": "solid",
-          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484301) 0px 0px "
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460449) 0px 0px "
         }
       },
       {
@@ -5573,12 +6491,12 @@
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460517) 0px 0px ",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484328) 0px 0px ",
         "focusRing": {
           "focusVisible": true,
           "outlineWidth": "2px",
           "outlineStyle": "solid",
-          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460517) 0px 0px "
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484328) 0px 0px "
         }
       },
       {
@@ -5613,12 +6531,12 @@
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460213) 0px 0px ",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484399) 0px 0px ",
         "focusRing": {
           "focusVisible": true,
           "outlineWidth": "2px",
           "outlineStyle": "solid",
-          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460213) 0px 0px "
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484399) 0px 0px "
         }
       },
       {
@@ -5633,12 +6551,12 @@
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484466) 0px 0px ",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484391) 0px 0px ",
         "focusRing": {
           "focusVisible": true,
           "outlineWidth": "2px",
           "outlineStyle": "solid",
-          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484466) 0px 0px "
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484391) 0px 0px "
         }
       },
       {
@@ -5685,7 +6603,10 @@
     "1024 旧壳五 Tab 行在 Before 出现既有横向滚动（Custom Analysis 截断），属旧壳行为；页面本身无横向滚动（已断言）。不判为 #1104 回归。",
     "截图 SHA-256 仅用于本次交付溯源，不作跨环境像素基线；headless Chromium 字体栅格化会造成字节级差异。",
     "Before 场景中的 Results（Insights）为空态（mock 返回空列表），未构造非空洞察/运行结果；不把空态表述为真实数据。",
-    "F1 预跑发现（空 selected UI 清空路径不可达）如实上报后由 fork-shell 修复（476b1b2）；最终 manifest 只含修复后 head 的 PASS 记录，预跑 FAIL 记录保留在 logs/prerun-F1-empty-selected-finding.md，不作为最终场景证据。",
-    "合成数据非真实 DB/宿主观测：本证据不能替代真实 host+DB 的 L2 验收，也不能作为 #1104 完成声明。"
+    "合成数据非真实 DB/宿主观测：本证据不能替代真实 host+DB 的 L2 验收，也不能作为 #1104 完成声明。",
+    "宿主失败/验证页证据为 synthetic：mock 将 GET /v1/research/workspace-status 置为 503（failure code=workspace_status_unreachable，可重试）或延迟 12s（verifying 态）；不是真实网络故障。",
+    "legacy 旧壳（legacy=1）在 zh-CN 下仍有既有英文残留（五 Tab/Results/Activity/范围控件等旧壳文案与既有双语欠项）；按 Lead 口径**旧壳不作为 #1104 目标壳双语验收对象**，残留清单已记录在 logs/capture-after-summary.json 的 after_legacy_old_shell_residual_* 检查中。",
+    "目标壳 zh-CN 已做可见文本英文残留扫描（允许 [synthetic] 项目名/资料名与 Ctrl/Cmd+Enter 等快捷键字形）：4a007a2 下目标壳全部场景 PASS；宿主页头失败/验证页中文文案也已采集（after_host_failure_zh / after_host_verifying_zh）。",
+    "开发态指示器：fork 以 `next dev` 运行，截图左下角的 Next.js 开发指示器（N 徽标）为开发态 UI，不属于产品界面；生产构建不出现，不作为视觉验收对象。"
   ]
 }
