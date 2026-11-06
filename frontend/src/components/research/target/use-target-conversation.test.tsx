@@ -479,7 +479,11 @@ describe('useTargetConversation · F1/F12 selected/single 真实发送', () => {
     })
     expect(sent).toBe(true)
     const payload = controllerFixture.send.mock.calls[0][0] as Record<string, unknown>
+    // H1：wire 必须为互斥形态（single → source_ids=[] / note_ids=[]）
+    expect(payload.sourceIds).toEqual([])
+    expect(payload.noteIds).toEqual([])
     expect((payload.scope as Record<string, unknown>).mode).toBe('single')
+    expect((payload.scope as Record<string, unknown>).sourceIds).toEqual([])
     expect((payload.scope as Record<string, unknown>).singleSourceId).toBe('src_2')
   })
 
@@ -508,9 +512,13 @@ describe('useTargetConversation · F1/F12 selected/single 真实发送', () => {
     expect(result.current.conversation.sendError).toBeNull()
     expect(controllerFixture.send).toHaveBeenCalledTimes(1)
     const payload = controllerFixture.send.mock.calls[0][0] as Record<string, unknown>
+    // H1（第 3 轮审查）：raw base IDs 保留在 provider/editor 一致性比较，
+    // **wire 选择**归一为互斥形态（source_ids=[]、single_source_id 正确）。
     expect((payload.scope as Record<string, unknown>).mode).toBe('single')
     expect((payload.scope as Record<string, unknown>).singleSourceId).toBe('src_2')
-    expect(payload.sourceIds).toEqual(['src_1', 'src_2'])
+    expect((payload.scope as Record<string, unknown>).sourceIds).toEqual([])
+    expect(payload.sourceIds).toEqual([])
+    expect(payload.noteIds).toEqual([])
   })
 
   it('F12：capabilities 缺失时 submissionReady=false（仅 === true 放行）', async () => {

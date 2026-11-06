@@ -12,8 +12,16 @@ import type { TargetCitationPreview, TargetRightPaneKind } from './target-types'
 import type { TargetConversationState } from './use-target-conversation'
 import { TargetComposer } from './TargetComposer'
 
-/** §3.2：中央对话正文列/面板的水平内边距（双侧一致的 clamp）。 */
+/**
+ * §3.2：中央对话正文列/面板的水平内边距（双侧一致的 clamp）。
+ *
+ * 宽度语义按规格是**分别定义**：正文列 max-width 850、composer max-width
+ * 682，各自在外层同 padding 容器内居中——两者左缘相差 (850−682)/2 = 84px
+ * 属规格定义，不是残留错位；不要为了“左缘完全对齐”把 composer 拉宽到 850。
+ */
 const CENTER_INLINE_PADDING = 'clamp(28px, 5vw, 84px)'
+const CENTER_BODY_MAX_WIDTH = '850px'
+const CENTER_COMPOSER_MAX_WIDTH = '682px'
 
 /**
  * UI-07 中央对话（W1 #1104；UI 规格 v1 §5.4）。
@@ -113,7 +121,7 @@ export function TargetConversation({
         data-testid="rdlens-target-conversation-header"
       >
         {/* N4：标题区与正文列使用同一内宽容器（850 居中），左缘一致 */}
-        <div style={{ maxWidth: '850px', width: '100%', marginInline: 'auto' }}>
+        <div style={{ maxWidth: CENTER_BODY_MAX_WIDTH, width: '100%', marginInline: 'auto' }}>
         <div className="flex min-w-0 items-start justify-between gap-3">
           <div className="min-w-0">
             <p
@@ -232,7 +240,7 @@ export function TargetConversation({
         <div
           className="h-full min-h-0"
           data-testid="rdlens-target-message-area"
-          style={{ maxWidth: '850px', width: '100%', marginInline: 'auto' }}
+          style={{ maxWidth: CENTER_BODY_MAX_WIDTH, width: '100%', marginInline: 'auto' }}
         >
         <ResearchChatPanel
           turns={conversation.turns}
@@ -261,8 +269,9 @@ export function TargetConversation({
           onDraftChange={(text) => conversation.editor.setDraftText(text)}
           onRetrySave={() => void conversation.editor.retrySave()}
           hideComposer
-          // 目标壳 composer 由 shell 拥有：面板不得把用户输入当作“冷启动
-          // 外部草稿”去查回 submissions（真实 harness 缺陷，见 prop 注释）。
+          // 目标壳 composer 由 shell 拥有：跨端草稿的 draft-token 级冷启动
+          // 查回不适用（mount 的 reconcileMarkers 仍恢复 active/marker）；
+          // 详见 ResearchChatPanel 的 prop 注释（真实 harness 缺陷修复）。
           suppressColdStartLookup
           showCoverageScopeSelector={false}
           showSessionScopeBar={false}
@@ -279,7 +288,7 @@ export function TargetConversation({
           paddingInline: CENTER_INLINE_PADDING,
         }}
       >
-        <div style={{ maxWidth: '682px', width: '100%', marginInline: 'auto' }}>
+        <div style={{ maxWidth: CENTER_COMPOSER_MAX_WIDTH, width: '100%', marginInline: 'auto' }}>
           <TargetComposer
             sessionWired={conversation.sessionWired}
             editor={conversation.editor}

@@ -79,6 +79,44 @@ export function scopeSnapshotToEditorEdits(
   ]
 }
 
+/**
+ * W1 #1104（第 `3` 轮审查 H1）：wire 选择归一化。
+ *
+ * §5.3 / C-05 冻结 schema 要求 `mode==='single'` 时 `source_ids=[]` 且
+ * `single_source_id` 非空（互斥形态）；而 provider 快照在 single 态会同时
+ * 携带 base（仅 selected）的 sourceIds/noteIds。**raw 快照**用于 editor 同步
+ * 与 frozen/fresh 一致性比较；**wire 选择**必须归一成合法互斥形态，否则
+ * `writeSubmissionMarker` sanitize 失败（markerWriteFailed），严格后端还可能
+ * 422。
+ */
+export interface WireChatSelection {
+  readonly mode: ResearchScopeMode
+  readonly sourceIds: string[]
+  readonly noteIds: string[]
+  readonly singleSourceId: string | null
+}
+
+export function normalizeSelectionForWire(
+  selection: ResearchChatSelection,
+): WireChatSelection {
+  const mode: ResearchScopeMode = selection.mode ?? 'all'
+  if (mode !== 'single') {
+    // 非 single：显式给出空数组/null，避免 undefined 进入 wire 构造。
+    return {
+      mode,
+      sourceIds: [...(selection.sourceIds ?? [])],
+      noteIds: [...(selection.noteIds ?? [])],
+      singleSourceId: null,
+    }
+  }
+  return {
+    mode: 'single',
+    sourceIds: [],
+    noteIds: [],
+    singleSourceId: selection.singleSourceId ?? null,
+  }
+}
+
 function sameIds(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((id, index) => id === right[index])
 }
@@ -424,6 +462,9 @@ export function useTargetConversation(): TargetConversationState {
         noteIds: [...base.noteIds],
         singleSourceId: base.singleSourceId,
       }
+      // H1：raw frozenScope 保留 base IDs 用于 fresh 一致性比较；wire 归一为
+      // 互斥形态（single → source_ids=[] / note_ids=[]）。
+      const wireSelection = normalizeSelectionForWire(selection)
       const scopeLabel = formatScopeLabel(frozenScope, t)
       const sent = await runGuarded(
         async (modelId) => {
@@ -496,12 +537,12 @@ export function useTargetConversation(): TargetConversationState {
           const result = await chatConversation.send({
             query,
             modelId,
-            sourceIds: frozenScope.sourceIds,
-            noteIds: frozenScope.noteIds,
+            sourceIds: [...wireSelection.sourceIds],
+            noteIds: [...wireSelection.noteIds],
             scope: {
-              mode: frozenScope.mode,
-              sourceIds: frozenScope.sourceIds,
-              singleSourceId: frozenScope.singleSourceId,
+              mode: wireSelection.mode,
+              sourceIds: [...wireSelection.sourceIds],
+              singleSourceId: wireSelection.singleSourceId,
             },
             editorRevision: fresh.revision,
             draftToken: fresh.draftToken,
@@ -534,7 +575,7 @@ export function useTargetConversation(): TargetConversationState {
   const sendLegacy = useCallback(
     async (query: string): Promise<boolean> => {
       const snapshot = scopeApi.getSnapshot()
-      const selection = selectionFromSnapshot(snapshot)
+      const selection = normalizeSelectionForWire(selectionFromSnapshot(snapshot))
       const scopeLabel = formatScopeLabel(snapshot, t)
       const idempotencyKey = newIdempotencyKey()
       const contract = c05.dispatchReady('chat') ? 'c05-v1' : 'v1'

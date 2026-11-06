@@ -486,12 +486,16 @@ export function ResearchChatPanel({
    */
   hideComposer?: boolean
   /**
-   * W1 #1104（真实 harness 缺陷修复）：目标壳 composer 由 shell 拥有
-   * （`hideComposer`），面板收不到自身 composer 的 `markDraftUserAuthored`
-   * 事件，导致用户输入被误判为"冷启动外部草稿"并触发 submissions 查回，
-   * 生成 `external_lookup` turn（state=unknown）→ 真实发送被
-   * `session_busy` 阻断。true 时禁用该冷启动查回（目标壳 W1 不做外部提交
-   * 恢复；旧壳默认 false 行为不变）。
+   * W1 #1104（真实 harness 缺陷修复，精确语义）：
+   *
+   * - 目标壳的 draft 由 shell 的外部 composer 拥有（`hideComposer`），本面板
+   *   收不到自身 composer 的 `markDraftUserAuthored` 事件；因此**跨端草稿的
+   *   draft-token 级冷启动提交查回**（本 effect 对"非本面板输入"的持久草稿
+   *   调用 `refreshMarkerLookups`）不适用于该接入方式。
+   * - 该接入下仍保留 mount 的 `reconcileMarkers(null)`：active submission 与
+   *   本地 marker 状态照常恢复/结算；只是不再对未识别草稿发起 submissions
+   *   查回（避免生成 `external_lookup` turn 阻断真实发送）。
+   * - 旧壳（面板自己的 composer）默认 false，完整冷启动恢复语义不变。
    */
   suppressColdStartLookup?: boolean
   /**

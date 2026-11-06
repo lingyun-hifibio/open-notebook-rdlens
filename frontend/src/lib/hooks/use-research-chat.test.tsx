@@ -1092,6 +1092,66 @@ describe('PR-5a（D2）：显式 session 接线', () => {
     })
   })
 
+  it('H1：single-over-selected 的 wire source_scope 为互斥形态（source_ids=[]，note_ids=[]）', () => {
+    const captures = openCapture()
+    const controller = {
+      detach: vi.fn(),
+      hasActiveTurn: vi.fn(() => false),
+      load: vi.fn(async () => ({ status: 'blocked' as const })),
+      getSnapshot: vi.fn(() => ({ turn: null, authGeneration: 1 })),
+    } as unknown as ConversationController
+    let capturedOptions: { transport: { openStream: (input: Record<string, unknown>) => { abort: (reason?: string) => void } } } | null = null
+    const conversation = vi.fn((...args: unknown[]) => {
+      capturedOptions = args[1] as typeof capturedOptions
+      return controller
+    })
+    const runtime = {
+      conversation,
+      releaseConversation: vi.fn(),
+      getSnapshot: () => ({ authGeneration: 1 }),
+      subscribe: () => () => {},
+    } as unknown as SessionRuntime
+    const ref: ResearchSessionRef = {
+      domain: 'research',
+      kind: 'global',
+      projectId: 'proj_1',
+      sessionId: 'sess_1',
+      sourceId: null,
+    }
+
+    renderHook(() => useResearchChat({ projectId: 'proj_1', session: { runtime, ref } }))
+    expect(capturedOptions).not.toBeNull()
+    act(() => {
+      capturedOptions?.transport.openStream({
+        sessionRef: ref,
+        editorRevision: 4,
+        draftToken: 'draft_1',
+        editorIntentHash: 'a'.repeat(64),
+        idempotencyKey: `s1_${'b'.repeat(64)}`,
+        lastEventId: 0,
+        query: 'q1',
+        modelId: MODEL,
+        // H1：调用方误带 base（selected）IDs / notes；transport 必须防御归一。
+        sourceIds: ['src_1', 'src_2'],
+        noteIds: ['note_1'],
+        scope: {
+          mode: 'single',
+          sourceIds: ['src_1', 'src_2'],
+          singleSourceId: 'src_2',
+        },
+      })
+    })
+    expect(captures).toHaveLength(1)
+    const request = captures[0].opts.request as unknown as Record<string, unknown>
+    expect(request.source_scope).toEqual({
+      mode: 'single',
+      source_ids: [],
+      single_source_id: 'src_2',
+    })
+    expect(request.note_ids).toEqual([])
+    expect(request.source_ids).toBeUndefined()
+  })
+
   // PR-7 P0-2（6b 真实接入）：服务端 `SourceSessionSubmission` 是
   // `extra="forbid"`——source session 请求体带顶层 `source_ids` 会 422
   // `extra_forbidden`。source 以路径 source_id 定位，wire 只写 query/model_id。
