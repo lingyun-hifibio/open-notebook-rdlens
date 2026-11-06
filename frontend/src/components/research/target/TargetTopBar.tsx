@@ -93,7 +93,7 @@ export function TargetTopBar({
           {activeJobCount > 0 && (
             <span
               aria-hidden="true"
-              className="inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold"
+              className="inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[11px] font-semibold"
               style={{
                 backgroundColor: 'var(--rdlens-evidence)',
                 color: 'var(--rdlens-on-evidence)',

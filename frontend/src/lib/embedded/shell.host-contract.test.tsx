@@ -169,29 +169,26 @@ describe('ResearchWorkspaceShell · 宿主语言（D-UI-02）', () => {
     expect(translateMock.setLanguage).toHaveBeenCalledTimes(1)
   })
 
-  it('未认证时的 language 消息不应用（fail-closed）', () => {
-    stubParentWindow()
+  it('未认证时的 language 消息不应用（fail-closed，五要素仍合法）', () => {
+    const captures = stubParentWindow()
     render(
       <ResearchWorkspaceShell transport={null}>
         <HostProbe />
       </ResearchWorkspaceShell>,
     )
-    act(() => {
-      window.dispatchEvent(
-        new MessageEvent('message', {
-          data: {
-            schema: 'research-v0',
-            channel: 'ch_unknown',
-            type: 'language',
-            nonce: 'n_unknown',
-            language: 'zh-CN',
-          },
-          origin: PARENT_ORIGIN,
-          source: window.parent as unknown as MessageEventSource,
-        }),
-      )
+    const ready = captures.posted[0].data
+    // F22：使用真实 channel/nonce（通过五要素校验），仅跳过 token ——
+    // 这样才真正覆盖 "authenticated guard"，而不是被消息校验提前拒绝。
+    dispatchMessage({
+      schema: 'research-v0',
+      channel: ready.channel,
+      type: 'language',
+      nonce: ready.nonce,
+      language: 'zh-CN',
     })
     expect(translateMock.setLanguage).not.toHaveBeenCalled()
+    // 未认证时仍渲染加载态（子树的宿主上下文尚未挂载）。
+    expect(screen.queryByTestId('host-language')).toBeNull()
   })
 })
 

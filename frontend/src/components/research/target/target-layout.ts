@@ -12,23 +12,16 @@
  *   可读宽度 640px；三栏阈值 = 282 + 640 + 355 = 1277 → 1280。
  */
 
-/** §3.2 顶栏高度（UI-02）。 */
-export const TARGET_TOP_BAR_HEIGHT = 72
 /** §3.2 左资料栏宽度（UI-04，固定）。 */
 export const TARGET_LEFT_PANE_WIDTH = 282
 /** §3.2 右栏宽度（UI-12，固定）。 */
 export const TARGET_RIGHT_PANE_WIDTH = 355
-/** §3.2/§3.3 右栏最小可读宽度（低于 310px 不开三栏）。 */
-export const TARGET_RIGHT_PANE_MIN_READABLE = 310
 /** §3.3 中央列最小可读宽度。 */
 export const TARGET_CENTER_MIN_WIDTH = 640
 /** §3.1/§3.3 三栏断点：282 + 640 + 355 = 1277，向上取 1280。 */
 export const TARGET_THREE_COLUMN_VIEWPORT = 1280
 /** §3.1 目标壳最低设计宽度（<1024 不设计）。 */
 export const TARGET_MIN_VIEWPORT = 1024
-/** §3.2 中央正文列最大宽度 / composer 最大宽度。 */
-export const TARGET_CENTER_MAX_WIDTH = 850
-export const TARGET_COMPOSER_MAX_WIDTH = 682
 
 /** 断点：compact = 1024–1279（右栏打开时左栏临时收起）；wide = ≥1280（三栏）。 */
 export type TargetBreakpoint = 'compact' | 'wide'
@@ -37,6 +30,12 @@ export interface TargetLayoutInput {
   breakpoint: TargetBreakpoint
   /** 右栏是否打开（UI-12 一次一项；默认收起） */
   rightPaneOpen: boolean
+  /**
+   * 实际视口宽度（CSS px）。缺省时按断点最小视口（1024 / 1280）推导，
+   * 供纯函数测试与 SSR 首帧使用；组件传入真实 `window.innerWidth` 以在
+   * 1440 等宽视口得到正确的中央列宽度（F19）。
+   */
+  viewportWidth?: number
 }
 
 export interface TargetLayout {
@@ -75,7 +74,11 @@ export function resolveTargetLayout(input: TargetLayoutInput): TargetLayout {
   const leftPaneVisible = !leftPaneTemporarilyCollapsed
   const rightPaneVisible = rightPaneOpen
   const viewport =
-    breakpoint === 'wide' ? TARGET_THREE_COLUMN_VIEWPORT : TARGET_MIN_VIEWPORT
+    input.viewportWidth !== undefined && Number.isFinite(input.viewportWidth) && input.viewportWidth > 0
+      ? input.viewportWidth
+      : breakpoint === 'wide'
+        ? TARGET_THREE_COLUMN_VIEWPORT
+        : TARGET_MIN_VIEWPORT
   const available =
     viewport -
     (leftPaneVisible ? TARGET_LEFT_PANE_WIDTH : 0) -
@@ -90,24 +93,4 @@ export function resolveTargetLayout(input: TargetLayoutInput): TargetLayout {
     centerColumnMinMet: available >= TARGET_CENTER_MIN_WIDTH,
     composerShowsCompactScope: breakpoint === 'compact' && rightPaneOpen,
   }
-}
-
-/**
- * §3.2 中央正文列水平内边距：center≥720px 时 clamp(28px, 5vw, 84px)；
- * center<720px 时 28px。返回 CSS 长度字符串（组件直接用于 style）。
- */
-export function centerHorizontalPadding(centerColumnWidth: number): string {
-  if (centerColumnWidth >= 720) return 'clamp(28px, 5vw, 84px)'
-  return '28px'
-}
-
-/**
- * §3.3 右栏打开时左栏收起/恢复的焦点与滚动语义由组件实现；本函数只
- * 表达"关闭右栏是否应恢复左栏"（compact 临时收起时恢复，wide 不涉及）。
- */
-export function shouldRestoreLeftPaneAfterClose(
-  breakpoint: TargetBreakpoint,
-  leftPaneTemporarilyCollapsed: boolean,
-): boolean {
-  return breakpoint === 'compact' && leftPaneTemporarilyCollapsed
 }

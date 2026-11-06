@@ -9,8 +9,8 @@ import { useResearchHostOptional } from '@/lib/embedded/host-context'
 import { useResearchSources } from '@/lib/hooks/use-research'
 import { useResearchJobsController } from '../ResearchJobsProvider'
 import { useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
-import { formatScopeLabel, useResearchScope } from '@/lib/research/scope'
 import { countActiveJobs } from '@/lib/research/jobs'
+import { formatScopeLabel, useResearchScope } from '@/lib/research/scope'
 import { TargetTopBar } from './TargetTopBar'
 import { TargetSourcesPane } from './TargetSourcesPane'
 import { TargetConversation } from './TargetConversation'
@@ -18,16 +18,29 @@ import { TargetRightPane } from './TargetRightPane'
 import { TargetSecondaryView } from './TargetSecondaryView'
 import { useTargetConversation } from './use-target-conversation'
 import {
+  TARGET_MIN_VIEWPORT,
   TARGET_THREE_COLUMN_VIEWPORT,
   resolveTargetLayout,
   targetBreakpointForWidth,
-  centerHorizontalPadding,
 } from './target-layout'
 import {
   TARGET_RIGHT_PANE_TITLE_KEYS,
   type TargetCitationPreview,
   type TargetRightPaneKind,
 } from './target-types'
+
+/** 实际视口宽度（F19：中央列宽度/内边距按真实宽度推导，不止断点下限）。 */
+function useViewportWidth(): number {
+  const [width, setWidth] = useState(() =>
+    typeof window === 'undefined' ? TARGET_MIN_VIEWPORT : window.innerWidth,
+  )
+  useEffect(() => {
+    const onResize = (): void => setWidth(window.innerWidth)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+  return width
+}
 
 /**
  * 目标工作台壳（W1 #1104；UI 规格 v1 §2.2/§3/§5/§7）。
@@ -39,10 +52,12 @@ import {
  * - 中央列最小 640px；页面无横向滚动。
  *
  * 键盘：跳过链接 → 输入区；右栏打开焦点进面板标题/关闭，`Esc` 关闭并
- * 焦点返回触发控件（A11Y-02）；header/aside/main 地标。
+ * 焦点返回触发控件（A11Y-02，含 citation/source 预览与 compact 左栏恢复，
+ * F7）；header/aside/main 地标。
  *
- * 诚实边界（W1）：W2/W3/P6 能力（原文阅读、成果编辑、深入研究执行、
- * 本次用途）不绘制假控件；缺省状态由各面板显式说明。
+ * 诚实边界（W1）：W2/W3/P6 能力（原文阅读、成果编辑、深入研究执行）不绘制
+ * 假控件；空 selected 同时阻断 composer 与次级搜索/比较（BEH-03/F4）；
+ * 「本次用途」（UI-11）由 #1106 锁步，W1 不造假控件（F13）。
  */
 export function TargetShell() {
   const { t } = useTranslation()
@@ -51,12 +66,15 @@ export function TargetShell() {
   const conversation = useTargetConversation()
   const jobsController = useResearchJobsController()
   const scopeApi = useResearchScope()
-  const { runGuarded } = useResearchGlobalModel()
   const sourcesQuery = useResearchSources(projectId)
+  const { runGuarded } = useResearchGlobalModel()
+  const viewportWidth = useViewportWidth()
   const isWideViewport = useMediaQuery(`(min-width: ${TARGET_THREE_COLUMN_VIEWPORT}px)`)
-  const breakpoint = targetBreakpointForWidth(
-    isWideViewport ? TARGET_THREE_COLUMN_VIEWPORT : 1024,
-  )
+  // 断点判定走媒体查询（响应式/测试可注入）；中央列宽度用真实视口宽度推导
+  // （F19：1440 右栏打开时中心 ≥720，不能按 1280 下限误判）。
+  const breakpoint = isWideViewport
+    ? 'wide'
+    : targetBreakpointForWidth(viewportWidth)
 
   const [rightPane, setRightPane] = useState<TargetRightPaneKind | null>(null)
   const [citationPreview, setCitationPreview] = useState<TargetCitationPreview | null>(null)
@@ -66,25 +84,42 @@ export function TargetShell() {
   )
   const [scopeFocusRequest, setScopeFocusRequest] = useState(0)
   const triggerRef = useRef<HTMLElement | null>(null)
+  const restoreFocusPendingRef = useRef(false)
   const shellRef = useRef<HTMLDivElement | null>(null)
 
   const layout = resolveTargetLayout({
     breakpoint,
     rightPaneOpen: rightPane !== null,
+    viewportWidth,
   })
 
-  const closeRightPane = useCallback(() => {
-    setRightPane(null)
-    // A11Y-02：关闭后焦点回到触发控件（触发元素可能已卸载 → 回退到输入区）。
+  // —— F4/BEH-03：空 selected 同时阻断 composer 与证据搜索/比较 ——
+  const scopeSnapshot = scopeApi.getSnapshot()
+  const scopeBlocked =
+    scopeSnapshot.mode === 'selected' &&
+    scopeSnapshot.sourceIds.length === 0 &&
+    scopeSnapshot.noteIds.length === 0
+  const scopeBlockedText = scopeBlocked ? t('research.target.composer.scopeBlocked') : null
+
+  // —— F7：关闭右栏后焦点回到触发控件；compact 左栏恢复可见后再执行 ——
+  useEffect(() => {
+    if (rightPane !== null) return
+    if (!restoreFocusPendingRef.current) return
+    restoreFocusPendingRef.current = false
     const trigger = triggerRef.current
     triggerRef.current = null
     if (trigger !== null && trigger.isConnected) {
       trigger.focus()
-      return
+      if (typeof document !== 'undefined' && document.activeElement === trigger) return
     }
     shellRef.current
       ?.querySelector<HTMLElement>('[data-testid="chat-input"]')
       ?.focus()
+  }, [rightPane])
+
+  const closeRightPane = useCallback(() => {
+    restoreFocusPendingRef.current = true
+    setRightPane(null)
   }, [])
 
   const openPane = useCallback(
@@ -115,12 +150,17 @@ export function TargetShell() {
     return () => document.removeEventListener('keydown', handler)
   }, [rightPane, closeRightPane])
 
-  const openCitation = useCallback((preview: TargetCitationPreview) => {
-    setCitationPreview(preview)
-    setRightPane('citation')
-  }, [])
+  const openCitation = useCallback(
+    (preview: TargetCitationPreview, trigger: HTMLElement | null) => {
+      triggerRef.current = trigger
+      setCitationPreview(preview)
+      setRightPane('citation')
+    },
+    [],
+  )
 
-  const openSourcePreview = useCallback((sourceId: string) => {
+  const openSourcePreview = useCallback((sourceId: string, trigger: HTMLElement | null) => {
+    triggerRef.current = trigger
     setSourcePreviewId(sourceId)
     setRightPane('source')
   }, [])
@@ -135,12 +175,13 @@ export function TargetShell() {
   const handleCitationJump = useCallback(
     (sourceId: string, pageIdx: number | null) => {
       void pageIdx
-      openSourcePreview(sourceId)
+      openSourcePreview(sourceId, null)
     },
     [openSourcePreview],
   )
 
   const sourcesReady = sourcesQuery.isSuccess && (sourcesQuery.data?.items.length ?? 0) > 0
+  const secondaryAvailable = sourcesReady && !scopeBlocked
   const composerScopeLabel = useMemo(
     () =>
       layout.composerShowsCompactScope
@@ -164,6 +205,7 @@ export function TargetShell() {
       style={layoutStyle}
       data-testid="rdlens-target-shell"
       data-breakpoint={breakpoint}
+      data-center-width={layout.centerColumnWidth}
       data-right-pane-open={rightPane !== null ? 'true' : undefined}
       data-left-pane-collapsed={layout.leftPaneTemporarilyCollapsed ? 'true' : undefined}
     >
@@ -216,7 +258,6 @@ export function TargetShell() {
           <div
             className="flex min-h-0 flex-1 flex-col"
             hidden={centerView !== 'conversation'}
-            style={{ paddingLeft: centerHorizontalPadding(layout.centerColumnWidth) }}
             data-testid="rdlens-target-conversation-slot"
           >
             <TargetConversation
@@ -224,17 +265,18 @@ export function TargetShell() {
               onOpenHistory={handleOpenHistory}
               onNewConversation={() => void conversation.newSession()}
               onOpenCitation={openCitation}
+              rightPane={rightPane}
+              onOpenRightPane={openPane}
               onOpenSearch={() => setCenterView('evidence-search')}
               onOpenCompare={() => setCenterView('compare')}
-              searchAvailable={sourcesReady}
-              compareAvailable={sourcesReady}
+              searchAvailable={secondaryAvailable}
+              compareAvailable={secondaryAvailable}
+              secondaryBlockedReason={scopeBlockedText}
               compactScopeChip={composerScopeLabel}
               onCompactScopeChipActivate={() => {
                 closeRightPane()
                 setScopeFocusRequest((request) => request + 1)
               }}
-              rightPane={rightPane}
-              onOpenRightPane={openPane}
             />
           </div>
 
@@ -243,6 +285,7 @@ export function TargetShell() {
               view={centerView}
               onBack={() => setCenterView('conversation')}
               onCitationJump={handleCitationJump}
+              scopeBlockedText={scopeBlockedText}
               compare={{
                 isCreating: jobsController.isCreating,
                 error: jobsController.error,
@@ -283,9 +326,9 @@ export function TargetShell() {
             activeRef={conversation.activeRef}
             onOpenSession={conversation.openSession}
             onNewSession={() => void conversation.newSession()}
+            canPinSingleSource={conversation.canPinSingleSource}
             onAskThisSource={(sourceId) => {
-              conversation.pinSingleSource(sourceId)
-              closeRightPane()
+              if (conversation.pinSingleSource(sourceId)) closeRightPane()
             }}
             jobs={jobsController.jobs}
           />

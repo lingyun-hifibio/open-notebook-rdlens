@@ -66,6 +66,7 @@ export function TargetRightPane({
   onNewSession,
   onAskThisSource,
   jobs,
+  canPinSingleSource,
 }: {
   kind: TargetRightPaneKind
   onClose: () => void
@@ -77,6 +78,8 @@ export function TargetRightPane({
   onNewSession: () => void
   onAskThisSource: (sourceId: string) => void
   jobs: readonly ResearchJob[]
+  /** 单篇 pin 只能绑定到当前活动会话（BEH-02/F3） */
+  canPinSingleSource: boolean
 }) {
   const { t, language } = useTranslation()
   const { projectId } = useResearchWorkspace()
@@ -164,6 +167,7 @@ export function TargetRightPane({
             preview={citationPreview}
             source={citationSource}
             onAskThisSource={onAskThisSource}
+            canPinSingleSource={canPinSingleSource}
           />
         )}
         {kind === 'source' && (
@@ -173,6 +177,7 @@ export function TargetRightPane({
             error={sourcesQuery.isError}
             onRetry={() => void sourcesQuery.refetch()}
             onAskThisSource={onAskThisSource}
+            canPinSingleSource={canPinSingleSource}
           />
         )}
         {kind === 'conversations' && (
@@ -181,6 +186,7 @@ export function TargetRightPane({
             activeRef={activeRef}
             onOpenSession={onOpenSession}
             onNewSession={onNewSession}
+            locale={language}
           />
         )}
         {kind === 'outcomes' && (
@@ -217,17 +223,23 @@ function CitationPreview({
   preview,
   source,
   onAskThisSource,
+  canPinSingleSource,
 }: {
   preview: TargetCitationPreview | null
   source: ResearchSource | null
   onAskThisSource: (sourceId: string) => void
+  canPinSingleSource: boolean
 }) {
   const { t } = useTranslation()
   if (preview === null) {
     return <EmptyState title={t('research.target.rightPane.locatorUnavailable')} />
   }
   const citation = preview.citation
-  const canPin = source !== null && source.source_id !== null && isSelectableStatus(source.status)
+  const canPin =
+    canPinSingleSource &&
+    source !== null &&
+    source.source_id !== null &&
+    isSelectableStatus(source.status)
   return (
     <div className="space-y-3 px-5 py-4" data-testid="rdlens-target-citation-preview">
       <div className="space-y-0.5">
@@ -279,7 +291,13 @@ function CitationPreview({
           size="sm"
           variant="outline"
           disabled={!canPin}
-          title={canPin ? undefined : t('research.target.rightPane.askThisSourceUnavailable')}
+          title={
+            canPin
+              ? undefined
+              : !canPinSingleSource
+                ? t('research.target.conversation.noActiveSession')
+                : t('research.target.rightPane.askThisSourceUnavailable')
+          }
           onClick={() => {
             if (source?.source_id) onAskThisSource(source.source_id)
           }}
@@ -298,12 +316,14 @@ function SourcePreview({
   error,
   onRetry,
   onAskThisSource,
+  canPinSingleSource,
 }: {
   source: ResearchSource | null
   loading: boolean
   error: boolean
   onRetry: () => void
   onAskThisSource: (sourceId: string) => void
+  canPinSingleSource: boolean
 }) {
   const { t } = useTranslation()
   if (loading) {
@@ -329,7 +349,10 @@ function SourcePreview({
     return <EmptyState title={t('research.target.rightPane.emptySource')} />
   }
   const statusLabel = t(STATUS_LABEL_KEYS[source.status])
-  const canPin = source.source_id !== null && isSelectableStatus(source.status)
+  const canPin =
+    canPinSingleSource &&
+    source.source_id !== null &&
+    isSelectableStatus(source.status)
   return (
     <div className="space-y-3 px-5 py-4" data-testid="rdlens-target-source-preview">
       <div className="space-y-0.5">
@@ -390,11 +413,14 @@ function ConversationHistory({
   activeRef,
   onOpenSession,
   onNewSession,
+  locale,
 }: {
   sessions: UseResearchSessionsResult | null
   activeRef: ResearchSessionRef | null
   onOpenSession: (ref: ResearchSessionRef) => void
   onNewSession: () => void
+  /** I18N-03：日期按 locale 格式化（F8） */
+  locale: string
 }) {
   const { t } = useTranslation()
   if (sessions === null) {
@@ -456,7 +482,7 @@ function ConversationHistory({
           const updated =
             item.updatedAt === null || item.updatedAt === undefined
               ? null
-              : formatResearchTimestamp(item.updatedAt)
+              : formatResearchTimestamp(item.updatedAt, { lang: locale })
           return (
             <li key={item.ref.sessionId}>
               <button
@@ -487,6 +513,33 @@ function ConversationHistory({
           )
         })}
       </ul>
+      {/* F11：>1 页历史（每页 20）必须可继续加载或显式说明，不静默截断。 */}
+      {sessions.hasMore && (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="w-full"
+          disabled={sessions.loadingMore}
+          aria-busy={sessions.loadingMore}
+          onClick={() => sessions.loadMore()}
+          data-testid="rdlens-target-conversation-load-more"
+        >
+          {sessions.loadingMore
+            ? t('research.pagination.loadingMore')
+            : t('research.pagination.loadMore')}
+        </Button>
+      )}
+      {sessions.loadMoreError !== null && (
+        <p
+          className="text-xs"
+          role="alert"
+          style={{ color: 'var(--rdlens-warning)' }}
+          data-testid="rdlens-target-conversation-load-more-error"
+        >
+          {t('research.loadFailed')}
+        </p>
+      )}
       <Button
         type="button"
         size="sm"

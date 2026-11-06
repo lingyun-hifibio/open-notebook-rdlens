@@ -520,10 +520,6 @@
   outline-offset: 3px;
 }
 
-.rdlens-target-shell [data-rdlens-focus-inset]:focus-visible {
-  outline-offset: -2px;
-}
-
 /* §4.4：prefers-reduced-motion 生效（只用于显隐/状态过渡） */
 @media (prefers-reduced-motion: reduce) {
   .rdlens-target-shell *,

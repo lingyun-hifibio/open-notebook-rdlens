@@ -22,9 +22,15 @@ export function TargetSecondaryView({
   onBack,
   compare,
   onCitationJump,
+  scopeBlockedText = null,
 }: {
   view: Exclude<TargetCenterView, 'conversation'>
   onBack: () => void
+  /**
+   * F4/BEH-03：空 selected 时次级视图也必须 fail-closed——即使视图已打开后
+   * 范围被清空，也不能把空 source_ids 派发给搜索/比较。
+   */
+  scopeBlockedText?: string | null
   compare: {
     isCreating: boolean
     error: string | null
@@ -64,7 +70,22 @@ export function TargetSecondaryView({
         </h2>
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">
-        {view === 'evidence-search' ? (
+        {scopeBlockedText !== null ? (
+          <div
+            role="alert"
+            className="space-y-3 p-6"
+            data-testid="rdlens-target-secondary-scope-blocked"
+          >
+            <p className="text-sm font-medium">{scopeBlockedText}</p>
+            <p className="text-xs" style={{ color: 'var(--rdlens-ink-muted)' }}>
+              {t('research.target.sources.scopeBlockedHint')}
+            </p>
+            <Button type="button" size="sm" variant="outline" onClick={onBack}>
+              {t('research.target.conversation.backToConversation')}
+            </Button>
+          </div>
+        ) : view === 'evidence-search' ? (
+          <div data-testid="rdlens-target-secondary-panel" className="h-full min-h-0">
           <ResearchSearchPanel
             projectId={projectId}
             active
@@ -74,7 +95,12 @@ export function TargetSecondaryView({
             // 左栏/当前对话范围约束（唯一权威仍是 ResearchScopeProvider）。
             showSearchContext={false}
           />
+          </div>
         ) : (
+          // F16：该面板内仍有少量 pre-existing 硬编码英文错误/`provider:` 标签
+          // （不属于本 PR 新增文案）；已登记为 W1 已知缺口，随搜索面板 i18n
+          // 收敛一起处理，不在本 PR 内改 legacy 面板。
+          <div data-testid="rdlens-target-secondary-panel" className="h-full min-h-0">
           <ComparePanel
             sources={sources}
             isCreating={compare.isCreating}
@@ -84,6 +110,7 @@ export function TargetSecondaryView({
             modelBlocked={compare.modelBlocked}
             blockedHint={compare.blockedHint}
           />
+          </div>
         )}
       </div>
     </div>

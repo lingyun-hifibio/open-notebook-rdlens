@@ -21,12 +21,14 @@ import type { UseResearchEditorResult } from '@/lib/hooks/use-research-editor'
  * - 复用 `ResearchDraftComposer`（加性 props：`mod-enter` 提交、52/170px、
  *   footerSlot、describedById），既有旧壳默认行为不变；
  * - 最小 52px、最大 170px；空输入不可提交、提交中禁用重复；
- * - 上下文 chip：单篇限定（BEH-02，可清除）与选段 chip（复用既有 shape）可见
- *   可移除；
+ * - 单篇限定 chip（BEH-02，可清除）可见可移除；
  * - 次级操作行：证据搜索 / 比较资料 → 打开既有面板作为中央次级视图；
- *   深入研究在 P6 前**明确不可用**（不建假任务）；
- * - 「本次用途」（UI-11）在 #1106 提供真实语义前**不造假控件**，登记为欠项；
- * - 空 selected 阻断（BEH-03）：显示原因与改选路径，不静默扩大范围。
+ *   空 selected 时与 composer 同源阻断（BEH-03/F4）；深入研究在 P6 前
+ *   **明确不可用**（不建假任务）；
+ * - 「本次用途」（UI-11）在 #1106 提供真实语义前**不造假控件**，登记为欠项
+ *   （F13：W1 退出项「目的可见可纠正」未满足，由 #1106 锁步）；
+ * - 门禁包含模型可用性（canExecute）与 submission capability（仅 true 放行），
+ *   并对发送被阻断/失败给出可见原因（F1/F5/F12）。
  */
 
 export function TargetComposer({
@@ -38,15 +40,17 @@ export function TargetComposer({
   canExecute,
   blockedHint,
   scopeBlockedText,
+  noActiveSession,
+  sendError,
+  onClearSendError,
   onSend,
   onOpenSearch,
   onOpenCompare,
   searchAvailable,
   compareAvailable,
+  secondaryBlockedReason,
   compactScopeChip,
   onCompactScopeChipActivate,
-  selectionChip = null,
-  focusRequestToken,
 }: {
   sessionWired: boolean
   editor: UseResearchEditorResult
@@ -56,21 +60,21 @@ export function TargetComposer({
   canExecute: boolean
   blockedHint: string
   scopeBlockedText: string | null
+  /** runtime 可用但无活动会话（F3）：明确阻断并提示新建/选择会话 */
+  noActiveSession: boolean
+  /** 最近一次发送失败/被阻断的可见原因（F1/F5） */
+  sendError: string | null
+  onClearSendError: () => void
   onSend: (text: string) => Promise<boolean>
   onOpenSearch: () => void
   onOpenCompare: () => void
   searchAvailable: boolean
   compareAvailable: boolean
+  /** 空 selected 时次级操作的阻断原因（与 composer 同源，F4） */
+  secondaryBlockedReason: string | null
   /** §3.3 compact + 右栏打开时的当前范围紧凑标签 */
   compactScopeChip: string | null
   onCompactScopeChipActivate: () => void
-  selectionChip?: {
-    readonly label: string
-    readonly title?: string
-    readonly onRemove: () => void
-    readonly disabled?: boolean
-  } | null
-  focusRequestToken?: number
 }) {
   const { t } = useTranslation()
   const { isAdminReadonly } = useResearchWorkspace()
@@ -95,36 +99,37 @@ export function TargetComposer({
         kind: 'global',
       })
     : {
-        allowed:
-          localDraft.trim().length > 0 &&
-          !isStreaming &&
-          canExecute &&
-          !isAdminReadonly &&
-          scopeBlockedText === null,
+        allowed: draftText.trim().length > 0 && !isStreaming && !isAdminReadonly,
         reason: null,
       }
-  // BEH-03：空 selected 的阻断也必须是**提交门禁**——不能只显示原因却让
-  // 按钮/快捷键仍可派发（session 模式下 derive 不知道范围，这里统一收口）。
-  const gate: ResearchDraftGate =
-    scopeBlockedText === null ? rawGate : { allowed: false, reason: rawGate.reason }
 
-  // 阻断原因优先级：范围阻断（BEH-03）> 模型不可用 > 会话状态 > 空输入。
+  // 门禁收口（F1/F4/F5/F12 + F3）：
+  // - 空 selected（BEH-03）与无活动会话（F3）不是"只显示原因"，必须真禁用；
+  // - canExecute=false（无模型/不可用/保存中/只读）不能"可点但静默失败"；
+  // - session 模式 submission capability 未确认时 `submissionReady===false`
+  //   已由 deriveResearchDraftGate 阻断（hook 侧把 undefined 归一为 false）。
+  const blockingReason =
+    scopeBlockedText ??
+    (noActiveSession ? t('research.target.composer.noActiveSession') : null) ??
+    (!canExecute ? (blockedHint.length > 0 ? blockedHint : t('research.target.composer.modelUnavailable')) : null)
+  const gate: ResearchDraftGate =
+    blockingReason === null ? rawGate : { allowed: false, reason: rawGate.reason }
+
+  // 阻断原因优先级：空 selected（BEH-03）> 无活动会话（F3）> 模型不可用
+  // （F5）> 其他 session 门禁（保存/冲突/只读/空输入）。
   const gateReasonText =
-    scopeBlockedText !== null
-      ? scopeBlockedText
-      : gate.allowed
-        ? null
-        : !canExecute && blockedHint.length > 0
-          ? blockedHint
-          : isAdminReadonly
-            ? t('research.workbench.adminWriteDenied')
-            : isStreaming
-              ? t('research.errors.generationInProgress')
-              : sessionWired && gate.reason !== null
-                ? t(researchDraftGateReasonKey(gate.reason))
-                : draftText.trim().length === 0
-                  ? t('research.target.composer.emptyDisabled')
-                  : null
+    blockingReason ??
+    (gate.allowed
+      ? null
+      : isAdminReadonly
+        ? t('research.workbench.adminWriteDenied')
+        : isStreaming
+          ? t('research.errors.generationInProgress')
+          : sessionWired && gate.reason !== null
+            ? t(researchDraftGateReasonKey(gate.reason))
+            : draftText.trim().length === 0
+              ? t('research.target.composer.emptyDisabled')
+              : null)
 
   const singleChip =
     mode === 'single' && singlePin !== null
@@ -133,56 +138,69 @@ export function TargetComposer({
           onRemove: clearSingle,
         }
       : null
-  const chip = selectionChip ?? singleChip
 
   const handleSend = (): void => {
     if (!gate.allowed) return
+    onClearSendError()
     void onSend(draftText)
   }
 
   const secondary = (
-    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-      <span className="sr-only">{t('research.target.secondary.label')}</span>
-      <Button
-        type="button"
-        size="sm"
-        variant="ghost"
-        className="h-8 gap-1 px-2 text-xs"
-        disabled={!searchAvailable}
-        onClick={onOpenSearch}
-        data-testid="rdlens-target-secondary-search"
-      >
-        <Search aria-hidden="true" className="h-3.5 w-3.5" />
-        {t('research.target.secondary.search')}
-      </Button>
-      <Button
-        type="button"
-        size="sm"
-        variant="ghost"
-        className="h-8 gap-1 px-2 text-xs"
-        disabled={!compareAvailable}
-        onClick={onOpenCompare}
-        data-testid="rdlens-target-secondary-compare"
-      >
-        <GitCompareArrows aria-hidden="true" className="h-3.5 w-3.5" />
-        {t('research.target.secondary.compare')}
-      </Button>
-      {/* P6 前深入研究没有真实执行：只显示不可用原因，不建假任务、不弹确认。 */}
-      <Button
-        type="button"
-        size="sm"
-        variant="ghost"
-        className="h-8 gap-1 px-2 text-xs"
-        disabled
-        aria-describedby="rdlens-target-deep-research-reason"
-        data-testid="rdlens-target-secondary-deep-research"
-      >
-        <Telescope aria-hidden="true" className="h-3.5 w-3.5" />
-        {t('research.target.secondary.deepResearch')}
-      </Button>
+    <div className="flex min-w-0 flex-col gap-1">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="sr-only">{t('research.target.secondary.label')}</span>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-8 gap-1 px-2 text-xs"
+          disabled={!searchAvailable}
+          onClick={onOpenSearch}
+          data-testid="rdlens-target-secondary-search"
+        >
+          <Search aria-hidden="true" className="h-3.5 w-3.5" />
+          {t('research.target.secondary.search')}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-8 gap-1 px-2 text-xs"
+          disabled={!compareAvailable}
+          onClick={onOpenCompare}
+          data-testid="rdlens-target-secondary-compare"
+        >
+          <GitCompareArrows aria-hidden="true" className="h-3.5 w-3.5" />
+          {t('research.target.secondary.compare')}
+        </Button>
+        {/* P6 前深入研究没有真实执行：只显示不可用原因，不建假任务、不弹确认。 */}
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-8 gap-1 px-2 text-xs"
+          disabled
+          aria-describedby="rdlens-target-deep-research-reason"
+          data-testid="rdlens-target-secondary-deep-research"
+        >
+          <Telescope aria-hidden="true" className="h-3.5 w-3.5" />
+          {t('research.target.secondary.deepResearch')}
+        </Button>
+      </div>
+      {/* 空 selected 时与 composer 同源阻断：说明原因与下一步（F4/BEH-03）。 */}
+      {secondaryBlockedReason !== null && (
+        <p
+          className="text-xs"
+          role="status"
+          style={{ color: 'var(--rdlens-warning)' }}
+          data-testid="rdlens-target-secondary-blocked"
+        >
+          {secondaryBlockedReason}
+        </p>
+      )}
       <p
         id="rdlens-target-deep-research-reason"
-        className="basis-full text-xs"
+        className="text-xs"
         style={{ color: 'var(--rdlens-ink-muted)' }}
         data-testid="rdlens-target-deep-research-reason"
       >
@@ -236,15 +254,25 @@ export function TargetComposer({
         onRetrySave={() => {
           if (sessionWired) void editor.retrySave()
         }}
-        selectionChip={chip}
+        selectionChip={singleChip}
         localDraftMode={!sessionWired}
         submitShortcut="mod-enter"
         minHeightPx={52}
         maxHeightPx={170}
         describedById="rdlens-target-composer-shortcut"
         footerSlot={secondary}
-        focusRequestToken={focusRequestToken}
       />
+      {/* F1：发送被阻断/失败的可视原因（不再静默吞掉 false）。 */}
+      {sendError !== null && (
+        <p
+          className="px-4 pt-1 text-xs font-medium"
+          role="alert"
+          style={{ color: 'var(--rdlens-warning)' }}
+          data-testid="rdlens-target-send-error"
+        >
+          {sendError}
+        </p>
+      )}
       <p
         id="rdlens-target-composer-shortcut"
         className="px-4 pb-2 text-[11px]"

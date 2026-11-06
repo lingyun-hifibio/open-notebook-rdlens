@@ -2,6 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
+vi.mock('@/lib/hooks/use-translation', () => ({
+  useTranslation: () => ({
+    t: (key: string) => key,
+    language: 'zh-CN',
+    setLanguage: vi.fn(),
+  }),
+}))
+
 import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
 import { ResearchHostProvider } from '@/lib/embedded/host-context'
 import { ResearchScopeProvider, useResearchScope } from '@/lib/research/scope'
@@ -40,7 +48,13 @@ const conversationFixture = vi.hoisted(() => ({
   send: vi.fn(async () => true),
   openSession: vi.fn(),
   newSession: vi.fn(async () => {}),
-  pinSingleSource: vi.fn(),
+  pinSingleSource: vi.fn(() => true),
+  flags: {
+    canExecute: true,
+    noActiveSession: false,
+    canPinSingleSource: false,
+    sendError: null as string | null,
+  },
   editor: {
     snapshot: null,
     controller: null,
@@ -223,9 +237,15 @@ vi.mock('./use-target-conversation', async () => {
         editor: conversationFixture.editor as unknown as TargetConversationState['editor'],
         editorSnapshot: null,
         submissionReady: undefined,
-        canExecute: true,
-        blockedHint: '',
+        canExecute: conversationFixture.flags.canExecute,
+        blockedHint: conversationFixture.flags.canExecute
+          ? ''
+          : 'research.globalModel.selectModelHint',
         scopeBlockedText: scopeEmpty ? 'research.target.composer.scopeBlocked' : null,
+        noActiveSession: conversationFixture.flags.noActiveSession,
+        sendError: conversationFixture.flags.sendError,
+        clearSendError: vi.fn(),
+        canPinSingleSource: conversationFixture.flags.canPinSingleSource,
         send: conversationFixture.send,
         openSession: conversationFixture.openSession,
         newSession: conversationFixture.newSession,
@@ -235,7 +255,12 @@ vi.mock('./use-target-conversation', async () => {
   }
 })
 
-function sessionFixture(): UseResearchSessionsResult {
+function sessionFixture(options: {
+  hasMore?: boolean
+  loading?: boolean
+  loadingMore?: boolean
+  loadMoreError?: 'list_failed' | null
+} = {}): UseResearchSessionsResult {
   return {
     sessions: [
       {
@@ -259,13 +284,13 @@ function sessionFixture(): UseResearchSessionsResult {
         visibilityDegraded: false,
       },
     ],
-    loading: false,
-    loadingMore: false,
+    loading: options.loading ?? false,
+    loadingMore: options.loadingMore ?? false,
     error: null,
-    loadMoreError: null,
+    loadMoreError: options.loadMoreError ?? null,
     unauthorized: false,
     sourceUnavailable: false,
-    hasMore: false,
+    hasMore: options.hasMore ?? false,
     capabilitiesReady: true,
     canList: true,
     canCreate: true,
@@ -314,10 +339,15 @@ beforeEach(() => {
   window.localStorage.clear()
   media.wide = false
   conversationFixture.sessions = sessionFixture()
+  conversationFixture.flags.canExecute = true
+  conversationFixture.flags.noActiveSession = false
+  conversationFixture.flags.canPinSingleSource = false
+  conversationFixture.flags.sendError = null
   conversationFixture.send.mockClear()
   conversationFixture.openSession.mockClear()
   conversationFixture.newSession.mockClear()
   conversationFixture.pinSingleSource.mockClear()
+  conversationFixture.pinSingleSource.mockReturnValue(true)
   ingest.mockClear()
 })
 
@@ -425,7 +455,8 @@ describe('UI-12 右栏焦点与 Esc（§5.6 / A11Y-02）', () => {
 
     fireEvent.keyDown(document, { key: 'Escape' })
     await waitFor(() => expect(screen.queryByTestId('rdlens-target-right-pane')).toBeNull())
-    expect(document.activeElement).toBe(trigger)
+    // F7：关闭后焦点回到触发控件（close 通过 effect 在恢复左栏可见后执行）
+    await waitFor(() => expect(document.activeElement).toBe(trigger))
   })
 
   it('关闭按钮同样把焦点还给触发控件', async () => {
@@ -435,7 +466,7 @@ describe('UI-12 右栏焦点与 Esc（§5.6 / A11Y-02）', () => {
     const close = await screen.findByTestId('rdlens-target-right-pane-close')
     fireEvent.click(close)
     await waitFor(() => expect(screen.queryByTestId('rdlens-target-right-pane')).toBeNull())
-    expect(document.activeElement).toBe(trigger)
+    await waitFor(() => expect(document.activeElement).toBe(trigger))
   })
 
   it('同一时刻只承担一项辅助内容：打开另一项即替换', async () => {
@@ -495,6 +526,7 @@ describe('引用点击 → 右栏引用预览（W1 最小可用）', () => {
   })
 
   it('只问此来源：调用既有 single-pin 能力并关闭右栏', async () => {
+    conversationFixture.flags.canPinSingleSource = true
     renderShell()
     fireEvent.click(screen.getByTestId('simulate-citation'))
     const ask = await screen.findByTestId('rdlens-target-ask-this-source')
@@ -542,7 +574,7 @@ describe('composer（UI-10，§5.5）', () => {
     expect(screen.getByTestId('rdlens-target-conversation')).toBeInTheDocument()
     fireEvent.click(screen.getByTestId('rdlens-target-secondary-back'))
     await waitFor(() =>
-      expect(screen.queryByTestId('rdlens-target-secondary-evidence-search')).toBeNull(),
+      expect(screen.queryByTestId('rdlens-target-secondary-panel')).toBeNull(),
     )
   })
 })
@@ -582,7 +614,7 @@ describe('左资料栏（UI-04，§5.3）', () => {
     )
     // 底部范围摘要反映既有 scope 语义
     expect(screen.getByTestId('rdlens-target-scope-summary')).toHaveTextContent(
-      'research.scopeSummary.sourceMany',
+      'research.scopeSummary.sourceOne',
     )
   })
 
@@ -638,5 +670,216 @@ describe('左资料栏（UI-04，§5.3）', () => {
     )
     expect(screen.getByTestId('rdlens-target-source-preview-name')).toHaveTextContent('doc_ready')
     expect(screen.getByTestId('rdlens-target-source-open-original')).toBeDisabled()
+  })
+})
+
+describe('审查第 1 轮修复回归（F3/F4/F5/F7/F9/F10/F11/F15/F18/F19/F21）', () => {
+  it('F4：空 selected 同时阻断证据搜索/比较，并显示与 composer 同源的阻断原因', () => {
+    renderShell()
+    fireEvent.click(screen.getByTestId('rdlens-target-source-select-src_ready'))
+    fireEvent.click(screen.getByTestId('rdlens-target-source-select-src_stale'))
+    fireEvent.click(screen.getByTestId('rdlens-target-source-select-src_ready'))
+    fireEvent.click(screen.getByTestId('rdlens-target-source-select-src_stale'))
+    expect(screen.getByTestId('scope-probe-source-count')).toHaveTextContent('0')
+    expect(screen.getByTestId('rdlens-target-secondary-search')).toBeDisabled()
+    expect(screen.getByTestId('rdlens-target-secondary-compare')).toBeDisabled()
+    expect(screen.getByTestId('rdlens-target-secondary-blocked')).toHaveTextContent(
+      'research.target.composer.scopeBlocked',
+    )
+  })
+
+  it('F4：次级视图已打开后 range 变空 → 不渲染搜索面板，fail-closed 显示阻断', async () => {
+    renderShell()
+    fireEvent.click(screen.getByTestId('rdlens-target-secondary-search'))
+    await waitFor(() =>
+      expect(screen.getByTestId('rdlens-target-secondary-panel')).toBeInTheDocument(),
+    )
+    fireEvent.click(screen.getByTestId('rdlens-target-source-select-src_ready'))
+    fireEvent.click(screen.getByTestId('rdlens-target-source-select-src_ready'))
+    await waitFor(() =>
+      expect(screen.getByTestId('rdlens-target-secondary-scope-blocked')).toBeInTheDocument(),
+    )
+    expect(screen.queryByTestId('rdlens-target-secondary-panel')).toBeNull()
+  })
+
+  it('F5：无可用模型 → composer 提交禁用且原因可见（不是可点后静默失败）', () => {
+    conversationFixture.flags.canExecute = false
+    renderShell()
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: 'Hello' } })
+    expect(screen.getByTestId('chat-send')).toBeDisabled()
+    expect(screen.getByTestId('research-draft-gate-hint')).toHaveTextContent(
+      'research.globalModel.selectModelHint',
+    )
+  })
+
+  it('F3：runtime 可用但无活动会话 → 显示新建/选择会话说明并禁用发送', () => {
+    conversationFixture.flags.noActiveSession = true
+    renderShell()
+    expect(screen.getByTestId('rdlens-target-no-session')).toBeInTheDocument()
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: 'Hello' } })
+    expect(screen.getByTestId('chat-send')).toBeDisabled()
+    expect(screen.getByTestId('research-draft-gate-hint')).toHaveTextContent(
+      'research.target.composer.noActiveSession',
+    )
+  })
+
+  it('F1/F5：发送被阻断/失败的可视原因（sendError）', () => {
+    conversationFixture.flags.sendError = 'research.target.composer.scopeChanged'
+    renderShell()
+    expect(screen.getByTestId('rdlens-target-send-error')).toHaveTextContent(
+      'research.target.composer.scopeChanged',
+    )
+  })
+
+  it('F7：引用预览关闭后焦点回到引用按钮（citation 触发元素被记录）', async () => {
+    renderShell()
+    const cite = screen.getByTestId('simulate-citation')
+    cite.focus()
+    fireEvent.click(cite)
+    const close = await screen.findByTestId('rdlens-target-right-pane-close')
+    fireEvent.click(close)
+    await waitFor(() => expect(screen.queryByTestId('rdlens-target-right-pane')).toBeNull())
+    await waitFor(() => expect(document.activeElement).toBe(cite))
+  })
+
+  it('F7：compact 下资料预览关闭后焦点回到资料行按钮（左栏恢复可见后）', async () => {
+    media.wide = false
+    renderShell()
+    const open = screen.getAllByTestId('rdlens-target-source-open')[0]
+    fireEvent.click(open)
+    await waitFor(() =>
+      expect(screen.getByTestId('rdlens-target-right-pane')).toHaveAttribute(
+        'data-pane-kind',
+        'source',
+      ),
+    )
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByTestId('rdlens-target-right-pane')).toBeNull())
+    await waitFor(() => expect(document.activeElement).toBe(open))
+  })
+
+  it('F9/F10：笔记区可选入同一 Scope；notes-only 摘要包含笔记（formatScopeLabel）', () => {
+    renderShell()
+    expect(screen.getByTestId('rdlens-target-notes-title')).toBeInTheDocument()
+    expect(screen.getAllByTestId('rdlens-target-note-row')).toHaveLength(1)
+    fireEvent.click(screen.getByTestId('rdlens-target-note-select-note_1'))
+    expect(screen.getByTestId('scope-probe-mode')).toHaveTextContent('selected')
+    expect(screen.getByTestId('scope-probe-note-count')).toHaveTextContent('1')
+    expect(screen.getByTestId('scope-probe-source-count')).toHaveTextContent('0')
+    expect(screen.getByTestId('rdlens-target-scope-summary')).toHaveTextContent(
+      'research.scopeSummary.noteOne',
+    )
+  })
+
+  it('F10：笔记区空态（无笔记）有明确说明', () => {
+    // 通过清空 notes fixture 验证空态（vi.mock 工厂读取同一 hoisted 对象）
+    const hoisted = fixtureRows as { notes: unknown[] }
+    const original = hoisted.notes
+    hoisted.notes = []
+    renderShell()
+    expect(screen.getByTestId('rdlens-target-notes-empty')).toBeInTheDocument()
+    hoisted.notes = original
+  })
+
+  it('F11：>1 页会话历史显示「加载更多」并调用 loadMore', async () => {
+    const loadMore = vi.fn()
+    conversationFixture.sessions = {
+      ...sessionFixture({ hasMore: true }),
+      loadMore,
+    }
+    renderShell()
+    fireEvent.click(screen.getByTestId('rdlens-target-history-trigger'))
+    const button = await screen.findByTestId('rdlens-target-conversation-load-more')
+    fireEvent.click(button)
+    expect(loadMore).toHaveBeenCalledTimes(1)
+  })
+
+  it('F15：历史加载中显示 loading 原因；新对话不可用原因常显（aria-describedby 不悬空）', () => {
+    conversationFixture.sessions = sessionFixture({ loading: true })
+    renderShell()
+    const history = screen.getByTestId('rdlens-target-history-trigger')
+    expect(history).toBeDisabled()
+    expect(screen.getByTestId('rdlens-target-history-unavailable')).toHaveTextContent(
+      'research.target.conversation.loading',
+    )
+    expect(history).toHaveAttribute('aria-describedby', 'rdlens-target-history-reason')
+    const create = screen.getByTestId('rdlens-target-new-conversation')
+    expect(create).toBeDisabled()
+    expect(create).toHaveAttribute('aria-describedby', 'rdlens-target-new-reason')
+    expect(screen.getByTestId('rdlens-target-new-unavailable')).toBeInTheDocument()
+  })
+
+  it('F18：资料/笔记 checkbox 有 24×24 点击区包装（A11Y-04）', () => {
+    renderShell()
+    expect(screen.getByTestId('rdlens-target-source-select-src_ready').parentElement).toHaveClass(
+      'h-6',
+      'w-6',
+    )
+    expect(screen.getByTestId('rdlens-target-note-select-note_1').parentElement).toHaveClass(
+      'h-6',
+      'w-6',
+    )
+  })
+
+  it('F19：1440 视口 + 右栏打开 → 中央列宽按真实视口推导（>=720）', async () => {
+    const originalWidth = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1440 })
+    media.wide = true
+    try {
+      renderShell()
+      fireEvent.click(screen.getByTestId('rdlens-target-tasks-trigger'))
+      await waitFor(() =>
+        expect(screen.getByTestId('rdlens-target-right-pane')).toBeInTheDocument(),
+      )
+      // 1440 − 282 − 355 = 803
+      expect(screen.getByTestId('rdlens-target-shell')).toHaveAttribute('data-center-width', '803')
+      // 关闭右栏 → 焦点回到触发控件（1440/wide 焦点返回也覆盖）
+      const trigger = screen.getByTestId('rdlens-target-tasks-trigger')
+      fireEvent.click(trigger)
+      await waitFor(() =>
+        expect(screen.getByTestId('rdlens-target-right-pane')).toBeInTheDocument(),
+      )
+      fireEvent.click(screen.getByTestId('rdlens-target-right-pane-close'))
+      await waitFor(() => expect(document.activeElement).toBe(trigger))
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth })
+    }
+  })
+
+  it('F21：任务计数徽标不小于 11px 可见文字', () => {
+    renderShell()
+    expect(screen.getByTestId('rdlens-target-tasks-badge').className).toContain('text-[11px]')
+  })
+})
+
+describe('审查第 1 轮 LOW 修复（F8/F17/F22）', () => {
+  it('F8：对话历史时间按 locale 格式化（zh-CN 下不是 ISO 裸串）', async () => {
+    renderShell()
+    fireEvent.click(screen.getByTestId('rdlens-target-history-trigger'))
+    await waitFor(() =>
+      expect(screen.getAllByTestId('rdlens-target-conversation-item').length).toBeGreaterThan(0),
+    )
+    const item = screen.getAllByTestId('rdlens-target-conversation-item')[0]
+    expect(item.textContent ?? '').toContain('2026')
+    expect(item.textContent ?? '').not.toContain('2026-11-02T00:00:00Z')
+  })
+
+  it('F17：空 selected 的「选择资料」聚焦第一个未 disabled 的复选（跳过 pending/failed）', () => {
+    const hoisted = fixtureRows as { sources: unknown[] }
+    const original = hoisted.sources
+    // 首行不可选（pending），第二行可选：聚焦必须落到第二行
+    hoisted.sources = [original[2], original[0], original[1], original[3]]
+    try {
+      renderShell()
+      fireEvent.click(screen.getByTestId('rdlens-target-source-select-src_ready'))
+      fireEvent.click(screen.getByTestId('rdlens-target-source-select-src_ready'))
+      expect(screen.getByTestId('scope-probe-source-count')).toHaveTextContent('0')
+      fireEvent.click(screen.getByTestId('rdlens-target-scope-blocked-choose'))
+      expect(document.activeElement).toBe(
+        screen.getByTestId('rdlens-target-source-select-src_ready'),
+      )
+    } finally {
+      hoisted.sources = original
+    }
   })
 })

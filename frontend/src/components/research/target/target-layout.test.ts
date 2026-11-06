@@ -4,9 +4,7 @@ import {
   TARGET_LEFT_PANE_WIDTH,
   TARGET_RIGHT_PANE_WIDTH,
   TARGET_THREE_COLUMN_VIEWPORT,
-  centerHorizontalPadding,
   resolveTargetLayout,
-  shouldRestoreLeftPaneAfterClose,
   targetBreakpointForWidth,
 } from './target-layout'
 
@@ -72,28 +70,24 @@ describe('resolveTargetLayout（§3.3）', () => {
   })
 })
 
-describe('关闭右栏恢复左栏（BEH §5.6 / 1024–1279）', () => {
-  it('compact 临时收起后关闭右栏 → 应恢复左栏', () => {
-    const open = resolveTargetLayout({ breakpoint: 'compact', rightPaneOpen: true })
-    expect(
-      shouldRestoreLeftPaneAfterClose(open.breakpoint, open.leftPaneTemporarilyCollapsed),
-    ).toBe(true)
-    const closed = resolveTargetLayout({ breakpoint: 'compact', rightPaneOpen: false })
-    expect(closed.leftPaneVisible).toBe(true)
+describe('真实视口宽度推导中央列（F19）', () => {
+  it('1440 + 右栏打开 + wide：center=1440−282−355=803（≥720）', () => {
+    const layout = resolveTargetLayout({ breakpoint: 'wide', rightPaneOpen: true, viewportWidth: 1440 })
+    expect(layout.centerColumnWidth).toBe(803)
+    expect(layout.centerColumnMinMet).toBe(true)
   })
 
-  it('wide 关闭右栏不涉及临时收起', () => {
-    const open = resolveTargetLayout({ breakpoint: 'wide', rightPaneOpen: true })
-    expect(
-      shouldRestoreLeftPaneAfterClose(open.breakpoint, open.leftPaneTemporarilyCollapsed),
-    ).toBe(false)
+  it('1024 + 右栏打开 + compact：左栏收起，center=1024−355=669', () => {
+    const layout = resolveTargetLayout({ breakpoint: 'compact', rightPaneOpen: true, viewportWidth: 1024 })
+    expect(layout.centerColumnWidth).toBe(669)
   })
-})
 
-describe('centerHorizontalPadding（§3.2）', () => {
-  it('center≥720 用 clamp；<720 固定 28px', () => {
-    expect(centerHorizontalPadding(850)).toBe('clamp(28px, 5vw, 84px)')
-    expect(centerHorizontalPadding(720)).toBe('clamp(28px, 5vw, 84px)')
-    expect(centerHorizontalPadding(719)).toBe('28px')
+  it('缺省 viewportWidth 时按断点最小视口推导（SSR/纯函数测试稳定）', () => {
+    expect(
+      resolveTargetLayout({ breakpoint: 'wide', rightPaneOpen: true }).centerColumnWidth,
+    ).toBe(643)
+    expect(
+      resolveTargetLayout({ breakpoint: 'compact', rightPaneOpen: false }).centerColumnWidth,
+    ).toBe(742)
   })
 })

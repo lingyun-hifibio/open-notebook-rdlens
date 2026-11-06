@@ -8,9 +8,12 @@ import type { CoverageSubmitOutcome } from '@/lib/hooks/use-research-chat'
 import { ResearchChatPanel } from '../ResearchChatPanel'
 import { translateOrFallback } from '@/lib/locales/translate-or-fallback'
 import type { ResearchCitationDisplayItem } from '@/lib/research/types'
-import type { TargetCitationPreview } from './target-types'
+import type { TargetCitationPreview, TargetRightPaneKind } from './target-types'
 import type { TargetConversationState } from './use-target-conversation'
 import { TargetComposer } from './TargetComposer'
+
+/** §3.2：中央对话正文列/面板的水平内边距（双侧一致的 clamp）。 */
+const CENTER_INLINE_PADDING = 'clamp(28px, 5vw, 84px)'
 
 /**
  * UI-07 中央对话（W1 #1104；UI 规格 v1 §5.4）。
@@ -21,6 +24,8 @@ import { TargetComposer } from './TargetComposer'
  *   会话标题/范围条/composer/coverage 范围选择器——目标壳不叠加第二套范围
  *   或模型控件）；
  * - composer 固定在中央列底部，不随消息滚走；
+ * - runtime 可用但无活动会话（F3）：显示「新建/选择会话」说明并禁用发送，
+ *   不静默退化到 legacy 单连续会话；
  * - W1 允许「引用点击 → 右栏引用预览」的最小可用行为；W2/W3 能力明确不可用。
  */
 export function TargetConversation({
@@ -34,24 +39,25 @@ export function TargetConversation({
   onOpenCompare,
   searchAvailable,
   compareAvailable,
+  secondaryBlockedReason,
   compactScopeChip,
   onCompactScopeChipActivate,
-  focusComposerToken,
 }: {
   conversation: TargetConversationState
   onOpenHistory: (trigger: HTMLElement) => void
   onNewConversation: () => void
-  onOpenCitation: (preview: TargetCitationPreview) => void
+  onOpenCitation: (preview: TargetCitationPreview, trigger: HTMLElement | null) => void
   /** 当前右栏面板（aria-expanded 与真实状态一致） */
-  rightPane: string | null
+  rightPane: TargetRightPaneKind | null
   onOpenRightPane: (kind: 'conversations', trigger: HTMLElement) => void
   onOpenSearch: () => void
   onOpenCompare: () => void
   searchAvailable: boolean
   compareAvailable: boolean
+  /** 空 selected 时次级操作的阻断原因（F4，与 composer 同源） */
+  secondaryBlockedReason: string | null
   compactScopeChip: string | null
   onCompactScopeChipActivate: () => void
-  focusComposerToken?: number
 }) {
   const { t } = useTranslation()
   const sessionTitle =
@@ -63,23 +69,47 @@ export function TargetConversation({
         )
       : conversation.sessionMeta?.title ?? null
   const title = sessionTitle ?? t('research.target.conversation.titleFallback')
-  const historyAvailable = conversation.sessions !== null && !conversation.sessions.loading
-  const createAvailable =
-    conversation.sessions !== null &&
-    !conversation.sessions.loading &&
-    conversation.sessions.canCreate &&
-    !conversation.sessions.creating
+
+  const sessions = conversation.sessions
+  const sessionsLoading = sessions !== null && sessions.loading
+  const sessionsError = sessions !== null && sessions.error !== null
+  // F15：loading / unavailable / error 原因分开，不再把“加载中”写成“运行时未接入”。
+  const historyUnavailableReason =
+    sessions === null
+      ? t('research.target.conversation.sessionUnavailable')
+      : sessionsLoading
+        ? t('research.target.conversation.loading')
+        : sessionsError
+          ? t('research.loadFailed')
+          : null
+  const historyAvailable = historyUnavailableReason === null
+  const createUnavailableReason =
+    sessions === null
+      ? t('research.target.conversation.newUnavailable')
+      : sessionsLoading
+        ? t('research.target.conversation.loading')
+        : !sessions.canCreate
+          ? t('research.target.conversation.newUnavailable')
+          : null
+  const createAvailable = createUnavailableReason === null && !sessions?.creating
 
   // W1：引用点击只打开右栏引用预览（BEH-05 往返/原文阅读属 W2）。
   const handleCitationReturn = (citation: ResearchCitationDisplayItem): void => {
-    onOpenCitation({ citation, sourceId: null })
+    const active = typeof document === 'undefined' ? null : document.activeElement
+    onOpenCitation(
+      { citation, sourceId: null },
+      active instanceof HTMLElement ? active : null,
+    )
   }
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="rdlens-target-conversation">
       <div
-        className="shrink-0 border-b px-7 pb-3 pt-5 max-xl:px-[18px]"
-        style={{ borderColor: 'var(--rdlens-line)' }}
+        className="shrink-0 border-b pb-3 pt-5"
+        style={{
+          borderColor: 'var(--rdlens-line)',
+          paddingInline: CENTER_INLINE_PADDING,
+        }}
         data-testid="rdlens-target-conversation-header"
       >
         <div className="flex min-w-0 items-start justify-between gap-3">
@@ -105,7 +135,7 @@ export function TargetConversation({
               variant="outline"
               className="h-[38px] gap-1.5"
               disabled={!historyAvailable}
-              title={historyAvailable ? undefined : t('research.target.conversation.sessionUnavailable')}
+              title={historyAvailable ? undefined : historyUnavailableReason ?? undefined}
               aria-describedby={historyAvailable ? undefined : 'rdlens-target-history-reason'}
               aria-expanded={rightPane === 'conversations'}
               aria-controls="rdlens-target-right-pane"
@@ -127,7 +157,7 @@ export function TargetConversation({
               variant="outline"
               className="h-[38px] gap-1.5"
               disabled={!createAvailable}
-              title={createAvailable ? undefined : t('research.target.conversation.newUnavailable')}
+              title={createAvailable ? undefined : createUnavailableReason ?? undefined}
               aria-describedby={createAvailable ? undefined : 'rdlens-target-new-reason'}
               onClick={onNewConversation}
               data-testid="rdlens-target-new-conversation"
@@ -137,7 +167,7 @@ export function TargetConversation({
             </Button>
           </div>
         </div>
-        {/* 不可用原因的可见说明（不是假控件：按钮 disabled 且原因常显） */}
+        {/* 不可用原因常显（不是假控件：按钮 disabled 且原因可见，F15）。 */}
         {!historyAvailable && (
           <p
             id="rdlens-target-history-reason"
@@ -145,18 +175,38 @@ export function TargetConversation({
             style={{ color: 'var(--rdlens-ink-muted)' }}
             data-testid="rdlens-target-history-unavailable"
           >
-            {t('research.target.conversation.sessionUnavailable')}
+            {historyUnavailableReason}
           </p>
         )}
-        {!createAvailable && historyAvailable && (
+        {!createAvailable && (
           <p
             id="rdlens-target-new-reason"
             className="mt-2 text-xs"
             style={{ color: 'var(--rdlens-ink-muted)' }}
             data-testid="rdlens-target-new-unavailable"
           >
-            {t('research.target.conversation.newUnavailable')}
+            {createUnavailableReason ?? t('research.target.conversation.newUnavailable')}
           </p>
+        )}
+        {/* F3：runtime 可用但无活动会话——明确的新建会话入口，不静默走 legacy。 */}
+        {conversation.noActiveSession && (
+          <div
+            className="mt-3 space-y-2 rounded-[4px] px-3 py-2"
+            style={{ backgroundColor: 'var(--rdlens-field)' }}
+            data-testid="rdlens-target-no-session"
+          >
+            <p className="text-sm font-medium">{t('research.target.conversation.noActiveSession')}</p>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!createAvailable}
+              onClick={onNewConversation}
+              data-testid="rdlens-target-no-session-new"
+            >
+              {t('research.target.conversation.newConversation')}
+            </Button>
+          </div>
         )}
       </div>
 
@@ -201,28 +251,35 @@ export function TargetConversation({
       </div>
 
       <div
-        className="shrink-0 border-t px-7 pt-3 max-xl:px-[18px]"
-        style={{ borderColor: 'var(--rdlens-line)', backgroundColor: 'var(--rdlens-surface-subtle)' }}
+        className="shrink-0 border-t pt-3"
+        style={{
+          borderColor: 'var(--rdlens-line)',
+          backgroundColor: 'var(--rdlens-surface-subtle)',
+          paddingInline: CENTER_INLINE_PADDING,
+        }}
       >
         <div style={{ maxWidth: '682px', width: '100%', marginInline: 'auto' }}>
-        <TargetComposer
-          sessionWired={conversation.sessionWired}
-          editor={conversation.editor}
-          editorSnapshot={conversation.editorSnapshot}
-          submissionReady={conversation.submissionReady}
-          isStreaming={conversation.isStreaming}
-          canExecute={conversation.canExecute}
-          blockedHint={conversation.blockedHint}
-          scopeBlockedText={conversation.scopeBlockedText}
-          onSend={conversation.send}
-          onOpenSearch={onOpenSearch}
-          onOpenCompare={onOpenCompare}
-          searchAvailable={searchAvailable}
-          compareAvailable={compareAvailable}
-          compactScopeChip={compactScopeChip}
-          onCompactScopeChipActivate={onCompactScopeChipActivate}
-          focusRequestToken={focusComposerToken}
-        />
+          <TargetComposer
+            sessionWired={conversation.sessionWired}
+            editor={conversation.editor}
+            editorSnapshot={conversation.editorSnapshot}
+            submissionReady={conversation.submissionReady}
+            isStreaming={conversation.isStreaming}
+            canExecute={conversation.canExecute}
+            blockedHint={conversation.blockedHint}
+            scopeBlockedText={conversation.scopeBlockedText}
+            noActiveSession={conversation.noActiveSession}
+            sendError={conversation.sendError}
+            onClearSendError={conversation.clearSendError}
+            onSend={conversation.send}
+            onOpenSearch={onOpenSearch}
+            onOpenCompare={onOpenCompare}
+            searchAvailable={searchAvailable}
+            compareAvailable={compareAvailable}
+            secondaryBlockedReason={secondaryBlockedReason}
+            compactScopeChip={compactScopeChip}
+            onCompactScopeChipActivate={onCompactScopeChipActivate}
+          />
         </div>
       </div>
     </div>
