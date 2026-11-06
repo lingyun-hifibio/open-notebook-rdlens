@@ -87,7 +87,7 @@ export function TargetComposer({
     phase: isStreaming ? ('streaming' as const) : ('idle' as const),
   }
 
-  const gate: ResearchDraftGate = sessionWired
+  const rawGate: ResearchDraftGate = sessionWired
     ? deriveResearchDraftGate({
         editorSnapshot,
         conversationSnapshot,
@@ -103,6 +103,10 @@ export function TargetComposer({
           scopeBlockedText === null,
         reason: null,
       }
+  // BEH-03：空 selected 的阻断也必须是**提交门禁**——不能只显示原因却让
+  // 按钮/快捷键仍可派发（session 模式下 derive 不知道范围，这里统一收口）。
+  const gate: ResearchDraftGate =
+    scopeBlockedText === null ? rawGate : { allowed: false, reason: rawGate.reason }
 
   // 阻断原因优先级：范围阻断（BEH-03）> 模型不可用 > 会话状态 > 空输入。
   const gateReasonText =

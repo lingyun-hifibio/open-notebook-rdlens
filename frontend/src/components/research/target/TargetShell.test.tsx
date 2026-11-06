@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
 import { ResearchHostProvider } from '@/lib/embedded/host-context'
-import { ResearchScopeProvider } from '@/lib/research/scope'
+import { ResearchScopeProvider, useResearchScope } from '@/lib/research/scope'
 import { TargetShell } from './TargetShell'
 import type { TargetConversationState } from './use-target-conversation'
 import type { UseResearchSessionsResult } from '@/lib/hooks/use-research-sessions'
@@ -192,37 +192,48 @@ vi.mock('@/components/research/ResearchChatPanel', () => ({
   ),
 }))
 
-vi.mock('./use-target-conversation', () => ({
-  useTargetConversation: (): TargetConversationState => {
-    const sessions = conversationFixture.sessions
-    return {
-      sessionWired: false,
-      runtimeAvailable: sessions !== null,
-      sessions,
-      activeRef: null,
-      turns: [],
-      isStreaming: false,
-      backgroundNotice: null,
-      resolveChatOrigin: async () => null,
-      conversation: null,
-      sessionMeta: null,
-      sessionCards: [],
-      submissionLookup: null,
-      markerWriteFailed: false,
-      refreshMarkerLookups: undefined,
-      editor: conversationFixture.editor as unknown as TargetConversationState['editor'],
-      editorSnapshot: null,
-      submissionReady: undefined,
-      canExecute: true,
-      blockedHint: '',
-      scopeBlockedText: null,
-      send: conversationFixture.send,
-      openSession: conversationFixture.openSession,
-      newSession: conversationFixture.newSession,
-      pinSingleSource: conversationFixture.pinSingleSource,
-    }
-  },
-}))
+vi.mock('./use-target-conversation', async () => {
+  const scopeModule = await vi.importActual<typeof import('@/lib/research/scope')>(
+    '@/lib/research/scope',
+  )
+  return {
+    useTargetConversation: (): TargetConversationState => {
+      const sessions = conversationFixture.sessions
+      // 空 selected 的阻断文案与真实 hook 同源（BEH-03）：从 provider 快照推导。
+      const snapshot = scopeModule.useResearchScope().getSnapshot()
+      const scopeEmpty =
+        snapshot.mode === 'selected' &&
+        snapshot.sourceIds.length === 0 &&
+        snapshot.noteIds.length === 0
+      return {
+        sessionWired: false,
+        runtimeAvailable: sessions !== null,
+        sessions,
+        activeRef: null,
+        turns: [],
+        isStreaming: false,
+        backgroundNotice: null,
+        resolveChatOrigin: async () => null,
+        conversation: null,
+        sessionMeta: null,
+        sessionCards: [],
+        submissionLookup: null,
+        markerWriteFailed: false,
+        refreshMarkerLookups: undefined,
+        editor: conversationFixture.editor as unknown as TargetConversationState['editor'],
+        editorSnapshot: null,
+        submissionReady: undefined,
+        canExecute: true,
+        blockedHint: '',
+        scopeBlockedText: scopeEmpty ? 'research.target.composer.scopeBlocked' : null,
+        send: conversationFixture.send,
+        openSession: conversationFixture.openSession,
+        newSession: conversationFixture.newSession,
+        pinSingleSource: conversationFixture.pinSingleSource,
+      }
+    },
+  }
+})
 
 function sessionFixture(): UseResearchSessionsResult {
   return {
@@ -269,6 +280,17 @@ function sessionFixture(): UseResearchSessionsResult {
   } as unknown as UseResearchSessionsResult
 }
 
+function ScopeProbe() {
+  const { mode, selectedSourceIds, selectedNoteIds } = useResearchScope()
+  return (
+    <div>
+      <span data-testid="scope-probe-mode">{mode}</span>
+      <span data-testid="scope-probe-source-count">{selectedSourceIds.length}</span>
+      <span data-testid="scope-probe-note-count">{selectedNoteIds.length}</span>
+    </div>
+  )
+}
+
 function renderShell(projectName: string | null = 'Project Alpha') {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -279,6 +301,7 @@ function renderShell(projectName: string | null = 'Project Alpha') {
         <ResearchScopeProvider userId="user_1" projectId="proj_1">
           <ResearchHostProvider projectName={projectName}>
             <TargetShell />
+            <ScopeProbe />
           </ResearchHostProvider>
         </ResearchScopeProvider>
       </ResearchWorkspaceProvider>
@@ -561,6 +584,50 @@ describe('左资料栏（UI-04，§5.3）', () => {
     expect(screen.getByTestId('rdlens-target-scope-summary')).toHaveTextContent(
       'research.scopeSummary.sourceMany',
     )
+  })
+
+  it('selected 可清空到空：取消最后一份后范围仍为 selected（不回退 all）并显示阻断说明', () => {
+    renderShell()
+    // all → 勾选两份 → selected 2
+    fireEvent.click(screen.getByTestId('rdlens-target-source-select-src_ready'))
+    fireEvent.click(screen.getByTestId('rdlens-target-source-select-src_stale'))
+    expect(screen.getByTestId('scope-probe-mode')).toHaveTextContent('selected')
+    expect(screen.getByTestId('scope-probe-source-count')).toHaveTextContent('2')
+    expect(screen.queryByTestId('rdlens-target-scope-blocked')).toBeNull()
+
+    // 取消第一份（仍有 1 份）
+    fireEvent.click(screen.getByTestId('rdlens-target-source-select-src_ready'))
+    expect(screen.getByTestId('scope-probe-source-count')).toHaveTextContent('1')
+    expect(screen.queryByTestId('rdlens-target-scope-blocked')).toBeNull()
+
+    // 有草稿时先确认可提交（对照组：非阻断态不被 composer 门禁挡）
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: 'Next question' } })
+    expect(screen.getByTestId('chat-send')).not.toBeDisabled()
+
+    // 取消最后一份：checkbox 必须可用（旧实现会禁用导致空 selected 不可达），
+    // 且保留稳定可访问名（含资料名）。
+    const lastCheckbox = screen.getByTestId('rdlens-target-source-select-src_stale')
+    expect(lastCheckbox).not.toBeDisabled()
+    expect(lastCheckbox).toHaveAccessibleName('research.target.sources.selectAria')
+    fireEvent.click(lastCheckbox)
+    expect(screen.getByTestId('scope-probe-source-count')).toHaveTextContent('0')
+    // BEH-01：selected 为空**不回退 all**（不静默扩大范围）
+    expect(screen.getByTestId('scope-probe-mode')).toHaveTextContent('selected')
+    // BEH-03：左栏阻断说明 + 下一步动作可见
+    const blocked = screen.getByTestId('rdlens-target-scope-blocked')
+    expect(blocked).toBeInTheDocument()
+    expect(within(blocked).getByText('research.target.sources.scopeEmptySelected')).toBeInTheDocument()
+    expect(screen.getByTestId('rdlens-target-scope-blocked-choose')).toBeInTheDocument()
+    // composer 同源阻断：提交门禁关闭 + 原因可见（不是只显示文案）
+    expect(screen.getByTestId('chat-send')).toBeDisabled()
+    expect(screen.getByTestId('research-draft-gate-hint')).toHaveTextContent(
+      'research.target.composer.scopeBlocked',
+    )
+
+    // 明确动作才扩大到 all（用户主动，而非静默）
+    fireEvent.click(screen.getByTestId('rdlens-target-scope-blocked-all'))
+    expect(screen.getByTestId('scope-probe-mode')).toHaveTextContent('all')
+    expect(screen.queryByTestId('rdlens-target-scope-blocked')).toBeNull()
   })
 
   it('打开资料预览（UI-17）显示版本/状态，原文阅读明确 W2 不可用', async () => {

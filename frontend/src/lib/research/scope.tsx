@@ -260,6 +260,13 @@ interface ResearchScopeValue {
   setMode: (mode: Exclude<ResearchScopeMode, 'single'>) => void
   toggleSource: (sourceId: string) => void
   toggleNote: (noteId: string) => void
+  /**
+   * W1 #1104（BEH-01/BEH-03）：显式取消一份资料——**允许清空 selected**。
+   * `toggleSource` 保留既有防误触（旧壳最后一份不可取消）；目标壳要能让用户
+   * 走到「selected 为空」的阻断路径，因此提供加性入口：空 selected 保持
+   * mode='selected'（不回退 all、不扩大范围），由 UI 显示阻断说明与下一步。
+   */
+  removeSource: (sourceId: string) => void
   /** 「只问此来源」（D-04）：绑定当前会话；sessionId 未知时先入待绑态 */
   setSingle: (sourceId: string, sessionId: string | null) => void
   /** 用户取消限定 → 恢复基础范围 */
@@ -361,6 +368,18 @@ function ResearchScopeProviderForIdentity({
 
   const toggleSource = useCallback((sourceId: string) => toggle('sourceIds', sourceId), [toggle])
   const toggleNote = useCallback((noteId: string) => toggle('noteIds', noteId), [toggle])
+
+  const removeSource = useCallback((sourceId: string) => {
+    // 显式范围操作：清除临时限定；从基础范围移除；**空 selected 合法**。
+    updateSinglePin(null)
+    const current = scopeRef.current
+    if (!current.sourceIds.includes(sourceId)) return
+    updateScope({
+      mode: 'selected',
+      sourceIds: current.sourceIds.filter((id) => id !== sourceId),
+      noteIds: [...current.noteIds],
+    })
+  }, [updateScope, updateSinglePin])
 
   const setSingle = useCallback((sourceId: string, sessionId: string | null) => {
     const current = scopeRef.current
@@ -482,6 +501,7 @@ function ResearchScopeProviderForIdentity({
         setMode,
         toggleSource,
         toggleNote,
+        removeSource,
         setSingle,
         clearSingle,
         bindSession,

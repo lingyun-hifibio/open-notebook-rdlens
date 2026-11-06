@@ -62,11 +62,13 @@ export function TargetSourcesPane({
     selectedNoteIds,
     singlePin,
     toggleSource,
+    removeSource,
     setMode,
   } = useResearchScope()
   const requestIngest = useRequestIngest()
   const [search, setSearch] = useState('')
   const scopeRef = useRef<HTMLDivElement | null>(null)
+  const listRef = useRef<HTMLDivElement | null>(null)
   const selectedCount = selectedSourceIds.length + selectedNoteIds.length
 
   // §3.3：紧凑态点击 composer 范围标签 → 关闭右栏并聚焦左栏范围控件。
@@ -169,7 +171,9 @@ export function TargetSourcesPane({
             <label className="flex min-w-0 items-center gap-2 text-sm">
               <RadioGroupItem
                 value="selected"
-                disabled={selectedCount === 0}
+                // 空 selected 是可达的阻断态（BEH-03）：已选中时保持可控读，
+                // 仅禁止从 all 切到空的 selected。
+                disabled={selectedCount === 0 && mode !== 'selected'}
                 data-testid="rdlens-target-scope-selected"
               />
               <span className="min-w-0">{t('research.target.sources.scopeSelected')}</span>
@@ -180,11 +184,51 @@ export function TargetSourcesPane({
               {t('research.layout.scope.allHint')}
             </p>
           )}
+          {/* BEH-03：空 selected 是用户可达的阻断态——说明原因 + 下一步
+              （选资料 / 改为全部可用资料）；不静默回退 all、不扩大范围。
+              「改为探索/写作」随 #1106 本次用途提供，W1 不造假控件。 */}
+          {mode === 'selected' && selectedCount === 0 && (
+            <div
+              role="alert"
+              className="mt-3 space-y-2 rounded-[4px] px-3 py-2"
+              style={{ backgroundColor: 'var(--rdlens-warning-field)', color: 'var(--rdlens-ink)' }}
+              data-testid="rdlens-target-scope-blocked"
+            >
+              <p className="text-sm font-medium">{t('research.target.sources.scopeEmptySelected')}</p>
+              <p className="text-xs" style={{ color: 'var(--rdlens-ink-muted)' }}>
+                {t('research.target.sources.scopeBlockedHint')}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    listRef.current
+                      ?.querySelector<HTMLElement>('[data-testid^="rdlens-target-source-select-"]')
+                      ?.focus()
+                  }}
+                  data-testid="rdlens-target-scope-blocked-choose"
+                >
+                  {t('research.target.sources.scopeBlockedChoose')}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setMode('all')}
+                  data-testid="rdlens-target-scope-blocked-all"
+                >
+                  {t('research.target.sources.scopeBlockedAll')}
+                </Button>
+              </div>
+            </div>
+          )}
         </fieldset>
       </div>
 
       {/* 列表：独立滚动；行最小高度 44px（§3.4） */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-1" data-testid="rdlens-target-sources-list">
+      <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto px-3 py-1" data-testid="rdlens-target-sources-list">
         {isLoading && (
           <p
             className="px-3 py-2 text-sm"
@@ -262,9 +306,13 @@ export function TargetSourcesPane({
                 >
                   <Checkbox
                     checked={selected}
-                    disabled={!selectable || (mode === 'selected' && selectedCount === 1 && selected)}
+                    // BEH-01/BEH-03：只按“是否可选”禁用；取消最后一份必须
+                    // 可用（否则“selected 为空”的阻断路径不可达）。
+                    disabled={!selectable}
                     onCheckedChange={() => {
-                      if (item.source_id !== null) toggleSource(item.source_id)
+                      if (item.source_id === null) return
+                      if (selected) removeSource(item.source_id)
+                      else toggleSource(item.source_id)
                     }}
                     aria-label={t('research.target.sources.selectAria', {
                       name: item.document_id,
