@@ -1,7 +1,7 @@
 {
   "ticket": "#1104",
   "title": "W1 目标两栏骨架与按需右栏 — Before/After 视觉证据（[synthetic] 网络）",
-  "generated_at": "2026-11-06T19:16:00.460Z",
+  "generated_at": "2026-11-06T21:04:03.229Z",
   "evidence_level": {
     "kind": "synthetic-network real-app rendering",
     "statement": "真实应用渲染（RDLens 宿主 Vite 应用 + fork Next.js 嵌入式工作台）+ 本地合成 API；无真实后端/数据库/模型/凭据/私有数据。synthetic 证据只能作为 smoke，不单独关闭 L2；L2（真实 host + DB + 部署）仍待部署验收（UI 规格 v1 §9.2）。",
@@ -50,17 +50,18 @@
       "fork": {
         "repo": "lingyun-hifibio/open-notebook-rdlens",
         "ref": "agent/wave-one-shell-bddcfc523569",
-        "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-        "short": "4a007a2",
+        "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+        "short": "61b2507",
         "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-        "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+        "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
       },
       "host": {
         "repo": "HiFiBiO-Therapeutics/RDLens",
         "ref": "agent/wave-one-shell-bddcfc523569",
-        "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-        "short": "d6da1a64b",
-        "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+        "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+        "short": "c96643e8",
+        "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+        "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
       }
     },
     "dependencies": {
@@ -95,8 +96,10 @@
       "合成数据非真实 DB/宿主观测：本证据不能替代真实 host+DB 的 L2 验收，也不能作为 #1104 完成声明。",
       "宿主失败/验证页证据为 synthetic：mock 将 GET /v1/research/workspace-status 置为 503（failure code=workspace_status_unreachable，可重试）或延迟 12s（verifying 态）；不是真实网络故障。",
       "legacy 旧壳（legacy=1）在 zh-CN 下仍有既有英文残留（五 Tab/Results/Activity/范围控件等旧壳文案与既有双语欠项）；按 Lead 口径**旧壳不作为 #1104 目标壳双语验收对象**，残留清单已记录在 logs/capture-after-summary.json 的 after_legacy_old_shell_residual_* 检查中。",
-      "目标壳 zh-CN 已做可见文本英文残留扫描（允许 [synthetic] 项目名/资料名与 Ctrl/Cmd+Enter 等快捷键字形）：4a007a2 下目标壳全部场景 PASS；宿主页头失败/验证页中文文案也已采集（after_host_failure_zh / after_host_verifying_zh）。",
-      "开发态指示器：fork 以 `next dev` 运行，截图左下角的 Next.js 开发指示器（N 徽标）为开发态 UI，不属于产品界面；生产构建不出现，不作为视觉验收对象。"
+      "开发态指示器：fork 以 `next dev` 运行，截图左下角的 Next.js 开发指示器（N 徽标）为开发态 UI，不属于产品界面；生产构建不出现，不作为视觉验收对象。",
+      "host 最终 head b7551f227 的审查修复（project trim/语言时序/a11y/测试）声明无视觉变化；本轮重采用于确认同场景视觉断言与键盘走查结论不变。",
+      "最终 head 重跑：host c96643e8 / fork 61b2507；预跑 99c088e 上的发送 0 派发与 refresh 消息缺失已由 61b2507 修复（suppressColdStartLookup），最终场景全部 PASS；预跑 FAIL 记录保留在 logs/capture-after-run.log（99c088e 历史）与 logs/send-failure-diagnosis.md，仅作发现记录，不进入最终 manifest。",
+      "W1 目标壳不提供“冷启动提交恢复”能力（fork 61b2507 说明的欠项登记）：目标壳草稿由外部 composer 拥有，面板不做冷启动 submission 查回；旧壳保留该能力。本证据不将该能力计为 W1 验收项。"
     ]
   },
   "dependencies": {
@@ -116,8 +119,8 @@
     }
   },
   "totals": {
-    "screenshots": 101,
-    "pass": 89,
+    "screenshots": 108,
+    "pass": 96,
     "fail": 0,
     "not_applicable": 12,
     "not_run": 0
@@ -1723,7 +1726,7 @@
       "phase": "after",
       "scene": "target shell default two-column (host header + topbar + sources + conversation + composer)",
       "screenshot": "after_default_two_column_1440x900_en-US.png",
-      "sha256": "4bcec18fc2b70adf45dcc79442480095b494829981092b79ba6567fbd941bdd2",
+      "sha256": "bccdca81e3415d4097a6efa156ada760ac89842fffdbe225146a88e4f9a70698",
       "viewport": "1440x900",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -1806,17 +1809,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -1870,17 +1874,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -1896,7 +1901,7 @@
       "phase": "after",
       "scene": "side panel open (outcomes catalog) — 1440 three columns / 1024 right pane replaces left pane",
       "screenshot": "after_right_pane_open_1440x900_en-US.png",
-      "sha256": "d12e0568972513bd1c121bda4701f150dcdeed4e8bfc2175b6db5604692c1dbc",
+      "sha256": "91d5e5028d583ad4c981741f0851e5eaf6bab9ae423f5702b6feaba11c686de4",
       "viewport": "1440x900",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -1944,17 +1949,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -1970,7 +1976,7 @@
       "phase": "after",
       "scene": "side panel closed with Esc — focus returns to trigger, left pane restored (compact)",
       "screenshot": "after_right_pane_closed_1440x900_en-US.png",
-      "sha256": "bae2eef65c9c6a52cae28e89fca9a499741cdbfb96e97cd95f6bc048ebfcf1d1",
+      "sha256": "bdbe4628483b2fc94a65810d86d41fe7c4cd1e7d4d28d5fd35764db06b77a370",
       "viewport": "1440x900",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -2003,17 +2009,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -2029,7 +2036,7 @@
       "phase": "after",
       "scene": "side panel open (task history)",
       "screenshot": "after_right_pane_tasks_1440x900_en-US.png",
-      "sha256": "ac6f0f0d93bbf6b1dd2e033d7ee5651e4a60c4a80825995984abd6d336c2c582",
+      "sha256": "fdd5dc9c5bdbd4dd621349dfcb1de13f7e91a9a1411ffdeeba0758c07c38e4bf",
       "viewport": "1440x900",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -2057,17 +2064,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -2083,7 +2091,7 @@
       "phase": "after",
       "scene": "sources pane — selected scope (one source checked)",
       "screenshot": "after_sources_selected_1440x900_en-US.png",
-      "sha256": "23746ec210ec8bc95a0ec1889b3a79902c396290dad08ad984e91dc409ec9304",
+      "sha256": "5cc415cf8ebd8d7e422fd5579575b9be39e3d64a4b1ca775ee8e34e785e3b211",
       "viewport": "1440x900",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -2093,12 +2101,12 @@
         {
           "label": "checking a source switched scope to selected",
           "pass": true,
-          "detail": "{\"selectedChecked\":true,\"allChecked\":false,\"summary\":\"CURRENT SCOPE 1 sources\",\"checkedRows\":1}"
+          "detail": "{\"selectedChecked\":true,\"allChecked\":false,\"summary\":\"CURRENT SCOPE 1 source\",\"checkedRows\":1}"
         },
         {
           "label": "scope summary reflects selection",
           "pass": true,
-          "detail": "CURRENT SCOPE 1 sources"
+          "detail": "CURRENT SCOPE 1 source"
         },
         {
           "label": "no horizontal page scroll",
@@ -2111,17 +2119,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -2137,7 +2146,7 @@
       "phase": "after",
       "scene": "sources pane — empty selected scope (blocked data query, BEH-03)",
       "screenshot": "after_sources_selected_empty_1440x900_en-US.png",
-      "sha256": "71186be265e756c2827634e32beb9d70111d89b24cffa4d10174fb685ce0e5be",
+      "sha256": "ee6e6fbc8418346ff101cf3fcfeae2bbe96da2b0e28bcba650de35332af5d012",
       "viewport": "1440x900",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -2180,17 +2189,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -2206,7 +2216,7 @@
       "phase": "after",
       "scene": "sources pane — clear selection via UI (BEH-03 / §9.3-2 walkthrough path)",
       "screenshot": "after_sources_clear_via_ui_1440x900_en-US.png",
-      "sha256": "71186be265e756c2827634e32beb9d70111d89b24cffa4d10174fb685ce0e5be",
+      "sha256": "ee6e6fbc8418346ff101cf3fcfeae2bbe96da2b0e28bcba650de35332af5d012",
       "viewport": "1440x900",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -2224,17 +2234,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -2250,7 +2261,7 @@
       "phase": "after",
       "scene": "sources pane — all available sources scope (default)",
       "screenshot": "after_sources_scope_all_1440x900_en-US.png",
-      "sha256": "d886a991808178c9d819bb64d169a931b52979c71cc0e8bbaa1c09b5fdd3fccc",
+      "sha256": "bccdca81e3415d4097a6efa156ada760ac89842fffdbe225146a88e4f9a70698",
       "viewport": "1440x900",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -2260,7 +2271,7 @@
         {
           "label": "scope=all checked, no selected rows",
           "pass": true,
-          "detail": "{\"allChecked\":true,\"selectedChecked\":false,\"checkedRows\":0,\"blocked\":false,\"summary\":\"CURRENT SCOPE All available sources\"}"
+          "detail": "{\"allChecked\":true,\"selectedChecked\":false,\"checkedRows\":0,\"blocked\":false,\"summary\":\"CURRENT SCOPE Entire project\"}"
         },
         {
           "label": "no blocked state under all scope",
@@ -2270,7 +2281,7 @@
         {
           "label": "scope summary reflects all-available scope",
           "pass": true,
-          "detail": "CURRENT SCOPE All available sources"
+          "detail": "CURRENT SCOPE Entire project"
         },
         {
           "label": "no horizontal page scroll",
@@ -2283,17 +2294,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -2309,7 +2321,7 @@
       "phase": "after",
       "scene": "empty conversation (target shell)",
       "screenshot": "after_empty_conversation_1440x900_en-US.png",
-      "sha256": "ae9dc04f828e191c989b1955fe74200cadd6704580598b15295546f520cc7c89",
+      "sha256": "faf660b3f28fc2ceb391e19a6ab7fc75f91116542cca8aa8bf4dca3d754717f9",
       "viewport": "1440x900",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -2329,7 +2341,7 @@
         {
           "label": "composer present with empty-draft hint",
           "pass": true,
-          "detail": "Ask about your sources…"
+          "detail": "Create or open a conversation before asking a question."
         },
         {
           "label": "no horizontal page scroll",
@@ -2342,17 +2354,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -2368,7 +2381,7 @@
       "phase": "after",
       "scene": "legacy=1 old shell via host header secondary entry (D-UI-05)",
       "screenshot": "after_legacy_old_shell_1440x900_en-US.png",
-      "sha256": "6358c761f3f4371190836a6d3640fb4511cb3fcd3c389edfc4bbf18b10d26f7c",
+      "sha256": "2159ce72bbb09933dc207985967c09e26f7ff8227e39ed059aaa4d1cecfcc171",
       "viewport": "1440x900",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -2401,17 +2414,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -2427,7 +2441,7 @@
       "phase": "after",
       "scene": "return from legacy to target shell (D-UI-05)",
       "screenshot": "after_legacy_return_target_1440x900_en-US.png",
-      "sha256": "60dc267a1cfcd0fc7a85f1c2484f914c64516c97175747f3966cdeaf30d3c1c7",
+      "sha256": "2cf06672bdd2e363c8142b9169bf4466bc6039d384844516328470ff45405b10",
       "viewport": "1440x900",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -2460,17 +2474,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -2486,7 +2501,7 @@
       "phase": "after",
       "scene": "target shell default two-column (host header + topbar + sources + conversation + composer)",
       "screenshot": "after_default_two_column_1440x900_zh-CN.png",
-      "sha256": "8796c6ae6ee5dde3841c5da728ad0354fc5108d5f8f3891d581dbc8137bb5b31",
+      "sha256": "8241829e1e9be1bfb3a72997934394678713c2c86e3cee26ebca21e4195eb4a8",
       "viewport": "1440x900",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -2574,17 +2589,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -2600,7 +2616,7 @@
       "phase": "after",
       "scene": "host Research page header (language switch + legacy entry, no project name)",
       "screenshot": "after_host_header_1440x900_zh-CN.png",
-      "sha256": "45ee85895181441963346bf4aa9b9c9b7662dbe7f8f0618ecb3543b3f027c38f",
+      "sha256": "2a1413f701c886c9de7bec4f532ec6e97f670751c4ff6cda494f1e020199e4c0",
       "viewport": "1440x900",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -2638,17 +2654,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -2664,7 +2681,7 @@
       "phase": "after",
       "scene": "side panel open (outcomes catalog) — 1440 three columns / 1024 right pane replaces left pane",
       "screenshot": "after_right_pane_open_1440x900_zh-CN.png",
-      "sha256": "8fbea2d5768cffe2f29058412f3f59736288e690c6abb978cc4407d918548e0c",
+      "sha256": "cbb8185559880053b9a8b5fc0b205611eb787f92456ca20de6a28f9c4471db22",
       "viewport": "1440x900",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -2712,17 +2729,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -2738,7 +2756,7 @@
       "phase": "after",
       "scene": "side panel closed with Esc — focus returns to trigger, left pane restored (compact)",
       "screenshot": "after_right_pane_closed_1440x900_zh-CN.png",
-      "sha256": "5583d3adaeaa58b846b5e31a654eb34a52f630566d687dcfc5dd357accf437fd",
+      "sha256": "52a25883e19eba61eddfa56e3a998b549ff3ff49f7b3c9697a84f3bfd06d88ad",
       "viewport": "1440x900",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -2771,17 +2789,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -2797,7 +2816,7 @@
       "phase": "after",
       "scene": "side panel open (task history)",
       "screenshot": "after_right_pane_tasks_1440x900_zh-CN.png",
-      "sha256": "0a971d6df20c7981901003b12672cee67d949fba795f0225f73d791c7191832e",
+      "sha256": "ca62f935985562819ce6a1f7c7d8bcc0ac101d4d35cdb42fdcad2da38dfac822",
       "viewport": "1440x900",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -2825,17 +2844,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -2851,7 +2871,7 @@
       "phase": "after",
       "scene": "sources pane — selected scope (one source checked)",
       "screenshot": "after_sources_selected_1440x900_zh-CN.png",
-      "sha256": "b9980da131c9311cd01de06b1aed14bbb34629b9cba19199cfd3ba24af65ffbe",
+      "sha256": "a614573072d108ef30b9091d7946686133a8c68e2fe75b6d5a9053be61b442b2",
       "viewport": "1440x900",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -2861,12 +2881,12 @@
         {
           "label": "checking a source switched scope to selected",
           "pass": true,
-          "detail": "{\"selectedChecked\":true,\"allChecked\":false,\"summary\":\"当前范围 已选 1 份资料\",\"checkedRows\":1}"
+          "detail": "{\"selectedChecked\":true,\"allChecked\":false,\"summary\":\"当前范围 1 份资料\",\"checkedRows\":1}"
         },
         {
           "label": "scope summary reflects selection",
           "pass": true,
-          "detail": "当前范围 已选 1 份资料"
+          "detail": "当前范围 1 份资料"
         },
         {
           "label": "no horizontal page scroll",
@@ -2879,17 +2899,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -2905,7 +2926,7 @@
       "phase": "after",
       "scene": "sources pane — empty selected scope (blocked data query, BEH-03)",
       "screenshot": "after_sources_selected_empty_1440x900_zh-CN.png",
-      "sha256": "bfef401a6d9aa3a5078a564ee1c7759c800df9a1c11851decc9da7044ad1cc63",
+      "sha256": "dc51155fd5c8e87a45c86d855fc96903975a1c8ff4851975b02969cf13de1a18",
       "viewport": "1440x900",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -2948,17 +2969,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -2992,17 +3014,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -3018,7 +3041,7 @@
       "phase": "after",
       "scene": "sources pane — clear selection via UI (BEH-03 / §9.3-2 walkthrough path)",
       "screenshot": "after_sources_clear_via_ui_1440x900_zh-CN.png",
-      "sha256": "bfef401a6d9aa3a5078a564ee1c7759c800df9a1c11851decc9da7044ad1cc63",
+      "sha256": "dc51155fd5c8e87a45c86d855fc96903975a1c8ff4851975b02969cf13de1a18",
       "viewport": "1440x900",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -3036,17 +3059,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -3062,7 +3086,7 @@
       "phase": "after",
       "scene": "sources pane — all available sources scope (default)",
       "screenshot": "after_sources_scope_all_1440x900_zh-CN.png",
-      "sha256": "8b2c39ee5634f439c2967d9959bac52fbec16b132b74dbd4120ddf39da60bfcf",
+      "sha256": "b7e2bc2b604dcb0f33afc7861619a5944d5d92a6c3a6e5f217f0062e50114003",
       "viewport": "1440x900",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -3095,17 +3119,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -3121,7 +3146,7 @@
       "phase": "after",
       "scene": "empty conversation (target shell)",
       "screenshot": "after_empty_conversation_1440x900_zh-CN.png",
-      "sha256": "3a6d81ef0a7977e30479c92baa661c7a9c887a7a818ac3f04ae6dcad847487e0",
+      "sha256": "b414e4469b1bfa9d269c38650276292adf7dd2e06eda636125a9f0f536f1d747",
       "viewport": "1440x900",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -3141,7 +3166,7 @@
         {
           "label": "composer present with empty-draft hint",
           "pass": true,
-          "detail": "就你的来源提问…"
+          "detail": "请先新建或选择对话，再开始提问。"
         },
         {
           "label": "no horizontal page scroll",
@@ -3154,17 +3179,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -3180,7 +3206,7 @@
       "phase": "after",
       "scene": "legacy=1 old shell via host header secondary entry (D-UI-05)",
       "screenshot": "after_legacy_old_shell_1440x900_zh-CN.png",
-      "sha256": "93d69888c24aab0f34838a278ecd7b3bf712bcfea8a66a8b93ef7f8ed3afe6ef",
+      "sha256": "38437ab21606d9296a02ff795c9418ac815d0ed542286b7ce074dd4ac7af2094",
       "viewport": "1440x900",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -3213,17 +3239,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -3249,7 +3276,7 @@
         {
           "label": "legacy old shell zh-CN residual English registered as pre-existing debt (not a PR acceptance target)",
           "pass": true,
-          "detail": "Activity, SCOPE, MATERIALS, RESULTS, Runs, Add, materials, focused, document, workspace"
+          "detail": "Activity, MATERIALS, RESULTS, Runs, focused, document, workspace"
         }
       ],
       "note": "旧壳既有双语欠项：legacy 五 Tab/Results/Activity 等文案仍有英文；按 Lead 口径不作为 #1104 目标壳验收对象。",
@@ -3257,17 +3284,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -3283,7 +3311,7 @@
       "phase": "after",
       "scene": "return from legacy to target shell (D-UI-05)",
       "screenshot": "after_legacy_return_target_1440x900_zh-CN.png",
-      "sha256": "b60eeea671ba314650e4b348662b60be28b510eba8b758a0a234d0056f392375",
+      "sha256": "36ac6fef7c1671029f96261165b2c7b80603ad009fd881774ecb90fdc9fc4b16",
       "viewport": "1440x900",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -3316,17 +3344,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -3342,7 +3371,7 @@
       "phase": "after",
       "scene": "target shell default two-column (host header + topbar + sources + conversation + composer)",
       "screenshot": "after_default_two_column_1024x768_en-US.png",
-      "sha256": "8989d73db47b689914ae190c16f2f195374d25b1a877e4ffb0d4df6bfc89c0c9",
+      "sha256": "dd2a3415a80dd71bba911ffe9a12530fe6a9b4b00aa0d32f8d79f149bf2986c2",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -3425,17 +3454,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -3451,7 +3481,7 @@
       "phase": "after",
       "scene": "host Research page header (language switch + legacy entry, no project name)",
       "screenshot": "after_host_header_1024x768_en-US.png",
-      "sha256": "6e6156c5a0437b3281e48c32429c7b8740992ac1e0c243f77ddec98c4fe533dd",
+      "sha256": "22027c95a54caf89bdd1f71863affaf2ce8250e9cee257010ba3babc1419cee9",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -3489,17 +3519,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -3515,7 +3546,7 @@
       "phase": "after",
       "scene": "side panel open (outcomes catalog) — 1440 three columns / 1024 right pane replaces left pane",
       "screenshot": "after_right_pane_open_1024x768_en-US.png",
-      "sha256": "98318b89ea8f3ff5ad5d9bb1d0e092d449448fad211abe897dcfee9218ed3383",
+      "sha256": "664b41bf2b321364962bf05156eaf38e052ff0f5e8a966b880a120cfb07e801f",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -3563,17 +3594,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -3589,7 +3621,7 @@
       "phase": "after",
       "scene": "side panel closed with Esc — focus returns to trigger, left pane restored (compact)",
       "screenshot": "after_right_pane_closed_1024x768_en-US.png",
-      "sha256": "20d1c8be8e12eeb94a225e4c56f044539679db07263c58036ea84682f4e2b649",
+      "sha256": "56a75b2fb523780adf8eb639d3b87be992ba7a7cd56d7e38d23e247d06c554a4",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -3622,17 +3654,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -3648,7 +3681,7 @@
       "phase": "after",
       "scene": "side panel open (task history)",
       "screenshot": "after_right_pane_tasks_1024x768_en-US.png",
-      "sha256": "3d52539f86359bfbaa1807fb946c06e081439b96745cae7ff77e050949149f4c",
+      "sha256": "c5a1a57a1ac00910688eb172373b9bd77a488bff8a2784928922784cf3370144",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -3676,17 +3709,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -3702,7 +3736,7 @@
       "phase": "after",
       "scene": "sources pane — selected scope (one source checked)",
       "screenshot": "after_sources_selected_1024x768_en-US.png",
-      "sha256": "38985be010304ec83ef244f89d1b2f720c27a92c235c72c393dcc2f8ead74d97",
+      "sha256": "233978ec5b31d756f92e33315537aadf91c23733f7fafa2c4423e04949b05cf3",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -3712,12 +3746,12 @@
         {
           "label": "checking a source switched scope to selected",
           "pass": true,
-          "detail": "{\"selectedChecked\":true,\"allChecked\":false,\"summary\":\"CURRENT SCOPE 1 sources\",\"checkedRows\":1}"
+          "detail": "{\"selectedChecked\":true,\"allChecked\":false,\"summary\":\"CURRENT SCOPE 1 source\",\"checkedRows\":1}"
         },
         {
           "label": "scope summary reflects selection",
           "pass": true,
-          "detail": "CURRENT SCOPE 1 sources"
+          "detail": "CURRENT SCOPE 1 source"
         },
         {
           "label": "no horizontal page scroll",
@@ -3730,17 +3764,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -3756,7 +3791,7 @@
       "phase": "after",
       "scene": "sources pane — empty selected scope (blocked data query, BEH-03)",
       "screenshot": "after_sources_selected_empty_1024x768_en-US.png",
-      "sha256": "7817104a1c856f2f1b06d6a23ce4fd14f6ef9bbc8a3700e139018bcb583e1427",
+      "sha256": "3c866cc4678d51868ba0136dcc55ec632db4cdd3e820899b9c75080847f7926c",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -3799,17 +3834,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -3825,7 +3861,7 @@
       "phase": "after",
       "scene": "sources pane — clear selection via UI (BEH-03 / §9.3-2 walkthrough path)",
       "screenshot": "after_sources_clear_via_ui_1024x768_en-US.png",
-      "sha256": "7817104a1c856f2f1b06d6a23ce4fd14f6ef9bbc8a3700e139018bcb583e1427",
+      "sha256": "3c866cc4678d51868ba0136dcc55ec632db4cdd3e820899b9c75080847f7926c",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -3843,17 +3879,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -3869,7 +3906,7 @@
       "phase": "after",
       "scene": "sources pane — all available sources scope (default)",
       "screenshot": "after_sources_scope_all_1024x768_en-US.png",
-      "sha256": "78711db036e0e17501815d35383d9f094f8f01caa75ac742bda063c748e088d8",
+      "sha256": "c2db8a2cb4b31d17f09e6a779d9f48ac2bffabe76169f90e08af4b55a8c24e8f",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -3879,7 +3916,7 @@
         {
           "label": "scope=all checked, no selected rows",
           "pass": true,
-          "detail": "{\"allChecked\":true,\"selectedChecked\":false,\"checkedRows\":0,\"blocked\":false,\"summary\":\"CURRENT SCOPE All available sources\"}"
+          "detail": "{\"allChecked\":true,\"selectedChecked\":false,\"checkedRows\":0,\"blocked\":false,\"summary\":\"CURRENT SCOPE Entire project\"}"
         },
         {
           "label": "no blocked state under all scope",
@@ -3889,7 +3926,7 @@
         {
           "label": "scope summary reflects all-available scope",
           "pass": true,
-          "detail": "CURRENT SCOPE All available sources"
+          "detail": "CURRENT SCOPE Entire project"
         },
         {
           "label": "no horizontal page scroll",
@@ -3902,17 +3939,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -3928,7 +3966,7 @@
       "phase": "after",
       "scene": "empty conversation (target shell)",
       "screenshot": "after_empty_conversation_1024x768_en-US.png",
-      "sha256": "c3e4790d50be8ecfd5cfebf82e6639e1b47bd7e22198ab7e93f09c1b2d792c76",
+      "sha256": "c2db8a2cb4b31d17f09e6a779d9f48ac2bffabe76169f90e08af4b55a8c24e8f",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -3948,7 +3986,7 @@
         {
           "label": "composer present with empty-draft hint",
           "pass": true,
-          "detail": "Ask about your sources…"
+          "detail": "Create or open a conversation before asking a question."
         },
         {
           "label": "no horizontal page scroll",
@@ -3961,17 +3999,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -3987,7 +4026,7 @@
       "phase": "after",
       "scene": "legacy=1 old shell via host header secondary entry (D-UI-05)",
       "screenshot": "after_legacy_old_shell_1024x768_en-US.png",
-      "sha256": "c975c9e1bb1f7d9f2a4621ec7f3e100dc3588665d0702607f1136d33b5e61e10",
+      "sha256": "fd1b47809faca14f7b606a4a4c4fa4ca8042f07f604f5203226cb548dcba24e8",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -4020,17 +4059,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -4046,7 +4086,7 @@
       "phase": "after",
       "scene": "return from legacy to target shell (D-UI-05)",
       "screenshot": "after_legacy_return_target_1024x768_en-US.png",
-      "sha256": "6a1343af7dffe4da49499bd8c59df150e5f85bcd8a489f95707aa7dc562da2bb",
+      "sha256": "507f7ac3ea42a8fc56c25ce450231326c916a6717e12cf58c5f31bf509865f70",
       "viewport": "1024x768",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -4079,17 +4119,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -4105,7 +4146,7 @@
       "phase": "after",
       "scene": "target shell default two-column (host header + topbar + sources + conversation + composer)",
       "screenshot": "after_default_two_column_1024x768_zh-CN.png",
-      "sha256": "11c1ec265715f6dff7939d961e87a93c7b0a966625d637c003847cebcb91737b",
+      "sha256": "ce7b6b2535b3026cd03670ea96634c90bd3bb798e4c1f939aa48f14b367cda51",
       "viewport": "1024x768",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -4193,17 +4234,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -4257,17 +4299,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -4283,7 +4326,7 @@
       "phase": "after",
       "scene": "side panel open (outcomes catalog) — 1440 three columns / 1024 right pane replaces left pane",
       "screenshot": "after_right_pane_open_1024x768_zh-CN.png",
-      "sha256": "f24408501d3b57fa2eeab8e6dd8804db1ee260445b66507679a493788c1614ba",
+      "sha256": "a32fbcf9ea0293ed6498e63af52af74ec8c0dc85e67b83c0f7d677fadd0ae356",
       "viewport": "1024x768",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -4331,17 +4374,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -4357,7 +4401,7 @@
       "phase": "after",
       "scene": "side panel closed with Esc — focus returns to trigger, left pane restored (compact)",
       "screenshot": "after_right_pane_closed_1024x768_zh-CN.png",
-      "sha256": "c7ba55f304a69fc76dfba370d552caf8819a76141b661aa37e46bbf2cd0958d7",
+      "sha256": "3933713854bc3e83d8bee95585763f8442262ec6e5f35e3164979d0ff68cf48f",
       "viewport": "1024x768",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -4390,17 +4434,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -4416,7 +4461,7 @@
       "phase": "after",
       "scene": "side panel open (task history)",
       "screenshot": "after_right_pane_tasks_1024x768_zh-CN.png",
-      "sha256": "a9e3c46787cbc7811f53b8f0082b4a73afcd9f2dc5ab703d9bf734109bc67547",
+      "sha256": "219d2fd9eeb3897ab919702555c85bb3e46c8267eee2fa15d8804eab8f521cef",
       "viewport": "1024x768",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -4444,17 +4489,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -4470,7 +4516,7 @@
       "phase": "after",
       "scene": "sources pane — selected scope (one source checked)",
       "screenshot": "after_sources_selected_1024x768_zh-CN.png",
-      "sha256": "7a01ffb08e7c08056ea675c0f6cbbed8f488803cff1abaa70410b728afe8cb5f",
+      "sha256": "5b728e4257a41886e0791d4536ddc1a3e61a6c4cc3a537c0cb8072264154a006",
       "viewport": "1024x768",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -4480,12 +4526,12 @@
         {
           "label": "checking a source switched scope to selected",
           "pass": true,
-          "detail": "{\"selectedChecked\":true,\"allChecked\":false,\"summary\":\"当前范围 已选 1 份资料\",\"checkedRows\":1}"
+          "detail": "{\"selectedChecked\":true,\"allChecked\":false,\"summary\":\"当前范围 1 份资料\",\"checkedRows\":1}"
         },
         {
           "label": "scope summary reflects selection",
           "pass": true,
-          "detail": "当前范围 已选 1 份资料"
+          "detail": "当前范围 1 份资料"
         },
         {
           "label": "no horizontal page scroll",
@@ -4498,17 +4544,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -4524,7 +4571,7 @@
       "phase": "after",
       "scene": "sources pane — empty selected scope (blocked data query, BEH-03)",
       "screenshot": "after_sources_selected_empty_1024x768_zh-CN.png",
-      "sha256": "745ac16044fe6f12077b84935a3c9ab5881c5277b78a19c9486a3f2b473604db",
+      "sha256": "b364157944ee3b1601efdedcc2c79d628400f32e4772bf9d623b7d81d8a30fa5",
       "viewport": "1024x768",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -4567,17 +4614,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -4611,17 +4659,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -4637,7 +4686,7 @@
       "phase": "after",
       "scene": "sources pane — clear selection via UI (BEH-03 / §9.3-2 walkthrough path)",
       "screenshot": "after_sources_clear_via_ui_1024x768_zh-CN.png",
-      "sha256": "745ac16044fe6f12077b84935a3c9ab5881c5277b78a19c9486a3f2b473604db",
+      "sha256": "b364157944ee3b1601efdedcc2c79d628400f32e4772bf9d623b7d81d8a30fa5",
       "viewport": "1024x768",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -4655,17 +4704,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -4681,7 +4731,7 @@
       "phase": "after",
       "scene": "sources pane — all available sources scope (default)",
       "screenshot": "after_sources_scope_all_1024x768_zh-CN.png",
-      "sha256": "7ab734f412aa5c7ceead1960efcb51152874d7834568784e946571460a8969e0",
+      "sha256": "9baf1bfcb74829cbe5bad67b9a85f9adfa01793a0369302122e98f23475fde24",
       "viewport": "1024x768",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -4714,17 +4764,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -4740,7 +4791,7 @@
       "phase": "after",
       "scene": "empty conversation (target shell)",
       "screenshot": "after_empty_conversation_1024x768_zh-CN.png",
-      "sha256": "a2875fac2a42cfb4ef30916a59a239a5a0dfa11a63903200ddabc313b00e0fc4",
+      "sha256": "94f8848630f105079ad46191cf898b43b6ed5cbcc841a7e50f71302a125bd232",
       "viewport": "1024x768",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -4760,7 +4811,7 @@
         {
           "label": "composer present with empty-draft hint",
           "pass": true,
-          "detail": "就你的来源提问…"
+          "detail": "请先新建或选择对话，再开始提问。"
         },
         {
           "label": "no horizontal page scroll",
@@ -4773,17 +4824,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -4799,7 +4851,7 @@
       "phase": "after",
       "scene": "legacy=1 old shell via host header secondary entry (D-UI-05)",
       "screenshot": "after_legacy_old_shell_1024x768_zh-CN.png",
-      "sha256": "7263078c3363db0d00086ca40f9dc7883f2e169d243e733a351e67c6bbe53206",
+      "sha256": "a6b89ea42fa0e0c9ee054b0421676a44b550e423566fc16396ce38dace613529",
       "viewport": "1024x768",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -4832,17 +4884,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -4868,7 +4921,7 @@
         {
           "label": "legacy old shell zh-CN residual English registered as pre-existing debt (not a PR acceptance target)",
           "pass": true,
-          "detail": "Activity, SCOPE, MATERIALS, RESULTS, Runs, Add, materials, focused, document, workspace"
+          "detail": "Activity, MATERIALS, RESULTS, Runs, focused, document, workspace"
         }
       ],
       "note": "旧壳既有双语欠项：legacy 五 Tab/Results/Activity 等文案仍有英文；按 Lead 口径不作为 #1104 目标壳验收对象。",
@@ -4876,17 +4929,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -4902,7 +4956,7 @@
       "phase": "after",
       "scene": "return from legacy to target shell (D-UI-05)",
       "screenshot": "after_legacy_return_target_1024x768_zh-CN.png",
-      "sha256": "3d45bf18524670149aa7e0f81ec19479d34b0a0b35f2a36ea0adee5990512d02",
+      "sha256": "e561f1f5af8c9d691fee1754f1cacb945d42b877c57538bf9a2f9a23722bdd4e",
       "viewport": "1024x768",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -4935,17 +4989,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -4961,7 +5016,7 @@
       "phase": "after",
       "scene": "target shell default two-column (host header + topbar + sources + conversation + composer)",
       "screenshot": "after_default_two_column_1440x900_en-US_dark.png",
-      "sha256": "daf4e4b730856b6d4ac452c2d301a3a5d5dc511c480ddbde5e8c5d624da18d2d",
+      "sha256": "9b96b7f8cad189254144e98c80d61155a388d2885a0092e7930a9d86e3e1b908",
       "viewport": "1440x900",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -5044,17 +5099,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -5108,17 +5164,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -5134,7 +5191,7 @@
       "phase": "after",
       "scene": "side panel open (outcomes catalog) — 1440 three columns / 1024 right pane replaces left pane",
       "screenshot": "after_right_pane_open_1440x900_en-US_dark.png",
-      "sha256": "dcccca677506006dbfdb4ee82367c66fb47b9f7527c38587d3ed396345f4b788",
+      "sha256": "4896dfab0e554068dbf42b23f3a52246d61ce9807a5c6e244250414ca613b648",
       "viewport": "1440x900",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -5182,17 +5239,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -5208,7 +5266,7 @@
       "phase": "after",
       "scene": "side panel closed with Esc — focus returns to trigger, left pane restored (compact)",
       "screenshot": "after_right_pane_closed_1440x900_en-US_dark.png",
-      "sha256": "542fba7ce0dbed25e862c106a5ee2c988ffa135d75386d8fefff991da97e4a1c",
+      "sha256": "9a934a0371269c8d8afbaecf107a7a51c4759236b6b2ac1861c2362a8800a7ec",
       "viewport": "1440x900",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -5241,17 +5299,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -5267,7 +5326,7 @@
       "phase": "after",
       "scene": "side panel open (task history)",
       "screenshot": "after_right_pane_tasks_1440x900_en-US_dark.png",
-      "sha256": "4fea73d0f6c18dfae9f13f2f7b8e47ad138f2f3e579da6742fd4c7d1cc3c1262",
+      "sha256": "38461c14705d6c6f9932e07ab0232a9bf6ae1078502d526f61a5c22991b6d1ba",
       "viewport": "1440x900",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -5295,17 +5354,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -5321,7 +5381,7 @@
       "phase": "after",
       "scene": "sources pane — selected scope (one source checked)",
       "screenshot": "after_sources_selected_1440x900_en-US_dark.png",
-      "sha256": "6a3581409086b879cb892e73d919a146145d22ab3a918fd5addd59fac92bb673",
+      "sha256": "854e773cbcf12cd8d888c008c351fed2ce7e661aaf952fc4992a6bba96b0c17c",
       "viewport": "1440x900",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -5331,12 +5391,12 @@
         {
           "label": "checking a source switched scope to selected",
           "pass": true,
-          "detail": "{\"selectedChecked\":true,\"allChecked\":false,\"summary\":\"CURRENT SCOPE 1 sources\",\"checkedRows\":1}"
+          "detail": "{\"selectedChecked\":true,\"allChecked\":false,\"summary\":\"CURRENT SCOPE 1 source\",\"checkedRows\":1}"
         },
         {
           "label": "scope summary reflects selection",
           "pass": true,
-          "detail": "CURRENT SCOPE 1 sources"
+          "detail": "CURRENT SCOPE 1 source"
         },
         {
           "label": "no horizontal page scroll",
@@ -5349,17 +5409,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -5375,7 +5436,7 @@
       "phase": "after",
       "scene": "sources pane — empty selected scope (blocked data query, BEH-03)",
       "screenshot": "after_sources_selected_empty_1440x900_en-US_dark.png",
-      "sha256": "6048415892c940154814f98299b3441c6d4334acec96700e8228066e70907bf1",
+      "sha256": "c1da9892f2679dbc38b044caecbd9398488436d5a693b690ce233cf331b5f9c7",
       "viewport": "1440x900",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -5418,17 +5479,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -5444,7 +5506,7 @@
       "phase": "after",
       "scene": "sources pane — clear selection via UI (BEH-03 / §9.3-2 walkthrough path)",
       "screenshot": "after_sources_clear_via_ui_1440x900_en-US_dark.png",
-      "sha256": "6048415892c940154814f98299b3441c6d4334acec96700e8228066e70907bf1",
+      "sha256": "c1da9892f2679dbc38b044caecbd9398488436d5a693b690ce233cf331b5f9c7",
       "viewport": "1440x900",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -5462,17 +5524,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -5488,7 +5551,7 @@
       "phase": "after",
       "scene": "sources pane — all available sources scope (default)",
       "screenshot": "after_sources_scope_all_1440x900_en-US_dark.png",
-      "sha256": "0c5e74af86a10c2730376a1561a834876ed2c93bb1dc5cd3b2e0952ab98e2e13",
+      "sha256": "e60a0c600edd24c0c75c8da8dc5d89e79fc9a748b6c4c3892be9ca246dfb3972",
       "viewport": "1440x900",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -5498,7 +5561,7 @@
         {
           "label": "scope=all checked, no selected rows",
           "pass": true,
-          "detail": "{\"allChecked\":true,\"selectedChecked\":false,\"checkedRows\":0,\"blocked\":false,\"summary\":\"CURRENT SCOPE All available sources\"}"
+          "detail": "{\"allChecked\":true,\"selectedChecked\":false,\"checkedRows\":0,\"blocked\":false,\"summary\":\"CURRENT SCOPE Entire project\"}"
         },
         {
           "label": "no blocked state under all scope",
@@ -5508,7 +5571,7 @@
         {
           "label": "scope summary reflects all-available scope",
           "pass": true,
-          "detail": "CURRENT SCOPE All available sources"
+          "detail": "CURRENT SCOPE Entire project"
         },
         {
           "label": "no horizontal page scroll",
@@ -5521,17 +5584,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -5547,7 +5611,7 @@
       "phase": "after",
       "scene": "empty conversation (target shell)",
       "screenshot": "after_empty_conversation_1440x900_en-US_dark.png",
-      "sha256": "d1b5fac0b3e572d36e2034c64e04b97f550b6e2adc3a77206d7ef7ec0e4fd2fc",
+      "sha256": "a509ecfca86ed1f0fea93d80808fc6265204a0b5953dda25bf8aa3754e95ff58",
       "viewport": "1440x900",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -5567,7 +5631,7 @@
         {
           "label": "composer present with empty-draft hint",
           "pass": true,
-          "detail": "Ask about your sources…"
+          "detail": "Create or open a conversation before asking a question."
         },
         {
           "label": "no horizontal page scroll",
@@ -5580,17 +5644,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -5606,7 +5671,7 @@
       "phase": "after",
       "scene": "legacy=1 old shell via host header secondary entry (D-UI-05)",
       "screenshot": "after_legacy_old_shell_1440x900_en-US_dark.png",
-      "sha256": "f26b30989c085b17ef95e718030255315b8c4ccf3abaca89fb92a433cf4bd999",
+      "sha256": "46a4dafad57c97a18729724e70bc86edc0faadbb7f18bf03bc460bd56b76eb9c",
       "viewport": "1440x900",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -5639,17 +5704,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -5665,7 +5731,7 @@
       "phase": "after",
       "scene": "return from legacy to target shell (D-UI-05)",
       "screenshot": "after_legacy_return_target_1440x900_en-US_dark.png",
-      "sha256": "45f1bc1511f5a07d4b34c98b9b4a7fc0f08ee86404fdf3d845600f8eab3ad5c6",
+      "sha256": "7933a4de2325a86f1ecf8cdb9dddbc60301a66c86642b9fb8edd0a5469b2fe1e",
       "viewport": "1440x900",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -5698,17 +5764,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -5724,7 +5791,7 @@
       "phase": "after",
       "scene": "language switch — en-US loaded (state to preserve: draft + selected scope)",
       "screenshot": "after_language_switch_before_1440x900_en-US.png",
-      "sha256": "d1b4b7aaf686612ccc82311d463148065d9cf1e7804d624ad207a663bba2b462",
+      "sha256": "d821f7fc746f83434a2973a9bdb4f29b31d0a838f21aee8b30b4b7aeaee15b05",
       "viewport": "1440x900",
       "language_requested": "en-US",
       "ui_language_actual": "en-US",
@@ -5752,17 +5819,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -5778,7 +5846,7 @@
       "phase": "after",
       "scene": "language switch — host zh-CN selected, workbench text immediately zh-CN, state retained",
       "screenshot": "after_language_switch_after_1440x900_zh-CN.png",
-      "sha256": "2395d1b31e13a9339eb34f23acdcf4c40b1fb32c03cb26bc45dc0cd147429657",
+      "sha256": "d91d89efbf392782d7f180cf66b929ed3fe71faa2b26e911f03eb6c2e967ee19",
       "viewport": "1440x900",
       "language_requested": "zh-CN",
       "ui_language_actual": "zh-CN",
@@ -5801,9 +5869,9 @@
           "detail": "[synthetic] Which synthetic sources support the D1 cohort OR"
         },
         {
-          "label": "scope selection retained across switch",
+          "label": "selected scope retained across switch",
           "pass": true,
-          "detail": "null"
+          "detail": "scope-selected checked"
         },
         {
           "label": "no horizontal page scroll after switch",
@@ -5816,17 +5884,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -5865,17 +5934,496 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
+        }
+      },
+      "pairs_with": []
+    },
+    {
+      "id": "after_conversation_send_selected_1440x900_en-US",
+      "phase": "after",
+      "scene": "conversation send with selected scope (Ctrl/Cmd+Enter dispatches chat, composer clears, message visible)",
+      "screenshot": "after_conversation_send_selected_1440x900_en-US.png",
+      "sha256": "f71d14736add0d0ce19b1f4f8d70cfb344bf086ce07ca16849eb5e573f4b4b27",
+      "viewport": "1440x900",
+      "language_requested": "en-US",
+      "ui_language_actual": "en-US",
+      "theme": "light",
+      "status": "PASS",
+      "checks": [
+        {
+          "label": "draft autosaved before send",
+          "pass": true,
+          "detail": "All changes saved"
+        },
+        {
+          "label": "chat-send enabled before send (gate open)",
+          "pass": true,
+          "detail": "disabled=false"
+        },
+        {
+          "label": "chat dispatch occurred (POST /chat recorded)",
+          "pass": true,
+          "detail": "posts=1"
+        },
+        {
+          "label": "request carries selected scope (source_scope.mode=selected, src_1)",
+          "pass": true,
+          "detail": "{\"mode\":\"selected\",\"source_ids\":[\"src_1\"],\"single_source_id\":null}"
+        },
+        {
+          "label": "composer cleared after accepted receipt",
+          "pass": true,
+          "detail": null
+        },
+        {
+          "label": "user/assistant message visible after send",
+          "pass": true,
+          "detail": "rows=1"
+        },
+        {
+          "label": "no silent failure (no send-error alert)",
+          "pass": true,
+          "detail": "sendError=0 "
+        },
+        {
+          "label": "no horizontal page scroll",
+          "pass": true,
+          "detail": "1440/1440"
+        }
+      ],
+      "note": "合成 SSE（thinking/answer/citation/usage+accepted/done）由 mock 提供；请求体 source_scope 记录在 mock-requests 日志。",
+      "revisions": {
+        "fork": {
+          "repo": "lingyun-hifibio/open-notebook-rdlens",
+          "ref": "agent/wave-one-shell-bddcfc523569",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+        },
+        "host": {
+          "repo": "HiFiBiO-Therapeutics/RDLens",
+          "ref": "agent/wave-one-shell-bddcfc523569",
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
+        }
+      },
+      "pairs_with": [
+        "before_chat_1440x900_en-US",
+        "before_chat_1440x900_zh-CN",
+        "before_chat_1024x768_en-US",
+        "before_chat_1024x768_zh-CN",
+        "before_chat_1440x900_en-US_dark"
+      ]
+    },
+    {
+      "id": "after_conversation_send_selected_1440x900_zh-CN",
+      "phase": "after",
+      "scene": "conversation send with selected scope (Ctrl/Cmd+Enter dispatches chat, composer clears, message visible)",
+      "screenshot": "after_conversation_send_selected_1440x900_zh-CN.png",
+      "sha256": "61deeb268ae3719f70a6ce21a8295fcfe44ce7c2e4ee97b0a23f86616a13b4cf",
+      "viewport": "1440x900",
+      "language_requested": "zh-CN",
+      "ui_language_actual": "zh-CN",
+      "theme": "light",
+      "status": "PASS",
+      "checks": [
+        {
+          "label": "draft autosaved before send",
+          "pass": true,
+          "detail": "所有更改已保存"
+        },
+        {
+          "label": "chat-send enabled before send (gate open)",
+          "pass": true,
+          "detail": "disabled=false"
+        },
+        {
+          "label": "chat dispatch occurred (POST /chat recorded)",
+          "pass": true,
+          "detail": "posts=1"
+        },
+        {
+          "label": "request carries selected scope (source_scope.mode=selected, src_1)",
+          "pass": true,
+          "detail": "{\"mode\":\"selected\",\"source_ids\":[\"src_1\"],\"single_source_id\":null}"
+        },
+        {
+          "label": "composer cleared after accepted receipt",
+          "pass": true,
+          "detail": null
+        },
+        {
+          "label": "user/assistant message visible after send",
+          "pass": true,
+          "detail": "rows=1"
+        },
+        {
+          "label": "no silent failure (no send-error alert)",
+          "pass": true,
+          "detail": "sendError=0 "
+        },
+        {
+          "label": "no horizontal page scroll",
+          "pass": true,
+          "detail": "1440/1440"
+        }
+      ],
+      "note": "合成 SSE（thinking/answer/citation/usage+accepted/done）由 mock 提供；请求体 source_scope 记录在 mock-requests 日志。",
+      "revisions": {
+        "fork": {
+          "repo": "lingyun-hifibio/open-notebook-rdlens",
+          "ref": "agent/wave-one-shell-bddcfc523569",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+        },
+        "host": {
+          "repo": "HiFiBiO-Therapeutics/RDLens",
+          "ref": "agent/wave-one-shell-bddcfc523569",
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
+        }
+      },
+      "pairs_with": [
+        "before_chat_1440x900_en-US",
+        "before_chat_1440x900_zh-CN",
+        "before_chat_1024x768_en-US",
+        "before_chat_1024x768_zh-CN",
+        "before_chat_1440x900_en-US_dark"
+      ]
+    },
+    {
+      "id": "after_conversation_send_single_1440x900_zh-CN",
+      "phase": "after",
+      "scene": "conversation send limited to a single source (ask-this-source → chip → send → cancel restores scope)",
+      "screenshot": "after_conversation_send_single_1440x900_zh-CN.png",
+      "sha256": "017c342c7a74555a15d3c94236605c7f6ccea39751f1fa85cd032daaa8bb8070",
+      "viewport": "1440x900",
+      "language_requested": "zh-CN",
+      "ui_language_actual": "zh-CN",
+      "theme": "light",
+      "status": "PASS",
+      "checks": [
+        {
+          "label": "ask-this-source chip visible before send",
+          "pass": true,
+          "detail": "仅问此来源：src_1 ×"
+        },
+        {
+          "label": "draft autosaved before send",
+          "pass": true,
+          "detail": "所有更改已保存"
+        },
+        {
+          "label": "chat dispatch occurred (POST /chat recorded)",
+          "pass": true,
+          "detail": "posts=1"
+        },
+        {
+          "label": "request carries single-source scope",
+          "pass": true,
+          "detail": "{\"mode\":\"single\",\"source_ids\":[],\"single_source_id\":\"src_1\"}"
+        },
+        {
+          "label": "composer cleared after accepted receipt",
+          "pass": true,
+          "detail": null
+        },
+        {
+          "label": "cancelling chip restores base scope (all)",
+          "pass": true,
+          "detail": "chipGone=true scopeAll=true"
+        }
+      ],
+      "note": "单篇限定请求体 source_scope 记录在 mock-requests 日志；取消后恢复基础范围。",
+      "revisions": {
+        "fork": {
+          "repo": "lingyun-hifibio/open-notebook-rdlens",
+          "ref": "agent/wave-one-shell-bddcfc523569",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+        },
+        "host": {
+          "repo": "HiFiBiO-Therapeutics/RDLens",
+          "ref": "agent/wave-one-shell-bddcfc523569",
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
+        }
+      },
+      "pairs_with": [
+        "before_chat_1440x900_en-US",
+        "before_chat_1440x900_zh-CN",
+        "before_chat_1024x768_en-US",
+        "before_chat_1024x768_zh-CN",
+        "before_chat_1440x900_en-US_dark"
+      ]
+    },
+    {
+      "id": "after_scope_empty_search_blocked_1440x900_zh-CN",
+      "phase": "after",
+      "scene": "empty selected scope — evidence search entry blocked with same reason, zero POST /search",
+      "screenshot": "after_scope_empty_search_blocked_1440x900_zh-CN.png",
+      "sha256": "f46f0a40bafee287394cfb6a49f082a18bfecbed3bd3fc9091028da4f3c7f3e2",
+      "viewport": "1440x900",
+      "language_requested": "zh-CN",
+      "ui_language_actual": "zh-CN",
+      "theme": "light",
+      "status": "PASS",
+      "checks": [
+        {
+          "label": "empty selected blocked block visible",
+          "pass": true,
+          "detail": null
+        },
+        {
+          "label": "evidence-search entry disabled under empty selected",
+          "pass": true,
+          "detail": null
+        },
+        {
+          "label": "blocked reason shown on secondary actions (same source as composer)",
+          "pass": true,
+          "detail": "secondary=请至少选择一份资料后再就资料提问，或切回全部可用资料。 gate=请至少选择一份资料后再就资料提问，或切回全部可用资料。"
+        },
+        {
+          "label": "zero POST /search dispatched",
+          "pass": true,
+          "detail": "count=0"
+        },
+        {
+          "label": "no horizontal page scroll",
+          "pass": true,
+          "detail": null
+        }
+      ],
+      "note": "空 selected：资料查询/证据搜索被阻断并显示同源原因（不静默回退 all）；按钮 disabled，JS click 也不派发。",
+      "revisions": {
+        "fork": {
+          "repo": "lingyun-hifibio/open-notebook-rdlens",
+          "ref": "agent/wave-one-shell-bddcfc523569",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+        },
+        "host": {
+          "repo": "HiFiBiO-Therapeutics/RDLens",
+          "ref": "agent/wave-one-shell-bddcfc523569",
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
+        }
+      },
+      "pairs_with": [
+        "before_sources_panel_1440x900_en-US",
+        "before_sources_panel_1440x900_zh-CN",
+        "before_sources_panel_1024x768_en-US",
+        "before_sources_panel_1024x768_zh-CN",
+        "before_sources_panel_1440x900_en-US_dark"
+      ]
+    },
+    {
+      "id": "after_no_model_composer_blocked_1440x900_en-US",
+      "phase": "after",
+      "scene": "no available model — composer send disabled with visible reason, no clickable silent failure",
+      "screenshot": "after_no_model_composer_blocked_1440x900_en-US.png",
+      "sha256": "708699cb5fc598e5a56c4ebf3d468436457fbc7f53e5151033161d271e99e1d0",
+      "viewport": "1440x900",
+      "language_requested": "en-US",
+      "ui_language_actual": "en-US",
+      "theme": "light",
+      "status": "PASS",
+      "checks": [
+        {
+          "label": "chat-send disabled under unavailable model",
+          "pass": true,
+          "detail": null
+        },
+        {
+          "label": "visible blocked reason (composer or model status)",
+          "pass": true,
+          "detail": "gate=Create or open a conversation before asking a question. status="
+        },
+        {
+          "label": "no silent dispatch attempt (0 POST /chat|/search)",
+          "pass": true,
+          "detail": "count=0"
+        },
+        {
+          "label": "no horizontal page scroll",
+          "pass": true,
+          "detail": null
+        }
+      ],
+      "note": "mock /models 返回无可用模型（synthetic）；不出现可点静默失败。",
+      "revisions": {
+        "fork": {
+          "repo": "lingyun-hifibio/open-notebook-rdlens",
+          "ref": "agent/wave-one-shell-bddcfc523569",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+        },
+        "host": {
+          "repo": "HiFiBiO-Therapeutics/RDLens",
+          "ref": "agent/wave-one-shell-bddcfc523569",
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
+        }
+      },
+      "pairs_with": [
+        "before_chat_1440x900_en-US",
+        "before_chat_1440x900_zh-CN",
+        "before_chat_1024x768_en-US",
+        "before_chat_1024x768_zh-CN",
+        "before_chat_1440x900_en-US_dark"
+      ]
+    },
+    {
+      "id": "after_refresh_restore_before_1440x900_zh-CN",
+      "phase": "after",
+      "scene": "refresh restore — state before page reload (active session + draft + selected scope)",
+      "screenshot": "after_refresh_restore_before_1440x900_zh-CN.png",
+      "sha256": "1be6333ce58f9ea0638ef9a55c6dc0aec5da8bce469a34dc6ad1c3a39b647da0",
+      "viewport": "1440x900",
+      "language_requested": "zh-CN",
+      "ui_language_actual": "zh-CN",
+      "theme": "light",
+      "status": "PASS",
+      "checks": [
+        {
+          "label": "synthetic global session created (composer wired)",
+          "pass": true,
+          "detail": "所有更改已保存"
+        },
+        {
+          "label": "persisted synthetic message visible before reload (seeded detail)",
+          "pass": true,
+          "detail": "rows=2"
+        },
+        {
+          "label": "composer draft autosaved before reload (PUT editor-state settled)",
+          "pass": true,
+          "detail": "所有更改已保存"
+        },
+        {
+          "label": "local session display pointer persisted (restore candidate)",
+          "pass": true,
+          "detail": "rdlens.research.session.v1.display.1.p1"
+        },
+        {
+          "label": "scope=selected persisted (src_1) before reload",
+          "pass": true,
+          "detail": null
+        }
+      ],
+      "note": "刷新前：服务端 seed 一条合成消息（detail 可见）、已建合成会话、草稿已保存（PUT editor-state）、范围=selected；随后整页刷新。",
+      "revisions": {
+        "fork": {
+          "repo": "lingyun-hifibio/open-notebook-rdlens",
+          "ref": "agent/wave-one-shell-bddcfc523569",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+        },
+        "host": {
+          "repo": "HiFiBiO-Therapeutics/RDLens",
+          "ref": "agent/wave-one-shell-bddcfc523569",
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
+        }
+      },
+      "pairs_with": []
+    },
+    {
+      "id": "after_refresh_restore_1440x900_zh-CN",
+      "phase": "after",
+      "scene": "refresh restore — page reload restored active session, composer draft and selected scope",
+      "screenshot": "after_refresh_restore_1440x900_zh-CN.png",
+      "sha256": "13b0c759a846ff578d9e1af633ec3ca8595168094f753aeca4c9e4cff0023c22",
+      "viewport": "1440x900",
+      "language_requested": "zh-CN",
+      "ui_language_actual": "zh-CN",
+      "theme": "light",
+      "status": "PASS",
+      "checks": [
+        {
+          "label": "host page + target shell re-rendered after full reload",
+          "pass": true,
+          "detail": "mode=target"
+        },
+        {
+          "label": "composer draft restored exactly",
+          "pass": true,
+          "detail": "restored=[synthetic] 刷新后应恢复的草稿：研究范围 selected，刷新恢复场景。"
+        },
+        {
+          "label": "selected scope restored after reload",
+          "pass": true,
+          "detail": "{\"selectedChecked\":true,\"srcChecked\":true,\"title\":\"[synthetic] refresh restore session\",\"displayPointers\":1}"
+        },
+        {
+          "label": "persisted message visible after reload (detail messages restored)",
+          "pass": true,
+          "detail": "rows=2"
+        },
+        {
+          "label": "restore path used local display pointer + server reads (GET session ≥1, GET editor-state ≥1)",
+          "pass": true,
+          "detail": "pointers=1 detail=2 editor=1"
+        },
+        {
+          "label": "no horizontal page scroll after restore",
+          "pass": true,
+          "detail": "1440/1440"
+        }
+      ],
+      "note": "整页刷新（page.reload）后恢复：合成 mock 记住 PUT 的 editor-state，runtime 经本机 display 指针 + GET session/editor-state 恢复草稿/范围。",
+      "revisions": {
+        "fork": {
+          "repo": "lingyun-hifibio/open-notebook-rdlens",
+          "ref": "agent/wave-one-shell-bddcfc523569",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
+          "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
+        },
+        "host": {
+          "repo": "HiFiBiO-Therapeutics/RDLens",
+          "ref": "agent/wave-one-shell-bddcfc523569",
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": []
@@ -5983,17 +6531,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -6048,17 +6597,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": [
@@ -6098,17 +6648,18 @@
         "fork": {
           "repo": "lingyun-hifibio/open-notebook-rdlens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "4a007a2719e6c81f2c47eedc6afc76679ad6137f",
-          "short": "4a007a2",
+          "commit": "61b250760ee6ce23c55001bbdc7e191f2238f1a6",
+          "short": "61b2507",
           "worktree": "evidence/worktrees/fork-after (git worktree add --detach)",
-          "note": "在 476b1b2（F1 修复）之上 1 commit：zh-CN 复用既有文案补全中文与错别字修正；无布局/交互变化。"
+          "note": "最终 fork head：F1–F22 修复 + 第 2 位审查附条件修复 + 第 2 轮重审 N1/N3/N4/N6，含“真实 harness 发送阻断”修复（目标壳隐藏面板 composer 导致冷启动查回→external_lookup unknown turn→session_busy；加性 suppressColdStartLookup 默认 false，旧壳不变）；tsc 0 / 定向 469 / 全量 2429 passed（25 基线失败）/ next build 成功。"
         },
         "host": {
           "repo": "HiFiBiO-Therapeutics/RDLens",
           "ref": "agent/wave-one-shell-bddcfc523569",
-          "commit": "d6da1a64b8ab8779e8a74b7c88fafc7bf6b87fdb",
-          "short": "d6da1a64b",
-          "worktree": "evidence/worktrees/host-after (git worktree add --detach)"
+          "commit": "c96643e837f04ee523ee8c2388d25de4c79a6edd",
+          "short": "c96643e8",
+          "worktree": "evidence/worktrees/host-after (git worktree add --detach)",
+          "note": "最终 host head（第 2 轮审查修复：theme 门控 + focus ring offset 3px；20 files +2051/−157；556 tests）。"
         }
       },
       "pairs_with": []
@@ -6117,7 +6668,7 @@
   "keyboard_walkthrough": {
     "ticket": "#1104",
     "phase": "after",
-    "generated_at": "2026-11-06T19:15:47.156Z",
+    "generated_at": "2026-11-06T21:03:57.719Z",
     "host_base_url": "http://127.0.0.1:5175/",
     "evidence_level": "synthetic network real-app rendering — NOT an L2 deployment acceptance (synthetic does not close L2)",
     "browser": "Playwright-core 1.62.1 / Chromium 151 (chromium-1243), headless, deviceScaleFactor=1",
@@ -6133,7 +6684,7 @@
         "id": "KB-02",
         "label": "工作台内 Tab 顺序：skip link → 顶栏 → 左资料栏 → 对话 → composer（单调不倒退）",
         "status": "PASS",
-        "details": "skip-link → topbar → topbar → topbar → sources → sources → sources → sources → sources → sources → sources → conversation → conversation → composer → composer → composer"
+        "details": "skip-link → topbar → topbar → topbar → sources → sources → sources → sources → sources → sources → sources → conversation → conversation → conversation → composer → composer → composer"
       },
       {
         "id": "KB-03",
@@ -6151,7 +6702,7 @@
         "id": "KB-05",
         "label": "焦点环可见（键盘聚焦控件 :focus-visible 且 ring/outline 非 none）",
         "status": "PASS",
-        "details": "global-model-summary-trigger focusVisible=true shadow=rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.496439) 0px 0px  outline=2px"
+        "details": "global-model-summary-trigger focusVisible=true shadow=rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.496422) 0px 0px  outline=2px"
       },
       {
         "id": "KB-06",
@@ -6176,6 +6727,18 @@
         "label": "1024 右栏打开时左栏临时收起、右栏 355px、composer 显示范围紧凑标签",
         "status": "PASS",
         "details": "{\"asideWidth\":0,\"asideHidden\":true,\"rightWidth\":355,\"mainWidth\":669,\"chipVisible\":true}"
+      },
+      {
+        "id": "KB-10",
+        "label": "右栏由资料预览触发：打开时焦点进入面板；Esc 关闭后焦点回到触发控件/资料栏",
+        "status": "PASS",
+        "details": "openFocus=right-pane/rdlens-target-right-pane-close closed=true returned=rdlens-target-source-open"
+      },
+      {
+        "id": "KB-11",
+        "label": "1024 空 selected 阻断块「选择资料」聚焦首个可用 checkbox（非 disabled）",
+        "status": "PASS",
+        "details": "{\"testid\":\"rdlens-target-source-select-src_1\",\"disabled\":false}"
       }
     ],
     "tab_sequence": [
@@ -6271,12 +6834,12 @@
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.496439) 0px 0px ",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.496422) 0px 0px ",
         "focusRing": {
           "focusVisible": true,
           "outlineWidth": "2px",
           "outlineStyle": "solid",
-          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.496439) 0px 0px "
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.496422) 0px 0px "
         }
       },
       {
@@ -6291,12 +6854,12 @@
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460198) 0px 0px ",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460388) 0px 0px ",
         "focusRing": {
           "focusVisible": true,
           "outlineWidth": "2px",
           "outlineStyle": "solid",
-          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460198) 0px 0px "
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460388) 0px 0px "
         }
       },
       {
@@ -6371,12 +6934,12 @@
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484464) 0px 0px ",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484397) 0px 0px ",
         "focusRing": {
           "focusVisible": true,
           "outlineWidth": "2px",
           "outlineStyle": "solid",
-          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484464) 0px 0px "
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484397) 0px 0px "
         }
       },
       {
@@ -6391,12 +6954,12 @@
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460388) 0px 0px ",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460384) 0px 0px ",
         "focusRing": {
           "focusVisible": true,
           "outlineWidth": "2px",
           "outlineStyle": "solid",
-          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460388) 0px 0px "
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460384) 0px 0px "
         }
       },
       {
@@ -6431,12 +6994,12 @@
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.46038) 0px 0px 0",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484395) 0px 0px ",
         "focusRing": {
           "focusVisible": true,
           "outlineWidth": "2px",
           "outlineStyle": "solid",
-          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.46038) 0px 0px 0"
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484395) 0px 0px "
         }
       },
       {
@@ -6471,12 +7034,12 @@
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460449) 0px 0px ",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484391) 0px 0px ",
         "focusRing": {
           "focusVisible": true,
           "outlineWidth": "2px",
           "outlineStyle": "solid",
-          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460449) 0px 0px "
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484391) 0px 0px "
         }
       },
       {
@@ -6491,16 +7054,36 @@
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484328) 0px 0px ",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484405) 0px 0px ",
         "focusRing": {
           "focusVisible": true,
           "outlineWidth": "2px",
           "outlineStyle": "solid",
-          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484328) 0px 0px "
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484405) 0px 0px "
         }
       },
       {
         "step": 19,
+        "frame": "child",
+        "tag": "BUTTON",
+        "testid": "rdlens-target-no-session-new",
+        "aria": null,
+        "text": "New conversation",
+        "href": null,
+        "zone": "conversation",
+        "focusVisible": true,
+        "outlineWidth": "2px",
+        "outlineStyle": "solid",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460392) 0px 0px ",
+        "focusRing": {
+          "focusVisible": true,
+          "outlineWidth": "2px",
+          "outlineStyle": "solid",
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460392) 0px 0px "
+        }
+      },
+      {
+        "step": 20,
         "frame": "child",
         "tag": "TEXTAREA",
         "testid": "chat-input",
@@ -6520,7 +7103,7 @@
         }
       },
       {
-        "step": 20,
+        "step": 21,
         "frame": "child",
         "tag": "BUTTON",
         "testid": "rdlens-target-secondary-search",
@@ -6531,16 +7114,16 @@
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484399) 0px 0px ",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460392) 0px 0px ",
         "focusRing": {
           "focusVisible": true,
           "outlineWidth": "2px",
           "outlineStyle": "solid",
-          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484399) 0px 0px "
+          "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460392) 0px 0px "
         }
       },
       {
-        "step": 21,
+        "step": 22,
         "frame": "child",
         "tag": "BUTTON",
         "testid": "rdlens-target-secondary-compare",
@@ -6560,7 +7143,7 @@
         }
       },
       {
-        "step": 22,
+        "step": 23,
         "frame": "host",
         "tag": "BODY",
         "testid": null,
@@ -6570,7 +7153,7 @@
         "focusRing": null
       },
       {
-        "step": 23,
+        "step": 24,
         "frame": "host",
         "tag": "BUTTON",
         "testid": null,
@@ -6583,7 +7166,9 @@
     "screenshots": [
       "after_keyboard_focus_ring_1440x900_en-US.png",
       "after_keyboard_right_pane_focus_1440x900_en-US.png",
-      "after_keyboard_1024_right_pane_1024x768_en-US.png"
+      "after_keyboard_1024_right_pane_1024x768_en-US.png",
+      "after_keyboard_source_preview_focus_1440x900_en-US.png",
+      "after_keyboard_empty_selected_choose_1024x768_zh-CN.png"
     ],
     "limitations": [
       "键盘走查在合成 mock 网络与真实应用渲染下完成，不是 L2 部署验收。",
@@ -6606,7 +7191,9 @@
     "合成数据非真实 DB/宿主观测：本证据不能替代真实 host+DB 的 L2 验收，也不能作为 #1104 完成声明。",
     "宿主失败/验证页证据为 synthetic：mock 将 GET /v1/research/workspace-status 置为 503（failure code=workspace_status_unreachable，可重试）或延迟 12s（verifying 态）；不是真实网络故障。",
     "legacy 旧壳（legacy=1）在 zh-CN 下仍有既有英文残留（五 Tab/Results/Activity/范围控件等旧壳文案与既有双语欠项）；按 Lead 口径**旧壳不作为 #1104 目标壳双语验收对象**，残留清单已记录在 logs/capture-after-summary.json 的 after_legacy_old_shell_residual_* 检查中。",
-    "目标壳 zh-CN 已做可见文本英文残留扫描（允许 [synthetic] 项目名/资料名与 Ctrl/Cmd+Enter 等快捷键字形）：4a007a2 下目标壳全部场景 PASS；宿主页头失败/验证页中文文案也已采集（after_host_failure_zh / after_host_verifying_zh）。",
-    "开发态指示器：fork 以 `next dev` 运行，截图左下角的 Next.js 开发指示器（N 徽标）为开发态 UI，不属于产品界面；生产构建不出现，不作为视觉验收对象。"
+    "开发态指示器：fork 以 `next dev` 运行，截图左下角的 Next.js 开发指示器（N 徽标）为开发态 UI，不属于产品界面；生产构建不出现，不作为视觉验收对象。",
+    "host 最终 head b7551f227 的审查修复（project trim/语言时序/a11y/测试）声明无视觉变化；本轮重采用于确认同场景视觉断言与键盘走查结论不变。",
+    "最终 head 重跑：host c96643e8 / fork 61b2507；预跑 99c088e 上的发送 0 派发与 refresh 消息缺失已由 61b2507 修复（suppressColdStartLookup），最终场景全部 PASS；预跑 FAIL 记录保留在 logs/capture-after-run.log（99c088e 历史）与 logs/send-failure-diagnosis.md，仅作发现记录，不进入最终 manifest。",
+    "W1 目标壳不提供“冷启动提交恢复”能力（fork 61b2507 说明的欠项登记）：目标壳草稿由外部 composer 拥有，面板不做冷启动 submission 查回；旧壳保留该能力。本证据不将该能力计为 W1 验收项。"
   ]
 }

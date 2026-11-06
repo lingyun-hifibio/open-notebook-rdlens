@@ -1,7 +1,7 @@
 {
   "ticket": "#1104",
   "phase": "after",
-  "generated_at": "2026-11-06T19:15:47.156Z",
+  "generated_at": "2026-11-06T21:03:57.719Z",
   "host_base_url": "http://127.0.0.1:5175/",
   "evidence_level": "synthetic network real-app rendering — NOT an L2 deployment acceptance (synthetic does not close L2)",
   "browser": "Playwright-core 1.62.1 / Chromium 151 (chromium-1243), headless, deviceScaleFactor=1",
@@ -17,7 +17,7 @@
       "id": "KB-02",
       "label": "工作台内 Tab 顺序：skip link → 顶栏 → 左资料栏 → 对话 → composer（单调不倒退）",
       "status": "PASS",
-      "details": "skip-link → topbar → topbar → topbar → sources → sources → sources → sources → sources → sources → sources → conversation → conversation → composer → composer → composer"
+      "details": "skip-link → topbar → topbar → topbar → sources → sources → sources → sources → sources → sources → sources → conversation → conversation → conversation → composer → composer → composer"
     },
     {
       "id": "KB-03",
@@ -35,7 +35,7 @@
       "id": "KB-05",
       "label": "焦点环可见（键盘聚焦控件 :focus-visible 且 ring/outline 非 none）",
       "status": "PASS",
-      "details": "global-model-summary-trigger focusVisible=true shadow=rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.496439) 0px 0px  outline=2px"
+      "details": "global-model-summary-trigger focusVisible=true shadow=rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.496422) 0px 0px  outline=2px"
     },
     {
       "id": "KB-06",
@@ -60,6 +60,18 @@
       "label": "1024 右栏打开时左栏临时收起、右栏 355px、composer 显示范围紧凑标签",
       "status": "PASS",
       "details": "{\"asideWidth\":0,\"asideHidden\":true,\"rightWidth\":355,\"mainWidth\":669,\"chipVisible\":true}"
+    },
+    {
+      "id": "KB-10",
+      "label": "右栏由资料预览触发：打开时焦点进入面板；Esc 关闭后焦点回到触发控件/资料栏",
+      "status": "PASS",
+      "details": "openFocus=right-pane/rdlens-target-right-pane-close closed=true returned=rdlens-target-source-open"
+    },
+    {
+      "id": "KB-11",
+      "label": "1024 空 selected 阻断块「选择资料」聚焦首个可用 checkbox（非 disabled）",
+      "status": "PASS",
+      "details": "{\"testid\":\"rdlens-target-source-select-src_1\",\"disabled\":false}"
     }
   ],
   "tab_sequence": [
@@ -155,12 +167,12 @@
       "focusVisible": true,
       "outlineWidth": "2px",
       "outlineStyle": "solid",
-      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.496439) 0px 0px ",
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.496422) 0px 0px ",
       "focusRing": {
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.496439) 0px 0px "
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.496422) 0px 0px "
       }
     },
     {
@@ -175,12 +187,12 @@
       "focusVisible": true,
       "outlineWidth": "2px",
       "outlineStyle": "solid",
-      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460198) 0px 0px ",
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460388) 0px 0px ",
       "focusRing": {
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460198) 0px 0px "
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460388) 0px 0px "
       }
     },
     {
@@ -255,12 +267,12 @@
       "focusVisible": true,
       "outlineWidth": "2px",
       "outlineStyle": "solid",
-      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484464) 0px 0px ",
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484397) 0px 0px ",
       "focusRing": {
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484464) 0px 0px "
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484397) 0px 0px "
       }
     },
     {
@@ -275,12 +287,12 @@
       "focusVisible": true,
       "outlineWidth": "2px",
       "outlineStyle": "solid",
-      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460388) 0px 0px ",
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460384) 0px 0px ",
       "focusRing": {
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460388) 0px 0px "
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460384) 0px 0px "
       }
     },
     {
@@ -315,12 +327,12 @@
       "focusVisible": true,
       "outlineWidth": "2px",
       "outlineStyle": "solid",
-      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.46038) 0px 0px 0",
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484395) 0px 0px ",
       "focusRing": {
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.46038) 0px 0px 0"
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484395) 0px 0px "
       }
     },
     {
@@ -355,12 +367,12 @@
       "focusVisible": true,
       "outlineWidth": "2px",
       "outlineStyle": "solid",
-      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460449) 0px 0px ",
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484391) 0px 0px ",
       "focusRing": {
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460449) 0px 0px "
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484391) 0px 0px "
       }
     },
     {
@@ -375,16 +387,36 @@
       "focusVisible": true,
       "outlineWidth": "2px",
       "outlineStyle": "solid",
-      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484328) 0px 0px ",
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484405) 0px 0px ",
       "focusRing": {
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484328) 0px 0px "
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484405) 0px 0px "
       }
     },
     {
       "step": 19,
+      "frame": "child",
+      "tag": "BUTTON",
+      "testid": "rdlens-target-no-session-new",
+      "aria": null,
+      "text": "New conversation",
+      "href": null,
+      "zone": "conversation",
+      "focusVisible": true,
+      "outlineWidth": "2px",
+      "outlineStyle": "solid",
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460392) 0px 0px ",
+      "focusRing": {
+        "focusVisible": true,
+        "outlineWidth": "2px",
+        "outlineStyle": "solid",
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460392) 0px 0px "
+      }
+    },
+    {
+      "step": 20,
       "frame": "child",
       "tag": "TEXTAREA",
       "testid": "chat-input",
@@ -404,7 +436,7 @@
       }
     },
     {
-      "step": 20,
+      "step": 21,
       "frame": "child",
       "tag": "BUTTON",
       "testid": "rdlens-target-secondary-search",
@@ -415,16 +447,16 @@
       "focusVisible": true,
       "outlineWidth": "2px",
       "outlineStyle": "solid",
-      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484399) 0px 0px ",
+      "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460392) 0px 0px ",
       "focusRing": {
         "focusVisible": true,
         "outlineWidth": "2px",
         "outlineStyle": "solid",
-        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.484399) 0px 0px "
+        "boxShadow": "rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, oklab(0.497701 -0.0845774 -0.00596708 / 0.460392) 0px 0px "
       }
     },
     {
-      "step": 21,
+      "step": 22,
       "frame": "child",
       "tag": "BUTTON",
       "testid": "rdlens-target-secondary-compare",
@@ -444,7 +476,7 @@
       }
     },
     {
-      "step": 22,
+      "step": 23,
       "frame": "host",
       "tag": "BODY",
       "testid": null,
@@ -454,7 +486,7 @@
       "focusRing": null
     },
     {
-      "step": 23,
+      "step": 24,
       "frame": "host",
       "tag": "BUTTON",
       "testid": null,
@@ -467,7 +499,9 @@
   "screenshots": [
     "after_keyboard_focus_ring_1440x900_en-US.png",
     "after_keyboard_right_pane_focus_1440x900_en-US.png",
-    "after_keyboard_1024_right_pane_1024x768_en-US.png"
+    "after_keyboard_1024_right_pane_1024x768_en-US.png",
+    "after_keyboard_source_preview_focus_1440x900_en-US.png",
+    "after_keyboard_empty_selected_choose_1024x768_zh-CN.png"
   ],
   "limitations": [
     "键盘走查在合成 mock 网络与真实应用渲染下完成，不是 L2 部署验收。",
