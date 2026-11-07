@@ -1288,7 +1288,12 @@ export function ResearchChatPanel({
         return candidate.content
       }
     }
-    return ''
+    // #1106（W1 PR-B，L2 422 纠正回归）：live/controller 错误行来自
+    // `renderedTurns = [...turns, ...controllerRows]` 的合成数组，不是
+    // `turns` 里的同一对象 ⇒ indexOf 为 -1。合成行由 controller 投影携带
+    // `submittedQuery`（conversationTurnToTurns 固定写入 `turn.query`），
+    // 用它回落；durable 行无该字段时仍返回空，不猜测、不读取当前 draft。
+    return target.submittedQuery ?? ''
   }
 
   /**

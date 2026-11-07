@@ -2041,6 +2041,7 @@ describe('ResearchChatPanel PR-5b：会话接线与解释 UI', () => {
     markerWriteFailed = false,
     onSendCoverage = vi.fn(async () => ACCEPTED_OUTCOME),
     conversation = conversationStub(),
+    onRetryWithPurpose,
     wrapPanel,
   }: {
     sessionMeta?: ResearchChatSessionMeta | null
@@ -2049,6 +2050,7 @@ describe('ResearchChatPanel PR-5b：会话接线与解释 UI', () => {
     markerWriteFailed?: boolean
     onSendCoverage?: (q: string, snapshot: ResearchScopeSnapshot) => Promise<CoverageSubmitOutcome>
     conversation?: ConversationController
+    onRetryWithPurpose?: (query: string) => Promise<boolean>
     /** 可选的 React 包装（如 Profiler），用于断言每次 commit 的 DOM 状态。 */
     wrapPanel?: (node: React.ReactNode) => React.ReactNode
   }) {
@@ -2075,6 +2077,7 @@ describe('ResearchChatPanel PR-5b：会话接线与解释 UI', () => {
               sessionMeta={sessionMeta}
               submissionLookup={submissionLookup}
               markerWriteFailed={markerWriteFailed}
+              onRetryWithPurpose={onRetryWithPurpose}
               onSendSession={vi.fn(async () => true)}
               scopeSources={[{ sourceId: 'src_1', title: 'Paper One' }]}
               scopeNotes={[]}
@@ -3535,7 +3538,10 @@ describe('ResearchChatPanel PR-13：not_accepted 类 503 不得静默', () => {
     } as unknown as ConversationController
   }
 
-  function renderNa(turn: ConversationTurn) {
+  function renderNa(
+    turn: ConversationTurn,
+    extra?: { onRetryWithPurpose?: (query: string) => Promise<boolean> },
+  ) {
     const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: 0 } } })
     render(
       <QueryClientProvider client={queryClient}>
@@ -3565,6 +3571,7 @@ describe('ResearchChatPanel PR-13：not_accepted 类 503 不得静默', () => {
               conversation={conversationWith(turn)}
               sessionRef={PR13_REF}
               onSendSession={vi.fn(async () => true)}
+              onRetryWithPurpose={extra?.onRetryWithPurpose}
               scopeSources={[{ sourceId: 'src_1', title: 'Paper One' }]}
               scopeNotes={[]}
               onChangeScope={vi.fn()}
@@ -3615,6 +3622,18 @@ describe('ResearchChatPanel PR-13：not_accepted 类 503 不得静默', () => {
     const idle = notAcceptedTurn('')
     renderNa(idle)
     expect(screen.queryByTestId('chat-error')).toBeNull()
+  })
+
+  it('#1106 live 合成 422 行（不在 durable turns 中）→ 仍用 submittedQuery 重发，不得静默 no-op', () => {
+    // L2 回归（PR-B build 34794e0）：sessionWired 下错误行来自
+    // renderedTurns = [...turns, ...controllerRows]，是重新投影的对象；
+    // turns.indexOf(row) 恒为 -1；旧实现返回空 query 后在调用
+    // onRetryWithPurpose 之前早退，按钮可见可点但没有请求。
+    const retry = vi.fn(async () => true)
+    renderNa(notAcceptedTurn('scope_selected_empty'), { onRetryWithPurpose: retry })
+    expect(screen.getByTestId('chat-scope-purpose-recovery')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('chat-scope-purpose-retry'))
+    expect(retry).toHaveBeenCalledWith('未受理的问题')
   })
 })
 
