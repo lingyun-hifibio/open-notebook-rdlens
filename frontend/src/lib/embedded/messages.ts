@@ -7,6 +7,14 @@
  * 任一不符或载荷不符合类型 schema → 返回 null，调用方**静默拒绝**：
  * 不响应、不落日志正文。
  *
+ * W1 宿主契约 v1（加性扩展，与宿主侧 PR 锁步）：
+ * - `language` 消息：宿主级语言偏好（D-UI-02）经同一嵌入会话协议下发；
+ *   只接受 `zh-CN` / `en-US` 两值，非法值静默丢弃；
+ * - `token` / `refresh` 的**可选** `project: { name }` 字段（1..200 chars）：
+ *   宿主项目可读名（D-UI-01：项目身份只在 UI-02 呈现）。字段存在但非法
+ *   → 整条消息静默丢弃（fail-closed，不猜测项目名）；refresh 缺字段时
+ *   由 session 层保留已有项目名。
+ *
  * 本模块为纯函数，不触碰 window/DOM，可直接单元测试。
  */
 
@@ -19,6 +27,19 @@ export const PM_ERROR_CODES = [
 ] as const
 
 export type PmErrorCode = (typeof PM_ERROR_CODES)[number]
+
+/**
+ * 宿主下发的语言（D-UI-02，W1 双语范围只有 zh-CN / en-US）。
+ * 加性扩展：旧宿主不发该消息时工作台保持嵌入式默认 en-US。
+ */
+export const HOST_LANGUAGES = ['zh-CN', 'en-US'] as const
+
+export type HostLanguage = (typeof HOST_LANGUAGES)[number]
+
+/** 宿主项目可读名（D-UI-01）：1..200 字符，不做 further 语义推断。 */
+export interface HostProject {
+  name: string
+}
 
 export interface MessageValidationContext {
   /** event.origin */
@@ -34,16 +55,44 @@ export interface MessageValidationContext {
 }
 
 export type ValidatedInboundMessage =
-  | { type: 'token'; token: string; expiresAt: number }
-  | { type: 'refresh'; token: string; expiresAt: number }
+  | { type: 'token'; token: string; expiresAt: number; project?: HostProject }
+  | { type: 'refresh'; token: string; expiresAt: number; project?: HostProject }
   | { type: 'error'; code: PmErrorCode; message: string }
   | { type: 'logout' }
   | { type: 'destroy' }
   /** RWV2-50：宿主解析主题（additive，契约 v0 §12 theme_rules） */
   | { type: 'theme'; theme: 'light' | 'dark' }
+  /** W1 契约 v1（D-UI-02）：宿主级语言偏好（additive） */
+  | { type: 'language'; language: HostLanguage }
+
+/** 项目名边界（1..200 chars）；超界视为非法载荷。 */
+export const HOST_PROJECT_NAME_MIN_LENGTH = 1
+export const HOST_PROJECT_NAME_MAX_LENGTH = 200
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * 校验可选 `project` 字段。
+ *
+ * 返回 `undefined` = 字段缺失（合法，session 层保留已有项目名）；
+ * 返回 `null` = 字段存在但非法（整条消息丢弃，不静默降级成通用项目名）。
+ */
+export function parseHostProject(value: unknown): HostProject | undefined | null {
+  if (value === undefined) return undefined
+  if (!isRecord(value) || typeof value.name !== 'string') return null
+  // W1 契约（host #1118 §B）：子页面与宿主统一按 **trim 后** 1..200 校验，
+  // 并存储 trim 后的值（顶栏不显示前后空格；也避免 201 原始/199 trim 名字
+  // 被 fail-closed 误丢弃导致认证空白错误页）。
+  const name = value.name.trim()
+  if (
+    name.length < HOST_PROJECT_NAME_MIN_LENGTH ||
+    name.length > HOST_PROJECT_NAME_MAX_LENGTH
+  ) {
+    return null
+  }
+  return { name }
 }
 
 /**
@@ -82,7 +131,15 @@ export function validateIncomingMessage(
       ) {
         return null
       }
-      return { type: data.type, token: data.token, expiresAt: data.expires_at }
+      // W1 契约 v1：project 可选；存在但非法 → 整条消息丢弃（fail-closed）。
+      const project = parseHostProject(data.project)
+      if (project === null) return null
+      return {
+        type: data.type,
+        token: data.token,
+        expiresAt: data.expires_at,
+        ...(project === undefined ? {} : { project }),
+      }
     }
     case 'error': {
       if (
@@ -104,6 +161,15 @@ export function validateIncomingMessage(
         return null
       }
       return { type: 'theme', theme: data.theme }
+    case 'language':
+      // W1 契约 v1（D-UI-02）：只有 zh-CN / en-US 两值合法。
+      if (
+        typeof data.language !== 'string' ||
+        !(HOST_LANGUAGES as readonly string[]).includes(data.language)
+      ) {
+        return null
+      }
+      return { type: 'language', language: data.language as HostLanguage }
     default:
       return null
   }

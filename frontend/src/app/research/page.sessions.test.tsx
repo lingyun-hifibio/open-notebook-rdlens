@@ -401,6 +401,9 @@ async function openSwitcher(surface: 'global' | 'source') {
 }
 
 beforeEach(() => {
+  // W1 #1104：默认 /research 已是目标壳；本文件断言旧壳会话导航组合层，
+  // 统一以 `?legacy=1` 渲染旧壳。
+  window.history.replaceState(null, '', '/research?legacy=1')
   cleanup()
   workspaceSpies.chatSend.mockReset()
   workspaceSpies.chatKeyDown.mockReset()

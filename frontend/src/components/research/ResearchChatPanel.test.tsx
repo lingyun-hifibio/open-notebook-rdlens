@@ -2958,6 +2958,8 @@ describe('ResearchChatPanel PR-10：冷启动草稿查回守卫（新建会话�
     initialDraftToken?: string
     /** 面板是否提供 refreshMarkerLookups（sessionMode 才提供）。 */
     withLookup?: boolean
+    /** W1 #1104：目标壳外部 composer 拥有的草稿不做冷启动查回。 */
+    suppressColdStartLookup?: boolean
   } = {}) {
     const submissionCalls: string[] = []
     const controller = createConversationController({
@@ -3034,6 +3036,7 @@ describe('ResearchChatPanel PR-10：冷启动草稿查回守卫（新建会话�
                   dirty: text.length > 0,
                 }))}
                 onRetrySave={vi.fn()}
+                suppressColdStartLookup={options.suppressColdStartLookup === true}
               />
             </ResearchScopeProvider>
           </ResearchWorkspaceProvider>
@@ -3065,6 +3068,21 @@ describe('ResearchChatPanel PR-10：冷启动草稿查回守卫（新建会话�
       await Promise.resolve()
     })
     expect(refreshMarkerLookups).not.toHaveBeenCalled()
+  })
+
+  it('①-b 目标壳 suppressColdStartLookup：外部 composer 草稿不查回、无 blocking turn', async () => {
+    const { controller, refreshMarkerLookups } = mountCase({
+      initialDraftText: '持久草稿',
+      initialDraftToken: 'draft_persisted',
+      suppressColdStartLookup: true,
+    })
+    // 与 ② 同输入，但目标壳声明草稿由外部 composer 拥有 → 不触发冷启动查回。
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(refreshMarkerLookups).not.toHaveBeenCalled()
+    expect(controller.getSnapshot().turn).toBeNull()
+    expect(hasNotObservedTurn(controller)).toBe(false)
   })
 
   it('②加载时已存在的非空持久草稿 → 仍查回一次（F10 不回退）', async () => {

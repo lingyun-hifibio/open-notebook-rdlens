@@ -17,6 +17,7 @@
 
 import {
   validateIncomingMessage,
+  type HostLanguage,
   type PmErrorCode,
   type ValidatedInboundMessage,
 } from './messages'
@@ -51,6 +52,17 @@ export interface SessionState {
   role?: ResearchRole
   /** RWV2-50：父页下发的解析主题；仅 authenticated 态存续，离开即清 */
   embeddedTheme?: 'light' | 'dark'
+  /**
+   * W1 契约 v1（D-UI-02）：父页下发的语言偏好；仅 authenticated 态存续，
+   * 离开即清。同值消息去重（与 theme 一致），非法值由消息层静默丢弃。
+   */
+  embeddedLanguage?: HostLanguage
+  /**
+   * W1 契约 v1（D-UI-01）：父页下发的项目可读名（token/refresh 可选字段）。
+   * token 刷新**缺字段时保留**已有名字；logout/destroy 清除。
+   * 缺失时顶栏回退到通用「Research」，不伪造项目身份。
+   */
+  embeddedProjectName?: string
 }
 
 export interface EmbeddedSessionOptions {
@@ -137,6 +149,7 @@ export function createEmbeddedSession(options: EmbeddedSessionOptions): Embedded
         // 新代 transport 与旧代在途回调据此区分。
         setResearchToken(message.token, message.expiresAt)
         authEpoch += 1
+        const previousAuthenticated = state.status === 'authenticated'
         setState({
           status: 'authenticated',
           authEpoch,
@@ -145,7 +158,16 @@ export function createEmbeddedSession(options: EmbeddedSessionOptions): Embedded
           projectId: claims.projectId,
           role: claims.role,
           // RWV2-50：Token 刷新不抹掉已应用主题（仅 authenticated 前态携带）
-          embeddedTheme: state.status === 'authenticated' ? state.embeddedTheme : undefined,
+          embeddedTheme: previousAuthenticated ? state.embeddedTheme : undefined,
+          // W1 契约 v1（D-UI-02）：语言随认证存续，刷新同值保留。
+          embeddedLanguage: previousAuthenticated ? state.embeddedLanguage : undefined,
+          // W1 契约 v1（D-UI-01）：project 缺省时保留已有项目名（refresh 不丢名）。
+          embeddedProjectName:
+            message.project !== undefined
+              ? message.project.name
+              : previousAuthenticated
+                ? state.embeddedProjectName
+                : undefined,
         })
         break
       }
@@ -165,6 +187,8 @@ export function createEmbeddedSession(options: EmbeddedSessionOptions): Embedded
                 projectId: state.projectId,
                 role: state.role,
                 embeddedTheme: state.embeddedTheme,
+                embeddedLanguage: state.embeddedLanguage,
+                embeddedProjectName: state.embeddedProjectName,
               }
             : {}),
         })
@@ -177,6 +201,13 @@ export function createEmbeddedSession(options: EmbeddedSessionOptions): Embedded
         break
       case 'destroy':
         destroy()
+        break
+      case 'language':
+        // W1 契约 v1（D-UI-02）：与 theme 同一 fail-closed 语义——只在
+        // authenticated 后应用；同值去重，避免宿主重放触发冗余 changeLanguage。
+        if (state.status === 'authenticated' && state.embeddedLanguage !== message.language) {
+          setState({ ...state, embeddedLanguage: message.language })
+        }
         break
       case 'theme':
         // RWV2-50：父页主题仅在 authenticated 后应用（fail-closed）；

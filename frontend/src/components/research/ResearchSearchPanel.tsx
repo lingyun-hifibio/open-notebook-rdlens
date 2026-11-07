@@ -9,10 +9,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
 import { ResearchCitationList } from './ResearchCitationList'
 import { ResultActions } from './ResultActions'
-import {
-  SearchContextSelector,
-  CONTEXT_LEVELS,
-} from './SearchContextSelector'
+import { CONTEXT_LEVELS, SearchContextSelector } from './SearchContextSelector'
 import { fetchContextPreview, newIdempotencyKey, searchV1 } from '@/lib/research/api'
 import { fetchC05Preview } from '@/lib/research/api'
 import { researchModelBlockedHint, useResearchGlobalModel } from '@/lib/hooks/use-research-global-model'
@@ -101,6 +98,13 @@ interface FrozenDispatch {
   envelope: Record<string, unknown>
 }
 
+/** 检索档位 → i18n label（只读摘要用；档位技术 token 一并展示）。 */
+const SEARCH_CONTEXT_LEVEL_KEY: Record<string, string> = {
+  focused: 'research.target.secondary.levelFocused',
+  document: 'research.target.secondary.levelDocument',
+  workspace: 'research.target.secondary.levelWorkspace',
+}
+
 export function ResearchSearchPanel({
   projectId,
   active = true,
@@ -109,6 +113,8 @@ export function ResearchSearchPanel({
   onViewNote,
   onCitationJump,
   sources = [],
+  showSearchContext = true,
+  showSearchContextSummary = false,
 }: {
   projectId: string
   /**
@@ -133,6 +139,18 @@ export function ResearchSearchPanel({
    * 复核跳转四闸（可选，默认 []——缺失时显示 document_id/version 且禁用跳转）。
    */
   sources?: readonly ResearchSource[]
+  /**
+   * W1 #1104（目标壳 D-UI-06）：隐藏显式 Search context 控件——目标壳不暴露
+   * 独立检索上下文，实际范围随操作声明并受左栏/当前对话范围约束。
+   * 默认 true：旧壳行为不变。
+   */
+  showSearchContext?: boolean
+  /**
+   * W1 #1104（审查 B F3 / D-UI-06）：目标壳不提供可编辑 Search context 控件，
+   * 但必须**显式呈现本次实际档位**（只读摘要）并保留自动收敛提示，避免
+   * "隐藏了档位却仍按隐藏档位派发"的静默行为。默认 false：旧壳行为不变。
+   */
+  showSearchContextSummary?: boolean
 }) {
   const { t } = useTranslation()
   // #1014：搜索历史能力位（加性 /models.capabilities.search_history，严格
@@ -521,9 +539,11 @@ export function ResearchSearchPanel({
     if (!gate.canSubmit) {
       setError({
         code: gate.blockedReason,
-        message: gate.blockedReason === 'budget_exceeded'
-          ? 'Preview budget exceeded for the selected path — narrow or split the task.'
-          : 'Required preview checks are unavailable — retry after they complete.',
+        message: t(
+          gate.blockedReason === 'budget_exceeded'
+            ? 'research.searchErrorBudgetExceeded'
+            : 'research.searchErrorPreviewChecksUnavailable',
+        ),
       })
       return
     }
@@ -534,7 +554,7 @@ export function ResearchSearchPanel({
     if ('blocked' in prepared) {
       setError({
         code: 'key_retry_exhausted',
-        message: 'Recovery window for the previous attempt is exhausted; review the pending result before retrying.',
+        message: t('research.searchErrorRecoveryExhausted'),
       })
       return
     }
@@ -606,21 +626,36 @@ export function ResearchSearchPanel({
             </Button>
           </div>
         )}
-        <SearchContextSelector
-          contextDefault={searchContextDefault}
-          supportedLevels={supportedLevels}
-          selectedLevel={selectedLevel}
-          onSelectLevel={(level) => {
-            interactedRef.current = true
-            setAdjustedFrom(null)
-            setDocumentLevelAdjusted(false)
-            setSelectedLevel(level)
-          }}
-          onSaveContext={(level) => void handleSaveContext(level)}
-          saving={savingContext}
-          disabled={isSavingModel}
-        />
-        {adjustedFrom !== null && (
+        {showSearchContext && (
+          <SearchContextSelector
+            contextDefault={searchContextDefault}
+            supportedLevels={supportedLevels}
+            selectedLevel={selectedLevel}
+            onSelectLevel={(level) => {
+              interactedRef.current = true
+              setAdjustedFrom(null)
+              setDocumentLevelAdjusted(false)
+              setSelectedLevel(level)
+            }}
+            onSaveContext={(level) => void handleSaveContext(level)}
+            saving={savingContext}
+            disabled={isSavingModel}
+          />
+        )}
+        {!showSearchContext && showSearchContextSummary && (
+          <p
+            className="text-xs text-muted-foreground"
+            data-testid="search-context-summary"
+            data-context-level={selectedLevel}
+          >
+            {t('research.target.secondary.searchLevel', {
+              level: `${t(SEARCH_CONTEXT_LEVEL_KEY[selectedLevel])} (${selectedLevel})`,
+            })}
+            {' · '}
+            {t('research.target.secondary.searchLevelHint')}
+          </p>
+        )}
+        {(showSearchContext || showSearchContextSummary) && adjustedFrom !== null && (
           <p className="mt-1 text-xs text-amber-600" data-testid="context-auto-adjusted">
             {t('research.searchContext.autoAdjusted', { level: adjustedFrom })}
           </p>
@@ -724,7 +759,7 @@ export function ResearchSearchPanel({
               )}
               {result.provider_id && (
                 <Badge variant="outline" data-testid="search-provider">
-                  provider: {result.provider_id}
+                  {t('research.resultProvider')}: {result.provider_id}
                 </Badge>
               )}
               {result.context_level && (

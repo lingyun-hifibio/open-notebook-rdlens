@@ -133,6 +133,12 @@ function workbenchEl(): HTMLElement {
   return screen.getByTestId('workbench')
 }
 
+// W1 #1104：旧壳页面组合层的既有断言继续有效——本文件统一以
+// `?legacy=1` 渲染旧壳（默认 `/research` 已切到目标壳，见 page.target.test.tsx）。
+beforeEach(() => {
+  window.history.replaceState(null, '', '/research?legacy=1')
+})
+
 describe('/research 页面骨架', () => {
   beforeEach(() => {
     mediaQueryMocks.hasUsableHeight.mockReturnValue(true)

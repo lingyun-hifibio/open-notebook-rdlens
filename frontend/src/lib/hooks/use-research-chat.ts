@@ -1511,12 +1511,18 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
         }
         if (ref.kind === 'global') {
           if (input.scope !== null) {
+            // H1（W1 #1104 第 3/4 轮审查）：后端 §5.3 对 single 只禁止
+            // `source_ids` 非空（C-05 `buildSourceScope` 同义）；调用方误带
+            // base（selected）source ID 时在这里防御性归一，避免 marker
+            // sanitize 失败/严格后端 422。
+            const single = input.scope.mode === 'single'
             request.source_scope = {
               mode: input.scope.mode,
-              source_ids: [...input.scope.sourceIds],
+              source_ids: single ? [] : [...input.scope.sourceIds],
               single_source_id: input.scope.singleSourceId,
             }
           }
+          // single 不禁止 note_ids：显式 Note 上下文原样保留（M04）。
           request.note_ids = [...input.noteIds]
         }
         // Issue #1013（D1-E-2）§2.11：选段只在 headed 提交携带；范围/检索

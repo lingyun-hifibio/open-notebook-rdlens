@@ -397,3 +397,129 @@ describe('createEmbeddedSession（REQ-EMB-01/02，契约 v0 §12）', () => {
     expect(h.session.getState().embeddedTheme).toBe('dark')
   })
 })
+
+// ── W1 宿主契约 v1（#1104）：宿主语言与项目名（D-UI-01 / D-UI-02） ──
+
+describe('createEmbeddedSession · 宿主语言（D-UI-02）', () => {
+  beforeEach(() => {
+    clearResearchToken()
+  })
+
+  afterEach(() => {
+    clearResearchToken()
+    vi.restoreAllMocks()
+  })
+
+  it('未认证时 language 消息被忽略（与 theme 同一 fail-closed 语义）', () => {
+    const h = makeHarness()
+    const transitionsBefore = h.states.length
+    h.dispatch({ data: inboundMessage(h.posted[0].data, { type: 'language', language: 'zh-CN' }) })
+    expect(h.session.getState().status).toBe('ready')
+    expect(h.session.getState().embeddedLanguage).toBeUndefined()
+    expect(h.states.length).toBe(transitionsBefore)
+  })
+
+  it('认证后 language 消息生效，同值去重', () => {
+    const h = makeHarness()
+    const ready = h.posted[0].data
+    h.dispatch({ data: inboundMessage(ready) })
+    h.dispatch({ data: inboundMessage(ready, { type: 'language', language: 'zh-CN' }) })
+    expect(h.session.getState().embeddedLanguage).toBe('zh-CN')
+    const transitionsBefore = h.states.length
+    h.dispatch({ data: inboundMessage(ready, { type: 'language', language: 'zh-CN' }) })
+    expect(h.states.length).toBe(transitionsBefore)
+    h.dispatch({ data: inboundMessage(ready, { type: 'language', language: 'en-US' }) })
+    expect(h.session.getState().embeddedLanguage).toBe('en-US')
+  })
+
+  it('非法 language 载荷被静默拒绝，状态不变', () => {
+    const h = makeHarness()
+    const ready = h.posted[0].data
+    h.dispatch({ data: inboundMessage(ready) })
+    const transitionsBefore = h.states.length
+    h.dispatch({ data: inboundMessage(ready, { type: 'language', language: 'fr-FR' }) })
+    expect(h.states.length).toBe(transitionsBefore)
+    expect(h.session.getState().embeddedLanguage).toBeUndefined()
+  })
+
+  it('token 刷新保留已应用语言；logout 清除', () => {
+    const h = makeHarness()
+    const ready = h.posted[0].data
+    h.dispatch({ data: inboundMessage(ready) })
+    h.dispatch({ data: inboundMessage(ready, { type: 'language', language: 'zh-CN' }) })
+    h.dispatch({ data: inboundMessage(ready, { type: 'refresh', expires_at: 1754460900 }) })
+    expect(h.session.getState().status).toBe('authenticated')
+    expect(h.session.getState().embeddedLanguage).toBe('zh-CN')
+    h.dispatch({ data: inboundMessage(ready, { type: 'logout' }) })
+    expect(h.session.getState().embeddedLanguage).toBeUndefined()
+  })
+})
+
+describe('createEmbeddedSession · 宿主项目名（D-UI-01）', () => {
+  beforeEach(() => {
+    clearResearchToken()
+  })
+
+  afterEach(() => {
+    clearResearchToken()
+    vi.restoreAllMocks()
+  })
+
+  it('token 携带 project.name → 写入会话语义状态', () => {
+    const h = makeHarness()
+    h.dispatch({ data: inboundMessage(h.posted[0].data, { project: { name: 'CAR-T 研究' } }) })
+    expect(h.session.getState().status).toBe('authenticated')
+    expect(h.session.getState().embeddedProjectName).toBe('CAR-T 研究')
+  })
+
+  it('refresh 缺 project 字段时保留已有项目名（不因刷新丢名）', () => {
+    const h = makeHarness()
+    const ready = h.posted[0].data
+    h.dispatch({ data: inboundMessage(ready, { project: { name: 'Project A' } }) })
+    h.dispatch({ data: inboundMessage(ready, { type: 'refresh', expires_at: 1754460900 }) })
+    expect(h.session.getState().embeddedProjectName).toBe('Project A')
+  })
+
+  it('refresh 携带新 project 时更新项目名；logout/destroy 清除', () => {
+    const h = makeHarness()
+    const ready = h.posted[0].data
+    h.dispatch({ data: inboundMessage(ready, { project: { name: 'Project A' } }) })
+    h.dispatch({
+      data: inboundMessage(ready, {
+        type: 'refresh',
+        project: { name: 'Project B' },
+        expires_at: 1754460900,
+      }),
+    })
+    expect(h.session.getState().embeddedProjectName).toBe('Project B')
+    h.dispatch({ data: inboundMessage(ready, { type: 'logout' }) })
+    expect(h.session.getState().embeddedProjectName).toBeUndefined()
+
+    h.dispatch({ data: inboundMessage(ready, { project: { name: 'Project C' } }) })
+    h.dispatch({ data: inboundMessage(ready, { type: 'destroy' }) })
+    expect(h.session.getState().embeddedProjectName).toBeUndefined()
+  })
+
+  it('非法 project 载荷整条消息丢弃（不进入 authenticated，不降级伪造项目名）', () => {
+    const h = makeHarness()
+    const stateBefore = h.session.getState()
+    h.dispatch({ data: inboundMessage(h.posted[0].data, { project: { name: 'A'.repeat(201) } }) })
+    expect(h.session.getState()).toEqual(stateBefore)
+    expect(h.session.getState().status).toBe('ready')
+  })
+
+  it('曾认证后 error 态保留项目名（与 theme 的保留分支一致）', () => {
+    const h = makeHarness()
+    const ready = h.posted[0].data
+    h.dispatch({ data: inboundMessage(ready, { project: { name: 'Project A' } }) })
+    h.dispatch({
+      data: inboundMessage(ready, {
+        type: 'error',
+        code: 'refresh_failed',
+        message: 'gateway outage',
+      }),
+    })
+    expect(h.session.getState().status).toBe('error')
+    expect(h.session.getState().embeddedProjectName).toBe('Project A')
+  })
+})
