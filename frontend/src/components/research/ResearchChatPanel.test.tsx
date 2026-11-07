@@ -154,6 +154,9 @@ function renderPanel(
     onScrollToMessageResult: (found: boolean) => void
     onSelectionJump: (selection: WireSelectionProjection) => void
     onSelectionConsumed: () => void
+    // #1106：回答脚注「改用途」/ 422 scope 纠正动作
+    onRequestPurposeChange: (query: string) => void
+    onRetryWithPurpose: (query: string) => Promise<boolean>
   }> = {},
 ) {
   if (overrides.scope) seedScope(overrides.scope)
@@ -182,6 +185,8 @@ function renderPanel(
         onScrollToMessageResult={overrides.onScrollToMessageResult}
         onSelectionJump={overrides.onSelectionJump}
         onSelectionConsumed={overrides.onSelectionConsumed}
+        onRequestPurposeChange={overrides.onRequestPurposeChange}
+        onRetryWithPurpose={overrides.onRetryWithPurpose}
       />
       <SinglePinControl />
     </ResearchScopeProvider>
@@ -4095,5 +4100,121 @@ describe('ResearchChatPanel · Issue #1013', () => {
     )
     expect(screen.queryByTestId('chat-return-target-unavailable')).toBeNull()
     expect(onScrollToMessageResult).toHaveBeenCalledWith(true)
+  })
+})
+
+// W1 #1106 PR-B：assistant 脚注 purpose + 来源（诚实映射）+ 改用途入口 +
+// 422 scope_selected_empty 的「改为探索讨论并重发」纠正动作。
+describe('ResearchChatPanel #1106 本次用途脚注与纠正', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+  afterEach(() => {
+    cleanup()
+    localStorage.clear()
+  })
+
+  const userTurn = turn({ id: 'u1', role: 'user', content: 'Q1', status: 'done' })
+
+  it.each([
+    ['document_qa', 'explicit', 'research.target.composer.purpose.footnote'],
+    ['exploration', 'inferred', 'research.target.composer.purpose.footnote'],
+    ['writing', 'default_legacy', 'research.target.composer.purpose.footnote'],
+  ] as const)(
+    '来源映射原样展示：%s/%s（文本键 + data 属性）',
+    (purpose, source, footnoteKey) => {
+      renderPanel([
+        userTurn,
+        turn({ id: 'a1', content: 'A1', workPurpose: purpose, workPurposeSource: source }),
+      ])
+      const footnote = screen.getByTestId('chat-turn-purpose')
+      expect(footnote).toHaveAttribute('data-purpose', purpose)
+      expect(footnote).toHaveAttribute('data-purpose-source', source)
+      expect(footnote).toHaveTextContent(footnoteKey)
+    },
+  )
+
+  it('旧行/未记录：null+not_recorded → 「未记录」，不回填 document_qa', () => {
+    renderPanel([
+      userTurn,
+      turn({ id: 'a1', content: 'A1', workPurpose: null, workPurposeSource: 'not_recorded' }),
+    ])
+    const footnote = screen.getByTestId('chat-turn-purpose')
+    expect(footnote).not.toHaveAttribute('data-purpose')
+    expect(footnote).toHaveAttribute('data-purpose-source', 'not_recorded')
+    expect(footnote).toHaveTextContent('research.target.composer.purpose.footnoteNotRecorded')
+  })
+
+  it('live turn 未收到 usage（source=null）→ 不显示脚注（不冒充未记录）', () => {
+    renderPanel([userTurn, turn({ id: 'a1', content: 'A1' })])
+    expect(screen.queryByTestId('chat-turn-purpose')).toBeNull()
+  })
+
+  it('「改用途」把该轮提问交给上一级（prefill 回 composer 的新请求入口）', () => {
+    const onChange = vi.fn()
+    renderPanel(
+      [
+        userTurn,
+        turn({
+          id: 'a1',
+          content: 'A1',
+          workPurpose: 'exploration',
+          workPurposeSource: 'inferred',
+        }),
+      ],
+      vi.fn(),
+      { onRequestPurposeChange: onChange },
+    )
+    fireEvent.click(screen.getByTestId('chat-turn-purpose-change'))
+    expect(onChange).toHaveBeenCalledWith('Q1')
+  })
+
+  it('未传 onRequestPurposeChange → 不渲染「改用途」动作（旧壳/能力关闭）', () => {
+    renderPanel(
+      [
+        userTurn,
+        turn({
+          id: 'a1',
+          content: 'A1',
+          workPurpose: 'exploration',
+          workPurposeSource: 'inferred',
+        }),
+      ],
+    )
+    expect(screen.queryByTestId('chat-turn-purpose-change')).toBeNull()
+  })
+
+  it('422 scope_selected_empty → 显示「改为探索讨论并重发」并回传原 query', async () => {
+    const retry = vi.fn(async () => true)
+    renderPanel(
+      [
+        userTurn,
+        turn({
+          id: 'a1',
+          content: '',
+          status: 'error',
+          errorCode: 'scope_selected_empty',
+          errorMessage: 'scope_selected_empty',
+          submittedQuery: 'Q1',
+        }),
+      ],
+      vi.fn(),
+      { onRetryWithPurpose: retry },
+    )
+    expect(screen.getByTestId('chat-scope-purpose-recovery')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('chat-scope-purpose-retry'))
+    expect(retry).toHaveBeenCalledWith('Q1')
+  })
+
+  it('其他错误码不显示 scope 用途纠正动作', () => {
+    renderPanel(
+      [
+        userTurn,
+        turn({ id: 'a1', content: '', status: 'error', errorCode: 'internal', errorMessage: 'x' }),
+      ],
+      vi.fn(),
+      { onRetryWithPurpose: vi.fn(async () => true) },
+    )
+    expect(screen.queryByTestId('chat-scope-purpose-recovery')).toBeNull()
   })
 })

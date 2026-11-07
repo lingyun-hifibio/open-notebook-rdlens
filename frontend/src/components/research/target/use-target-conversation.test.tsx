@@ -173,6 +173,8 @@ const globalModelFixture = vi.hoisted(() => ({
   canExecute: true,
   confirmedModelId: 'model_1' as string | null,
   blockedReason: null as string | null,
+  // #1106：purpose 推断能力位（默认 false=fail-closed；用例可覆盖）
+  purposeInferenceAvailable: false,
 }))
 
 const sessionsFixture = vi.hoisted(() => {
@@ -283,6 +285,7 @@ vi.mock('@/lib/hooks/use-research-global-model', async (importOriginal) => {
       blockedReason: globalModelFixture.blockedReason,
       confirmedModelId: globalModelFixture.confirmedModelId,
       localModelUnavailableMessage: null,
+      purposeInferenceAvailable: globalModelFixture.purposeInferenceAvailable,
     }),
   }
 })
@@ -387,7 +390,9 @@ function wrapper({ children }: { children: React.ReactNode }) {
 
 function useTargetHarness() {
   return {
-    conversation: useTargetConversation(),
+    conversation: useTargetConversation({
+      purposeInferenceAvailable: globalModelFixture.purposeInferenceAvailable,
+    }),
     scope: useResearchScope(),
   }
 }
@@ -419,6 +424,7 @@ beforeEach(() => {
   globalModelFixture.canExecute = true
   globalModelFixture.confirmedModelId = 'model_1'
   globalModelFixture.blockedReason = null
+  globalModelFixture.purposeInferenceAvailable = false
   chatFixture.lastOptions = null
 })
 
@@ -700,5 +706,135 @@ describe('TargetShell 集成（真实 hook + 真实 composer 发送路径，F6�
         'research.target.composer.sendFailed',
       ),
     )
+  })
+})
+
+// #1106 PR-B：本次用途接线——显式 purpose 透传 controller.send、自动判断
+// 省略（null）、能力关闭不发（防 426）、空 selected 放行（D5）、发送后复位。
+describe('useTargetConversation #1106 本次用途', () => {
+  it('显式 purpose 透传 controller.send；发送成功后回到自动判断', async () => {
+    globalModelFixture.purposeInferenceAvailable = true
+    displayFixture.display = { surface: 'global', ref: SESSION_REF }
+    const { result } = renderHook(useTargetHarness, { wrapper })
+    await waitFor(() => expect(result.current.conversation.sessionWired).toBe(true))
+    expect(result.current.conversation.workPurpose).toBeNull()
+
+    act(() => result.current.conversation.setWorkPurpose('exploration'))
+    let sent = false
+    await act(async () => {
+      sent = await result.current.conversation.send('Question')
+    })
+    expect(sent).toBe(true)
+    const payload = controllerFixture.send.mock.calls[0][0] as Record<string, unknown>
+    expect(payload.workPurpose).toBe('exploration')
+    // D7/§9：显式用途只作用于刚派发的下一请求；成功后回到自动判断。
+    expect(result.current.conversation.workPurpose).toBeNull()
+  })
+
+  it('自动判断：controller.send 收到 null（上游据此省略 wire 字段，绝不发 null）', async () => {
+    globalModelFixture.purposeInferenceAvailable = true
+    displayFixture.display = { surface: 'global', ref: SESSION_REF }
+    const { result } = renderHook(useTargetHarness, { wrapper })
+    await waitFor(() => expect(result.current.conversation.sessionWired).toBe(true))
+    await act(async () => {
+      expect(await result.current.conversation.send('Question')).toBe(true)
+    })
+    const payload = controllerFixture.send.mock.calls[0][0] as Record<string, unknown>
+    expect(payload.workPurpose).toBeNull()
+  })
+
+  it('能力位关闭：即使 state 有显式 purpose 也不发送（防后端 426）', async () => {
+    displayFixture.display = { surface: 'global', ref: SESSION_REF }
+    const { result } = renderHook(useTargetHarness, { wrapper })
+    await waitFor(() => expect(result.current.conversation.sessionWired).toBe(true))
+    act(() => result.current.conversation.setWorkPurpose('writing'))
+    await act(async () => {
+      expect(await result.current.conversation.send('Question')).toBe(true)
+    })
+    const payload = controllerFixture.send.mock.calls[0][0] as Record<string, unknown>
+    expect(payload.workPurpose).toBeNull()
+  })
+
+  it('D5：空 selected + 自动判断 + inference on → 可发送（交服务端推断，零本地阻断）', async () => {
+    globalModelFixture.purposeInferenceAvailable = true
+    displayFixture.display = { surface: 'global', ref: SESSION_REF }
+    const { result } = renderHook(useTargetHarness, { wrapper })
+    await waitFor(() => expect(result.current.conversation.sessionWired).toBe(true))
+    act(() => result.current.scope.toggleSource('src_1'))
+    await waitFor(() =>
+      expect(editorFixture.setScope).toHaveBeenCalledWith({
+        mode: 'selected',
+        sourceIds: ['src_1'],
+        noteIds: [],
+      }),
+    )
+    // BEH-03：清空最后一份必须用显式 removeSource（toggleSource 保留旧壳
+    // 防误触「最后一份不可取消」语义）。
+    act(() => result.current.scope.removeSource('src_1'))
+    await waitFor(() => expect(editorFixture.snapshot.baseScope.sourceIds).toEqual([]))
+    expect(result.current.conversation.scopeBlockedText).toBeNull()
+
+    let sent = false
+    await act(async () => {
+      sent = await result.current.conversation.send('Question')
+    })
+    expect(sent).toBe(true)
+    expect(controllerFixture.send).toHaveBeenCalledTimes(1)
+    const payload = controllerFixture.send.mock.calls[0][0] as Record<string, unknown>
+    expect(payload.workPurpose).toBeNull()
+    expect(payload.sourceIds).toEqual([])
+    expect((payload.scope as Record<string, unknown>).mode).toBe('selected')
+  })
+
+  it('空 selected + inference off → 保持现行本地阻断（不派发）', async () => {
+    displayFixture.display = { surface: 'global', ref: SESSION_REF }
+    const { result } = renderHook(useTargetHarness, { wrapper })
+    await waitFor(() => expect(result.current.conversation.sessionWired).toBe(true))
+    act(() => result.current.scope.toggleSource('src_1'))
+    await waitFor(() => expect(editorFixture.snapshot.baseScope.sourceIds).toEqual(['src_1']))
+    act(() => result.current.scope.removeSource('src_1'))
+    await waitFor(() => expect(editorFixture.snapshot.baseScope.sourceIds).toEqual([]))
+    expect(result.current.conversation.scopeBlockedText).toBe('research.target.composer.scopeBlocked')
+
+    let sent = true
+    await act(async () => {
+      sent = await result.current.conversation.send('Question')
+    })
+    expect(sent).toBe(false)
+    expect(controllerFixture.send).not.toHaveBeenCalled()
+    expect(result.current.conversation.sendError).toBe('research.target.composer.scopeBlocked')
+  })
+
+  it('D6：sendWithPurpose 以显式 exploration 重发同一 query（新请求）', async () => {
+    globalModelFixture.purposeInferenceAvailable = true
+    displayFixture.display = { surface: 'global', ref: SESSION_REF }
+    const { result } = renderHook(useTargetHarness, { wrapper })
+    await waitFor(() => expect(result.current.conversation.sessionWired).toBe(true))
+    await act(async () => {
+      expect(
+        await result.current.conversation.sendWithPurpose('Question', 'exploration'),
+      ).toBe(true)
+    })
+    const payload = controllerFixture.send.mock.calls[0][0] as Record<string, unknown>
+    expect(payload.query).toBe('Question')
+    expect(payload.workPurpose).toBe('exploration')
+    // 成功后 state 回到自动判断（下一请求默认）。
+    expect(result.current.conversation.workPurpose).toBeNull()
+  })
+
+  it('发送失败保留显式 purpose（用户可重试/修正，不静默丢意图）', async () => {
+    globalModelFixture.purposeInferenceAvailable = true
+    displayFixture.display = { surface: 'global', ref: SESSION_REF }
+    controllerFixture.send.mockResolvedValue({
+      status: 'blocked',
+      error: { code: 'session_busy', message: 'busy' },
+    } as never)
+    const { result } = renderHook(useTargetHarness, { wrapper })
+    await waitFor(() => expect(result.current.conversation.sessionWired).toBe(true))
+    act(() => result.current.conversation.setWorkPurpose('writing'))
+    await act(async () => {
+      expect(await result.current.conversation.send('Question')).toBe(false)
+    })
+    expect(result.current.conversation.workPurpose).toBe('writing')
   })
 })
