@@ -33,7 +33,7 @@ import {
   parseWorkPurposePair,
   type ResearchWorkPurpose,
   type ResearchWorkPurposeSource,
-} from './work-purpose'
+} from './types'
 
 /**
  * 受理回执投影（#602 第三批 PR-5a）：`session_ref` 经契约校验后转 camelCase。

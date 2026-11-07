@@ -17,6 +17,7 @@ import { TargetConversation } from './TargetConversation'
 import { TargetRightPane } from './TargetRightPane'
 import { TargetSecondaryView } from './TargetSecondaryView'
 import { useTargetConversation } from './use-target-conversation'
+import { useResearchPurposeCapability } from './use-purpose-capability'
 import {
   TARGET_MIN_VIEWPORT,
   TARGET_THREE_COLUMN_VIEWPORT,
@@ -64,7 +65,8 @@ export function TargetShell() {
   const { t } = useTranslation()
   const { projectId } = useResearchWorkspace()
   const host = useResearchHostOptional()
-  const conversation = useTargetConversation()
+  const purposeInferenceAvailable = useResearchPurposeCapability(projectId)
+  const conversation = useTargetConversation({ purposeInferenceAvailable })
   const jobsController = useResearchJobsController()
   const scopeApi = useResearchScope()
   const sourcesQuery = useResearchSources(projectId)

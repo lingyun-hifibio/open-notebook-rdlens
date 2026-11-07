@@ -62,7 +62,7 @@ import {
   submissionViewMatches,
 } from './conversation-machine'
 import type { ResearchAcceptedReceipt } from './sse'
-import type { ResearchWorkPurpose } from './work-purpose'
+import type { ResearchWorkPurpose } from './types'
 import type { ResearchSseEvent } from './types'
 import {
   purgeResearchAuthScope,

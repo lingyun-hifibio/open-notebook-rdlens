@@ -17,7 +17,7 @@ import {
   RESEARCH_WORK_PURPOSES,
   workPurposeLabelKey,
   type ResearchWorkPurpose,
-} from '@/lib/research/work-purpose'
+} from '@/lib/research/types'
 import type { UseResearchEditorResult } from '@/lib/hooks/use-research-editor'
 
 /**
@@ -121,12 +121,20 @@ export function TargetComposer({
     phase: isStreaming ? ('streaming' as const) : ('idle' as const),
   }
 
+  // #1106/D5（§8.7）：headed global Chat 的空 selected 由 purpose 语义裁决——
+  // 显式 exploration/writing，或 inference 能力严格 true 时的「自动判断」
+  // （交服务端推断/422）；其余（inference off、显式 document_qa）保持既有
+  // `scope_invalid` 本地阻断（旧壳 params 缺省 false，零回归）。
+  const allowEmptySelectedScope =
+    purposeInferenceAvailable &&
+    (workPurpose === null || workPurpose === 'exploration' || workPurpose === 'writing')
   const rawGate: ResearchDraftGate = sessionWired
     ? deriveResearchDraftGate({
         editorSnapshot,
         conversationSnapshot,
         submissionReady,
         kind: 'global',
+        allowEmptySelectedScope,
       })
     : {
         allowed: draftText.trim().length > 0 && !isStreaming && !isAdminReadonly,

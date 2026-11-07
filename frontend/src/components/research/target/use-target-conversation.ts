@@ -32,8 +32,7 @@ import {
 } from '@/lib/research/scope'
 import { buildSubmissionKey } from '@/lib/research/session-idempotency'
 import type { ConversationController } from '@/lib/research/session-runtime'
-import type { ResearchWorkPurpose } from '@/lib/research/work-purpose'
-import type { EditorSnapshot, ScopeEdit } from '@/lib/research/types'
+import type { EditorSnapshot, ResearchWorkPurpose, ScopeEdit } from '@/lib/research/types'
 import type { ResearchSessionRef } from '@/lib/research/session-contract'
 import type { ResearchSource } from '@/lib/types/research'
 
@@ -213,7 +212,11 @@ export interface TargetConversationState {
   pinSingleSource: (sourceId: string) => boolean
 }
 
-export function useTargetConversation(): TargetConversationState {
+export function useTargetConversation(options: {
+  /** #1106：由 TargetShell 从 `useResearchPurposeCapability` 注入（fail-closed）。 */
+  purposeInferenceAvailable?: boolean
+} = {}): TargetConversationState {
+  const purposeInferenceAvailable = options.purposeInferenceAvailable === true
   const { t } = useTranslation()
   const { toast } = useToast()
   const { projectId } = useResearchWorkspace()
@@ -415,7 +418,6 @@ export function useTargetConversation(): TargetConversationState {
     blockedReason,
     confirmedModelId,
     localModelUnavailableMessage,
-    purposeInferenceAvailable,
   } = useResearchGlobalModel()
   const blockedHint = researchModelBlockedHint(blockedReason, t, localModelUnavailableMessage)
 

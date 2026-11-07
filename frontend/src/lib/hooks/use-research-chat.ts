@@ -42,6 +42,7 @@ import {
   selectionContextToWire,
   MESSAGE_PROJECTION_HEADER,
   resolveMessageProjectionVersion,
+  readMessageWorkPurpose,
   SESSION_CONTRACT_HEADER,
   SESSION_CONTRACT_VERSION,
   type MessageProjectionVersion,
@@ -73,12 +74,11 @@ import type {
 } from '@/lib/research/session-runtime'
 import type { ConversationTurnState } from '@/lib/research/conversation-machine'
 import { buildSourceScope } from '@/lib/research/c05-request'
-import type { ResearchChatRequest } from '@/lib/research/types'
-import {
-  readMessageWorkPurpose,
-  type ResearchWorkPurpose,
-  type ResearchWorkPurposeSource,
-} from '@/lib/research/work-purpose'
+import type {
+  ResearchChatRequest,
+  ResearchWorkPurpose,
+  ResearchWorkPurposeSource,
+} from '@/lib/research/types'
 import { classifyC05Error } from '@/lib/research/c05-error-actions'
 import {
   parseGenerationIdFromMessageId,
@@ -1555,7 +1555,13 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
         }
         // #1106（W1 PR-B）：显式用途才上 wire；「自动判断」省略字段
         // （后端 flag on 缺失 → 服务端推断；显式 null 会 422，绝不可发）。
-        if (input.workPurpose !== null && input.workPurpose !== undefined) {
+        // D2：推断/用途只作用于 headed **global** Chat——source kind 的
+        // `SourceSessionSubmission` 是 extra=forbid，绝不可携带 work_purpose。
+        if (
+          ref.kind === 'global' &&
+          input.workPurpose !== null &&
+          input.workPurpose !== undefined
+        ) {
           request.work_purpose = input.workPurpose
         }
         // Issue #1013（D1-E-2）§2.11：选段只在 headed 提交携带；范围/检索

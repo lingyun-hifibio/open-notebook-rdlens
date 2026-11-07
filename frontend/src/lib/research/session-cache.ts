@@ -756,9 +756,9 @@ const SUBMISSION_BASE_KEYS = new Set([
   'model_id',
   'context_level',
   'response_language',
-  'work_purpose',
 ])
-const GLOBAL_ONLY_KEYS = new Set(['source_scope', 'note_ids'])
+// #1106：work_purpose 只允许 global（source chat 永不发送；D2 边界）。
+const GLOBAL_ONLY_KEYS = new Set(['source_scope', 'note_ids', 'work_purpose'])
 
 function isBoundedString(value: unknown, min: number, max: number): value is string {
   return typeof value === 'string' && value.length >= min && value.length <= max

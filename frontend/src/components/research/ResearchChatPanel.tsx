@@ -41,7 +41,7 @@ import type { ResearchGlobalChatCard } from '@/lib/research/api'
 import {
   workPurposeLabelKey,
   workPurposeSourceLabelKey,
-} from '@/lib/research/work-purpose'
+} from '@/lib/research/types'
 import { ResearchContextReport } from './ResearchContextReport'
 import {
   ResearchSubmissionStatus,

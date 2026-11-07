@@ -148,6 +148,14 @@ export function deriveResearchDraftGate(input: {
    * （能力翻转边界）。缺省/`false` 不改变任何既有 gate 行为。
    */
   readonly selectionUnavailable?: boolean
+  /**
+   * W1 #1106/D5（§8.7）：目标壳 headed global Chat 上空 selected 允许按
+   * purpose 放行——显式 exploration/writing，或 inference 能力可用时的
+   * 「自动判断」（服务端推断；无强信号由后端 422 可纠正）。缺省 `false`
+   * 保持既有 `scope_invalid` 门禁（旧壳零回归）；仅 TargetComposer 在能力位
+   * 严格 true 时传入与 D5 一致的值。
+   */
+  readonly allowEmptySelectedScope?: boolean
 }): ResearchDraftGate {
   const { editorSnapshot, conversationSnapshot } = input
   if (editorSnapshot === null) return { allowed: false, reason: 'runtime_unavailable' }
@@ -198,6 +206,7 @@ export function deriveResearchDraftGate(input: {
     return { allowed: false, reason: 'scope_invalid' }
   }
   if (
+    input.allowEmptySelectedScope !== true &&
     editorSnapshot.baseScope?.mode === 'selected' &&
     editorSnapshot.baseScope.sourceIds.length === 0 &&
     editorSnapshot.noteIds.length === 0 &&
