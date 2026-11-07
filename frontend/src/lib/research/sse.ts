@@ -29,6 +29,11 @@ import {
   type ResearchContextReportProjection,
   type ResearchSessionRef,
 } from './session-contract'
+import {
+  parseWorkPurposePair,
+  type ResearchWorkPurpose,
+  type ResearchWorkPurposeSource,
+} from './work-purpose'
 
 /**
  * 受理回执投影（#602 第三批 PR-5a）：`session_ref` 经契约校验后转 camelCase。
@@ -92,6 +97,13 @@ export interface ResearchSseState {
   contextReport: ResearchContextReportProjection | null
   /** #602 PR-5a（§9.5）：上下文覆盖投影。 */
   contextCoverage: ResearchContextCoverage | null
+  /**
+   * #1106（W1 PR-B）：`usage` 事件的持久化工作目的两级事实。
+   * null = 本端尚无信息（旧后端/flag off 未投影），UI 不显示脚注而不是
+   * 伪造「未记录」；投影出现但值为 null + `not_recorded` 时如实显示未记录。
+   */
+  workPurpose: ResearchWorkPurpose | null
+  workPurposeSource: ResearchWorkPurposeSource | null
   /** 乱序事件缓冲（按 event_id 升序），内部状态 */
   pending: ResearchSseEvent[]
 }
@@ -116,6 +128,8 @@ export function createSseState(): ResearchSseState {
     accepted: null,
     contextReport: null,
     contextCoverage: null,
+    workPurpose: null,
+    workPurposeSource: null,
     pending: [],
   }
 }
@@ -420,6 +434,18 @@ export function parseResearchEvent(payload: unknown): ResearchSseEvent | null {
   if (contextReport !== null) event.context_report = contextReport
   const contextCoverage = parseContextCoverageWire(payload.context_coverage)
   if (contextCoverage !== null) event.context_coverage = contextCoverage
+  // #1106（W1 PR-B）：usage 事件的持久化工作目的两键（与消息详情/completed
+  // 重放同一事实源）。只在 usage 事件消费；两键必须自洽成对，否则整组丢弃
+  // （不猜值、不跨事件拼接）。
+  if (type === 'usage') {
+    const pair = parseWorkPurposePair(payload)
+    if (pair !== null) {
+      event.work_purpose = pair.workPurpose
+      if (pair.workPurposeSource !== null) {
+        event.work_purpose_source = pair.workPurposeSource
+      }
+    }
+  }
   return event
 }
 
@@ -453,7 +479,18 @@ function applyOne(state: ResearchSseState, event: ResearchSseEvent): ResearchSse
     case 'citation':
       return { ...base, citations: mergeCitations(base.citations, event.citations ?? []) }
     case 'usage':
-      return { ...base, usage: event.usage ?? null, resolvedMode: event.resolved_mode ?? base.resolvedMode }
+      return {
+        ...base,
+        usage: event.usage ?? null,
+        resolvedMode: event.resolved_mode ?? base.resolvedMode,
+        // #1106（W1 PR-B）：同事件合并两级事实；两键缺失（flag off/旧后端）
+        // 保持原状态（null = 未知，不伪造「未记录」）。
+        workPurpose:
+          event.work_purpose_source === undefined
+            ? base.workPurpose
+            : event.work_purpose ?? null,
+        workPurposeSource: event.work_purpose_source ?? base.workPurposeSource,
+      }
     case 'done':
       return {
         ...base,

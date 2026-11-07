@@ -62,6 +62,7 @@ import {
   submissionViewMatches,
 } from './conversation-machine'
 import type { ResearchAcceptedReceipt } from './sse'
+import type { ResearchWorkPurpose } from './work-purpose'
 import type { ResearchSseEvent } from './types'
 import {
   purgeResearchAuthScope,
@@ -1148,6 +1149,11 @@ export interface ConversationStreamInput {
   readonly noteIds: readonly string[]
   /** global 新协议冻结的 source_scope（source kind 为 null）。 */
   readonly scope: ConversationScopeSnapshot | null
+  /**
+   * #1106（W1 PR-B）：用户显式选择的工作目的；null/缺省 = 「自动判断」
+   * （wire 省略 `work_purpose` 字段，**绝不发送 null**）。
+   */
+  readonly workPurpose?: ResearchWorkPurpose | null
   readonly onEvent: (event: ResearchSseEvent) => void
   readonly onEnd: () => void
   readonly onHttpError: (status: number, body: unknown) => void
@@ -1215,6 +1221,11 @@ export interface ConversationSendInput {
   readonly operationId: string
   readonly turnId?: string
   /**
+   * #1106（W1 PR-B）：显式工作目的（省略 = 自动判断）。重放/重试必须沿用
+   * 同一显式 purpose；改用途重发是**新意图**（新 draft token/新幂等键）。
+   */
+  readonly workPurpose?: ResearchWorkPurpose | null
+  /**
    * not_observed 后改稿/改范围/改模型再发送的显式重复执行确认（§6.3/§6.7）。
    * 未确认返回 blocked，不派发；确认为 true 时必须携带新的 draft_token 与
    * idempotency_key（同一意图重放不需要该字段）。
@@ -1233,6 +1244,8 @@ export interface ConversationRetryInput {
   readonly sourceIds?: readonly string[]
   readonly noteIds?: readonly string[]
   readonly scope?: ConversationScopeSnapshot | null
+  /** #1106（W1 PR-B）：重试沿用同一显式 purpose（省略 = 自动判断）。 */
+  readonly workPurpose?: ResearchWorkPurpose | null
 }
 
 export interface ConversationSnapshot {
@@ -1288,6 +1301,8 @@ interface ConversationRequestMeta {
   readonly sourceIds: readonly string[]
   readonly noteIds: readonly string[]
   readonly scope: ConversationScopeSnapshot | null
+  /** #1106（W1 PR-B）：本提交冻结的显式 purpose（null = 自动判断/省略字段）。 */
+  readonly workPurpose: ResearchWorkPurpose | null
 }
 
 function isTerminalTurn(turn: ConversationTurn | null): boolean {
@@ -1319,6 +1334,7 @@ function sameSubmissionIntent(
     && sameStringArray(meta.sourceIds, input.sourceIds ?? [])
     && sameStringArray(meta.noteIds, input.noteIds ?? [])
     && sameScope(meta.scope, input.scope ?? null)
+    && meta.workPurpose === (input.workPurpose ?? null)
     && meta.editorRevision === input.editorRevision
     && turn.identity.draftToken === input.draftToken
     && turn.identity.idempotencyKey === input.idempotencyKey
@@ -1602,6 +1618,8 @@ export function createConversationController(input: {
       sourceIds: meta.sourceIds,
       noteIds: meta.noteIds,
       scope: meta.scope,
+      // #1106：wire 只携带显式 purpose；自动判断省略字段（绝不发 null）。
+      workPurpose: meta.workPurpose,
       onEvent: (event) => dispatch({ type: 'sse', turnId, attempt: effect.attempt, event }),
       onEnd: () => dispatch({
         type: 'stream_end',
@@ -1911,6 +1929,7 @@ export function createConversationController(input: {
     sourceIds: readonly string[]
     noteIds: readonly string[]
     scope: ConversationScopeSnapshot | null
+    workPurpose: ResearchWorkPurpose | null
   }): void {
     requests.set(turnId, {
       query: seed.query,
@@ -1927,6 +1946,7 @@ export function createConversationController(input: {
         sourceIds: [...seed.scope.sourceIds],
         singleSourceId: seed.scope.singleSourceId,
       },
+      workPurpose: seed.workPurpose,
     })
   }
 
@@ -2028,6 +2048,8 @@ export function createConversationController(input: {
             sourceIds: input.sourceIds ?? [],
             noteIds: input.noteIds ?? [],
             scope,
+            // #1106：确认后的新意图沿用调用方给出的显式 purpose（未给 = 自动判断）。
+            workPurpose: input.workPurpose ?? null,
           }
       turnSequence += 1
       const turnId = input.turnId ?? `turn-${turnSequence}`
@@ -2082,6 +2104,7 @@ export function createConversationController(input: {
       sourceIds: input.sourceIds ?? [],
       noteIds: input.noteIds ?? [],
       scope,
+      workPurpose: input.workPurpose ?? null,
     })
     const identity = buildIdentity({
       turnId,
@@ -2131,6 +2154,8 @@ export function createConversationController(input: {
       editorIntentHash: input.editorIntentHash,
       idempotencyKey: input.idempotencyKey,
       operationId: input.operationId,
+      // #1106：retry/resend 沿用同一显式 purpose（改用途重发必须走新 token/key）。
+      workPurpose: input.workPurpose ?? null,
     })
   }
 

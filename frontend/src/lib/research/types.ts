@@ -109,6 +109,13 @@ export interface ResearchSseEvent {
   context_report?: ResearchContextReportWire
   /** #602 第三批 PR-5a：上下文覆盖（形状非法整组丢弃） */
   context_coverage?: ResearchContextCoverage
+  /**
+   * #1106（W1 PR-B）：`usage` 事件的持久化工作目的两级事实（与消息行/
+   * completed 重放同一来源）。旧行 `null` + `not_recorded`；flag off 时两键
+   * 不出现（不投影）。
+   */
+  work_purpose?: 'document_qa' | 'exploration' | 'writing' | null
+  work_purpose_source?: 'explicit' | 'inferred' | 'default_legacy' | 'not_recorded'
 }
 
 export type ResearchJobStatus = 'queued' | 'running' | 'cancelling' | 'cancelled' | 'completed' | 'failed'
@@ -254,6 +261,19 @@ export interface ResearchCapabilities {
    * 零回归，不臆造状态）；后端 fail-closed 仍是安全权威。
    */
   local_model?: unknown
+  /**
+   * #1106（W1 PR-A，加性）：目的推断能力位。只在 inference flag on 且
+   * D1-C 契约 on 时出现且为 `true`；缺失/非法/旧后端一律按不可用处理
+   * （fail-closed），读取见 `work-purpose.readPurposeInferenceCapability`。
+   * flag off 时 composer 摘要显示「默认（资料问答）」，不显示假控件。
+   */
+  purpose_inference?: unknown
+  /**
+   * #1106（W1 PR-A，加性）：当前可持久化的目的来源集合（含 `inferred`）。
+   * 只作探测/诊断参考；前端展示严格按消息行/SSE 的持久化 pair 读取，
+   * 不由该集合推断任何记录的值（不读就不猜）。
+   */
+  purpose_sources?: unknown
 }
 
 /** GET models 响应（#358：能力与模型同一次返回，避免两次请求间竞态） */
@@ -385,6 +405,12 @@ export interface ResearchChatRequest {
    * 可用时携带；不是检索范围，不得并入 source_ids/source_scope/note_ids。
    */
   selection_context?: WireSelectionContextBody | null
+  /**
+   * #1106（W1 PR-B）：显式工作目的（C-01 三个可写值）。只在用户明确选择时
+   * 出现；「自动判断」= **省略字段**（显式 null 会被后端 422，前端禁止发送
+   * null）。推断只发生在服务端（仅 headed global Chat）。
+   */
+  work_purpose?: 'document_qa' | 'exploration' | 'writing'
 }
 
 /** COV-08 §12.1：调用方显式选择相关证据回答或覆盖全部所选来源 */

@@ -74,6 +74,11 @@ import type {
 import type { ConversationTurnState } from '@/lib/research/conversation-machine'
 import { buildSourceScope } from '@/lib/research/c05-request'
 import type { ResearchChatRequest } from '@/lib/research/types'
+import {
+  readMessageWorkPurpose,
+  type ResearchWorkPurpose,
+  type ResearchWorkPurposeSource,
+} from '@/lib/research/work-purpose'
 import { classifyC05Error } from '@/lib/research/c05-error-actions'
 import {
   parseGenerationIdFromMessageId,
@@ -464,6 +469,14 @@ export interface ResearchChatTurn {
    */
   selectionContext?: WireSelectionProjection | null
   selectionContextInvalid?: boolean
+  /**
+   * #1106（W1 PR-B）：该轮持久化的工作目的与来源（结果/历史/重开同一来源）。
+   * - live turn：来自 SSE `usage` 事件的两键（未收到前 source=null → 不显示）；
+   * - 恢复/重开行：来自消息行两键（缺失/旧行 → not_recorded，如实显示未记录）；
+   * 绝不按文本/当前 composer 选择回填历史值。
+   */
+  workPurpose?: ResearchWorkPurpose | null
+  workPurposeSource?: ResearchWorkPurposeSource | null
 }
 
 /** 持久化消息行 + PR-5a 扩展（服务端可选下发；缺失按 null 处理）。 */
@@ -471,6 +484,9 @@ type DurableMessageRow = ResearchGlobalChatMessage & {
   context_report?: unknown
   context_coverage?: unknown
   record_visibility?: string | null
+  /** #1106（W1 PR-B）：D1-C 版本化投影的 purpose 两键（15 键 legacy 不含）。 */
+  work_purpose?: unknown
+  work_purpose_source?: unknown
 }
 
 /**
@@ -553,18 +569,30 @@ export function messageRowToTurn(
     // PR-5b（Lead 定向复核）：真实 mapper 的 user 行也必须保留持久 message_id
     // （面板依赖它做 durable 身份/定位；此前恒为 null 使真实冷启动缺 data-message-id）。
     const rowSelection = parseRowSelection(row, options?.projectionVersion ?? null)
+    const rowPurpose = readMessageWorkPurpose(
+      row as unknown as Record<string, unknown>,
+      options?.projectionVersion ?? null,
+    )
     return {
       ...base,
       ...extensions,
       serverMessageId: row.message_id ?? null,
       selectionContext: rowSelection.selection,
+      workPurpose: rowPurpose.workPurpose,
+      workPurposeSource: rowPurpose.workPurposeSource,
       ...(rowSelection.invalid ? { selectionContextInvalid: true } : {}),
     }
   }
   const generationId = parseGenerationIdFromMessageId(row.message_id)
+  const rowPurpose = readMessageWorkPurpose(
+    row as unknown as Record<string, unknown>,
+    options?.projectionVersion ?? null,
+  )
   return {
     ...base,
     ...extensions,
+    workPurpose: rowPurpose.workPurpose,
+    workPurposeSource: rowPurpose.workPurposeSource,
     thinking: restricted ? '' : (row.thinking ?? ''),
     serverMessageId: row.message_id ?? null,
     generationId,
@@ -1524,6 +1552,11 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
           }
           // single 不禁止 note_ids：显式 Note 上下文原样保留（M04）。
           request.note_ids = [...input.noteIds]
+        }
+        // #1106（W1 PR-B）：显式用途才上 wire；「自动判断」省略字段
+        // （后端 flag on 缺失 → 服务端推断；显式 null 会 422，绝不可发）。
+        if (input.workPurpose !== null && input.workPurpose !== undefined) {
+          request.work_purpose = input.workPurpose
         }
         // Issue #1013（D1-E-2）§2.11：选段只在 headed 提交携带；范围/检索
         // 载荷保持完全不变（选段来源允许在 scope 外，但绝不并入 source_ids/

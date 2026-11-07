@@ -27,7 +27,9 @@ import type { ResearchNote, ResearchSource, ResearchSourceStatus } from '@/lib/t
  * - 笔记区（UI-04「选用笔记或草稿继续讨论」）：列表 + 复选（写入同一 Scope
  *   provider）、空态；不新建范围权威、不提供编辑器（W3）；
  * - 底部范围摘要：`formatScopeLabel` 统一覆盖 sources + notes（F9）；
- * - 空 selected 是用户可达的阻断态（BEH-03）：说明 + 选资料/改回全部。
+ * - 空 selected 是用户可达的阻断态（BEH-03）：说明 + 选资料/改回全部；
+ *   #1106 起在推断能力可用时另给「改为探索讨论/写作」显式纠正动作（真实
+ *   purpose=explicit，不静默换目的，D6）。
  */
 
 const STATUS_LABEL_KEYS: Record<ResearchSourceStatus, string> = {
@@ -57,11 +59,21 @@ function CheckboxHitArea({ children }: { children: React.ReactNode }) {
 export function TargetSourcesPane({
   onOpenSource,
   scopeFocusRequest = 0,
+  purposeInferenceAvailable = false,
+  onSetWorkPurpose,
 }: {
   /** 打开右栏资料预览（UI-17）；传入触发元素用于关闭后焦点返回（F7） */
   onOpenSource: (sourceId: string, trigger: HTMLElement) => void
   /** 递增序号：composer 紧凑范围标签点击后聚焦范围单选组（§3.3） */
   scopeFocusRequest?: number
+  /** #1106：后端严格 `purpose_inference === true` 时才提供目的纠正动作 */
+  purposeInferenceAvailable?: boolean
+  /**
+   * #1106/BEH-03：空 selected 的「改为探索讨论/写作」显式纠正动作——
+   * 把下一请求目的设为显式 exploration/writing（不静默换目的、不扩大范围；
+   * 后端 D5 对显式 exploration/writing 放行空 selected）。
+   */
+  onSetWorkPurpose?: (purpose: 'exploration' | 'writing') => void
 }) {
   const { t } = useTranslation()
   const { projectId } = useResearchWorkspace()
@@ -258,6 +270,32 @@ export function TargetSourcesPane({
                 >
                   {t('research.target.sources.scopeBlockedAll')}
                 </Button>
+                {/* #1106/BEH-03/D6：空 selected 的另一条真实出路——显式改成
+                    探索讨论/写作（purpose=explicit），而不是静默回退 all 或
+                    静默换目的。仅 infer/contract 能力可用时渲染（不造假控件）。 */}
+                {purposeInferenceAvailable &&
+                  onSetWorkPurpose !== undefined && (
+                    <>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onSetWorkPurpose('exploration')}
+                        data-testid="rdlens-target-scope-blocked-exploration"
+                      >
+                        {t('research.target.sources.scopeBlockedExploration')}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onSetWorkPurpose('writing')}
+                        data-testid="rdlens-target-scope-blocked-writing"
+                      >
+                        {t('research.target.sources.scopeBlockedWriting')}
+                      </Button>
+                    </>
+                  )}
               </div>
             </div>
           )}

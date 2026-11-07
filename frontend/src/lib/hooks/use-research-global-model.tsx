@@ -64,6 +64,7 @@ import {
   coverageAllSelectedFrom,
   localModelCapabilityFrom,
 } from '@/lib/research/types'
+import { readPurposeInferenceCapability } from '@/lib/research/work-purpose'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
 
 export type ResearchModelAvailability = 'available' | 'unavailable' | 'none'
@@ -120,6 +121,13 @@ export interface UseResearchGlobalModelResult {
    * 两次请求间的能力竞态。
    */
   coverageAllSelected: boolean
+  /**
+   * #1106（W1 PR-B）：目的推断能力（GET models 顶层 capabilities 加性键）。
+   * 严格 `purpose_inference === true` 才启用；缺失/非法/未加载一律 false
+   * （fail-closed）。false 时 composer 摘要显示「默认（资料问答）」且不渲染
+   * 「自动判断/三选」控件（不制造假控件），也不提供回答的「改用途」入口。
+   */
+  purposeInferenceAvailable: boolean
   /** confirmed 模型条目；unavailable（目录中消失）时为 null */
   confirmedModel: ResearchModelOption | null
   confirmedModelIsExternal: boolean
@@ -290,6 +298,12 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
   // 因此后端开关翻转后下一次窗口聚焦即生效（请求时刻真值）。
   const coverageAllSelected = useMemo(
     () => coverageAllSelectedFrom(modelsQuery.data?.capabilities),
+    [modelsQuery.data],
+  )
+  // #1106（W1 PR-B）：目的推断能力位——与模型目录同一次 GET models 返回
+  // （不新增请求），严格 true 才启用（fail-closed）。
+  const purposeInferenceAvailable = useMemo(
+    () => readPurposeInferenceCapability(modelsQuery.data?.capabilities),
     [modelsQuery.data],
   )
   // #813：本地模型能力协商——与模型目录同一次 GET models 返回（不新增
@@ -727,6 +741,7 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
     dismissSaveModelError: () => setSaveModelError(null),
     models,
     coverageAllSelected,
+    purposeInferenceAvailable,
     confirmedModel,
     confirmedModelIsExternal,
     confirmedModelAvailability,
@@ -759,6 +774,7 @@ export function ResearchGlobalModelProvider({ children }: { children: ReactNode 
     confirmedModelId,
     confirmedModelIsExternal,
     coverageAllSelected,
+    purposeInferenceAvailable,
     draftModelId,
     isConsentInFlight,
     isConsentPromptOpen,
