@@ -32,7 +32,7 @@ import {
 } from '@/lib/research/scope'
 import { buildSubmissionKey } from '@/lib/research/session-idempotency'
 import type { ConversationController } from '@/lib/research/session-runtime'
-import type { EditorSnapshot, ScopeEdit } from '@/lib/research/types'
+import type { EditorSnapshot, ResearchWorkPurpose, ScopeEdit } from '@/lib/research/types'
 import type { ResearchSessionRef } from '@/lib/research/session-contract'
 import type { ResearchSource } from '@/lib/types/research'
 
@@ -55,8 +55,9 @@ import type { ResearchSource } from '@/lib/types/research'
  * - 门禁：模型可用性（canExecute）与 submission capability（仅 `=== true`
  *   放行）都进入 composer 门禁，不能"可点但静默无反应"（F5/F12）。
  *
- * 本 hook 不实现在 W1 未就绪的能力（深入研究执行、Coverage 全选合成、
- * 本次用途），调用方必须显式显示不可用说明，不建立假任务。
+ * 本 hook 不实现在 W1 未就绪的能力（深入研究执行、Coverage 全选合成）；
+ * 「本次用途」（#1106 UI-11）在此接线：显式 purpose 随 ConversationSendInput
+ * 透传（自动判断 = 省略字段），能力位严格 true 才由 composer 渲染控件。
  */
 
 /** 范围快照 → editor scope 变更序列（基础范围 + 单篇；notes 一并同步）。 */
@@ -189,8 +190,21 @@ export interface TargetConversationState {
   /** 单篇 pin 只允许绑定到当前活动会话（BEH-02/F3） */
   canPinSingleSource: boolean
 
+  // —— composer「本次用途」（#1106 UI-11）——
+  /** 下一请求的显式工作目的；null = 自动判断（省略请求字段）。 */
+  workPurpose: ResearchWorkPurpose | null
+  /** 修改用途：只作用于**下一请求**（不改写已生成回答/历史记录）。 */
+  setWorkPurpose: (purpose: ResearchWorkPurpose | null) => void
+  /** 后端是否声明严格 `purpose_inference === true`（fail-closed）。 */
+  purposeInferenceAvailable: boolean
+
   // —— 动作 ——
   send: (text: string) => Promise<boolean>
+  /**
+   * #1106/D6：带显式 purpose 的同一文本重发（422 scope_selected_empty 的
+   * 「改为探索讨论」纠正动作；新请求，旧记录不变）。
+   */
+  sendWithPurpose: (text: string, purpose: ResearchWorkPurpose | null) => Promise<boolean>
   clearSendError: () => void
   openSession: (ref: ResearchSessionRef) => void
   newSession: () => Promise<void>
@@ -198,7 +212,11 @@ export interface TargetConversationState {
   pinSingleSource: (sourceId: string) => boolean
 }
 
-export function useTargetConversation(): TargetConversationState {
+export function useTargetConversation(options: {
+  /** #1106：由 TargetShell 从 `useResearchPurposeCapability` 注入（fail-closed）。 */
+  purposeInferenceAvailable?: boolean
+} = {}): TargetConversationState {
+  const purposeInferenceAvailable = options.purposeInferenceAvailable === true
   const { t } = useTranslation()
   const { toast } = useToast()
   const { projectId } = useResearchWorkspace()
@@ -211,6 +229,15 @@ export function useTargetConversation(): TargetConversationState {
   const [activeRef, setActiveRef] = useState<ResearchSessionRef | null>(null)
   const [restored, setRestored] = useState(false)
   const [sendError, setSendError] = useState<string | null>(null)
+  /**
+   * #1106（W1 PR-B）：本次用途（UI-11）。null = 自动判断（请求省略
+   * `work_purpose`，由服务端推断）；显式选择只作用于**下一请求**，发送成功
+   * 后回到自动判断（计划 §9「无会话级 purpose 记忆」）。
+   */
+  const [workPurpose, setWorkPurposeState] = useState<ResearchWorkPurpose | null>(null)
+  const setWorkPurpose = useCallback((purpose: ResearchWorkPurpose | null) => {
+    setWorkPurposeState(purpose)
+  }, [])
 
   const sessions = useResearchSessions({
     runtime: sessionRuntime,
@@ -395,10 +422,23 @@ export function useTargetConversation(): TargetConversationState {
   const blockedHint = researchModelBlockedHint(blockedReason, t, localModelUnavailableMessage)
 
   // —— 范围有效性（BEH-03：空 selected 阻断资料查询，不静默扩大范围） ——
-  const scopeBlocked =
+  // #1106/D5：headed global Chat 上空 selected 的放行条件——
+  // - 显式 exploration/writing：后端 D5 放行（零检索）；
+  // - 自动判断（null）且 inference 能力可用：交给服务端推断（强讨论信号 →
+  //   inferred exploration 放行；无强信号 → 422 scope_selected_empty 可纠正）。
+  // inference off/能力未知时保持现行本地阻断；显式 document_qa 仍本地阻断。
+  const scopeEmptySelected =
     scopeSnapshot.mode === 'selected' &&
     scopeSnapshot.sourceIds.length === 0 &&
     scopeSnapshot.noteIds.length === 0
+  const isScopeBlockedFor = useCallback(
+    (purpose: ResearchWorkPurpose | null): boolean =>
+      scopeEmptySelected &&
+      !(purpose === 'exploration' || purpose === 'writing') &&
+      !(purpose === null && purposeInferenceAvailable),
+    [scopeEmptySelected, purposeInferenceAvailable],
+  )
+  const scopeBlocked = isScopeBlockedFor(workPurpose)
   const scopeBlockedText = scopeBlocked ? t('research.target.composer.scopeBlocked') : null
 
   // —— 范围 reconcile：失效选中被移除后 toast（与旧壳同一 provider 语义） ——
@@ -442,7 +482,7 @@ export function useTargetConversation(): TargetConversationState {
    * （不再静默 `return false`）。
    */
   const sendSession = useCallback(
-    async (query: string): Promise<boolean> => {
+    async (query: string, purpose: ResearchWorkPurpose | null): Promise<boolean> => {
       if (chatConversation === null || chatConversation === undefined) {
         setSendError(t('research.target.composer.noActiveSession'))
         return false
@@ -552,6 +592,10 @@ export function useTargetConversation(): TargetConversationState {
             editorIntentHash: fresh.intentHash ?? '',
             idempotencyKey,
             operationId,
+            // #1106（W1 PR-B）：显式用途随冻结意图一起透传；null → 省略字段
+            // （自动判断，绝不发送显式 null）。controller 的 sameSubmissionIntent
+            // 会把 purpose 纳入重放一致性判定（防静默改意图）。
+            workPurpose: purposeInferenceAvailable === true ? purpose : null,
           })
           if (result.status !== 'ok') {
             pendingSubmitTextRef.current = null
@@ -560,6 +604,9 @@ export function useTargetConversation(): TargetConversationState {
             setSendError(t('research.target.composer.sendFailed'))
             return false
           }
+          // D7/§9：显式用途只作用于刚派发的这一请求；下一请求回到自动判断
+          // （不扩 EditorStateWire，不做会话级记忆）。
+          setWorkPurposeState(null)
           return true
         },
         { scopeLabel },
@@ -571,7 +618,7 @@ export function useTargetConversation(): TargetConversationState {
       }
       return true
     },
-    [activeRef, chatConversation, editor, projectId, runGuarded, runtimeSnapshot.viewerUserId, scopeApi, selectionFromSnapshot, t],
+    [activeRef, chatConversation, editor, projectId, purposeInferenceAvailable, runGuarded, runtimeSnapshot.viewerUserId, scopeApi, selectionFromSnapshot, t],
   )
 
   /** legacy 发送：仅 runtime 完全不可用时的诚实回退（非嵌入/孤立渲染）。 */
@@ -600,8 +647,8 @@ export function useTargetConversation(): TargetConversationState {
 
   const clearSendError = useCallback(() => setSendError(null), [])
 
-  const send = useCallback(
-    async (text: string): Promise<boolean> => {
+  const runSend = useCallback(
+    async (text: string, purpose: ResearchWorkPurpose | null): Promise<boolean> => {
       const query = text
       if (query.trim().length === 0) return false
       setSendError(null)
@@ -617,24 +664,45 @@ export function useTargetConversation(): TargetConversationState {
         setSendError(t('research.target.composer.modelUnavailable'))
         return false
       }
-      if (scopeBlocked) {
+      // 空 selected 的放行与本次**实际派发**的 purpose 同源判定（而非上一次
+      // 渲染的 state），保证「改为探索讨论并重发」在状态提交前也能正确放行。
+      if (isScopeBlockedFor(purpose)) {
         setSendError(t('research.target.composer.scopeBlocked'))
         return false
       }
       if (sessionRuntime === null) return sendLegacy(query)
-      return sendSession(query)
+      return sendSession(query, purpose)
     },
     [
       blockedHint,
       canExecute,
       confirmedModelId,
+      isScopeBlockedFor,
       noActiveSession,
-      scopeBlocked,
       sendLegacy,
       sendSession,
       sessionRuntime,
       t,
     ],
+  )
+
+  const send = useCallback(
+    (text: string): Promise<boolean> => runSend(text, workPurpose),
+    [runSend, workPurpose],
+  )
+
+  /**
+   * #1106/D6/D7：带显式 purpose 的重发（422 `scope_selected_empty` 的
+   * 「改为探索讨论」纠正动作）。先落 UI 状态再以同一文本派发；旧回答/历史
+   * 不重写。422 为零写入（无受理行），重发不会产生同键不同 purpose 的 409；
+   * 成功后 editor 清稿会轮换 draft token（新请求身份），失败保留输入。
+   */
+  const sendWithPurpose = useCallback(
+    async (text: string, purpose: ResearchWorkPurpose | null): Promise<boolean> => {
+      setWorkPurposeState(purpose)
+      return runSend(text, purpose)
+    },
+    [runSend],
   )
 
   const openSession = useCallback(
@@ -687,7 +755,11 @@ export function useTargetConversation(): TargetConversationState {
     scopeBlockedText,
     sendError,
     canPinSingleSource: sessionWired,
+    workPurpose,
+    setWorkPurpose,
+    purposeInferenceAvailable,
     send,
+    sendWithPurpose,
     clearSendError,
     openSession,
     newSession,

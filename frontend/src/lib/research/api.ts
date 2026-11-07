@@ -1229,6 +1229,15 @@ export interface ResearchGlobalChatMessage {
    * 形状严格校验在 `session-contract.parseSelectionProjection`。
    */
   selection_context?: unknown
+  /**
+   * #1106（W1 PR-B）：D1-C 版本化消息投影的持久化工作目的两键
+   * （`d1c-message-v3`/`d1e-message-v4` 的 17/19/18/20 键投影出现；15 键
+   * legacy 投影不出现）。旧行/未记录 → `null` + `not_recorded`，读取见
+   * `work-purpose.readMessageWorkPurpose`（按投影版本/键数 fail-closed，
+   * 不回填、不推断）。
+   */
+  work_purpose?: unknown
+  work_purpose_source?: unknown
 }
 
 /** 后台 Generation 卡（未交付/未完成才出卡；completed 且已 delivered 不出） */

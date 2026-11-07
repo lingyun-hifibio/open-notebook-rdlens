@@ -13,6 +13,11 @@
  * 显示“响应无法识别/暂时不可用”，不得猜测缺失字段或回退旧 `/chat`。
  */
 
+import {
+  parseWorkPurposePair,
+  type WorkPurposeReadProjection,
+} from './types'
+
 /** 新协议请求头（02 §2）。 */
 export const SESSION_CONTRACT_HEADER = 'X-Research-Session-Contract' as const
 
@@ -1343,6 +1348,42 @@ export function messageKeyCountMatches(
 ): boolean {
   if (!isRecord(record)) return false
   return MESSAGE_PROJECTION_KEY_COUNTS[version].includes(Object.keys(record).length)
+}
+
+/**
+ * W1 #1106 PR-B：headed 消息行 → 工作目的读投影（历史/重开与首答同一来源，
+ * 不各自推断）。复用本文件的投影版本/key-count fail-closed 设施：
+ * - 版本未知（响应头缺失/旧传输）→ 键出现才严格解析，缺失 = 未记录；
+ * - 版本已知（legacy/d1c/d1e）但键数不属于该版本键集 → fail-closed
+ *   按未记录（不按旧键集容忍新投影，也不猜键集）；`legacy` 投影不允许
+ *   出现 purpose 两键；
+ * - 键缺失（15 键旧行/flag off 投影）→ 未记录（不回填 `document_qa`）。
+ */
+export function readMessageWorkPurpose(
+  row: Record<string, unknown>,
+  projectionVersion: MessageProjectionVersion | null,
+): WorkPurposeReadProjection {
+  const hasKeys =
+    Object.prototype.hasOwnProperty.call(row, 'work_purpose') &&
+    Object.prototype.hasOwnProperty.call(row, 'work_purpose_source')
+  const notRecorded: WorkPurposeReadProjection = {
+    workPurpose: null,
+    workPurposeSource: 'not_recorded',
+  }
+  if (projectionVersion !== null) {
+    const allowed = MESSAGE_PROJECTION_KEY_COUNTS[projectionVersion]
+    if (!allowed.includes(Object.keys(row).length)) {
+      return notRecorded
+    }
+    if (projectionVersion === 'legacy') {
+      // legacy = 15 键冻结投影：purpose 两键不应出现，出现即形状不符。
+      return notRecorded
+    }
+    if (!hasKeys) return notRecorded
+  } else if (!hasKeys) {
+    return notRecorded
+  }
+  return parseWorkPurposePair(row) ?? notRecorded
 }
 
 /** 读投影可见性（计划 §2.7 表；与 host 枚举逐字一致）。 */

@@ -38,6 +38,10 @@ import {
   type ResearchSessionRef,
 } from '@/lib/research/session-contract'
 import type { ResearchGlobalChatCard } from '@/lib/research/api'
+import {
+  workPurposeLabelKey,
+  workPurposeSourceLabelKey,
+} from '@/lib/research/types'
 import { ResearchContextReport } from './ResearchContextReport'
 import {
   ResearchSubmissionStatus,
@@ -226,6 +230,10 @@ function conversationTurnToTurns(turn: ConversationTurn): ResearchChatTurn[] {
     })),
     usage: turn.sse.usage,
     resolvedMode: turn.sse.resolvedMode,
+    // #1106（W1 PR-B）：首流 usage 投影的持久化 purpose 两级事实（与历史/
+    // completed 重放同一来源）；未收到 usage 前为 undefined → 不显示脚注。
+    workPurpose: turn.sse.workPurpose,
+    workPurposeSource: turn.sse.workPurposeSource,
     status,
     reconnectCount: 0,
     errorCode: notAcceptedCode ?? turn.sse.errorCode ?? turn.errorCode,
@@ -291,6 +299,58 @@ function earlierPagePrepended(before: readonly string[], now: readonly string[])
   return false
 }
 
+/**
+ * #1106（W1 PR-B）：assistant 回答脚注——显示该轮持久化 purpose 与来源。
+ *
+ * - 来源映射（计划 §5，诚实显示，不互相冒充）：explicit→「你选择」、
+ *   inferred→「自动判断」、default_legacy→「默认（资料问答）」、
+ *   not_recorded→「未记录」；
+ * - 旧行/未记录不回填、不推断；live turn 未收到 usage 前（source 为空）
+ *   不渲染，避免把「未知」冒充成「未记录」；
+ * - 「改用途」只把焦点送回 composer 用途控件（改用途作用于**下一请求**，
+ *   已生成回答不重写）。
+ */
+function PurposeFootnote({
+  turn,
+  onChange,
+}: {
+  turn: ResearchChatTurn
+  onChange?: () => void
+}) {
+  const { t } = useTranslation()
+  const source = turn.workPurposeSource
+  if (source === null || source === undefined) return null
+  const purpose = turn.workPurpose
+  const recorded = source === 'not_recorded' || purpose === null || purpose === undefined
+  return (
+    <>
+      <span
+        data-testid="chat-turn-purpose"
+        data-purpose={recorded ? undefined : purpose}
+        data-purpose-source={source}
+      >
+        {purpose === null || purpose === undefined || source === 'not_recorded'
+          ? t('research.target.composer.purpose.footnoteNotRecorded')
+          : t('research.target.composer.purpose.footnote', {
+              purpose: t(workPurposeLabelKey(purpose)),
+              source: t(workPurposeSourceLabelKey(source)),
+            })}
+      </span>
+      {onChange !== undefined && (
+        <button
+          type="button"
+          className="underline underline-offset-2 hover:no-underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+          aria-label={t('research.target.composer.purpose.changeAria')}
+          onClick={onChange}
+          data-testid="chat-turn-purpose-change"
+        >
+          {t('research.target.composer.purpose.change')}
+        </button>
+      )}
+    </>
+  )
+}
+
 export function ResearchChatPanel({
   turns,
   isStreaming,
@@ -332,6 +392,8 @@ export function ResearchChatPanel({
   onSendSession,
   onNewSession,
   selectionChip = null,
+  onRequestPurposeChange,
+  onRetryWithPurpose,
   onCitationReturn,
   scrollToMessage,
   onScrollToMessageResult,
@@ -385,6 +447,19 @@ export function ResearchChatPanel({
     readonly onRemove: () => void
     readonly disabled?: boolean
   } | null
+  /**
+   * #1106（W1 PR-B）：回答脚注的「改用途」入口。仅在目标壳、且后端声明
+   * `capabilities.purpose_inference === true` 时传入（旧壳不传 → 不渲染
+   * 纠正动作，不制造假能力）。点击把该轮提问放回 composer 并把焦点送到
+   * 用途控件（新请求/旧回答不重写）；用途变更只作用于下一请求。
+   */
+  onRequestPurposeChange?: (query: string) => void
+  /**
+   * #1106/D6：422 `scope_selected_empty` 的可纠正动作「改为探索讨论并重发」。
+   * 仅在目标壳、inference 能力严格 true 时传入；点击 = 以显式 exploration
+   * 重发同一 query（新请求，旧记录不变；不改后端 action 词表）。
+   */
+  onRetryWithPurpose?: (query: string) => Promise<boolean>
   /**
    * Issue #1013 §2.10：assistant 消息 citation 点击 → 记录 return target
    * （citation 身份 + durable message_id）并打开来源。`messageId` 为
@@ -1213,7 +1288,12 @@ export function ResearchChatPanel({
         return candidate.content
       }
     }
-    return ''
+    // #1106（W1 PR-B，L2 422 纠正回归）：live/controller 错误行来自
+    // `renderedTurns = [...turns, ...controllerRows]` 的合成数组，不是
+    // `turns` 里的同一对象 ⇒ indexOf 为 -1。合成行由 controller 投影携带
+    // `submittedQuery`（conversationTurnToTurns 固定写入 `turn.query`），
+    // 用它回落；durable 行无该字段时仍返回空，不猜测、不读取当前 draft。
+    return target.submittedQuery ?? ''
   }
 
   /**
@@ -1950,8 +2030,8 @@ export function ResearchChatPanel({
                     onNewSession={onNewSession}
                   />
 
-                  {(turn.usage || turn.resolvedMode) && (
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  {(turn.usage || turn.resolvedMode || turn.workPurposeSource != null) && (
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                       {turn.resolvedMode && <Badge variant="outline">{turn.resolvedMode}</Badge>}
                       {turn.usage && (
                         <span>
@@ -1961,6 +2041,14 @@ export function ResearchChatPanel({
                           {turn.usage.output_tokens} out
                         </span>
                       )}
+                      <PurposeFootnote
+                        turn={turn}
+                        onChange={
+                          onRequestPurposeChange === undefined
+                            ? undefined
+                            : () => onRequestPurposeChange(queryForTurn(turn))
+                        }
+                      />
                     </div>
                   )}
 
@@ -2068,6 +2156,32 @@ export function ResearchChatPanel({
                         </>
                       )}
                   </div>
+                  {/* #1106/D6：空 selected 的 422 不静默换目的——显式提供
+                      「改为探索讨论并重发」纠正动作（真实 purpose=explicit，
+                      同一 query 的新请求；旧回答不重写）。 */}
+                  {turn.errorCode === 'scope_selected_empty' &&
+                    onRetryWithPurpose !== undefined && (
+                      <div
+                        className="space-y-1 rounded border px-2 py-1.5"
+                        data-testid="chat-scope-purpose-recovery"
+                      >
+                        <p className="text-muted-foreground">
+                          {t('research.target.composer.purpose.scopeEmptyHint')}
+                        </p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const query = queryForTurn(turn)
+                            if (query.trim() === '') return
+                            void onRetryWithPurpose(query)
+                          }}
+                          data-testid="chat-scope-purpose-retry"
+                        >
+                          {t('research.target.composer.purpose.scopeEmptyAction')}
+                        </Button>
+                      </div>
+                    )}
                   {/* Issue #439：必须转持久化 Job → 不可重试，改走后端任务 */}
                   {turn.errorCode === 'persistent_job_required' &&
                     turn.scopeSnapshot !== null &&

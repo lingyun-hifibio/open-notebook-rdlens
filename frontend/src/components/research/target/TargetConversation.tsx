@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { History, Plus } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -68,6 +69,23 @@ export function TargetConversation({
   onCompactScopeChipActivate: () => void
 }) {
   const { t } = useTranslation()
+  // #1106：用途展开态由本层拥有——composer 自身切换与回答脚注「改用途」
+  // 入口共用同一展开状态（打开后把焦点送到 composer 用途控件）。
+  const [purposeMenuOpen, setPurposeMenuOpen] = useState(false)
+  // 回答「改用途」把该轮提问放回 composer（新请求/旧回答不变）；seq 递增
+  // 触发面板既有 prefill 接线（不自动发送，需用户确认后发送）。
+  const [purposePrefill, setPurposePrefill] = useState<{ text: string; seq: number } | null>(null)
+  const handleRequestPurposeChange = (query: string): void => {
+    if (query.trim() === '') {
+      setPurposeMenuOpen(true)
+      return
+    }
+    setPurposePrefill((previous) => ({
+      text: query,
+      seq: (previous?.seq ?? 0) + 1,
+    }))
+    setPurposeMenuOpen(true)
+  }
   const sessionTitle =
     conversation.sessionMeta?.recordVisibility === 'restricted'
       ? translateOrFallback(
@@ -273,6 +291,20 @@ export function TargetConversation({
           // 查回不适用（mount 的 reconcileMarkers 仍恢复 active/marker）；
           // 详见 ResearchChatPanel 的 prop 注释（真实 harness 缺陷修复）。
           suppressColdStartLookup
+          // #1106：回答脚注「改用途」入口（能力位 false 时不传入 → 不渲染
+          // 纠正动作，避免假控件）。点击把该轮提问放回 composer。
+          onRequestPurposeChange={
+            conversation.purposeInferenceAvailable
+              ? handleRequestPurposeChange
+              : undefined
+          }
+          // #1106/D6：422 scope_selected_empty 的「改为探索讨论并重发」。
+          onRetryWithPurpose={
+            conversation.purposeInferenceAvailable
+              ? (query) => conversation.sendWithPurpose(query, 'exploration')
+              : undefined
+          }
+          prefill={purposePrefill}
           showCoverageScopeSelector={false}
           showSessionScopeBar={false}
           showSessionHeader={false}
@@ -309,6 +341,11 @@ export function TargetConversation({
             secondaryBlockedReason={secondaryBlockedReason}
             compactScopeChip={compactScopeChip}
             onCompactScopeChipActivate={onCompactScopeChipActivate}
+            workPurpose={conversation.workPurpose}
+            onWorkPurposeChange={conversation.setWorkPurpose}
+            purposeInferenceAvailable={conversation.purposeInferenceAvailable}
+            purposeMenuOpen={purposeMenuOpen}
+            onPurposeMenuOpenChange={setPurposeMenuOpen}
           />
         </div>
       </div>

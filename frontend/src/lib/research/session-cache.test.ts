@@ -557,6 +557,19 @@ describe('session-cache: review 补证（编码分区 / quota 优先级 / 写入
     reject(withBody({ model_id: '' }))
     reject(withBody({ context_level: 'deep' }))
     reject(withBody({ unknown_field: 1 }))
+    // #1106：work_purpose 只接受三个契约值；显式 null（自动判断应为省略）拒绝。
+    reject(withBody({ work_purpose: null }))
+    reject(withBody({ work_purpose: 'delegated_research' }))
+    reject(withBody({ work_purpose: 'document' }))
+    // 正例：显式 purpose 可持久化进完整 wire 快照（global/source 同 schema）。
+    expect(
+      writeSubmissionMarker(
+        scope,
+        globalRef,
+        withBody({ work_purpose: 'exploration' }),
+        { storage },
+      ).ok,
+    ).toBe(true)
     // 不完整的 wire body：缺必填字段即不得声明 exactRequestAvailable
     reject(
       withRequest({
