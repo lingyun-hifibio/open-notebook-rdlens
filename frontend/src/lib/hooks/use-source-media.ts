@@ -148,13 +148,19 @@ function extractSourceMediaFailure(error: unknown): SourceMediaFailureInput {
       : typeof response?.status === 'number'
         ? response.status
         : null
-  let code = typeof record.code === 'string' && record.code.length > 0 ? record.code : null
-  let detail = typeof record.detail === 'string' ? record.detail : null
-  if (code === null && detail === null && response !== undefined && response !== null) {
+
+  // ⚠ 真实 axios 错误在**顶层** `code` 放传输层码（如 `ERR_BAD_REQUEST`），
+  // 服务端 envelope 码在 `response.data.detail.code`。分类唯一判据必须是
+  // 服务端 envelope（或纯 detail 文案），不能拿传输层 code 当 envelope 码
+  // ——否则 detail 读的 410/422 永远落到 `retryable`（撤权/版本失效 UI 不可达）。
+  let code: string | null = null
+  let detail: string | null = null
+  if (response !== undefined && response !== null) {
     const payload = response.data
     if (typeof payload === 'string') {
+      // 纯 detail 响应体（如 404 `Preview not supported ...`）。
       detail = payload.length > 0 ? payload : null
-    } else if (payload !== null && typeof payload === 'object') {
+    } else if (payload !== null && typeof payload === 'object' && !Array.isArray(payload)) {
       const envelopeDetail = (payload as { detail?: unknown }).detail
       if (typeof envelopeDetail === 'string') {
         detail = envelopeDetail.length > 0 ? envelopeDetail : null
@@ -168,6 +174,17 @@ function extractSourceMediaFailure(error: unknown): SourceMediaFailureInput {
           typeof envelopeCode === 'string' && envelopeCode.length > 0 ? envelopeCode : null
       }
     }
+  }
+  if (code === null && detail === null) {
+    // 注入/归一后的错误对象（非 axios 形状）：只接受显式服务端字段，忽略
+    // axios 传输层 `code`（`ERR_*`）。
+    const injectedDetail = typeof record.detail === 'string' ? record.detail : null
+    detail = injectedDetail !== null && injectedDetail.length > 0 ? injectedDetail : null
+    const injectedCode = typeof record.code === 'string' ? record.code : null
+    code =
+      injectedCode !== null && injectedCode.length > 0 && !/^ERR_/i.test(injectedCode)
+        ? injectedCode
+        : null
   }
   return { status, code, detail }
 }

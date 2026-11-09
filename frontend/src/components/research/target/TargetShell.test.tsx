@@ -1696,6 +1696,23 @@ describe('W2 #1077 返回原回答', () => {
     })
   })
 
+  it('navigate：不把焦点送回 citation 触发控件（focus 滚动不得拉走目标回答）', async () => {
+    d1eFixture.ready = true
+    conversationFixture.flags.activeRef = ACTIVE_GLOBAL_REF
+    renderShell()
+    await openCitationReader()
+    const citationTrigger = document.querySelector(
+      '[data-testid="simulate-citation"]',
+    ) as HTMLElement
+    expect(citationTrigger).not.toBeNull()
+    fireEvent.click(screen.getByTestId('fake-reader-return'))
+    await waitFor(() => expect(screen.queryByTestId('rdlens-target-reader')).toBeNull())
+    await waitFor(() => expect(screen.queryByTestId('rdlens-target-right-pane')).toBeNull())
+    // 返回原回答的滚动定位由 scrollToMessage 负责；右栏关闭不得再把焦点
+    // （及其浏览器 focus 滚动）送回 citation 触发控件。
+    expect(document.activeElement).not.toBe(citationTrigger)
+  })
+
   it('live citation 无 durable message_id：不记录返回目标、不显示返回入口', async () => {
     d1eFixture.ready = true
     conversationFixture.flags.activeRef = ACTIVE_GLOBAL_REF

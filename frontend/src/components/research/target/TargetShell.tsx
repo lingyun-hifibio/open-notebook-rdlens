@@ -304,8 +304,15 @@ export function TargetShell() {
       ?.focus()
   }, [rightPane])
 
-  const closeRightPane = useCallback(() => {
-    restoreFocusPendingRef.current = true
+  /**
+   * 关闭右栏。
+   *
+   * `restoreFocus: false` 用于「返回原回答」：该路径同时关闭阅读器并下发
+   * durable message 滚动请求；若右栏再把焦点送回 citation 触发控件，浏览器
+   * 的 focus 滚动会把目标回答拉出视口（1024 实测）。默认仍回触发控件。
+   */
+  const closeRightPane = useCallback((options?: { restoreFocus?: boolean }) => {
+    restoreFocusPendingRef.current = options?.restoreFocus !== false
     setRightPane(null)
   }, [])
 
@@ -496,9 +503,8 @@ export function TargetShell() {
     // 返回原回答时右栏也关闭；右栏的「焦点回触发控件」会聚焦 citation 按钮
     // 并把会话滚动拉离目标回答（1024 下目标回答被滚出视口）。滚动定位由
     // `scrollToMessage` 负责，焦点由阅读器关闭路径回输入区（preventScroll）。
-    restoreFocusPendingRef.current = false
     closeReader()
-    closeRightPane()
+    closeRightPane({ restoreFocus: false })
   }, [closeReader, closeRightPane, conversationActiveRef, returnTarget])
 
   /** W2 #1077/BEH-11：阅读器「讨论选段」→ composer chip + 关闭阅读器。 */

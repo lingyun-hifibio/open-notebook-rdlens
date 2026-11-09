@@ -79,6 +79,8 @@ function installAdapter(): void {
     if (outcome.status >= 400) {
       const error = Object.assign(new Error(`Request failed with status code ${outcome.status}`), {
         isAxiosError: true,
+        // 真实 axios 错误形状：顶层 code 是传输层码（不是服务端 envelope 码）。
+        code: 'ERR_BAD_REQUEST',
         response: {
           status: outcome.status,
           statusText: '',
