@@ -1,0 +1,159 @@
+{
+  "ticket": "#1077 reader L2 evidence - PUBLIC-SAFE screenshot list (controlled synthetic demo project only)",
+  "generated_at": "2026-11-09T18:16:52.658998+00:00",
+  "note": "Relative to issue1077-reader/evidence/. Public-safe: synthetic demo project usr_24_1125uidemo only; no real material titles/IDs. Private 10-paper / DEMO-01 screenshots are NOT listed here.",
+  "count": 30,
+  "missing": [],
+  "screenshots": [
+    {
+      "side": "after",
+      "file": "after/public/screenshots/after-public-after-a1__en-US__1024x768__01-citation-preview-enabled.png",
+      "caption": "A1 (en-US, 1024x768) After: citation preview 「打开原文」 enabled (W2 reader entry)"
+    },
+    {
+      "side": "after",
+      "file": "after/public/screenshots/after-public-after-a1__en-US__1024x768__02-reader-open.png",
+      "caption": "A1 (en-US, 1024x768) After: W2 reader overlay from citation — return bar/title/page locator, page nav, aside; controlled synthetic demo source has no file so page-image/download shows the honest unavailable state"
+    },
+    {
+      "side": "after",
+      "file": "after/public/screenshots/after-public-after-a1__en-US__1024x768__03-reader-next-page.png",
+      "caption": "A1 (en-US, 1024x768) After: reader page navigation within the locatable page set (Page N → N+1)"
+    },
+    {
+      "side": "after",
+      "file": "after/public/screenshots/after-public-after-a1__en-US__1440x900__01-citation-preview-enabled.png",
+      "caption": "A1 (en-US, 1440x900) After: citation preview 「打开原文」 enabled (W2 reader entry)"
+    },
+    {
+      "side": "after",
+      "file": "after/public/screenshots/after-public-after-a1__en-US__1440x900__02-reader-open.png",
+      "caption": "A1 (en-US, 1440x900) After: W2 reader overlay from citation — return bar/title/page locator, page nav, aside; controlled synthetic demo source has no file so page-image/download shows the honest unavailable state"
+    },
+    {
+      "side": "after",
+      "file": "after/public/screenshots/after-public-after-a1__en-US__1440x900__03-reader-next-page.png",
+      "caption": "A1 (en-US, 1440x900) After: reader page navigation within the locatable page set (Page N → N+1)"
+    },
+    {
+      "side": "after",
+      "file": "after/public/screenshots/after-public-after-a1__zh-CN__1024x768__01-citation-preview-enabled.png",
+      "caption": "A1 (zh-CN, 1024x768) After: citation preview 「打开原文」 enabled (W2 reader entry)"
+    },
+    {
+      "side": "after",
+      "file": "after/public/screenshots/after-public-after-a1__zh-CN__1024x768__02-reader-open.png",
+      "caption": "A1 (zh-CN, 1024x768) After: W2 reader overlay from citation — return bar/title/page locator, page nav, aside; controlled synthetic demo source has no file so page-image/download shows the honest unavailable state"
+    },
+    {
+      "side": "after",
+      "file": "after/public/screenshots/after-public-after-a1__zh-CN__1024x768__03-reader-next-page.png",
+      "caption": "A1 (zh-CN, 1024x768) After: reader page navigation within the locatable page set (Page N → N+1)"
+    },
+    {
+      "side": "after",
+      "file": "after/public/screenshots/after-public-after-a1__zh-CN__1440x900__01-citation-preview-enabled.png",
+      "caption": "A1 (zh-CN, 1440x900) After: citation preview 「打开原文」 enabled (W2 reader entry)"
+    },
+    {
+      "side": "after",
+      "file": "after/public/screenshots/after-public-after-a1__zh-CN__1440x900__02-reader-open.png",
+      "caption": "A1 (zh-CN, 1440x900) After: W2 reader overlay from citation — return bar/title/page locator, page nav, aside; controlled synthetic demo source has no file so page-image/download shows the honest unavailable state"
+    },
+    {
+      "side": "after",
+      "file": "after/public/screenshots/after-public-after-a1__zh-CN__1440x900__03-reader-next-page.png",
+      "caption": "A1 (zh-CN, 1440x900) After: reader page navigation within the locatable page set (Page N → N+1)"
+    },
+    {
+      "side": "after",
+      "file": "after/public/screenshots/after-public-after-a8__en-US__1024x768__01-reader-1024-aside-collapsed.png",
+      "caption": "A8 (en-US, 1024x768) After: 1024 viewport — aside collapsed by default, no whole-page horizontal scroll"
+    },
+    {
+      "side": "after",
+      "file": "after/public/screenshots/after-public-after-a8__en-US__1024x768__02-reader-1024-aside-expanded.png",
+      "caption": "A8 (en-US, 1024x768) After: aside expanded by toggle — body column gives way, no horizontal scroll"
+    },
+    {
+      "side": "after",
+      "file": "after/public/screenshots/after-public-after-a8__en-US__1024x768__03-reader-language-switched.png",
+      "caption": "A8 (en-US, 1024x768) After: host UI language switched (en-US → zh-CN) while reader open — reader stays open and page position preserved"
+    },
+    {
+      "side": "after",
+      "file": "after/public/screenshots/after-public-after-a8__zh-CN__1024x768__01-reader-1024-aside-collapsed.png",
+      "caption": "A8 (zh-CN, 1024x768) After: 1024 viewport — aside collapsed by default, no whole-page horizontal scroll"
+    },
+    {
+      "side": "after",
+      "file": "after/public/screenshots/after-public-after-a8__zh-CN__1024x768__02-reader-1024-aside-expanded.png",
+      "caption": "A8 (zh-CN, 1024x768) After: aside expanded by toggle — body column gives way, no horizontal scroll"
+    },
+    {
+      "side": "after",
+      "file": "after/public/screenshots/after-public-after-a8__zh-CN__1024x768__03-reader-language-switched.png",
+      "caption": "A8 (zh-CN, 1024x768) After: host UI language switched (zh-CN → en-US) while reader open — reader stays open and page position preserved"
+    },
+    {
+      "side": "before",
+      "file": "before/public/screenshots/before-public-before-target-shell__zh-CN__1440x900__01-target-shell.png",
+      "caption": "Before baseline target shell (zh-CN, 1440x900); sources list, W1 surface (no reader entry)"
+    },
+    {
+      "side": "before",
+      "file": "before/public/screenshots/before-public-before-target-shell__zh-CN__1440x900__02-source-preview.png",
+      "caption": "Before source preview (zh-CN, 1440x900): 「打开原文」 disabled with the W1 honest reason (no preview fabricated)"
+    },
+    {
+      "side": "before",
+      "file": "before/public/screenshots/before-public-before-target-shell__zh-CN__1440x900__03-citation-preview.png",
+      "caption": "Before citation preview (zh-CN, 1440x900): 「打开原文」 disabled with the W1 honest reason"
+    },
+    {
+      "side": "before",
+      "file": "before/public/screenshots/before-public-before-target-shell__zh-CN__1024x768__01-target-shell.png",
+      "caption": "Before baseline target shell (zh-CN, 1024x768); sources list, W1 surface (no reader entry)"
+    },
+    {
+      "side": "before",
+      "file": "before/public/screenshots/before-public-before-target-shell__zh-CN__1024x768__02-source-preview.png",
+      "caption": "Before source preview (zh-CN, 1024x768): 「打开原文」 disabled with the W1 honest reason (no preview fabricated)"
+    },
+    {
+      "side": "before",
+      "file": "before/public/screenshots/before-public-before-target-shell__zh-CN__1024x768__03-citation-preview.png",
+      "caption": "Before citation preview (zh-CN, 1024x768): 「打开原文」 disabled with the W1 honest reason"
+    },
+    {
+      "side": "before",
+      "file": "before/public/screenshots/before-public-before-target-shell__en-US__1440x900__01-target-shell.png",
+      "caption": "Before baseline target shell (en-US, 1440x900); sources list, W1 surface (no reader entry)"
+    },
+    {
+      "side": "before",
+      "file": "before/public/screenshots/before-public-before-target-shell__en-US__1440x900__02-source-preview.png",
+      "caption": "Before source preview (en-US, 1440x900): 「打开原文」 disabled with the W1 honest reason (no preview fabricated)"
+    },
+    {
+      "side": "before",
+      "file": "before/public/screenshots/before-public-before-target-shell__en-US__1440x900__03-citation-preview.png",
+      "caption": "Before citation preview (en-US, 1440x900): 「打开原文」 disabled with the W1 honest reason"
+    },
+    {
+      "side": "before",
+      "file": "before/public/screenshots/before-public-before-target-shell__en-US__1024x768__01-target-shell.png",
+      "caption": "Before baseline target shell (en-US, 1024x768); sources list, W1 surface (no reader entry)"
+    },
+    {
+      "side": "before",
+      "file": "before/public/screenshots/before-public-before-target-shell__en-US__1024x768__02-source-preview.png",
+      "caption": "Before source preview (en-US, 1024x768): 「打开原文」 disabled with the W1 honest reason (no preview fabricated)"
+    },
+    {
+      "side": "before",
+      "file": "before/public/screenshots/before-public-before-target-shell__en-US__1024x768__03-citation-preview.png",
+      "caption": "Before citation preview (en-US, 1024x768): 「打开原文」 disabled with the W1 honest reason"
+    }
+  ]
+}
