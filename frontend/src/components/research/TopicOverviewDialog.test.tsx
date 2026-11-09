@@ -31,6 +31,8 @@ const h = vi.hoisted(() => ({
     sources: [] as unknown[],
     sourcesLoading: false,
     sourcesError: false,
+    /** #1125 DEF-2：host 当前 UI 语言（概览 `response_language` 的真源）。 */
+    language: 'en-US' as string,
   },
   getTopicOverview: vi.fn(),
   createTopicOverview: vi.fn(),
@@ -42,6 +44,7 @@ const LOCALIZED_DISCUSSION_GUIDE = 'Continue the discussion based on this topic 
 
 vi.mock('@/lib/hooks/use-translation', () => ({
   useTranslation: () => ({
+    language: h.state.language,
     t: (key: string, opts?: Record<string, unknown>) =>
       key === 'research.topicOverview.dialog.continueDraft'
         ? 'Continue the discussion based on this topic overview: '
@@ -284,6 +287,7 @@ beforeEach(() => {
     }
   })
   resetGlobalModelStub()
+  h.state.language = 'en-US'
 })
 
 afterEach(() => {
@@ -653,6 +657,56 @@ describe('F-03/F-03b：生成请求契约与禁用条件', () => {
     expect(screen.getByTestId('topic-overview-admin-readonly')).toHaveTextContent(
       'research.topicOverview.dialog.adminReadonly',
     )
+  })
+})
+
+describe('#1125 DEF-2：概览正文语言（response_language）跟随 host UI 语言', () => {
+  /** 生成路径：无概览 → 生成表单直接提交，返回 wire request body。 */
+  async function submitGenerate(): Promise<Record<string, unknown>> {
+    seedScope('selected', ['src_1'])
+    h.getTopicOverview.mockResolvedValue(null)
+    h.createTopicOverview.mockResolvedValue(readyOverview())
+    renderDialog()
+    fireEvent.click(await screen.findByTestId('topic-overview-submit'))
+    await waitFor(() => expect(h.createTopicOverview).toHaveBeenCalledTimes(1))
+    return h.createTopicOverview.mock.calls[0][1] as Record<string, unknown>
+  }
+
+  /** 更新路径：已有概览 → 点「更新」展开表单后提交，返回 wire request body。 */
+  async function submitUpdate(): Promise<Record<string, unknown>> {
+    seedScope('selected', ['src_1'])
+    h.getTopicOverview.mockResolvedValue(readyOverview())
+    h.createTopicOverview.mockResolvedValue(readyOverview())
+    renderDialog()
+    fireEvent.click(await screen.findByTestId('topic-overview-update'))
+    fireEvent.click(screen.getByTestId('topic-overview-submit'))
+    await waitFor(() => expect(h.createTopicOverview).toHaveBeenCalledTimes(1))
+    return h.createTopicOverview.mock.calls[0][1] as Record<string, unknown>
+  }
+
+  it('en-US：生成与更新都携带 response_language=en（L2 en 场景不再落回中文）', async () => {
+    h.state.language = 'en-US'
+    expect((await submitGenerate()).response_language).toBe('en')
+
+    cleanup()
+    h.createTopicOverview.mockReset()
+    h.state.language = 'en-US'
+    expect((await submitUpdate()).response_language).toBe('en')
+  })
+
+  it('zh-CN：生成与更新都携带 response_language=zh（中文 host 行为不变）', async () => {
+    h.state.language = 'zh-CN'
+    expect((await submitGenerate()).response_language).toBe('zh')
+
+    cleanup()
+    h.createTopicOverview.mockReset()
+    h.state.language = 'zh-CN'
+    expect((await submitUpdate()).response_language).toBe('zh')
+  })
+
+  it('非 zh locale（如 ja-JP）：按 UI 规格回退 en-US 占位 → response_language=en', async () => {
+    h.state.language = 'ja-JP'
+    expect((await submitGenerate()).response_language).toBe('en')
   })
 })
 
