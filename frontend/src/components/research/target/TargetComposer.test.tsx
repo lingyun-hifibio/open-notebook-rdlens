@@ -11,7 +11,7 @@ vi.mock('@/lib/hooks/use-translation', () => ({
 }))
 
 import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
-import { ResearchScopeProvider } from '@/lib/research/scope'
+import { ResearchScopeProvider, useResearchScope } from '@/lib/research/scope'
 import { TargetComposer } from './TargetComposer'
 import type { UseResearchEditorResult } from '@/lib/hooks/use-research-editor'
 import type { EditorSnapshot, ResearchWorkPurpose } from '@/lib/research/types'
@@ -50,6 +50,7 @@ function Harness({
   onChange = vi.fn(),
   sessionWired = false,
   editorSnapshot = null,
+  selectionChip = null,
 }: {
   capability?: boolean
   initialPurpose?: ResearchWorkPurpose | null
@@ -57,10 +58,23 @@ function Harness({
   onChange?: (purpose: ResearchWorkPurpose | null) => void
   sessionWired?: boolean
   editorSnapshot?: EditorSnapshot | null
+  selectionChip?: {
+    label: string
+    title?: string
+    onRemove: () => void
+  } | null
 }) {
   const [purpose, setPurpose] = useState<ResearchWorkPurpose | null>(initialPurpose)
   const [open, setOpen] = useState(initialMenuOpen)
+  const scope = useResearchScope()
   return (
+    <>
+    {/* 测试辅助：真实单篇 pin（验证选段 chip 与 single chip 并存）。 */}
+    <button
+      type="button"
+      data-testid="harness-pin-single"
+      onClick={() => scope.setSingle('src_1', 'sess_1')}
+    />
     <TargetComposer
       sessionWired={sessionWired}
       editor={editorStub}
@@ -81,6 +95,7 @@ function Harness({
       secondaryBlockedReason={null}
       compactScopeChip={null}
       onCompactScopeChipActivate={() => {}}
+      selectionChip={selectionChip}
       workPurpose={purpose}
       onWorkPurposeChange={(next) => {
         setPurpose(next)
@@ -90,6 +105,7 @@ function Harness({
       purposeMenuOpen={open}
       onPurposeMenuOpenChange={setOpen}
     />
+    </>
   )
 }
 
@@ -298,5 +314,49 @@ describe('deriveResearchDraftGate #1106/D5 空 selected 用途放行', () => {
       initialPurpose: 'document_qa',
     })
     expect(screen.getByTestId('chat-send')).toBeDisabled()
+  })
+})
+
+// W2 #1077（UI 规格 v1 §5.7/BEH-11）：阅读器「讨论选段」→ composer chip。
+// chip 只是显式上下文提示，不改变发送门禁；移除后请求不再携带 selection_context，
+// 且必须与既有单篇 pin chip 并存（两套独立上下文）。
+describe('TargetComposer W2 #1077 阅读器选段 chip', () => {
+  it('渲染独立选段 chip（data-testid/标签/title），移除按钮调用 onRemove', () => {
+    const onRemove = vi.fn()
+    renderComposer({
+      selectionChip: {
+        label: 'Source A · p.3 · 2–9 · quote',
+        title: 'selected quote',
+        onRemove,
+      },
+    })
+    const chip = screen.getByTestId('rdlens-target-selection-chip')
+    expect(chip).toHaveTextContent('Source A · p.3 · 2–9 · quote')
+    expect(screen.getByTitle('selected quote')).toBeInTheDocument()
+    const remove = screen.getByTestId('rdlens-target-selection-chip-remove')
+    expect(remove).toHaveAttribute('aria-label', 'research.selection.remove')
+    fireEvent.click(remove)
+    expect(onRemove).toHaveBeenCalledTimes(1)
+  })
+
+  it('无 pending 选段时不渲染选段 chip（composer 结构不变）', () => {
+    renderComposer()
+    expect(screen.queryByTestId('rdlens-target-selection-chip')).toBeNull()
+    expect(screen.queryByTestId('rdlens-target-selection-chip-remove')).toBeNull()
+  })
+
+  it('与既有单篇 pin chip 并存（两行独立；不合并、不互相清除）', () => {
+    const onRemove = vi.fn()
+    renderComposer({
+      selectionChip: { label: 'selection chip', title: 'quote', onRemove },
+    })
+    fireEvent.click(screen.getByTestId('harness-pin-single'))
+    // ResearchDraftComposer 既有单篇 chip。
+    expect(screen.getByTestId('selection-chip')).toBeInTheDocument()
+    // 阅读器选段 chip 独立存在。
+    const readerChip = screen.getByTestId('rdlens-target-selection-chip')
+    expect(readerChip).toBeInTheDocument()
+    expect(readerChip).toHaveTextContent('selection chip')
+    expect(onRemove).not.toHaveBeenCalled()
   })
 })

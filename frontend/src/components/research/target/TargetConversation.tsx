@@ -9,6 +9,7 @@ import type { CoverageSubmitOutcome } from '@/lib/hooks/use-research-chat'
 import { ResearchChatPanel } from '../ResearchChatPanel'
 import { translateOrFallback } from '@/lib/locales/translate-or-fallback'
 import type { ResearchCitationDisplayItem } from '@/lib/research/types'
+import type { WireSelectionProjection } from '@/lib/research/session-contract'
 import type { TargetCitationPreview, TargetRightPaneKind } from './target-types'
 import type { TargetConversationState } from './use-target-conversation'
 import { TargetComposer } from './TargetComposer'
@@ -55,12 +56,19 @@ export function TargetConversation({
   secondaryBlockedReason,
   compactScopeChip,
   onCompactScopeChipActivate,
+  selectionChip,
+  scrollToMessage,
+  onSelectionJump,
   overviewSlot,
 }: {
   conversation: TargetConversationState
   onOpenHistory: (trigger: HTMLElement) => void
   onNewConversation: () => void
-  onOpenCitation: (preview: TargetCitationPreview, trigger: HTMLElement | null) => void
+  onOpenCitation: (
+    preview: TargetCitationPreview,
+    trigger: HTMLElement | null,
+    messageId: string | null,
+  ) => void
   /** 当前右栏面板（aria-expanded 与真实状态一致） */
   rightPane: TargetRightPaneKind | null
   onOpenRightPane: (kind: 'conversations', trigger: HTMLElement) => void
@@ -72,6 +80,20 @@ export function TargetConversation({
   secondaryBlockedReason: string | null
   compactScopeChip: string | null
   onCompactScopeChipActivate: () => void
+  /** W2 #1077/BEH-11：阅读器选段 chip（由 shell 计算，独立于单篇 pin） */
+  selectionChip?: {
+    readonly label: string
+    readonly title?: string
+    readonly onRemove: () => void
+  } | null
+  /** W2 #1077/#1013 §2.10：返回原回答的 durable message 滚动请求 */
+  scrollToMessage?: {
+    readonly sessionId: string
+    readonly messageId: string
+    readonly seq: number
+  } | null
+  /** W2 #1077/#1013 §2.10：user turn 选段 chip 点击 → 打开阅读器定位选段 */
+  onSelectionJump?: (selection: WireSelectionProjection) => void
   /**
    * #1125/D-UI-04=A：中央对话起始位置的轻量概览入口（由 shell 注入，仅在
    * 对话中心视图传入）。可选——不传时保持既有结构（次级视图不走对话列）。
@@ -129,12 +151,17 @@ export function TargetConversation({
           : null
   const createAvailable = createUnavailableReason === null && !sessions?.creating
 
-  // W1：引用点击只打开右栏引用预览（BEH-05 往返/原文阅读属 W2）。
-  const handleCitationReturn = (citation: ResearchCitationDisplayItem): void => {
+  // W2 #1077/BEH-05：#1013 citation 点击继续走既有右栏引用预览；durable
+  // message_id 一并透传（shell 据此记录「返回原回答」目标 + 阅读器请求）。
+  const handleCitationReturn = (
+    citation: ResearchCitationDisplayItem,
+    messageId: string | null,
+  ): void => {
     const active = typeof document === 'undefined' ? null : document.activeElement
     onOpenCitation(
       { citation, sourceId: null },
       active instanceof HTMLElement ? active : null,
+      messageId,
     )
   }
 
@@ -295,6 +322,8 @@ export function TargetConversation({
           sendDisabled={!conversation.canExecute}
           blockedHint={conversation.blockedHint}
           onCitationReturn={handleCitationReturn}
+          scrollToMessage={scrollToMessage}
+          onSelectionJump={onSelectionJump}
           backgroundNotice={conversation.backgroundNotice}
           resolveChatOrigin={conversation.resolveChatOrigin}
           editorSnapshot={conversation.sessionWired ? conversation.editorSnapshot : undefined}
@@ -366,6 +395,7 @@ export function TargetConversation({
             secondaryBlockedReason={secondaryBlockedReason}
             compactScopeChip={compactScopeChip}
             onCompactScopeChipActivate={onCompactScopeChipActivate}
+            selectionChip={selectionChip}
             workPurpose={conversation.workPurpose}
             onWorkPurposeChange={conversation.setWorkPurpose}
             purposeInferenceAvailable={conversation.purposeInferenceAvailable}

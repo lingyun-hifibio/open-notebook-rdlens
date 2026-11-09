@@ -62,7 +62,18 @@ const conversationFixture = vi.hoisted(() => ({
     purposeInferenceAvailable: false,
     workPurpose: null as 'document_qa' | 'exploration' | 'writing' | null,
     setWorkPurpose: vi.fn(),
+    // W2 #1077：活动会话（citation 返回目标/宿主态）与消息面 turns。
+    activeRef: null as {
+      domain: 'research'
+      kind: 'global'
+      projectId: string
+      sessionId: string
+      sourceId: null
+    } | null,
+    turns: [] as unknown[],
   },
+  // shell 传给 useTargetConversation 的 options（getPendingSelection 断言用）。
+  lastOptions: null as Record<string, unknown> | null,
   editor: {
     snapshot: null,
     controller: null,
@@ -92,6 +103,145 @@ const ingest = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/hooks/use-media-query', () => ({
   useMediaQuery: () => media.wide,
   useIsDesktop: () => true,
+}))
+
+// W2 #1077：阅读器数据层/UI/能力位替身（被测边界 = shell 接线）：
+// - useResearchD1e：readerReady（fail-closed 入口禁用）；
+// - useSourceMedia：不 fetch，回放可控媒体状态并记录入参（pageIdx/wantPageImage）；
+// - TargetReaderFocus：捕获 props（request/return/answer/选段）并用最小假控件
+//   触发 shell 回调（真实 reader 形态由 reader-ui 自己的测试覆盖）。
+const d1eFixture = vi.hoisted(() => ({ ready: false }))
+
+vi.mock('@/lib/hooks/use-research-c05', () => ({
+  useResearchD1e: () => ({
+    capability: d1eFixture.ready ? { contract: 'd1e-roundtrip-v1', enabled: true } : null,
+    ready: d1eFixture.ready,
+    loading: false,
+  }),
+  useResearchC05: () => ({
+    caps: null,
+    loading: false,
+    dispatchReady: () => false,
+    unavailableReason: () => '',
+    supportsMode: () => false,
+    previewSupported: false,
+  }),
+}))
+
+const sourceMediaFixture = vi.hoisted(() => {
+  const result = {
+    detail: {
+      source_id: 'src_ready',
+      document_id: 'doc_ready',
+      document_version: 'v1',
+      status: 'ready',
+      content_hash: null,
+      synced_at: null,
+      last_error: null,
+      title: 'Paper A',
+      source_type: 'pdf',
+      file_available: true,
+      markdown_chunks: [
+        { chunk_id: 'chunk_0', page_idx: 0, markdown: 'page zero' },
+        { chunk_id: 'chunk_2', page_idx: 2, markdown: 'page two' },
+      ],
+    },
+    detailStatus: 'ready' as 'idle' | 'loading' | 'ready' | 'error',
+    detailFailure: null,
+    retryDetail: vi.fn(),
+    versionState: { kind: 'match' as const },
+    sourceType: 'pdf' as string | null,
+    pages: [0, 2],
+    pageImage: { status: 'idle' as const, url: null, failure: null },
+    retryPageImage: vi.fn(),
+    file: { status: 'idle' as const, failure: null },
+    openFile: vi.fn(),
+  }
+  return {
+    result,
+    calls: [] as Array<Record<string, unknown>>,
+  }
+})
+
+vi.mock('@/lib/hooks/use-source-media', () => ({
+  useSourceMedia: (input: Record<string, unknown>) => {
+    sourceMediaFixture.calls.push(input)
+    return sourceMediaFixture.result
+  },
+}))
+
+/** 假阅读器触发的「讨论选段」载荷（真实 Body 产物形状）。 */
+const pendingSelectionFixture = {
+  selection: {
+    sourceId: 'src_ready',
+    documentId: 'doc_ready',
+    documentVersion: 'v1',
+    chunkId: 'chunk_2',
+    chunkOrdinal: 2,
+    pageIdx: 2,
+    startOffset: 0,
+    endOffset: 6,
+    quote: 'page two',
+    quoteHash: 'quote_hash',
+    contentHash: 'content_hash',
+  },
+  sourceId: 'src_ready',
+  sourceTitle: 'Paper A',
+  pageIdx: 2,
+  chunkOrdinal: 2,
+  target: 'global' as const,
+}
+
+const readerFocusFixture = vi.hoisted(() => ({
+  props: null as Record<string, unknown> | null,
+}))
+
+vi.mock('@/components/research/target/TargetReaderFocus', () => ({
+  TargetReaderFocus: (props: Record<string, unknown>) => {
+    readerFocusFixture.props = props
+    return (
+      <div data-testid="rdlens-target-reader" role="dialog" aria-modal="true">
+        <span data-testid="fake-reader-origin">
+          {(props.request as { origin?: string }).origin ?? ''}
+        </span>
+        <span data-testid="fake-reader-source">
+          {(props.request as { sourceId?: string }).sourceId ?? ''}
+        </span>
+        <span data-testid="fake-reader-message-id">
+          {String((props.request as { messageId?: string | null }).messageId ?? '')}
+        </span>
+        <span data-testid="fake-reader-page-idx">{String(props.pageIdx ?? '')}</span>
+        <span data-testid="fake-reader-answer">{String(props.answerContext ?? '')}</span>
+        <span data-testid="fake-reader-return-available">{String(props.returnAvailable)}</span>
+        <span data-testid="fake-reader-return-unavailable">
+          {String(props.returnUnavailableNotice)}
+        </span>
+        <button type="button" data-testid="fake-reader-close" onClick={props.onClose as () => void} />
+        <button
+          type="button"
+          data-testid="fake-reader-return"
+          onClick={props.onReturnToAnswer as () => void}
+        />
+        <button
+          type="button"
+          data-testid="fake-reader-ask-source"
+          onClick={props.onAskThisSource as () => void}
+        />
+        <button
+          type="button"
+          data-testid="fake-reader-open-file"
+          onClick={props.onOpenFile as () => void}
+        />
+        <button
+          type="button"
+          data-testid="fake-reader-discuss"
+          onClick={() =>
+            (props.onDiscussSelection as (pending: unknown) => void)(pendingSelectionFixture)
+          }
+        />
+      </div>
+    )
+  },
 }))
 
 vi.mock('@/lib/hooks/use-research', () => ({
@@ -217,40 +367,102 @@ vi.mock('@/lib/embedded/shell', () => ({
   useRequestIngest: () => ingest,
 }))
 
+const chatPanelFixture = vi.hoisted(() => ({
+  scrollToMessage: null as Record<string, unknown> | null,
+}))
+
 vi.mock('@/components/research/ResearchChatPanel', () => ({
   ResearchChatPanel: (props: {
     onCitationReturn?: (citation: Record<string, unknown>, messageId: string | null) => void
+    onSelectionJump?: (selection: Record<string, unknown>) => void
+    scrollToMessage?: Record<string, unknown> | null
     hideComposer?: boolean
     showSessionScopeBar?: boolean
     showCoverageScopeSelector?: boolean
     showSessionHeader?: boolean
     suppressColdStartLookup?: boolean
-  }) => (
-    <div
-      data-testid="chat-panel"
-      data-hide-composer={props.hideComposer === true ? 'true' : undefined}
-      data-show-scope-bar={props.showSessionScopeBar === true ? 'true' : undefined}
-      data-show-coverage={props.showCoverageScopeSelector === true ? 'true' : undefined}
-      data-suppress-cold-start={props.suppressColdStartLookup === true ? 'true' : undefined}
-    >
-      <button
-        type="button"
-        data-testid="simulate-citation"
-        onClick={() =>
-          props.onCitationReturn?.(
-            {
-              citation_id: 1,
-              claim: 'Evidence claim text',
-              doc_id: 'doc_ready',
-              page_idx: 2,
-              doc_version: 'v1',
-            },
-            'msg_1',
-          )
-        }
-      />
-    </div>
-  ),
+  }) => {
+    chatPanelFixture.scrollToMessage = props.scrollToMessage ?? null
+    return (
+      <div
+        data-testid="chat-panel"
+        data-hide-composer={props.hideComposer === true ? 'true' : undefined}
+        data-show-scope-bar={props.showSessionScopeBar === true ? 'true' : undefined}
+        data-show-coverage={props.showCoverageScopeSelector === true ? 'true' : undefined}
+        data-suppress-cold-start={props.suppressColdStartLookup === true ? 'true' : undefined}
+      >
+        <button
+          type="button"
+          data-testid="simulate-citation"
+          onClick={() =>
+            props.onCitationReturn?.(
+              {
+                citation_id: 1,
+                claim: 'Evidence claim text',
+                doc_id: 'doc_ready',
+                page_idx: 2,
+                doc_version: 'v1',
+              },
+              'msg_1',
+            )
+          }
+        />
+        <button
+          type="button"
+          data-testid="simulate-citation-unresolved"
+          onClick={() =>
+            props.onCitationReturn?.(
+              {
+                citation_id: 2,
+                claim: 'Unknown claim',
+                doc_id: 'doc_missing',
+                page_idx: null,
+                doc_version: null,
+              },
+              'msg_2',
+            )
+          }
+        />
+        <button
+          type="button"
+          data-testid="simulate-citation-no-message"
+          onClick={() =>
+            props.onCitationReturn?.(
+              {
+                citation_id: 3,
+                claim: 'Live claim',
+                doc_id: 'doc_ready',
+                page_idx: 2,
+                doc_version: 'v1',
+              },
+              null,
+            )
+          }
+        />
+        <button
+          type="button"
+          data-testid="simulate-selection-jump"
+          onClick={() =>
+            props.onSelectionJump?.({
+              sourceId: 'src_ready',
+              documentId: 'doc_ready',
+              documentVersion: 'v1',
+              chunkId: 'chunk_2',
+              chunkOrdinal: 2,
+              pageIdx: 2,
+              startOffset: 0,
+              endOffset: 6,
+              quote: 'page two',
+              quoteHash: 'quote_hash',
+              contentHash: 'content_hash',
+              visibility: 'visible',
+              reasonCode: 'ok',
+            })
+          }
+        />
+      </div>
+    )
+  },
 }))
 
 vi.mock('./use-target-conversation', async () => {
@@ -258,7 +470,8 @@ vi.mock('./use-target-conversation', async () => {
     '@/lib/research/scope',
   )
   return {
-    useTargetConversation: (): TargetConversationState => {
+    useTargetConversation: (options: Record<string, unknown> = {}): TargetConversationState => {
+      conversationFixture.lastOptions = options
       const sessions = conversationFixture.sessions
       // 空 selected 的阻断文案与真实 hook 同源（BEH-03）：从 provider 快照推导。
       const snapshot = scopeModule.useResearchScope().getSnapshot()
@@ -277,8 +490,8 @@ vi.mock('./use-target-conversation', async () => {
         sessionWired: conversationFixture.flags.sessionWired,
         runtimeAvailable: sessions !== null,
         sessions,
-        activeRef: null,
-        turns: [],
+        activeRef: conversationFixture.flags.activeRef,
+        turns: conversationFixture.flags.turns as TargetConversationState['turns'],
         isStreaming: false,
         backgroundNotice: null,
         resolveChatOrigin: async () => null,
@@ -477,6 +690,17 @@ beforeEach(() => {
   conversationFixture.flags.purposeInferenceAvailable = false
   conversationFixture.flags.workPurpose = null
   conversationFixture.flags.sessionWired = false
+  conversationFixture.flags.activeRef = null
+  conversationFixture.flags.turns = []
+  conversationFixture.lastOptions = null
+  d1eFixture.ready = false
+  sourceMediaFixture.calls.length = 0
+  sourceMediaFixture.result.detailStatus = 'ready'
+  sourceMediaFixture.result.versionState = { kind: 'match' }
+  sourceMediaFixture.result.sourceType = 'pdf'
+  sourceMediaFixture.result.pageImage = { status: 'idle', url: null, failure: null }
+  readerFocusFixture.props = null
+  chatPanelFixture.scrollToMessage = null
   conversationFixture.flags.setWorkPurpose.mockClear()
   conversationFixture.send.mockClear()
   conversationFixture.openSession.mockClear()
@@ -663,9 +887,12 @@ describe('引用点击 → 右栏引用预览（W1 最小可用）', () => {
       'research.target.rightPane.locatorPage',
     )
     expect(screen.getByTestId('rdlens-target-citation-excerpt')).toHaveTextContent('Evidence claim text')
-    // W2 前原文阅读明确不可用
+    // W2 #1077：能力位未就绪（fail-closed）→ 独立禁用原因（不再是 W1 的
+    // openOriginalUnavailable 通用文案）。
     expect(screen.getByTestId('rdlens-target-open-original')).toBeDisabled()
-    expect(screen.getByText('research.target.rightPane.openOriginalUnavailable')).toBeInTheDocument()
+    expect(screen.getByTestId('rdlens-target-open-original-reason')).toHaveTextContent(
+      'research.target.reader.capabilityUnavailable',
+    )
   })
 
   it('只问此来源：调用既有 single-pin 能力并关闭右栏', async () => {
@@ -805,7 +1032,7 @@ describe('左资料栏（UI-04，§5.3）', () => {
     expect(screen.queryByTestId('rdlens-target-scope-blocked')).toBeNull()
   })
 
-  it('打开资料预览（UI-17）显示版本/状态，原文阅读明确 W2 不可用', async () => {
+  it('打开资料预览（UI-17）显示版本/状态；能力位未就绪时「打开原文」禁用并显示独立原因', async () => {
     renderShell()
     fireEvent.click(screen.getAllByTestId('rdlens-target-source-open')[0])
     await waitFor(() =>
@@ -813,6 +1040,9 @@ describe('左资料栏（UI-04，§5.3）', () => {
     )
     expect(screen.getByTestId('rdlens-target-source-preview-name')).toHaveTextContent('doc_ready')
     expect(screen.getByTestId('rdlens-target-source-open-original')).toBeDisabled()
+    expect(screen.getByTestId('rdlens-target-source-open-original-reason')).toHaveTextContent(
+      'research.target.reader.capabilityUnavailable',
+    )
   })
 })
 
@@ -1290,5 +1520,301 @@ describe('#1125：主题概览入口接入默认目标壳（中央对话起始�
     renderShell()
     expect(screen.queryByTestId('topic-overview-entry')).toBeNull()
     expect(screen.queryByTestId('topic-overview-dialog')).toBeNull()
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// W2 #1077：宽屏阅读器接线（DESIGN「reader-shell 接线契约」）。
+// 真实 reader 形态/焦点陷阱由 reader-ui 测试覆盖；这里只验证 shell 的
+// 入口启用与独立禁用原因、请求透传、返回原回答、选段 chip/发送、inert/焦点。
+// ─────────────────────────────────────────────────────────────────────────────
+const ACTIVE_GLOBAL_REF = {
+  domain: 'research' as const,
+  kind: 'global' as const,
+  projectId: 'proj_1',
+  sessionId: 'sess_1',
+  sourceId: null,
+}
+
+async function openCitationReader(): Promise<void> {
+  fireEvent.click(screen.getByTestId('simulate-citation'))
+  const pane = await screen.findByTestId('rdlens-target-right-pane')
+  expect(pane).toHaveAttribute('data-pane-kind', 'citation')
+  fireEvent.click(screen.getByTestId('rdlens-target-open-original'))
+  await screen.findByTestId('rdlens-target-reader')
+}
+
+describe('W2 #1077 阅读器入口（引用预览/资料预览「打开原文」）', () => {
+  it('D1-E 能力未就绪：引用与资料入口均禁用，原因=capabilityUnavailable（fail-closed）', async () => {
+    renderShell()
+    fireEvent.click(screen.getByTestId('simulate-citation'))
+    await screen.findByTestId('rdlens-target-right-pane')
+    expect(screen.getByTestId('rdlens-target-open-original')).toBeDisabled()
+    expect(screen.getByTestId('rdlens-target-open-original-reason')).toHaveTextContent(
+      'research.target.reader.capabilityUnavailable',
+    )
+
+    fireEvent.click(screen.getAllByTestId('rdlens-target-source-open')[0])
+    await waitFor(() =>
+      expect(screen.getByTestId('rdlens-target-right-pane')).toHaveAttribute(
+        'data-pane-kind',
+        'source',
+      ),
+    )
+    expect(screen.getByTestId('rdlens-target-source-open-original')).toBeDisabled()
+    expect(
+      screen.getByTestId('rdlens-target-source-open-original-reason'),
+    ).toHaveTextContent('research.target.reader.capabilityUnavailable')
+  })
+
+  it('引用无法解析到来源：独立禁用原因 citationUnavailable（优先于能力位）', async () => {
+    d1eFixture.ready = true
+    renderShell()
+    fireEvent.click(screen.getByTestId('simulate-citation-unresolved'))
+    await screen.findByTestId('rdlens-target-right-pane')
+    const button = screen.getByTestId('rdlens-target-open-original')
+    expect(button).toBeDisabled()
+    expect(screen.getByTestId('rdlens-target-open-original-reason')).toHaveTextContent(
+      'research.target.reader.citationUnavailable',
+    )
+    // 未打开阅读器（不伪造原文）。
+    expect(screen.queryByTestId('rdlens-target-reader')).toBeNull()
+  })
+
+  it('citation 入口：请求携带 citation page_idx/messageId 与解析后的来源；aside 回答上下文绑定 durable message', async () => {
+    d1eFixture.ready = true
+    conversationFixture.flags.activeRef = ACTIVE_GLOBAL_REF
+    conversationFixture.flags.turns = [
+      {
+        id: 'turn_1',
+        role: 'assistant',
+        content: 'Durable answer body',
+        serverMessageId: 'msg_1',
+        citations: [],
+      },
+    ]
+    renderShell()
+    await openCitationReader()
+
+    expect(readerFocusFixture.props?.request).toMatchObject({
+      origin: 'citation',
+      sourceId: 'src_ready',
+      messageId: 'msg_1',
+      initialPageIdx: 2,
+    })
+    expect(
+      (readerFocusFixture.props?.request as { citation: { doc_id: string } }).citation.doc_id,
+    ).toBe('doc_ready')
+    expect(screen.getByTestId('fake-reader-answer')).toHaveTextContent('Durable answer body')
+    // 初始页 = citation.page_idx（版本一致且属于可定位页集合）；页图按当前页单页请求。
+    await waitFor(() => expect(screen.getByTestId('fake-reader-page-idx')).toHaveTextContent('2'))
+    const lastMediaCall = sourceMediaFixture.calls[sourceMediaFixture.calls.length - 1]
+    expect(lastMediaCall.pageIdx).toBe(2)
+    expect(lastMediaCall.wantPageImage).toBe(true)
+    // 右栏保持挂载（overlay 不销毁工作台）。
+    expect(screen.getByTestId('rdlens-target-right-pane')).toBeInTheDocument()
+  })
+
+  it('引用跳转保留 page_idx：资料预览语义打开，再进 reader 时作为 initial_page_idx（§2.3-3）', async () => {
+    d1eFixture.ready = true
+    overviewFixture.capability = true
+    overviewFixture.data = readyOverviewFixture()
+    renderShell()
+    fireEvent.click(screen.getByTestId('topic-overview-entry-open'))
+    fireEvent.click(await screen.findByTestId('topic-overview-citation-jump-0'))
+    await waitFor(() =>
+      expect(screen.getByTestId('rdlens-target-right-pane')).toHaveAttribute(
+        'data-pane-kind',
+        'source',
+      ),
+    )
+    // 跳转页 = overview citation page_idx(2) 作为资料预览的初始页提示。
+    fireEvent.click(screen.getByTestId('rdlens-target-source-open-original'))
+    await screen.findByTestId('rdlens-target-reader')
+    expect(readerFocusFixture.props?.request).toMatchObject({
+      origin: 'source',
+      sourceId: 'src_ready',
+      initialPageIdx: 2,
+    })
+    await waitFor(() => expect(screen.getByTestId('fake-reader-page-idx')).toHaveTextContent('2'))
+  })
+
+  it('资料预览入口：source 请求按最新版（无 citation/messageId），初始页=可定位页集合首页', async () => {
+    d1eFixture.ready = true
+    renderShell()
+    fireEvent.click(screen.getAllByTestId('rdlens-target-source-open')[0])
+    await waitFor(() =>
+      expect(screen.getByTestId('rdlens-target-right-pane')).toHaveAttribute(
+        'data-pane-kind',
+        'source',
+      ),
+    )
+    fireEvent.click(screen.getByTestId('rdlens-target-source-open-original'))
+    await screen.findByTestId('rdlens-target-reader')
+    expect(readerFocusFixture.props?.request).toMatchObject({
+      origin: 'source',
+      sourceId: 'src_ready',
+      citation: null,
+      messageId: null,
+      documentRef: null,
+    })
+    await waitFor(() => expect(screen.getByTestId('fake-reader-page-idx')).toHaveTextContent('0'))
+  })
+
+  it('user turn 选段 chip（onSelectionJump）→ source 阅读器并定位选段页', async () => {
+    d1eFixture.ready = true
+    renderShell()
+    fireEvent.click(screen.getByTestId('simulate-selection-jump'))
+    await screen.findByTestId('rdlens-target-reader')
+    expect(readerFocusFixture.props?.request).toMatchObject({
+      origin: 'source',
+      sourceId: 'src_ready',
+      initialPageIdx: 2,
+    })
+    await waitFor(() => expect(screen.getByTestId('fake-reader-page-idx')).toHaveTextContent('2'))
+  })
+})
+
+describe('W2 #1077 返回原回答', () => {
+  it('navigate：关闭阅读器与右栏，并向对话下发 durable message 滚动请求', async () => {
+    d1eFixture.ready = true
+    conversationFixture.flags.activeRef = ACTIVE_GLOBAL_REF
+    renderShell()
+    await openCitationReader()
+    // citation 点击即记录返回目标（sessionStorage + localStorage）。
+    const keys = Object.keys(window.localStorage)
+    expect(keys.some((key) => key.includes('rdlens.research.return-target.v1'))).toBe(true)
+    expect(screen.getByTestId('fake-reader-return-available')).toHaveTextContent('true')
+
+    fireEvent.click(screen.getByTestId('fake-reader-return'))
+    await waitFor(() => expect(screen.queryByTestId('rdlens-target-reader')).toBeNull())
+    await waitFor(() => expect(screen.queryByTestId('rdlens-target-right-pane')).toBeNull())
+    expect(chatPanelFixture.scrollToMessage).toMatchObject({
+      sessionId: 'sess_1',
+      messageId: 'msg_1',
+    })
+  })
+
+  it('live citation 无 durable message_id：不记录返回目标、不显示返回入口', async () => {
+    d1eFixture.ready = true
+    conversationFixture.flags.activeRef = ACTIVE_GLOBAL_REF
+    renderShell()
+    fireEvent.click(screen.getByTestId('simulate-citation-no-message'))
+    await screen.findByTestId('rdlens-target-right-pane')
+    fireEvent.click(screen.getByTestId('rdlens-target-open-original'))
+    await screen.findByTestId('rdlens-target-reader')
+    expect(screen.getByTestId('fake-reader-return-available')).toHaveTextContent('false')
+  })
+
+  it('position_unavailable：目标不可用时只显示不可用提示（不跳最新、不关阅读器）', async () => {
+    d1eFixture.ready = true
+    // 无活动会话 ⇒ citation 点击无法记录返回目标。
+    renderShell()
+    await openCitationReader()
+    expect(screen.getByTestId('fake-reader-return-available')).toHaveTextContent('false')
+    fireEvent.click(screen.getByTestId('fake-reader-return'))
+    await waitFor(() =>
+      expect(screen.getByTestId('fake-reader-return-unavailable')).toHaveTextContent('true'),
+    )
+    expect(screen.getByTestId('rdlens-target-reader')).toBeInTheDocument()
+    expect(chatPanelFixture.scrollToMessage).toBeNull()
+  })
+})
+
+describe('W2 #1077 选段 → composer chip / selection_context', () => {
+  it('讨论选段：关闭阅读器，composer 显示选段 chip，pending 供 hook 读取', async () => {
+    d1eFixture.ready = true
+    conversationFixture.flags.activeRef = ACTIVE_GLOBAL_REF
+    renderShell()
+    await openCitationReader()
+    fireEvent.click(screen.getByTestId('fake-reader-discuss'))
+    await waitFor(() => expect(screen.queryByTestId('rdlens-target-reader')).toBeNull())
+
+    const chip = screen.getByTestId('rdlens-target-selection-chip')
+    expect(chip).toHaveTextContent('research.selection.chip')
+    expect(screen.getByTitle('page two')).toBeInTheDocument()
+    // 选段不改范围（provider 仍是 all）。
+    expect(screen.getByTestId('scope-probe-mode')).toHaveTextContent('all')
+    expect(screen.getByTestId('scope-probe-source-count')).toHaveTextContent('0')
+
+    const options = conversationFixture.lastOptions as {
+      getPendingSelection?: () => unknown
+    }
+    expect(options.getPendingSelection?.()).toMatchObject({
+      target: 'global',
+      sourceId: 'src_ready',
+      selection: { sourceId: 'src_ready', chunkId: 'chunk_2', pageIdx: 2 },
+    })
+  })
+
+  it('移除 chip：pending 清空（后续请求不再携带 selection_context）', async () => {
+    d1eFixture.ready = true
+    conversationFixture.flags.activeRef = ACTIVE_GLOBAL_REF
+    renderShell()
+    await openCitationReader()
+    fireEvent.click(screen.getByTestId('fake-reader-discuss'))
+    await waitFor(() => expect(screen.queryByTestId('rdlens-target-reader')).toBeNull())
+    expect(screen.getByTestId('rdlens-target-selection-chip')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('rdlens-target-selection-chip-remove'))
+    await waitFor(() =>
+      expect(screen.queryByTestId('rdlens-target-selection-chip')).toBeNull(),
+    )
+    const options = conversationFixture.lastOptions as {
+      getPendingSelection?: () => unknown
+    }
+    expect(options.getPendingSelection?.()).toBeNull()
+  })
+
+  it('发送成功：清空选段 chip；实际发送文本与范围不变', async () => {
+    d1eFixture.ready = true
+    conversationFixture.flags.activeRef = ACTIVE_GLOBAL_REF
+    renderShell()
+    await openCitationReader()
+    fireEvent.click(screen.getByTestId('fake-reader-discuss'))
+    await waitFor(() => expect(screen.queryByTestId('rdlens-target-reader')).toBeNull())
+
+    const textarea = screen.getByTestId('chat-input')
+    fireEvent.change(textarea, { target: { value: 'Question' } })
+    fireEvent.keyDown(textarea, { key: 'Enter', ctrlKey: true })
+    await waitFor(() => expect(conversationFixture.send).toHaveBeenCalledWith('Question'))
+    // 发送经 shell 包装：成功后清空 pending chip。
+    await waitFor(() =>
+      expect(screen.queryByTestId('rdlens-target-selection-chip')).toBeNull(),
+    )
+    expect(screen.getByTestId('scope-probe-mode')).toHaveTextContent('all')
+    expect(screen.getByTestId('scope-probe-source-count')).toHaveTextContent('0')
+  })
+})
+
+describe('W2 #1077 overlay 保活 / inert / 焦点', () => {
+  it('打开阅读器：工作台 inert+aria-hidden 且对话/右栏/草稿保持；关闭后移除并回焦触发控件', async () => {
+    d1eFixture.ready = true
+    renderShell()
+    const draft = screen.getByTestId('chat-input')
+    fireEvent.change(draft, { target: { value: 'Draft stays' } })
+
+    fireEvent.click(screen.getByTestId('simulate-citation'))
+    await screen.findByTestId('rdlens-target-right-pane')
+    const openOriginal = screen.getByTestId('rdlens-target-open-original')
+    openOriginal.focus()
+    fireEvent.click(openOriginal)
+    await screen.findByTestId('rdlens-target-reader')
+
+    const content = screen.getByTestId('rdlens-target-shell-content')
+    expect(content).toHaveAttribute('inert')
+    expect(content).toHaveAttribute('aria-hidden', 'true')
+    // 工作台不卸载：右栏、对话与草稿仍在。
+    expect(screen.getByTestId('rdlens-target-right-pane')).toBeInTheDocument()
+    expect(screen.getByTestId('chat-panel')).toBeInTheDocument()
+    expect(screen.getByTestId('chat-input')).toHaveValue('Draft stays')
+
+    fireEvent.click(screen.getByTestId('fake-reader-close'))
+    await waitFor(() => expect(screen.queryByTestId('rdlens-target-reader')).toBeNull())
+    expect(content).not.toHaveAttribute('inert')
+    expect(content).not.toHaveAttribute('aria-hidden')
+    expect(screen.getByTestId('chat-input')).toHaveValue('Draft stays')
+    // 焦点回触发控件（「打开原文」按钮）。
+    await waitFor(() => expect(document.activeElement).toBe(openOriginal))
   })
 })

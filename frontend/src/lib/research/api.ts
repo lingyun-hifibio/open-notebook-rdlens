@@ -102,12 +102,28 @@ export async function listSources(
   return response.data
 }
 
+/**
+ * 来源详情（Issue #1077 W2：宽屏阅读器精确版本读取）。
+ *
+ * `ref` 缺省 = 既有「按最新版读取」行为（既有调用零变化，不带 query 参数）；
+ * 传 `ref` = 成对发送 `document_id`/`document_version`（服务端不成对/不一致
+ * 返回 422 `source_ref_mismatch`，由 `useSourceMedia` 的版本护栏消费）。
+ */
 export async function getSource(
   projectId: string,
   sourceId: string,
+  ref?: SourceDocumentRef,
 ): Promise<ResearchSourceDetail> {
   const response = await apiClient.get<ResearchSourceDetail>(
     researchPath(projectId, 'sources', sourceId),
+    ref === undefined
+      ? {}
+      : {
+          params: {
+            document_id: ref.documentId,
+            document_version: ref.documentVersion,
+          },
+        },
   )
   return response.data
 }

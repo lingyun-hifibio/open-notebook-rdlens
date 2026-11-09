@@ -58,6 +58,7 @@ export function TargetComposer({
   secondaryBlockedReason,
   compactScopeChip,
   onCompactScopeChipActivate,
+  selectionChip = null,
   workPurpose,
   onWorkPurposeChange,
   purposeInferenceAvailable,
@@ -87,6 +88,16 @@ export function TargetComposer({
   /** §3.3 compact + 右栏打开时的当前范围紧凑标签 */
   compactScopeChip: string | null
   onCompactScopeChipActivate: () => void
+  /**
+   * W2 #1077（BEH-11 / UI 规格 v1 §5.7「选段带入讨论」）：阅读器选段 chip。
+   * 与既有单篇 `singleChip` 并存；存在时**不改变**发送门禁，移除后请求不再
+   * 携带 `selection_context`（壳层负责清理）。
+   */
+  selectionChip?: {
+    readonly label: string
+    readonly title?: string
+    readonly onRemove: () => void
+  } | null
   /** #1106：下一请求的显式目的（null = 自动判断） */
   workPurpose: ResearchWorkPurpose | null
   onWorkPurposeChange: (purpose: ResearchWorkPurpose | null) => void
@@ -413,6 +424,35 @@ export function TargetComposer({
             <span className="min-w-0 truncate">{compactScopeChip}</span>
             <ArrowRight aria-hidden="true" className="h-3 w-3 shrink-0" />
           </button>
+        </div>
+      )}
+      {selectionChip !== null && (
+        <div className="px-1 pb-1">
+          {/* W2 #1077/BEH-11：阅读器选段 → composer chip（独立于单篇 pin）。
+              移除即清除 pending selection，后续请求不再携带 selection_context。 */}
+          <div
+            className="flex min-w-0 items-center gap-2 rounded-md border px-2 py-1"
+            style={{
+              borderColor: 'var(--rdlens-evidence)',
+              backgroundColor: 'var(--rdlens-cite-field)',
+            }}
+            data-testid="rdlens-target-selection-chip"
+          >
+            <span className="min-w-0 truncate text-xs" title={selectionChip.title}>
+              {selectionChip.label}
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-5 shrink-0 px-1 text-xs"
+              aria-label={t('research.selection.remove')}
+              onClick={selectionChip.onRemove}
+              data-testid="rdlens-target-selection-chip-remove"
+            >
+              ×
+            </Button>
+          </div>
         </div>
       )}
       {purposeControl}

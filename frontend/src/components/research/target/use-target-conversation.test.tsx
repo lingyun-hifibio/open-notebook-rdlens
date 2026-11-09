@@ -270,6 +270,8 @@ vi.mock('@/lib/hooks/use-research-chat', async (importOriginal) => {
 
 vi.mock('@/lib/hooks/use-research-c05', () => ({
   useResearchC05: () => ({ dispatchReady: () => false }),
+  // W2 #1077：TargetShell 的阅读能力位（本文件只渲染 shell 但不打开阅读器）。
+  useResearchD1e: () => ({ capability: null, ready: false, loading: false }),
 }))
 
 vi.mock('@/lib/hooks/use-research-global-model', async (importOriginal) => {
@@ -836,5 +838,112 @@ describe('useTargetConversation #1106 本次用途', () => {
       expect(await result.current.conversation.send('Question')).toBe(false)
     })
     expect(result.current.conversation.workPurpose).toBe('writing')
+  })
+})
+
+// W2 #1077（BEH-11 / #1013 §2.11）：阅读器「讨论选段」只能经 shell 显式注入的
+// getPendingSelection 读取；仅 target==='global' 时随提交写 selection_context，
+// 且**不改变**范围/检索载荷（选段来源允许在 scope 外）。
+const PENDING_SELECTION = {
+  selection: {
+    sourceId: 'src_1',
+    documentId: 'doc_1',
+    documentVersion: 'v1',
+    chunkId: 'chunk_1',
+    chunkOrdinal: 3,
+    pageIdx: 1,
+    startOffset: 0,
+    endOffset: 5,
+    quote: 'quote',
+    quoteHash: 'quote_hash',
+    contentHash: 'content_hash',
+  },
+  sourceId: 'src_1',
+  sourceTitle: 'Paper One',
+  pageIdx: 1,
+  chunkOrdinal: 3,
+  target: 'global' as const,
+}
+
+function usePendingHarness(getPendingSelection: () => unknown) {
+  return {
+    conversation: useTargetConversation({
+      purposeInferenceAvailable: globalModelFixture.purposeInferenceAvailable,
+      getPendingSelection: getPendingSelection as never,
+    }),
+    scope: useResearchScope(),
+  }
+}
+
+describe('useTargetConversation · W2 #1077 选段 selection_context', () => {
+  it('讨论选段后 getSelectionContext 返回 11 键 selection；发送不改变范围载荷', async () => {
+    displayFixture.display = { surface: 'global', ref: SESSION_REF }
+    const { result } = renderHook(() => usePendingHarness(() => PENDING_SELECTION), { wrapper })
+    await waitFor(() => expect(result.current.conversation.sessionWired).toBe(true))
+    await waitFor(() => expect(chatFixture.lastOptions?.session).toBeTruthy())
+
+    const session = chatFixture.lastOptions?.session as {
+      getSelectionContext?: () => unknown
+    }
+    expect(session.getSelectionContext?.()).toMatchObject({
+      sourceId: 'src_1',
+      chunkId: 'chunk_1',
+      chunkOrdinal: 3,
+      pageIdx: 1,
+      quote: 'quote',
+    })
+
+    await act(async () => {
+      expect(await result.current.conversation.send('Question')).toBe(true)
+    })
+    const payload = controllerFixture.send.mock.calls[0][0] as Record<string, unknown>
+    // 选段不并入范围/检索载荷：默认 all、无 source/note ids。
+    expect(payload.sourceIds).toEqual([])
+    expect(payload.noteIds).toEqual([])
+    expect((payload.scope as Record<string, unknown>).mode).toBe('all')
+  })
+
+  it('getPendingSelection 变化后读取渲染时刻最新值（ref，不重建 controller）', async () => {
+    displayFixture.display = { surface: 'global', ref: SESSION_REF }
+    let pending: unknown = null
+    const { rerender } = renderHook(() => usePendingHarness(() => pending), { wrapper })
+    await waitFor(() => expect(chatFixture.lastOptions?.session).toBeTruthy())
+    const session = chatFixture.lastOptions?.session as {
+      getSelectionContext?: () => unknown
+    }
+    expect(session.getSelectionContext?.()).toBeNull()
+
+    pending = PENDING_SELECTION
+    act(() => rerender())
+    await waitFor(() =>
+      expect(session.getSelectionContext?.()).toMatchObject({ sourceId: 'src_1' }),
+    )
+  })
+
+  it('target !== global（来源会话）→ 不携带 selection_context', async () => {
+    displayFixture.display = { surface: 'global', ref: SESSION_REF }
+    const sourcePending = { ...PENDING_SELECTION, target: 'source' as const }
+    renderHook(() => usePendingHarness(() => sourcePending), { wrapper })
+    await waitFor(() => expect(chatFixture.lastOptions?.session).toBeTruthy())
+    const session = chatFixture.lastOptions?.session as {
+      getSelectionContext?: () => unknown
+    }
+    expect(session.getSelectionContext?.()).toBeNull()
+  })
+
+  it('未注入 getPendingSelection → 旧行为不变（null）', async () => {
+    displayFixture.display = { surface: 'global', ref: SESSION_REF }
+    const { result } = renderHook(() => {
+      return {
+        conversation: useTargetConversation({
+          purposeInferenceAvailable: false,
+        }),
+      }
+    }, { wrapper })
+    await waitFor(() => expect(result.current.conversation.sessionWired).toBe(true))
+    const session = chatFixture.lastOptions?.session as {
+      getSelectionContext?: () => unknown
+    }
+    expect(session.getSelectionContext?.()).toBeNull()
   })
 })

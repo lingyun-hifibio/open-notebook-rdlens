@@ -67,6 +67,9 @@ export function TargetRightPane({
   onAskThisSource,
   jobs,
   canPinSingleSource,
+  readerReady,
+  onOpenCitationOriginal,
+  onOpenSourceOriginal,
 }: {
   kind: TargetRightPaneKind
   onClose: () => void
@@ -80,6 +83,12 @@ export function TargetRightPane({
   jobs: readonly ResearchJob[]
   /** 单篇 pin 只能绑定到当前活动会话（BEH-02/F3） */
   canPinSingleSource: boolean
+  /** W2 #1077：D1-E 阅读能力就绪（fail-closed：非严格 true = 不可用） */
+  readerReady: boolean
+  /** W2 #1077：引用预览「打开原文」（已解析来源；版本精确） */
+  onOpenCitationOriginal: (source: ResearchSource) => void
+  /** W2 #1077：资料预览「打开原文」（按最新版读取） */
+  onOpenSourceOriginal: (source: ResearchSource) => void
 }) {
   const { t, language } = useTranslation()
   const { projectId } = useResearchWorkspace()
@@ -168,6 +177,8 @@ export function TargetRightPane({
             source={citationSource}
             onAskThisSource={onAskThisSource}
             canPinSingleSource={canPinSingleSource}
+            readerReady={readerReady}
+            onOpenOriginal={onOpenCitationOriginal}
           />
         )}
         {kind === 'source' && (
@@ -178,6 +189,8 @@ export function TargetRightPane({
             onRetry={() => void sourcesQuery.refetch()}
             onAskThisSource={onAskThisSource}
             canPinSingleSource={canPinSingleSource}
+            readerReady={readerReady}
+            onOpenOriginal={onOpenSourceOriginal}
           />
         )}
         {kind === 'conversations' && (
@@ -224,11 +237,15 @@ function CitationPreview({
   source,
   onAskThisSource,
   canPinSingleSource,
+  readerReady,
+  onOpenOriginal,
 }: {
   preview: TargetCitationPreview | null
   source: ResearchSource | null
   onAskThisSource: (sourceId: string) => void
   canPinSingleSource: boolean
+  readerReady: boolean
+  onOpenOriginal: (source: ResearchSource) => void
 }) {
   const { t } = useTranslation()
   if (preview === null) {
@@ -240,6 +257,15 @@ function CitationPreview({
     source !== null &&
     source.source_id !== null &&
     isSelectableStatus(source.status)
+  // W2 #1077（§5.6 UI-13）：两个独立禁用原因——引用无法解析到来源
+  // （citationUnavailable，陈旧/跨版本/citation source 未解析）优先于
+  // 环境能力缺失（capabilityUnavailable，D1-E 能力未就绪）。
+  const originalUnavailableReason =
+    source === null || source.source_id === null
+      ? t('research.target.reader.citationUnavailable')
+      : !readerReady
+        ? t('research.target.reader.capabilityUnavailable')
+        : null
   return (
     <div className="space-y-3 px-5 py-4" data-testid="rdlens-target-citation-preview">
       <div className="space-y-0.5">
@@ -273,19 +299,29 @@ function CitationPreview({
           type="button"
           size="sm"
           variant="outline"
-          disabled
-          aria-describedby="rdlens-target-open-original-reason"
+          disabled={originalUnavailableReason !== null}
+          aria-describedby={
+            originalUnavailableReason === null ? undefined : 'rdlens-target-open-original-reason'
+          }
+          onClick={() => {
+            if (source !== null && source.source_id !== null && readerReady) {
+              onOpenOriginal(source)
+            }
+          }}
           data-testid="rdlens-target-open-original"
         >
           {t('research.target.rightPane.openOriginal')}
         </Button>
-        <p
-          id="rdlens-target-open-original-reason"
-          className="text-xs"
-          style={{ color: 'var(--rdlens-ink-muted)' }}
-        >
-          {t('research.target.rightPane.openOriginalUnavailable')}
-        </p>
+        {originalUnavailableReason !== null && (
+          <p
+            id="rdlens-target-open-original-reason"
+            className="text-xs"
+            style={{ color: 'var(--rdlens-ink-muted)' }}
+            data-testid="rdlens-target-open-original-reason"
+          >
+            {originalUnavailableReason}
+          </p>
+        )}
         <Button
           type="button"
           size="sm"
@@ -317,6 +353,8 @@ function SourcePreview({
   onRetry,
   onAskThisSource,
   canPinSingleSource,
+  readerReady,
+  onOpenOriginal,
 }: {
   source: ResearchSource | null
   loading: boolean
@@ -324,6 +362,8 @@ function SourcePreview({
   onRetry: () => void
   onAskThisSource: (sourceId: string) => void
   canPinSingleSource: boolean
+  readerReady: boolean
+  onOpenOriginal: (source: ResearchSource) => void
 }) {
   const { t } = useTranslation()
   if (loading) {
@@ -353,6 +393,10 @@ function SourcePreview({
     canPinSingleSource &&
     source.source_id !== null &&
     isSelectableStatus(source.status)
+  // W2 #1077（§5.6 UI-17）：资料预览按最新版读取；能力未就绪时独立禁用原因。
+  const originalUnavailableReason = !readerReady
+    ? t('research.target.reader.capabilityUnavailable')
+    : null
   return (
     <div className="space-y-3 px-5 py-4" data-testid="rdlens-target-source-preview">
       <div className="space-y-0.5">
@@ -378,19 +422,29 @@ function SourcePreview({
           type="button"
           size="sm"
           variant="outline"
-          disabled
-          aria-describedby="rdlens-target-open-original-reason-source"
+          disabled={originalUnavailableReason !== null}
+          aria-describedby={
+            originalUnavailableReason === null
+              ? undefined
+              : 'rdlens-target-source-open-original-reason'
+          }
+          onClick={() => {
+            if (readerReady) onOpenOriginal(source)
+          }}
           data-testid="rdlens-target-source-open-original"
         >
           {t('research.target.rightPane.openOriginal')}
         </Button>
-        <p
-          id="rdlens-target-open-original-reason-source"
-          className="text-xs"
-          style={{ color: 'var(--rdlens-ink-muted)' }}
-        >
-          {t('research.target.rightPane.openOriginalUnavailable')}
-        </p>
+        {originalUnavailableReason !== null && (
+          <p
+            id="rdlens-target-source-open-original-reason"
+            className="text-xs"
+            style={{ color: 'var(--rdlens-ink-muted)' }}
+            data-testid="rdlens-target-source-open-original-reason"
+          >
+            {originalUnavailableReason}
+          </p>
+        )}
         <Button
           type="button"
           size="sm"
