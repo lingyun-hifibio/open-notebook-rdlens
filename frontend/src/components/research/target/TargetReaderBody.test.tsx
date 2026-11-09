@@ -18,10 +18,13 @@ vi.mock('@/lib/hooks/use-translation', () => ({
 
 // MarkdownRenderer 依赖 window.matchMedia/SyntaxHighlighter；本文件只关心
 // 文本选择与状态，用平面文本替身（与 SourceDetailPanel.test 同约定）。
+const markdownRenderSpy = vi.hoisted(() => vi.fn())
+
 vi.mock('@/components/ui/markdown-renderer', () => ({
-  MarkdownRenderer: ({ children }: { children: React.ReactNode }) => (
-    <div data-testid="markdown">{children}</div>
-  ),
+  MarkdownRenderer: ({ children }: { children: React.ReactNode }) => {
+    markdownRenderSpy()
+    return <div data-testid="markdown">{children}</div>
+  },
 }))
 
 const HEX64 = 'a'.repeat(64)
@@ -62,6 +65,7 @@ function makeMedia(overrides: Partial<UseSourceMediaResult> = {}): UseSourceMedi
     retryDetail: vi.fn(),
     versionState: { kind: 'latest' },
     sourceType: 'pdf',
+    restricted: false,
     pages: [0],
     pageImage: { status: 'idle', url: null, failure: null },
     retryPageImage: vi.fn(),
@@ -178,6 +182,23 @@ describe('TargetReaderBody 状态优先级（§2.9）', () => {
     expect(download).toBeDisabled()
     fireEvent.click(download)
     expect(onOpenFile).not.toHaveBeenCalled()
+  })
+
+  it('页图子请求 410：清空正文/页图，只显示受限说明（NORMATIVE 14）', () => {
+    renderBody({
+      media: makeMedia({
+        detail: makeDetail({ markdown_chunks: [makeChunk()] }),
+        restricted: true,
+        pageImage: { status: 'error', url: null, failure: 'forbidden' },
+      }),
+      pageIdx: 0,
+    })
+    expect(screen.getByTestId('rdlens-target-reader-restricted')).toHaveTextContent(
+      'research.target.reader.restricted',
+    )
+    expect(screen.queryAllByTestId('rdlens-target-reader-chunk')).toHaveLength(0)
+    expect(screen.queryByTestId('rdlens-target-reader-page-image-section')).toBeNull()
+    expect(screen.queryByTestId('rdlens-target-reader-retry')).toBeNull()
   })
 
   it('401 会话失效：清空正文/页图，只显示会话失效（§2.9：结束重试、无 Retry）', () => {
@@ -511,6 +532,19 @@ describe('TargetReaderBody 选段（§2.5-4/§2.10-10）', () => {
       contentHash: HEX64,
     })
     expect(pending.selection.quoteHash).toMatch(/^[a-f0-9]{64}$/)
+  })
+
+  it('选段浮层状态更新不重渲染 chunk 正文（DOM 稳定，浏览器 Selection 不被清空）', () => {
+    renderBody({
+      media: makeMedia({ detail: makeDetail({ markdown_chunks: [makeChunk()] }) }),
+      pageIdx: 0,
+    })
+    expect(markdownRenderSpy).toHaveBeenCalledTimes(1)
+    // 选段 → 浮层 pendingAction 是本组件 state；重渲染不得波及 chunk 子树
+    // （真实 MarkdownRenderer 重渲染会重建 markdown DOM 并清掉浏览器 Selection）。
+    selectInChunk(0, 0, 10)
+    expect(screen.getByTestId('rdlens-target-reader-discuss-selection')).toBeInTheDocument()
+    expect(markdownRenderSpy).toHaveBeenCalledTimes(1)
   })
 
   it('chunk 缺逐 chunk content_hash：不产生选段，显示可读失败原因', () => {

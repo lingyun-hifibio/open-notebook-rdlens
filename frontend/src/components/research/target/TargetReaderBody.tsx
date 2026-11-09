@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactElement, ReactNode } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -45,6 +45,20 @@ interface PendingSelectionAction {
   readonly left: number
   readonly top: number
 }
+
+/**
+ * §2.11 选段：chunk 正文的 MarkdownRenderer 包装。
+ *
+ * `MarkdownRenderer` 每次渲染都会用新的内联 components 对象（React 视作新
+ * 组件类型）重建 markdown DOM；reader 的「讨论选段」浮层状态就在本组件里，
+ * 一 setState 就会重渲染 chunk DOM 并**清掉浏览器 Selection**（用户还没点
+ * 浮层按钮就被清空）。`memo` 以 markdown 字符串为界，使 chunk 子树在
+ * 选段/失败提示等局部状态变化时保持 DOM 稳定；markdown 内容/主题变化仍照常
+ * 更新（主题由 MarkdownRenderer 自己的 store 订阅驱动）。
+ */
+const ChunkMarkdown = memo(function ChunkMarkdown({ markdown }: { markdown: string }) {
+  return <MarkdownRenderer>{markdown}</MarkdownRenderer>
+})
 
 export interface TargetReaderBodyProps {
   request: TargetReaderOpenRequest
@@ -259,6 +273,10 @@ export function TargetReaderBody({
           type="button"
           size="sm"
           data-testid="rdlens-target-reader-discuss-selection"
+          // 浮层按钮在浏览器里可能因 mousedown 默认行为丢失 Selection（click
+          // 还没触发 pendingAction 就被 selectionchange 清空）：阻止默认的
+          // 焦点/选区变更，click 仍会正常派发。
+          onMouseDown={(event) => event.preventDefault()}
           onClick={discussPendingSelection}
         >
           {t('research.selection.discuss')}
@@ -302,7 +320,7 @@ export function TargetReaderBody({
             {t('research.target.reader.fallbackPositionNote')}
           </p>
         )}
-        <MarkdownRenderer>{chunk.markdown}</MarkdownRenderer>
+        <ChunkMarkdown markdown={chunk.markdown} />
         {chunkHasFigureMarker(chunk.markdown) && (
           <div
             className="space-y-2 rounded-md border border-dashed p-2"
@@ -388,6 +406,21 @@ export function TargetReaderBody({
   }
 
   // 3) 撤权（410 envelope）：清空正文/页图，只给受限说明 + 下载入口（若可用）。
+  // 页图/下载子请求的 410 与详情 410 同义（NORMATIVE 14：不伪装成页不可用）。
+  if (media.restricted) {
+    return bodyRoot(
+      <p
+        className="text-sm"
+        role="status"
+        style={{ color: 'var(--rdlens-warning)' }}
+        data-testid="rdlens-target-reader-restricted"
+      >
+        {t('research.target.reader.restricted')}
+      </p>,
+    )
+  }
+
+  // 3b) 撤权（410 envelope）：清空正文/页图，只给受限说明 + 下载入口（若可用）。
   if (detailFailure === 'forbidden') {
     return bodyRoot(
       <div className="space-y-3" data-testid="rdlens-target-reader-restricted">

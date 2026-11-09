@@ -151,6 +151,7 @@ const sourceMediaFixture = vi.hoisted(() => {
     retryDetail: vi.fn(),
     versionState: { kind: 'match' as const },
     sourceType: 'pdf' as string | null,
+    restricted: false,
     pages: [0, 2],
     pageImage: { status: 'idle' as const, url: null, failure: null },
     retryPageImage: vi.fn(),

@@ -77,12 +77,23 @@ export function TargetReaderAside({
         {t('research.target.reader.asideTitle')}
       </h3>
 
-      {citation !== null && (
-        <CitedCrossCheck
-          citation={citation}
-          chunks={chunks}
-          versionState={media.versionState}
-        />
+      {media.restricted ? (
+        <p
+          className="text-sm"
+          role="status"
+          style={{ color: 'var(--rdlens-warning)' }}
+          data-testid="rdlens-target-reader-aside-restricted"
+        >
+          {t('research.target.reader.restricted')}
+        </p>
+      ) : (
+        citation !== null && (
+          <CitedCrossCheck
+            citation={citation}
+            chunks={chunks}
+            versionState={media.versionState}
+          />
+        )
       )}
 
       {hasAnswerContext ? (

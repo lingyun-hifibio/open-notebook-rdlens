@@ -60,6 +60,7 @@ function makeMedia(overrides: Partial<UseSourceMediaResult> = {}): UseSourceMedi
     retryDetail: vi.fn(),
     versionState: { kind: 'latest' },
     sourceType: 'pdf',
+    restricted: false,
     pages: [0, 1],
     pageImage: { status: 'ready', url: 'blob:mock-page-1', failure: null },
     retryPageImage: vi.fn(),

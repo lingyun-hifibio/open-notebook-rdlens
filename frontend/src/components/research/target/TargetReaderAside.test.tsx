@@ -59,6 +59,7 @@ function makeMedia(
     retryDetail: vi.fn(),
     versionState: { kind: 'match' },
     sourceType: 'pdf',
+    restricted: false,
     pages: [0],
     pageImage: { status: 'idle', url: null, failure: null },
     retryPageImage: vi.fn(),
@@ -273,5 +274,26 @@ describe('TargetReaderAside 动作（§2.5-3/§2.10-11）', () => {
     expect(
       screen.getByTestId('rdlens-target-reader-aside-return-unavailable'),
     ).toHaveTextContent('research.source.returnUnavailable')
+  })
+})
+
+
+describe('TargetReaderAside 撤权（NORMATIVE 14：清空摘录）', () => {
+  it('restricted=true：不显示被引原文摘录/claim，只显示受限说明', () => {
+    renderAside({
+      media: makeMedia({
+        restricted: true,
+        pageImage: { status: 'error', url: null, failure: 'forbidden' },
+        detail: makeDetail({
+          markdown_chunks: [makeChunk({ chunk_id: 'chunk_ref', markdown: 'Cited passage text' })],
+        }),
+      }),
+      request: citationRequest,
+    })
+    expect(screen.getByTestId('rdlens-target-reader-aside-restricted')).toHaveTextContent(
+      'research.target.reader.restricted',
+    )
+    expect(screen.queryByTestId('rdlens-target-reader-cited-excerpt')).toBeNull()
+    expect(screen.queryByTestId('rdlens-target-reader-claim')).toBeNull()
   })
 })

@@ -263,7 +263,15 @@ export function TargetShell() {
     readerRestorePendingRef.current = false
     const trigger = readerTriggerRef.current
     readerTriggerRef.current = null
-    if (trigger !== null && trigger.isConnected) trigger.focus()
+    if (trigger !== null && trigger.isConnected) {
+      trigger.focus()
+      return
+    }
+    // 阅读器触发控件已被移除（如「返回原回答」同时关闭右栏）：焦点回工作台
+    // 输入区；`preventScroll` 不得覆盖刚下发的 durable message 滚动定位。
+    shellRef.current
+      ?.querySelector<HTMLElement>('[data-testid="chat-input"]')
+      ?.focus({ preventScroll: true })
   }, [readerRequest])
 
   const layout = resolveTargetLayout({
@@ -485,6 +493,10 @@ export function TargetShell() {
       messageId: plan.messageId,
       seq: returnScrollSeqRef.current,
     })
+    // 返回原回答时右栏也关闭；右栏的「焦点回触发控件」会聚焦 citation 按钮
+    // 并把会话滚动拉离目标回答（1024 下目标回答被滚出视口）。滚动定位由
+    // `scrollToMessage` 负责，焦点由阅读器关闭路径回输入区（preventScroll）。
+    restoreFocusPendingRef.current = false
     closeReader()
     closeRightPane()
   }, [closeReader, closeRightPane, conversationActiveRef, returnTarget])

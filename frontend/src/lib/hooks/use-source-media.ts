@@ -96,6 +96,11 @@ export interface UseSourceMediaResult {
   sourceType: string | null
   /** 可定位页集合（0-based 升序；citation 页仅在版本 match 时并入） */
   pages: number[]
+  /**
+   * §2.9/NORMATIVE 14：任一媒体子请求收到 410 envelope 撤权 → 清空正文/摘录。
+   * 页图/下载的 410 与详情 410 同义（不把撤权伪装成「页不可用」）。
+   */
+  restricted: boolean
   pageImage: ReaderPageImageState
   retryPageImage: () => void
   file: ReaderFileState
@@ -284,6 +289,7 @@ export function useSourceMedia(input: UseSourceMediaInput): UseSourceMediaResult
 
   const sourceType = typeof detail?.source_type === 'string' ? detail.source_type : null
 
+
   const detailDocumentRef = pairedDocumentRef(detail)
   const detailDocumentId = detailDocumentRef?.documentId ?? null
   const detailDocumentVersion = detailDocumentRef?.documentVersion ?? null
@@ -301,6 +307,13 @@ export function useSourceMedia(input: UseSourceMediaInput): UseSourceMediaResult
 
   const [pageImage, setPageImage] = useState<ReaderPageImageState>(IDLE_PAGE_IMAGE)
   const [file, setFile] = useState<ReaderFileState>(IDLE_FILE)
+
+  // §2.9/NORMATIVE 14：任一媒体子请求收到 410 envelope 撤权 → 清空正文/摘录。
+  // 页图/下载的 410 与来源详情 410 同义（不把撤权伪装成「页不可用」）。
+  const restricted =
+    detailFailure === 'forbidden' ||
+    pageImage.failure === 'forbidden' ||
+    file.failure === 'forbidden'
 
   // 请求代际：切页/重置/卸载时 bump，旧响应回来不写状态、不建 blob URL。
   const pageImageRequestRef = useRef(0)
@@ -440,6 +453,7 @@ export function useSourceMedia(input: UseSourceMediaInput): UseSourceMediaResult
     retryDetail,
     versionState,
     sourceType,
+    restricted,
     pages,
     pageImage,
     retryPageImage,

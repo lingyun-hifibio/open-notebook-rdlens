@@ -360,6 +360,32 @@ describe('useSourceMedia — detail 读取与版本护栏', () => {
     },
   )
 
+  it('页图 410 撤权子请求 → restricted=true（NORMATIVE 14：清空正文/摘录）', async () => {
+    responder = (config) => {
+      const url = String(config.url)
+      if (url.endsWith('/pages/0/image')) {
+        return { status: 410, data: { detail: { code: 'source_access_restricted', message: 'revoked' } } }
+      }
+      if (url.endsWith('/image')) return { status: 200, data: new Blob(['img'], { type: 'image/jpeg' }) }
+      return { status: 200, data: makeDetail() }
+    }
+    const { result } = renderHook(
+      () =>
+        useSourceMedia(
+          inputOf(citationRequest({ initialPageIdx: 0 }), {
+            pageIdx: 0,
+            wantPageImage: true,
+          }),
+        ),
+      { wrapper },
+    )
+    await waitFor(() => expect(result.current.detailStatus).toBe('ready'))
+    await waitFor(() => expect(result.current.pageImage.failure).toBe('forbidden'))
+    expect(result.current.restricted).toBe(true)
+    // 详情本身成功也不得展示「未撤权」的正文（读者层负责清空）。
+    expect(result.current.detail).not.toBeNull()
+  })
+
   it('detail 401 会话失效 → session_expired（§2.9：结束重试，不混入撤权/可重试）', async () => {
     responder = () => ({ status: 401, data: { detail: 'Not authenticated' } })
     const { result } = renderHook(() => useSourceMedia(inputOf(sourceRequest())), { wrapper })
