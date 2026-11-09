@@ -197,7 +197,7 @@ export function TopicOverviewDialog({
   isAdminReadonly,
   confirmedModelIsExternal,
 }: TopicOverviewDialogProps) {
-  const { t } = useTranslation()
+  const { t, language } = useTranslation()
   // 执行守卫与模型/scope 的唯一来源（与 Chat/Search 同一条链）。
   const { confirmedModelId, runGuarded } = useResearchGlobalModel()
   const { getSnapshot } = useResearchScope()
@@ -277,9 +277,20 @@ export function TopicOverviewDialog({
       }
       setSubmitError(null)
       setStaleNotice(false)
+      // I18N-02 / §5.9 UI-22：正文语言由 host 当前 UI 语言决定（zh* → zh，
+      // 其它 locale 用 en-US 占位）。此前漏传 `response_language` → 后端按
+      // 默认 zh 生成，en-US host 的 L2 读面得到中文正文（缺陷，非模型/提示
+      // 词问题）。只补该字段，不改 builder/wire/后端/prompt。
+      const responseLanguage: 'zh' | 'en' = language?.startsWith('zh') ? 'zh' : 'en'
       try {
         const result = await runGuarded(
-          (modelId) => generate.mutateAsync({ focus: focus.trim(), modelId, scope }),
+          (modelId) =>
+            generate.mutateAsync({
+              focus: focus.trim(),
+              modelId,
+              scope,
+              responseLanguage,
+            }),
           { scopeLabel: formatScopeLabel(current, t) },
         )
         // undefined = 守卫未放行（consent 登记/取消/无模型）：不当作失败。
@@ -295,7 +306,7 @@ export function TopicOverviewDialog({
         })
       }
     },
-    [blockedReasonText, confirmedModelId, focus, generate, getSnapshot, runGuarded, t],
+    [blockedReasonText, confirmedModelId, focus, generate, getSnapshot, language, runGuarded, t],
   )
 
   const submitErrorText =

@@ -16,6 +16,7 @@ import { TargetSourcesPane } from './TargetSourcesPane'
 import { TargetConversation } from './TargetConversation'
 import { TargetRightPane } from './TargetRightPane'
 import { TargetSecondaryView } from './TargetSecondaryView'
+import { TargetTopicOverview } from './TargetTopicOverview'
 import { useTargetConversation } from './use-target-conversation'
 import { useResearchPurposeCapability } from './use-purpose-capability'
 import {
@@ -60,17 +61,20 @@ function useViewportWidth(): number {
  * 假控件；空 selected 同时阻断 composer 与次级搜索/比较（BEH-03/F4）；
  * 「本次用途」（UI-11）由 #1106 PR-B 提供：能力位严格 true 时才渲染三选
  * 控件，空 selected 时另给真实的「改为探索讨论/写作」显式动作（D6）。
+ * #1125（owner「选A」defect 修复）：中央对话起始位置挂载既有 #1016 主题
+ * 概览入口/Dialog（UI 规格 v1 BEH-12/§5.4/D-UI-04=A）；不新增一级导航、
+ * 主区动作、路由或右栏面板。
  */
 export function TargetShell() {
   const { t } = useTranslation()
-  const { projectId } = useResearchWorkspace()
+  const { projectId, isAdminReadonly } = useResearchWorkspace()
   const host = useResearchHostOptional()
   const purposeInferenceAvailable = useResearchPurposeCapability(projectId)
   const conversation = useTargetConversation({ purposeInferenceAvailable })
   const jobsController = useResearchJobsController()
   const scopeApi = useResearchScope()
   const sourcesQuery = useResearchSources(projectId)
-  const { runGuarded } = useResearchGlobalModel()
+  const { runGuarded, confirmedModelIsExternal } = useResearchGlobalModel()
   const viewportWidth = useViewportWidth()
   const isWideViewport = useMediaQuery(`(min-width: ${TARGET_THREE_COLUMN_VIEWPORT}px)`)
   // 断点判定走媒体查询（响应式/测试可注入）；中央列宽度用真实视口宽度推导
@@ -282,6 +286,23 @@ export function TargetShell() {
                 closeRightPane()
                 setScopeFocusRequest((request) => request + 1)
               }}
+              // #1125：中央对话起始位置的既有 #1016 概览入口/Dialog。仅在
+              // 对话中心视图注入（次级视图不渲染，DOM 不残留 hidden 入口）；
+              // 引用跳转复用 shell 既有右栏来源预览；继续讨论写当前会话既有
+              // 草稿（无活动会话 → `editorHandle=null`，动作 fail-closed 隐藏）。
+              overviewSlot={
+                centerView === 'conversation' ? (
+                  <TargetTopicOverview
+                    projectId={projectId}
+                    onCitationJump={handleCitationJump}
+                    editorHandle={conversation.sessionWired ? conversation.editor : null}
+                    canExecute={conversation.canExecute}
+                    blockedHint={conversation.blockedHint}
+                    isAdminReadonly={isAdminReadonly}
+                    confirmedModelIsExternal={confirmedModelIsExternal === true}
+                  />
+                ) : undefined
+              }
             />
           </div>
 

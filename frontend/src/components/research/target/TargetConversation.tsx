@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { History, Plus } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -35,6 +35,10 @@ const CENTER_COMPOSER_MAX_WIDTH = '682px'
  * - composer 固定在中央列底部，不随消息滚走；
  * - runtime 可用但无活动会话（F3）：显示「新建/选择会话」说明并禁用发送，
  *   不静默退化到 legacy 单连续会话；
+ * - `overviewSlot`（可选，由 shell 注入 #1125 主题概览入口）：渲染在标题区
+ *   之下、消息区之上的「中央对话起始位置」轻量卡片行，与正文列同内边距/
+ *   同最大宽度（D-UI-04=A：不打开右栏、不新增一级导航/主区动作/路由）；
+ *   不传时不影响既有布局；
  * - W1 允许「引用点击 → 右栏引用预览」的最小可用行为；W2/W3 能力明确不可用。
  */
 export function TargetConversation({
@@ -51,6 +55,7 @@ export function TargetConversation({
   secondaryBlockedReason,
   compactScopeChip,
   onCompactScopeChipActivate,
+  overviewSlot,
 }: {
   conversation: TargetConversationState
   onOpenHistory: (trigger: HTMLElement) => void
@@ -67,6 +72,11 @@ export function TargetConversation({
   secondaryBlockedReason: string | null
   compactScopeChip: string | null
   onCompactScopeChipActivate: () => void
+  /**
+   * #1125/D-UI-04=A：中央对话起始位置的轻量概览入口（由 shell 注入，仅在
+   * 对话中心视图传入）。可选——不传时保持既有结构（次级视图不走对话列）。
+   */
+  overviewSlot?: ReactNode
 }) {
   const { t } = useTranslation()
   // #1106：用途展开态由本层拥有——composer 自身切换与回答脚注「改用途」
@@ -247,6 +257,21 @@ export function TargetConversation({
         )}
         </div>
       </div>
+
+      {/* #1125/D-UI-04=A：中央对话起始位置的轻量概览入口行（标题区之下、
+          消息区之上）。仅当 shell 注入时渲染；与正文列同内边距/同最大宽度
+          （850），不覆盖/不拦截消息区与 composer。 */}
+      {overviewSlot !== undefined && (
+        <div
+          className="shrink-0"
+          style={{ paddingInline: CENTER_INLINE_PADDING }}
+          data-testid="rdlens-target-overview-slot"
+        >
+          <div style={{ maxWidth: CENTER_BODY_MAX_WIDTH, width: '100%', marginInline: 'auto' }}>
+            {overviewSlot}
+          </div>
+        </div>
+      )}
 
       {/* 消息内容面：复用既有 ChatPanel；关闭其会话标题/范围条/composer，
           避免重复范围权威与重复标题（目标壳 composer 在中央列底部）。 */}

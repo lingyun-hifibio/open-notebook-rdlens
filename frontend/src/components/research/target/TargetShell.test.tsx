@@ -16,6 +16,7 @@ import { ResearchScopeProvider, useResearchScope } from '@/lib/research/scope'
 import { TargetShell } from './TargetShell'
 import type { TargetConversationState } from './use-target-conversation'
 import type { UseResearchSessionsResult } from '@/lib/hooks/use-research-sessions'
+import type { TopicOverviewWire } from '@/lib/research/topic-overview'
 import type { ResearchJob } from '@/lib/research/types'
 
 // W1 #1104（UI 规格 v1 §3/§5/§7）：目标工作台壳。
@@ -54,6 +55,9 @@ const conversationFixture = vi.hoisted(() => ({
     noActiveSession: false,
     canPinSingleSource: false,
     sendError: null as string | null,
+    // #1125 round-1：是否有活动会话（`sessionWired`）——决定「继续讨论」
+    // 是否接线草稿；默认 false 保持既有 50 例的 composer 语义不变。
+    sessionWired: false,
     // #1106：用途能力位/当前显式 purpose（用例可覆盖）
     purposeInferenceAvailable: false,
     workPurpose: null as 'document_qa' | 'exploration' | 'writing' | null,
@@ -123,6 +127,43 @@ vi.mock('@/lib/hooks/use-research-global-model', async (importOriginal) => {
     }),
   }
 })
+
+// #1125（owner 2026-11-09「选A」）：主题概览入口接线的替身。默认
+// `capability=false` ⇒ 目标壳既有布局零变化，且不发起任何概览请求；
+// 需要验证接线的用例显式打开能力位并给出就绪 wire。
+const overviewFixture = vi.hoisted(() => ({
+  capability: false,
+  data: null as unknown,
+}))
+
+vi.mock('@/lib/hooks/use-research-topic-overview', () => ({
+  topicOverviewGenerateMutationKey: (projectId: string) => [
+    'research',
+    projectId,
+    'topic-overview',
+    'generate',
+  ],
+  useResearchTopicOverviewCapability: () => overviewFixture.capability,
+  useResearchTopicOverview: () => ({
+    data: overviewFixture.data,
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+  useGenerateTopicOverview: () => ({
+    data: null,
+    isPending: false,
+    reset: vi.fn(),
+    mutateAsync: vi.fn(),
+  }),
+}))
+
+vi.mock('@/components/ui/markdown-renderer', () => ({
+  MarkdownRenderer: ({ children }: { children?: React.ReactNode }) => (
+    <div data-testid="markdown">{children}</div>
+  ),
+}))
 
 vi.mock('@/components/research/ResearchGlobalModelBar', () => ({
   ResearchGlobalModelBar: () => <div data-testid="model-bar" />,
@@ -233,7 +274,7 @@ vi.mock('./use-target-conversation', async () => {
         purpose === 'writing' ||
         (purpose === null && conversationFixture.flags.purposeInferenceAvailable)
       return {
-        sessionWired: false,
+        sessionWired: conversationFixture.flags.sessionWired,
         runtimeAvailable: sessions !== null,
         sessions,
         activeRef: null,
@@ -323,6 +364,78 @@ function sessionFixture(options: {
   } as unknown as UseResearchSessionsResult
 }
 
+/**
+ * #1125：已就绪主题概览 wire（最小完整形状）。引用指向左栏 fixture 中
+ * ready/v1 的 `doc_ready`，用于验证「引用跳转 → 右栏来源预览」的目标壳
+ * 既有链路。
+ */
+function readyOverviewFixture(): TopicOverviewWire {
+  return {
+    overview_id: 'ovw_1',
+    generation_id: 'gen_1',
+    generated_at: '2026-11-05T10:00:00+00:00',
+    generation_created_at: '2026-11-05T09:55:00+00:00',
+    focus: null,
+    visibility: 'ready',
+    content_markdown: 'Overview markdown',
+    sections: {
+      main_questions: 'Main questions',
+      findings: 'Findings',
+      disagreements: 'Disagreements',
+      reading_priorities: 'Reading priorities',
+    },
+    citations: [
+      {
+        citation_id: 1,
+        claim: 'claim-one',
+        doc_id: 'doc_ready',
+        doc_version: 'v1',
+        page_idx: 2,
+        chunk_id: 'chunk_1',
+        source_id: 'src_ready',
+        warning: null,
+      },
+    ],
+    scope: {
+      mode: 'selected',
+      contract_version: 'c05-v1',
+      includes_exact_versions: true,
+      captured_at: '2026-11-05T09:55:00+00:00',
+      source_count: 1,
+      refs_truncated: false,
+      // 空数组 ⇒ Entry 不做资料变化比较（不误报 added/retired）。
+      sources: [],
+      missing_source_ids: [],
+      single_source_id: null,
+    },
+    processing: {
+      resolved_mode: 'hybrid_rag',
+      evidence_chunk_count: 3,
+      citation_count: 1,
+      citations_total: 1,
+      citations_dropped: 0,
+      evidence_modalities: { text: 3, table: 0, figure: 0, mixed: 0 },
+      coverage: { trimmed: 1, missing: 0 },
+      included_sources: [
+        {
+          document_id: 'doc_ready',
+          document_version: 'v1',
+          chunk_count: 2,
+          source_id: 'src_ready',
+        },
+      ],
+      degradations: [],
+      degradation_reason: null,
+      evidence_degraded: null,
+      full_text_read: false,
+    },
+    model: { model_id: 'model_1', provider_id: 'p_local' },
+    purpose: null,
+    limitations: ['full_text_not_read'],
+    warnings: [],
+  }
+}
+
 function ScopeProbe() {
   const { mode, selectedSourceIds, selectedNoteIds } = useResearchScope()
   return (
@@ -363,12 +476,16 @@ beforeEach(() => {
   conversationFixture.flags.sendError = null
   conversationFixture.flags.purposeInferenceAvailable = false
   conversationFixture.flags.workPurpose = null
+  conversationFixture.flags.sessionWired = false
   conversationFixture.flags.setWorkPurpose.mockClear()
   conversationFixture.send.mockClear()
   conversationFixture.openSession.mockClear()
   conversationFixture.newSession.mockClear()
   conversationFixture.pinSingleSource.mockClear()
   conversationFixture.pinSingleSource.mockReturnValue(true)
+  conversationFixture.editor.setDraftText.mockClear()
+  overviewFixture.capability = false
+  overviewFixture.data = null
   ingest.mockClear()
 })
 
@@ -1075,5 +1192,103 @@ describe('#1106 本次用途（UI-11）', () => {
     fireEvent.click(screen.getByTestId('rdlens-target-source-select-src_ready'))
     fireEvent.change(screen.getByTestId('chat-input'), { target: { value: '讨论' } })
     expect(screen.getByTestId('chat-send')).not.toBeDisabled()
+  })
+})
+
+// #1125（owner 2026-11-09「选A」，defect 修复）：#1016 主题概览此前只在
+// legacy 壳挂载，默认目标壳（/research 非 legacy）无入口 → UI 规格 v1
+// BEH-12/§5.4/D-UI-04=A 在默认路径不可达。以下断言目标壳真实接线：
+// 入口位于中央对话起始位置；Dialog 复用既有语义；引用跳转先关闭 Dialog
+// 再打开右栏来源预览（HIGH-1：跳转对用户真实可见）；继续讨论写当前会话
+// 草稿并关闭 Dialog，无活动会话时 fail-closed 隐藏（MEDIUM-1）；次级视图
+// 不渲染入口（LOW-1）。
+describe('#1125：主题概览入口接入默认目标壳（中央对话起始位置）', () => {
+  it('能力位 true：入口在对话起始；引用跳转关闭 Dialog 后右栏来源预览可见（HIGH-1）', async () => {
+    overviewFixture.capability = true
+    overviewFixture.data = readyOverviewFixture()
+    renderShell()
+
+    const conversation = screen.getByTestId('rdlens-target-conversation')
+    const slot = screen.getByTestId('rdlens-target-overview-slot')
+    const entry = screen.getByTestId('topic-overview-entry')
+    const messageArea = screen.getByTestId('rdlens-target-message-area')
+    // 起始位置：标题区之下、消息区之上（不覆盖/不拦截消息面）。
+    expect(conversation).toContainElement(slot)
+    expect(slot).toContainElement(entry)
+    expect(
+      entry.compareDocumentPosition(messageArea) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+
+    // 已有概览 ⇒ 入口按钮为「查看」；点击打开既有 Dialog（四段正文）。
+    fireEvent.click(screen.getByTestId('topic-overview-entry-open'))
+    expect(await screen.findByTestId('topic-overview-dialog')).toBeInTheDocument()
+    expect(await screen.findByTestId('topic-overview-sections')).toBeInTheDocument()
+
+    // HIGH-1（round-1 审查）：概览 Dialog 是 Radix modal（overlay z-50），
+    // 目标壳右栏无 z-index；不关 Dialog 则右栏来源预览被遮住、用户不可见。
+    // 断言 Dialog 消失 + 右栏 source 预览真实打开（用户可见/可交互）。
+    fireEvent.click(await screen.findByTestId('topic-overview-citation-jump-0'))
+    await waitFor(() => expect(screen.queryByTestId('topic-overview-dialog')).toBeNull())
+    await waitFor(() =>
+      expect(screen.getByTestId('rdlens-target-right-pane')).toHaveAttribute(
+        'data-pane-kind',
+        'source',
+      ),
+    )
+    expect(screen.getByTestId('rdlens-target-source-preview-name')).toHaveTextContent('doc_ready')
+  })
+
+  it('MEDIUM-1：有活动会话时「继续讨论」写草稿并关闭 Dialog（草稿用户可见）', async () => {
+    overviewFixture.capability = true
+    overviewFixture.data = readyOverviewFixture()
+    // 真实语义：有活动会话才传 editor（shell 侧 fail-closed）。
+    conversationFixture.flags.sessionWired = true
+    renderShell()
+
+    fireEvent.click(screen.getByTestId('topic-overview-entry-open'))
+    expect(await screen.findByTestId('topic-overview-sections')).toBeInTheDocument()
+    fireEvent.click(await screen.findByTestId('topic-overview-discuss'))
+
+    // 写目标壳当前会话既有草稿（shell 传入 conversation.editor）。
+    expect(conversationFixture.editor.setDraftText).toHaveBeenCalledTimes(1)
+    // 写入后 Dialog 关闭：composer 在中央列底部可见（不是静默/被遮挡）。
+    await waitFor(() => expect(screen.queryByTestId('topic-overview-dialog')).toBeNull())
+  })
+
+  it('MEDIUM-1：无活动会话（sessionWired=false）⇒「继续讨论」fail-closed 隐藏', async () => {
+    overviewFixture.capability = true
+    overviewFixture.data = readyOverviewFixture()
+    // 默认 sessionWired=false：与真实 useTargetConversation 无活动会话同源。
+    renderShell()
+
+    fireEvent.click(screen.getByTestId('topic-overview-entry-open'))
+    expect(await screen.findByTestId('topic-overview-sections')).toBeInTheDocument()
+    expect(screen.queryByTestId('topic-overview-discuss')).toBeNull()
+    expect(conversationFixture.editor.setDraftText).not.toHaveBeenCalled()
+  })
+
+  it('LOW-1：次级视图不渲染概览入口（仅对话中心视图注入 slot），返回后恢复', async () => {
+    overviewFixture.capability = true
+    overviewFixture.data = readyOverviewFixture()
+    renderShell()
+    expect(screen.getByTestId('topic-overview-entry')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('rdlens-target-secondary-search'))
+    await waitFor(() =>
+      expect(screen.getByTestId('rdlens-target-secondary-evidence-search')).toBeInTheDocument(),
+    )
+    // 次级视图：对话列 hidden 且概览入口**未挂载**（不残留 hidden 入口）。
+    expect(screen.queryByTestId('rdlens-target-overview-slot')).toBeNull()
+    expect(screen.queryByTestId('topic-overview-entry')).toBeNull()
+
+    fireEvent.click(screen.getByTestId('rdlens-target-secondary-back'))
+    await waitFor(() => expect(screen.queryByTestId('rdlens-target-secondary-panel')).toBeNull())
+    expect(await screen.findByTestId('topic-overview-entry')).toBeInTheDocument()
+  })
+
+  it('能力位 false（默认）：目标壳零变化，无概览入口/Dialog', () => {
+    renderShell()
+    expect(screen.queryByTestId('topic-overview-entry')).toBeNull()
+    expect(screen.queryByTestId('topic-overview-dialog')).toBeNull()
   })
 })
