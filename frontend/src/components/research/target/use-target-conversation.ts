@@ -32,7 +32,7 @@ import {
 } from '@/lib/research/scope'
 import { buildSubmissionKey } from '@/lib/research/session-idempotency'
 import type { ConversationController } from '@/lib/research/session-runtime'
-import type { EditorSnapshot, ResearchWorkPurpose, ScopeEdit } from '@/lib/research/types'
+import type { EditorSnapshot, ResearchPendingSelection, ResearchWorkPurpose, ScopeEdit } from '@/lib/research/types'
 import type { ResearchSessionRef } from '@/lib/research/session-contract'
 import type { ResearchSource } from '@/lib/types/research'
 
@@ -215,6 +215,15 @@ export interface TargetConversationState {
 export function useTargetConversation(options: {
   /** #1106：由 TargetShell 从 `useResearchPurposeCapability` 注入（fail-closed）。 */
   purposeInferenceAvailable?: boolean
+  /**
+   * W2 #1077（BEH-11 / #1013 §2.11）：读取**当前**页级 pending 选段。
+   *
+   * 只在显式「讨论选段」之后存在；目标壳恒为 headed global 会话，
+   * `conversationSession.getSelectionContext` 仅当 `target === 'global'` 时
+   * 把它随提交写入 `selection_context`（范围/检索载荷完全不变）。用 ref
+   * 读取渲染时刻最新值，避免因选段变化重建 conversation controller。
+   */
+  getPendingSelection?: () => ResearchPendingSelection | null
 } = {}): TargetConversationState {
   const purposeInferenceAvailable = options.purposeInferenceAvailable === true
   const { t } = useTranslation()
@@ -347,6 +356,12 @@ export function useTargetConversation(options: {
   const chatControllerRef = useRef<ConversationController | null>(null)
   const pendingClearControllersRef = useRef(new Map<string, ConversationController>())
   const pendingSubmitTextRef = useRef<string | null>(null)
+  /**
+   * W2 #1077：pending 选段读取器（渲染时刻最新值；配合 selection_context
+   * 在 wire 组装时读取一次，避免重建 controller）。
+   */
+  const getPendingSelectionRef = useRef(options.getPendingSelection)
+  getPendingSelectionRef.current = options.getPendingSelection
 
   const conversationSession = useMemo(() => {
     if (sessionRuntime === null || activeRef === null) return undefined
@@ -354,6 +369,15 @@ export function useTargetConversation(options: {
       runtime: sessionRuntime,
       ref: activeRef,
       onReleaseHold: (operationId: string) => editor.release(operationId),
+      /**
+       * W2 #1077（BEH-11）：阅读器显式「讨论选段」后，把 11 键
+       * `selection_context` 随 headed global 提交流一次（读取时刻真值）。
+       * 范围/检索载荷不变；`target !== 'global'`（来源会话）一律不携带。
+       */
+      getSelectionContext: () => {
+        const pending = getPendingSelectionRef.current?.() ?? null
+        return pending !== null && pending.target === 'global' ? pending.selection : null
+      },
       onClearAfterSubmission: (
         receipt: { ref: ResearchSessionRef; draftToken: string; editorRevision: number },
         operationId: string,

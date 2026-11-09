@@ -108,6 +108,28 @@ describe('researchApi（Gateway 白名单契约）', () => {
     expect(captured.url).toBe(`/v1/research/projects/${P}/sources/src_1`)
   })
 
+  it('getSource 不传 ref → 不带 query 参数（既有调用零变化）', async () => {
+    const captured = await capture(() => researchApi.getSource(P, 'src_1'))
+    expect(captured.params).toBeUndefined()
+    expect(captured.headers?.Authorization).toBe('Bearer memory-token')
+    // token 不得进入 URL（NORMATIVE 16）
+    expect(captured.url).not.toMatch(/token|bearer|authorization/i)
+  })
+
+  it('getSource 传成对版本 ref → 带 document_id/document_version（#1077 精确版本）', async () => {
+    const captured = await capture(() =>
+      researchApi.getSource(P, 'src_1', {
+        documentId: 'doc_1',
+        documentVersion: 'v3',
+      }),
+    )
+    expect(captured.method).toBe('GET')
+    expect(captured.url).toBe(`/v1/research/projects/${P}/sources/src_1`)
+    expect(captured.params).toEqual({ document_id: 'doc_1', document_version: 'v3' })
+    // 成对参数里不得混入 token（Bearer 只在 header）
+    expect(JSON.stringify(captured.params)).not.toMatch(/token|bearer/i)
+  })
+
   it('createNote → POST .../notes，载荷仅 title/content（无 Embedding 字段，REQ-DIS-01）', async () => {
     const captured = await capture(() => researchApi.createNote(P, { title: 't', content: 'c' }))
     expect(captured.method).toBe('POST')

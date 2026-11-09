@@ -2,9 +2,16 @@ import { describe, expect, it } from 'vitest'
 import {
   TARGET_CENTER_MIN_WIDTH,
   TARGET_LEFT_PANE_WIDTH,
+  TARGET_READER_ASIDE_BREAKPOINT,
+  TARGET_READER_ASIDE_MAX_WIDTH,
+  TARGET_READER_ASIDE_MIN_WIDTH,
+  TARGET_READER_ASIDE_WIDTH,
+  TARGET_READER_BACK_BAR_HEIGHT,
+  TARGET_READER_BODY_MAX_WIDTH,
   TARGET_RIGHT_PANE_WIDTH,
   TARGET_THREE_COLUMN_VIEWPORT,
   resolveTargetLayout,
+  resolveTargetReaderLayout,
   targetBreakpointForWidth,
 } from './target-layout'
 
@@ -89,5 +96,103 @@ describe('真实视口宽度推导中央列（F19）', () => {
     expect(
       resolveTargetLayout({ breakpoint: 'compact', rightPaneOpen: false }).centerColumnWidth,
     ).toBe(742)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// W2 #1077：宽屏阅读器（focus view）布局（UI 规格 v1 §3.2/§5.7）。
+// 1440：正文 830 + aside 340；1024：aside 默认折叠，展开时正文让宽；
+// 任何组合都不产生整页横向滚动。
+// ---------------------------------------------------------------------------
+
+describe('reader 尺寸常量（§3.2/§5.7）', () => {
+  it('返回条 65 / 正文最大 830 / aside 340（300–380 区间）', () => {
+    expect(TARGET_READER_BACK_BAR_HEIGHT).toBe(65)
+    expect(TARGET_READER_BODY_MAX_WIDTH).toBe(830)
+    expect(TARGET_READER_ASIDE_WIDTH).toBe(340)
+    expect(TARGET_READER_ASIDE_MIN_WIDTH).toBe(300)
+    expect(TARGET_READER_ASIDE_MAX_WIDTH).toBe(380)
+    expect(TARGET_READER_ASIDE_BREAKPOINT).toBe(1280)
+    expect(TARGET_READER_ASIDE_WIDTH).toBeGreaterThanOrEqual(TARGET_READER_ASIDE_MIN_WIDTH)
+    expect(TARGET_READER_ASIDE_WIDTH).toBeLessThanOrEqual(TARGET_READER_ASIDE_MAX_WIDTH)
+  })
+})
+
+describe('resolveTargetReaderLayout（§5.7）', () => {
+  it('1440：aside 恒显示 340，正文 830 居中（不横向滚动）', () => {
+    for (const asideExpanded of [false, true]) {
+      const layout = resolveTargetReaderLayout({ viewportWidth: 1440, asideExpanded })
+      expect(layout.asideCollapsible).toBe(false)
+      expect(layout.asideVisible).toBe(true)
+      expect(layout.asideWidth).toBe(340)
+      expect(layout.bodyMaxWidth).toBe(830)
+      expect(layout.bodyColumnWidth).toBe(830)
+      // 830 + 340 = 1170 ≤ 1440
+      expect(layout.bodyColumnWidth + layout.asideWidth).toBeLessThanOrEqual(1440)
+    }
+  })
+
+  it('1440 + 收缩 aside 请求：≥1280 仍恒显示（asideExpanded 不生效）', () => {
+    expect(
+      resolveTargetReaderLayout({ viewportWidth: 1440, asideExpanded: false }).asideVisible,
+    ).toBe(true)
+  })
+
+  it('1024：aside 默认折叠（正文 830 占满可用宽度）', () => {
+    const layout = resolveTargetReaderLayout({ viewportWidth: 1024, asideExpanded: false })
+    expect(layout.asideCollapsible).toBe(true)
+    expect(layout.asideVisible).toBe(false)
+    expect(layout.asideWidth).toBe(340)
+    // min(830, 1024) = 830
+    expect(layout.bodyColumnWidth).toBe(830)
+    expect(layout.bodyColumnWidth).toBeLessThanOrEqual(1024)
+  })
+
+  it('1024 + 展开 aside：正文让宽到 684（不覆盖正文、不横向滚动）', () => {
+    const layout = resolveTargetReaderLayout({ viewportWidth: 1024, asideExpanded: true })
+    expect(layout.asideCollapsible).toBe(true)
+    expect(layout.asideVisible).toBe(true)
+    expect(layout.asideWidth).toBe(340)
+    // 1024 − 340 = 684
+    expect(layout.bodyColumnWidth).toBe(684)
+    expect(layout.bodyColumnWidth + layout.asideWidth).toBe(1024)
+    expect(layout.bodyColumnWidth + layout.asideWidth).toBeLessThanOrEqual(1024)
+  })
+
+  it('断点边界：1279 可折叠，1280 恒显示', () => {
+    expect(
+      resolveTargetReaderLayout({ viewportWidth: 1279, asideExpanded: false }).asideCollapsible,
+    ).toBe(true)
+    expect(
+      resolveTargetReaderLayout({ viewportWidth: 1279, asideExpanded: false }).asideVisible,
+    ).toBe(false)
+    const wide = resolveTargetReaderLayout({ viewportWidth: 1280, asideExpanded: false })
+    expect(wide.asideCollapsible).toBe(false)
+    expect(wide.asideVisible).toBe(true)
+    // 1280 − 340 = 940 → 上限 830
+    expect(wide.bodyColumnWidth).toBe(830)
+  })
+
+  it('任意视口组合：asideWidth 在 300–380 且列宽之和不超过视口（无整页横向滚动）', () => {
+    for (const viewportWidth of [1024, 1100, 1200, 1279, 1280, 1366, 1440, 1600, 1920]) {
+      for (const asideExpanded of [false, true]) {
+        const layout = resolveTargetReaderLayout({ viewportWidth, asideExpanded })
+        expect(layout.asideWidth).toBeGreaterThanOrEqual(TARGET_READER_ASIDE_MIN_WIDTH)
+        expect(layout.asideWidth).toBeLessThanOrEqual(TARGET_READER_ASIDE_MAX_WIDTH)
+        expect(layout.bodyColumnWidth).toBeLessThanOrEqual(TARGET_READER_BODY_MAX_WIDTH)
+        const occupied =
+          layout.bodyColumnWidth + (layout.asideVisible ? layout.asideWidth : 0)
+        expect(occupied).toBeLessThanOrEqual(viewportWidth)
+      }
+    }
+  })
+
+  it('视口非法/缺失按 1024 处理', () => {
+    for (const viewportWidth of [Number.NaN, Number.POSITIVE_INFINITY, 0, -100]) {
+      const layout = resolveTargetReaderLayout({ viewportWidth, asideExpanded: false })
+      expect(layout.asideCollapsible).toBe(true)
+      expect(layout.asideVisible).toBe(false)
+      expect(layout.bodyColumnWidth).toBe(830)
+    }
   })
 })
