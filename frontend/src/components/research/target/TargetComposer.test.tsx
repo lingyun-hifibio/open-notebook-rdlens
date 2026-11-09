@@ -201,6 +201,14 @@ describe('TargetComposer #1106 本次用途', () => {
     renderComposer({ initialMenuOpen: true })
     expect(document.activeElement).toBe(screen.getByTestId('rdlens-target-purpose-toggle'))
   })
+
+  it('#120 L3：点面板内不关闭；点面板外关闭（不抢焦点）', () => {
+    renderComposer({ initialMenuOpen: true })
+    fireEvent.pointerDown(screen.getByTestId('rdlens-target-purpose-options'))
+    expect(screen.getByTestId('rdlens-target-purpose-options')).toBeInTheDocument()
+    fireEvent.pointerDown(document.body)
+    expect(screen.queryByTestId('rdlens-target-purpose-options')).toBeNull()
+  })
 })
 
 

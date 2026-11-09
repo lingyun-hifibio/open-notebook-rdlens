@@ -3166,6 +3166,78 @@ describe('Issue #1013 F07：消息投影 → 选段 chip（fail-closed）', () =
   })
 })
 
+describe('#120 M1：headed 消息 purpose 读投影（版本/键数 fail-closed）', () => {
+  function padTo(count: number, row: Record<string, unknown>): Record<string, unknown> {
+    const out: Record<string, unknown> = { ...row }
+    let i = 0
+    while (Object.keys(out).length < count) {
+      out[`pad_${i}`] = i
+      i += 1
+    }
+    return out
+  }
+
+  function purposeRow(
+    count: number,
+    purpose: string | null,
+    source: string | null,
+  ): Record<string, unknown> {
+    return padTo(count, {
+      message_id: 'msg_gen_purpose',
+      role: 'assistant',
+      content: '答案',
+      work_purpose: purpose,
+      work_purpose_source: source,
+    })
+  }
+
+  it('d1c 17 键：explicit / inferred / not_recorded 三态同源读取', () => {
+    expect(messageRowToTurn(purposeRow(17, 'document_qa', 'explicit') as never, { projectionVersion: 'd1c' }))
+      .toMatchObject({ workPurpose: 'document_qa', workPurposeSource: 'explicit' })
+    expect(messageRowToTurn(purposeRow(17, 'exploration', 'inferred') as never, { projectionVersion: 'd1c' }))
+      .toMatchObject({ workPurpose: 'exploration', workPurposeSource: 'inferred' })
+    expect(messageRowToTurn(purposeRow(17, null, 'not_recorded') as never, { projectionVersion: 'd1c' }))
+      .toMatchObject({ workPurpose: null, workPurposeSource: 'not_recorded' })
+  })
+
+  it('d1c 19 键（selection 投影）也读取同一 purpose 两键', () => {
+    expect(messageRowToTurn(purposeRow(19, 'writing', 'default_legacy') as never, { projectionVersion: 'd1c' }))
+      .toMatchObject({ workPurpose: 'writing', workPurposeSource: 'default_legacy' })
+  })
+
+  it('d1c 键数不符 / legacy 行：fail-closed 为未记录，不猜测 document_qa', () => {
+    expect(messageRowToTurn(purposeRow(16, 'exploration', 'inferred') as never, { projectionVersion: 'd1c' }))
+      .toMatchObject({ workPurpose: null, workPurposeSource: 'not_recorded' })
+    expect(messageRowToTurn(padTo(15, { message_id: 'msg_l', role: 'assistant', content: 'a' }) as never, { projectionVersion: 'legacy' }))
+      .toMatchObject({ workPurpose: null, workPurposeSource: 'not_recorded' })
+  })
+
+  it('d1e 18 键读取；d1e 16 键缺 purpose 两键 → 未记录', () => {
+    expect(messageRowToTurn(purposeRow(18, 'exploration', 'inferred') as never, { projectionVersion: 'd1e' }))
+      .toMatchObject({ workPurpose: 'exploration', workPurposeSource: 'inferred' })
+    expect(messageRowToTurn(padTo(16, { message_id: 'msg_l', role: 'assistant', content: 'a' }) as never, { projectionVersion: 'd1e' }))
+      .toMatchObject({ workPurpose: null, workPurposeSource: 'not_recorded' })
+  })
+
+  it('版本未知（null）：键出现才解析；缺失只记未记录', () => {
+    expect(messageRowToTurn({ message_id: 'msg_u', role: 'user', content: 'q', work_purpose: 'document_qa', work_purpose_source: 'explicit' } as never))
+      .toMatchObject({ workPurpose: 'document_qa', workPurposeSource: 'explicit' })
+    expect(messageRowToTurn({ message_id: 'msg_u', role: 'user', content: 'q' } as never))
+      .toMatchObject({ workPurpose: null, workPurposeSource: 'not_recorded' })
+  })
+
+  it('两键不自洽/缺一 → 未记录（不跨键拼接）', () => {
+    const malformed = padTo(17, {
+      message_id: 'msg_gen_bad',
+      role: 'assistant',
+      content: 'a',
+      work_purpose: 'exploration',
+    })
+    expect(messageRowToTurn(malformed as never, { projectionVersion: 'd1c' }))
+      .toMatchObject({ workPurpose: null, workPurposeSource: 'not_recorded' })
+  })
+})
+
 describe('Issue #1013 F05/F14：global headed 提交的选段接线（extra=forbid 形状）', () => {
   function renderWithTransport(getSelectionContext?: () => WireSelectionContext | null) {
     let captured: ConversationTransport | null = null
