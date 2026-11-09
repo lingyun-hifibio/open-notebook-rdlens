@@ -11,8 +11,10 @@
  * - 能力位 `true` ⇒ 入口位于标题区之下、消息区之上（中央对话起始位置），
  *   与正文列同最大宽度（850）对齐；
  * - 点击入口打开既有 Dialog（复用 #1016 四段正文语义）；
- * - 继续讨论 → 目标壳既有 `editor.setDraftText`（当前会话草稿）；
- * - 引用跳转 → 目标壳既有 `onCitationJump(sourceId, pageIdx)`；
+ * - 继续讨论 → 目标壳既有 `editor.setDraftText`（当前会话草稿）**并关闭
+ *   Dialog**（草稿用户可见，MEDIUM-1）；无活动会话 → 动作 fail-closed 隐藏；
+ * - 引用跳转 → **先关闭 Dialog** 再调用目标壳既有
+ *   `onCitationJump(sourceId, pageIdx)`（右栏来源预览不被 modal 遮挡，HIGH-1）；
  * - Admin 只读即便能力位 true 也不渲染入口（与 legacy 一致）；
  * - 不传 `overviewSlot` 时对话列结构不变（加性 prop）。
  *
@@ -270,11 +272,13 @@ function conversationState(
 function Harness({
   role = 'owner',
   withSlot = true,
+  sessionWired = true,
 }: {
   role?: 'owner' | 'admin_readonly'
   withSlot?: boolean
+  sessionWired?: boolean
 }) {
-  const conversation = conversationState()
+  const conversation = conversationState({ sessionWired })
   return (
     <QueryClientProvider client={queryClient}>
       <ResearchWorkspaceProvider projectId={PROJECT_ID} role={role} userId="user_1">
@@ -298,7 +302,8 @@ function Harness({
                 <TargetTopicOverview
                   projectId={PROJECT_ID}
                   onCitationJump={onCitationJump}
-                  editorHandle={conversation.editor}
+                  // 与 TargetShell 同源：无活动会话 → null（动作 fail-closed 隐藏）。
+                  editorHandle={conversation.sessionWired ? conversation.editor : null}
                   canExecute={conversation.canExecute}
                   blockedHint={conversation.blockedHint}
                   isAdminReadonly={role === 'admin_readonly'}
@@ -313,7 +318,9 @@ function Harness({
   )
 }
 
-function renderHarness(options: { role?: 'owner' | 'admin_readonly'; withSlot?: boolean } = {}) {
+function renderHarness(
+  options: { role?: 'owner' | 'admin_readonly'; withSlot?: boolean; sessionWired?: boolean } = {},
+) {
   return render(<Harness {...options} />)
 }
 
@@ -349,8 +356,11 @@ describe('#1125：目标壳中央对话起始位置的主题概览入口', () =>
 
     expect(screen.queryByTestId('topic-overview-entry')).toBeNull()
     expect(screen.queryByTestId('topic-overview-dialog')).toBeNull()
-    // 入口自身以 `enabled` 关断读面（能力位 false 时不请求、不进入错误态）。
-    expect(h.enabledCalls.at(-1)).toEqual({ enabled: false })
+    // LOW-2（round-1 审查）：Dialog 关闭时也会调用同一 mocked hook，`at(-1)`
+    // 是同义反复；这里断言**全部**调用都关断（Entry 首个调用 + Dialog 的
+    // closed query）——即真实概览读面从未以 enabled 运行。
+    expect(h.enabledCalls.length).toBeGreaterThan(0)
+    expect(h.enabledCalls.every((options) => options?.enabled === false)).toBe(true)
   })
 
   it('能力位 true ⇒ 入口位于标题区之下、消息区之上（中央对话起始位置），与正文列对齐', () => {
@@ -371,6 +381,9 @@ describe('#1125：目标壳中央对话起始位置的主题概览入口', () =>
     // 与正文列同最大宽度（850）居中，不引入第二套列宽。
     const aligned = slot.firstElementChild as HTMLElement
     expect(aligned.style.maxWidth).toBe('850px')
+    // LOW-2：Entry 的读面调用是首个 hook 调用（Dialog 在 Entry 之后渲染），
+    // 能力位 true 且非 Admin ⇒ 读面以 enabled 运行。
+    expect(h.enabledCalls[0]).toEqual({ enabled: true })
   })
 
   it('点击入口打开既有主题概览 Dialog（复用 #1016 四段正文）', async () => {
@@ -385,7 +398,7 @@ describe('#1125：目标壳中央对话起始位置的主题概览入口', () =>
     expect(screen.getByTestId('topic-overview-section-findings')).toBeInTheDocument()
   })
 
-  it('继续讨论 ⇒ 写入目标壳既有会话草稿（editor.setDraftText），不新增 wire', async () => {
+  it('继续讨论 ⇒ 写入目标壳既有会话草稿并关闭 Dialog（用户可见草稿），不新增 wire', async () => {
     h.capability = true
     const overview = readyOverview()
     h.overviewData = overview
@@ -398,9 +411,22 @@ describe('#1125：目标壳中央对话起始位置的主题概览入口', () =>
     expect(setDraftText).toHaveBeenCalledWith(
       topicOverviewDiscussionText(overview, LOCALIZED_DISCUSSION_GUIDE),
     )
+    // MEDIUM-1（round-1 审查）：草稿写入后 Dialog 关闭，composer 可见。
+    expect(screen.queryByTestId('topic-overview-dialog')).toBeNull()
   })
 
-  it('引用跳转 ⇒ 调用目标壳既有跳转回调（右栏来源预览入口）', async () => {
+  it('无活动会话（sessionWired=false）⇒ 「继续讨论」fail-closed 隐藏（不是静默 no-op）', async () => {
+    h.capability = true
+    h.overviewData = readyOverview()
+    renderHarness({ sessionWired: false })
+
+    fireEvent.click(screen.getByTestId('topic-overview-entry-open'))
+    expect(await screen.findByTestId('topic-overview-sections')).toBeInTheDocument()
+    expect(screen.queryByTestId('topic-overview-discuss')).toBeNull()
+    expect(setDraftText).not.toHaveBeenCalled()
+  })
+
+  it('引用跳转 ⇒ 先关闭 Dialog 再调用目标壳既有跳转回调（右栏可见，HIGH-1）', async () => {
     h.capability = true
     h.overviewData = readyOverview()
     renderHarness()
@@ -409,6 +435,9 @@ describe('#1125：目标壳中央对话起始位置的主题概览入口', () =>
     fireEvent.click(await screen.findByTestId('topic-overview-citation-jump-0'))
 
     expect(onCitationJump).toHaveBeenCalledWith('src_1', 2)
+    // HIGH-1（round-1 审查）：modal Dialog 必须先关闭，否则目标壳右栏来源
+    // 预览被 overlay 遮住、用户不可见；Dialog 自身的 onCitationJump 不关闭。
+    expect(screen.queryByTestId('topic-overview-dialog')).toBeNull()
   })
 
   it('Admin 只读：能力位 true 也不渲染入口，且不发起概览读请求', () => {
@@ -416,7 +445,9 @@ describe('#1125：目标壳中央对话起始位置的主题概览入口', () =>
     renderHarness({ role: 'admin_readonly' })
 
     expect(screen.queryByTestId('topic-overview-entry')).toBeNull()
-    expect(h.enabledCalls.at(-1)).toEqual({ enabled: false })
+    // LOW-2：Entry（首个调用）按工作区角色关断，Dialog closed query 亦关断。
+    expect(h.enabledCalls.length).toBeGreaterThan(0)
+    expect(h.enabledCalls.every((options) => options?.enabled === false)).toBe(true)
   })
 
   it('可选 overviewSlot：不传时对话列既有结构不变（无概览槽位）', () => {

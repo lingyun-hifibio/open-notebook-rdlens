@@ -55,6 +55,9 @@ const conversationFixture = vi.hoisted(() => ({
     noActiveSession: false,
     canPinSingleSource: false,
     sendError: null as string | null,
+    // #1125 round-1：是否有活动会话（`sessionWired`）——决定「继续讨论」
+    // 是否接线草稿；默认 false 保持既有 50 例的 composer 语义不变。
+    sessionWired: false,
     // #1106：用途能力位/当前显式 purpose（用例可覆盖）
     purposeInferenceAvailable: false,
     workPurpose: null as 'document_qa' | 'exploration' | 'writing' | null,
@@ -271,7 +274,7 @@ vi.mock('./use-target-conversation', async () => {
         purpose === 'writing' ||
         (purpose === null && conversationFixture.flags.purposeInferenceAvailable)
       return {
-        sessionWired: false,
+        sessionWired: conversationFixture.flags.sessionWired,
         runtimeAvailable: sessions !== null,
         sessions,
         activeRef: null,
@@ -473,6 +476,7 @@ beforeEach(() => {
   conversationFixture.flags.sendError = null
   conversationFixture.flags.purposeInferenceAvailable = false
   conversationFixture.flags.workPurpose = null
+  conversationFixture.flags.sessionWired = false
   conversationFixture.flags.setWorkPurpose.mockClear()
   conversationFixture.send.mockClear()
   conversationFixture.openSession.mockClear()
@@ -1194,10 +1198,12 @@ describe('#1106 本次用途（UI-11）', () => {
 // #1125（owner 2026-11-09「选A」，defect 修复）：#1016 主题概览此前只在
 // legacy 壳挂载，默认目标壳（/research 非 legacy）无入口 → UI 规格 v1
 // BEH-12/§5.4/D-UI-04=A 在默认路径不可达。以下断言目标壳真实接线：
-// 入口位于中央对话起始位置；Dialog 复用既有语义；继续讨论写当前会话
-// 草稿（conversation.editor）；引用跳转复用既有右栏来源预览。
+// 入口位于中央对话起始位置；Dialog 复用既有语义；引用跳转先关闭 Dialog
+// 再打开右栏来源预览（HIGH-1：跳转对用户真实可见）；继续讨论写当前会话
+// 草稿并关闭 Dialog，无活动会话时 fail-closed 隐藏（MEDIUM-1）；次级视图
+// 不渲染入口（LOW-1）。
 describe('#1125：主题概览入口接入默认目标壳（中央对话起始位置）', () => {
-  it('能力位 true：入口在对话起始；打开 Dialog、继续讨论写草稿、引用跳转打开右栏来源预览', async () => {
+  it('能力位 true：入口在对话起始；引用跳转关闭 Dialog 后右栏来源预览可见（HIGH-1）', async () => {
     overviewFixture.capability = true
     overviewFixture.data = readyOverviewFixture()
     renderShell()
@@ -1218,13 +1224,11 @@ describe('#1125：主题概览入口接入默认目标壳（中央对话起始�
     expect(await screen.findByTestId('topic-overview-dialog')).toBeInTheDocument()
     expect(await screen.findByTestId('topic-overview-sections')).toBeInTheDocument()
 
-    // 继续讨论 ⇒ 写目标壳当前会话既有草稿（shell 传入 conversation.editor）。
-    fireEvent.click(screen.getByTestId('topic-overview-discuss'))
-    expect(conversationFixture.editor.setDraftText).toHaveBeenCalledTimes(1)
-
-    // 引用跳转 ⇒ shell handleCitationJump → 右栏来源预览（W1 BEH-05，
-    // 不新增原文阅读器）。
+    // HIGH-1（round-1 审查）：概览 Dialog 是 Radix modal（overlay z-50），
+    // 目标壳右栏无 z-index；不关 Dialog 则右栏来源预览被遮住、用户不可见。
+    // 断言 Dialog 消失 + 右栏 source 预览真实打开（用户可见/可交互）。
     fireEvent.click(await screen.findByTestId('topic-overview-citation-jump-0'))
+    await waitFor(() => expect(screen.queryByTestId('topic-overview-dialog')).toBeNull())
     await waitFor(() =>
       expect(screen.getByTestId('rdlens-target-right-pane')).toHaveAttribute(
         'data-pane-kind',
@@ -1232,6 +1236,54 @@ describe('#1125：主题概览入口接入默认目标壳（中央对话起始�
       ),
     )
     expect(screen.getByTestId('rdlens-target-source-preview-name')).toHaveTextContent('doc_ready')
+  })
+
+  it('MEDIUM-1：有活动会话时「继续讨论」写草稿并关闭 Dialog（草稿用户可见）', async () => {
+    overviewFixture.capability = true
+    overviewFixture.data = readyOverviewFixture()
+    // 真实语义：有活动会话才传 editor（shell 侧 fail-closed）。
+    conversationFixture.flags.sessionWired = true
+    renderShell()
+
+    fireEvent.click(screen.getByTestId('topic-overview-entry-open'))
+    expect(await screen.findByTestId('topic-overview-sections')).toBeInTheDocument()
+    fireEvent.click(await screen.findByTestId('topic-overview-discuss'))
+
+    // 写目标壳当前会话既有草稿（shell 传入 conversation.editor）。
+    expect(conversationFixture.editor.setDraftText).toHaveBeenCalledTimes(1)
+    // 写入后 Dialog 关闭：composer 在中央列底部可见（不是静默/被遮挡）。
+    await waitFor(() => expect(screen.queryByTestId('topic-overview-dialog')).toBeNull())
+  })
+
+  it('MEDIUM-1：无活动会话（sessionWired=false）⇒「继续讨论」fail-closed 隐藏', async () => {
+    overviewFixture.capability = true
+    overviewFixture.data = readyOverviewFixture()
+    // 默认 sessionWired=false：与真实 useTargetConversation 无活动会话同源。
+    renderShell()
+
+    fireEvent.click(screen.getByTestId('topic-overview-entry-open'))
+    expect(await screen.findByTestId('topic-overview-sections')).toBeInTheDocument()
+    expect(screen.queryByTestId('topic-overview-discuss')).toBeNull()
+    expect(conversationFixture.editor.setDraftText).not.toHaveBeenCalled()
+  })
+
+  it('LOW-1：次级视图不渲染概览入口（仅对话中心视图注入 slot），返回后恢复', async () => {
+    overviewFixture.capability = true
+    overviewFixture.data = readyOverviewFixture()
+    renderShell()
+    expect(screen.getByTestId('topic-overview-entry')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('rdlens-target-secondary-search'))
+    await waitFor(() =>
+      expect(screen.getByTestId('rdlens-target-secondary-evidence-search')).toBeInTheDocument(),
+    )
+    // 次级视图：对话列 hidden 且概览入口**未挂载**（不残留 hidden 入口）。
+    expect(screen.queryByTestId('rdlens-target-overview-slot')).toBeNull()
+    expect(screen.queryByTestId('topic-overview-entry')).toBeNull()
+
+    fireEvent.click(screen.getByTestId('rdlens-target-secondary-back'))
+    await waitFor(() => expect(screen.queryByTestId('rdlens-target-secondary-panel')).toBeNull())
+    expect(await screen.findByTestId('topic-overview-entry')).toBeInTheDocument()
   })
 
   it('能力位 false（默认）：目标壳零变化，无概览入口/Dialog', () => {

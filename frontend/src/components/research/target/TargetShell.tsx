@@ -286,18 +286,22 @@ export function TargetShell() {
                 closeRightPane()
                 setScopeFocusRequest((request) => request + 1)
               }}
-              // #1125：中央对话起始位置的既有 #1016 概览入口/Dialog。引用跳转
-              // 复用 shell 既有右栏来源预览；继续讨论写当前会话既有草稿。
+              // #1125：中央对话起始位置的既有 #1016 概览入口/Dialog。仅在
+              // 对话中心视图注入（次级视图不渲染，DOM 不残留 hidden 入口）；
+              // 引用跳转复用 shell 既有右栏来源预览；继续讨论写当前会话既有
+              // 草稿（无活动会话 → `editorHandle=null`，动作 fail-closed 隐藏）。
               overviewSlot={
-                <TargetTopicOverview
-                  projectId={projectId}
-                  onCitationJump={handleCitationJump}
-                  editorHandle={conversation.editor}
-                  canExecute={conversation.canExecute}
-                  blockedHint={conversation.blockedHint}
-                  isAdminReadonly={isAdminReadonly}
-                  confirmedModelIsExternal={confirmedModelIsExternal === true}
-                />
+                centerView === 'conversation' ? (
+                  <TargetTopicOverview
+                    projectId={projectId}
+                    onCitationJump={handleCitationJump}
+                    editorHandle={conversation.sessionWired ? conversation.editor : null}
+                    canExecute={conversation.canExecute}
+                    blockedHint={conversation.blockedHint}
+                    isAdminReadonly={isAdminReadonly}
+                    confirmedModelIsExternal={confirmedModelIsExternal === true}
+                  />
+                ) : undefined
               }
             />
           </div>

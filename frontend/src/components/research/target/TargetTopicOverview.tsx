@@ -29,7 +29,7 @@
  * 诚实边界（W1）：不绘制 W2/W3 阅读/编辑能力，不因本接入改变右栏行为。
  */
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import { TopicOverviewEntry } from '../TopicOverviewEntry'
 import { TopicOverviewDialog } from '../TopicOverviewDialog'
@@ -63,6 +63,32 @@ export function TargetTopicOverview({
   // 不开右栏、不进路由、不提升到 shell/全局 store。
   const [topicOverviewOpen, setTopicOverviewOpen] = useState(false)
 
+  // HIGH-1（round-1 审查）：概览 Dialog 是 Radix **modal**（fixed overlay
+  // z-50），目标壳右栏来源预览无 z-index，若 Dialog 不关，跳转后的右栏被
+  // 遮住、用户不可见/不可交互。跳转时先关闭概览 Dialog（同一次事件内），
+  // 再交给 shell 既有 `handleCitationJump`（W1 右栏来源预览，不新增阅读器）。
+  const handleCitationJump = (sourceId: string, pageIdx: number | null): void => {
+    setTopicOverviewOpen(false)
+    onCitationJump(sourceId, pageIdx)
+  }
+
+  // MEDIUM-1（round-1 审查）：「继续讨论」写的是当前会话草稿，Dialog 不关
+  // 则用户看不到草稿；写入后关闭 Dialog（composer 在中央列底部可见）。
+  // 无活动会话时 shell 传 `editorHandle=null`（fail-closed）→ Dialog 不渲染
+  // 该动作（沿用 #1016「无 editorHandle 不显示」语义），不出现静默 no-op。
+  const draftHandle = useMemo(
+    () =>
+      editorHandle === null || editorHandle === undefined
+        ? null
+        : {
+            setDraftText: (text: string) => {
+              editorHandle.setDraftText(text)
+              setTopicOverviewOpen(false)
+            },
+          },
+    [editorHandle],
+  )
+
   return (
     <>
       <TopicOverviewEntry
@@ -73,8 +99,8 @@ export function TargetTopicOverview({
         projectId={projectId}
         open={topicOverviewOpen}
         onOpenChange={setTopicOverviewOpen}
-        onCitationJump={onCitationJump}
-        editorHandle={editorHandle}
+        onCitationJump={handleCitationJump}
+        editorHandle={draftHandle}
         canExecute={canExecute}
         blockedHint={blockedHint}
         isAdminReadonly={isAdminReadonly}
