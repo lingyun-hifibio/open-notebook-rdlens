@@ -40,8 +40,7 @@ import {
   parseSubmissionResponse,
   parseMessageSelection,
   selectionContextToWire,
-  MESSAGE_PROJECTION_HEADER,
-  resolveMessageProjectionVersion,
+  observeMessageProjectionVersion,
   readMessageWorkPurpose,
   SESSION_CONTRACT_HEADER,
   SESSION_CONTRACT_VERSION,
@@ -1660,10 +1659,11 @@ export function useResearchChat({ projectId, c05DispatchReady, onBindSession, se
             // Issue #1013 §2.3/§2.11：捕获消息投影版本头，供选段读投影
             // fail-closed（头存在且不是 d1e-message-v4 → 不解析选段键）。
             onResponseMeta: (headers) => {
-              const version = resolveMessageProjectionVersion(
-                headers.get(MESSAGE_PROJECTION_HEADER),
-              )
-              messageProjectionVersionRef.current = version.ok ? version.value : null
+              // RDLens #1151：跨域 iframe 下响应头可能不可读（未列入
+              // Access-Control-Expose-Headers）——不可读 ≠ flag off 的 legacy
+              // 15 键投影，否则 20 键 d1e 行会被键数校验判成 not_recorded。
+              messageProjectionVersionRef.current =
+                observeMessageProjectionVersion(headers)
             },
           },
         ).then((detail) => {

@@ -1342,6 +1342,29 @@ export function resolveMessageProjectionVersion(
   return invalid('message_projection', `unsupported message projection: ${String(value)}`)
 }
 
+/**
+ * 详情响应头观察 → 消息投影版本（**头缺失/不可读 = 未知 `null`**）。
+ *
+ * 与 :func:`resolveMessageProjectionVersion` 的差异：后者按后端契约把「头
+ * 缺失」映射为 `legacy`（flag off 的 15 键冻结投影）。但在嵌入式跨域
+ * iframe 中，响应头若未列入 `Access-Control-Expose-Headers`，浏览器对 JS
+ * **恒为 null**——与「旧后端/flag off 不下发头」不可区分（RDLens #1151
+ * 生产实测：CORS 只暴露 `X-Research-Contract`/`X-Chat-Session-Id`，投影头
+ * 不可读）。若此时按 `legacy` 处理，20 键 d1e 行会被键数校验整行判形状
+ * 不符，purpose 读投影全部降级为 `not_recorded`。
+ *
+ * 未知态沿用既有「头不可得」读法：键出现才严格解析，不猜键集（见
+ * :func:`readMessageWorkPurpose` 与 `parseRowSelection` 的 null 分支）。
+ */
+export function observeMessageProjectionVersion(
+  headers: { readonly get: (name: string) => string | null } | null | undefined,
+): MessageProjectionVersion | null {
+  const raw = headers?.get(MESSAGE_PROJECTION_HEADER) ?? null
+  if (raw === null || raw === '') return null
+  const parsed = resolveMessageProjectionVersion(raw)
+  return parsed.ok ? parsed.value : null
+}
+
 /** 消息键数是否落在该版本的允许集合内（fail-closed）。 */
 export function messageKeyCountMatches(
   record: unknown,
