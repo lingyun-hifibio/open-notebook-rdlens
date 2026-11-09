@@ -45,8 +45,7 @@ import {
   sessionKey,
   parseMessageSelection,
   selectionContextToWire,
-  MESSAGE_PROJECTION_HEADER,
-  resolveMessageProjectionVersion,
+  observeMessageProjectionVersion,
   type MessageProjectionVersion,
   type ResearchSessionRef,
   type WireSelectionContext,
@@ -562,10 +561,11 @@ export function useResearchSourceChat({
             limit: limit ?? SOURCE_DETAIL_WINDOW_LIMIT,
             // Issue #1013 §2.3/§2.11：捕获消息投影版本头（选段读投影 fail-closed）。
             onResponseMeta: (headers) => {
-              const version = resolveMessageProjectionVersion(
-                headers.get(MESSAGE_PROJECTION_HEADER),
-              )
-              messageProjectionVersionRef.current = version.ok ? version.value : null
+              // RDLens #1151：跨域 iframe 下响应头可能不可读（未列入
+              // Access-Control-Expose-Headers）——不可读 ≠ flag off 的 legacy
+              // 15 键投影。
+              messageProjectionVersionRef.current =
+                observeMessageProjectionVersion(headers)
             },
           },
         ).then((detail) => {

@@ -23,11 +23,13 @@ import {
   parseSelectionContext,
   parseSelectionProjection,
   parseSessionError,
+  observeMessageProjectionVersion,
   parseSessionRef,
   parseSubmissionResponse,
   projectMessage,
   projectRestrictedMessage,
   projectSessionVisibility,
+  readMessageWorkPurpose,
   resolveMessageProjectionVersion,
   selectionAsVisibleProjection,
   selectionContextToWire,
@@ -763,5 +765,64 @@ describe('Issue #1013 F04：D1-E 能力键 fail-closed', () => {
       enabled: false,
     })
     expect(d1eRoundtripReady({ contract: 'd1e-roundtrip-v1', enabled: true })).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// RDLens #1151：详情响应头观察——跨域不可读 ≠ frozen legacy 15 键投影
+// ---------------------------------------------------------------------------
+
+describe('#1151 投影头观察：头缺失/不可读 → 未知（不得降级为 legacy）', () => {
+  const headersWith = (value: string | null) => ({ get: () => value })
+
+  /** 生产 d1e-message-v4 的 20 键助手行（2026-11-09 目标环境实测键集）。 */
+  const PRODUCTION_ROW_KEYS = [
+    'message_id', 'role', 'resolved_mode', 'degradation_reasons',
+    'background_generation_id', 'generation_id', 'created_at',
+    'record_visibility', 'content', 'thinking', 'citations', 'source_ref',
+    'usage', 'context_coverage', 'context_report', 'work_purpose',
+    'work_purpose_source', 'verification', 'evidence_degraded',
+    'selection_context',
+  ] as const
+
+  function productionAssistantRow(): Record<string, unknown> {
+    const row: Record<string, unknown> = Object.fromEntries(
+      PRODUCTION_ROW_KEYS.map((key) => [key, null]),
+    )
+    return {
+      ...row,
+      message_id: 'msg_gen_prod_assistant',
+      role: 'assistant',
+      content: '答案',
+      citations: [],
+      work_purpose: 'exploration',
+      work_purpose_source: 'inferred',
+    }
+  }
+
+  it('头缺失（CORS 未暴露/旧传输）→ null 未知态，不是 legacy', () => {
+    expect(observeMessageProjectionVersion(headersWith(null))).toBeNull()
+    expect(observeMessageProjectionVersion(headersWith(''))).toBeNull()
+    expect(observeMessageProjectionVersion(null)).toBeNull()
+    expect(observeMessageProjectionVersion(undefined)).toBeNull()
+  })
+
+  it('可读头 → 精确版本；未知版本串 → null（fail-closed，不猜键集）', () => {
+    expect(observeMessageProjectionVersion(headersWith(MESSAGE_PROJECTION_D1C))).toBe('d1c')
+    expect(observeMessageProjectionVersion(headersWith(MESSAGE_PROJECTION_D1E))).toBe('d1e')
+    expect(observeMessageProjectionVersion(headersWith('d1e-message-v5'))).toBeNull()
+  })
+
+  it('未知态读生产 20 键行：purpose 两键仍投影；误判 legacy 才会 not_recorded', () => {
+    const row = productionAssistantRow()
+    expect(Object.keys(row)).toHaveLength(20)
+    expect(
+      readMessageWorkPurpose(row, observeMessageProjectionVersion(headersWith(null))),
+    ).toEqual({ workPurpose: 'exploration', workPurposeSource: 'inferred' })
+    // 对照（修复前行为）：头不可读被当成 legacy → 20 键形状不符 → 未记录。
+    expect(readMessageWorkPurpose(row, 'legacy')).toEqual({
+      workPurpose: null,
+      workPurposeSource: 'not_recorded',
+    })
   })
 })
