@@ -1676,6 +1676,20 @@ describe('W2 #1077 阅读器入口（引用预览/资料预览「打开原文」
   })
 })
 
+describe('W2 #1077 阅读器内「只问此来源」', () => {
+  it('调用既有 single-pin 能力（BEH-02）并关闭阅读器/右栏，不制造未绑定 pin', async () => {
+    d1eFixture.ready = true
+    conversationFixture.flags.activeRef = ACTIVE_GLOBAL_REF
+    conversationFixture.flags.canPinSingleSource = true
+    renderShell()
+    await openCitationReader()
+    fireEvent.click(screen.getByTestId('fake-reader-ask-source'))
+    expect(conversationFixture.pinSingleSource).toHaveBeenCalledWith('src_ready')
+    await waitFor(() => expect(screen.queryByTestId('rdlens-target-reader')).toBeNull())
+    await waitFor(() => expect(screen.queryByTestId('rdlens-target-right-pane')).toBeNull())
+  })
+})
+
 describe('W2 #1077 返回原回答', () => {
   it('navigate：关闭阅读器与右栏，并向对话下发 durable message 滚动请求', async () => {
     d1eFixture.ready = true
