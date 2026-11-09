@@ -1,0 +1,109 @@
+{
+  "ticket": "issue1158-locale",
+  "issue": "#1158 (fork PR #124)",
+  "evidence_level": "public-safe visual (synthetic UI-demo project, masked host account)",
+  "purpose": "zh-CN topicOverview labels BEFORE the locale fix (English labels on zh-CN UI)",
+  "side": "before",
+  "reused_from": "evidence-l2/public-ui/after (captured on the pre-locale build afcd7aa)",
+  "source_manifest": {
+    "path": "evidence-l2/public-ui/after/manifest.json",
+    "sha256": "86c5701feeb9cf04f6fce62b02f6eaab47a50d835e6b10d8917abea0a6bd9de8"
+  },
+  "pins": {
+    "before_fork_head": "afcd7aa26a80612a3a39f1021bb994b9da71eee4",
+    "before_fork_tree": "6c18d6b225f0cf37f4f497b9fcc1bd8a51e1d00a",
+    "base_fork_main": "0459f29015724b500f1be59270489b3549af4048",
+    "rdlens_main": "a377713e4",
+    "flag_state": "ON",
+    "host_url": "http://127.0.0.1:5183"
+  },
+  "browser": {
+    "name": "chromium",
+    "version": "153.0.8010.12",
+    "engine": "playwright",
+    "device_scale_factor": 1,
+    "color_scheme": "light"
+  },
+  "project_id": "usr_24_1125uidemo",
+  "project_alias": "UI demo (controlled synthetic)",
+  "theme": "light",
+  "locale": "zh-CN",
+  "viewports": [
+    "1440x900",
+    "1024x768"
+  ],
+  "observed_english_labels_on_zh_ui": {
+    "entry_title": "Topic overview",
+    "entry_open_label": "View overview",
+    "entry_scope": "Entire project · 2 sources",
+    "entry_captured": "Scope captured: Nov 9, 2026, 11:14 PM",
+    "entry_generated": "Generated: Nov 9, 2026, 11:15 PM",
+    "dialog_title": "Topic overview",
+    "dialog_sections_headings": [
+      "Main questions",
+      "Key findings",
+      "Disagreements",
+      "Recommended reading"
+    ],
+    "dialog_scope_and_limits": [
+      "Declared scope vs actual evidence",
+      "Known limitations"
+    ],
+    "note": "surrounding shell chrome was already zh-CN; only the topicOverview surface stayed English (defect)"
+  },
+  "runs": [
+    {
+      "viewport": "1440x900",
+      "locale": "zh-CN",
+      "checks_all_pass": true,
+      "raw_before_facts": {
+        "entry": "{\"present\":true,\"title\":\"Topic overview\",\"empty_hint\":\"\",\"scope\":\"Entire project · 2 sources\",\"captured\":\"Scope captured: Nov 9, 2026, 11:14 PM\",\"generated\":\"Generated: Nov 9, 2026, 11:15 PM\",\"open_label\":\"View overview\",\"changes\":\"\",\"loading\":false,\"error\":\"\"}",
+        "dialog": "{\"dialog_present\":true,\"form_visible\":false,\"title\":\"Topic overview\",\"submit_label\":\"\",\"submit_disabled\":null,\"blocked\":\"\"}"
+      },
+      "screenshots": [
+        "public-ui/after/screenshots/public-after__zh-CN__1440x900__target__01-target-shell-entry.png",
+        "public-ui/after/screenshots/public-after__zh-CN__1440x900__target__02-topic-overview-dialog.png"
+      ]
+    },
+    {
+      "viewport": "1024x768",
+      "locale": "zh-CN",
+      "checks_all_pass": true,
+      "raw_before_facts": {
+        "entry": "{\"present\":true,\"title\":\"Topic overview\",\"empty_hint\":\"\",\"scope\":\"Entire project · 2 sources\",\"captured\":\"Scope captured: Nov 9, 2026, 11:14 PM\",\"generated\":\"Generated: Nov 9, 2026, 11:15 PM\",\"open_label\":\"View overview\",\"changes\":\"\",\"loading\":false,\"error\":\"\"}",
+        "dialog": "{\"dialog_present\":true,\"form_visible\":false,\"title\":\"Topic overview\",\"submit_label\":\"\",\"submit_disabled\":null,\"blocked\":\"\"}"
+      },
+      "screenshots": [
+        "public-ui/after/screenshots/public-after__zh-CN__1024x768__target__01-target-shell-entry.png",
+        "public-ui/after/screenshots/public-after__zh-CN__1024x768__target__02-topic-overview-dialog.png"
+      ]
+    }
+  ],
+  "copied_screenshots": [
+    {
+      "source": "evidence-l2/public-ui/after/screenshots/public-after__zh-CN__1024x768__target__01-target-shell-entry.png",
+      "copy": "evidence-locale/before/copy/public-after__zh-CN__1024x768__target__01-target-shell-entry.png",
+      "bytes": 107044,
+      "sha256": "24d491574732c2b72d5910c9f01ed23df04883ec2dccd86d4117998d2152d87f"
+    },
+    {
+      "source": "evidence-l2/public-ui/after/screenshots/public-after__zh-CN__1024x768__target__02-topic-overview-dialog.png",
+      "copy": "evidence-locale/before/copy/public-after__zh-CN__1024x768__target__02-topic-overview-dialog.png",
+      "bytes": 108680,
+      "sha256": "866bb1156b45fd6191c4a6055c2404c5fb33b154ec3094c81b3438ebff724fce"
+    },
+    {
+      "source": "evidence-l2/public-ui/after/screenshots/public-after__zh-CN__1440x900__target__01-target-shell-entry.png",
+      "copy": "evidence-locale/before/copy/public-after__zh-CN__1440x900__target__01-target-shell-entry.png",
+      "bytes": 113772,
+      "sha256": "0ebd86ea277e142f14ae001c05dc9348c22a87c73f3b6ff09050273ab4a30750"
+    },
+    {
+      "source": "evidence-l2/public-ui/after/screenshots/public-after__zh-CN__1440x900__target__02-topic-overview-dialog.png",
+      "copy": "evidence-locale/before/copy/public-after__zh-CN__1440x900__target__02-topic-overview-dialog.png",
+      "bytes": 144358,
+      "sha256": "ffdecda58b65662ddcab34641d2fa1559bf1dd27db461d3ac15b8ea232fdae41"
+    }
+  ],
+  "generated_at": "2026-11-10T00:45:00+08:00"
+}

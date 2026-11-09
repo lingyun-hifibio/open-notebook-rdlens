@@ -1,0 +1,433 @@
+{
+  "ticket": "issue1158-locale",
+  "issue": "#1158 (fork PR #124)",
+  "evidence_level": "public-safe visual (synthetic UI-demo project, masked host account)",
+  "purpose": "zh-CN topicOverview labels Before (afcd7aa = pre-locale) vs After (a3eebee = locale fix)",
+  "project_id": "usr_24_1125uidemo",
+  "project_alias": "UI demo (controlled synthetic)",
+  "side": "after",
+  "pins": {
+    "after_fork_head": "a3eebeedc495d530dfe33fc9610c63443fbf79e2",
+    "after_fork_tree": "1df0cddf1b4a694d08b68dc5da5f2e7355d8f386",
+    "before_fork_head": "afcd7aa26a80612a3a39f1021bb994b9da71eee4",
+    "before_fork_tree": "6c18d6b225f0cf37f4f497b9fcc1bd8a51e1d00a",
+    "base_fork_main": "0459f29015724b500f1be59270489b3549af4048",
+    "rdlens_main": "a377713e4",
+    "after_build_id": "dYMGhX06a19nyerFHaTp7",
+    "after_builder": "turbopack",
+    "l2_final_after_head": "afcd7aa26a80612a3a39f1021bb994b9da71eee4 (L2 evidence stays finalized; a3eebee supersedes only for the zh-CN locale screenshots)"
+  },
+  "viewports": [
+    "1440x900",
+    "1024x768"
+  ],
+  "theme": "light",
+  "locale": "zh-CN",
+  "browser": "153.0.8010.12",
+  "checked_at": "2026-11-09T16:47:19.093Z",
+  "runs": [
+    {
+      "viewport": "1440x900",
+      "locale": "zh-CN",
+      "checks": {
+        "entry_present": true,
+        "entry_zh_title": true,
+        "zh_sections": true,
+        "zh_scope_and_limits": true,
+        "zh_citations": true,
+        "no_english_leaks": true,
+        "no_real_material_markers": true,
+        "account_masked": true
+      },
+      "observed": {
+        "account_masked": {
+          "masked": true,
+          "items": [
+            "account-group",
+            "logout-button",
+            "username-span"
+          ]
+        },
+        "entry": {
+          "present": true,
+          "title": "主题概览",
+          "empty_hint": "",
+          "scope": "整个项目 · 2 份资料",
+          "captured": "范围快照时间：Nov 9, 2026, 11:14 PM",
+          "generated": "生成时间：Nov 9, 2026, 11:15 PM",
+          "open_label": "查看概览",
+          "changes": "",
+          "loading": false,
+          "error": ""
+        },
+        "dialog_open_state": {
+          "dialog_present": true,
+          "form_visible": false,
+          "title": "主题概览",
+          "submit_label": "",
+          "submit_disabled": null,
+          "blocked": ""
+        },
+        "dialog_text": "主题概览\n\n当前资料范围的简要概览：主要问题、主要发现、分歧与建议优先细读，并附可回溯到资料的引用。\n\n生成时间：Nov 9, 2026, 11:15 PM\n范围快照时间：Nov 9, 2026, 11:14 PM\n主要问题\n\nThe available evidence does not indicate specific research questions; it only describes the nature of the documents as controlled synthetic text for UI layout 【3】.\n\n主要发现\nThe project studies a fictional two-stage batch process used exclusively for interface screenshots 【1】.\nStage one involves mixing ingredients, and stage two applies a temperature ramp 【1】.\nNo real study data is used in this project 【1】.\nThe content is identified as controlled synthetic text intended solely for UI layout purposes 【3】.\n分歧\n\nBased on the existing evidence, there are no disagreements or conflicts between the documents. Both sources provide identical descriptions regarding the fictional nature and purpose of the batch process.\n\n建议优先细读\nDocument containing E1/E2: Recommended for understanding the specific details of the fictional two-stage batch process (mixing and temperature ramp) designed for interface screenshots 【1】.\nDocument containing E3: Recommended for verifying the disclaimer that the material is synthetic, not a real publication, and must not be cited as evidence for acceptance claims 【3】.\n声明范围与实际证据\n\n声明范围：整个项目 · 2 份资料\n\n实际纳入证据：2 份资料 · 3 个证据分块\n\n实际检索模式：hybrid_rag\n\n覆盖：裁剪 0 个分块，缺失 0 个\n\n本概览基于检索到的证据分块构建——并非对每份资料的全文阅读，图表或补充材料可能未被解读。\n\n已知限制\n未对资料进行全文阅读。\n段落级引用映射未经机器核验；请通过引用列表核对相关陈述。\n仅基于正文文本分块构建。\n图表未被解读。\n补充材料未被解读。\n已限制检索规模以适配单次调用。\n引用\n\nThe project studies a fictional two-stage batch process used only for interface screenshots. Stage one mixes ingredients; stage two applies a temperature ramp. No real study data is used.\n\ndoc_1125uidemo_a\n版本 v1\n第 1 页\n\n跳转到来源\n\nThe project studies a fictional two-stage batch process used only for interface screenshots. Stage one mixes ingredients; stage two applies a temperature ramp. No real study data is used.\n\ndoc_1125uidemo_b\n版本 v1\n第 1 页\n\n跳转到来源\n\nThis is controlled synthetic text for UI layout only. It is not a real publication, not frozen B1/B2 material, and must not be cited as evidence for any acceptance claim.\n\ndoc_1125uidemo_a\n版本 v1\n第 3 页\n\n跳转到来源\n\n模型：Qwen3.8-27B\n\n更新概览\n关闭",
+        "dialog_detail": {
+          "dialog_present": true,
+          "title": "主题概览",
+          "empty_hint": "",
+          "sections": {
+            "main_questions": {
+              "present": true,
+              "text": "主要问题 The available evidence does not indicate specific research questions; it only describes the nature of the documents as controlled synthetic text for UI layout 【3】."
+            },
+            "findings": {
+              "present": true,
+              "text": "主要发现 The project studies a fictional two-stage batch process used exclusively for interface screenshots 【1】. Stage one involves mixing ingredients, and stage two applies a temperature ramp 【1】. No real study data is used in this project 【1】. The content is identified as controlled synthetic text intended solely for UI layout purposes 【3】."
+            },
+            "disagreements": {
+              "present": true,
+              "text": "分歧 Based on the existing evidence, there are no disagreements or conflicts between the documents. Both sources provide identical descriptions regarding the fictional nature and purpose of the batch process."
+            },
+            "reading_priorities": {
+              "present": true,
+              "text": "建议优先细读 Document containing E1/E2: Recommended for understanding the specific details of the fictional two-stage batch process (mixing and temperature ramp) designed for interface screenshots 【1】. Document containing E3: Recommended for verifying the disclaimer that the material is synthetic, not a real publication, and must not be cited as evidence for acceptance claims 【3】."
+            }
+          },
+          "sections_container": true,
+          "markdown_fallback": false,
+          "restricted": false,
+          "scope": {
+            "declared": "声明范围：整个项目 · 2 份资料",
+            "actual": "实际纳入证据：2 份资料 · 3 个证据分块",
+            "resolved": "实际检索模式：hybrid_rag",
+            "coverage": "覆盖：裁剪 0 个分块，缺失 0 个",
+            "honesty": "本概览基于检索到的证据分块构建——并非对每份资料的全文阅读，图表或补充材料可能未被解读。"
+          },
+          "limitations": [
+            "未对资料进行全文阅读。",
+            "段落级引用映射未经机器核验；请通过引用列表核对相关陈述。",
+            "仅基于正文文本分块构建。",
+            "图表未被解读。",
+            "补充材料未被解读。",
+            "已限制检索规模以适配单次调用。"
+          ],
+          "citations": {
+            "rows": 15,
+            "jump_buttons": 3,
+            "degraded": 0,
+            "docs": [
+              "doc_1125uidemo_a",
+              "doc_1125uidemo_b",
+              "doc_1125uidemo_a"
+            ],
+            "versions": [
+              "版本 v1",
+              "版本 v1",
+              "版本 v1"
+            ],
+            "pages": [
+              "第 1 页",
+              "第 1 页",
+              "第 3 页"
+            ],
+            "claims": [
+              "The project studies a fictional two-stage batch process used only for interface screenshots. Stage one mixes ingredients; stage two applies a temperature ramp. No real study data is used.",
+              "The project studies a fictional two-stage batch process used only for interface screenshots. Stage one mixes ingredients; stage two applies a temperature ramp. No real study data is used.",
+              "This is controlled synthetic text for UI layout only. It is not a real publication, not frozen B1/B2 material, and must not be cited as evidence for any acceptance claim."
+            ]
+          },
+          "generated": "生成时间：Nov 9, 2026, 11:15 PM",
+          "captured": "范围快照时间：Nov 9, 2026, 11:14 PM",
+          "model": "模型：Qwen3.8-27B",
+          "focus_value": "",
+          "changes": "",
+          "discuss_button": false,
+          "update_button": true,
+          "submit_error": "",
+          "new_key_hint": "",
+          "scroll": {
+            "scrollTop": 0,
+            "scrollHeight": 1143,
+            "clientHeight": 652
+          },
+          "dialog_overflow": {
+            "sw": 1406,
+            "cw": 1406
+          }
+        },
+        "dialog_closed": true,
+        "entry_text": "主题概览 | 查看概览 | 整个项目 · 2 份资料 | 生成时间：Nov 9, 2026, 11:15 PM | 范围快照时间：Nov 9, 2026, 11:14 PM",
+        "zh_labels_in_entry": [
+          "主题概览",
+          "查看概览"
+        ],
+        "zh_labels_in_dialog": [
+          "主题概览",
+          "主要问题",
+          "主要发现",
+          "分歧",
+          "建议优先细读",
+          "声明范围与实际证据",
+          "引用",
+          "更新概览"
+        ],
+        "english_leaks_in_dialog": [],
+        "real_material_markers_found": []
+      },
+      "screenshots": [
+        {
+          "path": "evidence-locale/after/screenshots/locale-after__zh-CN__1440x900__target__01-target-shell-entry.png",
+          "bytes": 114224,
+          "sha256": "609d6afe65a42522ec93f3445699c5632824db2954c670eec2569855dc0433f4"
+        },
+        {
+          "path": "evidence-locale/after/screenshots/locale-after__zh-CN__1440x900__target__02-topic-overview-dialog.png",
+          "bytes": 151938,
+          "sha256": "3e81ba9da25488bf853f00b12df5e1adc799142315950c7d823a0234ae8c0e10"
+        }
+      ]
+    },
+    {
+      "viewport": "1024x768",
+      "locale": "zh-CN",
+      "checks": {
+        "entry_present": true,
+        "entry_zh_title": true,
+        "zh_sections": true,
+        "zh_scope_and_limits": true,
+        "zh_citations": true,
+        "no_english_leaks": true,
+        "no_real_material_markers": true,
+        "account_masked": true
+      },
+      "observed": {
+        "account_masked": {
+          "masked": true,
+          "items": [
+            "account-group",
+            "logout-button",
+            "username-span"
+          ]
+        },
+        "entry": {
+          "present": true,
+          "title": "主题概览",
+          "empty_hint": "",
+          "scope": "整个项目 · 2 份资料",
+          "captured": "范围快照时间：Nov 9, 2026, 11:14 PM",
+          "generated": "生成时间：Nov 9, 2026, 11:15 PM",
+          "open_label": "查看概览",
+          "changes": "",
+          "loading": false,
+          "error": ""
+        },
+        "dialog_open_state": {
+          "dialog_present": true,
+          "form_visible": false,
+          "title": "主题概览",
+          "submit_label": "",
+          "submit_disabled": null,
+          "blocked": ""
+        },
+        "dialog_text": "主题概览\n\n当前资料范围的简要概览：主要问题、主要发现、分歧与建议优先细读，并附可回溯到资料的引用。\n\n生成时间：Nov 9, 2026, 11:15 PM\n范围快照时间：Nov 9, 2026, 11:14 PM\n主要问题\n\nThe available evidence does not indicate specific research questions; it only describes the nature of the documents as controlled synthetic text for UI layout 【3】.\n\n主要发现\nThe project studies a fictional two-stage batch process used exclusively for interface screenshots 【1】.\nStage one involves mixing ingredients, and stage two applies a temperature ramp 【1】.\nNo real study data is used in this project 【1】.\nThe content is identified as controlled synthetic text intended solely for UI layout purposes 【3】.\n分歧\n\nBased on the existing evidence, there are no disagreements or conflicts between the documents. Both sources provide identical descriptions regarding the fictional nature and purpose of the batch process.\n\n建议优先细读\nDocument containing E1/E2: Recommended for understanding the specific details of the fictional two-stage batch process (mixing and temperature ramp) designed for interface screenshots 【1】.\nDocument containing E3: Recommended for verifying the disclaimer that the material is synthetic, not a real publication, and must not be cited as evidence for acceptance claims 【3】.\n声明范围与实际证据\n\n声明范围：整个项目 · 2 份资料\n\n实际纳入证据：2 份资料 · 3 个证据分块\n\n实际检索模式：hybrid_rag\n\n覆盖：裁剪 0 个分块，缺失 0 个\n\n本概览基于检索到的证据分块构建——并非对每份资料的全文阅读，图表或补充材料可能未被解读。\n\n已知限制\n未对资料进行全文阅读。\n段落级引用映射未经机器核验；请通过引用列表核对相关陈述。\n仅基于正文文本分块构建。\n图表未被解读。\n补充材料未被解读。\n已限制检索规模以适配单次调用。\n引用\n\nThe project studies a fictional two-stage batch process used only for interface screenshots. Stage one mixes ingredients; stage two applies a temperature ramp. No real study data is used.\n\ndoc_1125uidemo_a\n版本 v1\n第 1 页\n\n跳转到来源\n\nThe project studies a fictional two-stage batch process used only for interface screenshots. Stage one mixes ingredients; stage two applies a temperature ramp. No real study data is used.\n\ndoc_1125uidemo_b\n版本 v1\n第 1 页\n\n跳转到来源\n\nThis is controlled synthetic text for UI layout only. It is not a real publication, not frozen B1/B2 material, and must not be cited as evidence for any acceptance claim.\n\ndoc_1125uidemo_a\n版本 v1\n第 3 页\n\n跳转到来源\n\n模型：Qwen3.8-27B\n\n更新概览\n关闭",
+        "dialog_detail": {
+          "dialog_present": true,
+          "title": "主题概览",
+          "empty_hint": "",
+          "sections": {
+            "main_questions": {
+              "present": true,
+              "text": "主要问题 The available evidence does not indicate specific research questions; it only describes the nature of the documents as controlled synthetic text for UI layout 【3】."
+            },
+            "findings": {
+              "present": true,
+              "text": "主要发现 The project studies a fictional two-stage batch process used exclusively for interface screenshots 【1】. Stage one involves mixing ingredients, and stage two applies a temperature ramp 【1】. No real study data is used in this project 【1】. The content is identified as controlled synthetic text intended solely for UI layout purposes 【3】."
+            },
+            "disagreements": {
+              "present": true,
+              "text": "分歧 Based on the existing evidence, there are no disagreements or conflicts between the documents. Both sources provide identical descriptions regarding the fictional nature and purpose of the batch process."
+            },
+            "reading_priorities": {
+              "present": true,
+              "text": "建议优先细读 Document containing E1/E2: Recommended for understanding the specific details of the fictional two-stage batch process (mixing and temperature ramp) designed for interface screenshots 【1】. Document containing E3: Recommended for verifying the disclaimer that the material is synthetic, not a real publication, and must not be cited as evidence for acceptance claims 【3】."
+            }
+          },
+          "sections_container": true,
+          "markdown_fallback": false,
+          "restricted": false,
+          "scope": {
+            "declared": "声明范围：整个项目 · 2 份资料",
+            "actual": "实际纳入证据：2 份资料 · 3 个证据分块",
+            "resolved": "实际检索模式：hybrid_rag",
+            "coverage": "覆盖：裁剪 0 个分块，缺失 0 个",
+            "honesty": "本概览基于检索到的证据分块构建——并非对每份资料的全文阅读，图表或补充材料可能未被解读。"
+          },
+          "limitations": [
+            "未对资料进行全文阅读。",
+            "段落级引用映射未经机器核验；请通过引用列表核对相关陈述。",
+            "仅基于正文文本分块构建。",
+            "图表未被解读。",
+            "补充材料未被解读。",
+            "已限制检索规模以适配单次调用。"
+          ],
+          "citations": {
+            "rows": 15,
+            "jump_buttons": 3,
+            "degraded": 0,
+            "docs": [
+              "doc_1125uidemo_a",
+              "doc_1125uidemo_b",
+              "doc_1125uidemo_a"
+            ],
+            "versions": [
+              "版本 v1",
+              "版本 v1",
+              "版本 v1"
+            ],
+            "pages": [
+              "第 1 页",
+              "第 1 页",
+              "第 3 页"
+            ],
+            "claims": [
+              "The project studies a fictional two-stage batch process used only for interface screenshots. Stage one mixes ingredients; stage two applies a temperature ramp. No real study data is used.",
+              "The project studies a fictional two-stage batch process used only for interface screenshots. Stage one mixes ingredients; stage two applies a temperature ramp. No real study data is used.",
+              "This is controlled synthetic text for UI layout only. It is not a real publication, not frozen B1/B2 material, and must not be cited as evidence for any acceptance claim."
+            ]
+          },
+          "generated": "生成时间：Nov 9, 2026, 11:15 PM",
+          "captured": "范围快照时间：Nov 9, 2026, 11:14 PM",
+          "model": "模型：Qwen3.8-27B",
+          "focus_value": "",
+          "changes": "",
+          "discuss_button": false,
+          "update_button": true,
+          "submit_error": "",
+          "new_key_hint": "",
+          "scroll": {
+            "scrollTop": 0,
+            "scrollHeight": 1307,
+            "clientHeight": 540
+          },
+          "dialog_overflow": {
+            "sw": 990,
+            "cw": 990
+          }
+        },
+        "dialog_closed": true,
+        "entry_text": "主题概览 | 查看概览 | 整个项目 · 2 份资料 | 生成时间：Nov 9, 2026, 11:15 PM | 范围快照时间：Nov 9, 2026, 11:14 PM",
+        "zh_labels_in_entry": [
+          "主题概览",
+          "查看概览"
+        ],
+        "zh_labels_in_dialog": [
+          "主题概览",
+          "主要问题",
+          "主要发现",
+          "分歧",
+          "建议优先细读",
+          "声明范围与实际证据",
+          "引用",
+          "更新概览"
+        ],
+        "english_leaks_in_dialog": [],
+        "real_material_markers_found": []
+      },
+      "screenshots": [
+        {
+          "path": "evidence-locale/after/screenshots/locale-after__zh-CN__1024x768__target__01-target-shell-entry.png",
+          "bytes": 106798,
+          "sha256": "5af68d401ac3033b707e4ef806d212bb31024fe4e25af847a0066eb0cb377cdf"
+        },
+        {
+          "path": "evidence-locale/after/screenshots/locale-after__zh-CN__1024x768__target__02-topic-overview-dialog.png",
+          "bytes": 109908,
+          "sha256": "ab62772f676190680a9f3010ac5888054acb94b461cd108f01ff44e72135f735"
+        }
+      ]
+    },
+    {
+      "viewport": "1440x900",
+      "locale": "en-US",
+      "checks": {
+        "en_entry_present": true,
+        "en_title_is_english": true,
+        "en_dialog_title_english": true,
+        "en_no_zh_leak": true
+      },
+      "observed": {
+        "account_masked": {
+          "masked": true,
+          "items": [
+            "account-group",
+            "logout-button",
+            "username-span"
+          ]
+        },
+        "entry_text": "Topic overview | View overview",
+        "dialog_text_head": "Topic overview\n\nA short overview of the current source scope: main questions, findings, disagreements and recommended reading, with citations back to the sources.\n\nGenerated: Nov 9, 2026, 11:15 PM\nScope captured: Nov 9, 2026, 11:14 PM\nMain questions\n\nThe available evidence does not indicate specific research questions; it only describes the nature of the documents as controlled synthetic text for UI layout 【3】.\n\nKey findings\nThe project studies a fictional two-stage batch process used exclusively for interface screenshots 【1】.\nStage one involves mixing ingredients, and stage two applies a temperature ramp 【1】.\nNo real study data is used in this project 【1】.\nThe content is identified as controlled synthetic text intended solely for UI layout purposes 【3】.\nDisagreements\n\nBased on the existing evidence, there are no disagreements or conflicts between the documents. Both sources provide identical descriptions regarding the fictional nature and purpose of the batch process.\n\nRecommended reading\nDocument containing E1/E2: Recommended for understanding the specific details of the fictional two-stage batch process (mixing and temperature ramp) designed for interface screenshots 【1】.\nDocume"
+      },
+      "screenshots": [
+        {
+          "path": "evidence-locale/after/screenshots/locale-after-en__en-US__1440x900__target__01-target-shell-entry.png",
+          "bytes": 121032,
+          "sha256": "ac5e6ccf03ce0ccf93480363c6cfe140b42277b2fcea5f819675cdadbd89f217"
+        },
+        {
+          "path": "evidence-locale/after/screenshots/locale-after-en__en-US__1440x900__target__02-topic-overview-dialog.png",
+          "bytes": 145163,
+          "sha256": "0270932231a279e9d05531cf6245eee713c4d740b522c44c0223b1ad44d5593d"
+        }
+      ]
+    }
+  ],
+  "failures": [],
+  "screenshot_sha256": {
+    "evidence-locale/after/screenshots/locale-after__zh-CN__1440x900__target__01-target-shell-entry.png": {
+      "bytes": 114224,
+      "sha256": "609d6afe65a42522ec93f3445699c5632824db2954c670eec2569855dc0433f4"
+    },
+    "evidence-locale/after/screenshots/locale-after__zh-CN__1440x900__target__02-topic-overview-dialog.png": {
+      "bytes": 151938,
+      "sha256": "3e81ba9da25488bf853f00b12df5e1adc799142315950c7d823a0234ae8c0e10"
+    },
+    "evidence-locale/after/screenshots/locale-after__zh-CN__1024x768__target__01-target-shell-entry.png": {
+      "bytes": 106798,
+      "sha256": "5af68d401ac3033b707e4ef806d212bb31024fe4e25af847a0066eb0cb377cdf"
+    },
+    "evidence-locale/after/screenshots/locale-after__zh-CN__1024x768__target__02-topic-overview-dialog.png": {
+      "bytes": 109908,
+      "sha256": "ab62772f676190680a9f3010ac5888054acb94b461cd108f01ff44e72135f735"
+    },
+    "evidence-locale/after/screenshots/locale-after-en__en-US__1440x900__target__01-target-shell-entry.png": {
+      "bytes": 121032,
+      "sha256": "ac5e6ccf03ce0ccf93480363c6cfe140b42277b2fcea5f819675cdadbd89f217"
+    },
+    "evidence-locale/after/screenshots/locale-after-en__en-US__1440x900__target__02-topic-overview-dialog.png": {
+      "bytes": 145163,
+      "sha256": "0270932231a279e9d05531cf6245eee713c4d740b522c44c0223b1ad44d5593d"
+    }
+  },
+  "finished_at": "2026-11-09T16:47:30.608Z",
+  "build": {
+    "builder": "turbopack (next build without --webpack)",
+    "reason": "a3eebee FAILS `next build --webpack` in this environment: page-data TypeError: Class constructor URL cannot be invoked without 'new' (reproduced 3x, incl. a clean worktree; afcd7aa webpack build succeeds). Turbopack build of a3eebee succeeds. Harness-only build-method choice.",
+    "webpack_failure_log": "logs/fork-after-build.log (sections at 2026-11-10T00:40/00:41)",
+    "turbopack_build_log": "logs/fork-after-build.log (2026-11-10T00:46:49 exit=0) + logs/prepare-fork-after-locale3.out",
+    "build_id": "dYMGhX06a19nyerFHaTp7"
+  },
+  "bundle_zh_string_grep": {
+    "note": "grep of built standalone static chunks under ${BUILD}/.next/standalone/.next/static",
+    "counts": {
+      "主题概览": 12,
+      "主要问题": 2,
+      "主要发现": 2,
+      "建议优先细读": 2,
+      "声明范围与实际证据": 1
+    }
+  },
+  "observations": {
+    "dates_remain_en_us_format": "label prefix is zh (范围快照时间：/生成时间：) but the date value is still formatted en-US (\"Nov 9, 2026, 11:14 PM\") — date formatting is outside PR #124 copy-only scope; LOW/nice-to-have",
+    "dialog_body_content_language": "the synthetic demo overview body text is English because it was generated with response_language=en before the DEF-2 fix; all UI labels on the dialog are zh. A fully-Chinese body would require one zh regeneration (1 model call) — not done (0 model calls per task).",
+    "account_masked": "host header account group hidden before screenshots (H.maskHostAccount)",
+    "no_real_material": "synthetic UI-demo project only; real-title/account marker scan clean"
+  }
+}
