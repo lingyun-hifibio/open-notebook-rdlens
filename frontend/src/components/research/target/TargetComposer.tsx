@@ -103,11 +103,25 @@ export function TargetComposer({
   // 父层镜像一份用于发送（不改变既有输入行为）。
   const [localDraft, setLocalDraft] = useState('')
   const purposeToggleRef = useRef<HTMLButtonElement | null>(null)
+  const purposeRootRef = useRef<HTMLDivElement | null>(null)
   // 从回答脚注「改用途」打开时，显式把焦点送到用途控件（键盘可达）；
   // 由控件自身展开时焦点已在按钮上，重复 focus 无副作用。
   useEffect(() => {
     if (purposeMenuOpen) purposeToggleRef.current?.focus()
   }, [purposeMenuOpen])
+  // #120 L3：展开时点面板外关闭（与 Esc/再次点 toggle 并列）；点外关闭不抢焦点。
+  useEffect(() => {
+    if (!purposeMenuOpen) return
+    const onPointerDown = (event: PointerEvent): void => {
+      const root = purposeRootRef.current
+      const target = event.target
+      if (root !== null && target instanceof Node && !root.contains(target)) {
+        onPurposeMenuOpenChange(false)
+      }
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [purposeMenuOpen, onPurposeMenuOpenChange])
   const closePurposeMenu = (): void => {
     onPurposeMenuOpenChange(false)
     purposeToggleRef.current?.focus()
@@ -216,6 +230,7 @@ export function TargetComposer({
     </div>
   ) : (
     <div
+      ref={purposeRootRef}
       className="flex min-w-0 flex-col gap-1 px-1 pb-1.5"
       data-testid="rdlens-target-purpose"
       data-purpose={workPurpose ?? 'auto'}

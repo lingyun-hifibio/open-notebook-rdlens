@@ -667,6 +667,30 @@ describe('conversation-controller：副作用与迟到隔离', () => {
     expect(calls[1].input.lastEventId).toBe(0)
   })
 
+  it('#120 M2：显式 workPurpose 随 send/retry 透传；auto（省略）发送 null；改用途重试新 token/key', async () => {
+    const { controller, calls } = setup()
+    await controller.send(sendInput({ workPurpose: 'document_qa' }))
+    expect(calls[0].input.workPurpose).toBe('document_qa')
+    calls[0].input.onEvent(sse(1, 'error', { code: 'gateway_unavailable', message: 'boom' }))
+    const retry = await controller.retryTerminal({
+      ...sendInput(),
+      workPurpose: 'exploration',
+      draftToken: 'draft_2',
+      idempotencyKey: `s1_${'c'.repeat(64)}`,
+      operationId: 'op-2',
+    })
+    expect(retry.status).toBe('ok')
+    expect(calls).toHaveLength(2)
+    expect(calls[1].input.workPurpose).toBe('exploration')
+    expect(calls[1].input.draftToken).toBe('draft_2')
+    expect(calls[1].input.idempotencyKey).toBe(`s1_${'c'.repeat(64)}`)
+
+    // 「自动判断」= 省略字段：stream input 归一为 null，请求层据此不发 work_purpose。
+    const auto = setup()
+    await auto.controller.send(sendInput())
+    expect(auto.calls[0].input.workPurpose).toBeNull()
+  })
+
   it('快照按版本缓存：同版本返回同一对象', () => {
     const { controller } = setup()
     const first = controller.getSnapshot()
