@@ -1,0 +1,83 @@
+{
+  "ticket": "#1125 PUBLIC-SAFE UI pair（fork PR 描述用；synthetic UI-demo 项目）",
+  "note": "不含真实论文标题/ID；仅供 fork PR 描述/评审查看目标壳入口 Before/After。真实材料 L2 证据在 private 侧目录。",
+  "side": "before",
+  "generated_at": "2026-11-09T15:14:04.651Z",
+  "host_url": "http://127.0.0.1:5182",
+  "project_alias": "UI demo (2 controlled synthetic text sources)",
+  "fork_revision": "fb4f5f6ff02e190a69b2526394279ab8a957aacf",
+  "flag_state": "ON",
+  "browser": {
+    "name": "chromium",
+    "version": "153.0.8010.12",
+    "engine": "playwright",
+    "device_scale_factor": 1,
+    "color_scheme": "light"
+  },
+  "runs": [
+    {
+      "side": "before",
+      "scenario_id": "public-before-zh",
+      "surface": "target",
+      "locale": "zh-CN",
+      "viewport": "1440x900",
+      "theme": "light",
+      "checks": [
+        {
+          "ok": true,
+          "label": "baseline target shell loads (UI-demo project)",
+          "detail": "project=\"Issue 1125 UI demo (controlled synthetic)\" sources_rows=2"
+        },
+        {
+          "ok": true,
+          "label": "DEFECT EVIDENCE (public-safe): baseline target shell has no topic-overview entry",
+          "detail": "entry_count=0"
+        }
+      ],
+      "check_stats": {
+        "total": 2,
+        "pass": 2,
+        "fail": 0
+      },
+      "facts": {
+        "viewport": "1440x900",
+        "locale": "zh-CN",
+        "theme": "light",
+        "host_url": "http://127.0.0.1:5182",
+        "project_alias": "UI demo (2 controlled synthetic text sources)",
+        "project_name_rendered": "Issue 1125 UI demo (controlled synthetic)",
+        "account_masked": {
+          "masked": true,
+          "items": [
+            "account-group",
+            "logout-button",
+            "username-span"
+          ]
+        },
+        "entry": {
+          "present": false
+        },
+        "entry_placement": {
+          "entry_count": 0,
+          "in_center_column": false,
+          "above_composer": null,
+          "entry_box": null,
+          "main_box": null,
+          "composer_box": null
+        }
+      },
+      "status": "DEFECT",
+      "screenshots": [
+        "public-ui/before/screenshots/public-before__zh-CN__1440x900__target__01-target-shell-no-entry.png"
+      ],
+      "duration_ms": 2446
+    }
+  ],
+  "totals": {
+    "runs": 1,
+    "pass": 0,
+    "defect": 1,
+    "fail": 0,
+    "screenshots": 1
+  }
+}

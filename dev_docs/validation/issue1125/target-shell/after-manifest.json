@@ -1,0 +1,236 @@
+{
+  "ticket": "#1125 PUBLIC-SAFE UI pair（fork PR 描述用；synthetic UI-demo 项目）",
+  "note": "不含真实论文标题/ID；仅供 fork PR 描述/评审查看目标壳入口 Before/After。真实材料 L2 证据在 private 侧目录。",
+  "side": "after",
+  "generated_at": "2026-11-09T15:55:44.378Z",
+  "host_url": "http://127.0.0.1:5183",
+  "project_alias": "UI demo (2 controlled synthetic text sources)",
+  "fork_revision": "afcd7aa26a80612a3a39f1021bb994b9da71eee4",
+  "flag_state": "ON",
+  "browser": {
+    "name": "chromium",
+    "version": "153.0.8010.12",
+    "engine": "playwright",
+    "device_scale_factor": 1,
+    "color_scheme": "light"
+  },
+  "runs": [
+    {
+      "side": "after",
+      "scenario_id": "public-after-zh",
+      "surface": "target",
+      "locale": "zh-CN",
+      "viewport": "1440x900",
+      "theme": "light",
+      "checks": [
+        {
+          "ok": true,
+          "label": "fixed target shell loads (UI-demo project)",
+          "detail": "project=\"Issue 1125 UI demo (controlled synthetic)\" sources_rows=2"
+        },
+        {
+          "ok": true,
+          "label": "fix: topic-overview entry visible in default target shell",
+          "detail": "{\"present\":true,\"title\":\"Topic overview\",\"empty_hint\":\"\",\"scope\":\"Entire project · 2 sources\",\"captured\":\"Scope captured: Nov 9, 2026, 11:14 PM\",\"generated\":\"Generated: Nov 9, 2026, 11:15 PM\",\"open_label\":\"View overview\",\"changes\":\"\",\"loading\":false,\"error\":\"\"}"
+        },
+        {
+          "ok": true,
+          "label": "fix: entry at central conversation start position (above composer)",
+          "detail": "{\"entry_count\":1,\"in_center_column\":true,\"above_composer\":true,\"entry_box\":{\"x\":436,\"y\":316.875,\"width\":850,\"height\":49},\"main_box\":{\"x\":282,\"y\":119,\"width\":1158,\"height\":781},\"composer_box\":{\"x\":520,\"y\":689.5,\"width\":682,\"height\":210.5}}"
+        },
+        {
+          "ok": true,
+          "label": "fix: clicking entry opens the topic-overview Dialog",
+          "detail": "{\"dialog_present\":true,\"form_visible\":false,\"title\":\"Topic overview\",\"submit_label\":\"\",\"submit_disabled\":null,\"blocked\":\"\"}"
+        },
+        {
+          "ok": true,
+          "label": "fix: Dialog title rendered (zh-CN localized)",
+          "detail": "title=\"Topic overview\""
+        }
+      ],
+      "check_stats": {
+        "total": 5,
+        "pass": 5,
+        "fail": 0
+      },
+      "facts": {
+        "viewport": "1440x900",
+        "locale": "zh-CN",
+        "theme": "light",
+        "host_url": "http://127.0.0.1:5183",
+        "project_alias": "UI demo (2 controlled synthetic text sources)",
+        "project_name_rendered": "Issue 1125 UI demo (controlled synthetic)",
+        "account_masked": {
+          "masked": true,
+          "items": [
+            "account-group",
+            "logout-button",
+            "username-span"
+          ]
+        },
+        "entry": {
+          "present": true,
+          "title": "Topic overview",
+          "empty_hint": "",
+          "scope": "Entire project · 2 sources",
+          "captured": "Scope captured: Nov 9, 2026, 11:14 PM",
+          "generated": "Generated: Nov 9, 2026, 11:15 PM",
+          "open_label": "View overview",
+          "changes": "",
+          "loading": false,
+          "error": ""
+        },
+        "entry_placement": {
+          "entry_count": 1,
+          "in_center_column": true,
+          "above_composer": true,
+          "entry_box": {
+            "x": 436,
+            "y": 316.875,
+            "width": 850,
+            "height": 49
+          },
+          "main_box": {
+            "x": 282,
+            "y": 119,
+            "width": 1158,
+            "height": 781
+          },
+          "composer_box": {
+            "x": 520,
+            "y": 689.5,
+            "width": 682,
+            "height": 210.5
+          }
+        },
+        "dialog": {
+          "dialog_present": true,
+          "form_visible": false,
+          "title": "Topic overview",
+          "submit_label": "",
+          "submit_disabled": null,
+          "blocked": ""
+        }
+      },
+      "status": "PASS",
+      "screenshots": [
+        "public-ui/after/screenshots/public-after__zh-CN__1440x900__target__01-target-shell-entry.png",
+        "public-ui/after/screenshots/public-after__zh-CN__1440x900__target__02-topic-overview-dialog.png"
+      ],
+      "duration_ms": 3888
+    },
+    {
+      "side": "after",
+      "scenario_id": "public-after-zh",
+      "surface": "target",
+      "locale": "zh-CN",
+      "viewport": "1024x768",
+      "theme": "light",
+      "checks": [
+        {
+          "ok": true,
+          "label": "fixed target shell loads (UI-demo project)",
+          "detail": "project=\"Issue 1125 UI demo (controlled synthetic)\" sources_rows=2"
+        },
+        {
+          "ok": true,
+          "label": "fix: topic-overview entry visible in default target shell",
+          "detail": "{\"present\":true,\"title\":\"Topic overview\",\"empty_hint\":\"\",\"scope\":\"Entire project · 2 sources\",\"captured\":\"Scope captured: Nov 9, 2026, 11:14 PM\",\"generated\":\"Generated: Nov 9, 2026, 11:15 PM\",\"open_label\":\"View overview\",\"changes\":\"\",\"loading\":false,\"error\":\"\"}"
+        },
+        {
+          "ok": true,
+          "label": "fix: entry at central conversation start position (above composer)",
+          "detail": "{\"entry_count\":1,\"in_center_column\":true,\"above_composer\":true,\"entry_box\":{\"x\":333.1875,\"y\":316.875,\"width\":639.625,\"height\":77},\"main_box\":{\"x\":282,\"y\":119,\"width\":742,\"height\":649},\"composer_box\":{\"x\":333.1875,\"y\":557.5,\"width\":639.625,\"height\":210.5}}"
+        },
+        {
+          "ok": true,
+          "label": "fix: clicking entry opens the topic-overview Dialog",
+          "detail": "{\"dialog_present\":true,\"form_visible\":false,\"title\":\"Topic overview\",\"submit_label\":\"\",\"submit_disabled\":null,\"blocked\":\"\"}"
+        },
+        {
+          "ok": true,
+          "label": "fix: Dialog title rendered (zh-CN localized)",
+          "detail": "title=\"Topic overview\""
+        }
+      ],
+      "check_stats": {
+        "total": 5,
+        "pass": 5,
+        "fail": 0
+      },
+      "facts": {
+        "viewport": "1024x768",
+        "locale": "zh-CN",
+        "theme": "light",
+        "host_url": "http://127.0.0.1:5183",
+        "project_alias": "UI demo (2 controlled synthetic text sources)",
+        "project_name_rendered": "Issue 1125 UI demo (controlled synthetic)",
+        "account_masked": {
+          "masked": true,
+          "items": [
+            "account-group",
+            "logout-button",
+            "username-span"
+          ]
+        },
+        "entry": {
+          "present": true,
+          "title": "Topic overview",
+          "empty_hint": "",
+          "scope": "Entire project · 2 sources",
+          "captured": "Scope captured: Nov 9, 2026, 11:14 PM",
+          "generated": "Generated: Nov 9, 2026, 11:15 PM",
+          "open_label": "View overview",
+          "changes": "",
+          "loading": false,
+          "error": ""
+        },
+        "entry_placement": {
+          "entry_count": 1,
+          "in_center_column": true,
+          "above_composer": true,
+          "entry_box": {
+            "x": 333.1875,
+            "y": 316.875,
+            "width": 639.625,
+            "height": 77
+          },
+          "main_box": {
+            "x": 282,
+            "y": 119,
+            "width": 742,
+            "height": 649
+          },
+          "composer_box": {
+            "x": 333.1875,
+            "y": 557.5,
+            "width": 639.625,
+            "height": 210.5
+          }
+        },
+        "dialog": {
+          "dialog_present": true,
+          "form_visible": false,
+          "title": "Topic overview",
+          "submit_label": "",
+          "submit_disabled": null,
+          "blocked": ""
+        }
+      },
+      "status": "PASS",
+      "screenshots": [
+        "public-ui/after/screenshots/public-after__zh-CN__1024x768__target__01-target-shell-entry.png",
+        "public-ui/after/screenshots/public-after__zh-CN__1024x768__target__02-topic-overview-dialog.png"
+      ],
+      "duration_ms": 3807
+    }
+  ],
+  "totals": {
+    "runs": 2,
+    "pass": 2,
+    "defect": 0,
+    "fail": 0,
+    "screenshots": 4
+  }
+}
