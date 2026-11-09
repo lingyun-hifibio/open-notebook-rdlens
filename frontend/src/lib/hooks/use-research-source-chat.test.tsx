@@ -1120,6 +1120,51 @@ describe('RDLens #892 审查修复：source 会话详情读取', () => {
     created_at: '2026-10-29T00:00:00Z',
   }
 
+  it('#1151：投影头被跨域 iframe 隐藏时，user 行选段仍按 13 键读投影解析', async () => {
+    const h = sourceHarness()
+    vi.mocked(getSourceChatSession).mockImplementation(async (_projectId, _sourceId, _sessionId, params) => {
+      // 生产实测：CORS Access-Control-Expose-Headers 不含投影头 → 浏览器恒 null。
+      params?.onResponseMeta?.({ get: () => null })
+      return {
+        session: { session_id: 'sess_src_1', title: null },
+        messages: [
+          {
+            message_id: 'msg_u_1151',
+            role: 'user',
+            content: '问题',
+            created_at: '2026-11-09T08:40:00Z',
+            selection_context: {
+              source_id: 'src_1',
+              document_id: 'doc_1',
+              document_version: 'v3',
+              chunk_id: 'chunk_1',
+              chunk_ordinal: 2,
+              page_idx: 0,
+              start_offset: 6,
+              end_offset: 11,
+              quote: 'world',
+              quote_hash: '486ea46224d1bb4fb680f34f7c9ad96a8f24ec88be73ea8e5a6c65260e9cb8a7',
+              content_hash: 'a'.repeat(64),
+              visibility: 'visible',
+              reason_code: null,
+            },
+          },
+        ],
+        next_cursor: null,
+      } as never
+    })
+    const { result } = renderHook(
+      () => useResearchSourceChat({ projectId: 'proj_1', sourceId: 'src_1', session: { runtime: h.runtime, ref } }),
+      { wrapper: makeHookWrapper() },
+    )
+    await act(async () => {
+      await h.transport.loadDetail({ cursor: null, order: 'desc', limit: 50 })
+    })
+    const user = result.current.turns.find((turn) => turn.role === 'user')
+    expect(user?.selectionContext).toMatchObject({ quote: 'world', visibility: 'visible' })
+    expect(user?.selectionContextInvalid).toBeUndefined()
+  })
+
   it('F1：selectSession 读尾部窗口（只发 order=desc + limit=50）', async () => {
     const h = sourceHarness()
     vi.mocked(getSourceChatSession).mockResolvedValue({

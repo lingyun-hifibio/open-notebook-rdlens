@@ -3008,6 +3008,72 @@ describe('PR-5b（D2/D3）：会话元数据、submission marker 与未结算查
       expect(result.current.turns[0]).toMatchObject({ role: 'user', content: '最新问题' })
     })
   })
+
+  describe('#1151：跨域 iframe 投影头不可读时 purpose/选段不降级', () => {
+    /** 生产 d1e-message-v4 的 20 键行（2026-11-09 目标环境实测键集与取值）。 */
+    function productionRow(
+      role: 'user' | 'assistant',
+      fields: Record<string, unknown>,
+    ): Record<string, unknown> {
+      const row: Record<string, unknown> = {
+        message_id: role === 'user' ? 'msg_u_1151' : 'msg_gen_1151_assistant',
+        role,
+        resolved_mode: null,
+        degradation_reasons: [],
+        background_generation_id: null,
+        generation_id: null,
+        created_at: '2026-11-09T08:40:00Z',
+        record_visibility: 'visible',
+        content: role === 'user' ? '问题' : '答案',
+        thinking: null,
+        citations: [],
+        source_ref: null,
+        usage: null,
+        context_coverage: null,
+        context_report: null,
+        work_purpose: null,
+        work_purpose_source: 'not_recorded',
+        verification: null,
+        evidence_degraded: false,
+        selection_context: null,
+      }
+      return { ...row, ...fields }
+    }
+
+    it('投影头被 CORS 隐藏（headers.get→null）时，恢复轮仍从 20 键行投影 purpose/选段', async () => {
+      const userRow = productionRow('user', {
+        selection_context: selectionProjectionWire(),
+      })
+      const assistantRow = productionRow('assistant', {
+        work_purpose: 'exploration',
+        work_purpose_source: 'inferred',
+      })
+      vi.mocked(getResearchChatSession).mockImplementation(async (_projectId, _sessionId, params) => {
+        // 生产实测：Access-Control-Expose-Headers 不含投影头 → 浏览器恒 null。
+        params?.onResponseMeta?.({ get: () => null })
+        return {
+          session: { session_id: 'sess_1', title: null },
+          messages: [userRow, assistantRow],
+          cards: [],
+          next_cursor: null,
+        } as unknown as Awaited<ReturnType<typeof getResearchChatSession>>
+      })
+      const h = harness()
+      const { result } = renderHook(() =>
+        useResearchChat({ projectId: 'proj_1', session: { runtime: h.runtime, ref } }),
+      )
+      await flush()
+      await act(async () => {
+        await h.transport.loadDetail({ cursor: null })
+      })
+      const assistant = lastAssistant(result.current.turns)
+      expect(assistant.workPurpose).toBe('exploration')
+      expect(assistant.workPurposeSource).toBe('inferred')
+      const user = result.current.turns.find((turn) => turn.role === 'user')
+      expect(user?.selectionContext).toMatchObject({ quote: 'world', visibility: 'visible' })
+      expect(user?.selectionContextInvalid).toBeUndefined()
+    })
+  })
 })
 
 
