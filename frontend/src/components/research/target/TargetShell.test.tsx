@@ -54,6 +54,10 @@ const conversationFixture = vi.hoisted(() => ({
     noActiveSession: false,
     canPinSingleSource: false,
     sendError: null as string | null,
+    // #1106：用途能力位/当前显式 purpose（用例可覆盖）
+    purposeInferenceAvailable: false,
+    workPurpose: null as 'document_qa' | 'exploration' | 'writing' | null,
+    setWorkPurpose: vi.fn(),
   },
   editor: {
     snapshot: null,
@@ -221,6 +225,13 @@ vi.mock('./use-target-conversation', async () => {
         snapshot.mode === 'selected' &&
         snapshot.sourceIds.length === 0 &&
         snapshot.noteIds.length === 0
+      // #1106/D5：与真实 hook 同源——显式 exploration/writing 或
+      // inference 能力可用时的自动判断（null）放行空 selected。
+      const purpose = conversationFixture.flags.workPurpose
+      const purposeAllowsEmpty =
+        purpose === 'exploration' ||
+        purpose === 'writing' ||
+        (purpose === null && conversationFixture.flags.purposeInferenceAvailable)
       return {
         sessionWired: false,
         runtimeAvailable: sessions !== null,
@@ -243,12 +254,17 @@ vi.mock('./use-target-conversation', async () => {
         blockedHint: conversationFixture.flags.canExecute
           ? ''
           : 'research.globalModel.selectModelHint',
-        scopeBlockedText: scopeEmpty ? 'research.target.composer.scopeBlocked' : null,
+        scopeBlockedText:
+          scopeEmpty && !purposeAllowsEmpty ? 'research.target.composer.scopeBlocked' : null,
         noActiveSession: conversationFixture.flags.noActiveSession,
         sendError: conversationFixture.flags.sendError,
         clearSendError: vi.fn(),
         canPinSingleSource: conversationFixture.flags.canPinSingleSource,
+        workPurpose: conversationFixture.flags.workPurpose,
+        setWorkPurpose: conversationFixture.flags.setWorkPurpose,
+        purposeInferenceAvailable: conversationFixture.flags.purposeInferenceAvailable,
         send: conversationFixture.send,
+        sendWithPurpose: vi.fn(async () => true),
         openSession: conversationFixture.openSession,
         newSession: conversationFixture.newSession,
         pinSingleSource: conversationFixture.pinSingleSource,
@@ -345,6 +361,9 @@ beforeEach(() => {
   conversationFixture.flags.noActiveSession = false
   conversationFixture.flags.canPinSingleSource = false
   conversationFixture.flags.sendError = null
+  conversationFixture.flags.purposeInferenceAvailable = false
+  conversationFixture.flags.workPurpose = null
+  conversationFixture.flags.setWorkPurpose.mockClear()
   conversationFixture.send.mockClear()
   conversationFixture.openSession.mockClear()
   conversationFixture.newSession.mockClear()
@@ -978,5 +997,83 @@ describe('真实 harness 发送缺陷回归（冷启动查回阻断发送）', (
       'data-suppress-cold-start',
       'true',
     )
+  })
+})
+
+// W1 #1106 PR-B（UI-11 / D5 / D6）：composer「本次用途」与空 selected 放行。
+describe('#1106 本次用途（UI-11）', () => {
+  it('能力可用：摘要+展开三选，选择回传显式 purpose', () => {
+    conversationFixture.flags.purposeInferenceAvailable = true
+    renderShell()
+    const container = screen.getByTestId('rdlens-target-purpose')
+    expect(container).toHaveAttribute('data-purpose-inference', 'true')
+    expect(container).toHaveAttribute('data-purpose', 'auto')
+    fireEvent.click(screen.getByTestId('rdlens-target-purpose-toggle'))
+    for (const id of ['auto', 'document_qa', 'exploration', 'writing']) {
+      expect(screen.getByTestId(`rdlens-target-purpose-option-${id}`)).toBeInTheDocument()
+    }
+    // 写作诚实标注 W3（不主张写作产物）
+    expect(screen.getByTestId('rdlens-target-purpose-writing-hint')).toHaveTextContent(
+      'research.target.composer.purpose.writingHint',
+    )
+    fireEvent.click(screen.getByTestId('rdlens-target-purpose-option-exploration'))
+    expect(conversationFixture.flags.setWorkPurpose).toHaveBeenCalledWith('exploration')
+  })
+
+  it('能力关闭：显示「默认（资料问答）」静态摘要，不显示假控件/空 selected 纠正动作', () => {
+    renderShell()
+    expect(screen.getByTestId('rdlens-target-purpose')).toHaveAttribute(
+      'data-purpose-inference',
+      'false',
+    )
+    expect(screen.getByTestId('rdlens-target-purpose-default')).toHaveTextContent(
+      'research.target.composer.purpose.defaultSummary',
+    )
+    expect(screen.queryByTestId('rdlens-target-purpose-toggle')).toBeNull()
+    // 空 selected：仅原有两个动作，不渲染 exploration/writing
+    fireEvent.click(screen.getByTestId('rdlens-target-source-select-src_ready'))
+    fireEvent.click(screen.getByTestId('rdlens-target-source-select-src_ready'))
+    expect(screen.queryByTestId('rdlens-target-scope-blocked-exploration')).toBeNull()
+  })
+
+  it('D5：空 selected + 自动判断 + inference on → 可发送（交服务端推断），并提供改为探索讨论动作', () => {
+    conversationFixture.flags.purposeInferenceAvailable = true
+    renderShell()
+    fireEvent.click(screen.getByTestId('rdlens-target-source-select-src_ready'))
+    fireEvent.click(screen.getByTestId('rdlens-target-source-select-src_ready'))
+    expect(screen.getByTestId('scope-probe-source-count')).toHaveTextContent('0')
+    // 空 selected 的说明仍可见（BEH-03），但 composer 不再被本地阻断。
+    expect(screen.getByTestId('rdlens-target-scope-blocked')).toBeInTheDocument()
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: '我们讨论一个假设' } })
+    expect(screen.getByTestId('chat-send')).not.toBeDisabled()
+    expect(screen.queryByTestId('research-draft-gate-hint')).toBeNull()
+    // 「改为探索讨论」显式动作（不静默换目的）：设置为显式 exploration。
+    fireEvent.click(screen.getByTestId('rdlens-target-scope-blocked-exploration'))
+    expect(conversationFixture.flags.setWorkPurpose).toHaveBeenCalledWith('exploration')
+  })
+
+  it('D5：空 selected + inference off → 保持现行本地阻断（不静默放行）', () => {
+    renderShell()
+    fireEvent.click(screen.getByTestId('rdlens-target-source-select-src_ready'))
+    fireEvent.click(screen.getByTestId('rdlens-target-source-select-src_ready'))
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: '问题' } })
+    expect(screen.getByTestId('chat-send')).toBeDisabled()
+    expect(screen.getByTestId('research-draft-gate-hint')).toHaveTextContent(
+      'research.target.composer.scopeBlocked',
+    )
+  })
+
+  it('显式 exploration 作用下一请求：摘要与空 selected 放行同步（D5/D7）', () => {
+    conversationFixture.flags.purposeInferenceAvailable = true
+    conversationFixture.flags.workPurpose = 'exploration'
+    renderShell()
+    expect(screen.getByTestId('rdlens-target-purpose')).toHaveAttribute(
+      'data-purpose',
+      'exploration',
+    )
+    fireEvent.click(screen.getByTestId('rdlens-target-source-select-src_ready'))
+    fireEvent.click(screen.getByTestId('rdlens-target-source-select-src_ready'))
+    fireEvent.change(screen.getByTestId('chat-input'), { target: { value: '讨论' } })
+    expect(screen.getByTestId('chat-send')).not.toBeDisabled()
   })
 })

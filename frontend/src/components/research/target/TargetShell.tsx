@@ -17,6 +17,7 @@ import { TargetConversation } from './TargetConversation'
 import { TargetRightPane } from './TargetRightPane'
 import { TargetSecondaryView } from './TargetSecondaryView'
 import { useTargetConversation } from './use-target-conversation'
+import { useResearchPurposeCapability } from './use-purpose-capability'
 import {
   TARGET_MIN_VIEWPORT,
   TARGET_THREE_COLUMN_VIEWPORT,
@@ -57,13 +58,15 @@ function useViewportWidth(): number {
  *
  * 诚实边界（W1）：W2/W3/P6 能力（原文阅读、成果编辑、深入研究执行）不绘制
  * 假控件；空 selected 同时阻断 composer 与次级搜索/比较（BEH-03/F4）；
- * 「本次用途」（UI-11）由 #1106 锁步，W1 不造假控件（F13）。
+ * 「本次用途」（UI-11）由 #1106 PR-B 提供：能力位严格 true 时才渲染三选
+ * 控件，空 selected 时另给真实的「改为探索讨论/写作」显式动作（D6）。
  */
 export function TargetShell() {
   const { t } = useTranslation()
   const { projectId } = useResearchWorkspace()
   const host = useResearchHostOptional()
-  const conversation = useTargetConversation()
+  const purposeInferenceAvailable = useResearchPurposeCapability(projectId)
+  const conversation = useTargetConversation({ purposeInferenceAvailable })
   const jobsController = useResearchJobsController()
   const scopeApi = useResearchScope()
   const sourcesQuery = useResearchSources(projectId)
@@ -244,6 +247,8 @@ export function TargetShell() {
           <TargetSourcesPane
             onOpenSource={openSourcePreview}
             scopeFocusRequest={scopeFocusRequest}
+            purposeInferenceAvailable={conversation.purposeInferenceAvailable}
+            onSetWorkPurpose={conversation.setWorkPurpose}
           />
         </aside>
 

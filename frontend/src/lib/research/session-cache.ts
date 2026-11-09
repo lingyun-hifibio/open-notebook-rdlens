@@ -745,6 +745,8 @@ const SUBMISSION_HASH_PATTERN = /^[a-f0-9]{64}$/
 const CONTEXT_LEVELS = new Set(['focused', 'document', 'workspace'])
 const RESPONSE_LANGUAGES = new Set(['zh', 'en'])
 const SCOPE_MODES = new Set(['all', 'selected', 'single'])
+/** #1106（W1 PR-B）：C-01 三个可写目的值；显式 null 不被接受（自动判断=省略）。 */
+const WORK_PURPOSES = new Set(['document_qa', 'exploration', 'writing'])
 const SUBMISSION_BASE_KEYS = new Set([
   'session_id',
   'editor_revision',
@@ -755,7 +757,8 @@ const SUBMISSION_BASE_KEYS = new Set([
   'context_level',
   'response_language',
 ])
-const GLOBAL_ONLY_KEYS = new Set(['source_scope', 'note_ids'])
+// #1106：work_purpose 只允许 global（source chat 永不发送；D2 边界）。
+const GLOBAL_ONLY_KEYS = new Set(['source_scope', 'note_ids', 'work_purpose'])
 
 function isBoundedString(value: unknown, min: number, max: number): value is string {
   return typeof value === 'string' && value.length >= min && value.length <= max
@@ -833,6 +836,11 @@ function isCompleteSubmissionBody(
     body.response_language !== null &&
     (typeof body.response_language !== 'string' || !RESPONSE_LANGUAGES.has(body.response_language))
   ) {
+    return false
+  }
+  // #1106（W1 PR-B）：显式 purpose 只接受三个契约值；「自动判断」= 键省略。
+  // 显式 null 与后端契约冲突（flag on → 422），快照拒绝写入而不是保存坏请求。
+  if ('work_purpose' in body && !WORK_PURPOSES.has(body.work_purpose as string)) {
     return false
   }
   if (ref.kind === 'global') {

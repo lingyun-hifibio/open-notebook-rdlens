@@ -879,3 +879,70 @@ describe('parseSessionAcceptReceipt', () => {
     if (!wrongKind.ok) expect(wrongKind.reason).toBe('invalid_accept_receipt:session_ref')
   })
 })
+
+// W1 #1106 PR-B：work_purpose 是**可选** wire 键——显式出现时原样进入提交
+// body（含 attach 同一 body）；「自动判断」= 省略（不得出现 null）。
+describe('session chat wire work_purpose（#1106）', () => {
+  beforeEach(() => {
+    vi.stubEnv('NEXT_PUBLIC_RD_EMBEDDED_MODE', '1')
+    vi.stubEnv('NEXT_PUBLIC_RD_GATEWAY_URL', GATEWAY)
+    setResearchToken('research.jwt', 9999999999)
+  })
+
+  afterEach(() => {
+    clearResearchToken()
+    vi.unstubAllEnvs()
+    vi.restoreAllMocks()
+  })
+
+  it('显式 work_purpose 出现时进入冻结 body（两次请求同一 body）', async () => {
+    const fetchMock = installFetch(
+      acceptResponse(),
+      sseResponse([acceptedFrame(), DONE_FRAME]),
+    )
+    await new Promise<void>((resolve) => {
+      openResearchChatStream(
+        sessionOptions({
+          request: { query: 'q', model_id: 'm-test', work_purpose: 'exploration' },
+          onEvent: (event) => {
+            if (event.type === 'done') resolve()
+          },
+        }),
+      )
+    })
+    const first = fetchCall(fetchMock, 0)
+    const second = fetchCall(fetchMock, 1)
+    expect(Object.keys(first.body).sort()).toEqual([
+      'context_level',
+      'draft_token',
+      'editor_intent_hash',
+      'editor_revision',
+      'model_id',
+      'query',
+      'session_id',
+      'work_purpose',
+    ])
+    expect(first.body.work_purpose).toBe('exploration')
+    expect(second.body.work_purpose).toBe('exploration')
+    expect(second.init.body).toBe(first.init.body)
+  })
+
+  it('自动判断（缺省）不发送 work_purpose 键（绝不能是 null）', async () => {
+    const fetchMock = installFetch(
+      acceptResponse(),
+      sseResponse([acceptedFrame(), DONE_FRAME]),
+    )
+    await new Promise<void>((resolve) => {
+      openResearchChatStream(
+        sessionOptions({
+          onEvent: (event) => {
+            if (event.type === 'done') resolve()
+          },
+        }),
+      )
+    })
+    const body = fetchCall(fetchMock, 0).body
+    expect(Object.prototype.hasOwnProperty.call(body, 'work_purpose')).toBe(false)
+    expect(body.work_purpose).toBeUndefined()
+  })
+})
