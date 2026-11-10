@@ -671,10 +671,230 @@ const FIXTURE = {
   d2Revision: 3,
 }
 
+/** Expected accessible label for the enable entry (en-US `t()` value). */
+const ENABLE_PROTECTED_LABEL = 'Enable protected editing'
+/** Compact icon-button upper bounds (MEDIUM-1: a text button used to squeeze
+ * the legacy row title column to 0px at 1024x768). */
+const COMPACT_BUTTON_MAX = 40
+
+/**
+ * Real-Chromium layout probe for the legacy row (MEDIUM-1 evidence).
+ * Retrieves bounding boxes / scroll geometry of the title column, Delete
+ * action and the enable entry — no CSS-string parsing, no assumptions about
+ * class names beyond the stable `data-testid` row contract.
+ */
+async function collectLayout(boot) {
+  const { app, page } = boot
+  const viewport = page.viewportSize() || { width: boot.width, height: boot.height }
+  return app
+    .evaluate(
+      ({ viewport, noteId, expectedTitle }) => {
+        const rect = (el) => {
+          if (!el) return null
+          const r = el.getBoundingClientRect()
+          return {
+            x: Math.round(r.x * 100) / 100,
+            y: Math.round(r.y * 100) / 100,
+            width: Math.round(r.width * 100) / 100,
+            height: Math.round(r.height * 100) / 100,
+            right: Math.round(r.right * 100) / 100,
+            bottom: Math.round(r.bottom * 100) / 100,
+          }
+        }
+        const geometry = (el) => {
+          if (!el) return null
+          return {
+            box: rect(el),
+            visible: Boolean(el.offsetWidth || el.offsetHeight || el.getClientRects().length),
+            scrollWidth: el.scrollWidth,
+            clientWidth: el.clientWidth,
+            scrollHeight: el.scrollHeight,
+            clientHeight: el.clientHeight,
+          }
+        }
+        const row = document.querySelector(`[data-testid="note-catalog-row-${noteId}"]`)
+        const catalog = document.querySelector('[data-testid="note-catalog"]')
+        if (!row) return { viewport, row: null, catalog: geometry(catalog) }
+        // Legacy row title: the leaf <p> whose text equals the fixture title.
+        const titleNode =
+          [...row.querySelectorAll('p')].find(
+            (el) => (el.textContent || '').trim() === expectedTitle,
+          ) || row.querySelector('.min-w-0.flex-1 p')
+        const buttons = [...row.querySelectorAll('button')]
+        const deleteButton = buttons.find(
+          (button) =>
+            ((button.getAttribute('aria-label') || button.textContent || '').trim()) === 'Delete',
+        )
+        const actionArea = deleteButton ? deleteButton.parentElement : null
+        const enableButton = row.querySelector(`[data-testid="note-enable-${noteId}"]`)
+        return {
+          viewport,
+          row: geometry(row),
+          catalog: geometry(catalog),
+          title: titleNode
+            ? { text: (titleNode.textContent || '').trim(), ...geometry(titleNode) }
+            : null,
+          deleteButton: deleteButton
+            ? {
+                label:
+                  (deleteButton.getAttribute('aria-label') || deleteButton.textContent || '')
+                    .replace(/\s+/g, ' ')
+                    .trim(),
+                ...geometry(deleteButton),
+              }
+            : null,
+          actionArea: geometry(actionArea),
+          enableButton: enableButton
+            ? {
+                testid: enableButton.getAttribute('data-testid'),
+                aria_label: enableButton.getAttribute('aria-label'),
+                title_attr: enableButton.getAttribute('title'),
+                ...geometry(enableButton),
+              }
+            : null,
+        }
+      },
+      { viewport, noteId: FIXTURE.legacyNoteId, expectedTitle: FIXTURE.legacyTitle },
+    )
+    .catch(() => null)
+}
+
+const inside = (box, boundary, tolerance = 1) =>
+  Boolean(
+    box &&
+      boundary &&
+      box.width > 0 &&
+      box.x >= boundary.x - tolerance &&
+      box.right <= boundary.right + tolerance,
+  )
+
+/**
+ * Layout assertions shared by E1/E3 (MEDIUM-1): the legacy row title must not
+ * be squeezed to zero, the Delete action must be fully inside the Notes
+ * catalog/panel and not clipped, and (when present) the enable entry must be a
+ * compact icon button carrying the frozen accessible label.
+ */
+function checkLegacyRowLayout(check, prefix, layout, width, { expectEnable, catalogRightFallback = null }) {
+  check(
+    `${prefix}.layout_probe_available`,
+    Boolean(layout && layout.row),
+    `legacy row bounding box measurable (${width}px viewport)`,
+    layout && layout.row,
+  )
+  if (!layout || !layout.row) return { ok: false }
+  const viewport = layout.viewport || { width, height: heightFor(width) }
+  const catalog = layout.catalog || { box: null }
+  const catalogBox =
+    catalog.box ||
+    catalogRightFallback || {
+      x: 0,
+      right: viewport.width,
+      width: viewport.width,
+    }
+  const title = layout.title
+  check(
+    `${prefix}.layout_title_present`,
+    Boolean(title) && title.box.width > 0 && title.visible,
+    'legacy row title element is rendered with a non-zero box (not squeezed away)',
+    title && { text: title.text, width: title.box.width, visible: title.visible },
+  )
+  check(
+    `${prefix}.layout_title_width_gt_20px`,
+    Boolean(title) && title.box.width > 20,
+    `legacy row title width > 20px at ${width}px viewport (MEDIUM-1 regression guard)`,
+    title && { width: title.box.width, scrollWidth: title.scrollWidth, clientWidth: title.clientWidth },
+  )
+  check(
+    `${prefix}.layout_title_inside_panel`,
+    Boolean(title) && inside(title.box, catalogBox) && title.box.right <= viewport.width + 1,
+    'legacy row title box is fully inside the Notes catalog and viewport',
+    title && { title: title.box, catalog: catalogBox, viewport },
+  )
+  const del = layout.deleteButton
+  check(
+    `${prefix}.layout_delete_present_and_visible`,
+    Boolean(del) && del.box.width > 0 && del.box.height > 0 && del.visible,
+    'Delete action is present with a non-zero box and visible (hover-revealed)',
+    del && { label: del.label, box: del.box, visible: del.visible },
+  )
+  check(
+    `${prefix}.layout_delete_fully_inside_panel`,
+    Boolean(del) && inside(del.box, catalogBox) && del.box.right <= viewport.width + 1,
+    'Delete action right edge stays inside the Notes panel/viewport (no clipping)',
+    del && { deleteRight: del.box.right, catalogRight: catalogBox.right, viewportWidth: viewport.width },
+  )
+  check(
+    `${prefix}.layout_delete_not_clipped`,
+    Boolean(del) && del.scrollWidth <= del.clientWidth + 1,
+    'Delete action label is not clipped (scrollWidth <= clientWidth + 1)',
+    del && { scrollWidth: del.scrollWidth, clientWidth: del.clientWidth },
+  )
+  const actions = layout.actionArea
+  check(
+    `${prefix}.layout_actions_inside_panel`,
+    Boolean(actions) && inside(actions.box, catalogBox),
+    'row action area is fully inside the Notes catalog (no overflow into title column)',
+    actions && { actions: actions.box, catalogRight: catalogBox.right },
+  )
+  if (expectEnable) {
+    const enable = layout.enableButton
+    check(
+      `${prefix}.layout_enable_present`,
+      Boolean(enable) && enable.box.width > 0 && enable.box.height > 0,
+      'enable entry rendered with a non-zero box',
+      enable && { testid: enable.testid, box: enable.box },
+    )
+    check(
+      `${prefix}.layout_enable_compact_icon`,
+      Boolean(enable) && enable.box.width <= COMPACT_BUTTON_MAX && enable.box.height <= COMPACT_BUTTON_MAX,
+      `enable entry is a compact icon button (width/height <= ${COMPACT_BUTTON_MAX}px at ${width}px viewport)`,
+      enable && { width: enable.box.width, height: enable.box.height, limit: COMPACT_BUTTON_MAX },
+    )
+    check(
+      `${prefix}.layout_enable_aria_label`,
+      Boolean(enable) && enable.aria_label === ENABLE_PROTECTED_LABEL,
+      `enable entry aria-label equals the frozen catalog.enableProtected copy ("${ENABLE_PROTECTED_LABEL}")`,
+      enable && { aria_label: enable.aria_label, title_attr: enable.title_attr },
+    )
+    check(
+      `${prefix}.layout_enable_testid_stable`,
+      Boolean(enable) && enable.testid === `note-enable-${FIXTURE.legacyNoteId}`,
+      'enable entry keeps data-testid="note-enable-<note_id>"',
+      enable && { testid: enable.testid },
+    )
+  }
+  return { ok: true, catalogBox, title, del }
+}
+
+/**
+ * Compare an AFTER screenshot with its BEFORE counterpart (byte-identical sha256).
+ * Used for static screens where the issue's only visual delta is inside the
+ * legacy row action area (E3 capability-off / E7 admin / E8 capability error).
+ */
+function compareWithBefore(shotName) {
+  const fileName = shotName.endsWith('.png') ? shotName : `${shotName}.png`
+  const afterFile = path.join(OUT_DIR, fileName)
+  const beforeName = fileName.startsWith('after_')
+    ? `before_${fileName.slice('after_'.length)}`
+    : fileName
+  const beforeFile = path.join(EVIDENCE_ROOT, 'screenshots', 'before', beforeName)
+  const exists = fs.existsSync(beforeFile) && fs.existsSync(afterFile)
+  if (!exists) return { exists: false, before: beforeName, after: fileName }
+  const beforeSha = sha256File(beforeFile)
+  const afterSha = sha256File(afterFile)
+  // Informational only: next dev rendering can differ by a handful of
+  // anti-aliasing pixels between runs, so byte equality is not a hard gate.
+  // The hard cross-phase gate is DOM-layout equivalence
+  // (checkLegacyRowLayout) plus the tolerant pixel comparison in
+  // harness/verify_pixel_equivalence.py.
+  return { exists: true, equal: beforeSha === afterSha, beforeSha, afterSha, before: beforeName, after: fileName }
+}
+
 // ── BEFORE scenes (baseline: no enable entry) ─────────────────────────────
 async function sceneE1(browser, width, height) {
   const scene = 'E1'
   const { items, check } = makeAssert()
+  let sceneLayout = null
   await resetHarness({ noteMode: 'editor_on', enableMode: 'success' })
   const boot = await bootApp(browser, width, height)
   const app = boot.app
@@ -733,6 +953,12 @@ async function sceneE1(browser, width, height) {
       'no enable dialog before clicking the entry',
       state.counts.note_enable_dialog,
     )
+    // MEDIUM-1 round-1 regression guard: real-Chromium bounding boxes for the
+    // legacy row title column, Delete action and the compact enable icon.
+    const layout = await collectLayout(boot)
+    log(`${PREFIX} ${scene} layout=${JSON.stringify(layout)}`)
+    checkLegacyRowLayout(check, 'e1', layout, width, { expectEnable: true })
+    sceneLayout = layout
   }
   const raw = await stats()
   check(
@@ -744,7 +970,15 @@ async function sceneE1(browser, width, height) {
   log(`${PREFIX} ${scene} console-errors=${JSON.stringify(boot.errors)} expected-http-errors=${JSON.stringify(boot.expectedHttpErrors)}`)
   check('e1.no_console_or_page_errors', boot.errors.length === 0, [], boot.errors)
   await boot.context.close()
-  return { id: scene, width, note_mode: 'editor_on', enable_mode: 'success', stats: statsSummary(raw), assertions: items }
+  return {
+    id: scene,
+    width,
+    note_mode: 'editor_on',
+    enable_mode: 'success',
+    layout: sceneLayout,
+    stats: statsSummary(raw),
+    assertions: items,
+  }
 }
 
 async function sceneE2Before(browser, width, height) {
@@ -867,6 +1101,29 @@ async function sceneE2After(browser, width, height) {
     dialogState.dialogPhase,
   )
   await shot(boot, `${PREFIX}_e2_enable_dialog_${width}`)
+
+  // Round-1 fix: Esc in the `confirming` phase must cancel the dialog without
+  // sending any mutation (MEDIUM-1 companion fix). Verified through the real UI.
+  const dialogLocator = app.locator(HOOKS.dialog[0]).first()
+  await dialogLocator.press('Escape').catch(() => {})
+  await boot.page.waitForTimeout(800)
+  const afterEsc = await collectState(boot)
+  const escStats = await stats()
+  check(
+    'e2.esc_cancels_confirming_without_request',
+    afterEsc.counts.note_enable_dialog === 0 &&
+      (escStats.enable_requests || []).length === 0 &&
+      afterEsc.counts.note_enable === 1,
+    'Esc closes the confirming dialog without sending POST .../editing; the enable entry stays available',
+    {
+      dialog: afterEsc.counts.note_enable_dialog,
+      enable: afterEsc.counts.note_enable,
+      enable_requests: (escStats.enable_requests || []).length,
+    },
+  )
+  const reopened = await clickEnableEntry(app, FIXTURE.legacyNoteId)
+  check('e2.enable_entry_reopened_after_esc', reopened.clicked, 'enable entry can be clicked again after Esc cancel', reopened)
+  await waitFor(async () => (await count(app, HOOKS.dialog[0])) > 0, 15000)
 
   const confirmed = await clickDialogButton(app, HOOKS.confirm)
   check('e2.confirm_clicked', confirmed.clicked, 'note-enable-confirm clicked', confirmed)
@@ -1051,11 +1308,52 @@ async function sceneE3(browser, width, height) {
     'no d2-v1 protected editor for the legacy note in this flow',
     state.counts.note_editor,
   )
-  await shot(boot, `${PREFIX}_e3_capability_off_legacy_form_${width}`)
+  const shotName = `${PREFIX}_e3_capability_off_legacy_form_${width}`
+  await shot(boot, shotName)
+  let sceneLayout = null
+  let scenePixel = null
+  if (PHASE === 'after') {
+    // MEDIUM-1 guard also applies with the capability off: the old form path
+    // must keep an un-squeezed title column and a fully visible Delete action.
+    sceneLayout = await collectLayout(boot)
+    log(`${PREFIX} ${scene} layout=${JSON.stringify(sceneLayout)}`)
+    const layoutResult = checkLegacyRowLayout(check, 'e3', sceneLayout, width, {
+      expectEnable: false,
+    })
+    const pixel = compareWithBefore(shotName)
+    log(`${PREFIX} ${scene} pixel-compare=${JSON.stringify(pixel)}`)
+    scenePixel = pixel
+    // Cross-phase hard gate is DOM-layout equivalence (the capability-off
+    // surface carries no #1135 delta); byte/pixel identity is informational
+    // (next dev can shift a few anti-aliasing pixels between runs).
+    check(
+      'e3.after_layout_equivalent_to_before_surface',
+      Boolean(layoutResult.ok) &&
+        layoutResult.title.box.width > 20 &&
+        layoutResult.del.box.width > 0 &&
+        inside(layoutResult.del.box, layoutResult.catalogBox),
+      'AFTER E3 DOM layout (title column / Delete action) is equivalent to the BEFORE capability-off surface',
+      {
+        titleWidth: layoutResult.title && layoutResult.title.box.width,
+        delete: layoutResult.del && layoutResult.del.box,
+        catalog: layoutResult.catalogBox,
+        pixel,
+      },
+    )
+  }
   log(`${PREFIX} ${scene} console-errors=${JSON.stringify(boot.errors)} expected-http-errors=${JSON.stringify(boot.expectedHttpErrors)}`)
   check('e3.no_console_or_page_errors', boot.errors.length === 0, [], boot.errors)
   await boot.context.close()
-  return { id: scene, width, note_mode: 'editor_off', enable_mode: 'success', stats: statsSummary(raw), assertions: items }
+  return {
+    id: scene,
+    width,
+    note_mode: 'editor_off',
+    enable_mode: 'success',
+    layout: sceneLayout,
+    pixel_compare: scenePixel,
+    stats: statsSummary(raw),
+    assertions: items,
+  }
 }
 
 // ── AFTER-only error/unknown scenes ───────────────────────────────────────
@@ -1396,7 +1694,13 @@ async function sceneE7(browser, width, height) {
     'admin read-only session exposes no New note button',
     await count(app, '[data-testid="note-catalog-new"]'),
   )
-  await shot(boot, `${PREFIX}_e7_admin_readonly_${width}`)
+  const e7Shot = `${PREFIX}_e7_admin_readonly_${width}`
+  await shot(boot, e7Shot)
+  let e7Pixel = null
+  if (PHASE === 'after') {
+    e7Pixel = compareWithBefore(e7Shot)
+    log(`${PREFIX} ${scene} pixel-compare=${JSON.stringify(e7Pixel)}`)
+  }
   const raw = await stats()
   check(
     'e7.no_enable_request_for_admin',
@@ -1407,7 +1711,7 @@ async function sceneE7(browser, width, height) {
   log(`${PREFIX} ${scene} console-errors=${JSON.stringify(boot.errors)} expected-http-errors=${JSON.stringify(boot.expectedHttpErrors)}`)
   check('e7.no_console_or_page_errors', boot.errors.length === 0, [], boot.errors)
   await boot.context.close()
-  return { id: scene, width, note_mode: 'editor_on', role: 'admin_readonly', stats: statsSummary(raw), assertions: items }
+  return { id: scene, width, note_mode: 'editor_on', role: 'admin_readonly', pixel_compare: e7Pixel, stats: statsSummary(raw), assertions: items }
 }
 
 // ── E8 capability read failure (both phases) ──────────────────────────────
@@ -1444,7 +1748,13 @@ async function sceneE8(browser, width, height) {
       retry: await count(app, HOOKS.capabilityRetry[0]),
     },
   )
-  await shot(boot, `${PREFIX}_e8_capability_error_${width}`)
+  const e8Shot = `${PREFIX}_e8_capability_error_${width}`
+  await shot(boot, e8Shot)
+  let e8Pixel = null
+  if (PHASE === 'after') {
+    e8Pixel = compareWithBefore(e8Shot)
+    log(`${PREFIX} ${scene} pixel-compare=${JSON.stringify(e8Pixel)}`)
+  }
   const raw = await stats()
   check(
     'e8.models_request_failed_and_observed',
@@ -1461,7 +1771,7 @@ async function sceneE8(browser, width, height) {
   log(`${PREFIX} ${scene} console-errors=${JSON.stringify(boot.errors)} expected-http-errors=${JSON.stringify(boot.expectedHttpErrors)}`)
   check('e8.no_unexpected_console_or_page_errors', boot.errors.length === 0, [], boot.errors)
   await boot.context.close()
-  return { id: scene, width, note_mode: 'models_error', stats: statsSummary(raw), assertions: items }
+  return { id: scene, width, note_mode: 'models_error', pixel_compare: e8Pixel, stats: statsSummary(raw), assertions: items }
 }
 
 const BEFORE_SCENES = { e1: sceneE1, e2: sceneE2Before, e3: sceneE3, e7: sceneE7, e8: sceneE8 }
@@ -1557,6 +1867,10 @@ async function main() {
       fresh_browser_context_per_scene: true,
       harness_only_config_patch:
         'frontend/src/lib/embedded/config.ts static NEXT_PUBLIC_* member access (Next dev does not inline dynamic env lookups); reverted after capture',
+      layout_probe:
+        'MEDIUM-1 round-1 regression guard: real Chromium boundingBox/scroll geometry of the legacy row title column, Delete action and compact enable icon (E1/E3, both widths), plus cross-phase screenshot comparison for unchanged surfaces (E3/E7/E8): DOM-layout equivalence is the hard gate and harness/verify_pixel_equivalence.py performs a tolerant per-pixel comparison (byte sha256 equality is recorded as information, not a gate)',
+      round1_fix:
+        'round-1 MEDIUM-1: the enable entry is a compact icon button (lucide ShieldCheck, size="icon", aria-label/title = research.notes.catalog.enableProtected) so the legacy row title column is not squeezed at 1024x768; confirming-phase Esc cancels the dialog without a request',
     },
     scenes: sceneResults,
     totals: {

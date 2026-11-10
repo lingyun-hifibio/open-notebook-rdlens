@@ -94,8 +94,17 @@ else
   echo "verify_local exit=$VERIFY_EXIT"
 fi
 
+# Tolerant pixel equivalence for surfaces that must not change visually
+# (E3 capability-off / E7 Admin read-only / E8 capability-read-failure vs
+# BEFORE). Byte sha256 equality is informational only: next dev can shift a
+# handful of anti-aliasing pixels between runs.
+echo "== pixel equivalence (unchanged surfaces) =="
+python3 "$HERE/verify_pixel_equivalence.py" "$EVIDENCE"
+PIXEL_EXIT=$?
+echo "pixel equivalence exit=$PIXEL_EXIT"
+
 # Merge provenance + verification + implementation diff into the manifests.
-python3 - "$EVIDENCE" "$AFTER_SHA" "$VERIFY_EXIT" <<'PY'
+python3 - "$EVIDENCE" "$AFTER_SHA" "$VERIFY_EXIT" "$PIXEL_EXIT" <<'PY'
 import json
 import re
 import subprocess
@@ -105,6 +114,7 @@ from pathlib import Path
 evidence = Path(sys.argv[1])
 after_sha = sys.argv[2]
 verify_exit = int(sys.argv[3])
+pixel_exit = int(sys.argv[4]) if len(sys.argv) > 4 else None
 
 def load(path):
     return json.loads(path.read_text())
@@ -144,6 +154,21 @@ if verification_log.exists():
             summary_line = stripped
         elif stripped.startswith('Tests  ') or stripped.startswith('Tests '):
             tests_line = stripped
+pixel_log = evidence / 'logs' / 'pixel-equivalence.txt'
+pixel_summary = ''
+pixel_lines = []
+if pixel_log.exists():
+    pixel_lines = [line for line in pixel_log.read_text().splitlines() if line.strip()]
+    for line in pixel_lines:
+        if line.startswith('summary:'):
+            pixel_summary = line
+after_manifest['pixel_equivalence'] = {
+    'log': 'logs/pixel-equivalence.txt',
+    'exit_code': pixel_exit,
+    'summary': pixel_summary,
+    'pairs': [line for line in pixel_lines if line.startswith('PASS ') or line.startswith('FAIL ')],
+    'note': 'tolerant per-pixel comparison (Pillow) of AFTER vs BEFORE screenshots for surfaces that must not change visually; byte sha256 equality is recorded in scenes[].pixel_compare as information, not as a hard gate',
+}
 after_manifest['local_verification'] = {
     'head': after_sha,
     'log': 'logs/local-verification.txt',

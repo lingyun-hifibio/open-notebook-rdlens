@@ -1,16 +1,16 @@
 # Issue #1135 — 受保护编辑启用入口（legacy Notes → d2-v1 原地启用）Before/After 合成证据
 
 - **Issue**：`HiFiBiO-Therapeutics/RDLens#1135`（follow-up：#1046 PR4 §8.2〔R31〕的后续入口——旧未保护 Note 的受保护编辑启用）
-- **实现**：fork 前端单 PR（`NotesPanel` 入口 + 新增 `NoteEnableDialog` / `note-enable` 状态机 / `use-note-enable` + 14 语言文案 + 单测），实现 head = `deca6257b21bd67f062672dcf005eee2230b09f7`（fork 分支 `agent/protected-edit-ui-c1f827496380`）。
+- **实现**：fork 前端单 PR（`NotesPanel` 入口 + 新增 `NoteEnableDialog` / `note-enable` 状态机 / `use-note-enable` + 14 语言文案 + 单测），实现 head = `5806769a2772d43274ae7d4a75c4c9507bab0cd4`（fork 分支 `agent/protected-edit-ui-c1f827496380`；含 round-1 审查修复：紧凑图标入口 + confirming 阶段 Esc 取消）。
 - **证据分支**：`evidence/protected-edit-ui-c1f827496380`（本分支，从 fork `origin/main` 创建，**不属于实现 PR diff**；仅证据文件）。
 - **交付要求对应**：UI 变更 PR 的 Before/After 对比——同一场景/视口/主题/状态、标注基线与变更 revision；BEFORE = fork `origin/main` = `34f531d0270587ed1f2bfa02e361c8a3dd0d224d`（含 #1136 终态，**无启用入口**）。
 
 ## 结论摘要
 
-| 场景 | BEFORE（fork origin/main 34f531d） | AFTER（实现 head deca625） |
+| 场景 | BEFORE（fork origin/main 34f531d） | AFTER（实现 head 5806769，含 MEDIUM-1 修复） |
 |---|---|---|
-| E1 旧未保护 Note 行操作区（Hover） | 只有 `Edit` / `Delete`，无启用入口（`note-enable-*` = 0） | 同一操作区出现 `note-enable-note_legacy`（“Enable protected editing”），`Edit`/`Delete` 保持；未点击前不发任何请求、不开对话框 |
-| E2 旧 Note 编辑路径 | 点击 `Edit` 打开**旧表单**（Title/Content，无 revision/保护字段），旧表单保存 200 且 Note 仍 `edit_schema=null` | 点击启用 → `note-enable-dialog`（confirming）→ 确认 → 1 次 `POST .../notes/note_legacy/editing` 200 → **原地打开 d2-v1 Markdown 编辑器**：标题/正文与 fixture 一致、`Revision 1`、Save now 可用、旧表单不再出现、目录行刷新为 `d2-v1`；随后编辑器保存成功（revision 2） |
+| E1 旧未保护 Note 行操作区（Hover） | 只有 `Edit` / `Delete`，无启用入口（`note-enable-*` = 0） | 同一操作区出现 **紧凑图标入口** `note-enable-note_legacy`（28×28 ShieldCheck，`aria-label`/`title` = “Enable protected editing”），`Edit`/`Delete` 保持且标题列不被挤压（MEDIUM-1 修复）；未点击前不发任何请求、不开对话框 |
+| E2 旧 Note 编辑路径 | 点击 `Edit` 打开**旧表单**（Title/Content，无 revision/保护字段），旧表单保存 200 且 Note 仍 `edit_schema=null` | 点击启用 → `note-enable-dialog`（confirming）→ 确认 → 1 次 `POST .../notes/note_legacy/editing` 200 → **原地打开 d2-v1 Markdown 编辑器**：标题/正文与 fixture 一致、`Revision 1`、Save now 可用、旧表单不再出现、目录行刷新为 `d2-v1`；随后编辑器保存成功（revision 2）；confirming 阶段 Esc 取消不发请求（round-1 修复） |
 | E3 能力 `note_editor.available=false` | 无启用入口；旧表单照常打开/预填 | 入口隐藏（fail-closed）；旧表单照常打开/预填（行为不变） |
 | E4 403 `note_access_restricted` | N/A（基线无启用入口，不存在该流程） | 对话框内错误态 `note-enable-error`（`data-failure-kind=restricted`），**无重试**（terminal），Note 仍 `edit_schema=null` |
 | E5 503 `note_dependency_unavailable` | N/A（同上） | 错误态 `data-failure-kind=unavailable` + `note-enable-retry`；重试（同一 mutation_id）→ 200 → 编辑器打开；`/__stats` 2 次请求（503 → 200），仅 1 次语义变更 |
@@ -18,7 +18,49 @@
 | E7 Admin 只读 | `admin-readonly-banner` 可见；无启用入口、无 Edit/Delete、无 New note | 同左（Admin 无写/启用入口） |
 | E8 能力读取失败（`/models` 500） | fail-closed：`note-capability-blocked` + 重试；无启用入口 | 同左（无启用入口；不把旧表单当受保护编辑回退路径） |
 
-**浏览器行为断言**（真实 headless Chromium 点击 `/__stats` 请求计数，非 mock 断言）：BEFORE `74 PASS / 0 FAIL / 0 scene errors (74 assertions, 10 scene runs)`；AFTER `198 PASS / 0 FAIL / 0 scene errors (198 assertions, 16 scene runs)`。
+**浏览器行为断言**（真实 headless Chromium 点击 + `/__stats` 请求计数 + 真实 boundingBox 布局测量，非 mock 断言）：BEFORE `74 PASS / 0 FAIL / 0 scene errors (74 assertions, 10 scene runs)`；AFTER `244 PASS / 0 FAIL / 0 scene errors (244 assertions, 16 scene runs)`，另 6/6 对截图通过容差逐像素等价（见下节）。
+
+## round-1 审查修复（MEDIUM-1）：紧凑图标入口 + 布局断言
+
+独立审查 round-1 发现 **MEDIUM-1**：新增的**文本**启用按钮把 legacy 行标题列挤没——1024×768 下标题宽度变为 0px 且 `Delete` 越出 Notes 面板被裁剪；1440×900 下标题提前截断。实现 head `5806769` 的修复：
+
+- 入口改为**紧凑图标按钮**：`<Button size="icon" variant="ghost" className="size-7" aria-label/title={t('research.notes.catalog.enableProtected')}><ShieldCheck aria-hidden /></Button>`，`data-testid="note-enable-<note_id>"` 不变；
+- confirming 阶段 **Esc → onCancel**（不发送启用 mutation）。
+
+本次 AFTER 重采（head `5806769`）用真实 Chromium `getBoundingClientRect()` 增加布局断言（1440 与 1024 都测，重点 1024），修复前/后实测对照：
+
+| 测量项（E1，Hover 后真实布局） | round-1 head `deca625`（修复前，复现 MEDIUM-1） | round-2 head `5806769`（修复后，本次证据） |
+|---|---|---|
+| 1440 legacy 行标题宽度 | 111.06px（scrollWidth 263 → 提前截断） | **268.3px**（完整渲染，scrollWidth=clientWidth） |
+| 1024 legacy 行标题宽度 | **0px（不可见，MEDIUM-1）** | **122.7px**（可见，>20px 门槛） |
+| 1024 `Delete` 右边界 vs Notes 面板右边界 | 366.13 > 339.59（**被裁剪**） | 331.59 ≤ 339.59（完整在内） |
+| 入口按钮尺寸（1024） | 185.23 × 32px（文本按钮） | **28 × 28px（图标按钮）** |
+| 入口 `aria-label` / `title` | 无（仅文本） | **`Enable protected editing`**（`research.notes.catalog.enableProtected`） |
+| 1024 行动作区宽度 | 310.13px（挤压标题列） | 152.89px |
+
+新增断言（E1/E3，两视口各一遍；完整 expected/actual 见 `capture.log` 与 `after-manifest.json` 的 `scenes[].layout`）：
+
+- `e1.layout_title_present` / `e1.layout_title_width_gt_20px` / `e1.layout_title_inside_panel`：标题元素可见、宽度 > 20px、完整位于 Notes 面板内；
+- `e1.layout_delete_present_and_visible` / `e1.layout_delete_fully_inside_panel` / `e1.layout_delete_not_clipped`：`Delete` 有非零盒子、右边界不越出面板/视口（容差 1px）、标签文字不裁剪（`scrollWidth <= clientWidth + 1`）；
+- `e1.layout_actions_inside_panel`：行动作区整体位于 Notes 面板内；
+- `e1.layout_enable_present` / `e1.layout_enable_compact_icon` / `e1.layout_enable_aria_label` / `e1.layout_enable_testid_stable`：入口为紧凑图标（宽/高 ≤ 40px）、`aria-label` 等于冻结文案、testid 不变；
+- `e3.*` 同组布局断言（能力关闭、旧表单路径）：标题/`Delete` 布局同样不受影响；
+- `e2.esc_cancels_confirming_without_request` / `e2.enable_entry_reopened_after_esc`：confirming 阶段 Esc 关闭对话框且不发送任何 `POST .../editing`，入口可再次点击；
+- `e3.after_layout_equivalent_to_before_surface`：E3（能力关闭）AFTER 的 DOM 布局（标题列/`Delete` 均在面板内）与 BEFORE 一致；
+- **跨阶段视觉一致性（容差逐像素）**：E3/E7/E8 这些表面在 BEFORE/AFTER 之间不应有任何 #1135 视觉差异；除 DOM 布局断言外，另用 `harness/verify_pixel_equivalence.py` 对 6 对截图做容差逐像素比较（忽略通道差 ≤2、允许 ≤100 像素、最大通道差 ≤8），结果见 `logs/pixel-equivalence.txt`。《字节 sha256 完全相同》仅作为信息记录（`scenes[].pixel_compare`）：`next dev` 多次运行可能出现个位数 anti-aliasing/光标像素差异，故**不以字节相等作为硬门槛**，避免把渲染噪声当成通过/失败信号。
+
+修复前复现证据保存在 `logs/round1-prefix-layout-metrics.txt`（round-1 head `deca625`、同一布局探针、预期 FAIL 行）。
+
+### 跨阶段逐像素等价结果（E3/E7/E8，两视口）
+
+| 截图对 | 结果（容差逐像素） |
+|---|---|
+| e3_capability_off_legacy_form_1440 | size=1440x900 diff_bbox=None pixels_over_2=0 max_channel_delta=0 -> within tolerance |
+| e7_admin_readonly_1440 | size=1440x900 diff_bbox=None pixels_over_2=0 max_channel_delta=0 -> within tolerance |
+| e8_capability_error_1440 | size=1440x900 diff_bbox=(112, 33, 1423, 36) pixels_over_2=0 max_channel_delta=2 -> within tolerance |
+| e3_capability_off_legacy_form_1024 | size=1024x768 diff_bbox=(516, 33, 742, 36) pixels_over_2=0 max_channel_delta=2 -> within tolerance |
+| e7_admin_readonly_1024 | size=1024x768 diff_bbox=None pixels_over_2=0 max_channel_delta=0 -> within tolerance |
+| e8_capability_error_1024 | size=1024x768 diff_bbox=None pixels_over_2=0 max_channel_delta=0 -> within tolerance |
 
 ## 证据性质与公开安全声明（synthetic）
 
@@ -34,9 +76,9 @@
 | 项 | 值 |
 |---|---|
 | BEFORE 基线 | fork `origin/main` = `34f531d0270587ed1f2bfa02e361c8a3dd0d224d`（2026-11-10，含 #1136 终态；**无启用入口**） |
-| AFTER head | `deca6257b21bd67f062672dcf005eee2230b09f7`（fork 分支 `agent/protected-edit-ui-c1f827496380`；3 commits：`25ed83b` 状态机+hook → `8cb92f8` 入口+对话框 → `deca625` 14 语言文案） |
+| AFTER head | `5806769a2772d43274ae7d4a75c4c9507bab0cd4`（fork 分支 `agent/protected-edit-ui-c1f827496380`；4 commits：`25ed83b` 状态机+hook → `8cb92f8` 入口+对话框 → `deca625` 14 语言文案 → `5806769` round-1 修复：紧凑图标入口 + Esc 分派） |
 | 证据分支 | `evidence/protected-edit-ui-c1f827496380`（从 fork `origin/main` 创建；仅 `dev_docs/validation/issue-1135/` 证据文件） |
-| 实现改动 | 23 files（`git diff --name-only origin/main deca625`：5 个源文件 = `NotesPanel.tsx` + 新增 `NoteEnableDialog.tsx`/`note-enable.ts`/`use-note-enable.ts` + `note-ui-labels.ts`；14 个语言文件；4 个单测文件；完整列表见 `after-manifest.json.implementation_diff`） |
+| 实现改动 | 23 files（`git diff --name-only origin/main 5806769`：5 个源文件 = `NotesPanel.tsx` + 新增 `NoteEnableDialog.tsx`/`note-enable.ts`/`use-note-enable.ts` + `note-ui-labels.ts`；14 个语言文件；4 个单测文件；完整列表见 `after-manifest.json.implementation_diff`） |
 | Harness | `dev_docs/validation/issue-1135/harness/`（捕获脚本、合成 gateway/host、runbook；公开安全，无密钥） |
 
 ## 入口路径说明（重要，如实记录）
@@ -97,7 +139,7 @@ fork 前端自 W1 #1104 起，`/research` **默认渲染目标壳 `TargetShell`*
 
 ## 浏览器行为断言（Before vs After）
 
-每场景在两种视口各跑一遍（10 BEFORE scene runs / 16 AFTER scene runs）；每条断言记录 expected/actual 到 `capture.log`，汇总在 `before-manifest.json` / `after-manifest.json` 的 `scenes[].assertions`；截图时刻的 DOM testid 计数与 gateway 计数记录在 `screenshots[].dom_counts` / `gateway_stats`。
+每场景在两种视口各跑一遍（10 BEFORE scene runs / 16 AFTER scene runs）；每条断言记录 expected/actual 到 `capture.log`，汇总在 `before-manifest.json` / `after-manifest.json` 的 `scenes[].assertions`；截图时刻的 DOM testid 计数与 gateway 计数记录在 `screenshots[].dom_counts` / `gateway_stats`；E1/E3 另记录 `scenes[].layout`（真实 Chromium boundingBox）。
 
 ### BEFORE（基线缺口）
 
@@ -112,20 +154,20 @@ fork 前端自 W1 #1104 起，`/research` **默认渲染目标壳 `TargetShell`*
 | E7 Admin 只读 | `e7.admin_banner_visible`、`e7.no_enable_entry_for_admin`、`e7.no_legacy_write_actions_for_admin`、`e7.no_catalog_create_for_admin`、`e7.no_enable_request_for_admin`、`e7.no_console_or_page_errors` | 12 |
 | E8 能力读取失败 fail-closed | `e8.capability_blocked_shown`、`e8.no_enable_entry_on_capability_failure`、`e8.capability_retry_offered`、`e8.models_request_failed_and_observed`、`e8.no_enable_request`、`e8.no_unexpected_console_or_page_errors` | 12 |
 
-### AFTER（实现验收）
+### AFTER（实现验收，含 MEDIUM-1 布局断言）
 
 | 场景 | 关键断言（全部 PASS） | 计数（两视口合计） |
 |---|---|---|
-| E1 旧 Note 行操作区（Hover） | `e1.legacy_row_present`、`e1.legacy_row_is_unprotected`、`e1.row_hovered`、`e1.after_enable_entry_visible`、`e1.after_enable_entry_visible_after_hover`、`e1.after_legacy_edit_delete_kept`、`e1.after_no_dialog_before_click`、`e1.no_enable_request_on_row_view`、`e1.no_console_or_page_errors` | 18 |
-| E2 旧 Note 编辑路径（旧表单 / 启用→原地 d2-v1） | `e2.enable_entry_clicked`、`e2.enable_dialog_opened`、`e2.dialog_has_confirm_and_cancel`、`e2.dialog_mentions_enabling_protected_editing`、`e2.dialog_phase_confirming`、`e2.confirm_clicked`、`e2.editor_opened_in_place`、`e2.editor_title_unchanged`、`e2.editor_content_unchanged`、`e2.editor_revision_shown`、`e2.save_available`、`e2.old_legacy_form_gone`、`e2.enable_entry_gone_after_enable`、`e2.catalog_row_refreshed_to_d2_v1`、`e2.dialog_closed_after_success`、`e2.typed_into_enabled_editor`、`e2.enabled_editor_saves`、`e2.exactly_one_enable_request`、`e2.enable_request_succeeded`、`e2.server_note_now_protected`、`e2.enabled_note_saved_content`、`e2.save_request_was_d2`、`e2.no_console_or_page_errors` | 46 |
-| E3 能力关闭（note_editor=false） | `e3.row_hovered`、`e3.capability_off_known`、`e3.models_request_seen`、`e3.after_no_enable_entry_when_capability_off`、`e3.legacy_edit_action_clicked`、`e3.legacy_form_kept`、`e3.legacy_form_prefilled`、`e3.no_protected_editor_with_form`、`e3.no_console_or_page_errors` | 18 |
+| E1 旧 Note 行操作区（Hover） | `e1.legacy_row_present`、`e1.legacy_row_is_unprotected`、`e1.row_hovered`、`e1.after_enable_entry_visible`、`e1.after_enable_entry_visible_after_hover`、`e1.after_legacy_edit_delete_kept`、`e1.after_no_dialog_before_click`、`e1.layout_probe_available`、`e1.layout_title_present`、`e1.layout_title_width_gt_20px`、`e1.layout_title_inside_panel`、`e1.layout_delete_present_and_visible`、`e1.layout_delete_fully_inside_panel`、`e1.layout_delete_not_clipped`、`e1.layout_actions_inside_panel`、`e1.layout_enable_present`、`e1.layout_enable_compact_icon`、`e1.layout_enable_aria_label`、`e1.layout_enable_testid_stable`、`e1.no_enable_request_on_row_view`、`e1.no_console_or_page_errors` | 42 |
+| E2 旧 Note 编辑路径（旧表单 / 启用→原地 d2-v1） | `e2.enable_entry_clicked`、`e2.enable_dialog_opened`、`e2.dialog_has_confirm_and_cancel`、`e2.dialog_mentions_enabling_protected_editing`、`e2.dialog_phase_confirming`、`e2.esc_cancels_confirming_without_request`、`e2.enable_entry_reopened_after_esc`、`e2.confirm_clicked`、`e2.editor_opened_in_place`、`e2.editor_title_unchanged`、`e2.editor_content_unchanged`、`e2.editor_revision_shown`、`e2.save_available`、`e2.old_legacy_form_gone`、`e2.enable_entry_gone_after_enable`、`e2.catalog_row_refreshed_to_d2_v1`、`e2.dialog_closed_after_success`、`e2.typed_into_enabled_editor`、`e2.enabled_editor_saves`、`e2.exactly_one_enable_request`、`e2.enable_request_succeeded`、`e2.server_note_now_protected`、`e2.enabled_note_saved_content`、`e2.save_request_was_d2`、`e2.no_console_or_page_errors` | 50 |
+| E3 能力关闭（note_editor=false） | `e3.row_hovered`、`e3.capability_off_known`、`e3.models_request_seen`、`e3.after_no_enable_entry_when_capability_off`、`e3.legacy_edit_action_clicked`、`e3.legacy_form_kept`、`e3.legacy_form_prefilled`、`e3.no_protected_editor_with_form`、`e3.layout_probe_available`、`e3.layout_title_present`、`e3.layout_title_width_gt_20px`、`e3.layout_title_inside_panel`、`e3.layout_delete_present_and_visible`、`e3.layout_delete_fully_inside_panel`、`e3.layout_delete_not_clipped`、`e3.layout_actions_inside_panel`、`e3.after_layout_equivalent_to_before_surface`、`e3.no_console_or_page_errors` | 36 |
 | E4 403 restricted（终态） | `e4.enable_entry_clicked`、`e4.confirm_clicked`、`e4.error_state_shown`、`e4.error_has_failure_kind`、`e4.error_kind_is_restricted`、`e4.error_dialog_stays_open`、`e4.no_retry_for_terminal_error`、`e4.single_restricted_request`、`e4.no_semantic_change`、`e4.note_still_unprotected`、`e4.no_console_or_page_errors` | 22 |
 | E5 503 dependency + 重试 | `e5.enable_entry_clicked`、`e5.confirm_clicked`、`e5.error_state_shown`、`e5.error_kind_is_unavailable`、`e5.error_dialog_stays_open`、`e5.retry_offered`、`e5.retry_clicked`、`e5.editor_opened_after_retry`、`e5.editor_title_unchanged`、`e5.editor_revision_shown`、`e5.two_attempts_recorded`、`e5.first_retryable_second_success`、`e5.exactly_one_semantic_change`、`e5.no_console_or_page_errors` | 28 |
 | E6 未知结果 → 同 mutation 确认 | `e6.enable_entry_clicked`、`e6.confirm_clicked`、`e6.unknown_state_shown`、`e6.unknown_kind_reported`、`e6.unknown_dialog_stays_open`、`e6.confirm_result_action_present`、`e6.confirm_result_label_is_dedicated`、`e6.first_attempt_recorded_unknown`、`e6.mutation_id_present`、`e6.confirm_result_clicked`、`e6.editor_opened_after_confirm_result`、`e6.editor_title_unchanged`、`e6.editor_content_unchanged`、`e6.editor_revision_is_one`、`e6.two_requests_recorded`、`e6.same_mutation_id_replayed`、`e6.second_attempt_replayed_receipt`、`e6.exactly_one_semantic_change`、`e6.final_state_single_protected_document`、`e6.no_duplicate_note_created`、`e6.no_console_or_page_errors` | 42 |
 | E7 Admin 只读 | `e7.admin_banner_visible`、`e7.no_enable_entry_for_admin`、`e7.no_legacy_write_actions_for_admin`、`e7.no_catalog_create_for_admin`、`e7.no_enable_request_for_admin`、`e7.no_console_or_page_errors` | 12 |
 | E8 能力读取失败 fail-closed | `e8.capability_blocked_shown`、`e8.no_enable_entry_on_capability_failure`、`e8.capability_retry_offered`、`e8.models_request_failed_and_observed`、`e8.no_enable_request`、`e8.no_unexpected_console_or_page_errors` | 12 |
 
-合计：BEFORE `74 PASS / 0 FAIL / 0 scene errors (74 assertions, 10 scene runs)`；AFTER `198 PASS / 0 FAIL / 0 scene errors (198 assertions, 16 scene runs)`；两阶段均 **0 unexpected console/page error**（仅记录 intentional 失败模式触发的 Chromium “Failed to load resource … 403/500/503” 资源日志，按预期模式单独记录，非应用 console error）。
+合计：BEFORE `74 PASS / 0 FAIL / 0 scene errors (74 assertions, 10 scene runs)`；AFTER `244 PASS / 0 FAIL / 0 scene errors (244 assertions, 16 scene runs)`；两阶段均 **0 unexpected console/page error**（仅记录 intentional 失败模式触发的 Chromium "Failed to load resource … 403/500/503" 资源日志，按预期模式单独记录，非应用 console error）。
 
 ### 请求计数（`/__stats`，每个场景一次 reset）
 
@@ -159,15 +201,15 @@ fork 前端自 W1 #1104 起，`/research` **默认渲染目标壳 `TargetShell`*
 fork 仓库未配置 GitHub Actions checks，因此以本地命令结果为校验证据（命令与退出码同时写入 `after-manifest.json` 的 `local_verification`，完整输出见 `logs/local-verification.txt`）：
 
 ```
-head=deca6257b21bd67f062672dcf005eee2230b09f7 tsc=0 eslint=0 vitest=0 build=0 full=1
+head=5806769a2772d43274ae7d4a75c4c9507bab0cd4 tsc=0 eslint=0 vitest=0 build=0 full=1
 # tsc -b: exit 0
 # eslint (23 changed/new files): exit 0, 0 problems
-# targeted vitest: 4 files / 107 tests passed, exit 0
+# targeted vitest: 4 files / 109 tests passed, exit 0
 # next production build: exit 0
-# full suite: Tests 14 failed | 3027 passed (3041) → exit 1
+# full suite: Tests 14 failed | 3029 passed (3043) → exit 1
 #   14 failed = pre-existing SourceListPanel.test.tsx baseline failures
 #   (identical at origin/main 34f531d: that file alone is 14 failed | 1 passed)
-#   → not caused by this change; all other 182 test files pass
+#   → not caused by this change; all other test files pass
 ```
 
 ## 复现
@@ -175,7 +217,7 @@ head=deca6257b21bd67f062672dcf005eee2230b09f7 tsc=0 eslint=0 vitest=0 build=0 fu
 ```bash
 # 1) 准备 worktree（node_modules 用 symlink；本环境不 npm install）
 git -C <fork-repo> worktree add --detach <scratch>/fork-before 34f531d0270587ed1f2bfa02e361c8a3dd0d224d
-git -C <fork-repo> worktree add --detach <scratch>/fork-after deca6257b21bd67f062672dcf005eee2230b09f7
+git -C <fork-repo> worktree add --detach <scratch>/fork-after 5806769a2772d43274ae7d4a75c4c9507bab0cd4
 ln -s <fork-repo>/frontend/node_modules <scratch>/fork-before/frontend/node_modules
 ln -s <fork-repo>/frontend/node_modules <scratch>/fork-after/frontend/node_modules
 
@@ -183,12 +225,12 @@ ln -s <fork-repo>/frontend/node_modules <scratch>/fork-after/frontend/node_modul
 WT_BEFORE=<scratch>/fork-before dev_docs/validation/issue-1135/harness/run_before.sh
 
 # 3) AFTER（端口 8923/8982/8951；脚本会 checkout SHA 并记录/还原 harness patch）
-WT_AFTER=<scratch>/fork-after AFTER_SHA=deca6257b21bd67f062672dcf005eee2230b09f7 \
+WT_AFTER=<scratch>/fork-after AFTER_SHA=5806769a2772d43274ae7d4a75c4c9507bab0cd4 \
   dev_docs/validation/issue-1135/harness/run_after_final.sh
 
 # 4) 本地校验 + 清单（tsc/eslint/targeted vitest/build/全量、worktree 清洁度、config patch hash、screenshots.sha256）
 WT_BEFORE=<scratch>/fork-before WT_AFTER=<scratch>/fork-after \
-  AFTER_SHA=deca6257b21bd67f062672dcf005eee2230b09f7 \
+  AFTER_SHA=5806769a2772d43274ae7d4a75c4c9507bab0cd4 \
   dev_docs/validation/issue-1135/harness/finalize_evidence.sh
 ```
 
@@ -202,7 +244,8 @@ WT_BEFORE=<scratch>/fork-before WT_AFTER=<scratch>/fork-after \
 6. **intentional HTTP 失败**：`restricted403`/`dependency503`/`unknown503_apply`/`models_error` 会让 Chromium 记录资源级 “Failed to load resource … 403/500/503” console 条目（浏览器自动日志）；已与意外 page/console error 分开记录，本证据断言 **unexpected = 0**。
 7. **light/en-US 单主题**、两档视口（1440×900 / 1024×768）；未覆盖 dark/RTL/移动宽度/键盘或 IME 实体输入（实现仓单测覆盖交互边界）。
 8. **未覆盖**：`already_protected` 幂等分支（网关已实现模式，未单独截图/断言；由实现仓 `note-enable.test.ts` 覆盖）、`models_malformed` 畸形能力响应（仅实现 `models_error` 500 场景；畸形响应由 `readNoteCapabilities` 单测覆盖）、断连型未知（`network_error_apply` 未用于场景；E6 用 503 未知）、真实并发/多标签、真实用户权限矩阵。
-9. **本地全量测试**：全量 vitest = `14 failed | 3027 passed (3041)`。14 个失败全部来自既有 `src/components/research/SourceListPanel.test.tsx`（在该文件上 `14 failed | 1 passed (15)`），并在 BEFORE 基线 worktree（`origin/main` 34f531d）上**逐字复现**（见 `logs/baseline-sourceListPanel-at-origin-main.txt`），与 #1136 证据记录的基线失败一致；因此不作为本 PR 的 pass/fail 门槛，仅记录。
+9. **布局断言的边界**：MEDIUM-1 断言基于真实 Chromium `getBoundingClientRect()`/`scrollWidth`（DOM 几何）；E3/E7/E8 另有与 BEFORE 的**容差逐像素等价**（6/6 PASS：允许通道差 ≤2、≤100 像素、最大通道差 ≤8，见 `logs/pixel-equivalence.txt`），字节 sha256 相等仅作信息记录（next dev 多次运行会出现个位数 anti-aliasing/光标像素差）。其余场景不做像素级 diff（toast 时机、加载帧等），`screenshots.sha256` 仅对本次快照有效。
+10. **本地全量测试**：全量 vitest = `14 failed | 3029 passed (3043)`。14 个失败全部来自既有 `src/components/research/SourceListPanel.test.tsx`（在该文件上 `14 failed | 1 passed (15)`），并在 BEFORE 基线 worktree（`origin/main` 34f531d）上**逐字复现**（见 `logs/baseline-sourceListPanel-at-origin-main.txt`），与 #1136 证据记录的基线失败一致；因此不作为本 PR 的 pass/fail 门槛，仅记录。
 
 ## 文件清单
 
@@ -213,5 +256,5 @@ WT_BEFORE=<scratch>/fork-before WT_AFTER=<scratch>/fork-after \
 | `screenshots.sha256` | 全部截图的 sha256 |
 | `capture.log` | 逐命令/逐截图/DOM testid 计数/`/__stats`/console 证据日志（BEFORE 部分由 BEFORE 捕获运行的 stdout 还原，AFTER 部分由 AFTER 捕获运行直接追加；内容等价） |
 | `before-manifest.json` / `after-manifest.json` | 修订（full SHA）、环境、场景、断言、计数、截图 sha256、worktree 清洁度、config patch hash、本地校验结果、实现 diff |
-| `logs/` | gateway/host/dev 日志、config patch provenance、worktree provenance、本地校验输出 |
-| `harness/` | 可复现 harness（capture.js、host_server.js、gateway_mock.js、fixtures.js、run_*.sh、verify_local.sh、finalize_evidence.sh、probe.js） |
+| `logs/` | gateway/host/dev 日志、config patch provenance、worktree provenance、本地校验输出、round-1 修复前布局实测（`round1-prefix-layout-metrics.txt`）、跨阶段容差逐像素比较（`pixel-equivalence.txt`）、基线既有测试失败对照 |
+| `harness/` | 可复现 harness（capture.js、host_server.js、gateway_mock.js、fixtures.js、run_*.sh、verify_local.sh、finalize_evidence.sh、probe.js、verify_pixel_equivalence.py） |
