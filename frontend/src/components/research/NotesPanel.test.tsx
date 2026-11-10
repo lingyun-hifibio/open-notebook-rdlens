@@ -843,6 +843,27 @@ describe('NotesPanel', () => {
     expect(actions.closeEditor).toHaveBeenCalled()
   })
 
+  it('404 + 仅空白草稿：与状态机同口径判“有本地文本”，关闭不再锁死（round-3 MEDIUM-1 回归）', async () => {
+    seedRecoverableDraft()
+    const { actions } = stubEditor({
+      status: 'error',
+      note: null,
+      saveStatus: 'failed',
+      blockReason: 'note_not_found',
+      // 只有空白：NoteEditorView 的 trim 判空不会弹二次确认，但 machine 的
+      // hasUnsyncedLocalText 视为未同步文本；wrapper 必须用严格长度允许放弃。
+      title: '   ',
+      content: '',
+      error: { code: 'note_not_found', message: '', retryable: false, status: 404 },
+    })
+    const { wrapper } = makeWrapper()
+    render(<NotesPanel />, { wrapper })
+
+    fireEvent.click(await screen.findByTestId('note-capability-close'))
+    expect(actions.discardLocal).toHaveBeenCalledTimes(1)
+    expect(actions.closeEditor).toHaveBeenCalled()
+  })
+
   it('404 + 本地草稿：阻断态 Close 二次确认后可显式放弃（round-2 HIGH 回归）', async () => {
     seedRecoverableDraft()
     const { actions } = stubEditor({

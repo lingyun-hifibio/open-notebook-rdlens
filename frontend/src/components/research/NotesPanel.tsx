@@ -350,8 +350,12 @@ export function NotesPanel({
       ...actions,
       discardLocal: () => {
         const current = editorStateRef.current
+        // 与状态机 hasUnsyncedLocalText 保持同一口径：用严格长度而非 trim()
+        // （只含空白的草稿在 machine 里算“未同步文本”，trim 判空会导致
+        // flushBeforeLeave 返回 failed 而这里 no-op → 404+空白草稿锁死编辑器，
+        // 审查 round-3 MEDIUM-1）。
         const hasLocalText =
-          current.title.trim().length > 0 || current.content.trim().length > 0
+          current.title.length > 0 || current.content.length > 0
         if (current.note === null && current.status === 'error' && !hasLocalText) return
         actions.discardLocal()
       },
