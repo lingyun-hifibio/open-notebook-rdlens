@@ -2,7 +2,7 @@
 
 - **Issue**：`HiFiBiO-Therapeutics/RDLens#1136`（follow-up：#1046 PR4 审查 A MEDIUM-3 / PR #116「NOT RUN」节）
 - **Owner 方案**：**自动保存＋可恢复（不阻断导航）**——父级导航（切 pane／切项目／页面跳转）不弹阻断框；服务端保存未完成（失败/未知/冲突）时，回到 Notes 目录显式列出本标签页可恢复草稿，点「打开笔记」恢复正文与 PR4 既有恢复横幅/保存状态。
-- **实现**：fork 前端单点改动（`ResearchWorkbench.tsx` pane 切换前回调 + `NotesPanel.tsx` 注册离开前 handler + 新增 `NoteRecoveryInbox` + 复用 PR4 `note-draft-cache`/`use-note-editor`），实现 head = `46574030584ed3bfa11b75665c5fbf03fdb2ed52`。
+- **实现**：fork 前端单点改动（`ResearchWorkbench.tsx` pane 切换前回调 + `NotesPanel.tsx` 注册离开前 handler + 新增 `NoteRecoveryInbox` + 复用 PR4 `note-draft-cache`/`use-note-editor`），实现 head = `4200e3b4bdfd5dafb8dc19ff94763ed0069b5176`。
 - **证据分支**：`evidence/issue1136-leave-guard-20261110`（本分支，从 fork `origin/main` 创建，**不属于实现 PR diff**）。
 
 ## 结论摘要
@@ -31,9 +31,9 @@
 | 项 | 值 |
 |---|---|
 | BEFORE 基线 | fork `origin/main` = `a4a76170c5016d0c4cfefae505aa8369be568a96`（2026-11-10） |
-| AFTER head | `46574030584ed3bfa11b75665c5fbf03fdb2ed52`（fork 分支 `agent/leave-guard-798df570c13c`） |
+| AFTER head | `4200e3b4bdfd5dafb8dc19ff94763ed0069b5176`（fork 分支 `agent/leave-guard-798df570c13c`；线性历史 `18085fe → 8122ba1 → 4657403 → 4200e3b`，round-2 终态） |
 | 证据分支 | `evidence/issue1136-leave-guard-20261110`（从 fork origin/main 创建；仅证据文件） |
-| 实现改动 | **8 files** = 4 源文件（`NotesPanel.tsx`、`ResearchWorkbench.tsx`、新增 `NoteRecoveryInbox.tsx`、`note-draft-cache.ts`）+ 4 个对应测试文件；`use-note-editor.ts` 及其测试与 `origin/main` 逐字节相同（**未改**；项目切换由 PR4 既有 unmount cleanup 持久化），见实现 PR。核对：`git diff --name-only origin/main 46574030584ed3bfa11b75665c5fbf03fdb2ed52 | wc -l` = 8 |
+| 实现改动 | **8 files** = 4 源文件（`NotesPanel.tsx`、`ResearchWorkbench.tsx`、新增 `NoteRecoveryInbox.tsx`、`note-draft-cache.ts`）+ 4 个对应测试文件；`use-note-editor.ts` 及其测试与 `origin/main` 逐字节相同（**未改**；项目切换由 PR4 既有 unmount cleanup 持久化），见实现 PR。核对：`git diff --name-only origin/main 4200e3b4bdfd5dafb8dc19ff94763ed0069b5176 | wc -l` = 8 |
 | Harness | `dev_docs/validation/issue-1136/harness/`（捕获脚本、合成 gateway/host、runbook；公开安全，无密钥） |
 
 ## 入口路径说明（重要，如实记录）
@@ -140,14 +140,17 @@ fork 前端自 W1 #1104 起，`/research` **默认渲染目标壳 `TargetShell`*
 - 本 issue 的缺口在于：**从编辑器所在 Notes pane 切到其他父级 pane 时**，PR4 只能尽力 flush/持久化草稿，父级导航**静默成功**且无恢复入口（BEFORE 截图目录无 inbox）。
 - 捕获脚本对编辑器级对话框按“用户选择 Stay / Keep editing”处理（日志记录 `opened=1 stay-clicked=true remaining=0`），随后执行父级 pane 导航；导航本身**未被阻断**（符合 owner「自动保存＋可恢复，不阻断导航」方案）。AFTER 的增量是回到 Notes 目录后的 **inbox 显式恢复入口**，不是阻断。
 - R4 AFTER 的冲突对话框截图（`after_r4_conflict_restored_*`）展示的是 PR4 既有冲突 UI（Server revision 4 + 本地未保存文本 + 复制/受保护另存/加载最新版），与 inbox 恢复入口配合工作。
-- 实现 head `4657403`（审查 round-1 处置）在 inbox 行内新增 `Copy local text` / `Download local Markdown` 动作（testid `note-recovery-copy-<noteId>` / `note-recovery-download-<noteId>`），并把 inbox 容器改为 `role="status"`；AFTER 截图与 R1 断言覆盖该可见增量。受限目录项的脱敏标题/隐藏取回动作、打开失败（GET 503/离线）时 inbox 保留并可取回，均由组件/hook 测试覆盖，不在本 5 个真实浏览器场景内触发（合成 fixture 为 visible 且 GET 均成功）。
+- 实现 head `4200e3b` 的可见增量来自 round-1 处置：inbox 行内新增 `Copy local text` / `Download local Markdown` 动作（testid `note-recovery-copy-<noteId>` / `note-recovery-download-<noteId>`），inbox 容器改为 `role="status"`；AFTER 截图与 R1 断言覆盖该可见增量。
+- **round-2 处置（4200e3b）不改变本 5 个场景的 UI**：把打开失败时 `discardLocal` 的 no-op 收窄为「`note===null` + `status==='error'` + 无本地文本」，修复 `404 + 本地草稿` 时编辑器无法关闭/放弃/切换的 HIGH-1，并移除一条 vacuous 存储断言；该 404+draft 分支由 `NotesPanel` 组件回归测试覆盖（`404 + local draft → Close confirm → discardLocal`，旧条件会红），不在本 5 个真实浏览器场景内触发（合成 fixture 的 GET 均成功）。受限目录项的脱敏标题/隐藏取回动作、打开失败（GET 503/离线）时 inbox 保留并可取回，同样由组件/hook 测试覆盖；重新采集的 AFTER 28 张截图与 154 条断言在 round-2 head 上全部通过。
 
 ## 本地校验（fork 无 PR CI，local-only）
 
 fork 仓库未配置 GitHub Actions checks（与 #124 相同），因此以本地命令结果为校验证据（命令与退出码同时写入 `after-manifest.json` 的 `local_verification`，完整输出见 `logs/local-verification.txt`）：
 
 ```
-head=46574030584ed3bfa11b75665c5fbf03fdb2ed52 tsc=0 vitest=0 build=0 (exit=0)
+head=4200e3b4bdfd5dafb8dc19ff94763ed0069b5176 tsc=0 eslint=0 vitest=0 build=0 full=1 (exit=0)
+# targeted vitest: 5 files / 97 tests passed; eslint: 8 changed files, 0 problem
+# full suite: Tests  14 failed | 2959 passed (2973) → 14 failed / 2959 passed (total 2973), all pre-existing SourceListPanel.test.tsx baseline failures (identical at origin/main), not caused by this change
 ```
 
 ## 复现

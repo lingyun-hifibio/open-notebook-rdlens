@@ -46,6 +46,17 @@ run_step() {
 
 run_step "tsc -b" npx tsc -b
 TSC=$?
+run_step "eslint (8 changed files, final head)" \
+  npx eslint \
+  src/components/research/NotesPanel.tsx \
+  src/components/research/NotesPanel.test.tsx \
+  src/components/research/ResearchWorkbench.tsx \
+  src/components/research/ResearchWorkbench.test.tsx \
+  src/components/research/issue585/NoteRecoveryInbox.tsx \
+  src/components/research/issue585/NoteRecoveryInbox.test.tsx \
+  src/lib/research/issue585/note-draft-cache.ts \
+  src/lib/research/issue585/note-draft-cache.test.ts
+ESLINT=$?
 run_step "vitest (targeted issue585 / NotesPanel / ResearchWorkbench)" \
   npx vitest run \
   src/lib/research/issue585/note-draft-cache.test.ts \
@@ -56,9 +67,13 @@ run_step "vitest (targeted issue585 / NotesPanel / ResearchWorkbench)" \
 VITEST=$?
 run_step "next production build" npm run build
 BUILD=$?
+# Full suite is recorded separately: fork baseline has 14 known SourceListPanel
+# failures (documented in the implementation PR), so it is not a pass/fail gate.
+run_step "vitest (full suite)" npx vitest run
+FULL=$?
 
 echo "" | tee -a "$LOG"
 echo "=== summary ===" | tee -a "$LOG"
-echo "head=$AFTER_SHA tsc=$TSC vitest=$VITEST build=$BUILD" | tee -a "$LOG"
+echo "head=$AFTER_SHA tsc=$TSC eslint=$ESLINT vitest=$VITEST build=$BUILD full=$FULL" | tee -a "$LOG"
 echo "finished=$(date -Iseconds)" | tee -a "$LOG"
-[ "$TSC" = 0 ] && [ "$VITEST" = 0 ] && [ "$BUILD" = 0 ]
+[ "$TSC" = 0 ] && [ "$ESLINT" = 0 ] && [ "$VITEST" = 0 ] && [ "$BUILD" = 0 ]

@@ -56,6 +56,8 @@ echo "verify_local exit=$VERIFY_EXIT"
 # baseline provenance into before-manifest.json for symmetry).
 python3 - "$EVIDENCE" "$AFTER_SHA" "$VERIFY_EXIT" <<'PY'
 import json
+import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -107,6 +109,31 @@ after_manifest['local_verification'] = {
     'summary': summary_line,
     'exit_code': verify_exit,
     'pr_ci': 'fork repo has no GitHub Actions checks configured; these local command results are the verification evidence',
+}
+# Full-suite run is recorded separately: origin/main has 14 known pre-existing
+# SourceListPanel.test.tsx failures, so it is not a pass/fail gate for this PR.
+full_tests_line = ''
+for line in verification_log.read_text().splitlines():
+    if line.strip().startswith('Tests  ') or line.strip().startswith('Tests '):
+        full_tests_line = line.strip()
+full_exit = None
+match = re.search(r'\bfull=(\d+)', summary_line)
+if match:
+    full_exit = int(match.group(1))
+after_manifest['local_verification']['full_suite'] = {
+    'exit_code': full_exit,
+    'tests_line': full_tests_line,
+    'baseline_note': '14 failed / 2959 passed (total 2973) = pre-existing SourceListPanel.test.tsx baseline failures, identical at origin/main; not caused by this change',
+}
+# Implementation diff size at the evidenced head (8 files expected).
+changed = subprocess.run(
+    ['git', '-C', after_wt['worktree'], 'diff', '--name-only', 'origin/main', 'HEAD'],
+    capture_output=True, text=True, check=False,
+).stdout.split()
+after_manifest['implementation_diff'] = {
+    'changed_files': len(changed),
+    'files': changed,
+    'note': 'use-note-editor.ts and use-note-editor.test.tsx are byte-identical to origin/main (project-switch persistence comes from PR4 existing unmount cleanup)',
 }
 after_manifest_path.write_text(json.dumps(after_manifest, indent=2, ensure_ascii=False) + '\n')
 

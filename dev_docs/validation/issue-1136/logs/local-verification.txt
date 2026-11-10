@@ -1,11 +1,15 @@
-local verification (issue #1136) — head=46574030584ed3bfa11b75665c5fbf03fdb2ed52
+local verification (issue #1136) — head=4200e3b4bdfd5dafb8dc19ff94763ed0069b5176
 worktree=/home/lchen/.dsh/state/superagent/work/leave-guard-798df570c13c-evidence/fork-after
-started=2026-11-10T13:34:16+08:00
+started=2026-11-10T14:02:20+08:00
 node=v22.20.0
-head-rev=46574030584ed3bfa11b75665c5fbf03fdb2ed52
+head-rev=4200e3b4bdfd5dafb8dc19ff94763ed0069b5176
 
 === tsc -b ===
 $ npx tsc -b
+exit=0
+
+=== eslint (8 changed files, final head) ===
+$ npx eslint src/components/research/NotesPanel.tsx src/components/research/NotesPanel.test.tsx src/components/research/ResearchWorkbench.tsx src/components/research/ResearchWorkbench.test.tsx src/components/research/issue585/NoteRecoveryInbox.tsx src/components/research/issue585/NoteRecoveryInbox.test.tsx src/lib/research/issue585/note-draft-cache.ts src/lib/research/issue585/note-draft-cache.test.ts
 exit=0
 
 === vitest (targeted issue585 / NotesPanel / ResearchWorkbench) ===
@@ -14,9 +18,9 @@ exit=0
   
    RUN  v4.1.9 /home/lchen/.dsh/state/superagent/work/leave-guard-798df570c13c-evidence/fork-after/frontend
   
-   ✓ src/lib/research/issue585/note-draft-cache.test.ts (24 tests) 13ms
-   ✓ src/components/research/issue585/NoteRecoveryInbox.test.tsx (8 tests) 71ms
-   ✓ src/lib/research/issue585/use-note-editor.test.tsx (9 tests) 37ms
+   ✓ src/lib/research/issue585/note-draft-cache.test.ts (24 tests) 21ms
+   ✓ src/components/research/issue585/NoteRecoveryInbox.test.tsx (8 tests) 117ms
+   ✓ src/lib/research/issue585/use-note-editor.test.tsx (9 tests) 46ms
   stderr | src/components/research/ResearchWorkbench.test.tsx > ResearchWorkbench > RWV2-13：Edit scope 请求聚焦左栏编辑面（scopeEditRequest 递增 → 模式单选获得焦点）
   An update to ResearchJobsProvider inside a test was not wrapped in act(...).
   
@@ -41,15 +45,15 @@ exit=0
   
   This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
   
-   ✓ src/components/research/ResearchWorkbench.test.tsx (17 tests) 340ms
-   ✓ src/components/research/NotesPanel.test.tsx (38 tests) 1404ms
-       ✓ 搜索框输入经过 300ms 防抖后才以搜索词请求目录（词法搜索，不生成向量）  315ms
-       ✓ 目录结果不本地缓存：搜索变化后只渲染 hook 当前返回值（旧结果不回填）  609ms
+   ✓ src/components/research/ResearchWorkbench.test.tsx (17 tests) 378ms
+   ✓ src/components/research/NotesPanel.test.tsx (39 tests) 1473ms
+       ✓ 搜索框输入经过 300ms 防抖后才以搜索词请求目录（词法搜索，不生成向量）  325ms
+       ✓ 目录结果不本地缓存：搜索变化后只渲染 hook 当前返回值（旧结果不回填）  610ms
   
    Test Files  5 passed (5)
-        Tests  96 passed (96)
-     Start at  13:34:23
-     Duration  2.08s (transform 862ms, setup 212ms, import 1.55s, tests 1.86s, environment 827ms)
+        Tests  97 passed (97)
+     Start at  14:02:23
+     Duration  2.25s (transform 1.06s, setup 243ms, import 1.81s, tests 2.04s, environment 974ms)
   
 
 === next production build ===
@@ -58,15 +62,15 @@ exit=0
   
   [Next.js Rewrites] Proxying /api/* to http://localhost:5055/api/*
     Creating an optimized production build ...
-  ✓ Compiled successfully in 3.2s
+  ✓ Compiled successfully in 3.6s
     Running TypeScript ...
-    Finished TypeScript in 10.5s ...
+    Finished TypeScript in 11.1s ...
     Collecting page data using 21 workers ...
     Generating static pages using 21 workers (0/16) ...
     Generating static pages using 21 workers (4/16) 
     Generating static pages using 21 workers (8/16) 
     Generating static pages using 21 workers (12/16) 
-  ✓ Generating static pages using 21 workers (16/16) in 403ms
+  ✓ Generating static pages using 21 workers (16/16) in 466ms
     Finalizing page optimization ...
   
   Route (app)
@@ -96,6 +100,50 @@ exit=0
   ƒ  (Dynamic)  server-rendered on demand
   
 
+=== vitest (full suite) ===
+$ npx vitest run
+exit=1
+    [36m<div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"space-y-2"[39m
+      [36m>[39m
+        [36m<p[39m
+          [33mclass[39m=[32m"text-sm text-muted-foreground"[39m
+        [36m>[39m
+          [0mresearch.sources.empty[0m
+        [36m</p>[39m
+      [36m</div>[39m
+      [36m<div>[39m
+        [36m<span[39m
+          [33mdata-testid[39m=[32m"probe-mode"[39m
+        [36m>[39m
+          [0mall[0m
+        [36m</span>[39m
+        [36m<span[39m
+          [33mdata-testid[39m=[32m"probe-selected"[39m
+        [36m/>[39m
+      [36m</div>[39m
+    [36m</div>[39m
+  [36m</body>[39m
+   ❯ waitForWrapper ../../../../../../../workspace/open-notebook-rdlens/frontend/node_modules/@testing-library/dom/dist/wait-for.js:163:27
+   ❯ ../../../../../../../workspace/open-notebook-rdlens/frontend/node_modules/@testing-library/dom/dist/query-helpers.js:86:33
+   ❯ src/components/research/SourceListPanel.test.tsx:360:37
+      358|       { wrapper },
+      359|     )
+      360|     const openButton = await screen.findByRole('button', { name: /rese…
+         |                                     ^
+      361|     expect(openButton).toBeInTheDocument()
+      362|     fireEvent.click(openButton)
+  
+  ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/14]⎯
+  
+  
+   Test Files  1 failed | 179 passed (180)
+        Tests  14 failed | 2959 passed (2973)
+     Start at  14:02:43
+     Duration  16.02s (transform 28.07s, setup 13.59s, import 85.70s, tests 86.55s, environment 61.98s)
+  
+
 === summary ===
-head=46574030584ed3bfa11b75665c5fbf03fdb2ed52 tsc=0 vitest=0 build=0
-finished=2026-11-10T13:34:40+08:00
+head=4200e3b4bdfd5dafb8dc19ff94763ed0069b5176 tsc=0 eslint=0 vitest=0 build=0 full=1
+finished=2026-11-10T14:02:59+08:00
