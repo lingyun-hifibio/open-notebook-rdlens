@@ -18,17 +18,17 @@ const GATEWAY_URL_ENV = 'NEXT_PUBLIC_RD_GATEWAY_URL'
 const PARENT_ORIGIN_ENV = 'NEXT_PUBLIC_RD_PARENT_ORIGIN'
 
 export function isEmbeddedMode(): boolean {
-  const value = (process.env[EMBEDDED_MODE_ENV] ?? '').trim().toLowerCase()
+  const value = (process.env.NEXT_PUBLIC_RD_EMBEDDED_MODE ?? '').trim().toLowerCase()
   return value === '1' || value === 'true' || value === 'yes'
 }
 
 export function getEmbeddedGatewayUrl(): string {
-  return (process.env[GATEWAY_URL_ENV] ?? '').trim().replace(/\/+$/, '')
+  return (process.env.NEXT_PUBLIC_RD_GATEWAY_URL ?? '').trim().replace(/\/+$/, '')
 }
 
 /** 父页面精确 origin 白名单；未配置返回空数组（fail-closed）。 */
 export function getEmbeddedParentOrigins(): string[] {
-  return (process.env[PARENT_ORIGIN_ENV] ?? '')
+  return (process.env.NEXT_PUBLIC_RD_PARENT_ORIGIN ?? '')
     .split(',')
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0)

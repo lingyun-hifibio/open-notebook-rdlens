@@ -974,12 +974,9 @@ export function useWritingCompose(options: UseWritingComposeOptions): UseWriting
       updateSubmission({ ...IDLE_WRITING_SUBMISSION, stage: 'submitting' })
       const settleError = (error: WritingApiError): void => {
         submitInFlightRef.current = false
-        updateSubmission({
-          stage: 'error',
-          error,
-          terminal: 'error',
-          terminalErrorCode: error.code,
-        })
+        // 传输/HTTP 错误不代表 Generation 已失败（可能根本没开始执行）：
+        // 只记录可见错误，不伪造 terminal 状态/生成失败文案。
+        updateSubmission({ stage: 'error', error })
       }
       const abort = ports.submitWriting({
         projectId,
