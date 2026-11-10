@@ -593,4 +593,3 @@ describe('fragment pending mutation (PR5/B3)', () => {
     ).toBe(false)
   })
 })
-
