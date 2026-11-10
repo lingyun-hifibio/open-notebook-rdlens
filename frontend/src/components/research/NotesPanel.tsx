@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useDebounce } from 'use-debounce'
+import { ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -532,12 +533,15 @@ export function NotesPanel({
               item.edit_schema === null &&
               item.access_state !== 'restricted' && (
                 <Button
-                  size="sm"
+                  size="icon"
                   variant="ghost"
+                  className="size-7"
+                  aria-label={t('research.notes.catalog.enableProtected')}
+                  title={t('research.notes.catalog.enableProtected')}
                   onClick={() => noteEnable.actions.requestEnable(item.note_id)}
                   data-testid={`note-enable-${item.note_id}`}
                 >
-                  {t('research.notes.catalog.enableProtected')}
+                  <ShieldCheck aria-hidden="true" />
                 </Button>
               )}
             <Button size="sm" variant="ghost" onClick={() => startEditLegacy(item)}>

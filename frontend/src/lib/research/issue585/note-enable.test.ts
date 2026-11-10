@@ -317,7 +317,7 @@ describe('createNoteEnableMachine', () => {
     ['note_access_restricted', 403, 'restricted', 'none', false],
     ['note_not_found', 404, 'not_found', 'none', false],
     ['note_edit_schema_unsupported', 409, 'unsupported', 'none', false],
-    ['note_request_invalid', 400, 'unsupported', 'none', false],
+    ['note_request_invalid', 422, 'unsupported', 'none', false],
     ['mutation_id_reused', 409, 'conflict', 'new_mutation', true],
     ['note_revision_conflict', 409, 'conflict', 'new_mutation', true],
     ['note_revision_required', 428, 'conflict', 'new_mutation', true],

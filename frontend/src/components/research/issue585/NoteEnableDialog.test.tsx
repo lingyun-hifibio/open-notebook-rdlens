@@ -135,6 +135,28 @@ describe('NoteEnableDialog', () => {
     expect(error).toHaveTextContent('research.notes.enable.errors.unknown')
   })
 
+  it('confirming 阶段按 Escape 触发取消（onCancel），不触发 onClose', () => {
+    const onCancel = vi.fn()
+    const onClose = vi.fn()
+    renderDialog({ phase: 'confirming', onCancel, onClose })
+
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+
+    expect(onCancel).toHaveBeenCalledTimes(1)
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('pending 阶段按 Escape 不可关闭（不触发 onCancel/onClose）', () => {
+    const onCancel = vi.fn()
+    const onClose = vi.fn()
+    renderDialog({ phase: 'pending', onCancel, onClose })
+
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' })
+
+    expect(onCancel).not.toHaveBeenCalled()
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
   it('note 标题缺失时展示空串（不臆造标题）', () => {
     renderDialog({ noteTitle: '' })
     expect(screen.getByTestId('note-enable-note-title').textContent).toBe('')

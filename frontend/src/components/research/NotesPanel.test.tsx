@@ -1012,7 +1012,14 @@ describe('NotesPanel', () => {
     render(<NotesPanel />, { wrapper })
     await waitFor(() => expect(screen.getByText('旧笔记')).toBeInTheDocument())
 
-    expect(screen.getByTestId('note-enable-note_legacy')).toBeInTheDocument()
+    // MEDIUM-1（round-1 审查）：入口必须是紧凑图标按钮（aria-label/title 复用
+    // 文案 key），不得把 legacy 行标题列挤掉；testid 保持不变。
+    const enableButton = screen.getByTestId('note-enable-note_legacy')
+    expect(enableButton).toHaveAttribute('aria-label', 'research.notes.catalog.enableProtected')
+    expect(enableButton).toHaveAttribute('title', 'research.notes.catalog.enableProtected')
+    expect(enableButton).toHaveClass('size-7')
+    expect(enableButton.querySelector('svg')).not.toBeNull()
+    expect(enableButton.textContent).toBe('')
     expect(screen.queryByTestId('note-enable-note_d2')).toBeNull()
     expect(screen.queryByTestId('note-enable-note_restricted_legacy')).toBeNull()
   })

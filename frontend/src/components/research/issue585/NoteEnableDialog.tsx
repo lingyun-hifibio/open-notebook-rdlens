@@ -62,6 +62,11 @@ export function NoteEnableDialog({
         if (next) return
         // pending 为单在途：Esc/遮罩关闭等同 no-op（结果未知前不让用户丢状态）。
         if (pending) return
+        // confirming：Esc/关闭请求等同「取消」；error：等同「关闭错误」。
+        if (phase === 'confirming') {
+          onCancel()
+          return
+        }
         onClose()
       }}
     >
