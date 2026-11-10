@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Trash2 } from 'lucide-react'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import type { NoteApiError, ResearchNoteD2 } from '@/lib/research/issue585/types'
 
@@ -32,6 +33,13 @@ export interface NoteCatalogProps {
   onOpenNote: (noteId: string) => void
   /** Issue #1047 PR5（B3）：把该 Note 作为来源摘入其他文档（仅 d2-v1 行）。 */
   onExcerptNote?: (item: ResearchNoteD2) => void
+  /**
+   * Issue #1134：打开该 d2-v1 行的删除二次确认（仅 d2-v1 受保护行）。
+   * 旧未保护行不得调用（旧删除入口由 `legacyActions` 提供，语义不变）。
+   */
+  onRequestDelete?: (item: ResearchNoteD2) => void
+  /** Issue #1134：该行当前是否可删（能力/权限/revision 由调用方判定，fail-closed）。 */
+  canDeleteNote?: (item: ResearchNoteD2) => boolean
   onRefresh: () => void
   /** Save-as-Note 后的高亮目标（RWV2-23）。 */
   revealId?: string | null
@@ -74,6 +82,8 @@ export function NoteCatalog({
   activeNoteId = null,
   onOpenNote,
   onExcerptNote,
+  onRequestDelete,
+  canDeleteNote,
   onRefresh,
   revealId = null,
   scopeControl,
@@ -143,6 +153,9 @@ export function NoteCatalog({
           const restricted = isRestricted(item)
           const d2 = isD2(item)
           const active = d2 && item.note_id === activeNoteId
+          // Issue #1134：d2-v1 行删除入口的可见性由调用方判定（fail-closed）。
+          const deleteEntryVisible =
+            onRequestDelete !== undefined && (canDeleteNote?.(item) ?? true)
           return (
             <li
               key={item.note_id}
@@ -204,18 +217,36 @@ export function NoteCatalog({
                   {legacyActions(item)}
                 </div>
               )}
-              {d2 && canEdit && !restricted && onExcerptNote !== undefined && (
-                <div className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    data-testid={`note-excerpt-${item.note_id}`}
-                    onClick={() => onExcerptNote(item)}
-                  >
-                    {t('research.notes.excerpt.entry')}
-                  </Button>
-                </div>
-              )}
+              {d2 &&
+                canEdit &&
+                !restricted &&
+                (onExcerptNote !== undefined || deleteEntryVisible) && (
+                  <div className="flex shrink-0 items-start gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                    {deleteEntryVisible && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="size-7"
+                        aria-label={t('research.notes.deleteDialog.entry')}
+                        title={t('research.notes.deleteDialog.entry')}
+                        onClick={() => onRequestDelete?.(item)}
+                        data-testid={`note-delete-${item.note_id}`}
+                      >
+                        <Trash2 aria-hidden="true" />
+                      </Button>
+                    )}
+                    {onExcerptNote !== undefined && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        data-testid={`note-excerpt-${item.note_id}`}
+                        onClick={() => onExcerptNote(item)}
+                      >
+                        {t('research.notes.excerpt.entry')}
+                      </Button>
+                    )}
+                  </div>
+                )}
             </li>
           )
         })}

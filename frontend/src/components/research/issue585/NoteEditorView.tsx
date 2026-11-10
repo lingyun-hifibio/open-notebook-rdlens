@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -67,6 +68,11 @@ export interface NoteEditorViewProps {
   onRetryOpen?: () => void
   /** 能力读取失败/能力不可用时刷新服务端能力投影（fail-closed 恢复路径）。 */
   onRetryCapabilities?: () => void
+  /**
+   * Issue #1134：请求删除当前打开的 d2-v1 文档（打开二次确认对话框）。
+   * 未提供时不渲染删除入口（旧未保护行/Admin/能力不可用时由父层判定为 undefined）。
+   */
+  onRequestDelete?: () => void
 }
 
 /**
@@ -87,6 +93,7 @@ export function NoteEditorView({
   onCopySaved,
   onRetryOpen,
   onRetryCapabilities,
+  onRequestDelete,
 }: NoteEditorViewProps) {
   const { t } = useTranslation()
   const noteWorkspace = useNoteWorkspaceOptional()
@@ -427,6 +434,24 @@ export function NoteEditorView({
           >
             {t('research.notes.editor.saveNow')}
           </Button>
+          {onRequestDelete !== undefined && (
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-8"
+              onClick={onRequestDelete}
+              disabled={
+                isAdminReadonly ||
+                state.saveStatus === 'saving' ||
+                state.inserting === true
+              }
+              aria-label={t('research.notes.deleteDialog.entry')}
+              title={t('research.notes.deleteDialog.entry')}
+              data-testid="note-editor-delete"
+            >
+              <Trash2 aria-hidden="true" />
+            </Button>
+          )}
           <Button
             size="sm"
             variant="ghost"

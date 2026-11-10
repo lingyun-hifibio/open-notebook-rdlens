@@ -30,6 +30,7 @@ import {
 } from '@/lib/hooks/use-research'
 import { useNoteCatalog } from '@/lib/research/issue585/use-note-catalog'
 import { useNoteCapabilities } from '@/lib/research/issue585/use-note-capabilities'
+import { useNoteDelete } from '@/lib/research/issue585/use-note-delete'
 import { useNoteEditor } from '@/lib/research/issue585/use-note-editor'
 import { useNoteEnable } from '@/lib/research/issue585/use-note-enable'
 import {
@@ -47,6 +48,7 @@ import type {
 import { AdminReadOnlyBanner } from './AdminReadOnlyBanner'
 import { NoteCatalog } from './issue585/NoteCatalog'
 import { NoteCapabilityBlocked } from './issue585/NoteCapabilityBlocked'
+import { NoteDeleteDialog } from './issue585/NoteDeleteDialog'
 import { NoteEditorView } from './issue585/NoteEditorView'
 import { NoteEnableDialog } from './issue585/NoteEnableDialog'
 import { NoteRecoveryInbox } from './issue585/NoteRecoveryInbox'
@@ -130,6 +132,16 @@ export function NotesPanel({
   // `note_editor.available` 且非 Admin 时渲染（fail-closed，不因此回退旧表单）；
   // 成功后就地切入 d2-v1 编辑器（复用 PR4 编辑器与能力投影）。
   const noteEnable = useNoteEnable({
+    projectId,
+    capabilities: capabilitiesResult.capabilities,
+    isAdminReadonly,
+  })
+
+  // Issue #1134：d2-v1 受保护 Note 删除状态机（目录行/编辑器共用同一个二次确认）。
+  // 入口只在 `note_editor_existing.available` 且非 Admin 时出现（fail-closed）；
+  // 删除必须走 d2-v1 DELETE（mutation_id + expected_revision），绝不使用旧无
+  // revision 删除路径。成功后清理该 Note 的本地草稿缓存并刷新目录。
+  const noteDelete = useNoteDelete({
     projectId,
     capabilities: capabilitiesResult.capabilities,
     isAdminReadonly,
@@ -398,6 +410,96 @@ export function NotesPanel({
     if (closed) setRequestedNoteId(null)
   }
 
+  // Issue #1134：删除入口可见性（目录行与编辑器共用）。能力拿不到/不可用、
+  // Admin 只读、旧未保护行、受限行、缺 revision 基线一律不渲染（fail-closed）。
+  const canDeleteD2 =
+    !isAdminReadonly && capabilitiesResult.capabilities?.noteEditorExisting.available === true
+  const editorDeleteTarget = editor.state.note
+  const editorDeleteAvailable =
+    canDeleteD2 &&
+    editorDeleteTarget !== null &&
+    editorDeleteTarget.edit_schema === 'd2-v1' &&
+    editorDeleteTarget.revision !== null
+  const editorDeleteHasLocalChanges =
+    editorDeleteTarget !== null &&
+    noteDelete.state.noteId === editorDeleteTarget.note_id &&
+    (editor.state.title !== editorDeleteTarget.title ||
+      editor.state.content !== editorDeleteTarget.content)
+  const canDeleteCatalogNote = (item: ResearchNoteD2): boolean => {
+    if (!canDeleteD2) return false
+    if (item.edit_schema !== 'd2-v1' || item.access_state === 'restricted') return false
+    if (item.revision === null) return false
+    // 正在写当前打开文档时不允许从目录行删除同一文档（避免与在途 save
+    // 竞争）；编辑器内入口本身在 saveStatus='saving' 时禁用。
+    if (editorDeleteTarget !== null && item.note_id === editorDeleteTarget.note_id) {
+      if (editor.state.saveStatus === 'saving' || editor.state.inserting === true) return false
+    }
+    return true
+  }
+
+  /**
+   * 删除成功后的收尾：移除 Scope 选择 → 清理可恢复草稿入口 → 若删的是当前
+   * 打开文档则先显式放弃本地并关闭编辑器 → 刷新目录 → 成功 toast。
+   * 本地草稿缓存的全部 tab 分支已由状态机在确认回执后清理。
+   */
+  const finishDelete = async (noteId: string | null): Promise<void> => {
+    if (noteId === null) return
+    removeNote(noteId)
+    refreshRecoverableDrafts()
+    if (editorStateRef.current.note?.note_id === noteId) {
+      editorActionsRef.current.discardLocal()
+      const closed = await editorActionsRef.current.closeEditor()
+      if (closed) setRequestedNoteId(null)
+    }
+    try {
+      await catalog.refresh()
+    } catch {
+      // 目录刷新失败不改变“服务端已删除”的事实；下次刷新可见。
+    }
+    toast({ title: t('research.notes.deleteDialog.success') })
+  }
+
+  const confirmDeleteNote = async (): Promise<void> => {
+    await finishDelete(await noteDelete.actions.confirmDelete())
+  }
+
+  const retryDeleteNote = async (): Promise<void> => {
+    if (noteDelete.state.retryMode === 'reconfirm') {
+      // 409 冲突：先刷新目录，再用服务端已授权的当前 revision 重新二次确认；
+      // 拿不到新基线时（行已消失）复位并刷新（note_not_found 的收敛由用户
+      // 关闭对话框后的目录刷新承担）。
+      try {
+        await catalog.refresh()
+      } catch {
+        // 刷新失败不阻塞重新确认（revision 来自 409 detail）。
+      }
+      noteDelete.actions.reconfirm(noteDelete.state.error?.currentRevision ?? null)
+      return
+    }
+    await finishDelete(await noteDelete.actions.retry())
+  }
+
+  const dismissDeleteNote = async (): Promise<void> => {
+    const noteId = noteDelete.state.noteId
+    const failureKind = noteDelete.state.failureKind
+    noteDelete.actions.dismiss()
+    // 404 终态：Note 已不存在。刷新目录；若它正打开在编辑器里，关闭编辑器
+    // （本地文本仍可从可恢复草稿入口取回——PR4 404 语义，不清草稿）。
+    if (failureKind === 'not_found' && noteId !== null) {
+      refreshRecoverableDrafts()
+      if (editorStateRef.current.note?.note_id === noteId) {
+        editorActionsRef.current.discardLocal()
+        const closed = await editorActionsRef.current.closeEditor()
+        if (closed) setRequestedNoteId(null)
+      }
+      try {
+        await catalog.refresh()
+      } catch {
+        // 忽略刷新失败。
+      }
+    }
+  }
+
   const canCreate = !isAdminReadonly && capabilitiesResult.capabilities?.noteEditor.available === true
   const createBlockedReason = capabilitiesResult.isLoading
     ? null
@@ -506,6 +608,15 @@ export function NotesPanel({
                 })
               }
         }
+        onRequestDelete={
+          canDeleteD2
+            ? (item) => {
+                if (!canDeleteCatalogNote(item)) return
+                noteDelete.actions.requestDelete(item.note_id, item.revision, item.title)
+              }
+            : undefined
+        }
+        canDeleteNote={canDeleteCatalogNote}
         onRefresh={() => void catalog.refresh()}
         revealId={revealId}
         scopeControl={(item) => (
@@ -583,6 +694,21 @@ export function NotesPanel({
         onClose={noteEnable.actions.dismiss}
       />
 
+      {/* Issue #1134：d2-v1 Note 删除二次确认（目录行/编辑器共用）。 */}
+      <NoteDeleteDialog
+        open={noteDelete.state.phase !== 'idle' && noteDelete.state.noteId !== null}
+        phase={noteDelete.state.phase}
+        noteTitle={noteDelete.state.noteTitle}
+        expectedRevision={noteDelete.state.expectedRevision}
+        failureKind={noteDelete.state.failureKind}
+        retryMode={noteDelete.state.retryMode}
+        localChangesWarning={editorDeleteHasLocalChanges}
+        onConfirm={() => void confirmDeleteNote()}
+        onCancel={noteDelete.actions.cancel}
+        onRetry={() => void retryDeleteNote()}
+        onClose={() => void dismissDeleteNote()}
+      />
+
       {showLegacyForm && !isAdminReadonly && (
         <Card>
           <CardContent className="space-y-3 p-3">
@@ -634,6 +760,16 @@ export function NotesPanel({
                   : undefined
               }
               onRetryCapabilities={() => void capabilitiesResult.refresh()}
+              onRequestDelete={
+                editorDeleteAvailable && editorDeleteTarget !== null
+                  ? () =>
+                      noteDelete.actions.requestDelete(
+                        editorDeleteTarget.note_id,
+                        editorDeleteTarget.revision,
+                        editor.state.title,
+                      )
+                  : undefined
+              }
             />
           </CardContent>
         </Card>
