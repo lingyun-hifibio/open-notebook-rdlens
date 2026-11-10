@@ -16,6 +16,7 @@ import type {
   NoteLeaveBlockReason,
   NoteSaveStatus,
 } from '@/lib/research/issue585/types'
+import type { NoteEnableFailureKind } from '@/lib/research/issue585/note-enable'
 
 /** 保存状态 → 文案 key（方案 §4.1 的九类显式状态）。 */
 const SAVE_STATUS_LABEL_KEYS: Record<NoteSaveStatus, string> = {
@@ -70,6 +71,26 @@ const LEAVE_REASON_LABEL_KEYS: Record<NoteLeaveBlockReason, string> = {
   failed: 'research.notes.leave.failed',
   restricted: 'research.notes.leave.restricted',
   composing: 'research.notes.leave.composing',
+}
+
+/** Issue #1135：启用受保护编辑的失败分类 → 文案 key（字面量映射）。 */
+const NOTE_ENABLE_FAILURE_LABEL_KEYS: Record<NoteEnableFailureKind, string> = {
+  restricted: 'research.notes.enable.errors.restricted',
+  not_found: 'research.notes.enable.errors.notFound',
+  unsupported: 'research.notes.enable.errors.unsupported',
+  conflict: 'research.notes.enable.errors.conflict',
+  unavailable: 'research.notes.enable.errors.unavailable',
+  unknown: 'research.notes.enable.errors.unknown',
+}
+
+/** 启用失败分类 → 文案 key；未知分类落到通用「结果未知」文案。 */
+export function noteEnableFailureLabelKey(
+  kind: NoteEnableFailureKind | null | undefined,
+): string {
+  if (typeof kind === 'string' && kind in NOTE_ENABLE_FAILURE_LABEL_KEYS) {
+    return NOTE_ENABLE_FAILURE_LABEL_KEYS[kind as NoteEnableFailureKind]
+  }
+  return 'research.notes.enable.errors.unknown'
 }
 
 export function isNoteErrorCode(value: unknown): value is NoteErrorCode {

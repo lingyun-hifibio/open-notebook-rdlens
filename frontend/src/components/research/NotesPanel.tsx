@@ -30,6 +30,7 @@ import {
 import { useNoteCatalog } from '@/lib/research/issue585/use-note-catalog'
 import { useNoteCapabilities } from '@/lib/research/issue585/use-note-capabilities'
 import { useNoteEditor } from '@/lib/research/issue585/use-note-editor'
+import { useNoteEnable } from '@/lib/research/issue585/use-note-enable'
 import {
   listRecoverableNoteDrafts,
   readNoteDraftForRetrieval,
@@ -46,6 +47,7 @@ import { AdminReadOnlyBanner } from './AdminReadOnlyBanner'
 import { NoteCatalog } from './issue585/NoteCatalog'
 import { NoteCapabilityBlocked } from './issue585/NoteCapabilityBlocked'
 import { NoteEditorView } from './issue585/NoteEditorView'
+import { NoteEnableDialog } from './issue585/NoteEnableDialog'
 import { NoteRecoveryInbox } from './issue585/NoteRecoveryInbox'
 import { useNoteWorkspaceOptional } from './issue585/NoteWorkspaceProvider'
 import { blockReasonLabelKey, noteErrorLabelKey } from './issue585/note-ui-labels'
@@ -122,6 +124,15 @@ export function NotesPanel({
   const consumeOpenNote = noteWorkspace?.consumeOpenNote
   const pendingOpenNote = noteWorkspace?.pendingOpenNote ?? null
   const notesChangedSeq = noteWorkspace?.notesChangedSeq ?? 0
+
+  // Issue #1135：旧未保护 Note 的「启用受保护编辑」状态机。入口只在
+  // `note_editor.available` 且非 Admin 时渲染（fail-closed，不因此回退旧表单）；
+  // 成功后就地切入 d2-v1 编辑器（复用 PR4 编辑器与能力投影）。
+  const noteEnable = useNoteEnable({
+    projectId,
+    capabilities: capabilitiesResult.capabilities,
+    isAdminReadonly,
+  })
 
   // 目录行点击后记录目标 note_id：打开失败/能力故障时供编辑器重试打开。
   const [requestedNoteId, setRequestedNoteId] = useState<string | null>(null)
@@ -352,6 +363,35 @@ export function NotesPanel({
     await editor.actions.openNote(noteId)
   }
 
+  /**
+   * Issue #1135：启用受保护编辑成功（含已受保护 receipt=null）后的原地切换：
+   * 关闭旧表单 → toast → 刷新目录（失败不阻塞）→ 打开 d2-v1 编辑器。
+   * 启用失败/未知时绝不调用旧表单保存（updateNote）。
+   */
+  const finishEnableProtected = async (noteId: string | null): Promise<void> => {
+    if (noteId === null) return
+    setShowLegacyForm(false)
+    setEditingLegacyNote(null)
+    setLegacyTitle('')
+    setLegacyContent('')
+    toast({ title: t('research.notes.enable.success') })
+    try {
+      await catalog.refresh()
+    } catch {
+      // 目录刷新失败不阻塞原地切入（打开仍以服务端权限为准）。
+    }
+    setRequestedNoteId(noteId)
+    await editor.actions.openNote(noteId)
+  }
+
+  const confirmEnableProtected = async (): Promise<void> => {
+    await finishEnableProtected(await noteEnable.actions.confirmEnable())
+  }
+
+  const retryEnableProtected = async (): Promise<void> => {
+    await finishEnableProtected(await noteEnable.actions.retry())
+  }
+
   const closeEditor = async (): Promise<void> => {
     const closed = await editor.actions.closeEditor()
     if (closed) setRequestedNoteId(null)
@@ -363,6 +403,17 @@ export function NotesPanel({
     : (capabilitiesResult.capabilities?.noteEditor.reason ??
       capabilitiesResult.error?.code ??
       'capability_unknown')
+
+  // Issue #1135：启用受保护编辑入口——仅 legacy 行、非 Admin、能力可用时渲染。
+  // 能力 null/读取失败/noteEditor 不可用 → 入口不渲染（fail-closed；旧表单路径
+  // 行为不变，绝不因此回退/静默绕过）。
+  const canEnableProtected =
+    !isAdminReadonly && capabilitiesResult.capabilities?.noteEditor.available === true
+  const enableTargetTitle = useMemo(() => {
+    const noteId = noteEnable.state.noteId
+    if (noteId === null) return ''
+    return catalog.items.find((item) => item.note_id === noteId)?.title ?? ''
+  }, [catalog.items, noteEnable.state.noteId])
 
   const editorVisible = editor.state.note !== null || editor.state.status !== 'idle'
   // 恢复入口在编辑器完全关闭时展示；**打开失败**（status=error 且未加载文档）
@@ -477,6 +528,18 @@ export function NotesPanel({
         )}
         legacyActions={(item) => (
           <>
+            {canEnableProtected &&
+              item.edit_schema === null &&
+              item.access_state !== 'restricted' && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => noteEnable.actions.requestEnable(item.note_id)}
+                  data-testid={`note-enable-${item.note_id}`}
+                >
+                  {t('research.notes.catalog.enableProtected')}
+                </Button>
+              )}
             <Button size="sm" variant="ghost" onClick={() => startEditLegacy(item)}>
               {t('research.notes.edit')}
             </Button>
@@ -501,6 +564,19 @@ export function NotesPanel({
             </AlertDialog>
           </>
         )}
+      />
+
+      {/* Issue #1135：启用受保护编辑对话框（确认/单在途/错误与重试）。 */}
+      <NoteEnableDialog
+        open={noteEnable.state.phase !== 'idle' && noteEnable.state.noteId !== null}
+        phase={noteEnable.state.phase}
+        noteTitle={enableTargetTitle}
+        failureKind={noteEnable.state.failureKind}
+        retryMode={noteEnable.state.retryMode}
+        onConfirm={() => void confirmEnableProtected()}
+        onCancel={noteEnable.actions.cancel}
+        onRetry={() => void retryEnableProtected()}
+        onClose={noteEnable.actions.dismiss}
       />
 
       {showLegacyForm && !isAdminReadonly && (
