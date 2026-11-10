@@ -186,6 +186,16 @@ export function WritingComposeDialog({
     void compose.submit((query) => saveWritingComposer(editorRef.current.controller, query))
   }, [compose])
 
+  /**
+   * 关闭路径显式 reset：reset 会把当前输入（含 query）立即落盘，避免
+   * 「输入后在 debounce 窗口内关闭」丢掉最新指令（review round-2 MEDIUM-2）。
+   * 组件在关闭时由父级卸载，因此必须在 onClose 之前同步执行。
+   */
+  const handleClose = useCallback((): void => {
+    compose.reset()
+    onClose()
+  }, [compose, onClose])
+
   const handleRetrySame = useCallback((): void => {
     void compose.retrySameSubmission()
   }, [compose])
@@ -211,7 +221,7 @@ export function WritingComposeDialog({
         const generationId = compose.submission.generationId
         const located = await locateWritingResultMessage(
           workspace.projectId,
-          target.sessionId,
+          target,
           generationId,
           answer,
         )
@@ -262,7 +272,7 @@ export function WritingComposeDialog({
       : null
 
   return (
-    <Dialog open={open} onOpenChange={(next) => (next ? undefined : onClose())}>
+    <Dialog open={open} onOpenChange={(next) => (next ? undefined : handleClose())}>
       <DialogContent
         className="max-h-[90vh] overflow-y-auto sm:max-w-2xl"
         data-testid="writing-compose-dialog"
@@ -683,7 +693,7 @@ export function WritingComposeDialog({
               type="button"
               size="sm"
               variant="ghost"
-              onClick={onClose}
+              onClick={handleClose}
               data-testid="writing-close"
             >
               {t('research.notes.writing.close')}

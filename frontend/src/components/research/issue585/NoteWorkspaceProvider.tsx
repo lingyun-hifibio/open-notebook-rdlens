@@ -151,6 +151,8 @@ export function NoteWorkspaceProvider({
   const [pendingWritingSelection, setPendingWritingSelection] = useState<WritingSelection | null>(
     null,
   )
+  /** 写作入口打开 in-flight：flush 期间重复点击不并发（HIGH-3 修复配套）。 */
+  const writingOpenInFlightRef = useRef(false)
   const [writingBlockReason, setWritingBlockReason] = useState<NoteLeaveBlockReason | null>(null)
   const [writingDraftPending, setWritingDraftPending] = useState(false)
   // 身份/项目切换：丢弃上一身份的编排态（对话框/阅读 overlay/打开请求），
@@ -224,19 +226,26 @@ export function NoteWorkspaceProvider({
    * 只记录原因，不打开对话框。
    */
   const openWriting = useCallback(async (selection: WritingSelection): Promise<void> => {
-    if (!writingAvailable) return
+    if (!writingAvailable || writingOpenInFlightRef.current) return
+    writingOpenInFlightRef.current = true
     setWritingBlockReason(null)
-    setPendingWritingSelection(selection)
-    const actions = editorRef.current?.actions
-    if (actions?.flushForInsert === undefined) {
-      setPendingWritingSelection(null)
-      setWritingBlockReason('unsaved')
-      return
-    }
-    const blocked = await actions.flushForInsert()
-    if (blocked !== null) {
-      setPendingWritingSelection(null)
-      setWritingBlockReason(blocked)
+    try {
+      const actions = editorRef.current?.actions
+      if (actions?.flushForInsert === undefined) {
+        setWritingBlockReason('unsaved')
+        return
+      }
+      // HIGH-3：必须先 flush 成功再登记 pending。旧实现先 setPending，快照
+      // effect 在 dirty 状态跑一次后 returns；flush 完成后的 saved 重渲染不会
+      // 重跑该 effect，导致首次点击静默无反应。
+      const blocked = await actions.flushForInsert()
+      if (blocked !== null) {
+        setWritingBlockReason(blocked)
+        return
+      }
+      setPendingWritingSelection(selection)
+    } finally {
+      writingOpenInFlightRef.current = false
     }
   }, [writingAvailable])
 
@@ -293,7 +302,9 @@ export function NoteWorkspaceProvider({
       initialSelection: pendingWritingSelection,
     })
     setPendingWritingSelection(null)
-  }, [pendingWritingSelection, t])
+    // 依赖纳入编辑器的实时状态：即使 pending 不变，保存状态/插入状态变化也要
+    // 重新评估（否则 dirty→saved 的重渲染不会重跑本 effect）。
+  }, [pendingWritingSelection, t, editorHook.state])
 
   // 当前文档是否存在未发送的写作选择（恢复提示；打开对话框后会重新检查版本/权限）。
   const currentEditorNote = editorHook.state.note

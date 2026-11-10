@@ -634,6 +634,9 @@ export function useWritingCompose(options: UseWritingComposeOptions): UseWriting
           choice,
           submission: record.lastSubmission,
         })
+        // 恢复完成：后续输入/选择必须能重新落盘（否则 suppress 常开，debounce
+        // 与关闭 flush 全部被抑制，刷新仍丢最新输入）。
+        suppressChoicePersistRef.current = false
         return
       }
       if (record.lastSubmission !== null) {
@@ -1307,6 +1310,8 @@ export function useWritingCompose(options: UseWritingComposeOptions): UseWriting
     setSessionChoiceKindState(next)
   }, [])
   const setQuery = useCallback((next: string): void => {
+    // 用户显式输入即恢复落盘（恢复期间的写保护只覆盖恢复窗口）。
+    suppressChoicePersistRef.current = false
     setQueryState(next)
   }, [])
 

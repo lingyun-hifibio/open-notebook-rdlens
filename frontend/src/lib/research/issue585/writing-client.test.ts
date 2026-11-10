@@ -16,6 +16,7 @@ const apiMocks = vi.hoisted(() => ({
     (projectId: string, path: string) => `/v1/research/projects/${projectId}${path}`,
   ),
   getResearchChatSession: vi.fn(),
+  getSourceChatSession: vi.fn(),
 }))
 
 vi.mock('../api', async (importOriginal) => {
@@ -26,6 +27,7 @@ vi.mock('../api', async (importOriginal) => {
     openResearchWritingStream: apiMocks.openResearchWritingStream,
     buildResearchUrl: apiMocks.buildResearchUrl,
     getResearchChatSession: apiMocks.getResearchChatSession,
+    getSourceChatSession: apiMocks.getSourceChatSession,
   }
 })
 
@@ -465,7 +467,13 @@ describe('结果消息定位（按 generation_id 精确匹配耐久 message_id�
     apiMocks.getResearchChatSession.mockResolvedValue(detail)
     const located = await locateWritingResultMessage(
       'p_demo',
-      'sess_a',
+      {
+        domain: 'research',
+        kind: 'global',
+        projectId: 'p_demo',
+        sessionId: 'sess_a',
+        sourceId: null,
+      },
       'gen_1',
       '改写结果',
     )
@@ -474,6 +482,48 @@ describe('结果消息定位（按 generation_id 精确匹配耐久 message_id�
       order: 'desc',
       limit: 50,
     })
+    expect(apiMocks.getSourceChatSession).not.toHaveBeenCalled()
+  })
+
+  it('source 会话使用 getSourceChatSession 定位（全局详情对 source 会话 404）', async () => {
+    apiMocks.getSourceChatSession.mockResolvedValue(detail)
+    const located = await locateWritingResultMessage(
+      'p_demo',
+      {
+        domain: 'research',
+        kind: 'source',
+        projectId: 'p_demo',
+        sessionId: 'sess_src',
+        sourceId: 'src_1',
+      },
+      'gen_1',
+      '改写结果',
+    )
+    expect(located.ok).toBe(true)
+    expect(apiMocks.getSourceChatSession).toHaveBeenCalledWith(
+      'p_demo',
+      'src_1',
+      'sess_src',
+      { order: 'desc', limit: 50 },
+    )
+    expect(apiMocks.getResearchChatSession).not.toHaveBeenCalled()
+  })
+
+  it('source 会话缺少 sourceId → not_found（不退回全局接口）', async () => {
+    const located = await locateWritingResultMessage(
+      'p_demo',
+      {
+        domain: 'research',
+        kind: 'source',
+        projectId: 'p_demo',
+        sessionId: 'sess_src',
+        sourceId: null,
+      },
+      'gen_1',
+      '改写结果',
+    )
+    expect(located).toEqual({ ok: false, reason: 'not_found' })
+    expect(apiMocks.getResearchChatSession).not.toHaveBeenCalled()
   })
 })
 

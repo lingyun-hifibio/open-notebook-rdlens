@@ -18,6 +18,8 @@ import {
 import type { WritingContextProjection } from '@/lib/research/issue585/writing-types'
 import {
   clearWritingCacheMemoryFallback,
+  readOrCreateWritingCacheTabId,
+  readWritingCacheRecord,
   resetWritingCacheTabId,
 } from '@/lib/research/issue585/writing-cache'
 import { WritingComposeDialog } from './WritingComposeDialog'
@@ -398,7 +400,13 @@ describe('结果与实际输入回看 + 手工摘入', () => {
     // MEDIUM-7：按 generation_id 定位耐久消息，不按正文/序号猜。
     expect(clientMocks.locateWritingResultMessage).toHaveBeenCalledWith(
       'p_demo',
-      'sess_current',
+      expect.objectContaining({
+        domain: 'research',
+        kind: 'global',
+        projectId: 'p_demo',
+        sessionId: 'sess_current',
+        sourceId: null,
+      }),
       'gen_1',
       '改写结果',
     )
@@ -431,5 +439,37 @@ describe('结果与实际输入回看 + 手工摘入', () => {
     const second = lastSubmitInput()
     expect(second.request).toEqual(first.request)
     expect(editorMock.controller.flush).not.toHaveBeenCalled()
+  })
+})
+
+
+describe('关闭路径（review round-2 MEDIUM-2）', () => {
+  it('输入后 400ms 内关闭：关闭即把最新 query 落盘（不丢指令）', async () => {
+    const onClose = vi.fn()
+    renderDialog({ onClose })
+    fireEvent.change(screen.getByTestId('writing-query'), {
+      target: { value: '关闭前的最新指令' },
+    })
+    // 不等待 debounce；立即点关闭。
+    fireEvent.click(screen.getByTestId('writing-close'))
+    expect(onClose).toHaveBeenCalledTimes(1)
+    const record = readWritingCacheRecord(
+      {
+        ownerId: '42',
+        projectId: 'p_demo',
+        noteId: 'note_abc',
+        tabId: readOrCreateWritingCacheTabId(),
+      },
+      {
+        authority: {
+          authenticatedOwnerId: '42',
+          currentProjectId: 'p_demo',
+          authGeneration: 0,
+          currentAuthGeneration: 0,
+          notePermission: 'visible',
+        },
+      },
+    )
+    expect(record?.choice?.query).toBe('关闭前的最新指令')
   })
 })

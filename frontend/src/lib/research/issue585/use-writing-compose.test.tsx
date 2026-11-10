@@ -661,6 +661,39 @@ describe('SSE reducer 交叉校验（事件累积语义）', () => {
   })
 })
 
+describe('review round 2 修复回归', () => {
+  it('MEDIUM-2：恢复 unsent 后继续输入 → debounce 正常落盘（suppress 已复位）', async () => {
+    seedCache(
+      cacheRecord({
+        choice: {
+          documentSelection: {
+            note_id: NOTE.noteId,
+            revision: NOTE.revision,
+            snapshot_hash: NOTE.snapshotHash,
+            selection: { kind: 'range', start_utf16: 1, end_utf16: 3 },
+          },
+          historyMode: 'none',
+          sessionChoice: 'current',
+          sessionKind: 'global',
+          sourceId: null,
+          currentSessionId: 'sess_current',
+          query: '旧指令',
+          modelId: 'm-local',
+        },
+      }),
+    )
+    const harness = makeHarness()
+    const { result } = renderHook(() =>
+      useWritingCompose(baseOptions({ ports: harness.ports })),
+    )
+    await waitFor(() => expect(result.current.recovery?.kind).toBe('unsent'))
+    act(() => result.current.setQuery('恢复后新指令'))
+    await waitFor(() => expect(readCache()?.choice?.query).toBe('恢复后新指令'), {
+      timeout: 2000,
+    })
+  })
+})
+
 describe('review round 1 修复回归', () => {
   it('MEDIUM-1：新建会话成功即持久化 confirmed，刷新/重开不重复创建', async () => {
     const harness = makeHarness()

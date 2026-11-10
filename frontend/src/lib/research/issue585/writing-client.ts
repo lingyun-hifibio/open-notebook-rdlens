@@ -23,8 +23,8 @@ import {
   createChatSession,
   getEditorState,
   getResearchChatSession,
+  getSourceChatSession,
   openResearchWritingStream,
-  type ResearchGlobalChatSessionDetail,
   type ResearchSessionAcceptReceipt,
 } from '../api'
 import {
@@ -638,8 +638,16 @@ export function writingResultUserMessageId(generationId: string): string {
  * - 同正文重复出现的其它轮次不影响定位（按 generation，而不是按文本/序号）；
  * - generation_id 缺失 → `no_generation`（调用方显示不可摘入原因）。
  */
+export interface WritingResultDetailMessages {
+  readonly messages: ReadonlyArray<{
+    readonly message_id: string
+    readonly role: string
+    readonly content: string
+  }>
+}
+
 export function resolveWritingResultMessage(
-  detail: ResearchGlobalChatSessionDetail,
+  detail: WritingResultDetailMessages,
   expectedContent: string,
   generationId: string | null,
 ): WritingResultMessageResult {
@@ -663,16 +671,36 @@ export function resolveWritingResultMessage(
   }
 }
 
-/** 拉取会话详情并按 generation 定位写作结果（手工摘入前调用）。 */
+/**
+ * 拉取目标会话详情并按 generation 定位写作结果（手工摘入前调用）。
+ *
+ * global 会话走 `getResearchChatSession`，source 会话走 `getSourceChatSession`
+ * （host 全局详情端点对 source 会话返回 404）。会话身份由调用方的
+ * `sessionRef` 显式给出，不按当前 UI surface 猜测。
+ */
 export async function locateWritingResultMessage(
   projectId: string,
-  sessionId: string,
+  sessionRef: ResearchSessionRef,
   generationId: string | null,
   expectedContent: string,
 ): Promise<WritingResultMessageResult> {
   if (generationId === null) return { ok: false, reason: 'no_generation' }
   try {
-    const detail = await getResearchChatSession(projectId, sessionId, { order: 'desc', limit: 50 })
+    if (sessionRef.kind === 'source') {
+      const sourceId = sessionRef.sourceId
+      if (sourceId === null || sourceId === undefined) {
+        return { ok: false, reason: 'not_found' }
+      }
+      const detail = await getSourceChatSession(projectId, sourceId, sessionRef.sessionId, {
+        order: 'desc',
+        limit: 50,
+      })
+      return resolveWritingResultMessage(detail, expectedContent, generationId)
+    }
+    const detail = await getResearchChatSession(projectId, sessionRef.sessionId, {
+      order: 'desc',
+      limit: 50,
+    })
     return resolveWritingResultMessage(detail, expectedContent, generationId)
   } catch {
     return { ok: false, reason: 'not_found' }
@@ -682,8 +710,10 @@ export async function locateWritingResultMessage(
 // ── 服务端 owner 身份 / Note 权限重查（方案 §6.1.2；review LOW-3/MEDIUM-3） ──
 
 /**
- * 解析契约 `owner_user_id`：优先现有会话 editor-state 服务端返回的
- * `viewer_user_id`（正整数），不依赖宿主 `claims.sub` 必须是数字串。
+ * 解析契约 `owner_user_id` 的**回退路径**：编排层优先使用 claims 中的数字串
+ * （`writingOwnerUserId`），仅在 claims 不可解析时调用本函数读取会话
+ * editor-state 服务端返回的 `viewer_user_id`（正整数），不依赖宿主
+ * `claims.sub` 必须是数字串。
  *
  * 返回 null = 服务端未能确认；调用方显示可见 `owner_unknown`，不伪造身份。
  */
