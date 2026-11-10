@@ -68,6 +68,10 @@ vi.mock('@/components/ui/markdown-renderer', () => ({
 // 本文件只验证 Workbench 布局与 Scope 联动，用最小 hook 替身隔离 core 行为
 // （产品代码不改；catalog 行由各用例按需注入，见 noteCatalogStub）。
 const noteCatalogStub = vi.hoisted(() => ({ items: [] as unknown[] }))
+// Issue #1136：父级导航守卫观测点——工作台切 pane 前应调用 Notes 注册的离开回调。
+const noteEditorSpies = vi.hoisted(() => ({
+  flushBeforeLeave: vi.fn(async () => null),
+}))
 
 vi.mock('@/lib/research/issue585/use-note-catalog', () => ({
   useNoteCatalog: () => ({
@@ -128,7 +132,7 @@ vi.mock('@/lib/research/issue585/use-note-editor', () => ({
       saveAsCopy: async () => null,
       loadLatest: async () => undefined,
       discardLocal: () => undefined,
-      flushBeforeLeave: async () => null,
+      flushBeforeLeave: noteEditorSpies.flushBeforeLeave,
     },
   }),
 }))
@@ -345,6 +349,54 @@ describe('ResearchWorkbench', () => {
     await waitFor(() =>
       expect(screen.getByTestId('source-scope-src_1')).not.toBeDisabled(),
     )
+  })
+
+  it('Issue #1136：离开 Notes 子视图前调用编辑器注册的父级导航离开回调（切 pane 守卫）', async () => {
+    vi.mocked(researchApi.listSources).mockResolvedValue({ items: [], next_cursor: null })
+    renderWorkbench()
+
+    // 进入 Notes：NotesPanel 挂载并注册离开回调
+    fireEvent.click(screen.getByRole('button', { name: 'research.workbench.tabNotes' }))
+    await screen.findByTestId('note-catalog')
+    noteEditorSpies.flushBeforeLeave.mockClear()
+
+    // 切到 Sources：离开前调用守卫（NotesPanel 卸载 cleanup 也会兜底 flush）
+    fireEvent.click(screen.getByRole('button', { name: 'research.workbench.tabSources' }))
+    expect(noteEditorSpies.flushBeforeLeave).toHaveBeenCalled()
+
+    // 重新进入 Notes 只是挂载，不应在“进入”时误触发离开保护
+    noteEditorSpies.flushBeforeLeave.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: 'research.workbench.tabNotes' }))
+    await screen.findByTestId('note-catalog')
+    expect(noteEditorSpies.flushBeforeLeave).not.toHaveBeenCalled()
+  })
+
+  it('Issue #1136：同一子视图重复点击不触发离开回调（非导航）', async () => {
+    vi.mocked(researchApi.listSources).mockResolvedValue({ items: [], next_cursor: null })
+    renderWorkbench()
+    fireEvent.click(screen.getByRole('button', { name: 'research.workbench.tabNotes' }))
+    await screen.findByTestId('note-catalog')
+    noteEditorSpies.flushBeforeLeave.mockClear()
+
+    fireEvent.click(screen.getByRole('button', { name: 'research.workbench.tabNotes' }))
+    expect(noteEditorSpies.flushBeforeLeave).not.toHaveBeenCalled()
+  })
+
+  it('Issue #1136：根级 paneReveal 切走 Notes 时同样先调用离开回调', async () => {
+    vi.mocked(researchApi.listSources).mockResolvedValue({ items: [], next_cursor: null })
+    vi.mocked(researchApi.listInsights).mockResolvedValue({ items: [], next_cursor: null })
+    const { rerender, props } = renderWorkbench()
+    fireEvent.click(screen.getByRole('button', { name: 'research.workbench.tabNotes' }))
+    await screen.findByTestId('note-catalog')
+    noteEditorSpies.flushBeforeLeave.mockClear()
+
+    rerender(
+      <ResearchWorkbench
+        {...props}
+        paneReveal={{ pane: 'insights', artifactId: 'ins_1', seq: 1 }}
+      />,
+    )
+    expect(noteEditorSpies.flushBeforeLeave).toHaveBeenCalled()
   })
 
   it('Admin 会话：顶部只读横幅；Admin 仍可勾选 Scope（本地过滤语义，非写操作）', async () => {

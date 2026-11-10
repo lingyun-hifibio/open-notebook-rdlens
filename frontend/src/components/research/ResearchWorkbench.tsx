@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
@@ -107,6 +107,24 @@ export function ResearchWorkbench({
   const { t } = useTranslation()
   const { projectId, isAdminReadonly } = useResearchWorkspace()
   const [pane, setPane] = useState<ResearchWorkbenchPane>('sources')
+  // Issue #1136（父级导航离开保护，owner 选定「自动保存＋可恢复」）：NotesPanel
+  // 注册“离开前”回调（同步持久化草稿 + 尽力 flush），切 pane 前调用；导航本身
+  // 不阻断，服务端保存未完成时由 Notes 目录的可恢复草稿入口兜底。
+  const notesLeaveHandlerRef = useRef<(() => void) | null>(null)
+  const registerNotesLeaveHandler = useCallback((handler: (() => void) | null) => {
+    notesLeaveHandlerRef.current = handler
+  }, [])
+  const beforePaneNavigate = useCallback(() => {
+    notesLeaveHandlerRef.current?.()
+  }, [])
+  const selectPane = useCallback(
+    (next: ResearchWorkbenchPane) => {
+      if (next === pane) return
+      beforePaneNavigate()
+      setPane(next)
+    },
+    [beforePaneNavigate, pane],
+  )
   // RWV2-23（AC3）：reveal 请求 → 切 pane + 记录高亮目标（Notes/Insights
   // 行 ring；新条目按服务端 created_at DESC 恒在首行，滚动无需特判）。
   const [reveal, setReveal] = useState<{
@@ -115,6 +133,8 @@ export function ResearchWorkbench({
   } | null>(null)
   useEffect(() => {
     if (paneReveal !== null && paneReveal !== undefined) {
+      // 根级 reveal 也可能切走当前 pane：同样先保护 Notes 编辑。
+      if (paneReveal.pane !== pane) beforePaneNavigate()
       setPane(paneReveal.pane)
       setReveal({ pane: paneReveal.pane, artifactId: paneReveal.artifactId })
     }
@@ -170,6 +190,7 @@ export function ResearchWorkbench({
           <NotesPanel
             revealId={reveal?.pane === 'notes' ? reveal.artifactId : null}
             revealSeq={paneReveal?.seq ?? null}
+            registerParentLeaveHandler={registerNotesLeaveHandler}
           />
         )
       case 'insights':
@@ -228,7 +249,7 @@ export function ResearchWorkbench({
                     type="button"
                     aria-current={active ? 'true' : undefined}
                     className={paneButtonClass(active)}
-                    onClick={() => setPane(item.pane)}
+                    onClick={() => selectPane(item.pane)}
                   >
                     {t(item.labelKey)}
                   </button>
@@ -253,7 +274,7 @@ export function ResearchWorkbench({
                     type="button"
                     aria-current={active ? 'true' : undefined}
                     className={paneButtonClass(active)}
-                    onClick={() => setPane(item.pane)}
+                    onClick={() => selectPane(item.pane)}
                   >
                     {t(item.labelKey)}
                   </button>

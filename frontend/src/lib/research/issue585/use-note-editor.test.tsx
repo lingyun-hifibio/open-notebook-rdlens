@@ -11,7 +11,7 @@ import { StrictMode, type ReactNode } from 'react'
 import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
 import { noteApiClient } from './note-client'
 import { useNoteEditor } from './use-note-editor'
-import { NOTE_DRAFT_CACHE_PREFIX } from './note-draft-cache'
+import { NOTE_DRAFT_CACHE_PREFIX, clearNoteDraftMemoryFallback } from './note-draft-cache'
 import type {
   NoteCapabilities,
   NoteEditorActions,
@@ -289,6 +289,52 @@ describe('useNoteEditor', () => {
     expect(keys.length).toBeGreaterThan(0)
     const raw = window.localStorage.getItem(keys[0])
     expect(raw).toContain('pagehide 草稿')
+  })
+
+  it('persists the local draft before disposing the old machine on project switch (Issue #1136)', async () => {
+    mockedGet.mockResolvedValue(note())
+    let activeProject = PROJECT
+    function SwitchableWrapper({ children }: { children: ReactNode }) {
+      return (
+        <ResearchWorkspaceProvider
+          projectId={activeProject}
+          role="owner"
+          userId="7"
+          authGeneration={1}
+        >
+          {children}
+        </ResearchWorkspaceProvider>
+      )
+    }
+    const { result, rerender } = renderHook(
+      () =>
+        useNoteEditor({
+          projectId: activeProject,
+          capabilities: CAPS_READY,
+          isAdminReadonly: false,
+        }),
+      { wrapper: SwitchableWrapper },
+    )
+    await act(async () => {
+      await result.current.actions.openNote('n1')
+    })
+    act(() => {
+      result.current.actions.setContent('切项目前未保存正文')
+    })
+    // 宿主（父级）切换项目由身份变化驱动，hook 无法阻断；这里模拟最后一次
+    // 持久化缺口：清空已落盘的草稿后切项目，hook 必须在销毁旧状态机前同步
+    // 再写一次草稿，切回原项目时 Notes 目录才能列出可恢复草稿。
+    window.localStorage.clear()
+    clearNoteDraftMemoryFallback()
+    activeProject = 'proj_2'
+    rerender()
+
+    await waitFor(() => expect(result.current.state.status).toBe('idle'))
+    const keys = storedDraftKeys()
+    expect(keys.length).toBeGreaterThan(0)
+    const raw = keys.map((key) => window.localStorage.getItem(key) ?? '').join('\n')
+    expect(raw).toContain('切项目前未保存正文')
+    expect(raw).toContain(PROJECT)
   })
 
   it('stays fully usable after StrictMode setup→cleanup→setup (no permanent dispose)', async () => {

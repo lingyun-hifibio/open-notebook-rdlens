@@ -14,6 +14,7 @@ import {
   clearNoteDraftMemoryFallback,
   createNoteDraftTabId,
   isValidNoteDraftCacheRecord,
+  listRecoverableNoteDrafts,
   noteDraftCacheSegment,
   noteDraftKey,
   readNoteDraft,
@@ -358,5 +359,124 @@ describe('cleanup and tab branches', () => {
     const fresh = readOrCreateNoteDraftTabId(new FakeStorage())
     expect(fresh).not.toBe(first)
     expect(createNoteDraftTabId()).not.toBe(createNoteDraftTabId())
+  })
+})
+
+describe('recoverable draft listing (Issue #1136)', () => {
+  it('lists current-tab drafts for the owner/project with summary fields only', () => {
+    const storage = new FakeStorage()
+    writeNoteDraft(scope(), record(), { storage })
+    writeNoteDraft(
+      scope({ noteId: 'note_2' }),
+      record({
+        noteId: 'note_2',
+        title: '',
+        content: '第二条正文',
+        savedAt: '2026-11-05T01:00:00.000Z',
+      }),
+      { storage },
+    )
+
+    const listed = listRecoverableNoteDrafts('7', 'proj_1', 'tab_1', authority(), { storage })
+
+    expect(listed.map((entry) => entry.noteId)).toEqual(['note_2', 'note_1'])
+    expect(listed[0]).toEqual({
+      noteId: 'note_2',
+      title: '',
+      savedAt: '2026-11-05T01:00:00.000Z',
+      pendingMutation: false,
+      tabId: 'tab_1',
+    })
+    // 摘要不得携带正文/令牌等记录字段（恢复正文仍走 openNote 权限校验）。
+    for (const entry of listed) {
+      expect(Object.keys(entry).sort()).toEqual([
+        'noteId',
+        'pendingMutation',
+        'savedAt',
+        'tabId',
+        'title',
+      ])
+    }
+  })
+
+  it('marks pending mutations so the recovery UI can warn about unknown results', () => {
+    const storage = new FakeStorage()
+    writeNoteDraft(
+      scope(),
+      record({
+        pendingMutation: {
+          mutationId: 'nm_pending',
+          kind: 'save',
+          noteId: 'note_1',
+          expectedRevision: 2,
+          title: '标题',
+          content: '正文',
+          createdAt: '2026-11-05T00:00:00.000Z',
+        },
+      }),
+      { storage },
+    )
+
+    const listed = listRecoverableNoteDrafts('7', 'proj_1', 'tab_1', authority(), { storage })
+
+    expect(listed).toHaveLength(1)
+    expect(listed[0].pendingMutation).toBe(true)
+  })
+
+  it('isolates projects, owners, tabs and malformed records', () => {
+    const storage = new FakeStorage()
+    writeNoteDraft(scope(), record(), { storage })
+    writeNoteDraft(
+      scope({ projectId: 'proj_2' }),
+      record({ projectId: 'proj_2' }),
+      { storage },
+    )
+    writeNoteDraft(
+      scope({ ownerId: '8' }),
+      record({ ownerId: '8' }),
+      { storage },
+    )
+    writeNoteDraft(
+      scope({ tabId: 'tab_2' }),
+      record(),
+      { storage },
+    )
+    // 污染记录（额外键）必须被拒绝，而不是展示为可恢复草稿。
+    storage.setItem(
+      noteDraftKey(scope({ noteId: 'note_poison' })),
+      JSON.stringify({ ...record({ noteId: 'note_poison' }), token: 'secret' }),
+    )
+
+    const listed = listRecoverableNoteDrafts('7', 'proj_1', 'tab_1', authority(), { storage })
+
+    expect(listed.map((entry) => entry.noteId)).toEqual(['note_1'])
+  })
+
+  it('requires an authenticated owner, current generation and matching project', () => {
+    const storage = new FakeStorage()
+    writeNoteDraft(scope(), record(), { storage })
+
+    expect(
+      listRecoverableNoteDrafts('7', 'proj_1', 'tab_1', authority({ authenticatedOwnerId: null }), {
+        storage,
+      }),
+    ).toEqual([])
+    expect(
+      listRecoverableNoteDrafts('7', 'proj_1', 'tab_1', authority({ authGeneration: 0, currentAuthGeneration: 0 }), {
+        storage,
+      }),
+    ).toEqual([])
+    expect(
+      listRecoverableNoteDrafts('7', 'proj_1', 'tab_1', authority({ currentAuthGeneration: 4 }), {
+        storage,
+      }),
+    ).toEqual([])
+    expect(
+      listRecoverableNoteDrafts('8', 'proj_1', 'tab_1', authority(), { storage }),
+    ).toEqual([])
+    expect(
+      listRecoverableNoteDrafts('7', 'proj_2', 'tab_1', authority(), { storage }),
+    ).toEqual([])
+    expect(listRecoverableNoteDrafts('7', 'proj_1', '', authority(), { storage })).toEqual([])
   })
 })
