@@ -15,7 +15,7 @@
 #   - $WT_BEFORE is a git worktree of the fork repo checked out at the BEFORE
 #     revision with frontend/node_modules symlinked (this harness used a symlink
 #     to /home/lchen/workspace/open-notebook-rdlens/frontend/node_modules).
-#   - ports 8921 (Next dev), 8980 (host), 8951 (gateway) are free.
+#   - ports 8931 (Next dev), 8990 (host), 8961 (gateway) are free.
 #   - no real backend/database/model is contacted; every request is synthetic.
 #
 # Note: the fork applies the harness-only `frontend/src/lib/embedded/config.ts`
@@ -28,9 +28,9 @@ WT_BEFORE="${WT_BEFORE:?usage: WT_BEFORE=<path-to-baseline-worktree> ./run_befor
 HERE="$(cd "$(dirname "$0")" && pwd)"
 EVIDENCE="$(cd "$HERE/.." && pwd)"
 LOGS="$EVIDENCE/logs"
-DEV_PORT=8921
-HOST_PORT=8980
-GATEWAY_PORT=8951
+DEV_PORT=8931
+HOST_PORT=8990
+GATEWAY_PORT=8961
 SHA="${BEFORE_SHA:-34f531d}"
 
 mkdir -p "$LOGS" "$EVIDENCE/screenshots/before"

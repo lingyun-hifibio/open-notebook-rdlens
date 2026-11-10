@@ -1,13 +1,13 @@
 # Issue #1135 — 受保护编辑启用入口（legacy Notes → d2-v1 原地启用）Before/After 合成证据
 
 - **Issue**：`HiFiBiO-Therapeutics/RDLens#1135`（follow-up：#1046 PR4 §8.2〔R31〕的后续入口——旧未保护 Note 的受保护编辑启用）
-- **实现**：fork 前端单 PR（`NotesPanel` 入口 + 新增 `NoteEnableDialog` / `note-enable` 状态机 / `use-note-enable` + 14 语言文案 + 单测），实现 head = `5806769a2772d43274ae7d4a75c4c9507bab0cd4`（fork 分支 `agent/protected-edit-ui-c1f827496380`；含 round-1 审查修复：紧凑图标入口 + confirming 阶段 Esc 取消）。
+- **实现**：fork 前端单 PR（`NotesPanel` 入口 + 新增 `NoteEnableDialog` / `note-enable` 状态机 / `use-note-enable` + 14 语言文案 + 单测），实现 head = `537732fb9be012d93d6dd60bdb5c81d143cce43d`（fork 分支 `agent/protected-edit-ui-c1f827496380`；rebase 到新 fork `origin/main` `4986aa2e32fe3a50f1b5ccd9cc1709246c8be3da`，含 round-1 审查修复：紧凑图标入口 + confirming 阶段 Esc 取消）。
 - **证据分支**：`evidence/protected-edit-ui-c1f827496380`（本分支，从 fork `origin/main` 创建，**不属于实现 PR diff**；仅证据文件）。
-- **交付要求对应**：UI 变更 PR 的 Before/After 对比——同一场景/视口/主题/状态、标注基线与变更 revision；BEFORE = fork `origin/main` = `34f531d0270587ed1f2bfa02e361c8a3dd0d224d`（含 #1136 终态，**无启用入口**）。
+- **交付要求对应**：UI 变更 PR 的 Before/After 对比——同一场景/视口/主题/状态、标注基线与变更 revision；**BEFORE = fork `origin/main` = `4986aa2e32fe3a50f1b5ccd9cc1709246c8be3da`（含 PR #127 + 此前 #1136，无启用入口）**。旧基线 `34f531d` 的旧证据保留在证据分支历史（见「rebase 到新 fork main」节）。
 
 ## 结论摘要
 
-| 场景 | BEFORE（fork origin/main 34f531d） | AFTER（实现 head 5806769，含 MEDIUM-1 修复） |
+| 场景 | BEFORE（fork origin/main 4986aa2，含 PR #127） | AFTER（rebase 后实现 head 537732f，含 MEDIUM-1 修复） |
 |---|---|---|
 | E1 旧未保护 Note 行操作区（Hover） | 只有 `Edit` / `Delete`，无启用入口（`note-enable-*` = 0） | 同一操作区出现 **紧凑图标入口** `note-enable-note_legacy`（28×28 ShieldCheck，`aria-label`/`title` = “Enable protected editing”），`Edit`/`Delete` 保持且标题列不被挤压（MEDIUM-1 修复）；未点击前不发任何请求、不开对话框 |
 | E2 旧 Note 编辑路径 | 点击 `Edit` 打开**旧表单**（Title/Content，无 revision/保护字段），旧表单保存 200 且 Note 仍 `edit_schema=null` | 点击启用 → `note-enable-dialog`（confirming）→ 确认 → 1 次 `POST .../notes/note_legacy/editing` 200 → **原地打开 d2-v1 Markdown 编辑器**：标题/正文与 fixture 一致、`Revision 1`、Save now 可用、旧表单不再出现、目录行刷新为 `d2-v1`；随后编辑器保存成功（revision 2）；confirming 阶段 Esc 取消不发请求（round-1 修复） |
@@ -27,16 +27,16 @@
 - 入口改为**紧凑图标按钮**：`<Button size="icon" variant="ghost" className="size-7" aria-label/title={t('research.notes.catalog.enableProtected')}><ShieldCheck aria-hidden /></Button>`，`data-testid="note-enable-<note_id>"` 不变；
 - confirming 阶段 **Esc → onCancel**（不发送启用 mutation）。
 
-本次 AFTER 重采（head `5806769`）用真实 Chromium `getBoundingClientRect()` 增加布局断言（1440 与 1024 都测，重点 1024），修复前/后实测对照：
+本次 rebase 后重采（head `537732f`，新 base `4986aa2`）用真实 Chromium `getBoundingClientRect()` 增加布局断言（1440 与 1024 都测，重点 1024）；下表保留旧 base 的 round-1/round-2 历史实测列，并新增本次新 base 的实测列：
 
-| 测量项（E1，Hover 后真实布局） | round-1 head `deca625`（修复前，复现 MEDIUM-1） | round-2 head `5806769`（修复后，本次证据） |
-|---|---|---|
-| 1440 legacy 行标题宽度 | 111.06px（scrollWidth 263 → 提前截断） | **268.3px**（完整渲染，scrollWidth=clientWidth） |
-| 1024 legacy 行标题宽度 | **0px（不可见，MEDIUM-1）** | **122.7px**（可见，>20px 门槛） |
-| 1024 `Delete` 右边界 vs Notes 面板右边界 | 366.13 > 339.59（**被裁剪**） | 331.59 ≤ 339.59（完整在内） |
-| 入口按钮尺寸（1024） | 185.23 × 32px（文本按钮） | **28 × 28px（图标按钮）** |
-| 入口 `aria-label` / `title` | 无（仅文本） | **`Enable protected editing`**（`research.notes.catalog.enableProtected`） |
-| 1024 行动作区宽度 | 310.13px（挤压标题列） | 152.89px |
+| 测量项（E1，Hover 后真实布局） | round-1 head `deca625`（修复前，旧 base） | round-2 head `5806769`（修复后，旧 base） | **本次 rebase 后 `537732f`（新 base 4986aa2）** |
+|---|---|---|---|
+| 1440 标题宽度 | 111.06px（scrollWidth 263 → 提前截断） | 268.3px（完整渲染） | **268.3px** |
+| 1024 标题宽度 | **0px（不可见，MEDIUM-1）** | 122.7px（>20px） | **122.7px** |
+| 1024 `Delete` 右边界 vs Notes 面板右边界 | 366.13 > 339.59（**被裁剪**） | 331.59 ≤ 339.59 | **331.59 ≤ 339.59** |
+| 入口按钮尺寸（1024） | 185.23 × 32px（文本按钮） | 28 × 28px（图标按钮） | **28 × 28px（图标按钮）** |
+| 入口 `aria-label` / `title` | 无（仅文本） | `Enable protected editing` | **`Enable protected editing`** |
+| 1024 行动作区宽度 | 310.13px（挤压标题列） | 152.89px | 见 `after-manifest.json` `scenes[].layout`（两视口实测记录） |
 
 新增断言（E1/E3，两视口各一遍；完整 expected/actual 见 `capture.log` 与 `after-manifest.json` 的 `scenes[].layout`）：
 
@@ -55,12 +55,21 @@
 
 | 截图对 | 结果（容差逐像素） |
 |---|---|
-| e3_capability_off_legacy_form_1440 | size=1440x900 diff_bbox=None pixels_over_2=0 max_channel_delta=0 -> within tolerance |
-| e7_admin_readonly_1440 | size=1440x900 diff_bbox=None pixels_over_2=0 max_channel_delta=0 -> within tolerance |
+| e3_capability_off_legacy_form_1440 | size=1440x900 diff_bbox=(523, 886, 527, 888) pixels_over_2=0 max_channel_delta=2 -> within tolerance |
+| e7_admin_readonly_1440 | size=1440x900 diff_bbox=(112, 33, 203, 36) pixels_over_2=0 max_channel_delta=2 -> within tolerance |
 | e8_capability_error_1440 | size=1440x900 diff_bbox=(112, 33, 1423, 36) pixels_over_2=0 max_channel_delta=2 -> within tolerance |
-| e3_capability_off_legacy_form_1024 | size=1024x768 diff_bbox=(516, 33, 742, 36) pixels_over_2=0 max_channel_delta=2 -> within tolerance |
-| e7_admin_readonly_1024 | size=1024x768 diff_bbox=None pixels_over_2=0 max_channel_delta=0 -> within tolerance |
-| e8_capability_error_1024 | size=1024x768 diff_bbox=None pixels_over_2=0 max_channel_delta=0 -> within tolerance |
+| e3_capability_off_legacy_form_1024 | size=1024x768 diff_bbox=None pixels_over_2=0 max_channel_delta=0 -> within tolerance |
+| e7_admin_readonly_1024 | size=1024x768 diff_bbox=(112, 33, 452, 36) pixels_over_2=0 max_channel_delta=2 -> within tolerance |
+| e8_capability_error_1024 | size=1024x768 diff_bbox=(112, 33, 742, 36) pixels_over_2=0 max_channel_delta=2 -> within tolerance |
+
+## rebase 到新 fork main（PR #127 合入）后的基线变更与重采
+
+PR #128 原基于 `34f531d0270587ed1f2bfa02e361c8a3dd0d224d`（含 #1136 终态）。fork `origin/main` 随后前进到 `4986aa2e32fe3a50f1b5ccd9cc1709246c8be3da`（PR #127「选段入文档/引用展示」合入，Notes 表面 UI/编辑器 hook 有变化），造成冲突；实现分支已 **rebase 到新 base** 并语义解冲突，新 head = `537732fb9be012d93d6dd60bdb5c81d143cce43d`：
+
+- 冲突解决 = `NotesPanel.tsx` 合并 PR #127 的 `useNoteWorkspaceOptional` hook 与 #1135 的 `useNoteEnable` 状态机；`NotesPanel.test.tsx` 合并 PR #127 工作区测试与 7 个 enable 测试；**feature delta 无功能变化**（`git diff 5806769 537732f` 对 `note-enable.ts`/`use-note-enable.ts`/`NoteEnableDialog.tsx` 为空；`git diff --name-only 4986aa2 537732f` = 23 files，与原实现一致）。
+- 由于 **Notes 表面 UI 已随新 base 变化**，旧 `34f531d0270587ed1f2bfa02e361c8a3dd0d224d` 基线的截图不能与 rebase 后 AFTER 直接对比；因此本次按 **BEFORE `4986aa2` + AFTER `537732f`** 成对重采全部 12+24 张截图（同 harness/fixtures/gateway 模式/E1–E8/1440+1024/light/en-US）。
+- 旧证据（base `34f531d0270587ed1f2bfa02e361c8a3dd0d224d`，含 round-1 MEDIUM-1 修复前后对照）保留在证据分支历史提交 `cb84934` / `0acf073` / `b4e8fa2` 中，未删除；本 README 的 MEDIUM-1 小节保留其历史实测值，并补充本次 rebase 后的重测值。
+- 本证据的结论只针对 **`4986aa2`（BEFORE）→ `537732f`（AFTER）** 这一对修订；E4/E5/E6 的 BEFORE 仍为 N/A（新基线同样没有启用入口/启用 mutation）。
 
 ## 证据性质与公开安全声明（synthetic）
 
@@ -75,10 +84,10 @@
 
 | 项 | 值 |
 |---|---|
-| BEFORE 基线 | fork `origin/main` = `34f531d0270587ed1f2bfa02e361c8a3dd0d224d`（2026-11-10，含 #1136 终态；**无启用入口**） |
-| AFTER head | `5806769a2772d43274ae7d4a75c4c9507bab0cd4`（fork 分支 `agent/protected-edit-ui-c1f827496380`；4 commits：`25ed83b` 状态机+hook → `8cb92f8` 入口+对话框 → `deca625` 14 语言文案 → `5806769` round-1 修复：紧凑图标入口 + Esc 分派） |
+| BEFORE 基线（本次重采） | fork `origin/main` = `4986aa2e32fe3a50f1b5ccd9cc1709246c8be3da`（含 PR #127「选段入文档/引用展示」+ 此前 #1136；**无启用入口**）。旧基线 `34f531d0270587ed1f2bfa02e361c8a3dd0d224d` 的旧证据保留在证据分支历史中（`cb84934`/`0acf073`/`b4e8fa2`） |
+| AFTER head（本次重采） | `537732fb9be012d93d6dd60bdb5c81d143cce43d`（fork 分支 `agent/protected-edit-ui-c1f827496380`，rebase 后 4 commits：`cb2b5e9` 状态机+hook → `c181eb9` 入口+对话框 → `19146bf` 14 语言文案 → `537732f` round-1 修复：紧凑图标入口 + Esc 分派；rebase 冲突解决不改 feature delta） |
 | 证据分支 | `evidence/protected-edit-ui-c1f827496380`（从 fork `origin/main` 创建；仅 `dev_docs/validation/issue-1135/` 证据文件） |
-| 实现改动 | 23 files（`git diff --name-only origin/main 5806769`：5 个源文件 = `NotesPanel.tsx` + 新增 `NoteEnableDialog.tsx`/`note-enable.ts`/`use-note-enable.ts` + `note-ui-labels.ts`；14 个语言文件；4 个单测文件；完整列表见 `after-manifest.json.implementation_diff`） |
+| 实现改动 | 23 files（`git diff --name-only 4986aa2 537732f`：5 个源文件 = `NotesPanel.tsx` + 新增 `NoteEnableDialog.tsx`/`note-enable.ts`/`use-note-enable.ts` + `note-ui-labels.ts`；14 个语言文件；4 个单测文件；完整列表见 `after-manifest.json.implementation_diff`） |
 | Harness | `dev_docs/validation/issue-1135/harness/`（捕获脚本、合成 gateway/host、runbook；公开安全，无密钥） |
 
 ## 入口路径说明（重要，如实记录）
@@ -95,10 +104,10 @@ fork 前端自 W1 #1104 起，`/research` **默认渲染目标壳 `TargetShell`*
 
 | 项 | BEFORE | AFTER |
 |---|---|---|
-| Next dev | `node_modules/.bin/next dev --webpack -p 8921` | `... -p 8923` |
-| 合成 host | `http://127.0.0.1:8980/`（iframe `http://127.0.0.1:8921/research?legacy=1`） | `http://127.0.0.1:8982/`（iframe `http://127.0.0.1:8923/research?legacy=1`） |
-| 合成 Gateway mock | `http://127.0.0.1:8951`（两侧共用同一实现，模式文件驱动） | 同左 |
-| 嵌入式 env | `NEXT_PUBLIC_RD_EMBEDDED_MODE=1` / `NEXT_PUBLIC_RD_GATEWAY_URL=http://127.0.0.1:8951` / `NEXT_PUBLIC_RD_PARENT_ORIGIN=http://127.0.0.1:<host>` | 同左（parent origin 各自 host 端口） |
+| Next dev | `node_modules/.bin/next dev --webpack -p 8931` | `... -p 8933` |
+| 合成 host | `http://127.0.0.1:8990/`（iframe `http://127.0.0.1:8931/research?legacy=1`） | `http://127.0.0.1:8992/`（iframe `http://127.0.0.1:8933/research?legacy=1`） |
+| 合成 Gateway mock | `http://127.0.0.1:8961`（两侧共用同一实现，模式文件驱动） | 同左 |
+| 嵌入式 env | `NEXT_PUBLIC_RD_EMBEDDED_MODE=1` / `NEXT_PUBLIC_RD_GATEWAY_URL=http://127.0.0.1:8961` / `NEXT_PUBLIC_RD_PARENT_ORIGIN=http://127.0.0.1:<host>` | 同左（parent origin 各自 host 端口） |
 | 视口/主题 | 1440×900、1024×768；light；deviceScaleFactor=1；locale en-US；每个场景全新 browser context | 同左 |
 | 浏览器 | headless Chromium `/home/lchen/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome`（`--force-color-profile=srgb`） | 同左 |
 | Node | v22.20.0 | 同左 |
@@ -141,7 +150,7 @@ fork 前端自 W1 #1104 起，`/research` **默认渲染目标壳 `TargetShell`*
 
 每场景在两种视口各跑一遍（10 BEFORE scene runs / 16 AFTER scene runs）；每条断言记录 expected/actual 到 `capture.log`，汇总在 `before-manifest.json` / `after-manifest.json` 的 `scenes[].assertions`；截图时刻的 DOM testid 计数与 gateway 计数记录在 `screenshots[].dom_counts` / `gateway_stats`；E1/E3 另记录 `scenes[].layout`（真实 Chromium boundingBox）。
 
-### BEFORE（基线缺口）
+### BEFORE（基线缺口，base `4986aa2`）
 
 | 场景 | 关键断言（全部 PASS） | 计数（两视口合计） |
 |---|---|---|
@@ -154,7 +163,7 @@ fork 前端自 W1 #1104 起，`/research` **默认渲染目标壳 `TargetShell`*
 | E7 Admin 只读 | `e7.admin_banner_visible`、`e7.no_enable_entry_for_admin`、`e7.no_legacy_write_actions_for_admin`、`e7.no_catalog_create_for_admin`、`e7.no_enable_request_for_admin`、`e7.no_console_or_page_errors` | 12 |
 | E8 能力读取失败 fail-closed | `e8.capability_blocked_shown`、`e8.no_enable_entry_on_capability_failure`、`e8.capability_retry_offered`、`e8.models_request_failed_and_observed`、`e8.no_enable_request`、`e8.no_unexpected_console_or_page_errors` | 12 |
 
-### AFTER（实现验收，含 MEDIUM-1 布局断言）
+### AFTER（实现验收，含 MEDIUM-1 布局断言，head `537732f`）
 
 | 场景 | 关键断言（全部 PASS） | 计数（两视口合计） |
 |---|---|---|
@@ -201,36 +210,36 @@ fork 前端自 W1 #1104 起，`/research` **默认渲染目标壳 `TargetShell`*
 fork 仓库未配置 GitHub Actions checks，因此以本地命令结果为校验证据（命令与退出码同时写入 `after-manifest.json` 的 `local_verification`，完整输出见 `logs/local-verification.txt`）：
 
 ```
-head=5806769a2772d43274ae7d4a75c4c9507bab0cd4 tsc=0 eslint=0 vitest=0 build=0 full=1
+head=537732fb9be012d93d6dd60bdb5c81d143cce43d tsc=0 eslint=0 vitest=0 build=0 full=1
 # tsc -b: exit 0
 # eslint (23 changed/new files): exit 0, 0 problems
-# targeted vitest: 4 files / 109 tests passed, exit 0
+# targeted vitest: 4 files / 110 tests passed, exit 0
 # next production build: exit 0
-# full suite: Tests 14 failed | 3029 passed (3043) → exit 1
-#   14 failed = pre-existing SourceListPanel.test.tsx baseline failures
-#   (identical at origin/main 34f531d: that file alone is 14 failed | 1 passed)
-#   → not caused by this change; all other test files pass
+# full suite: Tests  59 failed | 3090 passed (3149) → exit 1
+#   pre-existing failures at the new BEFORE base 4986aa2: `src/app/research/page.target.test.tsx`（1/3 failed）、`src/app/research/page.sessions.provider.test.tsx`（2/2 failed）、`src/app/research/page.test.tsx`（16/16 failed）、`src/app/research/page.sessions.test.tsx`（26/26 failed）、`src/components/research/SourceListPanel.test.tsx`（14/15 failed）
+#   reproduced verbatim on the BEFORE worktree: Tests  59 failed | 3 passed (62)
+#   → not caused by this rebase/PR; the impl-changed test files themselves pass
 ```
 
 ## 复现
 
 ```bash
 # 1) 准备 worktree（node_modules 用 symlink；本环境不 npm install）
-git -C <fork-repo> worktree add --detach <scratch>/fork-before 34f531d0270587ed1f2bfa02e361c8a3dd0d224d
-git -C <fork-repo> worktree add --detach <scratch>/fork-after 5806769a2772d43274ae7d4a75c4c9507bab0cd4
+git -C <fork-repo> worktree add --detach <scratch>/fork-before 4986aa2e32fe3a50f1b5ccd9cc1709246c8be3da
+git -C <fork-repo> worktree add --detach <scratch>/fork-after 537732fb9be012d93d6dd60bdb5c81d143cce43d
 ln -s <fork-repo>/frontend/node_modules <scratch>/fork-before/frontend/node_modules
 ln -s <fork-repo>/frontend/node_modules <scratch>/fork-after/frontend/node_modules
 
-# 2) BEFORE（合成 gateway/host 由脚本启动；端口 8921/8980/8951）
+# 2) BEFORE（合成 gateway/host 由脚本启动；端口 8931/8990/8961）
 WT_BEFORE=<scratch>/fork-before dev_docs/validation/issue-1135/harness/run_before.sh
 
-# 3) AFTER（端口 8923/8982/8951；脚本会 checkout SHA 并记录/还原 harness patch）
-WT_AFTER=<scratch>/fork-after AFTER_SHA=5806769a2772d43274ae7d4a75c4c9507bab0cd4 \
+# 3) AFTER（端口 8933/8992/8961；脚本会 checkout SHA 并记录/还原 harness patch）
+WT_AFTER=<scratch>/fork-after AFTER_SHA=537732fb9be012d93d6dd60bdb5c81d143cce43d \
   dev_docs/validation/issue-1135/harness/run_after_final.sh
 
 # 4) 本地校验 + 清单（tsc/eslint/targeted vitest/build/全量、worktree 清洁度、config patch hash、screenshots.sha256）
 WT_BEFORE=<scratch>/fork-before WT_AFTER=<scratch>/fork-after \
-  AFTER_SHA=5806769a2772d43274ae7d4a75c4c9507bab0cd4 \
+  AFTER_SHA=537732fb9be012d93d6dd60bdb5c81d143cce43d \
   dev_docs/validation/issue-1135/harness/finalize_evidence.sh
 ```
 
@@ -238,14 +247,14 @@ WT_BEFORE=<scratch>/fork-before WT_AFTER=<scratch>/fork-after \
 
 1. **合成 harness + `next dev`**：证据证明前端行为与契约接线（真实浏览器、真实请求计数），不替代真实 host/DB/真实权限数据/真实模型证据；Research Gateway 为路由 mock。
 2. **入口 surface**：如“入口路径说明”，对比发生在前端 legacy 回归入口 `?legacy=1` 的 `ResearchWorkbench`；默认 `TargetShell` 的 Notes 集成不在本 issue 范围，**不声称生产默认入口可达**。
-3. **E4/E5/E6 的 BEFORE 为 N/A**：基线 34f531d 根本没有启用入口/启用 mutation（`enableNoteEditing` 客户端方法虽在 PR4 冻结契约中存在，但无 UI 调用路径），无法在基线重现这些错误/未知状态；未伪造基线截图。
+3. **E4/E5/E6 的 BEFORE 为 N/A**：新基线 4986aa2（旧基线 34f531d 同样）根本没有启用入口/启用 mutation（`enableNoteEditing` 客户端方法虽在 PR4 冻结契约中存在，但无 UI 调用路径），无法在基线重现这些错误/未知状态；未伪造基线截图。
 4. **错误注入为网关路由 mock**：403/503/未知/断连由 mock 按契约错误信封返回；不覆盖真实 Gateway/存储/依赖的故障注入（真实依赖不可判定语义由宿主测试覆盖）。
-5. **非确定性**：next dev/HMR 加载帧、toast 出现时机、catalog 刷新瞬间的 loading 文案会随运行时刻不同；**不声称截图跨次运行 byte-identical**；`screenshots.sha256` 只对本次提交的快照有效。
+5. **非确定性**：next dev/HMR 加载帧、toast 出现时机、catalog 刷新瞬间的 loading 文案会随运行时刻不同；**不声称截图跨次运行 byte-identical**；`screenshots.sha256` 只对本次提交的快照有效。**基线变更**：本证据重采于新 base `4986aa2`（PR #127 合入）；旧 base `34f531d` 的截图/数字保留在 git 历史中，不与本次截图混用。
 6. **intentional HTTP 失败**：`restricted403`/`dependency503`/`unknown503_apply`/`models_error` 会让 Chromium 记录资源级 “Failed to load resource … 403/500/503” console 条目（浏览器自动日志）；已与意外 page/console error 分开记录，本证据断言 **unexpected = 0**。
 7. **light/en-US 单主题**、两档视口（1440×900 / 1024×768）；未覆盖 dark/RTL/移动宽度/键盘或 IME 实体输入（实现仓单测覆盖交互边界）。
 8. **未覆盖**：`already_protected` 幂等分支（网关已实现模式，未单独截图/断言；由实现仓 `note-enable.test.ts` 覆盖）、`models_malformed` 畸形能力响应（仅实现 `models_error` 500 场景；畸形响应由 `readNoteCapabilities` 单测覆盖）、断连型未知（`network_error_apply` 未用于场景；E6 用 503 未知）、真实并发/多标签、真实用户权限矩阵。
 9. **布局断言的边界**：MEDIUM-1 断言基于真实 Chromium `getBoundingClientRect()`/`scrollWidth`（DOM 几何）；E3/E7/E8 另有与 BEFORE 的**容差逐像素等价**（6/6 PASS：允许通道差 ≤2、≤100 像素、最大通道差 ≤8，见 `logs/pixel-equivalence.txt`），字节 sha256 相等仅作信息记录（next dev 多次运行会出现个位数 anti-aliasing/光标像素差）。其余场景不做像素级 diff（toast 时机、加载帧等），`screenshots.sha256` 仅对本次快照有效。
-10. **本地全量测试**：全量 vitest = `14 failed | 3029 passed (3043)`。14 个失败全部来自既有 `src/components/research/SourceListPanel.test.tsx`（在该文件上 `14 failed | 1 passed (15)`），并在 BEFORE 基线 worktree（`origin/main` 34f531d）上**逐字复现**（见 `logs/baseline-sourceListPanel-at-origin-main.txt`），与 #1136 证据记录的基线失败一致；因此不作为本 PR 的 pass/fail 门槛，仅记录。
+10. **本地全量测试**：全量 vitest 结果见 `logs/local-verification.txt`（AFTER head `537732f`）。全量中存在 **pre-existing 失败**：`src/app/research/page.target.test.tsx`（1/3 failed）、`src/app/research/page.sessions.provider.test.tsx`（2/2 failed）、`src/app/research/page.test.tsx`（16/16 failed）、`src/app/research/page.sessions.test.tsx`（26/26 failed）、`src/components/research/SourceListPanel.test.tsx`（14/15 failed）；这些文件在 **新 BEFORE base `4986aa2` 上逐字复现**（Tests  59 failed | 3 passed (62)，见 `logs/baseline-failures-at-new-base.txt`），与本 PR 的 rebase/feature 无关（impl 改动的测试文件 targeted 全绿），因此不作为本 PR 的 pass/fail 门槛，仅记录。
 
 ## 文件清单
 

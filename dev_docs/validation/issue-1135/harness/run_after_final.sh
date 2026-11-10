@@ -10,7 +10,7 @@
 #   WT_AFTER=/path/to/fork-after AFTER_SHA=<40-hex-head> ./run_after_final.sh
 #
 # Preconditions: $WT_AFTER is a git worktree of the fork repo (node_modules
-# available) and ports 8923 (Next dev), 8982 (host), 8951 (gateway) are free.
+# available) and ports 8933 (Next dev), 8992 (host), 8961 (gateway) are free.
 # The gateway/host may already be running from the BEFORE run; this script only
 # starts what is missing and stops what it started.
 set -uo pipefail
@@ -20,9 +20,9 @@ AFTER_SHA="${AFTER_SHA:?usage: WT_AFTER=... AFTER_SHA=<sha> ./run_after_final.sh
 HERE="$(cd "$(dirname "$0")" && pwd)"
 EVIDENCE="$(cd "$HERE/.." && pwd)"
 LOGS="$EVIDENCE/logs"
-DEV_PORT=8923
-HOST_PORT=8982
-GATEWAY_PORT=8951
+DEV_PORT=8933
+HOST_PORT=8992
+GATEWAY_PORT=8961
 
 mkdir -p "$LOGS" "$EVIDENCE/screenshots/after"
 echo "== AFTER evidence run: worktree=$WT_AFTER sha=$AFTER_SHA =="

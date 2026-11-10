@@ -1,11 +1,11 @@
 Issue #1135 — tolerant pixel equivalence for unchanged surfaces
 pairs=6 ignore_channel_delta<=2 max_diff_pixels<=100 max_channel_delta<=8
 
-PASS e3_capability_off_legacy_form_1440: size=1440x900 diff_bbox=None pixels_over_2=0 max_channel_delta=0 -> within tolerance
-PASS e7_admin_readonly_1440: size=1440x900 diff_bbox=None pixels_over_2=0 max_channel_delta=0 -> within tolerance
+PASS e3_capability_off_legacy_form_1440: size=1440x900 diff_bbox=(523, 886, 527, 888) pixels_over_2=0 max_channel_delta=2 -> within tolerance
+PASS e7_admin_readonly_1440: size=1440x900 diff_bbox=(112, 33, 203, 36) pixels_over_2=0 max_channel_delta=2 -> within tolerance
 PASS e8_capability_error_1440: size=1440x900 diff_bbox=(112, 33, 1423, 36) pixels_over_2=0 max_channel_delta=2 -> within tolerance
-PASS e3_capability_off_legacy_form_1024: size=1024x768 diff_bbox=(516, 33, 742, 36) pixels_over_2=0 max_channel_delta=2 -> within tolerance
-PASS e7_admin_readonly_1024: size=1024x768 diff_bbox=None pixels_over_2=0 max_channel_delta=0 -> within tolerance
-PASS e8_capability_error_1024: size=1024x768 diff_bbox=None pixels_over_2=0 max_channel_delta=0 -> within tolerance
+PASS e3_capability_off_legacy_form_1024: size=1024x768 diff_bbox=None pixels_over_2=0 max_channel_delta=0 -> within tolerance
+PASS e7_admin_readonly_1024: size=1024x768 diff_bbox=(112, 33, 452, 36) pixels_over_2=0 max_channel_delta=2 -> within tolerance
+PASS e8_capability_error_1024: size=1024x768 diff_bbox=(112, 33, 742, 36) pixels_over_2=0 max_channel_delta=2 -> within tolerance
 
 summary: pairs=6 failures=0

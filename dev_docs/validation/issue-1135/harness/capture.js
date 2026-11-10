@@ -45,7 +45,7 @@ const CHROME = '/home/lchen/.cache/ms-playwright/chromium-1243/chrome-linux64/ch
 const EVIDENCE_ROOT = path.resolve(__dirname, '..') // dev_docs/validation/issue-1135
 const NOTE_MODE_FILE = '/tmp/issue1135-note-mode'
 const ENABLE_MODE_FILE = '/tmp/issue1135-enable-mode'
-const GATEWAY = process.env.ISSUE1135_GATEWAY || 'http://127.0.0.1:8951'
+const GATEWAY = process.env.ISSUE1135_GATEWAY || 'http://127.0.0.1:8961'
 
 const arg = (name, fallback) => {
   const hit = process.argv.find((item) => item.startsWith(`--${name}=`))
@@ -53,7 +53,7 @@ const arg = (name, fallback) => {
 }
 const PHASE = arg('phase', 'before')
 const PREFIX = PHASE === 'after' ? 'after' : 'before'
-const HOST = arg('host', PHASE === 'after' ? 'http://127.0.0.1:8982/' : 'http://127.0.0.1:8980/')
+const HOST = arg('host', PHASE === 'after' ? 'http://127.0.0.1:8992/' : 'http://127.0.0.1:8990/')
 const HEAD = arg('head', 'unset')
 const WIDTHS = (arg('widths', '1440,1024') || '1440,1024')
   .split(',')

@@ -15,7 +15,7 @@ const {
 
 const CHROME = '/home/lchen/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome'
 const positional = process.argv.slice(2).filter((value) => !value.startsWith('--'))
-const HOST = positional[0] || 'http://127.0.0.1:8980/'
+const HOST = positional[0] || 'http://127.0.0.1:8990/'
 const WAIT = Number(positional[1] || 12000)
 const roleArg = process.argv.find((value) => value.startsWith('--role='))
 const ROLE = roleArg ? roleArg.split('=').slice(1).join('=') : null

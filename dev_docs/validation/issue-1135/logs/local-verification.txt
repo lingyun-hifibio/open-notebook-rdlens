@@ -1,8 +1,8 @@
-local verification (issue #1135) — head=5806769a2772d43274ae7d4a75c4c9507bab0cd4
+local verification (issue #1135) — head=537732fb9be012d93d6dd60bdb5c81d143cce43d
 worktree=/home/lchen/.dsh/state/superagent/work/protected-edit-ui-c1f827496380-evidence/fork-after
-started=2026-11-10T15:36:34+08:00
+started=2026-11-10T19:19:58+08:00
 node=v22.20.0
-head-rev=5806769a2772d43274ae7d4a75c4c9507bab0cd4
+head-rev=537732fb9be012d93d6dd60bdb5c81d143cce43d
 
 changed files (23):
   src/components/research/NotesPanel.test.tsx
@@ -48,17 +48,17 @@ exit=0
   
    RUN  v4.1.9 /home/lchen/.dsh/state/superagent/work/protected-edit-ui-c1f827496380-evidence/fork-after/frontend
   
-   ✓ src/lib/research/issue585/note-enable.test.ts (39 tests) 11ms
-   ✓ src/lib/research/issue585/use-note-enable.test.tsx (7 tests) 21ms
-   ✓ src/components/research/issue585/NoteEnableDialog.test.tsx (16 tests) 164ms
-   ✓ src/components/research/NotesPanel.test.tsx (47 tests) 1547ms
-       ✓ 搜索框输入经过 300ms 防抖后才以搜索词请求目录（词法搜索，不生成向量）  316ms
+   ✓ src/lib/research/issue585/note-enable.test.ts (39 tests) 10ms
+   ✓ src/lib/research/issue585/use-note-enable.test.tsx (7 tests) 23ms
+   ✓ src/components/research/issue585/NoteEnableDialog.test.tsx (16 tests) 153ms
+   ✓ src/components/research/NotesPanel.test.tsx (48 tests) 1683ms
+       ✓ 搜索框输入经过 300ms 防抖后才以搜索词请求目录（词法搜索，不生成向量）  315ms
        ✓ 目录结果不本地缓存：搜索变化后只渲染 hook 当前返回值（旧结果不回填）  612ms
   
    Test Files  4 passed (4)
-        Tests  109 passed (109)
-     Start at  15:36:47
-     Duration  2.12s (transform 558ms, setup 118ms, import 891ms, tests 1.74s, environment 643ms)
+        Tests  110 passed (110)
+     Start at  19:20:04
+     Duration  2.47s (transform 643ms, setup 182ms, import 1.08s, tests 1.87s, environment 662ms)
   
 
 === next production build ===
@@ -67,15 +67,15 @@ exit=0
   
   [Next.js Rewrites] Proxying /api/* to http://localhost:5055/api/*
     Creating an optimized production build ...
-  ✓ Compiled successfully in 3.2s
+  ✓ Compiled successfully in 3.5s
     Running TypeScript ...
-    Finished TypeScript in 10.9s ...
+    Finished TypeScript in 24.6s ...
     Collecting page data using 21 workers ...
     Generating static pages using 21 workers (0/16) ...
     Generating static pages using 21 workers (4/16) 
     Generating static pages using 21 workers (8/16) 
     Generating static pages using 21 workers (12/16) 
-  ✓ Generating static pages using 21 workers (16/16) in 374ms
+  ✓ Generating static pages using 21 workers (16/16) in 425ms
     Finalizing page optimization ...
   
   Route (app)
@@ -140,15 +140,15 @@ exit=1
       361|     expect(openButton).toBeInTheDocument()
       362|     fireEvent.click(openButton)
   
-  ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/14]⎯
+  ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[15/59]⎯
   
   
-   Test Files  1 failed | 182 passed (183)
-        Tests  14 failed | 3029 passed (3043)
-     Start at  15:37:05
-     Duration  15.88s (transform 25.19s, setup 12.55s, import 80.49s, tests 85.35s, environment 61.48s)
+   Test Files  5 failed | 182 passed (187)
+        Tests  59 failed | 3090 passed (3149)
+     Start at  19:20:37
+     Duration  15.97s (transform 30.74s, setup 14.77s, import 96.22s, tests 81.55s, environment 63.93s)
   
 
 === summary ===
-head=5806769a2772d43274ae7d4a75c4c9507bab0cd4 tsc=0 eslint=0 vitest=0 build=0 full=1
-finished=2026-11-10T15:37:21+08:00
+head=537732fb9be012d93d6dd60bdb5c81d143cce43d tsc=0 eslint=0 vitest=0 build=0 full=1
+finished=2026-11-10T19:20:53+08:00

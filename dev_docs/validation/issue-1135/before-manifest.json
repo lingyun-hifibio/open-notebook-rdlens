@@ -4,11 +4,11 @@
   "evidence_kind": "synthetic",
   "synthetic_declaration": "Real fork Next.js app (next dev --webpack, embedded iframe) + synthetic host page + route-mocked Research Gateway. No real RDLens host, PostgreSQL, SurrealDB, files, models, Feishu content, users or private data. All note titles/ids/content are [synthetic] fixtures (project p1, viewer 1, fabricated claims-only token).",
   "phase": "before",
-  "head": "34f531d",
+  "head": "4986aa2e32fe3a50f1b5ccd9cc1709246c8be3da",
   "baseline": "fork origin/main 34f531d (post-#1136)",
-  "captured_at": "2026-11-10T07:06:57.884Z",
-  "host_url": "http://127.0.0.1:8980/",
-  "gateway": "http://127.0.0.1:8951",
+  "captured_at": "2026-11-10T11:16:58.086Z",
+  "host_url": "http://127.0.0.1:8990/",
+  "gateway": "http://127.0.0.1:8961",
   "note_mode_file": "/tmp/issue1135-note-mode",
   "enable_mode_file": "/tmp/issue1135-enable-mode",
   "before_na_scenes": {
@@ -31,7 +31,9 @@
     "color_scheme": "light",
     "locale": "en-US",
     "fresh_browser_context_per_scene": true,
-    "harness_only_config_patch": "frontend/src/lib/embedded/config.ts static NEXT_PUBLIC_* member access (Next dev does not inline dynamic env lookups); reverted after capture"
+    "harness_only_config_patch": "frontend/src/lib/embedded/config.ts static NEXT_PUBLIC_* member access (Next dev does not inline dynamic env lookups); reverted after capture",
+    "layout_probe": "MEDIUM-1 round-1 regression guard: real Chromium boundingBox/scroll geometry of the legacy row title column, Delete action and compact enable icon (E1/E3, both widths), plus cross-phase screenshot comparison for unchanged surfaces (E3/E7/E8): DOM-layout equivalence is the hard gate and harness/verify_pixel_equivalence.py performs a tolerant per-pixel comparison (byte sha256 equality is recorded as information, not a gate)",
+    "round1_fix": "round-1 MEDIUM-1: the enable entry is a compact icon button (lucide ShieldCheck, size=\"icon\", aria-label/title = research.notes.catalog.enableProtected) so the legacy row title column is not squeezed at 1024x768; confirming-phase Esc cancels the dialog without a request"
   },
   "scenes": [
     {
@@ -39,6 +41,7 @@
       "width": 1440,
       "note_mode": "editor_on",
       "enable_mode": "success",
+      "layout": null,
       "stats": {
         "note_mode": "editor_on",
         "enable_mode": "success",
@@ -114,14 +117,14 @@
           "actual": []
         }
       ],
-      "duration_ms": 4838
+      "duration_ms": 4758
     },
     {
       "id": "E2",
       "width": 1440,
       "note_mode": "editor_on",
       "enable_mode": "success",
-      "marker": "[synthetic] E2 legacy save marker 373628",
+      "marker": "[synthetic] E2 legacy save marker 374159",
       "stats": {
         "note_mode": "editor_on",
         "enable_mode": "success",
@@ -194,7 +197,7 @@
             "selected": false,
             "mutation_id": null,
             "expected_revision": null,
-            "at": 1794294374903,
+            "at": 1794309375417,
             "status": 200
           }
         },
@@ -203,7 +206,7 @@
           "ok": true,
           "expected": "server-side legacy note title updated through the old form",
           "actual": {
-            "title": "[synthetic] Legacy note (pre-protection) [synthetic] E2 legacy save marker 373628",
+            "title": "[synthetic] Legacy note (pre-protection) [synthetic] E2 legacy save marker 374159",
             "edit_schema": null
           }
         },
@@ -220,13 +223,15 @@
           "actual": []
         }
       ],
-      "duration_ms": 8561
+      "duration_ms": 8450
     },
     {
       "id": "E3",
       "width": 1440,
       "note_mode": "editor_off",
       "enable_mode": "success",
+      "layout": null,
+      "pixel_compare": null,
       "stats": {
         "note_mode": "editor_off",
         "enable_mode": "success",
@@ -305,13 +310,14 @@
           "actual": []
         }
       ],
-      "duration_ms": 5258
+      "duration_ms": 5152
     },
     {
       "id": "E7",
       "width": 1440,
       "note_mode": "editor_on",
       "role": "admin_readonly",
+      "pixel_compare": null,
       "stats": {
         "note_mode": "editor_on",
         "enable_mode": "success",
@@ -369,12 +375,13 @@
           "actual": []
         }
       ],
-      "duration_ms": 4403
+      "duration_ms": 4341
     },
     {
       "id": "E8",
       "width": 1440,
       "note_mode": "models_error",
+      "pixel_compare": null,
       "stats": {
         "note_mode": "models_error",
         "enable_mode": "success",
@@ -433,13 +440,14 @@
           "actual": []
         }
       ],
-      "duration_ms": 4421
+      "duration_ms": 4427
     },
     {
       "id": "E1",
       "width": 1024,
       "note_mode": "editor_on",
       "enable_mode": "success",
+      "layout": null,
       "stats": {
         "note_mode": "editor_on",
         "enable_mode": "success",
@@ -515,14 +523,14 @@
           "actual": []
         }
       ],
-      "duration_ms": 4389
+      "duration_ms": 4387
     },
     {
       "id": "E2",
       "width": 1024,
       "note_mode": "editor_on",
       "enable_mode": "success",
-      "marker": "[synthetic] E2 legacy save marker 400604",
+      "marker": "[synthetic] E2 legacy save marker 400902",
       "stats": {
         "note_mode": "editor_on",
         "enable_mode": "success",
@@ -595,7 +603,7 @@
             "selected": false,
             "mutation_id": null,
             "expected_revision": null,
-            "at": 1794294401904,
+            "at": 1794309402166,
             "status": 200
           }
         },
@@ -604,7 +612,7 @@
           "ok": true,
           "expected": "server-side legacy note title updated through the old form",
           "actual": {
-            "title": "[synthetic] Legacy note (pre-protection) [synthetic] E2 legacy save marker 400604",
+            "title": "[synthetic] Legacy note (pre-protection) [synthetic] E2 legacy save marker 400902",
             "edit_schema": null
           }
         },
@@ -621,13 +629,15 @@
           "actual": []
         }
       ],
-      "duration_ms": 8535
+      "duration_ms": 8434
     },
     {
       "id": "E3",
       "width": 1024,
       "note_mode": "editor_off",
       "enable_mode": "success",
+      "layout": null,
+      "pixel_compare": null,
       "stats": {
         "note_mode": "editor_off",
         "enable_mode": "success",
@@ -706,13 +716,14 @@
           "actual": []
         }
       ],
-      "duration_ms": 5161
+      "duration_ms": 5153
     },
     {
       "id": "E7",
       "width": 1024,
       "note_mode": "editor_on",
       "role": "admin_readonly",
+      "pixel_compare": null,
       "stats": {
         "note_mode": "editor_on",
         "enable_mode": "success",
@@ -770,12 +781,13 @@
           "actual": []
         }
       ],
-      "duration_ms": 4320
+      "duration_ms": 4334
     },
     {
       "id": "E8",
       "width": 1024,
       "note_mode": "models_error",
+      "pixel_compare": null,
       "stats": {
         "note_mode": "models_error",
         "enable_mode": "success",
@@ -834,7 +846,7 @@
           "actual": []
         }
       ],
-      "duration_ms": 4406
+      "duration_ms": 4331
     }
   ],
   "totals": {
@@ -847,8 +859,8 @@
   "screenshots": [
     {
       "file": "before_e1_row_actions_1440.png",
-      "bytes": 99609,
-      "sha256": "cfacbddc42e6da71cbcfca36c876c51df7cb7c68458d0f2bb59028e7d75cda2a",
+      "bytes": 98632,
+      "sha256": "9278ec727bcf9e7899f0426164bf17d6ae2aec7ff99810952e32963d788dc912",
       "dom_counts": {
         "note_enable": 0,
         "note_enable_dialog": 0,
@@ -870,6 +882,7 @@
       "enable_error": null,
       "enable_retry_label": null,
       "dialog_text": null,
+      "dialog_phase": null,
       "editor": {
         "title": null,
         "revision": null,
@@ -897,7 +910,8 @@
           "enable_button": false,
           "row_buttons": [
             "Include [synthetic] D1 cohort readout in scope",
-            "Open note: [synthetic] D1 cohort readout"
+            "Open note: [synthetic] D1 cohort readout",
+            "Insert excerpt"
           ]
         }
       },
@@ -918,8 +932,8 @@
     },
     {
       "file": "before_e2_legacy_form_1440.png",
-      "bytes": 112419,
-      "sha256": "c54bfc6da7e678f9195695c906f3422b6b9c54c6a7c50e6edc2a6d5e5efccfb0",
+      "bytes": 111469,
+      "sha256": "79d618dbab99e0f10e0f90206aba162a4b58cf26c9bedfbec2da3d67f93544fa",
       "dom_counts": {
         "note_enable": 0,
         "note_enable_dialog": 0,
@@ -941,6 +955,7 @@
       "enable_error": null,
       "enable_retry_label": null,
       "dialog_text": null,
+      "dialog_phase": null,
       "editor": {
         "title": null,
         "revision": null,
@@ -968,7 +983,8 @@
           "enable_button": false,
           "row_buttons": [
             "Include [synthetic] D1 cohort readout in scope",
-            "Open note: [synthetic] D1 cohort readout"
+            "Open note: [synthetic] D1 cohort readout",
+            "Insert excerpt"
           ]
         }
       },
@@ -989,8 +1005,8 @@
     },
     {
       "file": "before_e2_legacy_saved_1440.png",
-      "bytes": 101878,
-      "sha256": "a17420923805681523be04f5ea6ae83b1979ab14a03e6bdf479af451d653434d",
+      "bytes": 100984,
+      "sha256": "5ccda51396f411fe9100c95a4c691d2d3fe5c1603298687535ab2a9500e1dd12",
       "dom_counts": {
         "note_enable": 0,
         "note_enable_dialog": 0,
@@ -1012,6 +1028,7 @@
       "enable_error": null,
       "enable_retry_label": null,
       "dialog_text": null,
+      "dialog_phase": null,
       "editor": {
         "title": null,
         "revision": null,
@@ -1027,7 +1044,7 @@
           "legacy_badge": true,
           "enable_button": false,
           "row_buttons": [
-            "Include [synthetic] Legacy note (pre-protection) [synthetic] E2 legacy save marker 373628 in scope",
+            "Include [synthetic] Legacy note (pre-protection) [synthetic] E2 legacy save marker 374159 in scope",
             "Edit",
             "Delete"
           ]
@@ -1039,7 +1056,8 @@
           "enable_button": false,
           "row_buttons": [
             "Include [synthetic] D1 cohort readout in scope",
-            "Open note: [synthetic] D1 cohort readout"
+            "Open note: [synthetic] D1 cohort readout",
+            "Insert excerpt"
           ]
         }
       },
@@ -1067,8 +1085,8 @@
     },
     {
       "file": "before_e3_capability_off_legacy_form_1440.png",
-      "bytes": 109459,
-      "sha256": "2ce5e98aa17c85151820e47c20d90e54a0c40ce696958f355cb2b49c99549fc6",
+      "bytes": 109456,
+      "sha256": "d779a62e135d44b9567cae0f583be67c02a7e8f9e1ee3bb09640711db4d91e6f",
       "dom_counts": {
         "note_enable": 0,
         "note_enable_dialog": 0,
@@ -1090,6 +1108,7 @@
       "enable_error": null,
       "enable_retry_label": null,
       "dialog_text": null,
+      "dialog_phase": null,
       "editor": {
         "title": null,
         "revision": null,
@@ -1161,6 +1180,7 @@
       "enable_error": null,
       "enable_retry_label": null,
       "dialog_text": null,
+      "dialog_phase": null,
       "editor": {
         "title": null,
         "revision": null,
@@ -1206,8 +1226,8 @@
     },
     {
       "file": "before_e8_capability_error_1440.png",
-      "bytes": 111736,
-      "sha256": "e9812ad079edf45bd82dcf23a3155576a9ea6b351646db563681d757e350d6d7",
+      "bytes": 111727,
+      "sha256": "b7a39bac780b157ba21545c3140a1862e51385e2cca1e199f1b4fd167e8d0b74",
       "dom_counts": {
         "note_enable": 0,
         "note_enable_dialog": 0,
@@ -1229,6 +1249,7 @@
       "enable_error": null,
       "enable_retry_label": null,
       "dialog_text": null,
+      "dialog_phase": null,
       "editor": {
         "title": null,
         "revision": null,
@@ -1277,8 +1298,8 @@
     },
     {
       "file": "before_e1_row_actions_1024.png",
-      "bytes": 90876,
-      "sha256": "aa4247d380c200abe3e9865ae89027bfa3f45573f8d5ecfa86c4e74dabaa7871",
+      "bytes": 89245,
+      "sha256": "a47ab5918b14df1c2b39527ece7980a0da277b0b1b07ad52c6b0536244561657",
       "dom_counts": {
         "note_enable": 0,
         "note_enable_dialog": 0,
@@ -1300,6 +1321,7 @@
       "enable_error": null,
       "enable_retry_label": null,
       "dialog_text": null,
+      "dialog_phase": null,
       "editor": {
         "title": null,
         "revision": null,
@@ -1327,7 +1349,8 @@
           "enable_button": false,
           "row_buttons": [
             "Include [synthetic] D1 cohort readout in scope",
-            "Open note: [synthetic] D1 cohort readout"
+            "Open note: [synthetic] D1 cohort readout",
+            "Insert excerpt"
           ]
         }
       },
@@ -1348,8 +1371,8 @@
     },
     {
       "file": "before_e2_legacy_form_1024.png",
-      "bytes": 91049,
-      "sha256": "54eef7b436b9dc4cdd6e32dbc6125f4f5f7ad9332abf07fad456801c725ebc37",
+      "bytes": 89419,
+      "sha256": "05cf2ce1274f115ea8268828007d56a0fc69b38be947f7cee83e2d69d2f7858a",
       "dom_counts": {
         "note_enable": 0,
         "note_enable_dialog": 0,
@@ -1371,6 +1394,7 @@
       "enable_error": null,
       "enable_retry_label": null,
       "dialog_text": null,
+      "dialog_phase": null,
       "editor": {
         "title": null,
         "revision": null,
@@ -1398,7 +1422,8 @@
           "enable_button": false,
           "row_buttons": [
             "Include [synthetic] D1 cohort readout in scope",
-            "Open note: [synthetic] D1 cohort readout"
+            "Open note: [synthetic] D1 cohort readout",
+            "Insert excerpt"
           ]
         }
       },
@@ -1419,8 +1444,8 @@
     },
     {
       "file": "before_e2_legacy_saved_1024.png",
-      "bytes": 93925,
-      "sha256": "51d28f4598c2c0e25c3eada8f52432dce1ebe17571ad894aab4e7807715b0ecc",
+      "bytes": 92310,
+      "sha256": "6ea02bc3364ae451105e20cc7c5df9422265e76353dcd7fa9f604acdeca76211",
       "dom_counts": {
         "note_enable": 0,
         "note_enable_dialog": 0,
@@ -1442,6 +1467,7 @@
       "enable_error": null,
       "enable_retry_label": null,
       "dialog_text": null,
+      "dialog_phase": null,
       "editor": {
         "title": null,
         "revision": null,
@@ -1457,7 +1483,7 @@
           "legacy_badge": true,
           "enable_button": false,
           "row_buttons": [
-            "Include [synthetic] Legacy note (pre-protection) [synthetic] E2 legacy save marker 400604 in scope",
+            "Include [synthetic] Legacy note (pre-protection) [synthetic] E2 legacy save marker 400902 in scope",
             "Edit",
             "Delete"
           ]
@@ -1469,7 +1495,8 @@
           "enable_button": false,
           "row_buttons": [
             "Include [synthetic] D1 cohort readout in scope",
-            "Open note: [synthetic] D1 cohort readout"
+            "Open note: [synthetic] D1 cohort readout",
+            "Insert excerpt"
           ]
         }
       },
@@ -1520,6 +1547,7 @@
       "enable_error": null,
       "enable_retry_label": null,
       "dialog_text": null,
+      "dialog_phase": null,
       "editor": {
         "title": null,
         "revision": null,
@@ -1591,6 +1619,7 @@
       "enable_error": null,
       "enable_retry_label": null,
       "dialog_text": null,
+      "dialog_phase": null,
       "editor": {
         "title": null,
         "revision": null,
@@ -1636,8 +1665,8 @@
     },
     {
       "file": "before_e8_capability_error_1024.png",
-      "bytes": 96983,
-      "sha256": "cbbe5348143aef11c5cb570465c3c20b00ab42ff2c2aab284b9697af2be47b44",
+      "bytes": 97036,
+      "sha256": "4e5c53562035467c646bde574161efcf95b093702c0dd6f6c71447e3b601a338",
       "dom_counts": {
         "note_enable": 0,
         "note_enable_dialog": 0,
@@ -1659,6 +1688,7 @@
       "enable_error": null,
       "enable_retry_label": null,
       "dialog_text": null,
+      "dialog_phase": null,
       "editor": {
         "title": null,
         "revision": null,
@@ -1706,12 +1736,12 @@
       }
     }
   ],
-  "baseline_full_sha": "34f531d0270587ed1f2bfa02e361c8a3dd0d224d",
+  "baseline_full_sha": "4986aa2e32fe3a50f1b5ccd9cc1709246c8be3da",
   "worktree_provenance": {
     "before": {
       "name": "before",
       "worktree": "/home/lchen/.dsh/state/superagent/work/protected-edit-ui-c1f827496380-evidence/fork-before",
-      "head": "34f531d0270587ed1f2bfa02e361c8a3dd0d224d",
+      "head": "4986aa2e32fe3a50f1b5ccd9cc1709246c8be3da",
       "status_porcelain": "",
       "config_ts": {
         "sha256_current": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
