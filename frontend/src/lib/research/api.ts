@@ -84,6 +84,7 @@ import {
   parseSessionRef,
   type ResearchSessionRef,
 } from './session-contract'
+import type { WritingSubmissionRequest } from './issue585/writing-types'
 
 const researchPath = (projectId: string, ...segments: string[]): string =>
   `/v1/research/projects/${projectId}${segments.length > 0 ? `/${segments.join('/')}` : ''}`
@@ -1404,6 +1405,11 @@ interface ResearchChatStreamCallbacks {
    * **这是唯一可进入有界重试的 abort 原因**。
    */
   onIdleTimeout?: (phase: 'response' | 'idle') => void
+  /**
+   * Issue #1048 PR7：写作两步传输的首步 202 受理回执（已通过 §6.3 身份匹配）。
+   * 只记录/关联 generation_id；不参与判定，也不改变既有调用方的行为。
+   */
+  onAcceptReceipt?: (receipt: ResearchSessionAcceptReceipt) => void
 }
 
 /**
@@ -1465,7 +1471,32 @@ export interface ResearchChatSessionStreamOptions extends ResearchChatStreamCall
   attachRetryDelaysMs?: readonly number[]
 }
 
-/** 判别联合：legacy 变体与 `research-session-v1` 变体。 */
+/**
+ * 写作传输变体（Issue #1048 PR7；DESIGN §6.1/§6.2）：
+ * `POST .../chat/sessions/{session_id}/writing`（source 变体同构）。
+ *
+ * - 请求体是冻结的写作 request **11 键**（不再是聊天 request + 会话字段）；
+ * - 两步传输与 #602 会话提交一致：首步 202 受理回执 → 同 body/头 +
+ *   `Last-Event-ID: 0` attach 得 SSE；
+ * - `idempotencyKey` 由调用方生成一次并在重试/attach 中复用（不得换键）；
+ * - `onAcceptReceipt` 只用于关联 generation_id（结果回看），不改变判定。
+ */
+export interface ResearchWritingStreamOptions extends ResearchChatStreamCallbacks {
+  protocol: 'research-writing-v1'
+  projectId: string
+  /** 写作目标的会话身份（kind/source/project 由它固定，避免跨路径切权限）。 */
+  sessionRef: ResearchSessionRef
+  /** 冻结的写作请求体（11 键闭合；调用方已等到 composer ACK 后才构造）。 */
+  request: WritingSubmissionRequest
+  /** 提交幂等键（同一次写作尝试的重试必须复用同一值）。 */
+  idempotencyKey: string
+  /** 断线重连的 Last-Event-ID（0 = 从头开始）。 */
+  lastEventId?: number
+  /** attach 阶段 202 的有界退避毫秒序列（缺省 DEFAULT_ATTACH_RETRY_DELAYS_MS）。 */
+  attachRetryDelaysMs?: readonly number[]
+}
+
+/** 判别联合：legacy 与 `research-session-v1` 变体（既有调用方签名不变）。 */
 export type ResearchChatStreamOptions =
   | ResearchChatStreamLegacyOptions
   | ResearchChatSessionStreamOptions
@@ -1589,11 +1620,12 @@ export type ResearchStreamAbortReason = 'user_cancel' | 'identity' | 'page_chang
  *   网络错误/EOF）共用同一个 settlement 守卫，避免一次尝试上报两次；
  * - `Last-Event-ID`、事件去重、终态一次保持；不新增 SSE 事件类型。
  */
-export function openResearchChatStream(
-  options: ResearchChatStreamOptions,
+function openResearchStreamImpl(
+  options: ResearchChatStreamOptions | ResearchWritingStreamOptions,
 ): (reason?: ResearchStreamAbortReason) => void {
   const isSessionProtocol = options.protocol === 'research-session-v1'
-  if (!isSessionProtocol) {
+  const isWritingProtocol = options.protocol === 'research-writing-v1'
+  if (!isSessionProtocol && !isWritingProtocol) {
     // 运行时防御（D1 裁决）：未声明新协议却携带会话字段 → 协议错误，
     // 绝不静默降级为 legacy v1。
     const raw = options as unknown as Record<string, unknown>
@@ -1608,8 +1640,22 @@ export function openResearchChatStream(
       return () => {}
     }
   }
-  const legacyOptions = isSessionProtocol ? null : (options as ResearchChatStreamLegacyOptions)
+  const legacyOptions =
+    !isSessionProtocol && !isWritingProtocol
+      ? (options as ResearchChatStreamLegacyOptions)
+      : null
   const sessionOptions = isSessionProtocol ? (options as ResearchChatSessionStreamOptions) : null
+  const writingOptions = isWritingProtocol ? (options as ResearchWritingStreamOptions) : null
+  if (writingOptions !== null) {
+    const ref = writingOptions.sessionRef
+    if (
+      (ref.kind === 'source' && (ref.sourceId ?? '').length === 0)
+      || ref.projectId !== writingOptions.projectId
+    ) {
+      options.onProtocolError?.('invalid_session_ref')
+      return () => {}
+    }
+  }
   if (sessionOptions !== null) {
     const refSourceMissing =
       sessionOptions.kind === 'source'
@@ -1634,8 +1680,8 @@ export function openResearchChatStream(
     idempotencyKey = legacyOptions.idempotencyKey ?? newIdempotencyKey()
     requestBody = legacyOptions.request
     contractHeader = legacyOptions.contract ?? 'v1'
-  } else {
-    const session = options as ResearchChatSessionStreamOptions
+  } else if (sessionOptions !== null) {
+    const session = sessionOptions
     streamPath = session.kind === 'source'
       ? `/sources/${session.sessionRef.sourceId ?? ''}/chat`
       : '/chat'
@@ -1649,6 +1695,17 @@ export function openResearchChatStream(
       context_level: session.contextLevel ?? 'focused',
     }
     contractHeader = session.kind === 'global' ? 'c05-v1' : 'v1'
+  } else {
+    // 写作变体（PR7）：会话身份在路径中，body 是冻结的 11 键写作请求。
+    const writing = options as ResearchWritingStreamOptions
+    const ref = writing.sessionRef
+    const encodedSession = encodeURIComponent(ref.sessionId)
+    streamPath = ref.kind === 'source'
+      ? `/sources/${ref.sourceId ?? ''}/chat/sessions/${encodedSession}/writing`
+      : `/chat/sessions/${encodedSession}/writing`
+    idempotencyKey = writing.idempotencyKey
+    requestBody = writing.request
+    contractHeader = ref.kind === 'global' ? 'c05-v1' : 'v1'
   }
   // PR-7：session 两步传输的两次 POST 必须是**逐字节相同**的提交体
   // （同一幂等键、同一冻结意图；attach 只改变 `Last-Event-ID`）。
@@ -1912,9 +1969,18 @@ export function openResearchChatStream(
     }
   }
 
-  /** PR-7：读 202 受理回执并按 §6.3 身份匹配集校验（非法不得 attach）。 */
+  /**
+   * PR-7：读 202 受理回执并按 §6.3 身份匹配集校验（非法不得 attach）。
+   *
+   * 会话协议与写作变体共用同一回执形状与身份匹配集；写作的
+   * `draft_token`/`editor_intent_hash` 来自冻结请求体。
+   */
   const readAcceptReceipt = async (
-    session: ResearchChatSessionStreamOptions,
+    expected: {
+      readonly sessionRef: ResearchSessionRef
+      readonly draftToken: string
+      readonly editorIntentHash: string
+    },
     response: Response,
   ): Promise<ResearchSessionAcceptReceiptResult> => {
     let body: unknown = null
@@ -1923,11 +1989,7 @@ export function openResearchChatStream(
     } catch {
       return { ok: false, reason: 'invalid_accept_receipt:body' }
     }
-    return parseSessionAcceptReceipt(body, {
-      sessionRef: session.sessionRef,
-      draftToken: session.draftToken,
-      editorIntentHash: session.editorIntentHash,
-    })
+    return parseSessionAcceptReceipt(body, expected)
   }
 
   /**
@@ -1940,10 +2002,15 @@ export function openResearchChatStream(
    *   由调用方转提交查回/unknown：既不伪成功，也不判"未受理"，更不换键重发。
    */
   const attachEventStream = async (
-    session: ResearchChatSessionStreamOptions,
+    expected: {
+      readonly sessionRef: ResearchSessionRef
+      readonly draftToken: string
+      readonly editorIntentHash: string
+    },
+    attachRetryDelaysMs: readonly number[] | undefined,
     expectedGenerationId: string | null,
   ): Promise<void> => {
-    const delays = session.attachRetryDelaysMs ?? DEFAULT_ATTACH_RETRY_DELAYS_MS
+    const delays = attachRetryDelaysMs ?? DEFAULT_ATTACH_RETRY_DELAYS_MS
     const attachLastEventId =
       options.lastEventId !== undefined && options.lastEventId > 0 ? options.lastEventId : 0
     for (let attempt = 0; ; attempt += 1) {
@@ -2012,7 +2079,23 @@ export function openResearchChatStream(
         await consumeEventStream(first)
         return
       }
-      if (sessionOptions !== null && first.status === 202) {
+      const expectedSubmission =
+        sessionOptions !== null
+          ? {
+              sessionRef: sessionOptions.sessionRef,
+              draftToken: sessionOptions.draftToken,
+              editorIntentHash: sessionOptions.editorIntentHash,
+              attachRetryDelaysMs: sessionOptions.attachRetryDelaysMs,
+            }
+          : writingOptions !== null
+            ? {
+                sessionRef: writingOptions.sessionRef,
+                draftToken: writingOptions.request.draft_token,
+                editorIntentHash: writingOptions.request.editor_intent_hash,
+                attachRetryDelaysMs: writingOptions.attachRetryDelaysMs,
+              }
+            : null
+      if (expectedSubmission !== null && first.status === 202) {
         // PR-7（DESIGN §6.2/§6.3）：受理回执必须与本次提交同一身份，
         // 否则视为协议违反、**不**attach（不猜、不重发、不换键）。
         if (!isJsonContentType(firstContentType)) {
@@ -2022,7 +2105,14 @@ export function openResearchChatStream(
           }
           return
         }
-        const receipt = await readAcceptReceipt(sessionOptions, first)
+        const receipt = await readAcceptReceipt(
+          {
+            sessionRef: expectedSubmission.sessionRef,
+            draftToken: expectedSubmission.draftToken,
+            editorIntentHash: expectedSubmission.editorIntentHash,
+          },
+          first,
+        )
         if (!receipt.ok) {
           clearWatchdog()
           // 审查 MEDIUM-2：回执体读取期间调用方可能已 abort——不得把 abort
@@ -2034,7 +2124,17 @@ export function openResearchChatStream(
         clearWatchdog()
         // §6.4 首次绑定：把回执 generation 交给 attach 的 accepted 守卫。
         receiptGenerationId = receipt.receipt.generationId
-        await attachEventStream(sessionOptions, receiptGenerationId)
+        // 写作变体：把已校验回执交给调用方关联结果回看；既有调用方不传则无行为。
+        options.onAcceptReceipt?.(receipt.receipt)
+        await attachEventStream(
+          {
+            sessionRef: expectedSubmission.sessionRef,
+            draftToken: expectedSubmission.draftToken,
+            editorIntentHash: expectedSubmission.editorIntentHash,
+          },
+          expectedSubmission.attachRetryDelaysMs,
+          receiptGenerationId,
+        )
         return
       }
       // D-24（§5.3 第 2 行）：状态通过但 Content-Type 不是 SSE 就在消费流之前
@@ -2060,6 +2160,28 @@ export function openResearchChatStream(
     clearAttachRetry()
     controller.abort()
   }
+}
+
+/**
+ * 既有聊天 SSE 入口（签名与原判别联合保持不变；写作变体见
+ * `openResearchWritingStream`，二者共用同一传输实现）。
+ */
+export function openResearchChatStream(
+  options: ResearchChatStreamOptions,
+): (reason?: ResearchStreamAbortReason) => void {
+  return openResearchStreamImpl(options)
+}
+
+/**
+ * Issue #1048 PR7：打开写作提交 SSE 流（两步传输与会话提交同构）。
+ *
+ * 独立导出以免把写作变体混入既有 `ResearchChatStreamOptions` 判别联合
+ * （既有调用方的类型收窄与行为保持不变）。
+ */
+export function openResearchWritingStream(
+  options: ResearchWritingStreamOptions,
+): (reason?: ResearchStreamAbortReason) => void {
+  return openResearchStreamImpl(options)
 }
 
 // ── 会话列表 / 创建（#602 第三批 PR-2；契约 research-session-v1） ──

@@ -1851,6 +1851,176 @@ export const jaJP = {
             "Source dependencies cannot be verified; editing is blocked.",
         },
       },
+      // Issue #1048 PR7（D2-B4）：本地写作入口/确认/实际输入回看。默认关闭，
+      // 由服务端 capabilities.writing_local 决定入口；Admin 只读不显示。
+      writing: {
+        entry: {
+          full: "Write from full note",
+          selection: "Write from selection",
+          selectionEmpty: "Select text in the note first, or use full-note writing.",
+          draftPending: "An unsent writing selection is saved for this note.",
+          blocked: "Writing did not start because the note draft is not saved.",
+          disabled: "Local writing is not enabled in this deployment.",
+          adminReadonly: "Read-only sessions cannot start writing.",
+        },
+        dialog: {
+          title: "Write with this note",
+          description:
+            "Send the selected note text to the current or a new chat. Opening, selecting or creating a session never sends anything; you must click Send.",
+        },
+        scope: {
+          title: "Input selection",
+          noteMeta: "Note {{noteId}} · revision {{revision}}",
+          full: "Use the full note",
+          range: "Use the selection [{{start}}, {{end}})",
+          rangeUnavailable: "No note selection was captured; use full-note writing.",
+          previewTitle: "Show selected text",
+        },
+        capacity: {
+          value:
+            "Selection: {{chars}} chars ({{bytes}} bytes). Envelope limit: {{limit}} bytes.",
+          limits:
+            "Limits: document context {{envelopeLimit}} KiB, instruction {{queryLimit}} KiB (this instruction: {{queryBytes}} bytes).",
+          overLimit: "The writing input is over the capacity limit; nothing is truncated.",
+          overLimitPartDocument: "The selected note text is too large.",
+          overLimitPartQuery: "The writing instruction is too large.",
+        },
+        history: {
+          title: "Conversation history",
+          none: "Do not use conversation history",
+          current: "Use the current conversation history",
+          noneHint: "Default: only the selected note text and your instruction are used.",
+          currentHint:
+            "Only authorizable history from this session is considered, under the existing history budget. Excluded turns are reported in the actual-input review.",
+        },
+        session: {
+          title: "Target conversation",
+          current: "Current conversation ({{sessionId}})",
+          noCurrent: "No conversation is open.",
+          new: "Create a new conversation",
+          currentHint: "The instruction is saved as this conversation's composer draft before sending.",
+          newHint:
+            "A new conversation is created without sending anything. It stays empty until you click Send.",
+          newSourceHint:
+            "A new conversation is created bound to the currently open source (it cannot switch to global scope).",
+          create: "Create conversation",
+          created: "Conversation created: {{sessionId}}",
+        },
+        query: {
+          label: "Writing instruction",
+          placeholder: "Describe what to write, rewrite or discuss…",
+          hint: "The instruction is saved through the existing session editor CAS before sending; the request uses that saved composer identity.",
+        },
+        result: {
+          title: "Writing result",
+          thinking: "Reasoning",
+          errorTerminal: "Generation failed (code {{code}}).",
+          insert: "Insert into a note",
+          insertUnavailable:
+            "The result message could not be located in the conversation yet; open the conversation and insert from there.",
+          openSession: "Open conversation",
+        },
+        stage: {
+          session: "Conversation",
+          composer: "Composer save",
+          submit: "Submission",
+          validation: "Input check",
+          submitting: "Submitting the writing request…",
+          streaming: "Generating; the draft is published after citation checks…",
+          fetchingContext: "Loading the actual writing input…",
+          cancelled: "Local reading was stopped.",
+        },
+        cancelledHint:
+          "The server may still be running; the result will appear in the conversation.",
+        cancelRead: "Stop reading",
+        close: "Close",
+        send: "Send writing request",
+        sending: "Sending…",
+        cache: {
+          degraded:
+            "Local recovery for the writing selection is unavailable — the selection is kept in memory only.",
+        },
+        recovery: {
+          unsent: "An unsent writing selection was restored after re-checking the note version and access.",
+          stale:
+            "The note changed or access changed since the selection was saved. The old selection is invalid; choose again.",
+          unknown:
+            "A previous writing request has an unknown outcome. Retry with the original request identity instead of creating a new one.",
+          retry: "Retry the original request",
+          discard: "Discard saved selection",
+        },
+        composeErrors: {
+          noteRequired: "Open a saved note before writing.",
+          selectionInvalid: "The note selection is invalid.",
+          ownerUnknown: "Your user identity could not be verified for writing.",
+          modelMissing: "Confirm a model before sending a writing request.",
+          queryRequired: "Enter a writing instruction.",
+          queryTooLarge: "The instruction exceeds the 128 KiB limit.",
+          sessionRequired: "Choose the current conversation or create a new one first.",
+          sessionCreateFailed: "The conversation could not be created. Retry with the same conversation id.",
+          sessionUnauthorized: "You are not allowed to create a conversation in this project.",
+          composerNotReady: "The conversation composer is not ready yet. Retry in a moment.",
+          composerConflict: "The composer draft changed elsewhere; resolve the conflict before writing.",
+          composerBlocked: "The composer cannot be saved right now.",
+          composerFailed: "The composer draft could not be saved; nothing was sent.",
+          invalidRequest: "The writing request is invalid.",
+          unknown: "The writing request could not be completed.",
+        },
+        errors: {
+          writingNotAvailable: "Local writing is currently unavailable.",
+          contextChanged: "The note or conversation history changed after confirmation. Confirm the input again.",
+          inputUnavailable:
+            "The frozen writing input is unavailable or inconsistent; no model call was made.",
+          contextLimitExceeded:
+            "The writing input exceeds the capacity limit. Nothing was truncated or switched to the full note.",
+          intentConflict: "The same submission token was used with a different writing intent.",
+          sessionNotFound: "The conversation could not be found.",
+          ownerRequired: "Writing requires an owner session.",
+          invalidResponse: "The server response could not be verified.",
+          networkError: "Network error. Your selection is kept; retry when the connection is back.",
+          unknown: "The writing request failed.",
+        },
+        context: {
+          title: "Actual writing input",
+          loading: "Loading the actual writing input…",
+          unavailable: "The actual writing input is unavailable.",
+          restricted: "Content restricted",
+          restrictedHint:
+            "You cannot read the frozen note text. Only the restricted state is shown.",
+          noteMeta: "Note identity",
+          selectedText: "Frozen selected text",
+          history: {
+            title: "History adoption",
+            none: "History mode: none (no conversation history used)",
+            current: "History mode: current conversation history",
+            adopted: "Adopted turns",
+            adoptedEmpty: "No history turns were adopted.",
+            excluded: "Excluded turns",
+            excludedScope: "Outside the authorizable scope",
+            excludedBudget: "Excluded by the history budget",
+            excludedAuthority: "Excluded because access is no longer valid",
+          },
+          capacity: {
+            title: "Capacity",
+            value:
+              "Input {{input}} bytes · envelope {{envelope}} bytes · limit {{limit}} bytes",
+          },
+          integrity: {
+            title: "Integrity",
+            hash: "Envelope hash {{hash}}",
+          },
+        },
+        checks: {
+          title: "Citation checks",
+          none: "No selected citations are missing from the suggestion.",
+          missing:
+            "{{count}} input citation(s) were not carried into the suggestion; they are listed below.",
+          unavailable:
+            "The citation-missing report is unavailable, so completeness is not claimed.",
+          disclaimer:
+            "This is a derived hint, not a semantic guarantee; review the suggestion before inserting it.",
+        },
+      },
     },
     insights: {
       newInsight: "新しいインサイト",
