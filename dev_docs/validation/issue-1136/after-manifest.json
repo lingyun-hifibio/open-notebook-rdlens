@@ -1,0 +1,2657 @@
+{
+  "ticket": "HiFiBiO-Therapeutics/RDLens#1136",
+  "title": "应用内父级导航的离开保护（ResearchWorkbench 层）— fork visual evidence",
+  "evidence_kind": "synthetic",
+  "synthetic_declaration": "Real fork Next.js app (next dev --webpack, embedded iframe) + synthetic host page + route-mocked Research Gateway. No real RDLens host, PostgreSQL, SurrealDB, files, models, Feishu content, users or private data. All note titles/ids/content are [synthetic] fixtures (project p1/p2, viewer 1).",
+  "phase": "after",
+  "head": "46574030584ed3bfa11b75665c5fbf03fdb2ed52",
+  "baseline": "fork origin/main a4a76170c5016d0c4cfefae505aa8369be568a96",
+  "captured_at": "2026-11-10T05:33:40.696Z",
+  "host_url": "http://127.0.0.1:8974/",
+  "gateway": "http://127.0.0.1:8941",
+  "save_mode_file": "/tmp/issue1046-save-mode",
+  "note_mode_file": "/tmp/issue1046-note-mode",
+  "env": {
+    "chrome": "/home/lchen/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome",
+    "node": "v22.20.0",
+    "widths": [
+      1440,
+      1024
+    ],
+    "viewports": {
+      "1024": "1024x768",
+      "1440": "1440x900"
+    },
+    "device_scale_factor": 1,
+    "color_scheme": "light",
+    "locale": "en-US",
+    "fresh_browser_context_per_scene": true,
+    "harness_only_config_patch": "frontend/src/lib/embedded/config.ts static NEXT_PUBLIC_* member access (Next dev does not inline dynamic env lookups); reverted after capture"
+  },
+  "scenes": [
+    {
+      "id": "R1",
+      "width": 1440,
+      "save_mode": "unknown503",
+      "marker": "[synthetic] R1 pane-switch unsaved recovery marker 663236",
+      "stats": {
+        "models_requests": 2,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nm1692069b2bf4487b9e868d01c726c23c",
+            "expected_revision": 3,
+            "mode": "unknown503",
+            "status": 503
+          }
+        ],
+        "notes": [
+          "note_d1@r3",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 5
+      },
+      "assertions": [
+        {
+          "name": "r1.note_opened",
+          "ok": true,
+          "expected": "catalog note-open-note_d1 resolves",
+          "actual": {
+            "opened": true,
+            "selector": "[data-testid=\"note-open-note_d1\"]"
+          }
+        },
+        {
+          "name": "r1.typed",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "r1.unsaved_failure_state",
+          "ok": true,
+          "expected": "save status unknown/failed/pending/saving (cannot be saved)",
+          "actual": {
+            "status": "unknown",
+            "text": "Save result unknownThe note store is unavailable. Your text is kept locally.Confirm save resultConfirm save result"
+          }
+        },
+        {
+          "name": "r1.editor_level_guard_auto_opened",
+          "ok": true,
+          "expected": "PR4 editor-level leave guard auto-opens on unknown save result (dismissed with Stay to reach parent nav)",
+          "actual": {
+            "opened": 1,
+            "stayClicked": true,
+            "dismissed": true
+          }
+        },
+        {
+          "name": "r1.after_recovery_inbox_in_catalog",
+          "ok": true,
+          "expected": "catalog view shows >=1 note-recovery-inbox",
+          "actual": 1
+        },
+        {
+          "name": "r1.after_recovery_row_for_note",
+          "ok": true,
+          "expected": "note-recovery-row-note_d1 present in catalog",
+          "actual": {
+            "rows": 1,
+            "noteRow": 1
+          }
+        },
+        {
+          "name": "r1.after_recovery_title_for_note",
+          "ok": true,
+          "expected": "note-recovery-title-note_d1 present in catalog",
+          "actual": 1
+        },
+        {
+          "name": "r1.after_recovery_copy_action",
+          "ok": true,
+          "expected": "note-recovery-copy-note_d1 present in catalog inbox row",
+          "actual": 1
+        },
+        {
+          "name": "r1.after_recovery_download_action",
+          "ok": true,
+          "expected": "note-recovery-download-note_d1 present in catalog inbox row",
+          "actual": 1
+        },
+        {
+          "name": "r1.after_recovery_open_button",
+          "ok": true,
+          "expected": "inbox open-note action resolves",
+          "actual": {
+            "opened": true,
+            "selector": "[data-testid=\"note-recovery-open-note_d1\"]"
+          }
+        },
+        {
+          "name": "r1.after_restored_editor_recovery_banner",
+          "ok": true,
+          "expected": "note-draft-restored >= 1 after opening from the recovery inbox",
+          "actual": 1
+        },
+        {
+          "name": "r1.after_restored_draft_text_present",
+          "ok": true,
+          "expected": "restored editor content contains the typed unsaved marker",
+          "actual": {
+            "marker": "[synthetic] R1 pane-switch unsaved recovery marker 663236",
+            "present": true
+          }
+        },
+        {
+          "name": "r1.after_restored_guard_auto_opened",
+          "ok": true,
+          "expected": "editor-level guard auto-opens when restoring the unknown draft from the inbox",
+          "actual": {
+            "opened": 1,
+            "stayClicked": true,
+            "dismissed": true
+          }
+        },
+        {
+          "name": "r1.after_restored_unsaved_status",
+          "ok": true,
+          "expected": "save status unknown/failed (still not saved)",
+          "actual": {
+            "status": "unknown",
+            "text": "Save result unknownConfirm save resultConfirm save result"
+          }
+        },
+        {
+          "name": "r1.after_restored_draft_text_visible",
+          "ok": true,
+          "expected": "editor textarea in view contains the restored unsaved marker",
+          "actual": {
+            "marker": "[synthetic] R1 pane-switch unsaved recovery marker 663236",
+            "present": true
+          }
+        },
+        {
+          "name": "r1.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "r1.save_attempts_recorded",
+          "ok": true,
+          "expected": ">=1 gateway PATCH attempt",
+          "actual": 1
+        },
+        {
+          "name": "r1.note_not_saved_on_server",
+          "ok": true,
+          "expected": "note_d1 server revision stays 3 (save did not succeed)",
+          "actual": {
+            "note_id": "note_d1",
+            "revision": 3,
+            "edit_schema": "d2-v1",
+            "title": "[synthetic] D1 cohort readout"
+          }
+        }
+      ],
+      "duration_ms": 17163
+    },
+    {
+      "id": "R2",
+      "width": 1440,
+      "save_mode": "unknown503",
+      "driving_method": "window.__hostSendToken(projectId) re-posts research-v0 token on the same channel/nonce; legacy shell (iframe ?legacy=1) has no project-name element, switch asserted by host hook result + /projects/<id>/ gateway requests + workspace remount",
+      "marker": "[synthetic] R2 project-switch unsaved recovery marker 680337",
+      "project_requests": {
+        "p1": 25,
+        "p2": 11
+      },
+      "stats": {
+        "models_requests": 5,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nm9cbab37daf4146c0b32488c2238955ff",
+            "expected_revision": 3,
+            "mode": "unknown503",
+            "status": 503
+          }
+        ],
+        "notes": [
+          "note_d1@r3",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 9
+      },
+      "assertions": [
+        {
+          "name": "r2.note_opened",
+          "ok": true,
+          "expected": "catalog note-open-note_d1 resolves",
+          "actual": {
+            "opened": true,
+            "selector": "[data-testid=\"note-open-note_d1\"]"
+          }
+        },
+        {
+          "name": "r2.typed",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "r2.unsaved_failure_state",
+          "ok": true,
+          "expected": "save status unknown/failed (cannot be saved)",
+          "actual": {
+            "status": "unknown",
+            "text": "Save result unknownThe note store is unavailable. Your text is kept locally.Confirm save resultConfirm save result"
+          }
+        },
+        {
+          "name": "r2.host_token_switch_p2_accepted",
+          "ok": true,
+          "expected": "host hook reports ok",
+          "actual": {
+            "ok": true,
+            "projectId": "p2",
+            "tokenIndex": 4
+          }
+        },
+        {
+          "name": "r2.workspace_remounted_on_p2",
+          "ok": true,
+          "expected": "group nav alive, Notes catalog gone (default Sources pane), >=1 gateway request under /projects/p2/",
+          "actual": {
+            "p2Requests": 9
+          }
+        },
+        {
+          "name": "r2.no_p1_recovery_inbox_while_on_p2",
+          "ok": true,
+          "expected": "no recovery inbox row while the workspace is bound to p2 (draft is p1-scoped)",
+          "actual": {
+            "inbox": 0,
+            "rows": 0
+          }
+        },
+        {
+          "name": "r2.host_token_switch_p1_back_accepted",
+          "ok": true,
+          "expected": "host hook reports ok",
+          "actual": {
+            "ok": true,
+            "projectId": "p1",
+            "tokenIndex": 5
+          }
+        },
+        {
+          "name": "r2.workspace_remounted_back_on_p1",
+          "ok": true,
+          "expected": "fresh /projects/p1/ gateway requests after switching back and default Sources pane",
+          "actual": {
+            "p1Requests": 22
+          }
+        },
+        {
+          "name": "r2.draft_survives_project_switch_storage",
+          "ok": true,
+          "expected": ">=1 draft key present after p1->p2->p1",
+          "actual": 1
+        },
+        {
+          "name": "r2.after_recovery_inbox_in_catalog",
+          "ok": true,
+          "expected": "catalog view shows >=1 note-recovery-inbox after returning to p1",
+          "actual": 1
+        },
+        {
+          "name": "r2.after_recovery_row_for_note",
+          "ok": true,
+          "expected": "note-recovery-row-note_d1 present after returning to p1",
+          "actual": 1
+        },
+        {
+          "name": "r2.after_recovery_row_was_absent_on_p2",
+          "ok": true,
+          "expected": "inbox row only appears after returning to p1 (project-scoped draft cache)",
+          "actual": {
+            "onP2": 0,
+            "onP1": 1
+          }
+        },
+        {
+          "name": "r2.after_recovery_open_button",
+          "ok": true,
+          "expected": "inbox open-note action resolves",
+          "actual": {
+            "opened": true,
+            "selector": "[data-testid=\"note-recovery-open-note_d1\"]"
+          }
+        },
+        {
+          "name": "r2.after_restored_editor_recovery_banner",
+          "ok": true,
+          "expected": "note-draft-restored >= 1 after opening the p1 draft from the inbox",
+          "actual": 1
+        },
+        {
+          "name": "r2.after_restored_draft_text_present",
+          "ok": true,
+          "expected": "restored editor contains the typed unsaved marker",
+          "actual": {
+            "marker": "[synthetic] R2 project-switch unsaved recovery marker 680337",
+            "present": true
+          }
+        },
+        {
+          "name": "r2.after_restored_unsaved_status",
+          "ok": true,
+          "expected": "save status unknown/failed after restore (still not saved)",
+          "actual": {
+            "status": "unknown",
+            "text": "Save result unknownConfirm save resultConfirm save result"
+          }
+        },
+        {
+          "name": "r2.after_restore_permission_confirmed_get",
+          "ok": true,
+          "expected": "permission-confirming GET /projects/p1/notes/note_d1 observed before draft restore",
+          "actual": [
+            "/v1/research/projects/p1/notes/note_d1",
+            "/v1/research/projects/p1/notes/note_d1"
+          ]
+        },
+        {
+          "name": "r2.after_restored_guard_auto_opened",
+          "ok": true,
+          "expected": "PR4 editor-level guard auto-opens for the unknown draft (dismissed with Stay)",
+          "actual": {
+            "opened": 1,
+            "stayClicked": true,
+            "dismissed": true
+          }
+        },
+        {
+          "name": "r2.after_restored_draft_text_visible",
+          "ok": true,
+          "expected": "editor textarea in view contains the restored unsaved marker",
+          "actual": {
+            "marker": "[synthetic] R2 project-switch unsaved recovery marker 680337",
+            "present": true
+          }
+        },
+        {
+          "name": "r2.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 17432
+    },
+    {
+      "id": "R3",
+      "width": 1440,
+      "save_mode": "unknown503",
+      "marker": "[synthetic] R3 reload unsaved recovery marker 697765",
+      "stats": {
+        "models_requests": 4,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nm3d17d9ea449d4d73a166c48b66f58ed1",
+            "expected_revision": 3,
+            "mode": "unknown503",
+            "status": 503
+          }
+        ],
+        "notes": [
+          "note_d1@r3",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 7
+      },
+      "assertions": [
+        {
+          "name": "r3.note_opened",
+          "ok": true,
+          "expected": "catalog note-open-note_d1 resolves",
+          "actual": {
+            "opened": true,
+            "selector": "[data-testid=\"note-open-note_d1\"]"
+          }
+        },
+        {
+          "name": "r3.typed",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "r3.unsaved_failure_state",
+          "ok": true,
+          "expected": "save status unknown/failed (cannot be saved)",
+          "actual": {
+            "status": "unknown",
+            "text": "Save result unknownThe note store is unavailable. Your text is kept locally.Confirm save resultConfirm save result"
+          }
+        },
+        {
+          "name": "r3.app_frame_after_reload",
+          "ok": true,
+          "expected": "research iframe present after reload",
+          "actual": true
+        },
+        {
+          "name": "r3.draft_survives_reload_storage",
+          "ok": true,
+          "expected": ">=1 draft key present after full page reload",
+          "actual": 1
+        },
+        {
+          "name": "r3.after_recovery_inbox_in_catalog",
+          "ok": true,
+          "expected": "catalog view shows >=1 note-recovery-inbox after reload",
+          "actual": 1
+        },
+        {
+          "name": "r3.after_recovery_row_for_note",
+          "ok": true,
+          "expected": "note-recovery-row-note_d1 present after reload",
+          "actual": 1
+        },
+        {
+          "name": "r3.after_recovery_open_button",
+          "ok": true,
+          "expected": "inbox open-note action resolves",
+          "actual": {
+            "opened": true,
+            "selector": "[data-testid=\"note-recovery-open-note_d1\"]"
+          }
+        },
+        {
+          "name": "r3.after_restored_editor_recovery_banner",
+          "ok": true,
+          "expected": "note-draft-restored >= 1 after opening the reloaded draft from the inbox",
+          "actual": 1
+        },
+        {
+          "name": "r3.after_restored_draft_text_present",
+          "ok": true,
+          "expected": "restored editor contains the typed unsaved marker after reload",
+          "actual": {
+            "marker": "[synthetic] R3 reload unsaved recovery marker 697765",
+            "present": true
+          }
+        },
+        {
+          "name": "r3.after_restored_unsaved_status",
+          "ok": true,
+          "expected": "save status unknown/failed after restore (still not saved)",
+          "actual": {
+            "status": "unknown",
+            "text": "Save result unknownConfirm save resultConfirm save result"
+          }
+        },
+        {
+          "name": "r3.after_restore_permission_confirmed_get",
+          "ok": true,
+          "expected": "permission-confirming GET /projects/p1/notes/note_d1 observed before draft restore",
+          "actual": [
+            "/v1/research/projects/p1/notes/note_d1",
+            "/v1/research/projects/p1/notes/note_d1"
+          ]
+        },
+        {
+          "name": "r3.after_restored_guard_auto_opened",
+          "ok": true,
+          "expected": "PR4 editor-level guard auto-opens for the unknown draft (dismissed with Stay)",
+          "actual": {
+            "opened": 1,
+            "stayClicked": true,
+            "dismissed": true
+          }
+        },
+        {
+          "name": "r3.after_restored_draft_text_visible",
+          "ok": true,
+          "expected": "editor textarea in view contains the restored unsaved marker",
+          "actual": {
+            "marker": "[synthetic] R3 reload unsaved recovery marker 697765",
+            "present": true
+          }
+        },
+        {
+          "name": "r3.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "r3.note_not_saved_on_server",
+          "ok": true,
+          "expected": "note_d1 server revision stays 3 after reload (save still not succeeded)",
+          "actual": 3
+        }
+      ],
+      "duration_ms": 17836
+    },
+    {
+      "id": "R4",
+      "width": 1440,
+      "save_mode": "conflict",
+      "marker": "[synthetic] R4 conflict recovery marker 715669",
+      "stats": {
+        "models_requests": 2,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nmafe1b332eb99449dbb825a5bb2ca0f11",
+            "expected_revision": 3,
+            "mode": "conflict",
+            "status": 409
+          }
+        ],
+        "notes": [
+          "note_d1@r4",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 5
+      },
+      "assertions": [
+        {
+          "name": "r4.note_opened",
+          "ok": true,
+          "expected": "catalog note-open-note_d1 resolves",
+          "actual": {
+            "opened": true,
+            "selector": "[data-testid=\"note-open-note_d1\"]"
+          }
+        },
+        {
+          "name": "r4.typed",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "r4.conflict_state_reached",
+          "ok": true,
+          "expected": "save status conflict",
+          "actual": {
+            "status": "conflict",
+            "text": "Version conflict — autosave pausedThe note changed on the server. Resolve the conflict before saving again.Review conflict"
+          }
+        },
+        {
+          "name": "r4.conflict_dialog_present",
+          "ok": true,
+          "expected": "note-conflict-dialog >= 1",
+          "actual": 1
+        },
+        {
+          "name": "r4.after_recovery_inbox_in_catalog",
+          "ok": true,
+          "expected": "catalog view shows >=1 note-recovery-inbox after conflict + pane switch",
+          "actual": 1
+        },
+        {
+          "name": "r4.after_recovery_row_for_note",
+          "ok": true,
+          "expected": "note-recovery-row-note_d1 present",
+          "actual": 1
+        },
+        {
+          "name": "r4.after_recovery_open_button",
+          "ok": true,
+          "expected": "inbox open-note action resolves",
+          "actual": {
+            "opened": true,
+            "selector": "[data-testid=\"note-recovery-open-note_d1\"]"
+          }
+        },
+        {
+          "name": "r4.after_restored_editor_recovery_banner",
+          "ok": true,
+          "expected": "note-draft-restored >= 1 after opening from the recovery inbox",
+          "actual": 1
+        },
+        {
+          "name": "r4.after_restored_draft_text_present",
+          "ok": true,
+          "expected": "restored editor content contains the typed unsaved marker",
+          "actual": {
+            "marker": "[synthetic] R4 conflict recovery marker 715669",
+            "present": true
+          }
+        },
+        {
+          "name": "r4.after_conflict_ui_present_after_open",
+          "ok": true,
+          "expected": "conflict dialog or conflict save status shown after opening draft",
+          "actual": {
+            "dialog": 1,
+            "status": {
+              "status": "conflict",
+              "text": "Version conflict — autosave pausedReview conflict"
+            }
+          }
+        },
+        {
+          "name": "r4.after_restore_permission_confirmed_get",
+          "ok": true,
+          "expected": "permission-confirming GET /projects/p1/notes/note_d1 observed before draft restore",
+          "actual": [
+            "/v1/research/projects/p1/notes/note_d1",
+            "/v1/research/projects/p1/notes/note_d1"
+          ]
+        },
+        {
+          "name": "r4.after_restored_editor_conflict_status",
+          "ok": true,
+          "expected": "save-status bar shows conflict after dismissing the dialog",
+          "actual": {
+            "status": "conflict",
+            "text": "Version conflict — autosave pausedReview conflict"
+          }
+        },
+        {
+          "name": "r4.after_restored_editor_draft_text_present",
+          "ok": true,
+          "expected": "editor textarea still contains the restored unsaved marker",
+          "actual": {
+            "marker": "[synthetic] R4 conflict recovery marker 715669",
+            "present": true
+          }
+        },
+        {
+          "name": "r4.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "r4.save_conflict_recorded",
+          "ok": true,
+          "expected": ">=1 gateway PATCH returned 409",
+          "actual": [
+            409
+          ]
+        }
+      ],
+      "duration_ms": 16302
+    },
+    {
+      "id": "R5",
+      "width": 1440,
+      "save_mode": "success",
+      "marker": "[synthetic] R5 steady-state saved marker 731897",
+      "stats": {
+        "models_requests": 2,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nm1ed207c5478f40ebac9e35e1634897d6",
+            "expected_revision": 3,
+            "mode": "success",
+            "status": 200
+          }
+        ],
+        "notes": [
+          "note_d1@r4",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 4
+      },
+      "assertions": [
+        {
+          "name": "r5.note_opened",
+          "ok": true,
+          "expected": "catalog note-open-note_d1 resolves",
+          "actual": {
+            "opened": true,
+            "selector": "[data-testid=\"note-open-note_d1\"]"
+          }
+        },
+        {
+          "name": "r5.typed",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "r5.autosave_reached_saved",
+          "ok": true,
+          "expected": "save status saved",
+          "actual": {
+            "status": "saved",
+            "text": "Saved"
+          }
+        },
+        {
+          "name": "r5.no_recovery_inbox_after_successful_autosave",
+          "ok": true,
+          "expected": "both sides show 0 recovery inbox (no stale recovery after saved)",
+          "actual": {
+            "inbox": 0,
+            "rows": 0
+          }
+        },
+        {
+          "name": "r5.no_stale_draft_cache_after_saved",
+          "ok": true,
+          "expected": "0 draft cache keys after successful autosave + ACK cleanup",
+          "actual": []
+        },
+        {
+          "name": "r5.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "r5.saved_content_on_server",
+          "ok": true,
+          "expected": "server-side synthetic note content contains the saved marker",
+          "actual": {
+            "revision": 4,
+            "containsMarker": true
+          }
+        },
+        {
+          "name": "r5.server_revision_advanced",
+          "ok": true,
+          "expected": "note_d1 revision advanced beyond 3",
+          "actual": 4
+        }
+      ],
+      "duration_ms": 12239
+    },
+    {
+      "id": "R1",
+      "width": 1024,
+      "save_mode": "unknown503",
+      "marker": "[synthetic] R1 pane-switch unsaved recovery marker 744169",
+      "stats": {
+        "models_requests": 2,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nmf72d811337e441df97d3435982434781",
+            "expected_revision": 3,
+            "mode": "unknown503",
+            "status": 503
+          }
+        ],
+        "notes": [
+          "note_d1@r3",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 5
+      },
+      "assertions": [
+        {
+          "name": "r1.note_opened",
+          "ok": true,
+          "expected": "catalog note-open-note_d1 resolves",
+          "actual": {
+            "opened": true,
+            "selector": "[data-testid=\"note-open-note_d1\"]"
+          }
+        },
+        {
+          "name": "r1.typed",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "r1.unsaved_failure_state",
+          "ok": true,
+          "expected": "save status unknown/failed/pending/saving (cannot be saved)",
+          "actual": {
+            "status": "unknown",
+            "text": "Save result unknownThe note store is unavailable. Your text is kept locally.Confirm save resultConfirm save result"
+          }
+        },
+        {
+          "name": "r1.editor_level_guard_auto_opened",
+          "ok": true,
+          "expected": "PR4 editor-level leave guard auto-opens on unknown save result (dismissed with Stay to reach parent nav)",
+          "actual": {
+            "opened": 1,
+            "stayClicked": true,
+            "dismissed": true
+          }
+        },
+        {
+          "name": "r1.after_recovery_inbox_in_catalog",
+          "ok": true,
+          "expected": "catalog view shows >=1 note-recovery-inbox",
+          "actual": 1
+        },
+        {
+          "name": "r1.after_recovery_row_for_note",
+          "ok": true,
+          "expected": "note-recovery-row-note_d1 present in catalog",
+          "actual": {
+            "rows": 1,
+            "noteRow": 1
+          }
+        },
+        {
+          "name": "r1.after_recovery_title_for_note",
+          "ok": true,
+          "expected": "note-recovery-title-note_d1 present in catalog",
+          "actual": 1
+        },
+        {
+          "name": "r1.after_recovery_copy_action",
+          "ok": true,
+          "expected": "note-recovery-copy-note_d1 present in catalog inbox row",
+          "actual": 1
+        },
+        {
+          "name": "r1.after_recovery_download_action",
+          "ok": true,
+          "expected": "note-recovery-download-note_d1 present in catalog inbox row",
+          "actual": 1
+        },
+        {
+          "name": "r1.after_recovery_open_button",
+          "ok": true,
+          "expected": "inbox open-note action resolves",
+          "actual": {
+            "opened": true,
+            "selector": "[data-testid=\"note-recovery-open-note_d1\"]"
+          }
+        },
+        {
+          "name": "r1.after_restored_editor_recovery_banner",
+          "ok": true,
+          "expected": "note-draft-restored >= 1 after opening from the recovery inbox",
+          "actual": 1
+        },
+        {
+          "name": "r1.after_restored_draft_text_present",
+          "ok": true,
+          "expected": "restored editor content contains the typed unsaved marker",
+          "actual": {
+            "marker": "[synthetic] R1 pane-switch unsaved recovery marker 744169",
+            "present": true
+          }
+        },
+        {
+          "name": "r1.after_restored_guard_auto_opened",
+          "ok": true,
+          "expected": "editor-level guard auto-opens when restoring the unknown draft from the inbox",
+          "actual": {
+            "opened": 1,
+            "stayClicked": true,
+            "dismissed": true
+          }
+        },
+        {
+          "name": "r1.after_restored_unsaved_status",
+          "ok": true,
+          "expected": "save status unknown/failed (still not saved)",
+          "actual": {
+            "status": "unknown",
+            "text": "Save result unknownConfirm save resultConfirm save result"
+          }
+        },
+        {
+          "name": "r1.after_restored_draft_text_visible",
+          "ok": true,
+          "expected": "editor textarea in view contains the restored unsaved marker",
+          "actual": {
+            "marker": "[synthetic] R1 pane-switch unsaved recovery marker 744169",
+            "present": true
+          }
+        },
+        {
+          "name": "r1.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "r1.save_attempts_recorded",
+          "ok": true,
+          "expected": ">=1 gateway PATCH attempt",
+          "actual": 1
+        },
+        {
+          "name": "r1.note_not_saved_on_server",
+          "ok": true,
+          "expected": "note_d1 server revision stays 3 (save did not succeed)",
+          "actual": {
+            "note_id": "note_d1",
+            "revision": 3,
+            "edit_schema": "d2-v1",
+            "title": "[synthetic] D1 cohort readout"
+          }
+        }
+      ],
+      "duration_ms": 17018
+    },
+    {
+      "id": "R2",
+      "width": 1024,
+      "save_mode": "unknown503",
+      "driving_method": "window.__hostSendToken(projectId) re-posts research-v0 token on the same channel/nonce; legacy shell (iframe ?legacy=1) has no project-name element, switch asserted by host hook result + /projects/<id>/ gateway requests + workspace remount",
+      "marker": "[synthetic] R2 project-switch unsaved recovery marker 761213",
+      "project_requests": {
+        "p1": 25,
+        "p2": 11
+      },
+      "stats": {
+        "models_requests": 5,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nmb1fc07be566440fe995f8aa01efe5d79",
+            "expected_revision": 3,
+            "mode": "unknown503",
+            "status": 503
+          }
+        ],
+        "notes": [
+          "note_d1@r3",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 9
+      },
+      "assertions": [
+        {
+          "name": "r2.note_opened",
+          "ok": true,
+          "expected": "catalog note-open-note_d1 resolves",
+          "actual": {
+            "opened": true,
+            "selector": "[data-testid=\"note-open-note_d1\"]"
+          }
+        },
+        {
+          "name": "r2.typed",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "r2.unsaved_failure_state",
+          "ok": true,
+          "expected": "save status unknown/failed (cannot be saved)",
+          "actual": {
+            "status": "unknown",
+            "text": "Save result unknownThe note store is unavailable. Your text is kept locally.Confirm save resultConfirm save result"
+          }
+        },
+        {
+          "name": "r2.host_token_switch_p2_accepted",
+          "ok": true,
+          "expected": "host hook reports ok",
+          "actual": {
+            "ok": true,
+            "projectId": "p2",
+            "tokenIndex": 4
+          }
+        },
+        {
+          "name": "r2.workspace_remounted_on_p2",
+          "ok": true,
+          "expected": "group nav alive, Notes catalog gone (default Sources pane), >=1 gateway request under /projects/p2/",
+          "actual": {
+            "p2Requests": 9
+          }
+        },
+        {
+          "name": "r2.no_p1_recovery_inbox_while_on_p2",
+          "ok": true,
+          "expected": "no recovery inbox row while the workspace is bound to p2 (draft is p1-scoped)",
+          "actual": {
+            "inbox": 0,
+            "rows": 0
+          }
+        },
+        {
+          "name": "r2.host_token_switch_p1_back_accepted",
+          "ok": true,
+          "expected": "host hook reports ok",
+          "actual": {
+            "ok": true,
+            "projectId": "p1",
+            "tokenIndex": 5
+          }
+        },
+        {
+          "name": "r2.workspace_remounted_back_on_p1",
+          "ok": true,
+          "expected": "fresh /projects/p1/ gateway requests after switching back and default Sources pane",
+          "actual": {
+            "p1Requests": 22
+          }
+        },
+        {
+          "name": "r2.draft_survives_project_switch_storage",
+          "ok": true,
+          "expected": ">=1 draft key present after p1->p2->p1",
+          "actual": 1
+        },
+        {
+          "name": "r2.after_recovery_inbox_in_catalog",
+          "ok": true,
+          "expected": "catalog view shows >=1 note-recovery-inbox after returning to p1",
+          "actual": 1
+        },
+        {
+          "name": "r2.after_recovery_row_for_note",
+          "ok": true,
+          "expected": "note-recovery-row-note_d1 present after returning to p1",
+          "actual": 1
+        },
+        {
+          "name": "r2.after_recovery_row_was_absent_on_p2",
+          "ok": true,
+          "expected": "inbox row only appears after returning to p1 (project-scoped draft cache)",
+          "actual": {
+            "onP2": 0,
+            "onP1": 1
+          }
+        },
+        {
+          "name": "r2.after_recovery_open_button",
+          "ok": true,
+          "expected": "inbox open-note action resolves",
+          "actual": {
+            "opened": true,
+            "selector": "[data-testid=\"note-recovery-open-note_d1\"]"
+          }
+        },
+        {
+          "name": "r2.after_restored_editor_recovery_banner",
+          "ok": true,
+          "expected": "note-draft-restored >= 1 after opening the p1 draft from the inbox",
+          "actual": 1
+        },
+        {
+          "name": "r2.after_restored_draft_text_present",
+          "ok": true,
+          "expected": "restored editor contains the typed unsaved marker",
+          "actual": {
+            "marker": "[synthetic] R2 project-switch unsaved recovery marker 761213",
+            "present": true
+          }
+        },
+        {
+          "name": "r2.after_restored_unsaved_status",
+          "ok": true,
+          "expected": "save status unknown/failed after restore (still not saved)",
+          "actual": {
+            "status": "unknown",
+            "text": "Save result unknownConfirm save resultConfirm save result"
+          }
+        },
+        {
+          "name": "r2.after_restore_permission_confirmed_get",
+          "ok": true,
+          "expected": "permission-confirming GET /projects/p1/notes/note_d1 observed before draft restore",
+          "actual": [
+            "/v1/research/projects/p1/notes/note_d1",
+            "/v1/research/projects/p1/notes/note_d1"
+          ]
+        },
+        {
+          "name": "r2.after_restored_guard_auto_opened",
+          "ok": true,
+          "expected": "PR4 editor-level guard auto-opens for the unknown draft (dismissed with Stay)",
+          "actual": {
+            "opened": 1,
+            "stayClicked": true,
+            "dismissed": true
+          }
+        },
+        {
+          "name": "r2.after_restored_draft_text_visible",
+          "ok": true,
+          "expected": "editor textarea in view contains the restored unsaved marker",
+          "actual": {
+            "marker": "[synthetic] R2 project-switch unsaved recovery marker 761213",
+            "present": true
+          }
+        },
+        {
+          "name": "r2.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 17500
+    },
+    {
+      "id": "R3",
+      "width": 1024,
+      "save_mode": "unknown503",
+      "marker": "[synthetic] R3 reload unsaved recovery marker 778728",
+      "stats": {
+        "models_requests": 4,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nm2012c5291c794715b6880a2ddca106c3",
+            "expected_revision": 3,
+            "mode": "unknown503",
+            "status": 503
+          }
+        ],
+        "notes": [
+          "note_d1@r3",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 7
+      },
+      "assertions": [
+        {
+          "name": "r3.note_opened",
+          "ok": true,
+          "expected": "catalog note-open-note_d1 resolves",
+          "actual": {
+            "opened": true,
+            "selector": "[data-testid=\"note-open-note_d1\"]"
+          }
+        },
+        {
+          "name": "r3.typed",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "r3.unsaved_failure_state",
+          "ok": true,
+          "expected": "save status unknown/failed (cannot be saved)",
+          "actual": {
+            "status": "unknown",
+            "text": "Save result unknownThe note store is unavailable. Your text is kept locally.Confirm save resultConfirm save result"
+          }
+        },
+        {
+          "name": "r3.app_frame_after_reload",
+          "ok": true,
+          "expected": "research iframe present after reload",
+          "actual": true
+        },
+        {
+          "name": "r3.draft_survives_reload_storage",
+          "ok": true,
+          "expected": ">=1 draft key present after full page reload",
+          "actual": 1
+        },
+        {
+          "name": "r3.after_recovery_inbox_in_catalog",
+          "ok": true,
+          "expected": "catalog view shows >=1 note-recovery-inbox after reload",
+          "actual": 1
+        },
+        {
+          "name": "r3.after_recovery_row_for_note",
+          "ok": true,
+          "expected": "note-recovery-row-note_d1 present after reload",
+          "actual": 1
+        },
+        {
+          "name": "r3.after_recovery_open_button",
+          "ok": true,
+          "expected": "inbox open-note action resolves",
+          "actual": {
+            "opened": true,
+            "selector": "[data-testid=\"note-recovery-open-note_d1\"]"
+          }
+        },
+        {
+          "name": "r3.after_restored_editor_recovery_banner",
+          "ok": true,
+          "expected": "note-draft-restored >= 1 after opening the reloaded draft from the inbox",
+          "actual": 1
+        },
+        {
+          "name": "r3.after_restored_draft_text_present",
+          "ok": true,
+          "expected": "restored editor contains the typed unsaved marker after reload",
+          "actual": {
+            "marker": "[synthetic] R3 reload unsaved recovery marker 778728",
+            "present": true
+          }
+        },
+        {
+          "name": "r3.after_restored_unsaved_status",
+          "ok": true,
+          "expected": "save status unknown/failed after restore (still not saved)",
+          "actual": {
+            "status": "unknown",
+            "text": "Save result unknownConfirm save resultConfirm save result"
+          }
+        },
+        {
+          "name": "r3.after_restore_permission_confirmed_get",
+          "ok": true,
+          "expected": "permission-confirming GET /projects/p1/notes/note_d1 observed before draft restore",
+          "actual": [
+            "/v1/research/projects/p1/notes/note_d1",
+            "/v1/research/projects/p1/notes/note_d1"
+          ]
+        },
+        {
+          "name": "r3.after_restored_guard_auto_opened",
+          "ok": true,
+          "expected": "PR4 editor-level guard auto-opens for the unknown draft (dismissed with Stay)",
+          "actual": {
+            "opened": 1,
+            "stayClicked": true,
+            "dismissed": true
+          }
+        },
+        {
+          "name": "r3.after_restored_draft_text_visible",
+          "ok": true,
+          "expected": "editor textarea in view contains the restored unsaved marker",
+          "actual": {
+            "marker": "[synthetic] R3 reload unsaved recovery marker 778728",
+            "present": true
+          }
+        },
+        {
+          "name": "r3.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "r3.note_not_saved_on_server",
+          "ok": true,
+          "expected": "note_d1 server revision stays 3 after reload (save still not succeeded)",
+          "actual": 3
+        }
+      ],
+      "duration_ms": 17776
+    },
+    {
+      "id": "R4",
+      "width": 1024,
+      "save_mode": "conflict",
+      "marker": "[synthetic] R4 conflict recovery marker 796412",
+      "stats": {
+        "models_requests": 2,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nma8129243811b47a1bdb3410ed378358f",
+            "expected_revision": 3,
+            "mode": "conflict",
+            "status": 409
+          }
+        ],
+        "notes": [
+          "note_d1@r4",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 5
+      },
+      "assertions": [
+        {
+          "name": "r4.note_opened",
+          "ok": true,
+          "expected": "catalog note-open-note_d1 resolves",
+          "actual": {
+            "opened": true,
+            "selector": "[data-testid=\"note-open-note_d1\"]"
+          }
+        },
+        {
+          "name": "r4.typed",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "r4.conflict_state_reached",
+          "ok": true,
+          "expected": "save status conflict",
+          "actual": {
+            "status": "conflict",
+            "text": "Version conflict — autosave pausedThe note changed on the server. Resolve the conflict before saving again.Review conflict"
+          }
+        },
+        {
+          "name": "r4.conflict_dialog_present",
+          "ok": true,
+          "expected": "note-conflict-dialog >= 1",
+          "actual": 1
+        },
+        {
+          "name": "r4.after_recovery_inbox_in_catalog",
+          "ok": true,
+          "expected": "catalog view shows >=1 note-recovery-inbox after conflict + pane switch",
+          "actual": 1
+        },
+        {
+          "name": "r4.after_recovery_row_for_note",
+          "ok": true,
+          "expected": "note-recovery-row-note_d1 present",
+          "actual": 1
+        },
+        {
+          "name": "r4.after_recovery_open_button",
+          "ok": true,
+          "expected": "inbox open-note action resolves",
+          "actual": {
+            "opened": true,
+            "selector": "[data-testid=\"note-recovery-open-note_d1\"]"
+          }
+        },
+        {
+          "name": "r4.after_restored_editor_recovery_banner",
+          "ok": true,
+          "expected": "note-draft-restored >= 1 after opening from the recovery inbox",
+          "actual": 1
+        },
+        {
+          "name": "r4.after_restored_draft_text_present",
+          "ok": true,
+          "expected": "restored editor content contains the typed unsaved marker",
+          "actual": {
+            "marker": "[synthetic] R4 conflict recovery marker 796412",
+            "present": true
+          }
+        },
+        {
+          "name": "r4.after_conflict_ui_present_after_open",
+          "ok": true,
+          "expected": "conflict dialog or conflict save status shown after opening draft",
+          "actual": {
+            "dialog": 1,
+            "status": {
+              "status": "conflict",
+              "text": "Version conflict — autosave pausedReview conflict"
+            }
+          }
+        },
+        {
+          "name": "r4.after_restore_permission_confirmed_get",
+          "ok": true,
+          "expected": "permission-confirming GET /projects/p1/notes/note_d1 observed before draft restore",
+          "actual": [
+            "/v1/research/projects/p1/notes/note_d1",
+            "/v1/research/projects/p1/notes/note_d1"
+          ]
+        },
+        {
+          "name": "r4.after_restored_editor_conflict_status",
+          "ok": true,
+          "expected": "save-status bar shows conflict after dismissing the dialog",
+          "actual": {
+            "status": "conflict",
+            "text": "Version conflict — autosave pausedReview conflict"
+          }
+        },
+        {
+          "name": "r4.after_restored_editor_draft_text_present",
+          "ok": true,
+          "expected": "editor textarea still contains the restored unsaved marker",
+          "actual": {
+            "marker": "[synthetic] R4 conflict recovery marker 796412",
+            "present": true
+          }
+        },
+        {
+          "name": "r4.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "r4.save_conflict_recorded",
+          "ok": true,
+          "expected": ">=1 gateway PATCH returned 409",
+          "actual": [
+            409
+          ]
+        }
+      ],
+      "duration_ms": 16276
+    },
+    {
+      "id": "R5",
+      "width": 1024,
+      "save_mode": "success",
+      "marker": "[synthetic] R5 steady-state saved marker 812743",
+      "stats": {
+        "models_requests": 2,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nmc1e62c02ffda456786a811c6754be93c",
+            "expected_revision": 3,
+            "mode": "success",
+            "status": 200
+          }
+        ],
+        "notes": [
+          "note_d1@r4",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 4
+      },
+      "assertions": [
+        {
+          "name": "r5.note_opened",
+          "ok": true,
+          "expected": "catalog note-open-note_d1 resolves",
+          "actual": {
+            "opened": true,
+            "selector": "[data-testid=\"note-open-note_d1\"]"
+          }
+        },
+        {
+          "name": "r5.typed",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "r5.autosave_reached_saved",
+          "ok": true,
+          "expected": "save status saved",
+          "actual": {
+            "status": "saved",
+            "text": "Saved"
+          }
+        },
+        {
+          "name": "r5.no_recovery_inbox_after_successful_autosave",
+          "ok": true,
+          "expected": "both sides show 0 recovery inbox (no stale recovery after saved)",
+          "actual": {
+            "inbox": 0,
+            "rows": 0
+          }
+        },
+        {
+          "name": "r5.no_stale_draft_cache_after_saved",
+          "ok": true,
+          "expected": "0 draft cache keys after successful autosave + ACK cleanup",
+          "actual": []
+        },
+        {
+          "name": "r5.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "r5.saved_content_on_server",
+          "ok": true,
+          "expected": "server-side synthetic note content contains the saved marker",
+          "actual": {
+            "revision": 4,
+            "containsMarker": true
+          }
+        },
+        {
+          "name": "r5.server_revision_advanced",
+          "ok": true,
+          "expected": "note_d1 revision advanced beyond 3",
+          "actual": 4
+        }
+      ],
+      "duration_ms": 12226
+    }
+  ],
+  "totals": {
+    "scenes": 10,
+    "scene_errors": 0,
+    "assertions": 154,
+    "assertions_pass": 154,
+    "assertions_fail": 0
+  },
+  "screenshots": [
+    {
+      "file": "after_r1_pane_switch_1440.png",
+      "bytes": 116287,
+      "sha256": "e4a4255f5b5942b0e7f23dade97667ebaeb0ca272f56c4b1bb68986834487d02",
+      "dom_counts": {
+        "note_recovery_inbox": 1,
+        "note_recovery_rows": 1,
+        "note_recovery_titles": 1,
+        "note_recovery_opens": 1,
+        "note_draft_restored": 0,
+        "note_draft_recovery_banner": 0,
+        "note_editor": 0,
+        "note_catalog": 1,
+        "note_conflict_dialog": 0,
+        "note_save_status": 0,
+        "workbench_group_nav": 1
+      },
+      "gateway_stats": {
+        "models_requests": 2,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nm1692069b2bf4487b9e868d01c726c23c",
+            "expected_revision": 3,
+            "mode": "unknown503",
+            "status": 503
+          }
+        ],
+        "notes": [
+          "note_d1@r3",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 4
+      }
+    },
+    {
+      "file": "after_r1_restored_1440.png",
+      "bytes": 110429,
+      "sha256": "2b97dc11ebb4a160e6d05e651745b1d37842daa8a5825ad0e58187198a3310c3",
+      "dom_counts": {
+        "note_recovery_inbox": 0,
+        "note_recovery_rows": 0,
+        "note_recovery_titles": 0,
+        "note_recovery_opens": 0,
+        "note_draft_restored": 1,
+        "note_draft_recovery_banner": 1,
+        "note_editor": 1,
+        "note_catalog": 1,
+        "note_conflict_dialog": 0,
+        "note_save_status": 1,
+        "workbench_group_nav": 1
+      },
+      "gateway_stats": {
+        "models_requests": 2,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nm1692069b2bf4487b9e868d01c726c23c",
+            "expected_revision": 3,
+            "mode": "unknown503",
+            "status": 503
+          }
+        ],
+        "notes": [
+          "note_d1@r3",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 5
+      }
+    },
+    {
+      "file": "after_r1_restored_draft_1440.png",
+      "bytes": 126206,
+      "sha256": "5fa88eb7ad8c0f569c74c4ebbb74de99aa244198f2ee92a82a9175954c0caad6",
+      "dom_counts": {
+        "note_recovery_inbox": 0,
+        "note_recovery_rows": 0,
+        "note_recovery_titles": 0,
+        "note_recovery_opens": 0,
+        "note_draft_restored": 1,
+        "note_draft_recovery_banner": 1,
+        "note_editor": 1,
+        "note_catalog": 1,
+        "note_conflict_dialog": 0,
+        "note_save_status": 1,
+        "workbench_group_nav": 1
+      },
+      "gateway_stats": {
+        "models_requests": 2,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nm1692069b2bf4487b9e868d01c726c23c",
+            "expected_revision": 3,
+            "mode": "unknown503",
+            "status": 503
+          }
+        ],
+        "notes": [
+          "note_d1@r3",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 5
+      }
+    },
+    {
+      "file": "after_r2_project_p2_1440.png",
+      "bytes": 106371,
+      "sha256": "7526c2b794a7aab9ffe7991fa561901f61f4745099efec9c8ce342e22a78524b",
+      "dom_counts": {
+        "note_recovery_inbox": 0,
+        "note_recovery_rows": 0,
+        "note_recovery_titles": 0,
+        "note_recovery_opens": 0,
+        "note_draft_restored": 0,
+        "note_draft_recovery_banner": 0,
+        "note_editor": 0,
+        "note_catalog": 1,
+        "note_conflict_dialog": 0,
+        "note_save_status": 0,
+        "workbench_group_nav": 1
+      },
+      "gateway_stats": {
+        "models_requests": 4,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nm9cbab37daf4146c0b32488c2238955ff",
+            "expected_revision": 3,
+            "mode": "unknown503",
+            "status": 503
+          }
+        ],
+        "notes": [
+          "note_d1@r3",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 6
+      }
+    },
+    {
+      "file": "after_r2_project_switch_1440.png",
+      "bytes": 116332,
+      "sha256": "41dc277e6da90acd07a676fd2b4ec3785f0ba5429fc98300ffb0aa06867fcb85",
+      "dom_counts": {
+        "note_recovery_inbox": 1,
+        "note_recovery_rows": 1,
+        "note_recovery_titles": 1,
+        "note_recovery_opens": 1,
+        "note_draft_restored": 0,
+        "note_draft_recovery_banner": 0,
+        "note_editor": 0,
+        "note_catalog": 1,
+        "note_conflict_dialog": 0,
+        "note_save_status": 0,
+        "workbench_group_nav": 1
+      },
+      "gateway_stats": {
+        "models_requests": 5,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nm9cbab37daf4146c0b32488c2238955ff",
+            "expected_revision": 3,
+            "mode": "unknown503",
+            "status": 503
+          }
+        ],
+        "notes": [
+          "note_d1@r3",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 8
+      }
+    },
+    {
+      "file": "after_r2_restored_1440.png",
+      "bytes": 110429,
+      "sha256": "2b97dc11ebb4a160e6d05e651745b1d37842daa8a5825ad0e58187198a3310c3",
+      "dom_counts": {
+        "note_recovery_inbox": 0,
+        "note_recovery_rows": 0,
+        "note_recovery_titles": 0,
+        "note_recovery_opens": 0,
+        "note_draft_restored": 1,
+        "note_draft_recovery_banner": 1,
+        "note_editor": 1,
+        "note_catalog": 1,
+        "note_conflict_dialog": 0,
+        "note_save_status": 1,
+        "workbench_group_nav": 1
+      },
+      "gateway_stats": {
+        "models_requests": 5,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nm9cbab37daf4146c0b32488c2238955ff",
+            "expected_revision": 3,
+            "mode": "unknown503",
+            "status": 503
+          }
+        ],
+        "notes": [
+          "note_d1@r3",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 9
+      }
+    },
+    {
+      "file": "after_r2_restored_draft_1440.png",
+      "bytes": 126787,
+      "sha256": "a145bb70e38744d115d2b2634e3f04c8ba6760b0a9c4737eb9474892065afbaf",
+      "dom_counts": {
+        "note_recovery_inbox": 0,
+        "note_recovery_rows": 0,
+        "note_recovery_titles": 0,
+        "note_recovery_opens": 0,
+        "note_draft_restored": 1,
+        "note_draft_recovery_banner": 1,
+        "note_editor": 1,
+        "note_catalog": 1,
+        "note_conflict_dialog": 0,
+        "note_save_status": 1,
+        "workbench_group_nav": 1
+      },
+      "gateway_stats": {
+        "models_requests": 5,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nm9cbab37daf4146c0b32488c2238955ff",
+            "expected_revision": 3,
+            "mode": "unknown503",
+            "status": 503
+          }
+        ],
+        "notes": [
+          "note_d1@r3",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 9
+      }
+    },
+    {
+      "file": "after_r3_reload_1440.png",
+      "bytes": 118190,
+      "sha256": "2eec3b2f0c7adc4ea363fc4f81334fdf00f1c5627ab96e325a64da379faf8fd9",
+      "dom_counts": {
+        "note_recovery_inbox": 1,
+        "note_recovery_rows": 1,
+        "note_recovery_titles": 1,
+        "note_recovery_opens": 1,
+        "note_draft_restored": 0,
+        "note_draft_recovery_banner": 0,
+        "note_editor": 0,
+        "note_catalog": 1,
+        "note_conflict_dialog": 0,
+        "note_save_status": 0,
+        "workbench_group_nav": 1
+      },
+      "gateway_stats": {
+        "models_requests": 4,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nm3d17d9ea449d4d73a166c48b66f58ed1",
+            "expected_revision": 3,
+            "mode": "unknown503",
+            "status": 503
+          }
+        ],
+        "notes": [
+          "note_d1@r3",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 6
+      }
+    },
+    {
+      "file": "after_r3_restored_1440.png",
+      "bytes": 112602,
+      "sha256": "f09a1a72803d429fd621ae16bb82a6357a6cdab06f878471f58f9348b953111b",
+      "dom_counts": {
+        "note_recovery_inbox": 0,
+        "note_recovery_rows": 0,
+        "note_recovery_titles": 0,
+        "note_recovery_opens": 0,
+        "note_draft_restored": 1,
+        "note_draft_recovery_banner": 1,
+        "note_editor": 1,
+        "note_catalog": 1,
+        "note_conflict_dialog": 0,
+        "note_save_status": 1,
+        "workbench_group_nav": 1
+      },
+      "gateway_stats": {
+        "models_requests": 4,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nm3d17d9ea449d4d73a166c48b66f58ed1",
+            "expected_revision": 3,
+            "mode": "unknown503",
+            "status": 503
+          }
+        ],
+        "notes": [
+          "note_d1@r3",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 7
+      }
+    },
+    {
+      "file": "after_r3_restored_draft_1440.png",
+      "bytes": 130542,
+      "sha256": "53806e44da3c6c40e1434d8a289aafee91b41da0c07b36f0ed18f4cbbab8a69e",
+      "dom_counts": {
+        "note_recovery_inbox": 0,
+        "note_recovery_rows": 0,
+        "note_recovery_titles": 0,
+        "note_recovery_opens": 0,
+        "note_draft_restored": 1,
+        "note_draft_recovery_banner": 1,
+        "note_editor": 1,
+        "note_catalog": 1,
+        "note_conflict_dialog": 0,
+        "note_save_status": 1,
+        "workbench_group_nav": 1
+      },
+      "gateway_stats": {
+        "models_requests": 4,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nm3d17d9ea449d4d73a166c48b66f58ed1",
+            "expected_revision": 3,
+            "mode": "unknown503",
+            "status": 503
+          }
+        ],
+        "notes": [
+          "note_d1@r3",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 7
+      }
+    },
+    {
+      "file": "after_r4_conflict_1440.png",
+      "bytes": 116474,
+      "sha256": "2d76cbe71acb9812ae99b37c4ec10b9afae740bb0da07064f969da4bb79e3b45",
+      "dom_counts": {
+        "note_recovery_inbox": 1,
+        "note_recovery_rows": 1,
+        "note_recovery_titles": 1,
+        "note_recovery_opens": 1,
+        "note_draft_restored": 0,
+        "note_draft_recovery_banner": 0,
+        "note_editor": 0,
+        "note_catalog": 1,
+        "note_conflict_dialog": 0,
+        "note_save_status": 0,
+        "workbench_group_nav": 1
+      },
+      "gateway_stats": {
+        "models_requests": 2,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nmafe1b332eb99449dbb825a5bb2ca0f11",
+            "expected_revision": 3,
+            "mode": "conflict",
+            "status": 409
+          }
+        ],
+        "notes": [
+          "note_d1@r4",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 4
+      }
+    },
+    {
+      "file": "after_r4_conflict_restored_1440.png",
+      "bytes": 121025,
+      "sha256": "7a700a1d2797cc51f2170c2febf9d49ddca8a870f41e9f87d7bbff3eeecfa40e",
+      "dom_counts": {
+        "note_recovery_inbox": 0,
+        "note_recovery_rows": 0,
+        "note_recovery_titles": 0,
+        "note_recovery_opens": 0,
+        "note_draft_restored": 1,
+        "note_draft_recovery_banner": 1,
+        "note_editor": 1,
+        "note_catalog": 1,
+        "note_conflict_dialog": 1,
+        "note_save_status": 1,
+        "workbench_group_nav": 1
+      },
+      "gateway_stats": {
+        "models_requests": 2,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nmafe1b332eb99449dbb825a5bb2ca0f11",
+            "expected_revision": 3,
+            "mode": "conflict",
+            "status": 409
+          }
+        ],
+        "notes": [
+          "note_d1@r4",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 5
+      }
+    },
+    {
+      "file": "after_r4_conflict_restored_editor_1440.png",
+      "bytes": 110350,
+      "sha256": "4b241449cc965c01a8b8ed98eccda4ff171f7325f6e4dea4d78b453667da1afc",
+      "dom_counts": {
+        "note_recovery_inbox": 0,
+        "note_recovery_rows": 0,
+        "note_recovery_titles": 0,
+        "note_recovery_opens": 0,
+        "note_draft_restored": 1,
+        "note_draft_recovery_banner": 1,
+        "note_editor": 1,
+        "note_catalog": 1,
+        "note_conflict_dialog": 0,
+        "note_save_status": 1,
+        "workbench_group_nav": 1
+      },
+      "gateway_stats": {
+        "models_requests": 2,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nmafe1b332eb99449dbb825a5bb2ca0f11",
+            "expected_revision": 3,
+            "mode": "conflict",
+            "status": 409
+          }
+        ],
+        "notes": [
+          "note_d1@r4",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 5
+      }
+    },
+    {
+      "file": "after_r5_steady_state_1440.png",
+      "bytes": 106306,
+      "sha256": "eb886d644de544a1c85cc4a35646d2abe615264dd5b28c3f3129e6cde5cb7d86",
+      "dom_counts": {
+        "note_recovery_inbox": 0,
+        "note_recovery_rows": 0,
+        "note_recovery_titles": 0,
+        "note_recovery_opens": 0,
+        "note_draft_restored": 0,
+        "note_draft_recovery_banner": 0,
+        "note_editor": 0,
+        "note_catalog": 1,
+        "note_conflict_dialog": 0,
+        "note_save_status": 0,
+        "workbench_group_nav": 1
+      },
+      "gateway_stats": {
+        "models_requests": 2,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nm1ed207c5478f40ebac9e35e1634897d6",
+            "expected_revision": 3,
+            "mode": "success",
+            "status": 200
+          }
+        ],
+        "notes": [
+          "note_d1@r4",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 4
+      }
+    },
+    {
+      "file": "after_r1_pane_switch_1024.png",
+      "bytes": 89125,
+      "sha256": "65a2da12272d37117a73c575aa701ebfbf02332677f3f41f1c400642ebdc2bd1",
+      "dom_counts": {
+        "note_recovery_inbox": 1,
+        "note_recovery_rows": 1,
+        "note_recovery_titles": 1,
+        "note_recovery_opens": 1,
+        "note_draft_restored": 0,
+        "note_draft_recovery_banner": 0,
+        "note_editor": 0,
+        "note_catalog": 1,
+        "note_conflict_dialog": 0,
+        "note_save_status": 0,
+        "workbench_group_nav": 1
+      },
+      "gateway_stats": {
+        "models_requests": 2,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nmf72d811337e441df97d3435982434781",
+            "expected_revision": 3,
+            "mode": "unknown503",
+            "status": 503
+          }
+        ],
+        "notes": [
+          "note_d1@r3",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 4
+      }
+    },
+    {
+      "file": "after_r1_restored_1024.png",
+      "bytes": 95549,
+      "sha256": "9ce864b50bd0ae3d747f7da4dcdac88f7d268aa9719e2fae573c8d97172e8acf",
+      "dom_counts": {
+        "note_recovery_inbox": 0,
+        "note_recovery_rows": 0,
+        "note_recovery_titles": 0,
+        "note_recovery_opens": 0,
+        "note_draft_restored": 1,
+        "note_draft_recovery_banner": 1,
+        "note_editor": 1,
+        "note_catalog": 1,
+        "note_conflict_dialog": 0,
+        "note_save_status": 1,
+        "workbench_group_nav": 1
+      },
+      "gateway_stats": {
+        "models_requests": 2,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nmf72d811337e441df97d3435982434781",
+            "expected_revision": 3,
+            "mode": "unknown503",
+            "status": 503
+          }
+        ],
+        "notes": [
+          "note_d1@r3",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 5
+      }
+    },
+    {
+      "file": "after_r1_restored_draft_1024.png",
+      "bytes": 101797,
+      "sha256": "b8d6263c7c95b7d16504a2fd42bb7132449a8509d4a39a421ab4e5d6792840be",
+      "dom_counts": {
+        "note_recovery_inbox": 0,
+        "note_recovery_rows": 0,
+        "note_recovery_titles": 0,
+        "note_recovery_opens": 0,
+        "note_draft_restored": 1,
+        "note_draft_recovery_banner": 1,
+        "note_editor": 1,
+        "note_catalog": 1,
+        "note_conflict_dialog": 0,
+        "note_save_status": 1,
+        "workbench_group_nav": 1
+      },
+      "gateway_stats": {
+        "models_requests": 2,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nmf72d811337e441df97d3435982434781",
+            "expected_revision": 3,
+            "mode": "unknown503",
+            "status": 503
+          }
+        ],
+        "notes": [
+          "note_d1@r3",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 5
+      }
+    },
+    {
+      "file": "after_r2_project_p2_1024.png",
+      "bytes": 91197,
+      "sha256": "da2701e41b68710b81e1b7da92500a7dcf0ff8cb53ab6dbbad599b1a1fdb1542",
+      "dom_counts": {
+        "note_recovery_inbox": 0,
+        "note_recovery_rows": 0,
+        "note_recovery_titles": 0,
+        "note_recovery_opens": 0,
+        "note_draft_restored": 0,
+        "note_draft_recovery_banner": 0,
+        "note_editor": 0,
+        "note_catalog": 1,
+        "note_conflict_dialog": 0,
+        "note_save_status": 0,
+        "workbench_group_nav": 1
+      },
+      "gateway_stats": {
+        "models_requests": 4,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nmb1fc07be566440fe995f8aa01efe5d79",
+            "expected_revision": 3,
+            "mode": "unknown503",
+            "status": 503
+          }
+        ],
+        "notes": [
+          "note_d1@r3",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 6
+      }
+    },
+    {
+      "file": "after_r2_project_switch_1024.png",
+      "bytes": 89198,
+      "sha256": "8abedcdece22146532e2b304b1259f2483b149d219a8c1cf556859a413e42fd7",
+      "dom_counts": {
+        "note_recovery_inbox": 1,
+        "note_recovery_rows": 1,
+        "note_recovery_titles": 1,
+        "note_recovery_opens": 1,
+        "note_draft_restored": 0,
+        "note_draft_recovery_banner": 0,
+        "note_editor": 0,
+        "note_catalog": 1,
+        "note_conflict_dialog": 0,
+        "note_save_status": 0,
+        "workbench_group_nav": 1
+      },
+      "gateway_stats": {
+        "models_requests": 5,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nmb1fc07be566440fe995f8aa01efe5d79",
+            "expected_revision": 3,
+            "mode": "unknown503",
+            "status": 503
+          }
+        ],
+        "notes": [
+          "note_d1@r3",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 8
+      }
+    },
+    {
+      "file": "after_r2_restored_1024.png",
+      "bytes": 95549,
+      "sha256": "9ce864b50bd0ae3d747f7da4dcdac88f7d268aa9719e2fae573c8d97172e8acf",
+      "dom_counts": {
+        "note_recovery_inbox": 0,
+        "note_recovery_rows": 0,
+        "note_recovery_titles": 0,
+        "note_recovery_opens": 0,
+        "note_draft_restored": 1,
+        "note_draft_recovery_banner": 1,
+        "note_editor": 1,
+        "note_catalog": 1,
+        "note_conflict_dialog": 0,
+        "note_save_status": 1,
+        "workbench_group_nav": 1
+      },
+      "gateway_stats": {
+        "models_requests": 5,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nmb1fc07be566440fe995f8aa01efe5d79",
+            "expected_revision": 3,
+            "mode": "unknown503",
+            "status": 503
+          }
+        ],
+        "notes": [
+          "note_d1@r3",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 9
+      }
+    },
+    {
+      "file": "after_r2_restored_draft_1024.png",
+      "bytes": 102672,
+      "sha256": "d098650377f82419d14fff07121909543efd176021708a9f0b3202bf82891851",
+      "dom_counts": {
+        "note_recovery_inbox": 0,
+        "note_recovery_rows": 0,
+        "note_recovery_titles": 0,
+        "note_recovery_opens": 0,
+        "note_draft_restored": 1,
+        "note_draft_recovery_banner": 1,
+        "note_editor": 1,
+        "note_catalog": 1,
+        "note_conflict_dialog": 0,
+        "note_save_status": 1,
+        "workbench_group_nav": 1
+      },
+      "gateway_stats": {
+        "models_requests": 5,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nmb1fc07be566440fe995f8aa01efe5d79",
+            "expected_revision": 3,
+            "mode": "unknown503",
+            "status": 503
+          }
+        ],
+        "notes": [
+          "note_d1@r3",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 9
+      }
+    },
+    {
+      "file": "after_r3_reload_1024.png",
+      "bytes": 90875,
+      "sha256": "096ea7caa6bcc43bda3438491fa0e0443368c48e3977339cf49be6a6f34fe965",
+      "dom_counts": {
+        "note_recovery_inbox": 1,
+        "note_recovery_rows": 1,
+        "note_recovery_titles": 1,
+        "note_recovery_opens": 1,
+        "note_draft_restored": 0,
+        "note_draft_recovery_banner": 0,
+        "note_editor": 0,
+        "note_catalog": 1,
+        "note_conflict_dialog": 0,
+        "note_save_status": 0,
+        "workbench_group_nav": 1
+      },
+      "gateway_stats": {
+        "models_requests": 4,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nm2012c5291c794715b6880a2ddca106c3",
+            "expected_revision": 3,
+            "mode": "unknown503",
+            "status": 503
+          }
+        ],
+        "notes": [
+          "note_d1@r3",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 6
+      }
+    },
+    {
+      "file": "after_r3_restored_1024.png",
+      "bytes": 97610,
+      "sha256": "d9b9d83ad9d6f46b38d904a7dcabb9d9025e0266834dfc20c283c12d41c649f9",
+      "dom_counts": {
+        "note_recovery_inbox": 0,
+        "note_recovery_rows": 0,
+        "note_recovery_titles": 0,
+        "note_recovery_opens": 0,
+        "note_draft_restored": 1,
+        "note_draft_recovery_banner": 1,
+        "note_editor": 1,
+        "note_catalog": 1,
+        "note_conflict_dialog": 0,
+        "note_save_status": 1,
+        "workbench_group_nav": 1
+      },
+      "gateway_stats": {
+        "models_requests": 4,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nm2012c5291c794715b6880a2ddca106c3",
+            "expected_revision": 3,
+            "mode": "unknown503",
+            "status": 503
+          }
+        ],
+        "notes": [
+          "note_d1@r3",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 7
+      }
+    },
+    {
+      "file": "after_r3_restored_draft_1024.png",
+      "bytes": 103589,
+      "sha256": "5573f77d37efc573168bf2216ab6344ea14d0ba925953f930d444389cacb55e1",
+      "dom_counts": {
+        "note_recovery_inbox": 0,
+        "note_recovery_rows": 0,
+        "note_recovery_titles": 0,
+        "note_recovery_opens": 0,
+        "note_draft_restored": 1,
+        "note_draft_recovery_banner": 1,
+        "note_editor": 1,
+        "note_catalog": 1,
+        "note_conflict_dialog": 0,
+        "note_save_status": 1,
+        "workbench_group_nav": 1
+      },
+      "gateway_stats": {
+        "models_requests": 4,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nm2012c5291c794715b6880a2ddca106c3",
+            "expected_revision": 3,
+            "mode": "unknown503",
+            "status": 503
+          }
+        ],
+        "notes": [
+          "note_d1@r3",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 7
+      }
+    },
+    {
+      "file": "after_r4_conflict_1024.png",
+      "bytes": 88878,
+      "sha256": "9c07fd8b064eec53e7a23efff9767fb0ad39fa249de96db1fa476cd292cebd33",
+      "dom_counts": {
+        "note_recovery_inbox": 1,
+        "note_recovery_rows": 1,
+        "note_recovery_titles": 1,
+        "note_recovery_opens": 1,
+        "note_draft_restored": 0,
+        "note_draft_recovery_banner": 0,
+        "note_editor": 0,
+        "note_catalog": 1,
+        "note_conflict_dialog": 0,
+        "note_save_status": 0,
+        "workbench_group_nav": 1
+      },
+      "gateway_stats": {
+        "models_requests": 2,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nma8129243811b47a1bdb3410ed378358f",
+            "expected_revision": 3,
+            "mode": "conflict",
+            "status": 409
+          }
+        ],
+        "notes": [
+          "note_d1@r4",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 4
+      }
+    },
+    {
+      "file": "after_r4_conflict_restored_1024.png",
+      "bytes": 96188,
+      "sha256": "84dca53fcaabe9b75454c6d47e855299413904cfef4e104e707ad44ee1c5a557",
+      "dom_counts": {
+        "note_recovery_inbox": 0,
+        "note_recovery_rows": 0,
+        "note_recovery_titles": 0,
+        "note_recovery_opens": 0,
+        "note_draft_restored": 1,
+        "note_draft_recovery_banner": 1,
+        "note_editor": 1,
+        "note_catalog": 1,
+        "note_conflict_dialog": 1,
+        "note_save_status": 1,
+        "workbench_group_nav": 1
+      },
+      "gateway_stats": {
+        "models_requests": 2,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nma8129243811b47a1bdb3410ed378358f",
+            "expected_revision": 3,
+            "mode": "conflict",
+            "status": 409
+          }
+        ],
+        "notes": [
+          "note_d1@r4",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 5
+      }
+    },
+    {
+      "file": "after_r4_conflict_restored_editor_1024.png",
+      "bytes": 93256,
+      "sha256": "f62d456b6cc579ee3f99943e6b8fff9a2b6f3a9db246f9771afc26c52df33dc3",
+      "dom_counts": {
+        "note_recovery_inbox": 0,
+        "note_recovery_rows": 0,
+        "note_recovery_titles": 0,
+        "note_recovery_opens": 0,
+        "note_draft_restored": 1,
+        "note_draft_recovery_banner": 1,
+        "note_editor": 1,
+        "note_catalog": 1,
+        "note_conflict_dialog": 0,
+        "note_save_status": 1,
+        "workbench_group_nav": 1
+      },
+      "gateway_stats": {
+        "models_requests": 2,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nma8129243811b47a1bdb3410ed378358f",
+            "expected_revision": 3,
+            "mode": "conflict",
+            "status": 409
+          }
+        ],
+        "notes": [
+          "note_d1@r4",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 5
+      }
+    },
+    {
+      "file": "after_r5_steady_state_1024.png",
+      "bytes": 91184,
+      "sha256": "3b2bd15b691533a627826befa9f1258033c62fcbe55482caa603ccdb573666d6",
+      "dom_counts": {
+        "note_recovery_inbox": 0,
+        "note_recovery_rows": 0,
+        "note_recovery_titles": 0,
+        "note_recovery_opens": 0,
+        "note_draft_restored": 0,
+        "note_draft_recovery_banner": 0,
+        "note_editor": 0,
+        "note_catalog": 1,
+        "note_conflict_dialog": 0,
+        "note_save_status": 0,
+        "workbench_group_nav": 1
+      },
+      "gateway_stats": {
+        "models_requests": 2,
+        "creates": 0,
+        "copies": 0,
+        "saves": [
+          {
+            "note_id": "note_d1",
+            "mutation_id": "nmc1e62c02ffda456786a811c6754be93c",
+            "expected_revision": 3,
+            "mode": "success",
+            "status": 200
+          }
+        ],
+        "notes": [
+          "note_d1@r4",
+          "note_safety@r2",
+          "note_legacy@rnull"
+        ],
+        "note_requests": 4
+      }
+    }
+  ],
+  "final_head": "46574030584ed3bfa11b75665c5fbf03fdb2ed52",
+  "worktree_provenance": {
+    "before": {
+      "name": "before",
+      "worktree": "/home/lchen/.dsh/state/superagent/work/leave-guard-798df570c13c-evidence/fork-before",
+      "head": "a4a76170c5016d0c4cfefae505aa8369be568a96",
+      "status_porcelain": "",
+      "config_ts": {
+        "sha256_current": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+        "sha256_at_head": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+        "restored_clean": true,
+        "original_sha256": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+        "patched_sha256": "255492d4ddc991b20eeb1fa7013af9223dda7d304180a5986107fed0afc0dade"
+      }
+    },
+    "after": {
+      "name": "after",
+      "worktree": "/home/lchen/.dsh/state/superagent/work/leave-guard-798df570c13c-evidence/fork-after",
+      "head": "46574030584ed3bfa11b75665c5fbf03fdb2ed52",
+      "status_porcelain": "",
+      "config_ts": {
+        "sha256_current": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+        "sha256_at_head": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+        "restored_clean": true,
+        "original_sha256": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+        "patched_sha256": "255492d4ddc991b20eeb1fa7013af9223dda7d304180a5986107fed0afc0dade"
+      }
+    },
+    "harness_only_patch": {
+      "file": "frontend/src/lib/embedded/config.ts",
+      "change": "dynamic process.env[CONST] lookups -> static process.env.NEXT_PUBLIC_* member access (Next dev does not inline dynamic lookups); reverted after capture",
+      "restored_clean": true
+    }
+  },
+  "local_verification": {
+    "head": "46574030584ed3bfa11b75665c5fbf03fdb2ed52",
+    "log": "logs/local-verification.txt",
+    "summary": "head=46574030584ed3bfa11b75665c5fbf03fdb2ed52 tsc=0 vitest=0 build=0",
+    "exit_code": 0,
+    "pr_ci": "fork repo has no GitHub Actions checks configured; these local command results are the verification evidence"
+  }
+}
