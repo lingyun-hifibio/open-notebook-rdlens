@@ -1,0 +1,16 @@
+{
+  "before": {
+    "original_sha256": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+    "patched_sha256": "255492d4ddc991b20eeb1fa7013af9223dda7d304180a5986107fed0afc0dade",
+    "restored_sha256": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+    "sha256_at_head": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+    "restored_clean": true
+  },
+  "after": {
+    "original_sha256": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+    "patched_sha256": "255492d4ddc991b20eeb1fa7013af9223dda7d304180a5986107fed0afc0dade",
+    "restored_sha256": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+    "sha256_at_head": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+    "restored_clean": true
+  }
+}

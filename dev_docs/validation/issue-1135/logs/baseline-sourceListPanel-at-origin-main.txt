@@ -1,0 +1,754 @@
+
+ RUN  v4.1.9 /home/lchen/.dsh/state/superagent/work/protected-edit-ui-c1f827496380-evidence/fork-before/frontend
+
+ ❯ src/components/research/SourceListPanel.test.tsx (15 tests | 14 failed) 14053ms
+     × 渲染全部四种状态（pending/ready/stale/failed） 1014ms
+     × ready/stale 可选择，pending/failed 不可选择，stale 显示英文风险提示 1003ms
+     × failed 状态展示管理员可重试提示（retry-visible；Owner 无重试按钮） 1003ms
+     ✓ 空态展示（无来源） 3ms
+     × 紧凑单行列表：每来源一个 listitem（选择复选框 + 状态徽标 + 标题 + 打开按钮） 1002ms
+     × 点击来源行回调 onOpenSource(sourceId)，与选择复选框互不干扰 1003ms
+     × 行首复选框进入/退出选中：写入 provider 并切换到 selected 模式（左栏编辑） 1003ms
+     × 21 项分两批浏览，跨页选择保持且计数准确 1003ms
+     × 恰好 20 项全部可见且不显示 Load more 1003ms
+     × selected 模式最后一项不可取消（复选框禁用，仍保持 ≥1 有效选择） 1003ms
+     × 每行复选框带可访问名称（aria-label 含文档名，屏幕阅读器语义） 1003ms
+     × 加载失败展示错误状态与重试，绝不伪装为空数据 1002ms
+     × synced_at 非 null → meta 显示版本 + Synced 标签 + 格式化时间，无裸 ISO 1002ms
+     × pending/failed（synced_at null）→ meta 不含 Synced 段（R2-1 回归红线） 1001ms
+     × Open 动作：图标按钮 a11y 可达（role button + aria-label），与选择分离 1003ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 14 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/components/research/SourceListPanel.test.tsx > SourceListPanel > 渲染全部四种状态（pending/ready/stale/failed）
+TestingLibraryElementError: Unable to find an element with the text: research.sources.statusPending. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"space-y-2"[39m
+    [36m>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"text-sm text-muted-foreground"[39m
+      [36m>[39m
+        [0mresearch.sources.empty[0m
+      [36m</p>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+
+Ignored nodes: comments, script, style
+[36m<html>[39m
+  [36m<head />[39m
+  [36m<body>[39m
+    [36m<div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"space-y-2"[39m
+      [36m>[39m
+        [36m<p[39m
+          [33mclass[39m=[32m"text-sm text-muted-foreground"[39m
+        [36m>[39m
+          [0mresearch.sources.empty[0m
+        [36m</p>[39m
+      [36m</div>[39m
+    [36m</div>[39m
+  [36m</body>[39m
+[36m</html>[39m...
+ ❯ Proxy.waitForWrapper ../../../../../../../workspace/open-notebook-rdlens/frontend/node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ src/components/research/SourceListPanel.test.tsx:85:11
+     83|     const { wrapper } = makeWrapper()
+     84|     render(<SourceListPanel />, { wrapper })
+     85|     await waitFor(() => {
+       |           ^
+     86|       expect(screen.getByText('research.sources.statusPending')).toBeI…
+     87|       expect(screen.getByText('research.sources.statusReady')).toBeInT…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/14]⎯
+
+ FAIL  src/components/research/SourceListPanel.test.tsx > SourceListPanel > ready/stale 可选择，pending/failed 不可选择，stale 显示英文风险提示
+TestingLibraryElementError: Unable to find an element by: [data-testid="source-scope-pending"]
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"space-y-2"[39m
+    [36m>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"text-sm text-muted-foreground"[39m
+      [36m>[39m
+        [0mresearch.sources.empty[0m
+      [36m</p>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"space-y-2"[39m
+    [36m>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"text-sm text-muted-foreground"[39m
+      [36m>[39m
+        [0mresearch.sources.empty[0m
+      [36m</p>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ waitForWrapper ../../../../../../../workspace/open-notebook-rdlens/frontend/node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ ../../../../../../../workspace/open-notebook-rdlens/frontend/node_modules/@testing-library/dom/dist/query-helpers.js:86:33
+ ❯ src/components/research/SourceListPanel.test.tsx:108:25
+    106|     render(<SourceListPanel />, { wrapper })
+    107|
+    108|     expect(await screen.findByTestId('source-scope-pending')).toBeDisa…
+       |                         ^
+    109|     expect(screen.getByTestId('source-scope-failed')).toBeDisabled()
+    110|     expect(screen.getByTestId('source-scope-ready')).not.toBeDisabled()
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/14]⎯
+
+ FAIL  src/components/research/SourceListPanel.test.tsx > SourceListPanel > failed 状态展示管理员可重试提示（retry-visible；Owner 无重试按钮）
+TestingLibraryElementError: Unable to find an element with the text: research.sources.retryHint. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"space-y-2"[39m
+    [36m>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"text-sm text-muted-foreground"[39m
+      [36m>[39m
+        [0mresearch.sources.empty[0m
+      [36m</p>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+
+Ignored nodes: comments, script, style
+[36m<html>[39m
+  [36m<head />[39m
+  [36m<body>[39m
+    [36m<div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"space-y-2"[39m
+      [36m>[39m
+        [36m<p[39m
+          [33mclass[39m=[32m"text-sm text-muted-foreground"[39m
+        [36m>[39m
+          [0mresearch.sources.empty[0m
+        [36m</p>[39m
+      [36m</div>[39m
+    [36m</div>[39m
+  [36m</body>[39m
+[36m</html>[39m...
+ ❯ Proxy.waitForWrapper ../../../../../../../workspace/open-notebook-rdlens/frontend/node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ src/components/research/SourceListPanel.test.tsx:122:11
+    120|     const { wrapper } = makeWrapper()
+    121|     render(<SourceListPanel />, { wrapper })
+    122|     await waitFor(() => {
+       |           ^
+    123|       expect(screen.getByText('research.sources.retryHint')).toBeInThe…
+    124|     })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/14]⎯
+
+ FAIL  src/components/research/SourceListPanel.test.tsx > SourceListPanel > 紧凑单行列表：每来源一个 listitem（选择复选框 + 状态徽标 + 标题 + 打开按钮）
+TestingLibraryElementError: Unable to find an element by: [data-testid="source-list-rows"]
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"space-y-2"[39m
+    [36m>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"text-sm text-muted-foreground"[39m
+      [36m>[39m
+        [0mresearch.sources.empty[0m
+      [36m</p>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"space-y-2"[39m
+    [36m>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"text-sm text-muted-foreground"[39m
+      [36m>[39m
+        [0mresearch.sources.empty[0m
+      [36m</p>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ waitForWrapper ../../../../../../../workspace/open-notebook-rdlens/frontend/node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ ../../../../../../../workspace/open-notebook-rdlens/frontend/node_modules/@testing-library/dom/dist/query-helpers.js:86:33
+ ❯ src/components/research/SourceListPanel.test.tsx:147:31
+    145|     const { wrapper } = makeWrapper()
+    146|     render(<SourceListPanel onOpenSource={onOpenSource} />, { wrapper …
+    147|     const rows = await screen.findByTestId('source-list-rows')
+       |                               ^
+    148|     expect(rows).toBeInTheDocument()
+    149|     const items = within(rows).getAllByRole('listitem')
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/14]⎯
+
+ FAIL  src/components/research/SourceListPanel.test.tsx > SourceListPanel > 点击来源行回调 onOpenSource(sourceId)，与选择复选框互不干扰
+TestingLibraryElementError: Unable to find role="button" and name `/research.sources.open/`
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"space-y-2"[39m
+    [36m>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"text-sm text-muted-foreground"[39m
+      [36m>[39m
+        [0mresearch.sources.empty[0m
+      [36m</p>[39m
+    [36m</div>[39m
+    [36m<div>[39m
+      [36m<span[39m
+        [33mdata-testid[39m=[32m"probe-mode"[39m
+      [36m>[39m
+        [0mall[0m
+      [36m</span>[39m
+      [36m<span[39m
+        [33mdata-testid[39m=[32m"probe-selected"[39m
+      [36m/>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+
+Ignored nodes: comments, script, style
+[36m<html>[39m
+  [36m<head />[39m
+  [36m<body>[39m
+    [36m<div>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"space-y-2"[39m
+      [36m>[39m
+        [36m<p[39m
+          [33mclass[39m=[32m"text-sm text-muted-foreground"[39m
+        [36m>[39m
+          [0mresearch.sources.empty[0m
+        [36m</p>[39m
+      [36m</div>[39m
+      [36m<div>[39m
+        [36m<span[39m
+          [33mdata-testid[39m=[32m"probe-mode"[39m
+        [36m>[39m
+          [0mall[0m
+        [36m</span>[39m
+        [36m<span[39m
+          [33mdata-testid[39m=[32m"probe-selected"[39m
+        [36m/>[39m
+      [36m</div>[39m
+    [36m</div>[39m
+  [36m</body>[39m
+[36m</html>[39m...
+ ❯ Proxy.waitForWrapper ../../../../../../../workspace/open-notebook-rdlens/frontend/node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ src/components/research/SourceListPanel.test.tsx:174:11
+    172|       { wrapper },
+    173|     )
+    174|     await waitFor(() => {
+       |           ^
+    175|       fireEvent.click(screen.getByRole('button', { name: /research.sou…
+    176|     })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/14]⎯
+
+ FAIL  src/components/research/SourceListPanel.test.tsx > SourceListPanel > 行首复选框进入/退出选中：写入 provider 并切换到 selected 模式（左栏编辑）
+TestingLibraryElementError: Unable to find role="checkbox"
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"space-y-2"[39m
+    [36m>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"text-sm text-muted-foreground"[39m
+      [36m>[39m
+        [0mresearch.sources.empty[0m
+      [36m</p>[39m
+    [36m</div>[39m
+    [36m<div>[39m
+      [36m<span[39m
+        [33mdata-testid[39m=[32m"probe-mode"[39m
+      [36m>[39m
+        [0mall[0m
+      [36m</span>[39m
+      [36m<span[39m
+        [33mdata-testid[39m=[32m"probe-selected"[39m
+      [36m/>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"space-y-2"[39m
+    [36m>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"text-sm text-muted-foreground"[39m
+      [36m>[39m
+        [0mresearch.sources.empty[0m
+      [36m</p>[39m
+    [36m</div>[39m
+    [36m<div>[39m
+      [36m<span[39m
+        [33mdata-testid[39m=[32m"probe-mode"[39m
+      [36m>[39m
+        [0mall[0m
+      [36m</span>[39m
+      [36m<span[39m
+        [33mdata-testid[39m=[32m"probe-selected"[39m
+      [36m/>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ waitForWrapper ../../../../../../../workspace/open-notebook-rdlens/frontend/node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ ../../../../../../../workspace/open-notebook-rdlens/frontend/node_modules/@testing-library/dom/dist/query-helpers.js:86:33
+ ❯ src/components/research/SourceListPanel.test.tsx:195:37
+    193|       { wrapper },
+    194|     )
+    195|     const checkboxes = await screen.findAllByRole('checkbox')
+       |                                     ^
+    196|     expect(checkboxes).toHaveLength(2)
+    197|     fireEvent.click(checkboxes[0])
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/14]⎯
+
+ FAIL  src/components/research/SourceListPanel.test.tsx > SourceListPanel > 21 项分两批浏览，跨页选择保持且计数准确
+TestingLibraryElementError: Unable to find an element by: [data-testid="source-list-rows"]
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"space-y-2"[39m
+    [36m>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"text-sm text-muted-foreground"[39m
+      [36m>[39m
+        [0mresearch.sources.empty[0m
+      [36m</p>[39m
+    [36m</div>[39m
+    [36m<div>[39m
+      [36m<span[39m
+        [33mdata-testid[39m=[32m"probe-mode"[39m
+      [36m>[39m
+        [0mall[0m
+      [36m</span>[39m
+      [36m<span[39m
+        [33mdata-testid[39m=[32m"probe-selected"[39m
+      [36m/>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"space-y-2"[39m
+    [36m>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"text-sm text-muted-foreground"[39m
+      [36m>[39m
+        [0mresearch.sources.empty[0m
+      [36m</p>[39m
+    [36m</div>[39m
+    [36m<div>[39m
+      [36m<span[39m
+        [33mdata-testid[39m=[32m"probe-mode"[39m
+      [36m>[39m
+        [0mall[0m
+      [36m</span>[39m
+      [36m<span[39m
+        [33mdata-testid[39m=[32m"probe-selected"[39m
+      [36m/>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ waitForWrapper ../../../../../../../workspace/open-notebook-rdlens/frontend/node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ ../../../../../../../workspace/open-notebook-rdlens/frontend/node_modules/@testing-library/dom/dist/query-helpers.js:86:33
+ ❯ src/components/research/SourceListPanel.test.tsx:230:31
+    228|     )
+    229|
+    230|     const rows = await screen.findByTestId('source-list-rows')
+       |                               ^
+    231|     expect(within(rows).getAllByRole('listitem')).toHaveLength(20)
+    232|     fireEvent.click(screen.getByTestId('source-scope-s1'))
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/14]⎯
+
+ FAIL  src/components/research/SourceListPanel.test.tsx > SourceListPanel > 恰好 20 项全部可见且不显示 Load more
+TestingLibraryElementError: Unable to find an element by: [data-testid="source-list-rows"]
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"space-y-2"[39m
+    [36m>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"text-sm text-muted-foreground"[39m
+      [36m>[39m
+        [0mresearch.sources.empty[0m
+      [36m</p>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"space-y-2"[39m
+    [36m>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"text-sm text-muted-foreground"[39m
+      [36m>[39m
+        [0mresearch.sources.empty[0m
+      [36m</p>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ waitForWrapper ../../../../../../../workspace/open-notebook-rdlens/frontend/node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ ../../../../../../../workspace/open-notebook-rdlens/frontend/node_modules/@testing-library/dom/dist/query-helpers.js:86:33
+ ❯ src/components/research/SourceListPanel.test.tsx:253:31
+    251|     render(<SourceListPanel />, { wrapper })
+    252|
+    253|     const rows = await screen.findByTestId('source-list-rows')
+       |                               ^
+    254|     await waitFor(() => expect(within(rows).getAllByRole('listitem')).…
+    255|     expect(screen.queryByRole('button', { name: 'research.pagination.l…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/14]⎯
+
+ FAIL  src/components/research/SourceListPanel.test.tsx > SourceListPanel > selected 模式最后一项不可取消（复选框禁用，仍保持 ≥1 有效选择）
+TestingLibraryElementError: Unable to find an element by: [data-testid="source-scope-src_1"]
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"space-y-2"[39m
+    [36m>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"text-sm text-muted-foreground"[39m
+      [36m>[39m
+        [0mresearch.sources.empty[0m
+      [36m</p>[39m
+    [36m</div>[39m
+    [36m<div>[39m
+      [36m<span[39m
+        [33mdata-testid[39m=[32m"probe-mode"[39m
+      [36m>[39m
+        [0mselected[0m
+      [36m</span>[39m
+      [36m<span[39m
+        [33mdata-testid[39m=[32m"probe-selected"[39m
+      [36m>[39m
+        [0msrc_1[0m
+      [36m</span>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"space-y-2"[39m
+    [36m>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"text-sm text-muted-foreground"[39m
+      [36m>[39m
+        [0mresearch.sources.empty[0m
+      [36m</p>[39m
+    [36m</div>[39m
+    [36m<div>[39m
+      [36m<span[39m
+        [33mdata-testid[39m=[32m"probe-mode"[39m
+      [36m>[39m
+        [0mselected[0m
+      [36m</span>[39m
+      [36m<span[39m
+        [33mdata-testid[39m=[32m"probe-selected"[39m
+      [36m>[39m
+        [0msrc_1[0m
+      [36m</span>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ waitForWrapper ../../../../../../../workspace/open-notebook-rdlens/frontend/node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ ../../../../../../../workspace/open-notebook-rdlens/frontend/node_modules/@testing-library/dom/dist/query-helpers.js:86:33
+ ❯ src/components/research/SourceListPanel.test.tsx:276:35
+    274|       { wrapper },
+    275|     )
+    276|     const checkbox = await screen.findByTestId('source-scope-src_1')
+       |                                   ^
+    277|     expect(checkbox).toBeDisabled()
+    278|     expect(screen.getByTestId('probe-selected')).toHaveTextContent('sr…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/14]⎯
+
+ FAIL  src/components/research/SourceListPanel.test.tsx > SourceListPanel > 每行复选框带可访问名称（aria-label 含文档名，屏幕阅读器语义）
+TestingLibraryElementError: Unable to find an element by: [data-testid="source-scope-src_1"]
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"space-y-2"[39m
+    [36m>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"text-sm text-muted-foreground"[39m
+      [36m>[39m
+        [0mresearch.sources.empty[0m
+      [36m</p>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"space-y-2"[39m
+    [36m>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"text-sm text-muted-foreground"[39m
+      [36m>[39m
+        [0mresearch.sources.empty[0m
+      [36m</p>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ waitForWrapper ../../../../../../../workspace/open-notebook-rdlens/frontend/node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ ../../../../../../../workspace/open-notebook-rdlens/frontend/node_modules/@testing-library/dom/dist/query-helpers.js:86:33
+ ❯ src/components/research/SourceListPanel.test.tsx:288:35
+    286|     const { wrapper } = makeWrapper()
+    287|     render(<SourceListPanel />, { wrapper })
+    288|     const checkbox = await screen.findByTestId('source-scope-src_1')
+       |                                   ^
+    289|     expect(checkbox).toHaveAttribute('aria-label', 'research.sources.s…
+    290|     expect(checkbox).toHaveAttribute('role', 'checkbox')
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/14]⎯
+
+ FAIL  src/components/research/SourceListPanel.test.tsx > SourceListPanel > 加载失败展示错误状态与重试，绝不伪装为空数据
+TestingLibraryElementError: Unable to find an element with the text: research.workbench.loadFailed. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"space-y-2"[39m
+    [36m>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"text-sm text-muted-foreground"[39m
+      [36m>[39m
+        [0mresearch.sources.empty[0m
+      [36m</p>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"space-y-2"[39m
+    [36m>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"text-sm text-muted-foreground"[39m
+      [36m>[39m
+        [0mresearch.sources.empty[0m
+      [36m</p>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ waitForWrapper ../../../../../../../workspace/open-notebook-rdlens/frontend/node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ ../../../../../../../workspace/open-notebook-rdlens/frontend/node_modules/@testing-library/dom/dist/query-helpers.js:86:33
+ ❯ src/components/research/SourceListPanel.test.tsx:299:25
+    297|     const { wrapper } = makeWrapper()
+    298|     render(<SourceListPanel />, { wrapper })
+    299|     expect(await screen.findByText('research.workbench.loadFailed')).t…
+       |                         ^
+    300|     expect(screen.queryByText('research.sources.empty')).toBeNull()
+    301|     fireEvent.click(screen.getByRole('button', { name: 'research.retry…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/14]⎯
+
+ FAIL  src/components/research/SourceListPanel.test.tsx > SourceListPanel（RWV2-43 meta 可读化） > synced_at 非 null → meta 显示版本 + Synced 标签 + 格式化时间，无裸 ISO
+TestingLibraryElementError: Unable to find an element by: [data-testid="source-list-rows"]
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"space-y-2"[39m
+    [36m>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"text-sm text-muted-foreground"[39m
+      [36m>[39m
+        [0mresearch.sources.empty[0m
+      [36m</p>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"space-y-2"[39m
+    [36m>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"text-sm text-muted-foreground"[39m
+      [36m>[39m
+        [0mresearch.sources.empty[0m
+      [36m</p>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ waitForWrapper ../../../../../../../workspace/open-notebook-rdlens/frontend/node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ ../../../../../../../workspace/open-notebook-rdlens/frontend/node_modules/@testing-library/dom/dist/query-helpers.js:86:33
+ ❯ src/components/research/SourceListPanel.test.tsx:320:31
+    318|     const { wrapper } = makeWrapper()
+    319|     render(<SourceListPanel />, { wrapper })
+    320|     const rows = await screen.findByTestId('source-list-rows')
+       |                               ^
+    321|     const row = within(rows).getAllByRole('listitem')[0]
+    322|     expect(row.textContent).toContain('v3')
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/14]⎯
+
+ FAIL  src/components/research/SourceListPanel.test.tsx > SourceListPanel（RWV2-43 meta 可读化） > pending/failed（synced_at null）→ meta 不含 Synced 段（R2-1 回归红线）
+TestingLibraryElementError: Unable to find an element by: [data-testid="source-list-rows"]
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"space-y-2"[39m
+    [36m>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"text-sm text-muted-foreground"[39m
+      [36m>[39m
+        [0mresearch.sources.empty[0m
+      [36m</p>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"space-y-2"[39m
+    [36m>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"text-sm text-muted-foreground"[39m
+      [36m>[39m
+        [0mresearch.sources.empty[0m
+      [36m</p>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ waitForWrapper ../../../../../../../workspace/open-notebook-rdlens/frontend/node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ ../../../../../../../workspace/open-notebook-rdlens/frontend/node_modules/@testing-library/dom/dist/query-helpers.js:86:33
+ ❯ src/components/research/SourceListPanel.test.tsx:338:31
+    336|     const { wrapper } = makeWrapper()
+    337|     render(<SourceListPanel />, { wrapper })
+    338|     const rows = await screen.findByTestId('source-list-rows')
+       |                               ^
+    339|     const items = within(rows).getAllByRole('listitem')
+    340|     expect(items).toHaveLength(2)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[13/14]⎯
+
+ FAIL  src/components/research/SourceListPanel.test.tsx > SourceListPanel（RWV2-43 meta 可读化） > Open 动作：图标按钮 a11y 可达（role button + aria-label），与选择分离
+TestingLibraryElementError: Unable to find role="button" and name `/research.sources.open/`
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"space-y-2"[39m
+    [36m>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"text-sm text-muted-foreground"[39m
+      [36m>[39m
+        [0mresearch.sources.empty[0m
+      [36m</p>[39m
+    [36m</div>[39m
+    [36m<div>[39m
+      [36m<span[39m
+        [33mdata-testid[39m=[32m"probe-mode"[39m
+      [36m>[39m
+        [0mall[0m
+      [36m</span>[39m
+      [36m<span[39m
+        [33mdata-testid[39m=[32m"probe-selected"[39m
+      [36m/>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"space-y-2"[39m
+    [36m>[39m
+      [36m<p[39m
+        [33mclass[39m=[32m"text-sm text-muted-foreground"[39m
+      [36m>[39m
+        [0mresearch.sources.empty[0m
+      [36m</p>[39m
+    [36m</div>[39m
+    [36m<div>[39m
+      [36m<span[39m
+        [33mdata-testid[39m=[32m"probe-mode"[39m
+      [36m>[39m
+        [0mall[0m
+      [36m</span>[39m
+      [36m<span[39m
+        [33mdata-testid[39m=[32m"probe-selected"[39m
+      [36m/>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+ ❯ waitForWrapper ../../../../../../../workspace/open-notebook-rdlens/frontend/node_modules/@testing-library/dom/dist/wait-for.js:163:27
+ ❯ ../../../../../../../workspace/open-notebook-rdlens/frontend/node_modules/@testing-library/dom/dist/query-helpers.js:86:33
+ ❯ src/components/research/SourceListPanel.test.tsx:360:37
+    358|       { wrapper },
+    359|     )
+    360|     const openButton = await screen.findByRole('button', { name: /rese…
+       |                                     ^
+    361|     expect(openButton).toBeInTheDocument()
+    362|     fireEvent.click(openButton)
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[14/14]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  14 failed | 1 passed (15)
+   Start at  15:14:17
+   Duration  14.62s (transform 196ms, setup 39ms, import 325ms, tests 14.05s, environment 148ms)
+

@@ -1,0 +1,1744 @@
+{
+  "ticket": "HiFiBiO-Therapeutics/RDLens#1135",
+  "title": "受保护编辑启用入口（旧未保护 Note → d2-v1 原地启用）— fork visual evidence",
+  "evidence_kind": "synthetic",
+  "synthetic_declaration": "Real fork Next.js app (next dev --webpack, embedded iframe) + synthetic host page + route-mocked Research Gateway. No real RDLens host, PostgreSQL, SurrealDB, files, models, Feishu content, users or private data. All note titles/ids/content are [synthetic] fixtures (project p1, viewer 1, fabricated claims-only token).",
+  "phase": "before",
+  "head": "34f531d",
+  "baseline": "fork origin/main 34f531d (post-#1136)",
+  "captured_at": "2026-11-10T07:06:57.884Z",
+  "host_url": "http://127.0.0.1:8980/",
+  "gateway": "http://127.0.0.1:8951",
+  "note_mode_file": "/tmp/issue1135-note-mode",
+  "enable_mode_file": "/tmp/issue1135-enable-mode",
+  "before_na_scenes": {
+    "e4": "N/A — baseline has no enable entry/mutation, so a 403 restricted test of the enable flow does not exist",
+    "e5": "N/A — baseline has no enable entry/mutation, so a 503 dependency + retry test of the enable flow does not exist",
+    "e6": "N/A — baseline has no enable entry/mutation, so the unknown-result / same-mutation replay test does not exist"
+  },
+  "env": {
+    "chrome": "/home/lchen/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome",
+    "node": "v22.20.0",
+    "widths": [
+      1440,
+      1024
+    ],
+    "viewports": {
+      "1024": "1024x768",
+      "1440": "1440x900"
+    },
+    "device_scale_factor": 1,
+    "color_scheme": "light",
+    "locale": "en-US",
+    "fresh_browser_context_per_scene": true,
+    "harness_only_config_patch": "frontend/src/lib/embedded/config.ts static NEXT_PUBLIC_* member access (Next dev does not inline dynamic env lookups); reverted after capture"
+  },
+  "scenes": [
+    {
+      "id": "E1",
+      "width": 1440,
+      "note_mode": "editor_on",
+      "enable_mode": "success",
+      "stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      },
+      "assertions": [
+        {
+          "name": "e1.legacy_row_present",
+          "ok": true,
+          "expected": "note-catalog-row-note_legacy present",
+          "actual": true
+        },
+        {
+          "name": "e1.legacy_row_is_unprotected",
+          "ok": true,
+          "expected": "legacy row data-edit-schema=\"legacy\"",
+          "actual": {
+            "edit_schema": "legacy",
+            "revision_testid": false,
+            "legacy_badge": true,
+            "enable_button": false,
+            "row_buttons": [
+              "Include [synthetic] Legacy note (pre-protection) in scope",
+              "Edit",
+              "Delete"
+            ]
+          }
+        },
+        {
+          "name": "e1.row_hovered",
+          "ok": true,
+          "expected": "legacy row hover works",
+          "actual": true
+        },
+        {
+          "name": "e1.before_legacy_edit_delete_actions",
+          "ok": true,
+          "expected": "legacy row action area shows Edit and Delete",
+          "actual": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Edit",
+            "Delete"
+          ]
+        },
+        {
+          "name": "e1.before_no_enable_entry",
+          "ok": true,
+          "expected": "0 note-enable-* testids in the legacy row action area (baseline gap)",
+          "actual": {
+            "enable": 0,
+            "testids": []
+          }
+        },
+        {
+          "name": "e1.no_enable_request_on_row_view",
+          "ok": true,
+          "expected": "no POST .../editing request merely by viewing/hovering the row",
+          "actual": 0
+        },
+        {
+          "name": "e1.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 4838
+    },
+    {
+      "id": "E2",
+      "width": 1440,
+      "note_mode": "editor_on",
+      "enable_mode": "success",
+      "marker": "[synthetic] E2 legacy save marker 373628",
+      "stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": null,
+            "expected_revision": null,
+            "status": 200
+          }
+        ],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 5
+      },
+      "assertions": [
+        {
+          "name": "e2.before_edit_action_clicked",
+          "ok": true,
+          "expected": "legacy row Edit button clicked",
+          "actual": {
+            "clicked": true
+          }
+        },
+        {
+          "name": "e2.before_legacy_form_opened",
+          "ok": true,
+          "expected": "legacy-note-form-hint >= 1",
+          "actual": true
+        },
+        {
+          "name": "e2.before_legacy_form_prefilled",
+          "ok": true,
+          "expected": "old form prefilled with the legacy note title/content",
+          "actual": {
+            "title": "[synthetic] Legacy note (pre-protection)",
+            "contentPrefix": "[synthetic] Legacy note created before d2-v1 editing protect"
+          }
+        },
+        {
+          "name": "e2.before_no_protected_editor_or_revision",
+          "ok": true,
+          "expected": "no protected d2-v1 editor / revision display for the legacy note (baseline gap)",
+          "actual": {
+            "editor": 0,
+            "revision": 0
+          }
+        },
+        {
+          "name": "e2.before_no_enable_entry",
+          "ok": true,
+          "expected": "0 note-enable-* testids (baseline gap)",
+          "actual": {
+            "enable": 0,
+            "testids": []
+          }
+        },
+        {
+          "name": "e2.before_legacy_save_succeeds",
+          "ok": true,
+          "expected": "legacy (unprotected) PATCH save returns 200",
+          "actual": {
+            "note_id": "note_legacy",
+            "selected": false,
+            "mutation_id": null,
+            "expected_revision": null,
+            "at": 1794294374903,
+            "status": 200
+          }
+        },
+        {
+          "name": "e2.before_legacy_save_updates_note",
+          "ok": true,
+          "expected": "server-side legacy note title updated through the old form",
+          "actual": {
+            "title": "[synthetic] Legacy note (pre-protection) [synthetic] E2 legacy save marker 373628",
+            "edit_schema": null
+          }
+        },
+        {
+          "name": "e2.before_note_stays_unprotected",
+          "ok": true,
+          "expected": "legacy note remains unprotected (edit_schema null) after the old-form save",
+          "actual": null
+        },
+        {
+          "name": "e2.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 8561
+    },
+    {
+      "id": "E3",
+      "width": 1440,
+      "note_mode": "editor_off",
+      "enable_mode": "success",
+      "stats": {
+        "note_mode": "editor_off",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      },
+      "assertions": [
+        {
+          "name": "e3.row_hovered",
+          "ok": true,
+          "expected": "legacy row hover works",
+          "actual": true
+        },
+        {
+          "name": "e3.capability_off_known",
+          "ok": true,
+          "expected": "Notes catalog rendered with the capability projection loaded",
+          "actual": 1
+        },
+        {
+          "name": "e3.models_request_seen",
+          "ok": true,
+          "expected": "/models capability projection requested",
+          "actual": 2
+        },
+        {
+          "name": "e3.before_no_enable_entry",
+          "ok": true,
+          "expected": "0 note-enable-* testids with note_editor.available=false (baseline gap)",
+          "actual": {
+            "enable": 0,
+            "testids": []
+          }
+        },
+        {
+          "name": "e3.legacy_edit_action_clicked",
+          "ok": true,
+          "expected": "legacy row Edit button clicked",
+          "actual": {
+            "clicked": true
+          }
+        },
+        {
+          "name": "e3.legacy_form_kept",
+          "ok": true,
+          "expected": "legacy-note-form-hint >= 1 (old form unchanged)",
+          "actual": true
+        },
+        {
+          "name": "e3.legacy_form_prefilled",
+          "ok": true,
+          "expected": "old form prefilled with the legacy note content",
+          "actual": {
+            "title": "[synthetic] Legacy note (pre-protection)",
+            "contentPrefix": "[synthetic] Legacy note created before d2-v1 editing protect"
+          }
+        },
+        {
+          "name": "e3.no_protected_editor_with_form",
+          "ok": true,
+          "expected": "no d2-v1 protected editor for the legacy note in this flow",
+          "actual": 0
+        },
+        {
+          "name": "e3.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 5258
+    },
+    {
+      "id": "E7",
+      "width": 1440,
+      "note_mode": "editor_on",
+      "role": "admin_readonly",
+      "stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      },
+      "assertions": [
+        {
+          "name": "e7.admin_banner_visible",
+          "ok": true,
+          "expected": "admin-readonly-banner visible for the synthetic admin_readonly token",
+          "actual": 2
+        },
+        {
+          "name": "e7.no_enable_entry_for_admin",
+          "ok": true,
+          "expected": "no note-enable-* entry for an Admin read-only session",
+          "actual": {
+            "enable": 0,
+            "testids": []
+          }
+        },
+        {
+          "name": "e7.no_legacy_write_actions_for_admin",
+          "ok": true,
+          "expected": "admin read-only session exposes no legacy Edit/Delete write actions",
+          "actual": [
+            "Include [synthetic] Legacy note (pre-protection) in scope"
+          ]
+        },
+        {
+          "name": "e7.no_catalog_create_for_admin",
+          "ok": true,
+          "expected": "admin read-only session exposes no New note button",
+          "actual": 0
+        },
+        {
+          "name": "e7.no_enable_request_for_admin",
+          "ok": true,
+          "expected": "no editing request emitted by an Admin read-only session",
+          "actual": 0
+        },
+        {
+          "name": "e7.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 4403
+    },
+    {
+      "id": "E8",
+      "width": 1440,
+      "note_mode": "models_error",
+      "stats": {
+        "note_mode": "models_error",
+        "enable_mode": "success",
+        "models_requests": 6,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      },
+      "assertions": [
+        {
+          "name": "e8.capability_blocked_shown",
+          "ok": true,
+          "expected": "note-capability-blocked fail-closed hint rendered when /models fails",
+          "actual": true
+        },
+        {
+          "name": "e8.no_enable_entry_on_capability_failure",
+          "ok": true,
+          "expected": "no enable entry when the capability projection cannot be read (fail-closed)",
+          "actual": {
+            "enable": 0,
+            "testids": []
+          }
+        },
+        {
+          "name": "e8.capability_retry_offered",
+          "ok": true,
+          "expected": "capability blocked state offers a retry for the projection",
+          "actual": {
+            "blocked": 1,
+            "retry": 1
+          }
+        },
+        {
+          "name": "e8.models_request_failed_and_observed",
+          "ok": true,
+          "expected": "/models request attempted and failed (synthetic 500)",
+          "actual": 6
+        },
+        {
+          "name": "e8.no_enable_request",
+          "ok": true,
+          "expected": "no editing request emitted while capabilities are unreadable",
+          "actual": 0
+        },
+        {
+          "name": "e8.no_unexpected_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 4421
+    },
+    {
+      "id": "E1",
+      "width": 1024,
+      "note_mode": "editor_on",
+      "enable_mode": "success",
+      "stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      },
+      "assertions": [
+        {
+          "name": "e1.legacy_row_present",
+          "ok": true,
+          "expected": "note-catalog-row-note_legacy present",
+          "actual": true
+        },
+        {
+          "name": "e1.legacy_row_is_unprotected",
+          "ok": true,
+          "expected": "legacy row data-edit-schema=\"legacy\"",
+          "actual": {
+            "edit_schema": "legacy",
+            "revision_testid": false,
+            "legacy_badge": true,
+            "enable_button": false,
+            "row_buttons": [
+              "Include [synthetic] Legacy note (pre-protection) in scope",
+              "Edit",
+              "Delete"
+            ]
+          }
+        },
+        {
+          "name": "e1.row_hovered",
+          "ok": true,
+          "expected": "legacy row hover works",
+          "actual": true
+        },
+        {
+          "name": "e1.before_legacy_edit_delete_actions",
+          "ok": true,
+          "expected": "legacy row action area shows Edit and Delete",
+          "actual": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Edit",
+            "Delete"
+          ]
+        },
+        {
+          "name": "e1.before_no_enable_entry",
+          "ok": true,
+          "expected": "0 note-enable-* testids in the legacy row action area (baseline gap)",
+          "actual": {
+            "enable": 0,
+            "testids": []
+          }
+        },
+        {
+          "name": "e1.no_enable_request_on_row_view",
+          "ok": true,
+          "expected": "no POST .../editing request merely by viewing/hovering the row",
+          "actual": 0
+        },
+        {
+          "name": "e1.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 4389
+    },
+    {
+      "id": "E2",
+      "width": 1024,
+      "note_mode": "editor_on",
+      "enable_mode": "success",
+      "marker": "[synthetic] E2 legacy save marker 400604",
+      "stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": null,
+            "expected_revision": null,
+            "status": 200
+          }
+        ],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 5
+      },
+      "assertions": [
+        {
+          "name": "e2.before_edit_action_clicked",
+          "ok": true,
+          "expected": "legacy row Edit button clicked",
+          "actual": {
+            "clicked": true
+          }
+        },
+        {
+          "name": "e2.before_legacy_form_opened",
+          "ok": true,
+          "expected": "legacy-note-form-hint >= 1",
+          "actual": true
+        },
+        {
+          "name": "e2.before_legacy_form_prefilled",
+          "ok": true,
+          "expected": "old form prefilled with the legacy note title/content",
+          "actual": {
+            "title": "[synthetic] Legacy note (pre-protection)",
+            "contentPrefix": "[synthetic] Legacy note created before d2-v1 editing protect"
+          }
+        },
+        {
+          "name": "e2.before_no_protected_editor_or_revision",
+          "ok": true,
+          "expected": "no protected d2-v1 editor / revision display for the legacy note (baseline gap)",
+          "actual": {
+            "editor": 0,
+            "revision": 0
+          }
+        },
+        {
+          "name": "e2.before_no_enable_entry",
+          "ok": true,
+          "expected": "0 note-enable-* testids (baseline gap)",
+          "actual": {
+            "enable": 0,
+            "testids": []
+          }
+        },
+        {
+          "name": "e2.before_legacy_save_succeeds",
+          "ok": true,
+          "expected": "legacy (unprotected) PATCH save returns 200",
+          "actual": {
+            "note_id": "note_legacy",
+            "selected": false,
+            "mutation_id": null,
+            "expected_revision": null,
+            "at": 1794294401904,
+            "status": 200
+          }
+        },
+        {
+          "name": "e2.before_legacy_save_updates_note",
+          "ok": true,
+          "expected": "server-side legacy note title updated through the old form",
+          "actual": {
+            "title": "[synthetic] Legacy note (pre-protection) [synthetic] E2 legacy save marker 400604",
+            "edit_schema": null
+          }
+        },
+        {
+          "name": "e2.before_note_stays_unprotected",
+          "ok": true,
+          "expected": "legacy note remains unprotected (edit_schema null) after the old-form save",
+          "actual": null
+        },
+        {
+          "name": "e2.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 8535
+    },
+    {
+      "id": "E3",
+      "width": 1024,
+      "note_mode": "editor_off",
+      "enable_mode": "success",
+      "stats": {
+        "note_mode": "editor_off",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      },
+      "assertions": [
+        {
+          "name": "e3.row_hovered",
+          "ok": true,
+          "expected": "legacy row hover works",
+          "actual": true
+        },
+        {
+          "name": "e3.capability_off_known",
+          "ok": true,
+          "expected": "Notes catalog rendered with the capability projection loaded",
+          "actual": 1
+        },
+        {
+          "name": "e3.models_request_seen",
+          "ok": true,
+          "expected": "/models capability projection requested",
+          "actual": 2
+        },
+        {
+          "name": "e3.before_no_enable_entry",
+          "ok": true,
+          "expected": "0 note-enable-* testids with note_editor.available=false (baseline gap)",
+          "actual": {
+            "enable": 0,
+            "testids": []
+          }
+        },
+        {
+          "name": "e3.legacy_edit_action_clicked",
+          "ok": true,
+          "expected": "legacy row Edit button clicked",
+          "actual": {
+            "clicked": true
+          }
+        },
+        {
+          "name": "e3.legacy_form_kept",
+          "ok": true,
+          "expected": "legacy-note-form-hint >= 1 (old form unchanged)",
+          "actual": true
+        },
+        {
+          "name": "e3.legacy_form_prefilled",
+          "ok": true,
+          "expected": "old form prefilled with the legacy note content",
+          "actual": {
+            "title": "[synthetic] Legacy note (pre-protection)",
+            "contentPrefix": "[synthetic] Legacy note created before d2-v1 editing protect"
+          }
+        },
+        {
+          "name": "e3.no_protected_editor_with_form",
+          "ok": true,
+          "expected": "no d2-v1 protected editor for the legacy note in this flow",
+          "actual": 0
+        },
+        {
+          "name": "e3.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 5161
+    },
+    {
+      "id": "E7",
+      "width": 1024,
+      "note_mode": "editor_on",
+      "role": "admin_readonly",
+      "stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      },
+      "assertions": [
+        {
+          "name": "e7.admin_banner_visible",
+          "ok": true,
+          "expected": "admin-readonly-banner visible for the synthetic admin_readonly token",
+          "actual": 2
+        },
+        {
+          "name": "e7.no_enable_entry_for_admin",
+          "ok": true,
+          "expected": "no note-enable-* entry for an Admin read-only session",
+          "actual": {
+            "enable": 0,
+            "testids": []
+          }
+        },
+        {
+          "name": "e7.no_legacy_write_actions_for_admin",
+          "ok": true,
+          "expected": "admin read-only session exposes no legacy Edit/Delete write actions",
+          "actual": [
+            "Include [synthetic] Legacy note (pre-protection) in scope"
+          ]
+        },
+        {
+          "name": "e7.no_catalog_create_for_admin",
+          "ok": true,
+          "expected": "admin read-only session exposes no New note button",
+          "actual": 0
+        },
+        {
+          "name": "e7.no_enable_request_for_admin",
+          "ok": true,
+          "expected": "no editing request emitted by an Admin read-only session",
+          "actual": 0
+        },
+        {
+          "name": "e7.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 4320
+    },
+    {
+      "id": "E8",
+      "width": 1024,
+      "note_mode": "models_error",
+      "stats": {
+        "note_mode": "models_error",
+        "enable_mode": "success",
+        "models_requests": 6,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      },
+      "assertions": [
+        {
+          "name": "e8.capability_blocked_shown",
+          "ok": true,
+          "expected": "note-capability-blocked fail-closed hint rendered when /models fails",
+          "actual": true
+        },
+        {
+          "name": "e8.no_enable_entry_on_capability_failure",
+          "ok": true,
+          "expected": "no enable entry when the capability projection cannot be read (fail-closed)",
+          "actual": {
+            "enable": 0,
+            "testids": []
+          }
+        },
+        {
+          "name": "e8.capability_retry_offered",
+          "ok": true,
+          "expected": "capability blocked state offers a retry for the projection",
+          "actual": {
+            "blocked": 1,
+            "retry": 1
+          }
+        },
+        {
+          "name": "e8.models_request_failed_and_observed",
+          "ok": true,
+          "expected": "/models request attempted and failed (synthetic 500)",
+          "actual": 6
+        },
+        {
+          "name": "e8.no_enable_request",
+          "ok": true,
+          "expected": "no editing request emitted while capabilities are unreadable",
+          "actual": 0
+        },
+        {
+          "name": "e8.no_unexpected_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 4406
+    }
+  ],
+  "totals": {
+    "scenes": 10,
+    "scene_errors": 0,
+    "assertions": 74,
+    "assertions_pass": 74,
+    "assertions_fail": 0
+  },
+  "screenshots": [
+    {
+      "file": "before_e1_row_actions_1440.png",
+      "bytes": 99609,
+      "sha256": "cfacbddc42e6da71cbcfca36c876c51df7cb7c68458d0f2bb59028e7d75cda2a",
+      "dom_counts": {
+        "note_enable": 0,
+        "note_enable_dialog": 0,
+        "note_enable_error": 0,
+        "note_enable_retry": 0,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "legacy_note_form_hint": 0,
+        "note_save_status": 0,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [],
+      "enable_error": null,
+      "enable_retry_label": null,
+      "dialog_text": null,
+      "editor": {
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null
+      },
+      "save_status": null,
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "revision_testid": false,
+          "legacy_badge": true,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Edit",
+            "Delete"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      }
+    },
+    {
+      "file": "before_e2_legacy_form_1440.png",
+      "bytes": 112419,
+      "sha256": "c54bfc6da7e678f9195695c906f3422b6b9c54c6a7c50e6edc2a6d5e5efccfb0",
+      "dom_counts": {
+        "note_enable": 0,
+        "note_enable_dialog": 0,
+        "note_enable_error": 0,
+        "note_enable_retry": 0,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "legacy_note_form_hint": 1,
+        "note_save_status": 0,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [],
+      "enable_error": null,
+      "enable_retry_label": null,
+      "dialog_text": null,
+      "editor": {
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null
+      },
+      "save_status": null,
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "revision_testid": false,
+          "legacy_badge": true,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Edit",
+            "Delete"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      }
+    },
+    {
+      "file": "before_e2_legacy_saved_1440.png",
+      "bytes": 101878,
+      "sha256": "a17420923805681523be04f5ea6ae83b1979ab14a03e6bdf479af451d653434d",
+      "dom_counts": {
+        "note_enable": 0,
+        "note_enable_dialog": 0,
+        "note_enable_error": 0,
+        "note_enable_retry": 0,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "legacy_note_form_hint": 0,
+        "note_save_status": 0,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [],
+      "enable_error": null,
+      "enable_retry_label": null,
+      "dialog_text": null,
+      "editor": {
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null
+      },
+      "save_status": null,
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "revision_testid": false,
+          "legacy_badge": true,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) [synthetic] E2 legacy save marker 373628 in scope",
+            "Edit",
+            "Delete"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": null,
+            "expected_revision": null,
+            "status": 200
+          }
+        ],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 5
+      }
+    },
+    {
+      "file": "before_e3_capability_off_legacy_form_1440.png",
+      "bytes": 109459,
+      "sha256": "2ce5e98aa17c85151820e47c20d90e54a0c40ce696958f355cb2b49c99549fc6",
+      "dom_counts": {
+        "note_enable": 0,
+        "note_enable_dialog": 0,
+        "note_enable_error": 0,
+        "note_enable_retry": 0,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "legacy_note_form_hint": 1,
+        "note_save_status": 0,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [],
+      "enable_error": null,
+      "enable_retry_label": null,
+      "dialog_text": null,
+      "editor": {
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null
+      },
+      "save_status": null,
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "revision_testid": false,
+          "legacy_badge": true,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Edit",
+            "Delete"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "editor_off",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      }
+    },
+    {
+      "file": "before_e7_admin_readonly_1440.png",
+      "bytes": 119710,
+      "sha256": "9f32df0eb515f4a5cfe0f184a34c61ab082df21e0f796ea4b1808c2081b648e7",
+      "dom_counts": {
+        "note_enable": 0,
+        "note_enable_dialog": 0,
+        "note_enable_error": 0,
+        "note_enable_retry": 0,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 2,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "legacy_note_form_hint": 0,
+        "note_save_status": 0,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [],
+      "enable_error": null,
+      "enable_retry_label": null,
+      "dialog_text": null,
+      "editor": {
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null
+      },
+      "save_status": null,
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "revision_testid": false,
+          "legacy_badge": true,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      }
+    },
+    {
+      "file": "before_e8_capability_error_1440.png",
+      "bytes": 111736,
+      "sha256": "e9812ad079edf45bd82dcf23a3155576a9ea6b351646db563681d757e350d6d7",
+      "dom_counts": {
+        "note_enable": 0,
+        "note_enable_dialog": 0,
+        "note_enable_error": 0,
+        "note_enable_retry": 0,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 1,
+        "admin_readonly_banner": 0,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "legacy_note_form_hint": 0,
+        "note_save_status": 0,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [],
+      "enable_error": null,
+      "enable_retry_label": null,
+      "dialog_text": null,
+      "editor": {
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null
+      },
+      "save_status": null,
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "revision_testid": false,
+          "legacy_badge": true,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Edit",
+            "Delete"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "models_error",
+        "enable_mode": "success",
+        "models_requests": 6,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      }
+    },
+    {
+      "file": "before_e1_row_actions_1024.png",
+      "bytes": 90876,
+      "sha256": "aa4247d380c200abe3e9865ae89027bfa3f45573f8d5ecfa86c4e74dabaa7871",
+      "dom_counts": {
+        "note_enable": 0,
+        "note_enable_dialog": 0,
+        "note_enable_error": 0,
+        "note_enable_retry": 0,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "legacy_note_form_hint": 0,
+        "note_save_status": 0,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [],
+      "enable_error": null,
+      "enable_retry_label": null,
+      "dialog_text": null,
+      "editor": {
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null
+      },
+      "save_status": null,
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "revision_testid": false,
+          "legacy_badge": true,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Edit",
+            "Delete"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      }
+    },
+    {
+      "file": "before_e2_legacy_form_1024.png",
+      "bytes": 91049,
+      "sha256": "54eef7b436b9dc4cdd6e32dbc6125f4f5f7ad9332abf07fad456801c725ebc37",
+      "dom_counts": {
+        "note_enable": 0,
+        "note_enable_dialog": 0,
+        "note_enable_error": 0,
+        "note_enable_retry": 0,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "legacy_note_form_hint": 1,
+        "note_save_status": 0,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [],
+      "enable_error": null,
+      "enable_retry_label": null,
+      "dialog_text": null,
+      "editor": {
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null
+      },
+      "save_status": null,
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "revision_testid": false,
+          "legacy_badge": true,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Edit",
+            "Delete"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      }
+    },
+    {
+      "file": "before_e2_legacy_saved_1024.png",
+      "bytes": 93925,
+      "sha256": "51d28f4598c2c0e25c3eada8f52432dce1ebe17571ad894aab4e7807715b0ecc",
+      "dom_counts": {
+        "note_enable": 0,
+        "note_enable_dialog": 0,
+        "note_enable_error": 0,
+        "note_enable_retry": 0,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "legacy_note_form_hint": 0,
+        "note_save_status": 0,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [],
+      "enable_error": null,
+      "enable_retry_label": null,
+      "dialog_text": null,
+      "editor": {
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null
+      },
+      "save_status": null,
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "revision_testid": false,
+          "legacy_badge": true,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) [synthetic] E2 legacy save marker 400604 in scope",
+            "Edit",
+            "Delete"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": null,
+            "expected_revision": null,
+            "status": 200
+          }
+        ],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 5
+      }
+    },
+    {
+      "file": "before_e3_capability_off_legacy_form_1024.png",
+      "bytes": 94160,
+      "sha256": "802c3e4a973fe536016c366aa42310d0cf4d85c9ba594e1c7ec5fc4354a32a5f",
+      "dom_counts": {
+        "note_enable": 0,
+        "note_enable_dialog": 0,
+        "note_enable_error": 0,
+        "note_enable_retry": 0,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "legacy_note_form_hint": 1,
+        "note_save_status": 0,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [],
+      "enable_error": null,
+      "enable_retry_label": null,
+      "dialog_text": null,
+      "editor": {
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null
+      },
+      "save_status": null,
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "revision_testid": false,
+          "legacy_badge": true,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Edit",
+            "Delete"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "editor_off",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      }
+    },
+    {
+      "file": "before_e7_admin_readonly_1024.png",
+      "bytes": 102456,
+      "sha256": "055c57956c21c951237af962bc537c24c368fcc062c4c301096affae4fff77b3",
+      "dom_counts": {
+        "note_enable": 0,
+        "note_enable_dialog": 0,
+        "note_enable_error": 0,
+        "note_enable_retry": 0,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 2,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "legacy_note_form_hint": 0,
+        "note_save_status": 0,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [],
+      "enable_error": null,
+      "enable_retry_label": null,
+      "dialog_text": null,
+      "editor": {
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null
+      },
+      "save_status": null,
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "revision_testid": false,
+          "legacy_badge": true,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      }
+    },
+    {
+      "file": "before_e8_capability_error_1024.png",
+      "bytes": 96983,
+      "sha256": "cbbe5348143aef11c5cb570465c3c20b00ab42ff2c2aab284b9697af2be47b44",
+      "dom_counts": {
+        "note_enable": 0,
+        "note_enable_dialog": 0,
+        "note_enable_error": 0,
+        "note_enable_retry": 0,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 1,
+        "admin_readonly_banner": 0,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "legacy_note_form_hint": 0,
+        "note_save_status": 0,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [],
+      "enable_error": null,
+      "enable_retry_label": null,
+      "dialog_text": null,
+      "editor": {
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null
+      },
+      "save_status": null,
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "revision_testid": false,
+          "legacy_badge": true,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Edit",
+            "Delete"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "models_error",
+        "enable_mode": "success",
+        "models_requests": 6,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      }
+    }
+  ],
+  "baseline_full_sha": "34f531d0270587ed1f2bfa02e361c8a3dd0d224d",
+  "worktree_provenance": {
+    "before": {
+      "name": "before",
+      "worktree": "/home/lchen/.dsh/state/superagent/work/protected-edit-ui-c1f827496380-evidence/fork-before",
+      "head": "34f531d0270587ed1f2bfa02e361c8a3dd0d224d",
+      "status_porcelain": "",
+      "config_ts": {
+        "sha256_current": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+        "sha256_at_head": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+        "restored_clean": true
+      }
+    },
+    "harness_only_patch": {
+      "file": "frontend/src/lib/embedded/config.ts",
+      "change": "dynamic process.env[CONST] lookups -> static process.env.NEXT_PUBLIC_* member access (Next dev does not inline dynamic lookups); reverted after capture",
+      "records": {
+        "before": {
+          "original_sha256": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+          "patched_sha256": "255492d4ddc991b20eeb1fa7013af9223dda7d304180a5986107fed0afc0dade",
+          "restored_sha256": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+          "sha256_at_head": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+          "restored_clean": true
+        },
+        "after": {
+          "original_sha256": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+          "patched_sha256": "255492d4ddc991b20eeb1fa7013af9223dda7d304180a5986107fed0afc0dade",
+          "restored_sha256": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+          "sha256_at_head": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+          "restored_clean": true
+        }
+      },
+      "restored_clean": true
+    }
+  }
+}

@@ -1,0 +1,4306 @@
+{
+  "ticket": "HiFiBiO-Therapeutics/RDLens#1135",
+  "title": "受保护编辑启用入口（旧未保护 Note → d2-v1 原地启用）— fork visual evidence",
+  "evidence_kind": "synthetic",
+  "synthetic_declaration": "Real fork Next.js app (next dev --webpack, embedded iframe) + synthetic host page + route-mocked Research Gateway. No real RDLens host, PostgreSQL, SurrealDB, files, models, Feishu content, users or private data. All note titles/ids/content are [synthetic] fixtures (project p1, viewer 1, fabricated claims-only token).",
+  "phase": "after",
+  "head": "deca6257b21bd67f062672dcf005eee2230b09f7",
+  "baseline": "fork origin/main 34f531d (post-#1136)",
+  "captured_at": "2026-11-10T07:12:46.327Z",
+  "host_url": "http://127.0.0.1:8982/",
+  "gateway": "http://127.0.0.1:8951",
+  "note_mode_file": "/tmp/issue1135-note-mode",
+  "enable_mode_file": "/tmp/issue1135-enable-mode",
+  "before_na_scenes": {},
+  "env": {
+    "chrome": "/home/lchen/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome",
+    "node": "v22.20.0",
+    "widths": [
+      1440,
+      1024
+    ],
+    "viewports": {
+      "1024": "1024x768",
+      "1440": "1440x900"
+    },
+    "device_scale_factor": 1,
+    "color_scheme": "light",
+    "locale": "en-US",
+    "fresh_browser_context_per_scene": true,
+    "harness_only_config_patch": "frontend/src/lib/embedded/config.ts static NEXT_PUBLIC_* member access (Next dev does not inline dynamic env lookups); reverted after capture"
+  },
+  "scenes": [
+    {
+      "id": "E1",
+      "width": 1440,
+      "note_mode": "editor_on",
+      "enable_mode": "success",
+      "stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      },
+      "assertions": [
+        {
+          "name": "e1.legacy_row_present",
+          "ok": true,
+          "expected": "note-catalog-row-note_legacy present",
+          "actual": true
+        },
+        {
+          "name": "e1.legacy_row_is_unprotected",
+          "ok": true,
+          "expected": "legacy row data-edit-schema=\"legacy\"",
+          "actual": {
+            "edit_schema": "legacy",
+            "revision_testid": false,
+            "legacy_badge": true,
+            "enable_button": true,
+            "row_buttons": [
+              "Include [synthetic] Legacy note (pre-protection) in scope",
+              "Enable protected editing",
+              "Edit",
+              "Delete"
+            ]
+          }
+        },
+        {
+          "name": "e1.row_hovered",
+          "ok": true,
+          "expected": "legacy row hover works",
+          "actual": true
+        },
+        {
+          "name": "e1.after_enable_entry_visible",
+          "ok": true,
+          "expected": "note-enable-note_legacy present in the hovered legacy row",
+          "actual": {
+            "enable": 1,
+            "testids": [
+              "note-enable-note_legacy"
+            ]
+          }
+        },
+        {
+          "name": "e1.after_enable_entry_visible_after_hover",
+          "ok": true,
+          "expected": "enable entry is visible after hovering the row",
+          "actual": true
+        },
+        {
+          "name": "e1.after_legacy_edit_delete_kept",
+          "ok": true,
+          "expected": "legacy Edit/Delete actions remain next to the enable entry",
+          "actual": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Enable protected editing",
+            "Edit",
+            "Delete"
+          ]
+        },
+        {
+          "name": "e1.after_no_dialog_before_click",
+          "ok": true,
+          "expected": "no enable dialog before clicking the entry",
+          "actual": 0
+        },
+        {
+          "name": "e1.no_enable_request_on_row_view",
+          "ok": true,
+          "expected": "no POST .../editing request merely by viewing/hovering the row",
+          "actual": 0
+        },
+        {
+          "name": "e1.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 4349
+    },
+    {
+      "id": "E2",
+      "width": 1440,
+      "note_mode": "editor_on",
+      "enable_mode": "success",
+      "marker": "[synthetic] E2 enabled save marker 664334",
+      "stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 1,
+        "enable_requests": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nm1085e672d1574d2988c09c019b1d11b2",
+            "mode": "success",
+            "outcome": "success",
+            "status": 200
+          }
+        ],
+        "enable_applies": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nm1085e672d1574d2988c09c019b1d11b2",
+            "applied_revision": 1
+          }
+        ],
+        "saves": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nm9daace9b07564ceab83c5e6854e7a0a7",
+            "expected_revision": 1,
+            "status": 200
+          }
+        ],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@r2:d2-v1"
+        ],
+        "note_requests": 6
+      },
+      "assertions": [
+        {
+          "name": "e2.enable_entry_clicked",
+          "ok": true,
+          "expected": "note-enable-note_legacy clicked",
+          "actual": {
+            "clicked": true,
+            "selector": "[data-testid=\"note-enable-note_legacy\"]"
+          }
+        },
+        {
+          "name": "e2.enable_dialog_opened",
+          "ok": true,
+          "expected": "note-enable-dialog >= 1",
+          "actual": true
+        },
+        {
+          "name": "e2.dialog_has_confirm_and_cancel",
+          "ok": true,
+          "expected": "dialog exposes note-enable-confirm and note-enable-cancel",
+          "actual": {
+            "confirm": 1,
+            "cancel": 1
+          }
+        },
+        {
+          "name": "e2.dialog_mentions_enabling_protected_editing",
+          "ok": true,
+          "expected": "dialog text mentions enabling protected editing",
+          "actual": "Enable protected editing?You need edit permission on this project. Enabling protected editing only adds protection fields — the title and content stay unchanged. After enabling, this note opens in the Markdown editor and the legacy form is no longer offered.[synthetic] Legacy note (pre-protection)Enable protected editingCancel"
+        },
+        {
+          "name": "e2.dialog_phase_confirming",
+          "ok": true,
+          "expected": "dialog data-phase=confirming before the user confirms",
+          "actual": "confirming"
+        },
+        {
+          "name": "e2.confirm_clicked",
+          "ok": true,
+          "expected": "note-enable-confirm clicked",
+          "actual": {
+            "clicked": true,
+            "selector": "[data-testid=\"note-enable-confirm\"]"
+          }
+        },
+        {
+          "name": "e2.editor_opened_in_place",
+          "ok": true,
+          "expected": "d2-v1 Markdown editor opened after confirm",
+          "actual": true
+        },
+        {
+          "name": "e2.editor_title_unchanged",
+          "ok": true,
+          "expected": "editor title equals fixture \"[synthetic] Legacy note (pre-protection)\"",
+          "actual": "[synthetic] Legacy note (pre-protection)"
+        },
+        {
+          "name": "e2.editor_content_unchanged",
+          "ok": true,
+          "expected": "editor content still contains the legacy fixture body",
+          "actual": "[synthetic] Legacy note created before d2-v1 editing protection (fictional).\n\n- Owner: synthetic viewer 1\n- Binder: B-0001"
+        },
+        {
+          "name": "e2.editor_revision_shown",
+          "ok": true,
+          "expected": "editor displays Revision",
+          "actual": "Revision 1"
+        },
+        {
+          "name": "e2.save_available",
+          "ok": true,
+          "expected": "Save now button present and enabled",
+          "actual": {
+            "saveNow": 1,
+            "disabled": false
+          }
+        },
+        {
+          "name": "e2.old_legacy_form_gone",
+          "ok": true,
+          "expected": "legacy (unprotected) form not rendered after enabling",
+          "actual": 0
+        },
+        {
+          "name": "e2.enable_entry_gone_after_enable",
+          "ok": true,
+          "expected": "enable entry no longer offered once the note is protected",
+          "actual": []
+        },
+        {
+          "name": "e2.catalog_row_refreshed_to_d2_v1",
+          "ok": true,
+          "expected": "catalog row refreshed: data-edit-schema=d2-v1, revision shown, legacy badge gone",
+          "actual": {
+            "edit_schema": "d2-v1",
+            "revision_testid": true,
+            "legacy_badge": false,
+            "enable_button": false,
+            "row_buttons": [
+              "Include [synthetic] Legacy note (pre-protection) in scope",
+              "Open note: [synthetic] Legacy note (pre-protection)"
+            ]
+          }
+        },
+        {
+          "name": "e2.dialog_closed_after_success",
+          "ok": true,
+          "expected": "enable dialog closed after success",
+          "actual": 0
+        },
+        {
+          "name": "e2.typed_into_enabled_editor",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "e2.enabled_editor_saves",
+          "ok": true,
+          "expected": "save status saved after editing the enabled note",
+          "actual": {
+            "status": "saved",
+            "text": "Saved"
+          }
+        },
+        {
+          "name": "e2.exactly_one_enable_request",
+          "ok": true,
+          "expected": "1 POST .../editing request for the enable",
+          "actual": [
+            {
+              "outcome": "success",
+              "status": 200
+            }
+          ]
+        },
+        {
+          "name": "e2.enable_request_succeeded",
+          "ok": true,
+          "expected": "enable request outcome success / status 200",
+          "actual": {
+            "method": "POST",
+            "note_id": "note_legacy",
+            "mutation_id": "nm1085e672d1574d2988c09c019b1d11b2",
+            "mode": "success",
+            "outcome": "success",
+            "status": 200,
+            "at": 1794294661125
+          }
+        },
+        {
+          "name": "e2.server_note_now_protected",
+          "ok": true,
+          "expected": "server note edit_schema=d2-v1 with a revision",
+          "actual": {
+            "edit_schema": "d2-v1",
+            "revision": 2
+          }
+        },
+        {
+          "name": "e2.enabled_note_saved_content",
+          "ok": true,
+          "expected": "enabled note content saved through the d2-v1 editor",
+          "actual": {
+            "revision": 2,
+            "containsMarker": true
+          }
+        },
+        {
+          "name": "e2.save_request_was_d2",
+          "ok": true,
+          "expected": "in-place editor used the d2-v1 revision-aware PATCH (selected=true, 200)",
+          "actual": [
+            {
+              "note_id": "note_legacy",
+              "selected": true,
+              "status": 200
+            }
+          ]
+        },
+        {
+          "name": "e2.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 12717
+    },
+    {
+      "id": "E3",
+      "width": 1440,
+      "note_mode": "editor_off",
+      "enable_mode": "success",
+      "stats": {
+        "note_mode": "editor_off",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      },
+      "assertions": [
+        {
+          "name": "e3.row_hovered",
+          "ok": true,
+          "expected": "legacy row hover works",
+          "actual": true
+        },
+        {
+          "name": "e3.capability_off_known",
+          "ok": true,
+          "expected": "Notes catalog rendered with the capability projection loaded",
+          "actual": 1
+        },
+        {
+          "name": "e3.models_request_seen",
+          "ok": true,
+          "expected": "/models capability projection requested",
+          "actual": 2
+        },
+        {
+          "name": "e3.after_no_enable_entry_when_capability_off",
+          "ok": true,
+          "expected": "enable entry hidden when note_editor.available=false",
+          "actual": {
+            "enable": 0,
+            "testids": []
+          }
+        },
+        {
+          "name": "e3.legacy_edit_action_clicked",
+          "ok": true,
+          "expected": "legacy row Edit button clicked",
+          "actual": {
+            "clicked": true
+          }
+        },
+        {
+          "name": "e3.legacy_form_kept",
+          "ok": true,
+          "expected": "legacy-note-form-hint >= 1 (old form unchanged)",
+          "actual": true
+        },
+        {
+          "name": "e3.legacy_form_prefilled",
+          "ok": true,
+          "expected": "old form prefilled with the legacy note content",
+          "actual": {
+            "title": "[synthetic] Legacy note (pre-protection)",
+            "contentPrefix": "[synthetic] Legacy note created before d2-v1 editing protect"
+          }
+        },
+        {
+          "name": "e3.no_protected_editor_with_form",
+          "ok": true,
+          "expected": "no d2-v1 protected editor for the legacy note in this flow",
+          "actual": 0
+        },
+        {
+          "name": "e3.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 5201
+    },
+    {
+      "id": "E4",
+      "width": 1440,
+      "note_mode": "editor_on",
+      "enable_mode": "restricted403",
+      "stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "restricted403",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nm19097191811448d481088abbb1dd9ec8",
+            "mode": "restricted403",
+            "outcome": "restricted",
+            "status": 403
+          }
+        ],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 3
+      },
+      "assertions": [
+        {
+          "name": "e4.enable_entry_clicked",
+          "ok": true,
+          "expected": "enable entry clicked",
+          "actual": {
+            "clicked": true,
+            "selector": "[data-testid=\"note-enable-note_legacy\"]"
+          }
+        },
+        {
+          "name": "e4.confirm_clicked",
+          "ok": true,
+          "expected": "confirm clicked",
+          "actual": {
+            "clicked": true,
+            "selector": "[data-testid=\"note-enable-confirm\"]"
+          }
+        },
+        {
+          "name": "e4.error_state_shown",
+          "ok": true,
+          "expected": "note-enable-error >= 1 (403 restricted)",
+          "actual": true
+        },
+        {
+          "name": "e4.error_has_failure_kind",
+          "ok": true,
+          "expected": "note-enable-error exposes a non-empty data-failure-kind",
+          "actual": {
+            "failure_kind": "restricted",
+            "text": "You do not have permission to enable protected editing for this note."
+          }
+        },
+        {
+          "name": "e4.error_kind_is_restricted",
+          "ok": true,
+          "expected": "note-enable-error data-failure-kind=restricted",
+          "actual": {
+            "failure_kind": "restricted",
+            "text": "You do not have permission to enable protected editing for this note."
+          }
+        },
+        {
+          "name": "e4.error_dialog_stays_open",
+          "ok": true,
+          "expected": "error stays in the dialog (data-phase=error) so the user sees the terminal reason",
+          "actual": {
+            "dialog": 1,
+            "phase": "error"
+          }
+        },
+        {
+          "name": "e4.no_retry_for_terminal_error",
+          "ok": true,
+          "expected": "terminal 403 exposes no retry action",
+          "actual": {
+            "retry": 0,
+            "testids": [
+              "note-enable-note_legacy",
+              "note-enable-dialog",
+              "note-enable-note-title",
+              "note-enable-error",
+              "note-enable-close"
+            ]
+          }
+        },
+        {
+          "name": "e4.single_restricted_request",
+          "ok": true,
+          "expected": "1 POST .../editing → 403 restricted",
+          "actual": [
+            {
+              "outcome": "restricted",
+              "status": 403
+            }
+          ]
+        },
+        {
+          "name": "e4.no_semantic_change",
+          "ok": true,
+          "expected": "0 applied enable changes on failure",
+          "actual": 0
+        },
+        {
+          "name": "e4.note_still_unprotected",
+          "ok": true,
+          "expected": "note stays unprotected after the 403",
+          "actual": null
+        },
+        {
+          "name": "e4.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 6500
+    },
+    {
+      "id": "E5",
+      "width": 1440,
+      "note_mode": "editor_on",
+      "enable_mode": "dependency503",
+      "stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "dependency503",
+        "models_requests": 2,
+        "enable_semantic_changes": 1,
+        "enable_requests": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nmdd26bc7785cb4b0689aa89a6479b94ac",
+            "mode": "dependency503",
+            "outcome": "dependency_unavailable",
+            "status": 503
+          },
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nmdd26bc7785cb4b0689aa89a6479b94ac",
+            "mode": "dependency503",
+            "outcome": "success",
+            "status": 200
+          }
+        ],
+        "enable_applies": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nmdd26bc7785cb4b0689aa89a6479b94ac",
+            "applied_revision": 1
+          }
+        ],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@r1:d2-v1"
+        ],
+        "note_requests": 6
+      },
+      "assertions": [
+        {
+          "name": "e5.enable_entry_clicked",
+          "ok": true,
+          "expected": "enable entry clicked",
+          "actual": {
+            "clicked": true,
+            "selector": "[data-testid=\"note-enable-note_legacy\"]"
+          }
+        },
+        {
+          "name": "e5.confirm_clicked",
+          "ok": true,
+          "expected": "confirm clicked",
+          "actual": {
+            "clicked": true,
+            "selector": "[data-testid=\"note-enable-confirm\"]"
+          }
+        },
+        {
+          "name": "e5.error_state_shown",
+          "ok": true,
+          "expected": "note-enable-error >= 1 (503 dependency)",
+          "actual": true
+        },
+        {
+          "name": "e5.error_kind_is_unavailable",
+          "ok": true,
+          "expected": "note-enable-error data-failure-kind=unavailable (retryable dependency)",
+          "actual": {
+            "failure_kind": "unavailable",
+            "text": "Source dependencies cannot be verified right now. Retry to confirm the result."
+          }
+        },
+        {
+          "name": "e5.error_dialog_stays_open",
+          "ok": true,
+          "expected": "error stays in the dialog (data-phase=error) with the retry action",
+          "actual": {
+            "dialog": 1,
+            "phase": "error"
+          }
+        },
+        {
+          "name": "e5.retry_offered",
+          "ok": true,
+          "expected": "retry action offered for the retryable 503",
+          "actual": 1
+        },
+        {
+          "name": "e5.retry_clicked",
+          "ok": true,
+          "expected": "note-enable-retry clicked",
+          "actual": {
+            "clicked": true,
+            "selector": "[data-testid=\"note-enable-retry\"]"
+          }
+        },
+        {
+          "name": "e5.editor_opened_after_retry",
+          "ok": true,
+          "expected": "editor opened after retrying the 503",
+          "actual": true
+        },
+        {
+          "name": "e5.editor_title_unchanged",
+          "ok": true,
+          "expected": "editor title unchanged after retry success",
+          "actual": "[synthetic] Legacy note (pre-protection)"
+        },
+        {
+          "name": "e5.editor_revision_shown",
+          "ok": true,
+          "expected": "revision shown after retry success",
+          "actual": 1
+        },
+        {
+          "name": "e5.two_attempts_recorded",
+          "ok": true,
+          "expected": "2 POST .../editing attempts recorded (failure + retry)",
+          "actual": [
+            {
+              "outcome": "dependency_unavailable",
+              "status": 503
+            },
+            {
+              "outcome": "success",
+              "status": 200
+            }
+          ]
+        },
+        {
+          "name": "e5.first_retryable_second_success",
+          "ok": true,
+          "expected": "first attempt 503, retry 200",
+          "actual": [
+            503,
+            200
+          ]
+        },
+        {
+          "name": "e5.exactly_one_semantic_change",
+          "ok": true,
+          "expected": "exactly one applied enable change",
+          "actual": 1
+        },
+        {
+          "name": "e5.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 9468
+    },
+    {
+      "id": "E6",
+      "width": 1440,
+      "note_mode": "editor_on",
+      "enable_mode": "unknown503_apply",
+      "mutation_ids": [
+        "nma21aeb43225044bd91852e63ca4433ed",
+        "nma21aeb43225044bd91852e63ca4433ed"
+      ],
+      "stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "unknown503_apply",
+        "models_requests": 2,
+        "enable_semantic_changes": 1,
+        "enable_requests": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nma21aeb43225044bd91852e63ca4433ed",
+            "mode": "unknown503_apply",
+            "outcome": "unknown_applied",
+            "status": 503
+          },
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nma21aeb43225044bd91852e63ca4433ed",
+            "mode": "unknown503_apply",
+            "outcome": "replayed",
+            "status": 200
+          }
+        ],
+        "enable_applies": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nma21aeb43225044bd91852e63ca4433ed",
+            "applied_revision": 1
+          }
+        ],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@r1:d2-v1"
+        ],
+        "note_requests": 6
+      },
+      "assertions": [
+        {
+          "name": "e6.enable_entry_clicked",
+          "ok": true,
+          "expected": "enable entry clicked",
+          "actual": {
+            "clicked": true,
+            "selector": "[data-testid=\"note-enable-note_legacy\"]"
+          }
+        },
+        {
+          "name": "e6.confirm_clicked",
+          "ok": true,
+          "expected": "confirm clicked",
+          "actual": {
+            "clicked": true,
+            "selector": "[data-testid=\"note-enable-confirm\"]"
+          }
+        },
+        {
+          "name": "e6.unknown_state_shown",
+          "ok": true,
+          "expected": "note-enable-error >= 1 (unknown result)",
+          "actual": true
+        },
+        {
+          "name": "e6.unknown_kind_reported",
+          "ok": true,
+          "expected": "note-enable-error data-failure-kind=unknown (outcome could not be confirmed)",
+          "actual": {
+            "failure_kind": "unknown",
+            "text": "The result could not be confirmed. Retry to check the same request before doing anything else."
+          }
+        },
+        {
+          "name": "e6.unknown_dialog_stays_open",
+          "ok": true,
+          "expected": "unknown result stays in the dialog (data-phase=error)",
+          "actual": {
+            "dialog": 1,
+            "phase": "error"
+          }
+        },
+        {
+          "name": "e6.confirm_result_action_present",
+          "ok": true,
+          "expected": "unknown state exposes a \"confirm result\" action",
+          "actual": {
+            "selector": "[data-testid=\"note-enable-retry\"]",
+            "testids": [
+              "note-enable-note_legacy",
+              "note-enable-dialog",
+              "note-enable-note-title",
+              "note-enable-error",
+              "note-enable-retry",
+              "note-enable-close"
+            ],
+            "retryLabel": "Confirm result"
+          }
+        },
+        {
+          "name": "e6.confirm_result_label_is_dedicated",
+          "ok": true,
+          "expected": "the unknown-state action uses the dedicated confirmResult copy (\"Confirm result\")",
+          "actual": "Confirm result"
+        },
+        {
+          "name": "e6.first_attempt_recorded_unknown",
+          "ok": true,
+          "expected": "first attempt applied the enable but returned 503 (unknown)",
+          "actual": [
+            {
+              "outcome": "unknown_applied",
+              "status": 503
+            }
+          ]
+        },
+        {
+          "name": "e6.mutation_id_present",
+          "ok": true,
+          "expected": "first attempt carries a mutation_id",
+          "actual": "nma21aeb43225044bd91852e63ca4433ed"
+        },
+        {
+          "name": "e6.confirm_result_clicked",
+          "ok": true,
+          "expected": "confirm-result action clicked",
+          "actual": {
+            "clicked": true,
+            "selector": "dialog-button-text:Confirm result"
+          }
+        },
+        {
+          "name": "e6.editor_opened_after_confirm_result",
+          "ok": true,
+          "expected": "editor opened after confirming the unknown result",
+          "actual": true
+        },
+        {
+          "name": "e6.editor_title_unchanged",
+          "ok": true,
+          "expected": "editor title unchanged after confirming the unknown result",
+          "actual": "[synthetic] Legacy note (pre-protection)"
+        },
+        {
+          "name": "e6.editor_content_unchanged",
+          "ok": true,
+          "expected": "editor content unchanged after confirming the unknown result",
+          "actual": "[synthetic] Legacy note created before d2-v1 editing protection (fictional).\n\n- Owner: synthetic viewer 1\n- Binder: B-0001"
+        },
+        {
+          "name": "e6.editor_revision_is_one",
+          "ok": true,
+          "expected": "revision stays 1 (single semantic change)",
+          "actual": "Revision 1"
+        },
+        {
+          "name": "e6.two_requests_recorded",
+          "ok": true,
+          "expected": "2 POST .../editing requests recorded",
+          "actual": [
+            {
+              "outcome": "unknown_applied",
+              "status": 503
+            },
+            {
+              "outcome": "replayed",
+              "status": 200
+            }
+          ]
+        },
+        {
+          "name": "e6.same_mutation_id_replayed",
+          "ok": true,
+          "expected": "both attempts used the SAME mutation_id",
+          "actual": [
+            "nma21aeb43225044bd91852e63ca4433ed",
+            "nma21aeb43225044bd91852e63ca4433ed"
+          ]
+        },
+        {
+          "name": "e6.second_attempt_replayed_receipt",
+          "ok": true,
+          "expected": "second attempt is a receipt replay (200 replayed)",
+          "actual": {
+            "method": "POST",
+            "note_id": "note_legacy",
+            "mutation_id": "nma21aeb43225044bd91852e63ca4433ed",
+            "mode": "unknown503_apply",
+            "outcome": "replayed",
+            "status": 200,
+            "at": 1794294696191
+          }
+        },
+        {
+          "name": "e6.exactly_one_semantic_change",
+          "ok": true,
+          "expected": "exactly one semantic enable change (no double apply)",
+          "actual": {
+            "applies": 1,
+            "semantic_changes": 1
+          }
+        },
+        {
+          "name": "e6.final_state_single_protected_document",
+          "ok": true,
+          "expected": "final state: the SAME note id is protected at revision 1 (no duplicate document)",
+          "actual": {
+            "note_id": "note_legacy",
+            "edit_schema": "d2-v1",
+            "revision": 1
+          }
+        },
+        {
+          "name": "e6.no_duplicate_note_created",
+          "ok": true,
+          "expected": "store still contains exactly the 2 fixture notes (no duplicate document)",
+          "actual": [
+            {
+              "note_id": "note_d1",
+              "revision": 3,
+              "edit_schema": "d2-v1",
+              "title": "[synthetic] D1 cohort readout"
+            },
+            {
+              "note_id": "note_legacy",
+              "revision": 1,
+              "edit_schema": "d2-v1",
+              "title": "[synthetic] Legacy note (pre-protection)"
+            }
+          ]
+        },
+        {
+          "name": "e6.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 9453
+    },
+    {
+      "id": "E7",
+      "width": 1440,
+      "note_mode": "editor_on",
+      "role": "admin_readonly",
+      "stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      },
+      "assertions": [
+        {
+          "name": "e7.admin_banner_visible",
+          "ok": true,
+          "expected": "admin-readonly-banner visible for the synthetic admin_readonly token",
+          "actual": 2
+        },
+        {
+          "name": "e7.no_enable_entry_for_admin",
+          "ok": true,
+          "expected": "no note-enable-* entry for an Admin read-only session",
+          "actual": {
+            "enable": 0,
+            "testids": []
+          }
+        },
+        {
+          "name": "e7.no_legacy_write_actions_for_admin",
+          "ok": true,
+          "expected": "admin read-only session exposes no legacy Edit/Delete write actions",
+          "actual": [
+            "Include [synthetic] Legacy note (pre-protection) in scope"
+          ]
+        },
+        {
+          "name": "e7.no_catalog_create_for_admin",
+          "ok": true,
+          "expected": "admin read-only session exposes no New note button",
+          "actual": 0
+        },
+        {
+          "name": "e7.no_enable_request_for_admin",
+          "ok": true,
+          "expected": "no editing request emitted by an Admin read-only session",
+          "actual": 0
+        },
+        {
+          "name": "e7.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 4337
+    },
+    {
+      "id": "E8",
+      "width": 1440,
+      "note_mode": "models_error",
+      "stats": {
+        "note_mode": "models_error",
+        "enable_mode": "success",
+        "models_requests": 6,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      },
+      "assertions": [
+        {
+          "name": "e8.capability_blocked_shown",
+          "ok": true,
+          "expected": "note-capability-blocked fail-closed hint rendered when /models fails",
+          "actual": true
+        },
+        {
+          "name": "e8.no_enable_entry_on_capability_failure",
+          "ok": true,
+          "expected": "no enable entry when the capability projection cannot be read (fail-closed)",
+          "actual": {
+            "enable": 0,
+            "testids": []
+          }
+        },
+        {
+          "name": "e8.capability_retry_offered",
+          "ok": true,
+          "expected": "capability blocked state offers a retry for the projection",
+          "actual": {
+            "blocked": 1,
+            "retry": 1
+          }
+        },
+        {
+          "name": "e8.models_request_failed_and_observed",
+          "ok": true,
+          "expected": "/models request attempted and failed (synthetic 500)",
+          "actual": 6
+        },
+        {
+          "name": "e8.no_enable_request",
+          "ok": true,
+          "expected": "no editing request emitted while capabilities are unreadable",
+          "actual": 0
+        },
+        {
+          "name": "e8.no_unexpected_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 4470
+    },
+    {
+      "id": "E1",
+      "width": 1024,
+      "note_mode": "editor_on",
+      "enable_mode": "success",
+      "stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      },
+      "assertions": [
+        {
+          "name": "e1.legacy_row_present",
+          "ok": true,
+          "expected": "note-catalog-row-note_legacy present",
+          "actual": true
+        },
+        {
+          "name": "e1.legacy_row_is_unprotected",
+          "ok": true,
+          "expected": "legacy row data-edit-schema=\"legacy\"",
+          "actual": {
+            "edit_schema": "legacy",
+            "revision_testid": false,
+            "legacy_badge": true,
+            "enable_button": true,
+            "row_buttons": [
+              "Include [synthetic] Legacy note (pre-protection) in scope",
+              "Enable protected editing",
+              "Edit",
+              "Delete"
+            ]
+          }
+        },
+        {
+          "name": "e1.row_hovered",
+          "ok": true,
+          "expected": "legacy row hover works",
+          "actual": true
+        },
+        {
+          "name": "e1.after_enable_entry_visible",
+          "ok": true,
+          "expected": "note-enable-note_legacy present in the hovered legacy row",
+          "actual": {
+            "enable": 1,
+            "testids": [
+              "note-enable-note_legacy"
+            ]
+          }
+        },
+        {
+          "name": "e1.after_enable_entry_visible_after_hover",
+          "ok": true,
+          "expected": "enable entry is visible after hovering the row",
+          "actual": true
+        },
+        {
+          "name": "e1.after_legacy_edit_delete_kept",
+          "ok": true,
+          "expected": "legacy Edit/Delete actions remain next to the enable entry",
+          "actual": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Enable protected editing",
+            "Edit",
+            "Delete"
+          ]
+        },
+        {
+          "name": "e1.after_no_dialog_before_click",
+          "ok": true,
+          "expected": "no enable dialog before clicking the entry",
+          "actual": 0
+        },
+        {
+          "name": "e1.no_enable_request_on_row_view",
+          "ok": true,
+          "expected": "no POST .../editing request merely by viewing/hovering the row",
+          "actual": 0
+        },
+        {
+          "name": "e1.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 4433
+    },
+    {
+      "id": "E2",
+      "width": 1024,
+      "note_mode": "editor_on",
+      "enable_mode": "success",
+      "marker": "[synthetic] E2 enabled save marker 721002",
+      "stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 1,
+        "enable_requests": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nmdcfca8fc91214d1e91baeeba6ecfccc7",
+            "mode": "success",
+            "outcome": "success",
+            "status": 200
+          }
+        ],
+        "enable_applies": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nmdcfca8fc91214d1e91baeeba6ecfccc7",
+            "applied_revision": 1
+          }
+        ],
+        "saves": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nmadf1bed910784c3d80f65b757844fd80",
+            "expected_revision": 1,
+            "status": 200
+          }
+        ],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@r2:d2-v1"
+        ],
+        "note_requests": 6
+      },
+      "assertions": [
+        {
+          "name": "e2.enable_entry_clicked",
+          "ok": true,
+          "expected": "note-enable-note_legacy clicked",
+          "actual": {
+            "clicked": true,
+            "selector": "[data-testid=\"note-enable-note_legacy\"]"
+          }
+        },
+        {
+          "name": "e2.enable_dialog_opened",
+          "ok": true,
+          "expected": "note-enable-dialog >= 1",
+          "actual": true
+        },
+        {
+          "name": "e2.dialog_has_confirm_and_cancel",
+          "ok": true,
+          "expected": "dialog exposes note-enable-confirm and note-enable-cancel",
+          "actual": {
+            "confirm": 1,
+            "cancel": 1
+          }
+        },
+        {
+          "name": "e2.dialog_mentions_enabling_protected_editing",
+          "ok": true,
+          "expected": "dialog text mentions enabling protected editing",
+          "actual": "Enable protected editing?You need edit permission on this project. Enabling protected editing only adds protection fields — the title and content stay unchanged. After enabling, this note opens in the Markdown editor and the legacy form is no longer offered.[synthetic] Legacy note (pre-protection)Enable protected editingCancel"
+        },
+        {
+          "name": "e2.dialog_phase_confirming",
+          "ok": true,
+          "expected": "dialog data-phase=confirming before the user confirms",
+          "actual": "confirming"
+        },
+        {
+          "name": "e2.confirm_clicked",
+          "ok": true,
+          "expected": "note-enable-confirm clicked",
+          "actual": {
+            "clicked": true,
+            "selector": "[data-testid=\"note-enable-confirm\"]"
+          }
+        },
+        {
+          "name": "e2.editor_opened_in_place",
+          "ok": true,
+          "expected": "d2-v1 Markdown editor opened after confirm",
+          "actual": true
+        },
+        {
+          "name": "e2.editor_title_unchanged",
+          "ok": true,
+          "expected": "editor title equals fixture \"[synthetic] Legacy note (pre-protection)\"",
+          "actual": "[synthetic] Legacy note (pre-protection)"
+        },
+        {
+          "name": "e2.editor_content_unchanged",
+          "ok": true,
+          "expected": "editor content still contains the legacy fixture body",
+          "actual": "[synthetic] Legacy note created before d2-v1 editing protection (fictional).\n\n- Owner: synthetic viewer 1\n- Binder: B-0001"
+        },
+        {
+          "name": "e2.editor_revision_shown",
+          "ok": true,
+          "expected": "editor displays Revision",
+          "actual": "Revision 1"
+        },
+        {
+          "name": "e2.save_available",
+          "ok": true,
+          "expected": "Save now button present and enabled",
+          "actual": {
+            "saveNow": 1,
+            "disabled": false
+          }
+        },
+        {
+          "name": "e2.old_legacy_form_gone",
+          "ok": true,
+          "expected": "legacy (unprotected) form not rendered after enabling",
+          "actual": 0
+        },
+        {
+          "name": "e2.enable_entry_gone_after_enable",
+          "ok": true,
+          "expected": "enable entry no longer offered once the note is protected",
+          "actual": []
+        },
+        {
+          "name": "e2.catalog_row_refreshed_to_d2_v1",
+          "ok": true,
+          "expected": "catalog row refreshed: data-edit-schema=d2-v1, revision shown, legacy badge gone",
+          "actual": {
+            "edit_schema": "d2-v1",
+            "revision_testid": true,
+            "legacy_badge": false,
+            "enable_button": false,
+            "row_buttons": [
+              "Include [synthetic] Legacy note (pre-protection) in scope",
+              "Open note: [synthetic] Legacy note (pre-protection)"
+            ]
+          }
+        },
+        {
+          "name": "e2.dialog_closed_after_success",
+          "ok": true,
+          "expected": "enable dialog closed after success",
+          "actual": 0
+        },
+        {
+          "name": "e2.typed_into_enabled_editor",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "e2.enabled_editor_saves",
+          "ok": true,
+          "expected": "save status saved after editing the enabled note",
+          "actual": {
+            "status": "saved",
+            "text": "Saved"
+          }
+        },
+        {
+          "name": "e2.exactly_one_enable_request",
+          "ok": true,
+          "expected": "1 POST .../editing request for the enable",
+          "actual": [
+            {
+              "outcome": "success",
+              "status": 200
+            }
+          ]
+        },
+        {
+          "name": "e2.enable_request_succeeded",
+          "ok": true,
+          "expected": "enable request outcome success / status 200",
+          "actual": {
+            "method": "POST",
+            "note_id": "note_legacy",
+            "mutation_id": "nmdcfca8fc91214d1e91baeeba6ecfccc7",
+            "mode": "success",
+            "outcome": "success",
+            "status": 200,
+            "at": 1794294717807
+          }
+        },
+        {
+          "name": "e2.server_note_now_protected",
+          "ok": true,
+          "expected": "server note edit_schema=d2-v1 with a revision",
+          "actual": {
+            "edit_schema": "d2-v1",
+            "revision": 2
+          }
+        },
+        {
+          "name": "e2.enabled_note_saved_content",
+          "ok": true,
+          "expected": "enabled note content saved through the d2-v1 editor",
+          "actual": {
+            "revision": 2,
+            "containsMarker": true
+          }
+        },
+        {
+          "name": "e2.save_request_was_d2",
+          "ok": true,
+          "expected": "in-place editor used the d2-v1 revision-aware PATCH (selected=true, 200)",
+          "actual": [
+            {
+              "note_id": "note_legacy",
+              "selected": true,
+              "status": 200
+            }
+          ]
+        },
+        {
+          "name": "e2.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 13048
+    },
+    {
+      "id": "E3",
+      "width": 1024,
+      "note_mode": "editor_off",
+      "enable_mode": "success",
+      "stats": {
+        "note_mode": "editor_off",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      },
+      "assertions": [
+        {
+          "name": "e3.row_hovered",
+          "ok": true,
+          "expected": "legacy row hover works",
+          "actual": true
+        },
+        {
+          "name": "e3.capability_off_known",
+          "ok": true,
+          "expected": "Notes catalog rendered with the capability projection loaded",
+          "actual": 1
+        },
+        {
+          "name": "e3.models_request_seen",
+          "ok": true,
+          "expected": "/models capability projection requested",
+          "actual": 2
+        },
+        {
+          "name": "e3.after_no_enable_entry_when_capability_off",
+          "ok": true,
+          "expected": "enable entry hidden when note_editor.available=false",
+          "actual": {
+            "enable": 0,
+            "testids": []
+          }
+        },
+        {
+          "name": "e3.legacy_edit_action_clicked",
+          "ok": true,
+          "expected": "legacy row Edit button clicked",
+          "actual": {
+            "clicked": true
+          }
+        },
+        {
+          "name": "e3.legacy_form_kept",
+          "ok": true,
+          "expected": "legacy-note-form-hint >= 1 (old form unchanged)",
+          "actual": true
+        },
+        {
+          "name": "e3.legacy_form_prefilled",
+          "ok": true,
+          "expected": "old form prefilled with the legacy note content",
+          "actual": {
+            "title": "[synthetic] Legacy note (pre-protection)",
+            "contentPrefix": "[synthetic] Legacy note created before d2-v1 editing protect"
+          }
+        },
+        {
+          "name": "e3.no_protected_editor_with_form",
+          "ok": true,
+          "expected": "no d2-v1 protected editor for the legacy note in this flow",
+          "actual": 0
+        },
+        {
+          "name": "e3.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 5781
+    },
+    {
+      "id": "E4",
+      "width": 1024,
+      "note_mode": "editor_on",
+      "enable_mode": "restricted403",
+      "stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "restricted403",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nm85aa87280c8842afa3973e6570e62367",
+            "mode": "restricted403",
+            "outcome": "restricted",
+            "status": 403
+          }
+        ],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 3
+      },
+      "assertions": [
+        {
+          "name": "e4.enable_entry_clicked",
+          "ok": true,
+          "expected": "enable entry clicked",
+          "actual": {
+            "clicked": true,
+            "selector": "[data-testid=\"note-enable-note_legacy\"]"
+          }
+        },
+        {
+          "name": "e4.confirm_clicked",
+          "ok": true,
+          "expected": "confirm clicked",
+          "actual": {
+            "clicked": true,
+            "selector": "[data-testid=\"note-enable-confirm\"]"
+          }
+        },
+        {
+          "name": "e4.error_state_shown",
+          "ok": true,
+          "expected": "note-enable-error >= 1 (403 restricted)",
+          "actual": true
+        },
+        {
+          "name": "e4.error_has_failure_kind",
+          "ok": true,
+          "expected": "note-enable-error exposes a non-empty data-failure-kind",
+          "actual": {
+            "failure_kind": "restricted",
+            "text": "You do not have permission to enable protected editing for this note."
+          }
+        },
+        {
+          "name": "e4.error_kind_is_restricted",
+          "ok": true,
+          "expected": "note-enable-error data-failure-kind=restricted",
+          "actual": {
+            "failure_kind": "restricted",
+            "text": "You do not have permission to enable protected editing for this note."
+          }
+        },
+        {
+          "name": "e4.error_dialog_stays_open",
+          "ok": true,
+          "expected": "error stays in the dialog (data-phase=error) so the user sees the terminal reason",
+          "actual": {
+            "dialog": 1,
+            "phase": "error"
+          }
+        },
+        {
+          "name": "e4.no_retry_for_terminal_error",
+          "ok": true,
+          "expected": "terminal 403 exposes no retry action",
+          "actual": {
+            "retry": 0,
+            "testids": [
+              "note-enable-note_legacy",
+              "note-enable-dialog",
+              "note-enable-note-title",
+              "note-enable-error",
+              "note-enable-close"
+            ]
+          }
+        },
+        {
+          "name": "e4.single_restricted_request",
+          "ok": true,
+          "expected": "1 POST .../editing → 403 restricted",
+          "actual": [
+            {
+              "outcome": "restricted",
+              "status": 403
+            }
+          ]
+        },
+        {
+          "name": "e4.no_semantic_change",
+          "ok": true,
+          "expected": "0 applied enable changes on failure",
+          "actual": 0
+        },
+        {
+          "name": "e4.note_still_unprotected",
+          "ok": true,
+          "expected": "note stays unprotected after the 403",
+          "actual": null
+        },
+        {
+          "name": "e4.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 7355
+    },
+    {
+      "id": "E5",
+      "width": 1024,
+      "note_mode": "editor_on",
+      "enable_mode": "dependency503",
+      "stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "dependency503",
+        "models_requests": 2,
+        "enable_semantic_changes": 1,
+        "enable_requests": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nmda2a6b35592c4049ab6c61428ec9ae6f",
+            "mode": "dependency503",
+            "outcome": "dependency_unavailable",
+            "status": 503
+          },
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nmda2a6b35592c4049ab6c61428ec9ae6f",
+            "mode": "dependency503",
+            "outcome": "success",
+            "status": 200
+          }
+        ],
+        "enable_applies": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nmda2a6b35592c4049ab6c61428ec9ae6f",
+            "applied_revision": 1
+          }
+        ],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@r1:d2-v1"
+        ],
+        "note_requests": 6
+      },
+      "assertions": [
+        {
+          "name": "e5.enable_entry_clicked",
+          "ok": true,
+          "expected": "enable entry clicked",
+          "actual": {
+            "clicked": true,
+            "selector": "[data-testid=\"note-enable-note_legacy\"]"
+          }
+        },
+        {
+          "name": "e5.confirm_clicked",
+          "ok": true,
+          "expected": "confirm clicked",
+          "actual": {
+            "clicked": true,
+            "selector": "[data-testid=\"note-enable-confirm\"]"
+          }
+        },
+        {
+          "name": "e5.error_state_shown",
+          "ok": true,
+          "expected": "note-enable-error >= 1 (503 dependency)",
+          "actual": true
+        },
+        {
+          "name": "e5.error_kind_is_unavailable",
+          "ok": true,
+          "expected": "note-enable-error data-failure-kind=unavailable (retryable dependency)",
+          "actual": {
+            "failure_kind": "unavailable",
+            "text": "Source dependencies cannot be verified right now. Retry to confirm the result."
+          }
+        },
+        {
+          "name": "e5.error_dialog_stays_open",
+          "ok": true,
+          "expected": "error stays in the dialog (data-phase=error) with the retry action",
+          "actual": {
+            "dialog": 1,
+            "phase": "error"
+          }
+        },
+        {
+          "name": "e5.retry_offered",
+          "ok": true,
+          "expected": "retry action offered for the retryable 503",
+          "actual": 1
+        },
+        {
+          "name": "e5.retry_clicked",
+          "ok": true,
+          "expected": "note-enable-retry clicked",
+          "actual": {
+            "clicked": true,
+            "selector": "[data-testid=\"note-enable-retry\"]"
+          }
+        },
+        {
+          "name": "e5.editor_opened_after_retry",
+          "ok": true,
+          "expected": "editor opened after retrying the 503",
+          "actual": true
+        },
+        {
+          "name": "e5.editor_title_unchanged",
+          "ok": true,
+          "expected": "editor title unchanged after retry success",
+          "actual": "[synthetic] Legacy note (pre-protection)"
+        },
+        {
+          "name": "e5.editor_revision_shown",
+          "ok": true,
+          "expected": "revision shown after retry success",
+          "actual": 1
+        },
+        {
+          "name": "e5.two_attempts_recorded",
+          "ok": true,
+          "expected": "2 POST .../editing attempts recorded (failure + retry)",
+          "actual": [
+            {
+              "outcome": "dependency_unavailable",
+              "status": 503
+            },
+            {
+              "outcome": "success",
+              "status": 200
+            }
+          ]
+        },
+        {
+          "name": "e5.first_retryable_second_success",
+          "ok": true,
+          "expected": "first attempt 503, retry 200",
+          "actual": [
+            503,
+            200
+          ]
+        },
+        {
+          "name": "e5.exactly_one_semantic_change",
+          "ok": true,
+          "expected": "exactly one applied enable change",
+          "actual": 1
+        },
+        {
+          "name": "e5.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 9557
+    },
+    {
+      "id": "E6",
+      "width": 1024,
+      "note_mode": "editor_on",
+      "enable_mode": "unknown503_apply",
+      "mutation_ids": [
+        "nmb7c6ed3c560c440490e65f3fa218bea1",
+        "nmb7c6ed3c560c440490e65f3fa218bea1"
+      ],
+      "stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "unknown503_apply",
+        "models_requests": 2,
+        "enable_semantic_changes": 1,
+        "enable_requests": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nmb7c6ed3c560c440490e65f3fa218bea1",
+            "mode": "unknown503_apply",
+            "outcome": "unknown_applied",
+            "status": 503
+          },
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nmb7c6ed3c560c440490e65f3fa218bea1",
+            "mode": "unknown503_apply",
+            "outcome": "replayed",
+            "status": 200
+          }
+        ],
+        "enable_applies": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nmb7c6ed3c560c440490e65f3fa218bea1",
+            "applied_revision": 1
+          }
+        ],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@r1:d2-v1"
+        ],
+        "note_requests": 6
+      },
+      "assertions": [
+        {
+          "name": "e6.enable_entry_clicked",
+          "ok": true,
+          "expected": "enable entry clicked",
+          "actual": {
+            "clicked": true,
+            "selector": "[data-testid=\"note-enable-note_legacy\"]"
+          }
+        },
+        {
+          "name": "e6.confirm_clicked",
+          "ok": true,
+          "expected": "confirm clicked",
+          "actual": {
+            "clicked": true,
+            "selector": "[data-testid=\"note-enable-confirm\"]"
+          }
+        },
+        {
+          "name": "e6.unknown_state_shown",
+          "ok": true,
+          "expected": "note-enable-error >= 1 (unknown result)",
+          "actual": true
+        },
+        {
+          "name": "e6.unknown_kind_reported",
+          "ok": true,
+          "expected": "note-enable-error data-failure-kind=unknown (outcome could not be confirmed)",
+          "actual": {
+            "failure_kind": "unknown",
+            "text": "The result could not be confirmed. Retry to check the same request before doing anything else."
+          }
+        },
+        {
+          "name": "e6.unknown_dialog_stays_open",
+          "ok": true,
+          "expected": "unknown result stays in the dialog (data-phase=error)",
+          "actual": {
+            "dialog": 1,
+            "phase": "error"
+          }
+        },
+        {
+          "name": "e6.confirm_result_action_present",
+          "ok": true,
+          "expected": "unknown state exposes a \"confirm result\" action",
+          "actual": {
+            "selector": "[data-testid=\"note-enable-retry\"]",
+            "testids": [
+              "note-enable-note_legacy",
+              "note-enable-dialog",
+              "note-enable-note-title",
+              "note-enable-error",
+              "note-enable-retry",
+              "note-enable-close"
+            ],
+            "retryLabel": "Confirm result"
+          }
+        },
+        {
+          "name": "e6.confirm_result_label_is_dedicated",
+          "ok": true,
+          "expected": "the unknown-state action uses the dedicated confirmResult copy (\"Confirm result\")",
+          "actual": "Confirm result"
+        },
+        {
+          "name": "e6.first_attempt_recorded_unknown",
+          "ok": true,
+          "expected": "first attempt applied the enable but returned 503 (unknown)",
+          "actual": [
+            {
+              "outcome": "unknown_applied",
+              "status": 503
+            }
+          ]
+        },
+        {
+          "name": "e6.mutation_id_present",
+          "ok": true,
+          "expected": "first attempt carries a mutation_id",
+          "actual": "nmb7c6ed3c560c440490e65f3fa218bea1"
+        },
+        {
+          "name": "e6.confirm_result_clicked",
+          "ok": true,
+          "expected": "confirm-result action clicked",
+          "actual": {
+            "clicked": true,
+            "selector": "dialog-button-text:Confirm result"
+          }
+        },
+        {
+          "name": "e6.editor_opened_after_confirm_result",
+          "ok": true,
+          "expected": "editor opened after confirming the unknown result",
+          "actual": true
+        },
+        {
+          "name": "e6.editor_title_unchanged",
+          "ok": true,
+          "expected": "editor title unchanged after confirming the unknown result",
+          "actual": "[synthetic] Legacy note (pre-protection)"
+        },
+        {
+          "name": "e6.editor_content_unchanged",
+          "ok": true,
+          "expected": "editor content unchanged after confirming the unknown result",
+          "actual": "[synthetic] Legacy note created before d2-v1 editing protection (fictional).\n\n- Owner: synthetic viewer 1\n- Binder: B-0001"
+        },
+        {
+          "name": "e6.editor_revision_is_one",
+          "ok": true,
+          "expected": "revision stays 1 (single semantic change)",
+          "actual": "Revision 1"
+        },
+        {
+          "name": "e6.two_requests_recorded",
+          "ok": true,
+          "expected": "2 POST .../editing requests recorded",
+          "actual": [
+            {
+              "outcome": "unknown_applied",
+              "status": 503
+            },
+            {
+              "outcome": "replayed",
+              "status": 200
+            }
+          ]
+        },
+        {
+          "name": "e6.same_mutation_id_replayed",
+          "ok": true,
+          "expected": "both attempts used the SAME mutation_id",
+          "actual": [
+            "nmb7c6ed3c560c440490e65f3fa218bea1",
+            "nmb7c6ed3c560c440490e65f3fa218bea1"
+          ]
+        },
+        {
+          "name": "e6.second_attempt_replayed_receipt",
+          "ok": true,
+          "expected": "second attempt is a receipt replay (200 replayed)",
+          "actual": {
+            "method": "POST",
+            "note_id": "note_legacy",
+            "mutation_id": "nmb7c6ed3c560c440490e65f3fa218bea1",
+            "mode": "unknown503_apply",
+            "outcome": "replayed",
+            "status": 200,
+            "at": 1794294754661
+          }
+        },
+        {
+          "name": "e6.exactly_one_semantic_change",
+          "ok": true,
+          "expected": "exactly one semantic enable change (no double apply)",
+          "actual": {
+            "applies": 1,
+            "semantic_changes": 1
+          }
+        },
+        {
+          "name": "e6.final_state_single_protected_document",
+          "ok": true,
+          "expected": "final state: the SAME note id is protected at revision 1 (no duplicate document)",
+          "actual": {
+            "note_id": "note_legacy",
+            "edit_schema": "d2-v1",
+            "revision": 1
+          }
+        },
+        {
+          "name": "e6.no_duplicate_note_created",
+          "ok": true,
+          "expected": "store still contains exactly the 2 fixture notes (no duplicate document)",
+          "actual": [
+            {
+              "note_id": "note_d1",
+              "revision": 3,
+              "edit_schema": "d2-v1",
+              "title": "[synthetic] D1 cohort readout"
+            },
+            {
+              "note_id": "note_legacy",
+              "revision": 1,
+              "edit_schema": "d2-v1",
+              "title": "[synthetic] Legacy note (pre-protection)"
+            }
+          ]
+        },
+        {
+          "name": "e6.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 9479
+    },
+    {
+      "id": "E7",
+      "width": 1024,
+      "note_mode": "editor_on",
+      "role": "admin_readonly",
+      "stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      },
+      "assertions": [
+        {
+          "name": "e7.admin_banner_visible",
+          "ok": true,
+          "expected": "admin-readonly-banner visible for the synthetic admin_readonly token",
+          "actual": 2
+        },
+        {
+          "name": "e7.no_enable_entry_for_admin",
+          "ok": true,
+          "expected": "no note-enable-* entry for an Admin read-only session",
+          "actual": {
+            "enable": 0,
+            "testids": []
+          }
+        },
+        {
+          "name": "e7.no_legacy_write_actions_for_admin",
+          "ok": true,
+          "expected": "admin read-only session exposes no legacy Edit/Delete write actions",
+          "actual": [
+            "Include [synthetic] Legacy note (pre-protection) in scope"
+          ]
+        },
+        {
+          "name": "e7.no_catalog_create_for_admin",
+          "ok": true,
+          "expected": "admin read-only session exposes no New note button",
+          "actual": 0
+        },
+        {
+          "name": "e7.no_enable_request_for_admin",
+          "ok": true,
+          "expected": "no editing request emitted by an Admin read-only session",
+          "actual": 0
+        },
+        {
+          "name": "e7.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 4356
+    },
+    {
+      "id": "E8",
+      "width": 1024,
+      "note_mode": "models_error",
+      "stats": {
+        "note_mode": "models_error",
+        "enable_mode": "success",
+        "models_requests": 6,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      },
+      "assertions": [
+        {
+          "name": "e8.capability_blocked_shown",
+          "ok": true,
+          "expected": "note-capability-blocked fail-closed hint rendered when /models fails",
+          "actual": true
+        },
+        {
+          "name": "e8.no_enable_entry_on_capability_failure",
+          "ok": true,
+          "expected": "no enable entry when the capability projection cannot be read (fail-closed)",
+          "actual": {
+            "enable": 0,
+            "testids": []
+          }
+        },
+        {
+          "name": "e8.capability_retry_offered",
+          "ok": true,
+          "expected": "capability blocked state offers a retry for the projection",
+          "actual": {
+            "blocked": 1,
+            "retry": 1
+          }
+        },
+        {
+          "name": "e8.models_request_failed_and_observed",
+          "ok": true,
+          "expected": "/models request attempted and failed (synthetic 500)",
+          "actual": 6
+        },
+        {
+          "name": "e8.no_enable_request",
+          "ok": true,
+          "expected": "no editing request emitted while capabilities are unreadable",
+          "actual": 0
+        },
+        {
+          "name": "e8.no_unexpected_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 4354
+    }
+  ],
+  "totals": {
+    "scenes": 16,
+    "scene_errors": 0,
+    "assertions": 198,
+    "assertions_pass": 198,
+    "assertions_fail": 0
+  },
+  "screenshots": [
+    {
+      "file": "after_e1_row_actions_1440.png",
+      "bytes": 98496,
+      "sha256": "02b9b06eb85978b7952958c38c8fb6c26aa8f8dcc63428f2e2fb6cc7e0088359",
+      "dom_counts": {
+        "note_enable": 1,
+        "note_enable_dialog": 0,
+        "note_enable_error": 0,
+        "note_enable_retry": 0,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "legacy_note_form_hint": 0,
+        "note_save_status": 0,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [
+        "note-enable-note_legacy"
+      ],
+      "enable_error": null,
+      "enable_retry_label": null,
+      "dialog_text": null,
+      "dialog_phase": null,
+      "editor": {
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null
+      },
+      "save_status": null,
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "revision_testid": false,
+          "legacy_badge": true,
+          "enable_button": true,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Enable protected editing",
+            "Edit",
+            "Delete"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      }
+    },
+    {
+      "file": "after_e2_enable_dialog_1440.png",
+      "bytes": 124643,
+      "sha256": "3218add2be000e11670fc3c6a6edf66c94835d6c02858475ec7323649f34e83d",
+      "dom_counts": {
+        "note_enable": 5,
+        "note_enable_dialog": 1,
+        "note_enable_error": 0,
+        "note_enable_retry": 0,
+        "note_enable_confirm": 1,
+        "note_enable_cancel": 1,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "legacy_note_form_hint": 0,
+        "note_save_status": 0,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [
+        "note-enable-note_legacy",
+        "note-enable-dialog",
+        "note-enable-note-title",
+        "note-enable-confirm",
+        "note-enable-cancel"
+      ],
+      "enable_error": null,
+      "enable_retry_label": null,
+      "dialog_text": "Enable protected editing?You need edit permission on this project. Enabling protected editing only adds protection fields — the title and content stay unchanged. After enabling, this note opens in the Markdown editor and the legacy form is no longer offered.[synthetic] Legacy note (pre-protection)Enable protected editingCancel",
+      "dialog_phase": "confirming",
+      "editor": {
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null
+      },
+      "save_status": null,
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "revision_testid": false,
+          "legacy_badge": true,
+          "enable_button": true,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Enable protected editing",
+            "Edit",
+            "Delete"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      }
+    },
+    {
+      "file": "after_e2_editor_opened_1440.png",
+      "bytes": 122388,
+      "sha256": "df817df71a5fe8a684efad13aaa09f155106a8126bf88c9f7be7a51379b49ad0",
+      "dom_counts": {
+        "note_enable": 0,
+        "note_enable_dialog": 0,
+        "note_enable_error": 0,
+        "note_enable_retry": 0,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "note_editor": 1,
+        "note_editor_revision": 1,
+        "note_editor_save_now": 1,
+        "legacy_note_form_hint": 0,
+        "note_save_status": 1,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [],
+      "enable_error": null,
+      "enable_retry_label": null,
+      "dialog_text": null,
+      "dialog_phase": null,
+      "editor": {
+        "title": "[synthetic] Legacy note (pre-protection)",
+        "revision": "Revision 1",
+        "contentTail": "[synthetic] Legacy note created before d2-v1 editing protection (fictional).\n\n- Owner: synthetic viewer 1\n- Binder: B-0001",
+        "contentContainsFixture": true,
+        "saveNowDisabled": false
+      },
+      "save_status": {
+        "status": "saved",
+        "text": "Saved"
+      },
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Open note: [synthetic] Legacy note (pre-protection)"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 1,
+        "enable_requests": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nm1085e672d1574d2988c09c019b1d11b2",
+            "mode": "success",
+            "outcome": "success",
+            "status": 200
+          }
+        ],
+        "enable_applies": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nm1085e672d1574d2988c09c019b1d11b2",
+            "applied_revision": 1
+          }
+        ],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@r1:d2-v1"
+        ],
+        "note_requests": 5
+      }
+    },
+    {
+      "file": "after_e2_editor_saved_1440.png",
+      "bytes": 118282,
+      "sha256": "c08e9bdc80277d17e1fe18bea0d130b3b0f75c755b36d9c3e8d40f5acc0f050d",
+      "dom_counts": {
+        "note_enable": 0,
+        "note_enable_dialog": 0,
+        "note_enable_error": 0,
+        "note_enable_retry": 0,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "note_editor": 1,
+        "note_editor_revision": 1,
+        "note_editor_save_now": 1,
+        "legacy_note_form_hint": 0,
+        "note_save_status": 1,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [],
+      "enable_error": null,
+      "enable_retry_label": null,
+      "dialog_text": null,
+      "dialog_phase": null,
+      "editor": {
+        "title": "[synthetic] Legacy note (pre-protection)",
+        "revision": "Revision 2",
+        "contentTail": "[synthetic] Legacy note created before d2-v1 editing protection (fictional).\n\n\n[synthetic] E2 enabled save marker 664334\n- Owner: synthetic viewer 1\n- Binder: B-0001",
+        "contentContainsFixture": true,
+        "saveNowDisabled": false
+      },
+      "save_status": {
+        "status": "saved",
+        "text": "Saved"
+      },
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Open note: [synthetic] Legacy note (pre-protection)"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 1,
+        "enable_requests": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nm1085e672d1574d2988c09c019b1d11b2",
+            "mode": "success",
+            "outcome": "success",
+            "status": 200
+          }
+        ],
+        "enable_applies": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nm1085e672d1574d2988c09c019b1d11b2",
+            "applied_revision": 1
+          }
+        ],
+        "saves": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nm9daace9b07564ceab83c5e6854e7a0a7",
+            "expected_revision": 1,
+            "status": 200
+          }
+        ],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@r2:d2-v1"
+        ],
+        "note_requests": 6
+      }
+    },
+    {
+      "file": "after_e3_capability_off_legacy_form_1440.png",
+      "bytes": 109459,
+      "sha256": "2ce5e98aa17c85151820e47c20d90e54a0c40ce696958f355cb2b49c99549fc6",
+      "dom_counts": {
+        "note_enable": 0,
+        "note_enable_dialog": 0,
+        "note_enable_error": 0,
+        "note_enable_retry": 0,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "legacy_note_form_hint": 1,
+        "note_save_status": 0,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [],
+      "enable_error": null,
+      "enable_retry_label": null,
+      "dialog_text": null,
+      "dialog_phase": null,
+      "editor": {
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null
+      },
+      "save_status": null,
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "revision_testid": false,
+          "legacy_badge": true,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Edit",
+            "Delete"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "editor_off",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      }
+    },
+    {
+      "file": "after_e4_restricted_error_1440.png",
+      "bytes": 123108,
+      "sha256": "9075ebb01c7469701e7026ee278d21895936496f607188032dad13f2c3f89951",
+      "dom_counts": {
+        "note_enable": 5,
+        "note_enable_dialog": 1,
+        "note_enable_error": 1,
+        "note_enable_retry": 0,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "legacy_note_form_hint": 0,
+        "note_save_status": 0,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [
+        "note-enable-note_legacy",
+        "note-enable-dialog",
+        "note-enable-note-title",
+        "note-enable-error",
+        "note-enable-close"
+      ],
+      "enable_error": {
+        "failure_kind": "restricted",
+        "text": "You do not have permission to enable protected editing for this note."
+      },
+      "enable_retry_label": null,
+      "dialog_text": "Enable protected editing?You need edit permission on this project. Enabling protected editing only adds protection fields — the title and content stay unchanged. After enabling, this note opens in the Markdown editor and the legacy form is no longer offered.[synthetic] Legacy note (pre-protection)You do not have permission to enable protected editing for this note.Close",
+      "dialog_phase": "error",
+      "editor": {
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null
+      },
+      "save_status": null,
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "revision_testid": false,
+          "legacy_badge": true,
+          "enable_button": true,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Enable protected editing",
+            "Edit",
+            "Delete"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "restricted403",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nm19097191811448d481088abbb1dd9ec8",
+            "mode": "restricted403",
+            "outcome": "restricted",
+            "status": 403
+          }
+        ],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 3
+      }
+    },
+    {
+      "file": "after_e5_dependency_error_1440.png",
+      "bytes": 125223,
+      "sha256": "47230cfcb2ca025e3e7f3199b1735f080b530b85c1dbd1334553562d5e954550",
+      "dom_counts": {
+        "note_enable": 6,
+        "note_enable_dialog": 1,
+        "note_enable_error": 1,
+        "note_enable_retry": 1,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "legacy_note_form_hint": 0,
+        "note_save_status": 0,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [
+        "note-enable-note_legacy",
+        "note-enable-dialog",
+        "note-enable-note-title",
+        "note-enable-error",
+        "note-enable-retry",
+        "note-enable-close"
+      ],
+      "enable_error": {
+        "failure_kind": "unavailable",
+        "text": "Source dependencies cannot be verified right now. Retry to confirm the result."
+      },
+      "enable_retry_label": "Confirm result",
+      "dialog_text": "Enable protected editing?You need edit permission on this project. Enabling protected editing only adds protection fields — the title and content stay unchanged. After enabling, this note opens in the Markdown editor and the legacy form is no longer offered.[synthetic] Legacy note (pre-protection)Source dependencies cannot be verified right now. Retry to confirm the result.Confirm resultClose",
+      "dialog_phase": "error",
+      "editor": {
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null
+      },
+      "save_status": null,
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "revision_testid": false,
+          "legacy_badge": true,
+          "enable_button": true,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Enable protected editing",
+            "Edit",
+            "Delete"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "dependency503",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nmdd26bc7785cb4b0689aa89a6479b94ac",
+            "mode": "dependency503",
+            "outcome": "dependency_unavailable",
+            "status": 503
+          }
+        ],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 3
+      }
+    },
+    {
+      "file": "after_e5_retry_editor_1440.png",
+      "bytes": 122388,
+      "sha256": "df817df71a5fe8a684efad13aaa09f155106a8126bf88c9f7be7a51379b49ad0",
+      "dom_counts": {
+        "note_enable": 0,
+        "note_enable_dialog": 0,
+        "note_enable_error": 0,
+        "note_enable_retry": 0,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "note_editor": 1,
+        "note_editor_revision": 1,
+        "note_editor_save_now": 1,
+        "legacy_note_form_hint": 0,
+        "note_save_status": 1,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [],
+      "enable_error": null,
+      "enable_retry_label": null,
+      "dialog_text": null,
+      "dialog_phase": null,
+      "editor": {
+        "title": "[synthetic] Legacy note (pre-protection)",
+        "revision": "Revision 1",
+        "contentTail": "[synthetic] Legacy note created before d2-v1 editing protection (fictional).\n\n- Owner: synthetic viewer 1\n- Binder: B-0001",
+        "contentContainsFixture": true,
+        "saveNowDisabled": false
+      },
+      "save_status": {
+        "status": "saved",
+        "text": "Saved"
+      },
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Open note: [synthetic] Legacy note (pre-protection)"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "dependency503",
+        "models_requests": 2,
+        "enable_semantic_changes": 1,
+        "enable_requests": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nmdd26bc7785cb4b0689aa89a6479b94ac",
+            "mode": "dependency503",
+            "outcome": "dependency_unavailable",
+            "status": 503
+          },
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nmdd26bc7785cb4b0689aa89a6479b94ac",
+            "mode": "dependency503",
+            "outcome": "success",
+            "status": 200
+          }
+        ],
+        "enable_applies": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nmdd26bc7785cb4b0689aa89a6479b94ac",
+            "applied_revision": 1
+          }
+        ],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@r1:d2-v1"
+        ],
+        "note_requests": 6
+      }
+    },
+    {
+      "file": "after_e6_unknown_result_1440.png",
+      "bytes": 126378,
+      "sha256": "4662067ef629a000a6d9a355a0312fe5762e3c86911ae0f685a176b8c76d8ba3",
+      "dom_counts": {
+        "note_enable": 6,
+        "note_enable_dialog": 1,
+        "note_enable_error": 1,
+        "note_enable_retry": 1,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "legacy_note_form_hint": 0,
+        "note_save_status": 0,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [
+        "note-enable-note_legacy",
+        "note-enable-dialog",
+        "note-enable-note-title",
+        "note-enable-error",
+        "note-enable-retry",
+        "note-enable-close"
+      ],
+      "enable_error": {
+        "failure_kind": "unknown",
+        "text": "The result could not be confirmed. Retry to check the same request before doing anything else."
+      },
+      "enable_retry_label": "Confirm result",
+      "dialog_text": "Enable protected editing?You need edit permission on this project. Enabling protected editing only adds protection fields — the title and content stay unchanged. After enabling, this note opens in the Markdown editor and the legacy form is no longer offered.[synthetic] Legacy note (pre-protection)The result could not be confirmed. Retry to check the same request before doing anything else.Confirm resultClose",
+      "dialog_phase": "error",
+      "editor": {
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null
+      },
+      "save_status": null,
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "revision_testid": false,
+          "legacy_badge": true,
+          "enable_button": true,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Enable protected editing",
+            "Edit",
+            "Delete"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "unknown503_apply",
+        "models_requests": 2,
+        "enable_semantic_changes": 1,
+        "enable_requests": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nma21aeb43225044bd91852e63ca4433ed",
+            "mode": "unknown503_apply",
+            "outcome": "unknown_applied",
+            "status": 503
+          }
+        ],
+        "enable_applies": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nma21aeb43225044bd91852e63ca4433ed",
+            "applied_revision": 1
+          }
+        ],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@r1:d2-v1"
+        ],
+        "note_requests": 3
+      }
+    },
+    {
+      "file": "after_e6_confirmed_editor_1440.png",
+      "bytes": 122388,
+      "sha256": "df817df71a5fe8a684efad13aaa09f155106a8126bf88c9f7be7a51379b49ad0",
+      "dom_counts": {
+        "note_enable": 0,
+        "note_enable_dialog": 0,
+        "note_enable_error": 0,
+        "note_enable_retry": 0,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "note_editor": 1,
+        "note_editor_revision": 1,
+        "note_editor_save_now": 1,
+        "legacy_note_form_hint": 0,
+        "note_save_status": 1,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [],
+      "enable_error": null,
+      "enable_retry_label": null,
+      "dialog_text": null,
+      "dialog_phase": null,
+      "editor": {
+        "title": "[synthetic] Legacy note (pre-protection)",
+        "revision": "Revision 1",
+        "contentTail": "[synthetic] Legacy note created before d2-v1 editing protection (fictional).\n\n- Owner: synthetic viewer 1\n- Binder: B-0001",
+        "contentContainsFixture": true,
+        "saveNowDisabled": false
+      },
+      "save_status": {
+        "status": "saved",
+        "text": "Saved"
+      },
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Open note: [synthetic] Legacy note (pre-protection)"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "unknown503_apply",
+        "models_requests": 2,
+        "enable_semantic_changes": 1,
+        "enable_requests": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nma21aeb43225044bd91852e63ca4433ed",
+            "mode": "unknown503_apply",
+            "outcome": "unknown_applied",
+            "status": 503
+          },
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nma21aeb43225044bd91852e63ca4433ed",
+            "mode": "unknown503_apply",
+            "outcome": "replayed",
+            "status": 200
+          }
+        ],
+        "enable_applies": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nma21aeb43225044bd91852e63ca4433ed",
+            "applied_revision": 1
+          }
+        ],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@r1:d2-v1"
+        ],
+        "note_requests": 6
+      }
+    },
+    {
+      "file": "after_e7_admin_readonly_1440.png",
+      "bytes": 119710,
+      "sha256": "9f32df0eb515f4a5cfe0f184a34c61ab082df21e0f796ea4b1808c2081b648e7",
+      "dom_counts": {
+        "note_enable": 0,
+        "note_enable_dialog": 0,
+        "note_enable_error": 0,
+        "note_enable_retry": 0,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 2,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "legacy_note_form_hint": 0,
+        "note_save_status": 0,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [],
+      "enable_error": null,
+      "enable_retry_label": null,
+      "dialog_text": null,
+      "dialog_phase": null,
+      "editor": {
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null
+      },
+      "save_status": null,
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "revision_testid": false,
+          "legacy_badge": true,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      }
+    },
+    {
+      "file": "after_e8_capability_error_1440.png",
+      "bytes": 111727,
+      "sha256": "b7a39bac780b157ba21545c3140a1862e51385e2cca1e199f1b4fd167e8d0b74",
+      "dom_counts": {
+        "note_enable": 0,
+        "note_enable_dialog": 0,
+        "note_enable_error": 0,
+        "note_enable_retry": 0,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 1,
+        "admin_readonly_banner": 0,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "legacy_note_form_hint": 0,
+        "note_save_status": 0,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [],
+      "enable_error": null,
+      "enable_retry_label": null,
+      "dialog_text": null,
+      "dialog_phase": null,
+      "editor": {
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null
+      },
+      "save_status": null,
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "revision_testid": false,
+          "legacy_badge": true,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Edit",
+            "Delete"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "models_error",
+        "enable_mode": "success",
+        "models_requests": 6,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      }
+    },
+    {
+      "file": "after_e1_row_actions_1024.png",
+      "bytes": 88639,
+      "sha256": "298136b08ddb48fd902c70b07face0a4dba08cd65641e46a334f3ca7952e4af5",
+      "dom_counts": {
+        "note_enable": 1,
+        "note_enable_dialog": 0,
+        "note_enable_error": 0,
+        "note_enable_retry": 0,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "legacy_note_form_hint": 0,
+        "note_save_status": 0,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [
+        "note-enable-note_legacy"
+      ],
+      "enable_error": null,
+      "enable_retry_label": null,
+      "dialog_text": null,
+      "dialog_phase": null,
+      "editor": {
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null
+      },
+      "save_status": null,
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "revision_testid": false,
+          "legacy_badge": true,
+          "enable_button": true,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Enable protected editing",
+            "Edit",
+            "Delete"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      }
+    },
+    {
+      "file": "after_e2_enable_dialog_1024.png",
+      "bytes": 113992,
+      "sha256": "a27654b9ef7e9ecbecdefaf3a3817ba5ac6e57fb16f4817171b148a7f1cc6ce4",
+      "dom_counts": {
+        "note_enable": 5,
+        "note_enable_dialog": 1,
+        "note_enable_error": 0,
+        "note_enable_retry": 0,
+        "note_enable_confirm": 1,
+        "note_enable_cancel": 1,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "legacy_note_form_hint": 0,
+        "note_save_status": 0,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [
+        "note-enable-note_legacy",
+        "note-enable-dialog",
+        "note-enable-note-title",
+        "note-enable-confirm",
+        "note-enable-cancel"
+      ],
+      "enable_error": null,
+      "enable_retry_label": null,
+      "dialog_text": "Enable protected editing?You need edit permission on this project. Enabling protected editing only adds protection fields — the title and content stay unchanged. After enabling, this note opens in the Markdown editor and the legacy form is no longer offered.[synthetic] Legacy note (pre-protection)Enable protected editingCancel",
+      "dialog_phase": "confirming",
+      "editor": {
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null
+      },
+      "save_status": null,
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "revision_testid": false,
+          "legacy_badge": true,
+          "enable_button": true,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Enable protected editing",
+            "Edit",
+            "Delete"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      }
+    },
+    {
+      "file": "after_e2_editor_opened_1024.png",
+      "bytes": 92872,
+      "sha256": "61efdb96feb4d4a38ccd339ef80d2a923c7e9a85fe7b7b48cd74ee6d4004bbf2",
+      "dom_counts": {
+        "note_enable": 0,
+        "note_enable_dialog": 0,
+        "note_enable_error": 0,
+        "note_enable_retry": 0,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "note_editor": 1,
+        "note_editor_revision": 1,
+        "note_editor_save_now": 1,
+        "legacy_note_form_hint": 0,
+        "note_save_status": 1,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [],
+      "enable_error": null,
+      "enable_retry_label": null,
+      "dialog_text": null,
+      "dialog_phase": null,
+      "editor": {
+        "title": "[synthetic] Legacy note (pre-protection)",
+        "revision": "Revision 1",
+        "contentTail": "[synthetic] Legacy note created before d2-v1 editing protection (fictional).\n\n- Owner: synthetic viewer 1\n- Binder: B-0001",
+        "contentContainsFixture": true,
+        "saveNowDisabled": false
+      },
+      "save_status": {
+        "status": "saved",
+        "text": "Saved"
+      },
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Open note: [synthetic] Legacy note (pre-protection)"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 1,
+        "enable_requests": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nmdcfca8fc91214d1e91baeeba6ecfccc7",
+            "mode": "success",
+            "outcome": "success",
+            "status": 200
+          }
+        ],
+        "enable_applies": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nmdcfca8fc91214d1e91baeeba6ecfccc7",
+            "applied_revision": 1
+          }
+        ],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@r1:d2-v1"
+        ],
+        "note_requests": 5
+      }
+    },
+    {
+      "file": "after_e2_editor_saved_1024.png",
+      "bytes": 89989,
+      "sha256": "cc27771231b8258250716be04bbfb9dbb3a84e002cd00951b38cfb343ced6b59",
+      "dom_counts": {
+        "note_enable": 0,
+        "note_enable_dialog": 0,
+        "note_enable_error": 0,
+        "note_enable_retry": 0,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "note_editor": 1,
+        "note_editor_revision": 1,
+        "note_editor_save_now": 1,
+        "legacy_note_form_hint": 0,
+        "note_save_status": 1,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [],
+      "enable_error": null,
+      "enable_retry_label": null,
+      "dialog_text": null,
+      "dialog_phase": null,
+      "editor": {
+        "title": "[synthetic] Legacy note (pre-protection)",
+        "revision": "Revision 2",
+        "contentTail": "[synthetic] Legacy note created before d2-v1 editing protection (fictional).\n\n\n[synthetic] E2 enabled save marker 721002\n- Owner: synthetic viewer 1\n- Binder: B-0001",
+        "contentContainsFixture": true,
+        "saveNowDisabled": false
+      },
+      "save_status": {
+        "status": "saved",
+        "text": "Saved"
+      },
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Open note: [synthetic] Legacy note (pre-protection)"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 1,
+        "enable_requests": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nmdcfca8fc91214d1e91baeeba6ecfccc7",
+            "mode": "success",
+            "outcome": "success",
+            "status": 200
+          }
+        ],
+        "enable_applies": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nmdcfca8fc91214d1e91baeeba6ecfccc7",
+            "applied_revision": 1
+          }
+        ],
+        "saves": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nmadf1bed910784c3d80f65b757844fd80",
+            "expected_revision": 1,
+            "status": 200
+          }
+        ],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@r2:d2-v1"
+        ],
+        "note_requests": 6
+      }
+    },
+    {
+      "file": "after_e3_capability_off_legacy_form_1024.png",
+      "bytes": 94160,
+      "sha256": "802c3e4a973fe536016c366aa42310d0cf4d85c9ba594e1c7ec5fc4354a32a5f",
+      "dom_counts": {
+        "note_enable": 0,
+        "note_enable_dialog": 0,
+        "note_enable_error": 0,
+        "note_enable_retry": 0,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "legacy_note_form_hint": 1,
+        "note_save_status": 0,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [],
+      "enable_error": null,
+      "enable_retry_label": null,
+      "dialog_text": null,
+      "dialog_phase": null,
+      "editor": {
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null
+      },
+      "save_status": null,
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "revision_testid": false,
+          "legacy_badge": true,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Edit",
+            "Delete"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "editor_off",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      }
+    },
+    {
+      "file": "after_e4_restricted_error_1024.png",
+      "bytes": 108644,
+      "sha256": "b4cfa90d9227d82d9479fdbabe7a0060d51d1e782a154fbba654f24ee0450047",
+      "dom_counts": {
+        "note_enable": 5,
+        "note_enable_dialog": 1,
+        "note_enable_error": 1,
+        "note_enable_retry": 0,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "legacy_note_form_hint": 0,
+        "note_save_status": 0,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [
+        "note-enable-note_legacy",
+        "note-enable-dialog",
+        "note-enable-note-title",
+        "note-enable-error",
+        "note-enable-close"
+      ],
+      "enable_error": {
+        "failure_kind": "restricted",
+        "text": "You do not have permission to enable protected editing for this note."
+      },
+      "enable_retry_label": null,
+      "dialog_text": "Enable protected editing?You need edit permission on this project. Enabling protected editing only adds protection fields — the title and content stay unchanged. After enabling, this note opens in the Markdown editor and the legacy form is no longer offered.[synthetic] Legacy note (pre-protection)You do not have permission to enable protected editing for this note.Close",
+      "dialog_phase": "error",
+      "editor": {
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null
+      },
+      "save_status": null,
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "revision_testid": false,
+          "legacy_badge": true,
+          "enable_button": true,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Enable protected editing",
+            "Edit",
+            "Delete"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "restricted403",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nm85aa87280c8842afa3973e6570e62367",
+            "mode": "restricted403",
+            "outcome": "restricted",
+            "status": 403
+          }
+        ],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 3
+      }
+    },
+    {
+      "file": "after_e5_dependency_error_1024.png",
+      "bytes": 110622,
+      "sha256": "1c2fcf2fe78daa65a6b6654b7ed1585e21a9b77e4e85bbb39fd9cbb289e290db",
+      "dom_counts": {
+        "note_enable": 6,
+        "note_enable_dialog": 1,
+        "note_enable_error": 1,
+        "note_enable_retry": 1,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "legacy_note_form_hint": 0,
+        "note_save_status": 0,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [
+        "note-enable-note_legacy",
+        "note-enable-dialog",
+        "note-enable-note-title",
+        "note-enable-error",
+        "note-enable-retry",
+        "note-enable-close"
+      ],
+      "enable_error": {
+        "failure_kind": "unavailable",
+        "text": "Source dependencies cannot be verified right now. Retry to confirm the result."
+      },
+      "enable_retry_label": "Confirm result",
+      "dialog_text": "Enable protected editing?You need edit permission on this project. Enabling protected editing only adds protection fields — the title and content stay unchanged. After enabling, this note opens in the Markdown editor and the legacy form is no longer offered.[synthetic] Legacy note (pre-protection)Source dependencies cannot be verified right now. Retry to confirm the result.Confirm resultClose",
+      "dialog_phase": "error",
+      "editor": {
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null
+      },
+      "save_status": null,
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "revision_testid": false,
+          "legacy_badge": true,
+          "enable_button": true,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Enable protected editing",
+            "Edit",
+            "Delete"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "dependency503",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nmda2a6b35592c4049ab6c61428ec9ae6f",
+            "mode": "dependency503",
+            "outcome": "dependency_unavailable",
+            "status": 503
+          }
+        ],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 3
+      }
+    },
+    {
+      "file": "after_e5_retry_editor_1024.png",
+      "bytes": 92888,
+      "sha256": "56c1110a9069c63ba848bde9bb2ccdee1e2aed9797fbe510e9dded1985b43316",
+      "dom_counts": {
+        "note_enable": 0,
+        "note_enable_dialog": 0,
+        "note_enable_error": 0,
+        "note_enable_retry": 0,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "note_editor": 1,
+        "note_editor_revision": 1,
+        "note_editor_save_now": 1,
+        "legacy_note_form_hint": 0,
+        "note_save_status": 1,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [],
+      "enable_error": null,
+      "enable_retry_label": null,
+      "dialog_text": null,
+      "dialog_phase": null,
+      "editor": {
+        "title": "[synthetic] Legacy note (pre-protection)",
+        "revision": "Revision 1",
+        "contentTail": "[synthetic] Legacy note created before d2-v1 editing protection (fictional).\n\n- Owner: synthetic viewer 1\n- Binder: B-0001",
+        "contentContainsFixture": true,
+        "saveNowDisabled": false
+      },
+      "save_status": {
+        "status": "saved",
+        "text": "Saved"
+      },
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Open note: [synthetic] Legacy note (pre-protection)"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "dependency503",
+        "models_requests": 2,
+        "enable_semantic_changes": 1,
+        "enable_requests": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nmda2a6b35592c4049ab6c61428ec9ae6f",
+            "mode": "dependency503",
+            "outcome": "dependency_unavailable",
+            "status": 503
+          },
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nmda2a6b35592c4049ab6c61428ec9ae6f",
+            "mode": "dependency503",
+            "outcome": "success",
+            "status": 200
+          }
+        ],
+        "enable_applies": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nmda2a6b35592c4049ab6c61428ec9ae6f",
+            "applied_revision": 1
+          }
+        ],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@r1:d2-v1"
+        ],
+        "note_requests": 6
+      }
+    },
+    {
+      "file": "after_e6_unknown_result_1024.png",
+      "bytes": 112105,
+      "sha256": "ce1910f3eefd3b2121ea20f64cc999edf5c1a900104a850bba676af3c7bd2ee7",
+      "dom_counts": {
+        "note_enable": 6,
+        "note_enable_dialog": 1,
+        "note_enable_error": 1,
+        "note_enable_retry": 1,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "legacy_note_form_hint": 0,
+        "note_save_status": 0,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [
+        "note-enable-note_legacy",
+        "note-enable-dialog",
+        "note-enable-note-title",
+        "note-enable-error",
+        "note-enable-retry",
+        "note-enable-close"
+      ],
+      "enable_error": {
+        "failure_kind": "unknown",
+        "text": "The result could not be confirmed. Retry to check the same request before doing anything else."
+      },
+      "enable_retry_label": "Confirm result",
+      "dialog_text": "Enable protected editing?You need edit permission on this project. Enabling protected editing only adds protection fields — the title and content stay unchanged. After enabling, this note opens in the Markdown editor and the legacy form is no longer offered.[synthetic] Legacy note (pre-protection)The result could not be confirmed. Retry to check the same request before doing anything else.Confirm resultClose",
+      "dialog_phase": "error",
+      "editor": {
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null
+      },
+      "save_status": null,
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "revision_testid": false,
+          "legacy_badge": true,
+          "enable_button": true,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Enable protected editing",
+            "Edit",
+            "Delete"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "unknown503_apply",
+        "models_requests": 2,
+        "enable_semantic_changes": 1,
+        "enable_requests": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nmb7c6ed3c560c440490e65f3fa218bea1",
+            "mode": "unknown503_apply",
+            "outcome": "unknown_applied",
+            "status": 503
+          }
+        ],
+        "enable_applies": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nmb7c6ed3c560c440490e65f3fa218bea1",
+            "applied_revision": 1
+          }
+        ],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@r1:d2-v1"
+        ],
+        "note_requests": 3
+      }
+    },
+    {
+      "file": "after_e6_confirmed_editor_1024.png",
+      "bytes": 92888,
+      "sha256": "56c1110a9069c63ba848bde9bb2ccdee1e2aed9797fbe510e9dded1985b43316",
+      "dom_counts": {
+        "note_enable": 0,
+        "note_enable_dialog": 0,
+        "note_enable_error": 0,
+        "note_enable_retry": 0,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "note_editor": 1,
+        "note_editor_revision": 1,
+        "note_editor_save_now": 1,
+        "legacy_note_form_hint": 0,
+        "note_save_status": 1,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [],
+      "enable_error": null,
+      "enable_retry_label": null,
+      "dialog_text": null,
+      "dialog_phase": null,
+      "editor": {
+        "title": "[synthetic] Legacy note (pre-protection)",
+        "revision": "Revision 1",
+        "contentTail": "[synthetic] Legacy note created before d2-v1 editing protection (fictional).\n\n- Owner: synthetic viewer 1\n- Binder: B-0001",
+        "contentContainsFixture": true,
+        "saveNowDisabled": false
+      },
+      "save_status": {
+        "status": "saved",
+        "text": "Saved"
+      },
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Open note: [synthetic] Legacy note (pre-protection)"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "unknown503_apply",
+        "models_requests": 2,
+        "enable_semantic_changes": 1,
+        "enable_requests": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nmb7c6ed3c560c440490e65f3fa218bea1",
+            "mode": "unknown503_apply",
+            "outcome": "unknown_applied",
+            "status": 503
+          },
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nmb7c6ed3c560c440490e65f3fa218bea1",
+            "mode": "unknown503_apply",
+            "outcome": "replayed",
+            "status": 200
+          }
+        ],
+        "enable_applies": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": "nmb7c6ed3c560c440490e65f3fa218bea1",
+            "applied_revision": 1
+          }
+        ],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@r1:d2-v1"
+        ],
+        "note_requests": 6
+      }
+    },
+    {
+      "file": "after_e7_admin_readonly_1024.png",
+      "bytes": 102456,
+      "sha256": "055c57956c21c951237af962bc537c24c368fcc062c4c301096affae4fff77b3",
+      "dom_counts": {
+        "note_enable": 0,
+        "note_enable_dialog": 0,
+        "note_enable_error": 0,
+        "note_enable_retry": 0,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 2,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "legacy_note_form_hint": 0,
+        "note_save_status": 0,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [],
+      "enable_error": null,
+      "enable_retry_label": null,
+      "dialog_text": null,
+      "dialog_phase": null,
+      "editor": {
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null
+      },
+      "save_status": null,
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "revision_testid": false,
+          "legacy_badge": true,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "enable_mode": "success",
+        "models_requests": 2,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      }
+    },
+    {
+      "file": "after_e8_capability_error_1024.png",
+      "bytes": 96983,
+      "sha256": "cbbe5348143aef11c5cb570465c3c20b00ab42ff2c2aab284b9697af2be47b44",
+      "dom_counts": {
+        "note_enable": 0,
+        "note_enable_dialog": 0,
+        "note_enable_error": 0,
+        "note_enable_retry": 0,
+        "note_enable_confirm": 0,
+        "note_enable_cancel": 0,
+        "note_capability_blocked": 1,
+        "admin_readonly_banner": 0,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "legacy_note_form_hint": 0,
+        "note_save_status": 0,
+        "note_catalog": 1,
+        "workbench_group_nav": 1
+      },
+      "enable_testids": [],
+      "enable_error": null,
+      "enable_retry_label": null,
+      "dialog_text": null,
+      "dialog_phase": null,
+      "editor": {
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null
+      },
+      "save_status": null,
+      "rows": {
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "revision_testid": false,
+          "legacy_badge": true,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Edit",
+            "Delete"
+          ]
+        },
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "revision_testid": true,
+          "legacy_badge": false,
+          "enable_button": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout"
+          ]
+        }
+      },
+      "gateway_stats": {
+        "note_mode": "models_error",
+        "enable_mode": "success",
+        "models_requests": 6,
+        "enable_semantic_changes": 0,
+        "enable_requests": [],
+        "enable_applies": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r3:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      }
+    }
+  ],
+  "final_head": "deca6257b21bd67f062672dcf005eee2230b09f7",
+  "baseline_full_sha": "34f531d0270587ed1f2bfa02e361c8a3dd0d224d",
+  "worktree_provenance": {
+    "before": {
+      "name": "before",
+      "worktree": "/home/lchen/.dsh/state/superagent/work/protected-edit-ui-c1f827496380-evidence/fork-before",
+      "head": "34f531d0270587ed1f2bfa02e361c8a3dd0d224d",
+      "status_porcelain": "",
+      "config_ts": {
+        "sha256_current": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+        "sha256_at_head": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+        "restored_clean": true
+      }
+    },
+    "after": {
+      "name": "after",
+      "worktree": "/home/lchen/.dsh/state/superagent/work/protected-edit-ui-c1f827496380-evidence/fork-after",
+      "head": "deca6257b21bd67f062672dcf005eee2230b09f7",
+      "status_porcelain": "",
+      "config_ts": {
+        "sha256_current": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+        "sha256_at_head": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+        "restored_clean": true
+      }
+    },
+    "harness_only_patch": {
+      "file": "frontend/src/lib/embedded/config.ts",
+      "change": "dynamic process.env[CONST] lookups -> static process.env.NEXT_PUBLIC_* member access (Next dev does not inline dynamic lookups); reverted after capture",
+      "records": {
+        "before": {
+          "original_sha256": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+          "patched_sha256": "255492d4ddc991b20eeb1fa7013af9223dda7d304180a5986107fed0afc0dade",
+          "restored_sha256": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+          "sha256_at_head": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+          "restored_clean": true
+        },
+        "after": {
+          "original_sha256": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+          "patched_sha256": "255492d4ddc991b20eeb1fa7013af9223dda7d304180a5986107fed0afc0dade",
+          "restored_sha256": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+          "sha256_at_head": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+          "restored_clean": true
+        }
+      },
+      "restored_clean": true
+    }
+  },
+  "local_verification": {
+    "head": "deca6257b21bd67f062672dcf005eee2230b09f7",
+    "log": "logs/local-verification.txt",
+    "summary": "head=deca6257b21bd67f062672dcf005eee2230b09f7 tsc=0 eslint=0 vitest=0 build=0 full=1",
+    "exit_code": 0,
+    "pr_ci": "fork repo has no GitHub Actions checks configured; these local command results are the verification evidence",
+    "full_suite": {
+      "exit_code": 1,
+      "tests_line": "Tests  14 failed | 3027 passed (3041)",
+      "baseline_note": "the fork origin/main baseline has known pre-existing SourceListPanel.test.tsx failures; full-suite failures are compared against that baseline and are not caused by this change (see README §Limitations)"
+    }
+  },
+  "implementation_diff": {
+    "changed_files": 23,
+    "files": [
+      "frontend/src/components/research/NotesPanel.test.tsx",
+      "frontend/src/components/research/NotesPanel.tsx",
+      "frontend/src/components/research/issue585/NoteEnableDialog.test.tsx",
+      "frontend/src/components/research/issue585/NoteEnableDialog.tsx",
+      "frontend/src/components/research/issue585/note-ui-labels.ts",
+      "frontend/src/lib/locales/bn-IN/index.ts",
+      "frontend/src/lib/locales/ca-ES/index.ts",
+      "frontend/src/lib/locales/de-DE/index.ts",
+      "frontend/src/lib/locales/en-US/index.ts",
+      "frontend/src/lib/locales/es-ES/index.ts",
+      "frontend/src/lib/locales/fr-FR/index.ts",
+      "frontend/src/lib/locales/it-IT/index.ts",
+      "frontend/src/lib/locales/ja-JP/index.ts",
+      "frontend/src/lib/locales/pl-PL/index.ts",
+      "frontend/src/lib/locales/pt-BR/index.ts",
+      "frontend/src/lib/locales/ru-RU/index.ts",
+      "frontend/src/lib/locales/tr-TR/index.ts",
+      "frontend/src/lib/locales/zh-CN/index.ts",
+      "frontend/src/lib/locales/zh-TW/index.ts",
+      "frontend/src/lib/research/issue585/note-enable.test.ts",
+      "frontend/src/lib/research/issue585/note-enable.ts",
+      "frontend/src/lib/research/issue585/use-note-enable.test.tsx",
+      "frontend/src/lib/research/issue585/use-note-enable.ts"
+    ],
+    "untracked_files": [],
+    "note": "implementation branch only; verified head is the fork branch agent/protected-edit-ui-c1f827496380 (single frontend PR); the evidence branch is not part of the implementation PR diff"
+  }
+}
