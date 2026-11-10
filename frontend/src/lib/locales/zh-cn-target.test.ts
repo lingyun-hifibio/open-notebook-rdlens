@@ -86,4 +86,17 @@ describe('zh-CN 目标壳文案（I18N-01）', () => {
     })
     expect(englishOnly).toEqual([])
   })
+
+  // #1158（#1125 L2 发现 2）：#1016 交付时 topicOverview 全块按「14 locale 同键、
+  // en-US 真值、其余英文占位」冻结，zh-CN 未翻译 → zh 界面概览入口/Dialog 显示
+  // 英文。本用例钉住 zh-CN 该块全量中文化，防止再次以英文占位回落（I18N-01）。
+  it('主题概览（topicOverview）文案全部有中文值（#1158）', () => {
+    const leaves = collectLeaves(get(enUS, 'research.topicOverview'), 'research.topicOverview')
+    expect(leaves.length).toBeGreaterThan(50)
+    const englishOnly = leaves.filter((key) => {
+      const value = get(zhCN, key)
+      return typeof value !== 'string' || !CJK.test(value)
+    })
+    expect(englishOnly).toEqual([])
+  })
 })
