@@ -1,0 +1,13 @@
+Issue #1134 — tolerant pixel equivalence for unchanged surfaces
+pairs=4 ignore_channel_delta<=2 max_diff_pixels<=100 max_channel_delta<=8
+
+PASS e9_admin_readonly_1440: size=1440x900 diff_bbox=None pixels_over_2=0 max_channel_delta=0 -> within tolerance
+PASS e10_existing_off_blocked_1440: size=1440x900 diff_bbox=(932, 33, 1423, 36) pixels_over_2=0 max_channel_delta=2 -> within tolerance
+PASS e9_admin_readonly_1024: size=1024x768 diff_bbox=(378, 754, 382, 756) pixels_over_2=0 max_channel_delta=2 -> within tolerance
+PASS e10_existing_off_blocked_1024: size=1024x768 diff_bbox=(516, 33, 742, 36) pixels_over_2=0 max_channel_delta=2 -> within tolerance
+PASS e11_legacy_delete_dialog_1440_legacy_row_region: region=(14, 671, 487, 739) size=(473, 68) diff_bbox=None pixels_over_2=0 max_channel_delta=0 -> within tolerance
+PASS e11_legacy_deleted_1440_legacy_row_region: region=(14, 671, 487, 739) size=(473, 68) diff_bbox=None pixels_over_2=0 max_channel_delta=0 -> within tolerance
+PASS e11_legacy_delete_dialog_1024_legacy_row_region: region=(14, 739, 341, 807) size=(327, 68) diff_bbox=None pixels_over_2=0 max_channel_delta=0 -> within tolerance
+PASS e11_legacy_deleted_1024_legacy_row_region: region=(14, 739, 341, 807) size=(327, 68) diff_bbox=None pixels_over_2=0 max_channel_delta=0 -> within tolerance
+
+summary: pairs=4 region_pairs=4 failures=0

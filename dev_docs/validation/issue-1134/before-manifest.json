@@ -1,0 +1,2816 @@
+{
+  "ticket": "HiFiBiO-Therapeutics/RDLens#1134",
+  "title": "d2-v1 Note 删除入口（目录行 + 编辑器工具栏 + 二次确认/失败重试）— fork Before/After visual evidence",
+  "evidence_kind": "synthetic",
+  "synthetic_declaration": "Real fork Next.js app (next dev --webpack, embedded iframe) + synthetic host page + route-mocked Research Gateway. No real RDLens host, PostgreSQL, SurrealDB, files, models, Feishu content, users or private data. All note titles/ids/content are [synthetic] fixtures (project p1, viewer 1, fabricated claims-only token).",
+  "phase": "before",
+  "head": "f3e4e47a3aa68ec0ee97370c9b5341929bb0fb46",
+  "baseline": "fork origin/main f3e4e47 (post-#128/#1135)",
+  "captured_at": "2026-11-10T16:19:59.898Z",
+  "host_url": "http://127.0.0.1:8994/",
+  "gateway": "http://127.0.0.1:8963",
+  "mode_files": {
+    "note_mode": "/tmp/issue1134-note-mode",
+    "delete_mode": "/tmp/issue1134-delete-mode",
+    "save_mode": "/tmp/issue1134-save-mode"
+  },
+  "before_na_scenes": {
+    "e2": "N/A — baseline has no d2-v1 delete entry, so the delete confirmation dialog does not exist; no baseline screenshot was fabricated",
+    "e3": "N/A — baseline cannot delete a d2-v1 note from the UI (no delete entry, no DELETE mutation path)",
+    "e4": "N/A — baseline has no editor-toolbar delete entry, so the editor delete success flow does not exist",
+    "e5": "N/A — baseline has no d2-v1 delete entry, so a 403 restricted delete error state does not exist",
+    "e6": "N/A — baseline has no d2-v1 delete entry, so no 409 revision-conflict / refresh-and-review flow exists",
+    "e7": "N/A — baseline has no d2-v1 delete entry, so no unknown-result / same-mutation replay flow exists",
+    "e8": "N/A — baseline has no d2-v1 delete entry, so no 503 dependency-unavailable retry flow exists",
+    "e12": "N/A — E12 is merged into E2 (impact/reference copy inside the delete dialog); baseline has no dialog"
+  },
+  "env": {
+    "chrome": "/home/lchen/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome",
+    "node": "v22.20.0",
+    "widths": [
+      1440,
+      1024
+    ],
+    "viewports": {
+      "1024": "1024x768",
+      "1440": "1440x900"
+    },
+    "device_scale_factor": 1,
+    "color_scheme": "light",
+    "locale": "en-US",
+    "fresh_browser_context_per_scene": true,
+    "harness_only_config_patch": "frontend/src/lib/embedded/config.ts static NEXT_PUBLIC_* member access (Next dev does not inline dynamic env lookups); reverted after capture",
+    "layout_probe": "real Chromium boundingBox/scroll geometry of the d2-v1 row title, compact delete icon, Insert excerpt entry and legacy old Delete action (E1, both widths); no CSS-string parsing",
+    "contract_copy": {
+      "deleteEntryAria": "Delete note",
+      "dialogTitle": "Delete note?",
+      "dialogImpactMarker": "kept as a saved copy",
+      "dialogPermissionsMarker": "Permissions are checked again",
+      "unsavedLocal": "Unsaved changes in the open editor will be discarded.",
+      "successToast": "Note deleted",
+      "retryConfirmResult": "Confirm result",
+      "retryRefreshAndReview": "Refresh and review"
+    },
+    "scene_notes": "E2 also carries the E12 assertions (impact/reference copy inside the delete dialog). E3/E4 seed two sessionStorage draft-cache tab branches in the app frame and assert all branches for the deleted note are removed."
+  },
+  "scenes": [
+    {
+      "id": "E1",
+      "width": 1440,
+      "note_mode": "editor_on",
+      "delete_mode": "success",
+      "layout": {
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "catalog": {
+          "box": {
+            "x": 16,
+            "y": 471,
+            "width": 469.19,
+            "height": 242,
+            "right": 485.19,
+            "bottom": 713
+          },
+          "visible": true,
+          "scrollWidth": 469,
+          "clientWidth": 469,
+          "scrollHeight": 242,
+          "clientHeight": 242
+        },
+        "catalogTab": {
+          "box": {
+            "x": 16,
+            "y": 519,
+            "width": 469.19,
+            "height": 194,
+            "right": 485.19,
+            "bottom": 713
+          },
+          "visible": true,
+          "scrollWidth": 469,
+          "clientWidth": 469,
+          "scrollHeight": 194,
+          "clientHeight": 194
+        },
+        "row": {
+          "box": {
+            "x": 16,
+            "y": 519,
+            "width": 469.19,
+            "height": 65,
+            "right": 485.19,
+            "bottom": 584
+          },
+          "visible": true,
+          "scrollWidth": 469,
+          "clientWidth": 469,
+          "scrollHeight": 64,
+          "clientHeight": 64
+        },
+        "title": {
+          "text": "[synthetic] D1 cohort readout",
+          "box": {
+            "x": 48,
+            "y": 525,
+            "width": 189.67,
+            "height": 20,
+            "right": 237.67,
+            "bottom": 545
+          },
+          "visible": true,
+          "scrollWidth": 190,
+          "clientWidth": 190,
+          "scrollHeight": 20,
+          "clientHeight": 20
+        },
+        "deleteEntry": null,
+        "excerpt": {
+          "label": "Insert excerpt",
+          "testid": "note-excerpt-note_d1",
+          "title_attr": null,
+          "box": {
+            "x": 362.72,
+            "y": 525,
+            "width": 114.47,
+            "height": 32,
+            "right": 477.19,
+            "bottom": 557
+          },
+          "visible": true,
+          "scrollWidth": 114,
+          "clientWidth": 114,
+          "scrollHeight": 32,
+          "clientHeight": 32
+        },
+        "actions": {
+          "box": {
+            "x": 362.72,
+            "y": 525,
+            "width": 114.47,
+            "height": 32,
+            "right": 477.19,
+            "bottom": 557
+          },
+          "visible": true,
+          "scrollWidth": 114,
+          "clientWidth": 114,
+          "scrollHeight": 32,
+          "clientHeight": 32
+        },
+        "legacyRow": {
+          "box": {
+            "x": 16,
+            "y": 649,
+            "width": 469.19,
+            "height": 64,
+            "right": 485.19,
+            "bottom": 713
+          },
+          "visible": true,
+          "scrollWidth": 469,
+          "clientWidth": 469,
+          "scrollHeight": 64,
+          "clientHeight": 64
+        },
+        "legacyTitle": {
+          "text": "[synthetic] Legacy note (pre-protection)",
+          "box": {
+            "x": 48,
+            "y": 655,
+            "width": 268.3,
+            "height": 20,
+            "right": 316.3,
+            "bottom": 675
+          },
+          "visible": true,
+          "scrollWidth": 268,
+          "clientWidth": 268,
+          "scrollHeight": 20,
+          "clientHeight": 20
+        },
+        "legacyDelete": {
+          "label": "Delete",
+          "testid": null,
+          "title_attr": null,
+          "box": {
+            "x": 410.19,
+            "y": 655,
+            "width": 67,
+            "height": 32,
+            "right": 477.19,
+            "bottom": 687
+          },
+          "visible": true,
+          "scrollWidth": 67,
+          "clientWidth": 67,
+          "scrollHeight": 32,
+          "clientHeight": 32
+        },
+        "legacyActions": {
+          "box": {
+            "x": 324.3,
+            "y": 655,
+            "width": 152.89,
+            "height": 32,
+            "right": 477.19,
+            "bottom": 687
+          },
+          "visible": true,
+          "scrollWidth": 153,
+          "clientWidth": 153,
+          "scrollHeight": 32,
+          "clientHeight": 32
+        }
+      },
+      "stats": {
+        "note_mode": "editor_on",
+        "delete_mode": "success",
+        "save_mode": "ok",
+        "models_requests": 2,
+        "list_requests": 2,
+        "semantic_deletes": 0,
+        "delete_replays": 0,
+        "legacy_deletes": 0,
+        "delete_requests": [],
+        "delete_applies": [],
+        "legacy_delete_entries": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r1:d2-v1",
+          "note_d2@r1:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      },
+      "assertions": [
+        {
+          "name": "e1.d2_row_present",
+          "ok": true,
+          "expected": "note-catalog-row-note_d1 present",
+          "actual": 1
+        },
+        {
+          "name": "e1.d2_row_second_present",
+          "ok": true,
+          "expected": "note-catalog-row-note_d2 present",
+          "actual": 1
+        },
+        {
+          "name": "e1.legacy_row_present",
+          "ok": true,
+          "expected": "note-catalog-row-note_legacy present",
+          "actual": 1
+        },
+        {
+          "name": "e1.row_hovered",
+          "ok": true,
+          "expected": "d2-v1 row hover works",
+          "actual": true
+        },
+        {
+          "name": "e1.d2_row_protected",
+          "ok": true,
+          "expected": "d2 row data-edit-schema=\"d2-v1\"",
+          "actual": "d2-v1"
+        },
+        {
+          "name": "e1.d2_revision_shown",
+          "ok": true,
+          "expected": "d2 row shows \"Revision 1\"",
+          "actual": "Revision 1"
+        },
+        {
+          "name": "e1.excerpt_entry_present",
+          "ok": true,
+          "expected": "Insert excerpt entry present on d2 row",
+          "actual": true
+        },
+        {
+          "name": "e1.legacy_edit_delete_actions",
+          "ok": true,
+          "expected": "legacy row action area still shows Edit and Delete (old path untouched)",
+          "actual": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Enable protected editing",
+            "Edit",
+            "Delete"
+          ]
+        },
+        {
+          "name": "e1.before_no_delete_entry",
+          "ok": true,
+          "expected": "0 note-delete-* testids in the d2-v1 row action area (baseline gap)",
+          "actual": {
+            "entries": 0,
+            "testids": []
+          }
+        },
+        {
+          "name": "e1.before_no_editor_delete_entry",
+          "ok": true,
+          "expected": "0 note-editor-delete testids (no editor open / no editor delete entry at baseline)",
+          "actual": 0
+        },
+        {
+          "name": "e1.layout_probe_available",
+          "ok": true,
+          "expected": "d2-v1 catalog row bounding box measurable (1440px viewport)",
+          "actual": {
+            "box": {
+              "x": 16,
+              "y": 519,
+              "width": 469.19,
+              "height": 65,
+              "right": 485.19,
+              "bottom": 584
+            },
+            "visible": true,
+            "scrollWidth": 469,
+            "clientWidth": 469,
+            "scrollHeight": 64,
+            "clientHeight": 64
+          }
+        },
+        {
+          "name": "e1.layout_catalog_present",
+          "ok": true,
+          "expected": "note-catalog bounding box measurable (panel boundary for clipping assertions)",
+          "actual": {
+            "x": 16,
+            "y": 471,
+            "width": 469.19,
+            "height": 242,
+            "right": 485.19,
+            "bottom": 713
+          }
+        },
+        {
+          "name": "e1.layout_title_present",
+          "ok": true,
+          "expected": "d2-v1 row title is rendered with a non-zero box",
+          "actual": {
+            "text": "[synthetic] D1 cohort readout",
+            "width": 189.67,
+            "visible": true
+          }
+        },
+        {
+          "name": "e1.layout_title_width_gt_20px",
+          "ok": true,
+          "expected": "d2-v1 row title width > 20px at 1440px viewport (no squeeze by new actions)",
+          "actual": {
+            "width": 189.67,
+            "scrollWidth": 190,
+            "clientWidth": 190
+          }
+        },
+        {
+          "name": "e1.layout_title_inside_panel",
+          "ok": true,
+          "expected": "d2-v1 title box is fully inside the Notes catalog and viewport",
+          "actual": {
+            "title": {
+              "x": 48,
+              "y": 525,
+              "width": 189.67,
+              "height": 20,
+              "right": 237.67,
+              "bottom": 545
+            },
+            "catalog": {
+              "x": 16,
+              "y": 471,
+              "width": 469.19,
+              "height": 242,
+              "right": 485.19,
+              "bottom": 713
+            },
+            "viewport": {
+              "width": 1440,
+              "height": 900
+            }
+          }
+        },
+        {
+          "name": "e1.layout_excerpt_present",
+          "ok": true,
+          "expected": "Insert excerpt entry present on the d2-v1 row (coexisting action)",
+          "actual": {
+            "label": "Insert excerpt",
+            "box": {
+              "x": 362.72,
+              "y": 525,
+              "width": 114.47,
+              "height": 32,
+              "right": 477.19,
+              "bottom": 557
+            }
+          }
+        },
+        {
+          "name": "e1.layout_legacy_delete_present",
+          "ok": true,
+          "expected": "legacy row old text Delete action still present (regression guard)",
+          "actual": {
+            "label": "Delete",
+            "box": {
+              "x": 410.19,
+              "y": 655,
+              "width": 67,
+              "height": 32,
+              "right": 477.19,
+              "bottom": 687
+            }
+          }
+        },
+        {
+          "name": "e1.layout_legacy_delete_fully_inside_panel",
+          "ok": true,
+          "expected": "legacy Delete action right edge stays inside the Notes panel (not clipped)",
+          "actual": {
+            "deleteRight": 477.19,
+            "catalogRight": 485.19
+          }
+        },
+        {
+          "name": "e1.layout_legacy_delete_not_clipped",
+          "ok": true,
+          "expected": "legacy Delete label is not clipped (scrollWidth <= clientWidth + 1)",
+          "actual": {
+            "scrollWidth": 67,
+            "clientWidth": 67
+          }
+        },
+        {
+          "name": "e1.layout_legacy_title_present",
+          "ok": true,
+          "expected": "legacy row title still rendered (old path layout unchanged)",
+          "actual": {
+            "width": 268.3
+          }
+        },
+        {
+          "name": "e1.no_delete_request_on_row_view",
+          "ok": true,
+          "expected": "no DELETE request merely by viewing/hovering the row",
+          "actual": 0
+        },
+        {
+          "name": "e1.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 4779
+    },
+    {
+      "id": "E9",
+      "width": 1440,
+      "note_mode": "editor_on",
+      "role": "admin_readonly",
+      "pixel_compare": null,
+      "stats": {
+        "note_mode": "editor_on",
+        "delete_mode": "success",
+        "save_mode": "ok",
+        "models_requests": 2,
+        "list_requests": 2,
+        "semantic_deletes": 0,
+        "delete_replays": 0,
+        "legacy_deletes": 0,
+        "delete_requests": [],
+        "delete_applies": [],
+        "legacy_delete_entries": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r1:d2-v1",
+          "note_d2@r1:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      },
+      "assertions": [
+        {
+          "name": "e9.admin_banner_visible",
+          "ok": true,
+          "expected": "admin-readonly-banner visible for the synthetic admin_readonly token",
+          "actual": 2
+        },
+        {
+          "name": "e9.d2_rows_listed",
+          "ok": true,
+          "expected": "d2-v1 rows still listed for an Admin read-only session",
+          "actual": {
+            "d1": {
+              "edit_schema": "d2-v1",
+              "restricted": "false",
+              "revision_text": "Revision 1",
+              "legacy_badge": false,
+              "open_button": false,
+              "excerpt_button": false,
+              "enable_button": false,
+              "delete_entry": false,
+              "row_buttons": [
+                "Include [synthetic] D1 cohort readout in scope"
+              ]
+            },
+            "d2": {
+              "edit_schema": "d2-v1",
+              "restricted": "false",
+              "revision_text": "Revision 1",
+              "legacy_badge": false,
+              "open_button": false,
+              "excerpt_button": false,
+              "enable_button": false,
+              "delete_entry": false,
+              "row_buttons": [
+                "Include [synthetic] D2 PK readout in scope"
+              ]
+            }
+          }
+        },
+        {
+          "name": "e9.no_delete_entry_on_d2_rows",
+          "ok": true,
+          "expected": "no note-delete-* entry on any d2-v1 row for Admin read-only (both phases)",
+          "actual": {
+            "entries": 0,
+            "testids": []
+          }
+        },
+        {
+          "name": "e9.no_editor_delete_entry",
+          "ok": true,
+          "expected": "no note-editor-delete entry in the Admin read-only view",
+          "actual": 0
+        },
+        {
+          "name": "e9.no_legacy_write_actions_for_admin",
+          "ok": true,
+          "expected": "Admin read-only session exposes no legacy Edit/Delete write actions",
+          "actual": [
+            "Include [synthetic] Legacy note (pre-protection) in scope"
+          ]
+        },
+        {
+          "name": "e9.no_delete_request_for_admin",
+          "ok": true,
+          "expected": "no DELETE request emitted by an Admin read-only session",
+          "actual": 0
+        },
+        {
+          "name": "e9.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 4999
+    },
+    {
+      "id": "E10",
+      "width": 1440,
+      "note_mode": "existing_off",
+      "pixel_compare": null,
+      "stats": {
+        "note_mode": "existing_off",
+        "delete_mode": "success",
+        "save_mode": "ok",
+        "models_requests": 2,
+        "list_requests": 2,
+        "semantic_deletes": 0,
+        "delete_replays": 0,
+        "legacy_deletes": 0,
+        "delete_requests": [],
+        "delete_applies": [],
+        "legacy_delete_entries": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r1:d2-v1",
+          "note_d2@r1:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 3
+      },
+      "assertions": [
+        {
+          "name": "e10.catalog_rendered_with_capability_off",
+          "ok": true,
+          "expected": "Notes catalog renders d2-v1 rows while note_editor_existing.available=false",
+          "actual": {
+            "edit_schema": "d2-v1",
+            "restricted": "false",
+            "revision_text": "Revision 1",
+            "legacy_badge": false,
+            "open_button": true,
+            "excerpt_button": true,
+            "enable_button": false,
+            "delete_entry": false,
+            "row_buttons": [
+              "Include [synthetic] D1 cohort readout in scope",
+              "Open note: [synthetic] D1 cohort readout",
+              "Insert excerpt"
+            ]
+          }
+        },
+        {
+          "name": "e10.no_delete_entry_when_capability_off",
+          "ok": true,
+          "expected": "no note-delete-* entry when note_editor_existing.available=false (fail-closed)",
+          "actual": {
+            "entries": 0,
+            "testids": []
+          }
+        },
+        {
+          "name": "e10.note_open_attempted",
+          "ok": true,
+          "expected": "clicked the d2-v1 note open action",
+          "actual": {
+            "clicked": true,
+            "ready": true
+          }
+        },
+        {
+          "name": "e10.capability_blocked_hint_shown",
+          "ok": true,
+          "expected": "note-capability-blocked fail-closed hint rendered when note_editor_existing is unavailable",
+          "actual": true
+        },
+        {
+          "name": "e10.capability_blocked_reason_surface",
+          "ok": true,
+          "expected": "capability-blocked hint carries user-facing reason text",
+          "actual": "Note editing is unavailableThe note store is unavailable. Your text is kept locally.RetryCopy local textDownload local MarkdownClose"
+        },
+        {
+          "name": "e10.no_delete_entry_in_blocked_editor",
+          "ok": true,
+          "expected": "no delete entry in the capability-blocked editor or catalog",
+          "actual": {
+            "editorDelete": 0,
+            "entries": 0
+          }
+        },
+        {
+          "name": "e10.no_delete_request_when_capability_off",
+          "ok": true,
+          "expected": "no DELETE request while note_editor_existing.available=false",
+          "actual": 0
+        },
+        {
+          "name": "e10.models_capability_request_seen",
+          "ok": true,
+          "expected": "/models capability projection requested",
+          "actual": 2
+        },
+        {
+          "name": "e10.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 5596
+    },
+    {
+      "id": "E11",
+      "width": 1440,
+      "note_mode": "editor_on",
+      "delete_mode": "success",
+      "pixel_compare": {
+        "dialog": null,
+        "deleted": null
+      },
+      "stats": {
+        "note_mode": "editor_on",
+        "delete_mode": "success",
+        "save_mode": "ok",
+        "models_requests": 2,
+        "list_requests": 4,
+        "semantic_deletes": 0,
+        "delete_replays": 0,
+        "legacy_deletes": 1,
+        "delete_requests": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": null,
+            "expected_revision": null,
+            "contract_header": null,
+            "body_keys": [],
+            "mode": "success",
+            "outcome": "legacy_deleted",
+            "status": 204,
+            "replay": false,
+            "applied": false
+          }
+        ],
+        "delete_applies": [],
+        "legacy_delete_entries": [
+          {
+            "note_id": "note_legacy",
+            "status": 204,
+            "at": 1794327578524
+          }
+        ],
+        "saves": [],
+        "notes": [
+          "note_d1@r1:d2-v1",
+          "note_d2@r1:d2-v1"
+        ],
+        "note_requests": 5
+      },
+      "assertions": [
+        {
+          "name": "e11.legacy_row_hovered",
+          "ok": true,
+          "expected": "legacy row hover works",
+          "actual": true
+        },
+        {
+          "name": "e11.legacy_delete_text_button_present",
+          "ok": true,
+          "expected": "legacy row still renders the old text \"Delete\" button",
+          "actual": 1
+        },
+        {
+          "name": "e11.legacy_confirm_dialog_opened",
+          "ok": true,
+          "expected": "legacy delete confirmation AlertDialog opened",
+          "actual": true
+        },
+        {
+          "name": "e11.legacy_dialog_copy",
+          "ok": true,
+          "expected": "legacy dialog keeps its old copy (\"Delete this note?\" + note title)",
+          "actual": {
+            "text": "Delete this note?[synthetic] Legacy note (pre-protection)CancelConfirm",
+            "buttons": [
+              "Cancel",
+              "Confirm"
+            ]
+          }
+        },
+        {
+          "name": "e11.legacy_dialog_buttons",
+          "ok": true,
+          "expected": "legacy dialog keeps old Cancel/Confirm buttons",
+          "actual": [
+            "Cancel",
+            "Confirm"
+          ]
+        },
+        {
+          "name": "e11.legacy_row_removed_after_delete",
+          "ok": true,
+          "expected": "legacy row disappears after the old delete",
+          "actual": true
+        },
+        {
+          "name": "e11.legacy_single_delete",
+          "ok": true,
+          "expected": "exactly 1 DELETE request for the legacy row",
+          "actual": 1
+        },
+        {
+          "name": "e11.legacy_delete_has_no_d2_contract_header",
+          "ok": true,
+          "expected": "legacy DELETE carries NO X-Research-Note-Contract: d2-v1 header",
+          "actual": null
+        },
+        {
+          "name": "e11.legacy_delete_has_no_mutation_or_revision_body",
+          "ok": true,
+          "expected": "legacy DELETE carries NO mutation_id/expected_revision body (old path untouched)",
+          "actual": {
+            "method": "DELETE",
+            "path": "/v1/research/projects/p1/notes/note_legacy",
+            "note_id": "note_legacy",
+            "selected": false,
+            "contract_header": null,
+            "body": {},
+            "body_keys": [],
+            "mutation_id": null,
+            "expected_revision": null,
+            "mode": "success",
+            "outcome": "legacy_deleted",
+            "status": 204,
+            "replay": false,
+            "applied": false,
+            "at": 1794327578524
+          }
+        },
+        {
+          "name": "e11.legacy_delete_status_204",
+          "ok": true,
+          "expected": "legacy DELETE returns the old 204 No Content",
+          "actual": {
+            "status": 204,
+            "outcome": "legacy_deleted"
+          }
+        },
+        {
+          "name": "e11.no_d2_semantic_delete",
+          "ok": true,
+          "expected": "0 d2-v1 semantic deletes / 1 legacy delete recorded",
+          "actual": {
+            "semantic_deletes": 0,
+            "legacy": 1
+          }
+        },
+        {
+          "name": "e11.legacy_note_gone_server_side",
+          "ok": true,
+          "expected": "server store no longer contains note_legacy",
+          "actual": null
+        },
+        {
+          "name": "e11.d2_notes_untouched",
+          "ok": true,
+          "expected": "both d2-v1 notes untouched by the legacy delete",
+          "actual": [
+            "note_d1@r1:d2-v1",
+            "note_d2@r1:d2-v1"
+          ]
+        },
+        {
+          "name": "e11.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 5549
+    },
+    {
+      "id": "E1",
+      "width": 1024,
+      "note_mode": "editor_on",
+      "delete_mode": "success",
+      "layout": {
+        "viewport": {
+          "width": 1024,
+          "height": 768
+        },
+        "catalog": {
+          "box": {
+            "x": 16,
+            "y": 499,
+            "width": 323.59,
+            "height": 282,
+            "right": 339.59,
+            "bottom": 781
+          },
+          "visible": true,
+          "scrollWidth": 324,
+          "clientWidth": 324,
+          "scrollHeight": 282,
+          "clientHeight": 282
+        },
+        "catalogTab": {
+          "box": {
+            "x": 16,
+            "y": 587,
+            "width": 323.59,
+            "height": 194,
+            "right": 339.59,
+            "bottom": 781
+          },
+          "visible": true,
+          "scrollWidth": 324,
+          "clientWidth": 324,
+          "scrollHeight": 194,
+          "clientHeight": 194
+        },
+        "row": {
+          "box": {
+            "x": 16,
+            "y": 587,
+            "width": 323.59,
+            "height": 65,
+            "right": 339.59,
+            "bottom": 652
+          },
+          "visible": true,
+          "scrollWidth": 324,
+          "clientWidth": 324,
+          "scrollHeight": 64,
+          "clientHeight": 64
+        },
+        "title": {
+          "text": "[synthetic] D1 cohort readout",
+          "box": {
+            "x": 48,
+            "y": 593,
+            "width": 161.13,
+            "height": 20,
+            "right": 209.13,
+            "bottom": 613
+          },
+          "visible": true,
+          "scrollWidth": 190,
+          "clientWidth": 161,
+          "scrollHeight": 20,
+          "clientHeight": 20
+        },
+        "deleteEntry": null,
+        "excerpt": {
+          "label": "Insert excerpt",
+          "testid": "note-excerpt-note_d1",
+          "title_attr": null,
+          "box": {
+            "x": 217.13,
+            "y": 593,
+            "width": 114.47,
+            "height": 32,
+            "right": 331.59,
+            "bottom": 625
+          },
+          "visible": true,
+          "scrollWidth": 114,
+          "clientWidth": 114,
+          "scrollHeight": 32,
+          "clientHeight": 32
+        },
+        "actions": {
+          "box": {
+            "x": 217.13,
+            "y": 593,
+            "width": 114.47,
+            "height": 32,
+            "right": 331.59,
+            "bottom": 625
+          },
+          "visible": true,
+          "scrollWidth": 114,
+          "clientWidth": 114,
+          "scrollHeight": 32,
+          "clientHeight": 32
+        },
+        "legacyRow": {
+          "box": {
+            "x": 16,
+            "y": 717,
+            "width": 323.59,
+            "height": 64,
+            "right": 339.59,
+            "bottom": 781
+          },
+          "visible": true,
+          "scrollWidth": 324,
+          "clientWidth": 324,
+          "scrollHeight": 64,
+          "clientHeight": 64
+        },
+        "legacyTitle": {
+          "text": "[synthetic] Legacy note (pre-protection)",
+          "box": {
+            "x": 48,
+            "y": 723,
+            "width": 122.7,
+            "height": 20,
+            "right": 170.7,
+            "bottom": 743
+          },
+          "visible": true,
+          "scrollWidth": 263,
+          "clientWidth": 123,
+          "scrollHeight": 20,
+          "clientHeight": 20
+        },
+        "legacyDelete": {
+          "label": "Delete",
+          "testid": null,
+          "title_attr": null,
+          "box": {
+            "x": 264.59,
+            "y": 723,
+            "width": 67,
+            "height": 32,
+            "right": 331.59,
+            "bottom": 755
+          },
+          "visible": true,
+          "scrollWidth": 67,
+          "clientWidth": 67,
+          "scrollHeight": 32,
+          "clientHeight": 32
+        },
+        "legacyActions": {
+          "box": {
+            "x": 178.7,
+            "y": 723,
+            "width": 152.89,
+            "height": 32,
+            "right": 331.59,
+            "bottom": 755
+          },
+          "visible": true,
+          "scrollWidth": 153,
+          "clientWidth": 153,
+          "scrollHeight": 32,
+          "clientHeight": 32
+        }
+      },
+      "stats": {
+        "note_mode": "editor_on",
+        "delete_mode": "success",
+        "save_mode": "ok",
+        "models_requests": 2,
+        "list_requests": 2,
+        "semantic_deletes": 0,
+        "delete_replays": 0,
+        "legacy_deletes": 0,
+        "delete_requests": [],
+        "delete_applies": [],
+        "legacy_delete_entries": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r1:d2-v1",
+          "note_d2@r1:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      },
+      "assertions": [
+        {
+          "name": "e1.d2_row_present",
+          "ok": true,
+          "expected": "note-catalog-row-note_d1 present",
+          "actual": 1
+        },
+        {
+          "name": "e1.d2_row_second_present",
+          "ok": true,
+          "expected": "note-catalog-row-note_d2 present",
+          "actual": 1
+        },
+        {
+          "name": "e1.legacy_row_present",
+          "ok": true,
+          "expected": "note-catalog-row-note_legacy present",
+          "actual": 1
+        },
+        {
+          "name": "e1.row_hovered",
+          "ok": true,
+          "expected": "d2-v1 row hover works",
+          "actual": true
+        },
+        {
+          "name": "e1.d2_row_protected",
+          "ok": true,
+          "expected": "d2 row data-edit-schema=\"d2-v1\"",
+          "actual": "d2-v1"
+        },
+        {
+          "name": "e1.d2_revision_shown",
+          "ok": true,
+          "expected": "d2 row shows \"Revision 1\"",
+          "actual": "Revision 1"
+        },
+        {
+          "name": "e1.excerpt_entry_present",
+          "ok": true,
+          "expected": "Insert excerpt entry present on d2 row",
+          "actual": true
+        },
+        {
+          "name": "e1.legacy_edit_delete_actions",
+          "ok": true,
+          "expected": "legacy row action area still shows Edit and Delete (old path untouched)",
+          "actual": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Enable protected editing",
+            "Edit",
+            "Delete"
+          ]
+        },
+        {
+          "name": "e1.before_no_delete_entry",
+          "ok": true,
+          "expected": "0 note-delete-* testids in the d2-v1 row action area (baseline gap)",
+          "actual": {
+            "entries": 0,
+            "testids": []
+          }
+        },
+        {
+          "name": "e1.before_no_editor_delete_entry",
+          "ok": true,
+          "expected": "0 note-editor-delete testids (no editor open / no editor delete entry at baseline)",
+          "actual": 0
+        },
+        {
+          "name": "e1.layout_probe_available",
+          "ok": true,
+          "expected": "d2-v1 catalog row bounding box measurable (1024px viewport)",
+          "actual": {
+            "box": {
+              "x": 16,
+              "y": 587,
+              "width": 323.59,
+              "height": 65,
+              "right": 339.59,
+              "bottom": 652
+            },
+            "visible": true,
+            "scrollWidth": 324,
+            "clientWidth": 324,
+            "scrollHeight": 64,
+            "clientHeight": 64
+          }
+        },
+        {
+          "name": "e1.layout_catalog_present",
+          "ok": true,
+          "expected": "note-catalog bounding box measurable (panel boundary for clipping assertions)",
+          "actual": {
+            "x": 16,
+            "y": 499,
+            "width": 323.59,
+            "height": 282,
+            "right": 339.59,
+            "bottom": 781
+          }
+        },
+        {
+          "name": "e1.layout_title_present",
+          "ok": true,
+          "expected": "d2-v1 row title is rendered with a non-zero box",
+          "actual": {
+            "text": "[synthetic] D1 cohort readout",
+            "width": 161.13,
+            "visible": true
+          }
+        },
+        {
+          "name": "e1.layout_title_width_gt_20px",
+          "ok": true,
+          "expected": "d2-v1 row title width > 20px at 1024px viewport (no squeeze by new actions)",
+          "actual": {
+            "width": 161.13,
+            "scrollWidth": 190,
+            "clientWidth": 161
+          }
+        },
+        {
+          "name": "e1.layout_title_inside_panel",
+          "ok": true,
+          "expected": "d2-v1 title box is fully inside the Notes catalog and viewport",
+          "actual": {
+            "title": {
+              "x": 48,
+              "y": 593,
+              "width": 161.13,
+              "height": 20,
+              "right": 209.13,
+              "bottom": 613
+            },
+            "catalog": {
+              "x": 16,
+              "y": 499,
+              "width": 323.59,
+              "height": 282,
+              "right": 339.59,
+              "bottom": 781
+            },
+            "viewport": {
+              "width": 1024,
+              "height": 768
+            }
+          }
+        },
+        {
+          "name": "e1.layout_excerpt_present",
+          "ok": true,
+          "expected": "Insert excerpt entry present on the d2-v1 row (coexisting action)",
+          "actual": {
+            "label": "Insert excerpt",
+            "box": {
+              "x": 217.13,
+              "y": 593,
+              "width": 114.47,
+              "height": 32,
+              "right": 331.59,
+              "bottom": 625
+            }
+          }
+        },
+        {
+          "name": "e1.layout_legacy_delete_present",
+          "ok": true,
+          "expected": "legacy row old text Delete action still present (regression guard)",
+          "actual": {
+            "label": "Delete",
+            "box": {
+              "x": 264.59,
+              "y": 723,
+              "width": 67,
+              "height": 32,
+              "right": 331.59,
+              "bottom": 755
+            }
+          }
+        },
+        {
+          "name": "e1.layout_legacy_delete_fully_inside_panel",
+          "ok": true,
+          "expected": "legacy Delete action right edge stays inside the Notes panel (not clipped)",
+          "actual": {
+            "deleteRight": 331.59,
+            "catalogRight": 339.59
+          }
+        },
+        {
+          "name": "e1.layout_legacy_delete_not_clipped",
+          "ok": true,
+          "expected": "legacy Delete label is not clipped (scrollWidth <= clientWidth + 1)",
+          "actual": {
+            "scrollWidth": 67,
+            "clientWidth": 67
+          }
+        },
+        {
+          "name": "e1.layout_legacy_title_present",
+          "ok": true,
+          "expected": "legacy row title still rendered (old path layout unchanged)",
+          "actual": {
+            "width": 122.7
+          }
+        },
+        {
+          "name": "e1.no_delete_request_on_row_view",
+          "ok": true,
+          "expected": "no DELETE request merely by viewing/hovering the row",
+          "actual": 0
+        },
+        {
+          "name": "e1.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 4360
+    },
+    {
+      "id": "E9",
+      "width": 1024,
+      "note_mode": "editor_on",
+      "role": "admin_readonly",
+      "pixel_compare": null,
+      "stats": {
+        "note_mode": "editor_on",
+        "delete_mode": "success",
+        "save_mode": "ok",
+        "models_requests": 2,
+        "list_requests": 2,
+        "semantic_deletes": 0,
+        "delete_replays": 0,
+        "legacy_deletes": 0,
+        "delete_requests": [],
+        "delete_applies": [],
+        "legacy_delete_entries": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r1:d2-v1",
+          "note_d2@r1:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      },
+      "assertions": [
+        {
+          "name": "e9.admin_banner_visible",
+          "ok": true,
+          "expected": "admin-readonly-banner visible for the synthetic admin_readonly token",
+          "actual": 2
+        },
+        {
+          "name": "e9.d2_rows_listed",
+          "ok": true,
+          "expected": "d2-v1 rows still listed for an Admin read-only session",
+          "actual": {
+            "d1": {
+              "edit_schema": "d2-v1",
+              "restricted": "false",
+              "revision_text": "Revision 1",
+              "legacy_badge": false,
+              "open_button": false,
+              "excerpt_button": false,
+              "enable_button": false,
+              "delete_entry": false,
+              "row_buttons": [
+                "Include [synthetic] D1 cohort readout in scope"
+              ]
+            },
+            "d2": {
+              "edit_schema": "d2-v1",
+              "restricted": "false",
+              "revision_text": "Revision 1",
+              "legacy_badge": false,
+              "open_button": false,
+              "excerpt_button": false,
+              "enable_button": false,
+              "delete_entry": false,
+              "row_buttons": [
+                "Include [synthetic] D2 PK readout in scope"
+              ]
+            }
+          }
+        },
+        {
+          "name": "e9.no_delete_entry_on_d2_rows",
+          "ok": true,
+          "expected": "no note-delete-* entry on any d2-v1 row for Admin read-only (both phases)",
+          "actual": {
+            "entries": 0,
+            "testids": []
+          }
+        },
+        {
+          "name": "e9.no_editor_delete_entry",
+          "ok": true,
+          "expected": "no note-editor-delete entry in the Admin read-only view",
+          "actual": 0
+        },
+        {
+          "name": "e9.no_legacy_write_actions_for_admin",
+          "ok": true,
+          "expected": "Admin read-only session exposes no legacy Edit/Delete write actions",
+          "actual": [
+            "Include [synthetic] Legacy note (pre-protection) in scope"
+          ]
+        },
+        {
+          "name": "e9.no_delete_request_for_admin",
+          "ok": true,
+          "expected": "no DELETE request emitted by an Admin read-only session",
+          "actual": 0
+        },
+        {
+          "name": "e9.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 5016
+    },
+    {
+      "id": "E10",
+      "width": 1024,
+      "note_mode": "existing_off",
+      "pixel_compare": null,
+      "stats": {
+        "note_mode": "existing_off",
+        "delete_mode": "success",
+        "save_mode": "ok",
+        "models_requests": 2,
+        "list_requests": 2,
+        "semantic_deletes": 0,
+        "delete_replays": 0,
+        "legacy_deletes": 0,
+        "delete_requests": [],
+        "delete_applies": [],
+        "legacy_delete_entries": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r1:d2-v1",
+          "note_d2@r1:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 3
+      },
+      "assertions": [
+        {
+          "name": "e10.catalog_rendered_with_capability_off",
+          "ok": true,
+          "expected": "Notes catalog renders d2-v1 rows while note_editor_existing.available=false",
+          "actual": {
+            "edit_schema": "d2-v1",
+            "restricted": "false",
+            "revision_text": "Revision 1",
+            "legacy_badge": false,
+            "open_button": true,
+            "excerpt_button": true,
+            "enable_button": false,
+            "delete_entry": false,
+            "row_buttons": [
+              "Include [synthetic] D1 cohort readout in scope",
+              "Open note: [synthetic] D1 cohort readout",
+              "Insert excerpt"
+            ]
+          }
+        },
+        {
+          "name": "e10.no_delete_entry_when_capability_off",
+          "ok": true,
+          "expected": "no note-delete-* entry when note_editor_existing.available=false (fail-closed)",
+          "actual": {
+            "entries": 0,
+            "testids": []
+          }
+        },
+        {
+          "name": "e10.note_open_attempted",
+          "ok": true,
+          "expected": "clicked the d2-v1 note open action",
+          "actual": {
+            "clicked": true,
+            "ready": true
+          }
+        },
+        {
+          "name": "e10.capability_blocked_hint_shown",
+          "ok": true,
+          "expected": "note-capability-blocked fail-closed hint rendered when note_editor_existing is unavailable",
+          "actual": true
+        },
+        {
+          "name": "e10.capability_blocked_reason_surface",
+          "ok": true,
+          "expected": "capability-blocked hint carries user-facing reason text",
+          "actual": "Note editing is unavailableThe note store is unavailable. Your text is kept locally.RetryCopy local textDownload local MarkdownClose"
+        },
+        {
+          "name": "e10.no_delete_entry_in_blocked_editor",
+          "ok": true,
+          "expected": "no delete entry in the capability-blocked editor or catalog",
+          "actual": {
+            "editorDelete": 0,
+            "entries": 0
+          }
+        },
+        {
+          "name": "e10.no_delete_request_when_capability_off",
+          "ok": true,
+          "expected": "no DELETE request while note_editor_existing.available=false",
+          "actual": 0
+        },
+        {
+          "name": "e10.models_capability_request_seen",
+          "ok": true,
+          "expected": "/models capability projection requested",
+          "actual": 2
+        },
+        {
+          "name": "e10.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 5217
+    },
+    {
+      "id": "E11",
+      "width": 1024,
+      "note_mode": "editor_on",
+      "delete_mode": "success",
+      "pixel_compare": {
+        "dialog": null,
+        "deleted": null
+      },
+      "stats": {
+        "note_mode": "editor_on",
+        "delete_mode": "success",
+        "save_mode": "ok",
+        "models_requests": 2,
+        "list_requests": 4,
+        "semantic_deletes": 0,
+        "delete_replays": 0,
+        "legacy_deletes": 1,
+        "delete_requests": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": null,
+            "expected_revision": null,
+            "contract_header": null,
+            "body_keys": [],
+            "mode": "success",
+            "outcome": "legacy_deleted",
+            "status": 204,
+            "replay": false,
+            "applied": false
+          }
+        ],
+        "delete_applies": [],
+        "legacy_delete_entries": [
+          {
+            "note_id": "note_legacy",
+            "status": 204,
+            "at": 1794327598739
+          }
+        ],
+        "saves": [],
+        "notes": [
+          "note_d1@r1:d2-v1",
+          "note_d2@r1:d2-v1"
+        ],
+        "note_requests": 5
+      },
+      "assertions": [
+        {
+          "name": "e11.legacy_row_hovered",
+          "ok": true,
+          "expected": "legacy row hover works",
+          "actual": true
+        },
+        {
+          "name": "e11.legacy_delete_text_button_present",
+          "ok": true,
+          "expected": "legacy row still renders the old text \"Delete\" button",
+          "actual": 1
+        },
+        {
+          "name": "e11.legacy_confirm_dialog_opened",
+          "ok": true,
+          "expected": "legacy delete confirmation AlertDialog opened",
+          "actual": true
+        },
+        {
+          "name": "e11.legacy_dialog_copy",
+          "ok": true,
+          "expected": "legacy dialog keeps its old copy (\"Delete this note?\" + note title)",
+          "actual": {
+            "text": "Delete this note?[synthetic] Legacy note (pre-protection)CancelConfirm",
+            "buttons": [
+              "Cancel",
+              "Confirm"
+            ]
+          }
+        },
+        {
+          "name": "e11.legacy_dialog_buttons",
+          "ok": true,
+          "expected": "legacy dialog keeps old Cancel/Confirm buttons",
+          "actual": [
+            "Cancel",
+            "Confirm"
+          ]
+        },
+        {
+          "name": "e11.legacy_row_removed_after_delete",
+          "ok": true,
+          "expected": "legacy row disappears after the old delete",
+          "actual": true
+        },
+        {
+          "name": "e11.legacy_single_delete",
+          "ok": true,
+          "expected": "exactly 1 DELETE request for the legacy row",
+          "actual": 1
+        },
+        {
+          "name": "e11.legacy_delete_has_no_d2_contract_header",
+          "ok": true,
+          "expected": "legacy DELETE carries NO X-Research-Note-Contract: d2-v1 header",
+          "actual": null
+        },
+        {
+          "name": "e11.legacy_delete_has_no_mutation_or_revision_body",
+          "ok": true,
+          "expected": "legacy DELETE carries NO mutation_id/expected_revision body (old path untouched)",
+          "actual": {
+            "method": "DELETE",
+            "path": "/v1/research/projects/p1/notes/note_legacy",
+            "note_id": "note_legacy",
+            "selected": false,
+            "contract_header": null,
+            "body": {},
+            "body_keys": [],
+            "mutation_id": null,
+            "expected_revision": null,
+            "mode": "success",
+            "outcome": "legacy_deleted",
+            "status": 204,
+            "replay": false,
+            "applied": false,
+            "at": 1794327598739
+          }
+        },
+        {
+          "name": "e11.legacy_delete_status_204",
+          "ok": true,
+          "expected": "legacy DELETE returns the old 204 No Content",
+          "actual": {
+            "status": 204,
+            "outcome": "legacy_deleted"
+          }
+        },
+        {
+          "name": "e11.no_d2_semantic_delete",
+          "ok": true,
+          "expected": "0 d2-v1 semantic deletes / 1 legacy delete recorded",
+          "actual": {
+            "semantic_deletes": 0,
+            "legacy": 1
+          }
+        },
+        {
+          "name": "e11.legacy_note_gone_server_side",
+          "ok": true,
+          "expected": "server store no longer contains note_legacy",
+          "actual": null
+        },
+        {
+          "name": "e11.d2_notes_untouched",
+          "ok": true,
+          "expected": "both d2-v1 notes untouched by the legacy delete",
+          "actual": [
+            "note_d1@r1:d2-v1",
+            "note_d2@r1:d2-v1"
+          ]
+        },
+        {
+          "name": "e11.no_console_or_page_errors",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        }
+      ],
+      "duration_ms": 5609
+    }
+  ],
+  "totals": {
+    "scenes": 8,
+    "scene_errors": 0,
+    "assertions": 104,
+    "assertions_pass": 104,
+    "assertions_fail": 0
+  },
+  "screenshots": [
+    {
+      "file": "before_e1_row_actions_1440.png",
+      "bytes": 106469,
+      "sha256": "f616f8246ab8cfd8a64601fe3ecd752c6822af053a6c9a2a534831af622d9aae",
+      "dom_counts": {
+        "note_catalog": 1,
+        "note_list_rows": 1,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "note_save_status": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "legacy_note_form_hint": 0,
+        "leave_guard_dialog": 0,
+        "workbench_group_nav": 1,
+        "note_delete_entries": 0,
+        "note_delete_dialog": 0,
+        "note_delete_confirm": 0,
+        "note_delete_cancel": 0,
+        "note_delete_status": 0,
+        "note_delete_error": 0,
+        "note_delete_retry": 0,
+        "note_delete_close": 0,
+        "note_editor_delete": 0
+      },
+      "delete_testids": [],
+      "dialog": null,
+      "delete_error": null,
+      "retry": null,
+      "rows": {
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "restricted": "false",
+          "revision_text": "Revision 1",
+          "legacy_badge": false,
+          "open_button": true,
+          "excerpt_button": true,
+          "enable_button": false,
+          "delete_entry": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout",
+            "Insert excerpt"
+          ]
+        },
+        "note_d2": {
+          "edit_schema": "d2-v1",
+          "restricted": "false",
+          "revision_text": "Revision 1",
+          "legacy_badge": false,
+          "open_button": true,
+          "excerpt_button": true,
+          "enable_button": false,
+          "delete_entry": false,
+          "row_buttons": [
+            "Include [synthetic] D2 PK readout in scope",
+            "Open note: [synthetic] D2 PK readout",
+            "Insert excerpt"
+          ]
+        },
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "restricted": "false",
+          "revision_text": null,
+          "legacy_badge": true,
+          "open_button": false,
+          "excerpt_button": false,
+          "enable_button": true,
+          "delete_entry": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Enable protected editing",
+            "Edit",
+            "Delete"
+          ]
+        }
+      },
+      "editor": {
+        "present": false,
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null,
+        "saveStatus": null,
+        "editorDelete": null
+      },
+      "draft_keys": {
+        "all": [],
+        "note_d1": [],
+        "note_d2": []
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "delete_mode": "success",
+        "save_mode": "ok",
+        "models_requests": 2,
+        "list_requests": 2,
+        "semantic_deletes": 0,
+        "delete_replays": 0,
+        "legacy_deletes": 0,
+        "delete_requests": [],
+        "delete_applies": [],
+        "legacy_delete_entries": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r1:d2-v1",
+          "note_d2@r1:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      }
+    },
+    {
+      "file": "before_e9_admin_readonly_1440.png",
+      "bytes": 128137,
+      "sha256": "24a175af11bfbef4f24c35949dfff188d5630d8817c183d330ab7a4cccaef933",
+      "dom_counts": {
+        "note_catalog": 1,
+        "note_list_rows": 1,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "note_save_status": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 2,
+        "legacy_note_form_hint": 0,
+        "leave_guard_dialog": 0,
+        "workbench_group_nav": 1,
+        "note_delete_entries": 0,
+        "note_delete_dialog": 0,
+        "note_delete_confirm": 0,
+        "note_delete_cancel": 0,
+        "note_delete_status": 0,
+        "note_delete_error": 0,
+        "note_delete_retry": 0,
+        "note_delete_close": 0,
+        "note_editor_delete": 0
+      },
+      "delete_testids": [],
+      "dialog": null,
+      "delete_error": null,
+      "retry": null,
+      "rows": {
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "restricted": "false",
+          "revision_text": "Revision 1",
+          "legacy_badge": false,
+          "open_button": false,
+          "excerpt_button": false,
+          "enable_button": false,
+          "delete_entry": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope"
+          ]
+        },
+        "note_d2": {
+          "edit_schema": "d2-v1",
+          "restricted": "false",
+          "revision_text": "Revision 1",
+          "legacy_badge": false,
+          "open_button": false,
+          "excerpt_button": false,
+          "enable_button": false,
+          "delete_entry": false,
+          "row_buttons": [
+            "Include [synthetic] D2 PK readout in scope"
+          ]
+        },
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "restricted": "false",
+          "revision_text": null,
+          "legacy_badge": true,
+          "open_button": false,
+          "excerpt_button": false,
+          "enable_button": false,
+          "delete_entry": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope"
+          ]
+        }
+      },
+      "editor": {
+        "present": false,
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null,
+        "saveStatus": null,
+        "editorDelete": null
+      },
+      "draft_keys": {
+        "all": [],
+        "note_d1": [],
+        "note_d2": []
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "delete_mode": "success",
+        "save_mode": "ok",
+        "models_requests": 2,
+        "list_requests": 2,
+        "semantic_deletes": 0,
+        "delete_replays": 0,
+        "legacy_deletes": 0,
+        "delete_requests": [],
+        "delete_applies": [],
+        "legacy_delete_entries": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r1:d2-v1",
+          "note_d2@r1:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      }
+    },
+    {
+      "file": "before_e10_existing_off_blocked_1440.png",
+      "bytes": 114236,
+      "sha256": "bc640ef86698076d9484c4291782f4d07a29e96c6801b5d0df139d192d378583",
+      "dom_counts": {
+        "note_catalog": 1,
+        "note_list_rows": 1,
+        "note_editor": 1,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "note_save_status": 0,
+        "note_capability_blocked": 1,
+        "admin_readonly_banner": 0,
+        "legacy_note_form_hint": 0,
+        "leave_guard_dialog": 0,
+        "workbench_group_nav": 1,
+        "note_delete_entries": 0,
+        "note_delete_dialog": 0,
+        "note_delete_confirm": 0,
+        "note_delete_cancel": 0,
+        "note_delete_status": 0,
+        "note_delete_error": 0,
+        "note_delete_retry": 0,
+        "note_delete_close": 0,
+        "note_editor_delete": 0
+      },
+      "delete_testids": [],
+      "dialog": null,
+      "delete_error": null,
+      "retry": null,
+      "rows": {
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "restricted": "false",
+          "revision_text": "Revision 1",
+          "legacy_badge": false,
+          "open_button": true,
+          "excerpt_button": true,
+          "enable_button": false,
+          "delete_entry": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout",
+            "Insert excerpt"
+          ]
+        },
+        "note_d2": {
+          "edit_schema": "d2-v1",
+          "restricted": "false",
+          "revision_text": "Revision 1",
+          "legacy_badge": false,
+          "open_button": true,
+          "excerpt_button": true,
+          "enable_button": false,
+          "delete_entry": false,
+          "row_buttons": [
+            "Include [synthetic] D2 PK readout in scope",
+            "Open note: [synthetic] D2 PK readout",
+            "Insert excerpt"
+          ]
+        },
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "restricted": "false",
+          "revision_text": null,
+          "legacy_badge": true,
+          "open_button": false,
+          "excerpt_button": false,
+          "enable_button": true,
+          "delete_entry": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Enable protected editing",
+            "Edit",
+            "Delete"
+          ]
+        }
+      },
+      "editor": {
+        "present": true,
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null,
+        "saveStatus": null,
+        "editorDelete": null
+      },
+      "draft_keys": {
+        "all": [],
+        "note_d1": [],
+        "note_d2": []
+      },
+      "gateway_stats": {
+        "note_mode": "existing_off",
+        "delete_mode": "success",
+        "save_mode": "ok",
+        "models_requests": 2,
+        "list_requests": 2,
+        "semantic_deletes": 0,
+        "delete_replays": 0,
+        "legacy_deletes": 0,
+        "delete_requests": [],
+        "delete_applies": [],
+        "legacy_delete_entries": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r1:d2-v1",
+          "note_d2@r1:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 3
+      }
+    },
+    {
+      "file": "before_e11_legacy_delete_dialog_1440.png",
+      "bytes": 111970,
+      "sha256": "91c6a60b564769826b6bf5a456c78706f907ac89499414ba5db7c2a373631a49",
+      "dom_counts": {
+        "note_catalog": 1,
+        "note_list_rows": 1,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "note_save_status": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "legacy_note_form_hint": 0,
+        "leave_guard_dialog": 0,
+        "workbench_group_nav": 1,
+        "note_delete_entries": 0,
+        "note_delete_dialog": 0,
+        "note_delete_confirm": 0,
+        "note_delete_cancel": 0,
+        "note_delete_status": 0,
+        "note_delete_error": 0,
+        "note_delete_retry": 0,
+        "note_delete_close": 0,
+        "note_editor_delete": 0
+      },
+      "delete_testids": [],
+      "dialog": null,
+      "delete_error": null,
+      "retry": null,
+      "rows": {
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "restricted": "false",
+          "revision_text": "Revision 1",
+          "legacy_badge": false,
+          "open_button": true,
+          "excerpt_button": true,
+          "enable_button": false,
+          "delete_entry": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout",
+            "Insert excerpt"
+          ]
+        },
+        "note_d2": {
+          "edit_schema": "d2-v1",
+          "restricted": "false",
+          "revision_text": "Revision 1",
+          "legacy_badge": false,
+          "open_button": true,
+          "excerpt_button": true,
+          "enable_button": false,
+          "delete_entry": false,
+          "row_buttons": [
+            "Include [synthetic] D2 PK readout in scope",
+            "Open note: [synthetic] D2 PK readout",
+            "Insert excerpt"
+          ]
+        },
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "restricted": "false",
+          "revision_text": null,
+          "legacy_badge": true,
+          "open_button": false,
+          "excerpt_button": false,
+          "enable_button": true,
+          "delete_entry": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Enable protected editing",
+            "Edit",
+            "Delete"
+          ]
+        }
+      },
+      "editor": {
+        "present": false,
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null,
+        "saveStatus": null,
+        "editorDelete": null
+      },
+      "draft_keys": {
+        "all": [],
+        "note_d1": [],
+        "note_d2": []
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "delete_mode": "success",
+        "save_mode": "ok",
+        "models_requests": 2,
+        "list_requests": 2,
+        "semantic_deletes": 0,
+        "delete_replays": 0,
+        "legacy_deletes": 0,
+        "delete_requests": [],
+        "delete_applies": [],
+        "legacy_delete_entries": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r1:d2-v1",
+          "note_d2@r1:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      }
+    },
+    {
+      "file": "before_e11_legacy_deleted_1440.png",
+      "bytes": 99980,
+      "sha256": "6d09e30e118968847069d30333d803d859f9d7e3091a56e01b0d7c854a9d5743",
+      "dom_counts": {
+        "note_catalog": 1,
+        "note_list_rows": 1,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "note_save_status": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "legacy_note_form_hint": 0,
+        "leave_guard_dialog": 0,
+        "workbench_group_nav": 1,
+        "note_delete_entries": 0,
+        "note_delete_dialog": 0,
+        "note_delete_confirm": 0,
+        "note_delete_cancel": 0,
+        "note_delete_status": 0,
+        "note_delete_error": 0,
+        "note_delete_retry": 0,
+        "note_delete_close": 0,
+        "note_editor_delete": 0
+      },
+      "delete_testids": [],
+      "dialog": null,
+      "delete_error": null,
+      "retry": null,
+      "rows": {
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "restricted": "false",
+          "revision_text": "Revision 1",
+          "legacy_badge": false,
+          "open_button": true,
+          "excerpt_button": true,
+          "enable_button": false,
+          "delete_entry": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout",
+            "Insert excerpt"
+          ]
+        },
+        "note_d2": {
+          "edit_schema": "d2-v1",
+          "restricted": "false",
+          "revision_text": "Revision 1",
+          "legacy_badge": false,
+          "open_button": true,
+          "excerpt_button": true,
+          "enable_button": false,
+          "delete_entry": false,
+          "row_buttons": [
+            "Include [synthetic] D2 PK readout in scope",
+            "Open note: [synthetic] D2 PK readout",
+            "Insert excerpt"
+          ]
+        },
+        "note_legacy": null
+      },
+      "editor": {
+        "present": false,
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null,
+        "saveStatus": null,
+        "editorDelete": null
+      },
+      "draft_keys": {
+        "all": [],
+        "note_d1": [],
+        "note_d2": []
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "delete_mode": "success",
+        "save_mode": "ok",
+        "models_requests": 2,
+        "list_requests": 4,
+        "semantic_deletes": 0,
+        "delete_replays": 0,
+        "legacy_deletes": 1,
+        "delete_requests": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": null,
+            "expected_revision": null,
+            "contract_header": null,
+            "body_keys": [],
+            "mode": "success",
+            "outcome": "legacy_deleted",
+            "status": 204,
+            "replay": false,
+            "applied": false
+          }
+        ],
+        "delete_applies": [],
+        "legacy_delete_entries": [
+          {
+            "note_id": "note_legacy",
+            "status": 204,
+            "at": 1794327578524
+          }
+        ],
+        "saves": [],
+        "notes": [
+          "note_d1@r1:d2-v1",
+          "note_d2@r1:d2-v1"
+        ],
+        "note_requests": 5
+      }
+    },
+    {
+      "file": "before_e1_row_actions_1024.png",
+      "bytes": 89541,
+      "sha256": "7fbda78e1dc3cacc12d12c11d69f94c87fdaf7ceca707bae560bdcd5622bbc7c",
+      "dom_counts": {
+        "note_catalog": 1,
+        "note_list_rows": 1,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "note_save_status": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "legacy_note_form_hint": 0,
+        "leave_guard_dialog": 0,
+        "workbench_group_nav": 1,
+        "note_delete_entries": 0,
+        "note_delete_dialog": 0,
+        "note_delete_confirm": 0,
+        "note_delete_cancel": 0,
+        "note_delete_status": 0,
+        "note_delete_error": 0,
+        "note_delete_retry": 0,
+        "note_delete_close": 0,
+        "note_editor_delete": 0
+      },
+      "delete_testids": [],
+      "dialog": null,
+      "delete_error": null,
+      "retry": null,
+      "rows": {
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "restricted": "false",
+          "revision_text": "Revision 1",
+          "legacy_badge": false,
+          "open_button": true,
+          "excerpt_button": true,
+          "enable_button": false,
+          "delete_entry": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout",
+            "Insert excerpt"
+          ]
+        },
+        "note_d2": {
+          "edit_schema": "d2-v1",
+          "restricted": "false",
+          "revision_text": "Revision 1",
+          "legacy_badge": false,
+          "open_button": true,
+          "excerpt_button": true,
+          "enable_button": false,
+          "delete_entry": false,
+          "row_buttons": [
+            "Include [synthetic] D2 PK readout in scope",
+            "Open note: [synthetic] D2 PK readout",
+            "Insert excerpt"
+          ]
+        },
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "restricted": "false",
+          "revision_text": null,
+          "legacy_badge": true,
+          "open_button": false,
+          "excerpt_button": false,
+          "enable_button": true,
+          "delete_entry": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Enable protected editing",
+            "Edit",
+            "Delete"
+          ]
+        }
+      },
+      "editor": {
+        "present": false,
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null,
+        "saveStatus": null,
+        "editorDelete": null
+      },
+      "draft_keys": {
+        "all": [],
+        "note_d1": [],
+        "note_d2": []
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "delete_mode": "success",
+        "save_mode": "ok",
+        "models_requests": 2,
+        "list_requests": 2,
+        "semantic_deletes": 0,
+        "delete_replays": 0,
+        "legacy_deletes": 0,
+        "delete_requests": [],
+        "delete_applies": [],
+        "legacy_delete_entries": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r1:d2-v1",
+          "note_d2@r1:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      }
+    },
+    {
+      "file": "before_e9_admin_readonly_1024.png",
+      "bytes": 102527,
+      "sha256": "379ae58a55c1663649dec4f3a4cb5eb8a52c67398a98a48ece074d8404430878",
+      "dom_counts": {
+        "note_catalog": 1,
+        "note_list_rows": 1,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "note_save_status": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 2,
+        "legacy_note_form_hint": 0,
+        "leave_guard_dialog": 0,
+        "workbench_group_nav": 1,
+        "note_delete_entries": 0,
+        "note_delete_dialog": 0,
+        "note_delete_confirm": 0,
+        "note_delete_cancel": 0,
+        "note_delete_status": 0,
+        "note_delete_error": 0,
+        "note_delete_retry": 0,
+        "note_delete_close": 0,
+        "note_editor_delete": 0
+      },
+      "delete_testids": [],
+      "dialog": null,
+      "delete_error": null,
+      "retry": null,
+      "rows": {
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "restricted": "false",
+          "revision_text": "Revision 1",
+          "legacy_badge": false,
+          "open_button": false,
+          "excerpt_button": false,
+          "enable_button": false,
+          "delete_entry": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope"
+          ]
+        },
+        "note_d2": {
+          "edit_schema": "d2-v1",
+          "restricted": "false",
+          "revision_text": "Revision 1",
+          "legacy_badge": false,
+          "open_button": false,
+          "excerpt_button": false,
+          "enable_button": false,
+          "delete_entry": false,
+          "row_buttons": [
+            "Include [synthetic] D2 PK readout in scope"
+          ]
+        },
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "restricted": "false",
+          "revision_text": null,
+          "legacy_badge": true,
+          "open_button": false,
+          "excerpt_button": false,
+          "enable_button": false,
+          "delete_entry": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope"
+          ]
+        }
+      },
+      "editor": {
+        "present": false,
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null,
+        "saveStatus": null,
+        "editorDelete": null
+      },
+      "draft_keys": {
+        "all": [],
+        "note_d1": [],
+        "note_d2": []
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "delete_mode": "success",
+        "save_mode": "ok",
+        "models_requests": 2,
+        "list_requests": 2,
+        "semantic_deletes": 0,
+        "delete_replays": 0,
+        "legacy_deletes": 0,
+        "delete_requests": [],
+        "delete_applies": [],
+        "legacy_delete_entries": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r1:d2-v1",
+          "note_d2@r1:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      }
+    },
+    {
+      "file": "before_e10_existing_off_blocked_1024.png",
+      "bytes": 89596,
+      "sha256": "fc7e3cab3f01b3323027e843e2a5ba54c86a542961ce18a560dc7ea00ba5fb2a",
+      "dom_counts": {
+        "note_catalog": 1,
+        "note_list_rows": 1,
+        "note_editor": 1,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "note_save_status": 0,
+        "note_capability_blocked": 1,
+        "admin_readonly_banner": 0,
+        "legacy_note_form_hint": 0,
+        "leave_guard_dialog": 0,
+        "workbench_group_nav": 1,
+        "note_delete_entries": 0,
+        "note_delete_dialog": 0,
+        "note_delete_confirm": 0,
+        "note_delete_cancel": 0,
+        "note_delete_status": 0,
+        "note_delete_error": 0,
+        "note_delete_retry": 0,
+        "note_delete_close": 0,
+        "note_editor_delete": 0
+      },
+      "delete_testids": [],
+      "dialog": null,
+      "delete_error": null,
+      "retry": null,
+      "rows": {
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "restricted": "false",
+          "revision_text": "Revision 1",
+          "legacy_badge": false,
+          "open_button": true,
+          "excerpt_button": true,
+          "enable_button": false,
+          "delete_entry": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout",
+            "Insert excerpt"
+          ]
+        },
+        "note_d2": {
+          "edit_schema": "d2-v1",
+          "restricted": "false",
+          "revision_text": "Revision 1",
+          "legacy_badge": false,
+          "open_button": true,
+          "excerpt_button": true,
+          "enable_button": false,
+          "delete_entry": false,
+          "row_buttons": [
+            "Include [synthetic] D2 PK readout in scope",
+            "Open note: [synthetic] D2 PK readout",
+            "Insert excerpt"
+          ]
+        },
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "restricted": "false",
+          "revision_text": null,
+          "legacy_badge": true,
+          "open_button": false,
+          "excerpt_button": false,
+          "enable_button": true,
+          "delete_entry": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Enable protected editing",
+            "Edit",
+            "Delete"
+          ]
+        }
+      },
+      "editor": {
+        "present": true,
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null,
+        "saveStatus": null,
+        "editorDelete": null
+      },
+      "draft_keys": {
+        "all": [],
+        "note_d1": [],
+        "note_d2": []
+      },
+      "gateway_stats": {
+        "note_mode": "existing_off",
+        "delete_mode": "success",
+        "save_mode": "ok",
+        "models_requests": 2,
+        "list_requests": 2,
+        "semantic_deletes": 0,
+        "delete_replays": 0,
+        "legacy_deletes": 0,
+        "delete_requests": [],
+        "delete_applies": [],
+        "legacy_delete_entries": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r1:d2-v1",
+          "note_d2@r1:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 3
+      }
+    },
+    {
+      "file": "before_e11_legacy_delete_dialog_1024.png",
+      "bytes": 97702,
+      "sha256": "56dcd4e4e203e6125b2c38589332fcebf7d592603fab9c9cd0f71468b94c60b4",
+      "dom_counts": {
+        "note_catalog": 1,
+        "note_list_rows": 1,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "note_save_status": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "legacy_note_form_hint": 0,
+        "leave_guard_dialog": 0,
+        "workbench_group_nav": 1,
+        "note_delete_entries": 0,
+        "note_delete_dialog": 0,
+        "note_delete_confirm": 0,
+        "note_delete_cancel": 0,
+        "note_delete_status": 0,
+        "note_delete_error": 0,
+        "note_delete_retry": 0,
+        "note_delete_close": 0,
+        "note_editor_delete": 0
+      },
+      "delete_testids": [],
+      "dialog": null,
+      "delete_error": null,
+      "retry": null,
+      "rows": {
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "restricted": "false",
+          "revision_text": "Revision 1",
+          "legacy_badge": false,
+          "open_button": true,
+          "excerpt_button": true,
+          "enable_button": false,
+          "delete_entry": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout",
+            "Insert excerpt"
+          ]
+        },
+        "note_d2": {
+          "edit_schema": "d2-v1",
+          "restricted": "false",
+          "revision_text": "Revision 1",
+          "legacy_badge": false,
+          "open_button": true,
+          "excerpt_button": true,
+          "enable_button": false,
+          "delete_entry": false,
+          "row_buttons": [
+            "Include [synthetic] D2 PK readout in scope",
+            "Open note: [synthetic] D2 PK readout",
+            "Insert excerpt"
+          ]
+        },
+        "note_legacy": {
+          "edit_schema": "legacy",
+          "restricted": "false",
+          "revision_text": null,
+          "legacy_badge": true,
+          "open_button": false,
+          "excerpt_button": false,
+          "enable_button": true,
+          "delete_entry": false,
+          "row_buttons": [
+            "Include [synthetic] Legacy note (pre-protection) in scope",
+            "Enable protected editing",
+            "Edit",
+            "Delete"
+          ]
+        }
+      },
+      "editor": {
+        "present": false,
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null,
+        "saveStatus": null,
+        "editorDelete": null
+      },
+      "draft_keys": {
+        "all": [],
+        "note_d1": [],
+        "note_d2": []
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "delete_mode": "success",
+        "save_mode": "ok",
+        "models_requests": 2,
+        "list_requests": 2,
+        "semantic_deletes": 0,
+        "delete_replays": 0,
+        "legacy_deletes": 0,
+        "delete_requests": [],
+        "delete_applies": [],
+        "legacy_delete_entries": [],
+        "saves": [],
+        "notes": [
+          "note_d1@r1:d2-v1",
+          "note_d2@r1:d2-v1",
+          "note_legacy@legacy:legacy"
+        ],
+        "note_requests": 2
+      }
+    },
+    {
+      "file": "before_e11_legacy_deleted_1024.png",
+      "bytes": 90736,
+      "sha256": "995e00b7e9b73b54f4ac809dda5061d1cf1205f078cf47d7770e2f242d823983",
+      "dom_counts": {
+        "note_catalog": 1,
+        "note_list_rows": 1,
+        "note_editor": 0,
+        "note_editor_revision": 0,
+        "note_editor_save_now": 0,
+        "note_save_status": 0,
+        "note_capability_blocked": 0,
+        "admin_readonly_banner": 0,
+        "legacy_note_form_hint": 0,
+        "leave_guard_dialog": 0,
+        "workbench_group_nav": 1,
+        "note_delete_entries": 0,
+        "note_delete_dialog": 0,
+        "note_delete_confirm": 0,
+        "note_delete_cancel": 0,
+        "note_delete_status": 0,
+        "note_delete_error": 0,
+        "note_delete_retry": 0,
+        "note_delete_close": 0,
+        "note_editor_delete": 0
+      },
+      "delete_testids": [],
+      "dialog": null,
+      "delete_error": null,
+      "retry": null,
+      "rows": {
+        "note_d1": {
+          "edit_schema": "d2-v1",
+          "restricted": "false",
+          "revision_text": "Revision 1",
+          "legacy_badge": false,
+          "open_button": true,
+          "excerpt_button": true,
+          "enable_button": false,
+          "delete_entry": false,
+          "row_buttons": [
+            "Include [synthetic] D1 cohort readout in scope",
+            "Open note: [synthetic] D1 cohort readout",
+            "Insert excerpt"
+          ]
+        },
+        "note_d2": {
+          "edit_schema": "d2-v1",
+          "restricted": "false",
+          "revision_text": "Revision 1",
+          "legacy_badge": false,
+          "open_button": true,
+          "excerpt_button": true,
+          "enable_button": false,
+          "delete_entry": false,
+          "row_buttons": [
+            "Include [synthetic] D2 PK readout in scope",
+            "Open note: [synthetic] D2 PK readout",
+            "Insert excerpt"
+          ]
+        },
+        "note_legacy": null
+      },
+      "editor": {
+        "present": false,
+        "title": null,
+        "revision": null,
+        "contentTail": null,
+        "contentContainsFixture": false,
+        "saveNowDisabled": null,
+        "saveStatus": null,
+        "editorDelete": null
+      },
+      "draft_keys": {
+        "all": [],
+        "note_d1": [],
+        "note_d2": []
+      },
+      "gateway_stats": {
+        "note_mode": "editor_on",
+        "delete_mode": "success",
+        "save_mode": "ok",
+        "models_requests": 2,
+        "list_requests": 4,
+        "semantic_deletes": 0,
+        "delete_replays": 0,
+        "legacy_deletes": 1,
+        "delete_requests": [
+          {
+            "note_id": "note_legacy",
+            "mutation_id": null,
+            "expected_revision": null,
+            "contract_header": null,
+            "body_keys": [],
+            "mode": "success",
+            "outcome": "legacy_deleted",
+            "status": 204,
+            "replay": false,
+            "applied": false
+          }
+        ],
+        "delete_applies": [],
+        "legacy_delete_entries": [
+          {
+            "note_id": "note_legacy",
+            "status": 204,
+            "at": 1794327598739
+          }
+        ],
+        "saves": [],
+        "notes": [
+          "note_d1@r1:d2-v1",
+          "note_d2@r1:d2-v1"
+        ],
+        "note_requests": 5
+      }
+    }
+  ],
+  "baseline_full_sha": "f3e4e47a3aa68ec0ee97370c9b5341929bb0fb46",
+  "worktree_provenance": {
+    "before": {
+      "name": "before",
+      "worktree": "/home/lchen/.dsh/state/superagent/work/note-delete-ui-a35682a0d739-evidence/fork-before",
+      "head": "f3e4e47a3aa68ec0ee97370c9b5341929bb0fb46",
+      "status_porcelain": "",
+      "config_ts": {
+        "sha256_current": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+        "sha256_at_head": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+        "restored_clean": true
+      }
+    },
+    "harness_only_patch": {
+      "file": "frontend/src/lib/embedded/config.ts",
+      "change": "dynamic process.env[CONST] lookups -> static process.env.NEXT_PUBLIC_* member access (Next dev does not inline dynamic lookups); reverted after capture",
+      "records": {
+        "before": {
+          "original_sha256": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+          "patched_sha256": "255492d4ddc991b20eeb1fa7013af9223dda7d304180a5986107fed0afc0dade",
+          "restored_sha256": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+          "sha256_at_head": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+          "restored_clean": true
+        },
+        "after": {
+          "original_sha256": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+          "patched_sha256": "255492d4ddc991b20eeb1fa7013af9223dda7d304180a5986107fed0afc0dade",
+          "restored_sha256": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+          "sha256_at_head": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
+          "restored_clean": true
+        }
+      },
+      "restored_clean": true
+    }
+  }
+}
