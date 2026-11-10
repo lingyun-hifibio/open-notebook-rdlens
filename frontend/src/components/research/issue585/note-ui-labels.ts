@@ -89,6 +89,7 @@ const NOTE_DELETE_FAILURE_LABEL_KEYS: Record<NoteDeleteFailureKind, string> = {
   restricted: 'research.notes.deleteDialog.errors.restricted',
   not_found: 'research.notes.deleteDialog.errors.notFound',
   conflict: 'research.notes.deleteDialog.errors.conflict',
+  stale_request: 'research.notes.deleteDialog.errors.staleRequest',
   unsupported: 'research.notes.deleteDialog.errors.unsupported',
   unavailable: 'research.notes.deleteDialog.errors.unavailable',
   unknown: 'research.notes.deleteDialog.errors.unknown',

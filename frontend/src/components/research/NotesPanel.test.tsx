@@ -83,6 +83,13 @@ vi.mock('@/lib/research/issue585/use-note-delete', () => ({
   useNoteDelete: vi.fn(),
 }))
 
+// Issue #1134（round-1 MEDIUM-1）：409 冲突后按既有权限另行读取最新版。
+const getNoteD2Mock = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/research/issue585/note-client', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/research/issue585/note-client')>()
+  return { ...actual, getNoteD2: getNoteD2Mock }
+})
+
 // PR5/B3：页面级组合根的打开请求/目录刷新（Issue #1047 review M-2'）。
 const workspaceMock = vi.hoisted(() => ({
   current: null as null | {
@@ -273,6 +280,7 @@ function makeNoteDeleteState(overrides: Partial<NoteDeleteState> = {}): NoteDele
     phase: 'idle',
     noteId: null,
     noteTitle: '',
+    noteContent: '',
     expectedRevision: null,
     mutationId: null,
     error: null,
@@ -305,6 +313,16 @@ function stubNoteDelete(
   const deleteActions = makeNoteDeleteActions(actions)
   vi.mocked(useNoteDelete).mockReturnValue({ state: deleteState, actions: deleteActions })
   return { state: deleteState, actions: deleteActions }
+}
+
+/** axios 形状错误（走 normalizeNoteApiError 归一化路径）。 */
+function httpErrorResponse(status: number, code: string, retryable: boolean) {
+  return {
+    response: {
+      status,
+      data: { detail: { code, message: '', retryable, request_id: 'req_1' } },
+    },
+  }
 }
 
 function makeWrapper(role: 'owner' | 'admin_readonly' = 'owner') {
@@ -381,6 +399,7 @@ describe('NotesPanel', () => {
     stubEditor()
     stubNoteEnable()
     stubNoteDelete()
+    getNoteD2Mock.mockReset()
   })
 
   it('目录渲染 d2-v1 与旧未保护行：d2 行走新编辑器入口，旧行保留旧表单操作', async () => {
@@ -1237,7 +1256,12 @@ describe('NotesPanel', () => {
     await waitFor(() => expect(screen.getByTestId('note-delete-note_d2')).toBeInTheDocument())
 
     fireEvent.click(screen.getByTestId('note-delete-note_d2'))
-    expect(actions.requestDelete).toHaveBeenCalledWith('note_d2', 3, '受保护笔记')
+    expect(actions.requestDelete).toHaveBeenCalledWith(
+      'note_d2',
+      3,
+      '受保护笔记',
+      '受保护正文',
+    )
     expect(actions.confirmDelete).not.toHaveBeenCalled()
   })
 
@@ -1287,7 +1311,12 @@ describe('NotesPanel', () => {
     await waitFor(() => expect(screen.getByTestId('note-editor-delete')).toBeInTheDocument())
 
     fireEvent.click(screen.getByTestId('note-editor-delete'))
-    expect(actions.requestDelete).toHaveBeenCalledWith('note_d2', 3, '受保护笔记')
+    expect(actions.requestDelete).toHaveBeenCalledWith(
+      'note_d2',
+      3,
+      '受保护笔记',
+      '受保护正文',
+    )
   })
 
   it('当前打开文档有未保存修改时，删除确认对话框提示本地修改会被丢弃', async () => {
@@ -1309,11 +1338,12 @@ describe('NotesPanel', () => {
     await waitFor(() => expect(screen.getByTestId('note-delete-unsaved')).toBeInTheDocument())
   })
 
-  it('409 冲突重试：先刷新目录，再用 409 已授权的 current revision 重新确认（不直接删除）', async () => {
+  it('409 冲突重试：按既有权限读取最新版，用刷新后的 revision/标题/正文重新确认（不直接删除）', async () => {
     const { actions } = stubNoteDelete({
       phase: 'error',
       noteId: 'note_d2',
       noteTitle: '受保护笔记',
+      noteContent: '受保护正文',
       expectedRevision: 3,
       mutationId: 'nm1',
       failureKind: 'conflict',
@@ -1327,6 +1357,9 @@ describe('NotesPanel', () => {
         currentSnapshotHash: 'b'.repeat(64),
       },
     })
+    getNoteD2Mock.mockResolvedValue(
+      d2Note({ revision: 4, title: '刷新后标题', content: '刷新后正文' }),
+    )
     const { wrapper } = makeWrapper()
     render(<NotesPanel />, { wrapper })
     await waitFor(() => expect(screen.getByTestId('note-delete-error')).toBeInTheDocument())
@@ -1336,9 +1369,72 @@ describe('NotesPanel', () => {
       'conflict',
     )
     fireEvent.click(screen.getByTestId('note-delete-retry'))
-    await waitFor(() => expect(refreshCatalog).toHaveBeenCalledTimes(1))
-    expect(actions.reconfirm).toHaveBeenCalledWith(4)
+    await waitFor(() => expect(actions.reconfirm).toHaveBeenCalled())
+    expect(getNoteD2Mock).toHaveBeenCalledWith('proj_1', 'note_d2')
+    expect(actions.reconfirm).toHaveBeenCalledWith(4, '刷新后标题', '刷新后正文')
+    expect(refreshCatalog).toHaveBeenCalledTimes(1)
     expect(actions.retry).not.toHaveBeenCalled()
+  })
+
+  it('409 冲突重试时最新版已不存在（GET 404）：关闭对话框、关闭编辑器并刷新目录', async () => {
+    const { actions } = stubNoteDelete({
+      phase: 'error',
+      noteId: 'note_d2',
+      noteTitle: '受保护笔记',
+      expectedRevision: 3,
+      failureKind: 'conflict',
+      retryMode: 'reconfirm',
+      error: { code: 'note_revision_conflict', message: '', retryable: false, status: 409 },
+    })
+    const { actions: editorActions } = stubEditor({
+      status: 'ready',
+      note: d2Note(),
+      title: '受保护笔记',
+      content: '受保护正文',
+      saveStatus: 'saved',
+    })
+    getNoteD2Mock.mockRejectedValue(
+      httpErrorResponse(404, 'note_not_found', false),
+    )
+    const { wrapper } = makeWrapper()
+    render(<NotesPanel />, { wrapper })
+    await waitFor(() => expect(screen.getByTestId('note-delete-retry')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByTestId('note-delete-retry'))
+    await waitFor(() => expect(actions.dismiss).toHaveBeenCalledTimes(1))
+    expect(editorActions.closeEditor).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(refreshCatalog).toHaveBeenCalledTimes(1))
+    expect(actions.reconfirm).not.toHaveBeenCalled()
+  })
+
+  it('409 冲突重试时最新版读取失败（503）：保持错误态并提示重试，不用 409 旧基线确认', async () => {
+    const { actions } = stubNoteDelete({
+      phase: 'error',
+      noteId: 'note_d2',
+      noteTitle: '受保护笔记',
+      expectedRevision: 3,
+      failureKind: 'conflict',
+      retryMode: 'reconfirm',
+      error: { code: 'note_revision_conflict', message: '', retryable: false, status: 409 },
+    })
+    getNoteD2Mock.mockRejectedValue(
+      httpErrorResponse(503, 'note_store_unavailable', true),
+    )
+    const { wrapper } = makeWrapper()
+    render(<NotesPanel />, { wrapper })
+    await waitFor(() => expect(screen.getByTestId('note-delete-retry')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByTestId('note-delete-retry'))
+    await waitFor(() =>
+      expect(toastMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: 'research.notes.deleteDialog.refreshFailed',
+          variant: 'destructive',
+        }),
+      ),
+    )
+    expect(actions.reconfirm).not.toHaveBeenCalled()
+    expect(actions.dismiss).not.toHaveBeenCalled()
   })
 
   it('结果未知重试：调用状态机 retry（同一 mutation 重放），确认前不冒充成功', async () => {
@@ -1369,7 +1465,7 @@ describe('NotesPanel', () => {
     )
   })
 
-  it('404 终态关闭：关闭编辑器并刷新目录（本地文本仍可恢复，不清草稿）', async () => {
+  it('404 终态关闭：关闭编辑器（确认框已同意丢弃本地修改）并刷新目录', async () => {
     const { actions, } = stubNoteDelete({
       phase: 'error',
       noteId: 'note_d2',

@@ -9,7 +9,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { NoteDeleteDialog } from './NoteDeleteDialog'
 import type { NoteDeleteFailureKind, NoteDeleteRetryMode } from '@/lib/research/issue585/note-delete'
 
@@ -37,6 +37,7 @@ const FAILURE_KEYS: Record<NoteDeleteFailureKind, string> = {
   restricted: 'research.notes.deleteDialog.errors.restricted',
   not_found: 'research.notes.deleteDialog.errors.notFound',
   conflict: 'research.notes.deleteDialog.errors.conflict',
+  stale_request: 'research.notes.deleteDialog.errors.staleRequest',
   unsupported: 'research.notes.deleteDialog.errors.unsupported',
   unavailable: 'research.notes.deleteDialog.errors.unavailable',
   unknown: 'research.notes.deleteDialog.errors.unknown',
@@ -73,6 +74,18 @@ describe('NoteDeleteDialog', () => {
     expect(onCancel).toHaveBeenCalledTimes(1)
   })
 
+  it('confirming：展示目标正文复核块（最新读取的内容）；空正文不渲染', () => {
+    renderDialog({ noteContent: '刷新后的正文' })
+    expect(screen.getByTestId('note-delete-content')).toHaveTextContent('刷新后的正文')
+    expect(screen.getByTestId('note-delete-content')).toHaveTextContent(
+      'research.notes.deleteDialog.contentLabel',
+    )
+    cleanup()
+
+    renderDialog({ noteContent: '' })
+    expect(screen.queryByTestId('note-delete-content')).toBeNull()
+  })
+
   it('confirming + 未保存本地修改：显示丢弃提示；无修改时不显示', () => {
     renderDialog({ localChangesWarning: true })
     expect(screen.getByTestId('note-delete-unsaved')).toHaveTextContent(
@@ -102,6 +115,7 @@ describe('NoteDeleteDialog', () => {
     'not_found',
     'unsupported',
     'conflict',
+    'stale_request',
     'unavailable',
     'unknown',
   ])('失败分类 %s 映射稳定文案与 data-failure-kind', (failureKind) => {

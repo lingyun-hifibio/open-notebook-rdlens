@@ -1729,6 +1729,8 @@ export const zhTW = {
         confirm: "Delete",
         pending: "Deleting…",
         success: "Note deleted",
+        contentLabel: "Note content",
+        refreshFailed: "Could not refresh the note. Please try again.",
         confirmResult: "Confirm result",
         refreshAndReview: "Refresh and review",
         errors: {
@@ -1736,6 +1738,7 @@ export const zhTW = {
           notFound: "This note no longer exists. Refresh the list to reconcile.",
           conflict:
             "This note changed after it was loaded. Refresh the list, review the latest version, and confirm again.",
+          staleRequest: "This delete request was already used. Retry the delete.",
           unsupported: "This note cannot be deleted through the protected note API.",
           unavailable:
             "Dependencies cannot be verified right now. Retry to confirm the result.",

@@ -35,6 +35,11 @@ export interface NoteDeleteDialogProps {
   phase: NoteDeletePhase
   /** 目标 Note 标题（目录缺失时为空串，不臆造标题）。 */
   noteTitle: string
+  /**
+   * 目标 Note 正文投影（复核用；409 冲突刷新后为服务端最新读取结果）。
+   * 空串时不渲染正文块（绝不伪造内容）。
+   */
+  noteContent?: string
   /** 本次删除冻结的 revision（confirming 时展示，便于复核刷新后的版本）。 */
   expectedRevision: number | null
   failureKind: NoteDeleteFailureKind | null
@@ -51,6 +56,7 @@ export function NoteDeleteDialog({
   open,
   phase,
   noteTitle,
+  noteContent = '',
   expectedRevision,
   failureKind,
   retryMode,
@@ -100,6 +106,17 @@ export function NoteDeleteDialog({
           >
             {t('research.notes.deleteDialog.revision', { revision: expectedRevision })}
           </p>
+        )}
+
+        {confirming && noteContent.length > 0 && (
+          <div data-testid="note-delete-content">
+            <p className="text-xs font-medium text-muted-foreground">
+              {t('research.notes.deleteDialog.contentLabel')}
+            </p>
+            <div className="max-h-24 overflow-auto whitespace-pre-wrap rounded border p-2 text-xs">
+              {noteContent}
+            </div>
+          </div>
         )}
 
         <p

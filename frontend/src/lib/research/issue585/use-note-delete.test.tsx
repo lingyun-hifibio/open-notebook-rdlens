@@ -57,6 +57,15 @@ function receipt(overrides: Partial<NoteReceipt> = {}): NoteReceipt {
 let generation = 1
 let workspaceProjectId = PROJECT
 
+/** 回显请求的 mutation_id/expected_revision（删除回执契约：applied_revision=删除前 revision）。 */
+function echoDeleteReceipt(
+  _projectId: string,
+  _noteId: string,
+  body: { mutation_id: string; expected_revision: number },
+): NoteReceipt {
+  return receipt({ mutation_id: body.mutation_id, applied_revision: body.expected_revision })
+}
+
 function Wrapper({ children }: { children: ReactNode }): ReactNode {
   return (
     <ResearchWorkspaceProvider
@@ -93,7 +102,9 @@ describe('useNoteDelete', () => {
   })
 
   it('初始 idle；requestDelete → confirming；confirm 成功返回 note_id 并回 idle', async () => {
-    mockedDelete.mockResolvedValue(receipt())
+    mockedDelete.mockImplementation(async (project, note, body) =>
+      echoDeleteReceipt(project, note, body),
+    )
     const { result } = renderDelete()
 
     expect(result.current.state.phase).toBe('idle')
@@ -169,7 +180,9 @@ describe('useNoteDelete', () => {
   })
 
   it('StrictMode 双挂载不销毁状态机：confirm 仍可用', async () => {
-    mockedDelete.mockResolvedValue(receipt())
+    mockedDelete.mockImplementation(async (project, note, body) =>
+      echoDeleteReceipt(project, note, body),
+    )
     const { result } = renderHook(
       (props: UseNoteDeleteOptions) => useNoteDelete(props),
       {

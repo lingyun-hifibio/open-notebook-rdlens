@@ -50,6 +50,7 @@ export type NoteDeleteFailureKind =
   | 'restricted'
   | 'not_found'
   | 'conflict'
+  | 'stale_request'
   | 'unsupported'
   | 'unavailable'
   | 'unknown'
@@ -70,8 +71,13 @@ export interface NoteDeleteState {
   phase: NoteDeletePhase
   /** 本次删除目标 note_id（idle 时为 null）。 */
   noteId: string | null
-  /** 目标 Note 标题（确认对话框展示用；目录缺失时为空串，不臆造）。 */
+  /** 目标 Note 标题（确认对话框展示用；目录缺失/刷新后为空串，不臆造）。 */
   noteTitle: string
+  /**
+   * 目标 Note 正文投影（确认对话框复核用；取目录行/编辑器的当前文本，
+   * 409 冲突刷新后更新为服务端最新读取结果）。绝不伪造，空串按空展示。
+   */
+  noteContent: string
   /** 本次删除冻结的 revision CAS 基线（idle 时为 null）。 */
   expectedRevision: number | null
   /** 已发送/待确认的 mutation_id（用于同 mutation 重放）。 */
@@ -86,7 +92,12 @@ export interface NoteDeleteState {
 /** 删除动作（所有网络动作不抛异常，结果体现在 state / 返回值上）。 */
 export interface NoteDeleteActions {
   /** 请求删除（打开二次确认；能力/权限/revision 守卫失败时不发请求）。 */
-  requestDelete: (noteId: string, expectedRevision: number | null, noteTitle?: string) => void
+  requestDelete: (
+    noteId: string,
+    expectedRevision: number | null,
+    noteTitle?: string,
+    noteContent?: string,
+  ) => void
   /** 关闭确认对话框（仅 confirming → idle）。 */
   cancel: () => void
   /**
@@ -102,11 +113,16 @@ export interface NoteDeleteActions {
    */
   retry: () => Promise<string | null>
   /**
-   * 409 冲突后的重新确认：以刷新后（或 409 已授权的 current_revision）作为
-   * 新 CAS 基线回到 confirming；`expectedRevision=null` 表示该 Note 已消失，
-   * 直接复位 idle（调用方负责刷新目录）。
+   * 409 冲突后的重新确认：调用方应先按既有权限**另行读取最新版**（GET），
+   * 再把最新 revision/标题/正文传回；`expectedRevision=null` 表示该 Note 已
+   * 消失，直接复位 idle（调用方负责刷新目录）。确认框据此呈现刷新后的目标，
+   * 用户复核后再决定是否删除。
    */
-  reconfirm: (expectedRevision: number | null) => void
+  reconfirm: (
+    expectedRevision: number | null,
+    noteTitle?: string,
+    noteContent?: string,
+  ) => void
   /** 关闭错误对话框（仅 error → idle，清 error/mutation）。 */
   dismiss: () => void
 }
@@ -141,6 +157,7 @@ function createIdleState(): NoteDeleteState {
     phase: 'idle',
     noteId: null,
     noteTitle: '',
+    noteContent: '',
     expectedRevision: null,
     mutationId: null,
     error: null,
@@ -198,7 +215,7 @@ export function classifyNoteDeleteError(error: NoteApiError): NoteDeleteFailure 
     case 'note_snapshot_fence_exhausted':
       return { failureKind: 'conflict', retryMode: 'reconfirm' }
     case 'mutation_id_reused':
-      return { failureKind: 'conflict', retryMode: 'new_mutation' }
+      return { failureKind: 'stale_request', retryMode: 'new_mutation' }
     case 'note_dependency_unavailable':
     case 'note_snapshot_unavailable':
       return { failureKind: 'unavailable', retryMode: 'same_mutation' }
@@ -228,12 +245,25 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function isReceiptForNote(receipt: unknown, noteId: string): receipt is NoteReceipt {
+/**
+ * 删除回执的 delete 专有校验（defense-in-depth，服务端为权威）：
+ * `note_id` 必须为目标；`mutation_id` 必须是本次发送的幂等键；
+ * `applied_revision` 必须等于冻结的 expected_revision（删除回执保留删除前
+ * revision）；`snapshot_hash` 必须为 null（契约 `delete_snapshot_hash: null`）；
+ * `replayed` 为布尔。任一不符 → 服务端可能已应用但回包不可信 ⇒ 结果未知。
+ */
+function isReceiptForNote(
+  receipt: unknown,
+  noteId: string,
+  mutationId: string,
+  expectedRevision: number,
+): receipt is NoteReceipt {
   return (
     isRecord(receipt) &&
     receipt.note_id === noteId &&
-    typeof receipt.mutation_id === 'string' &&
-    typeof receipt.applied_revision === 'number' &&
+    receipt.mutation_id === mutationId &&
+    receipt.applied_revision === expectedRevision &&
+    receipt.snapshot_hash === null &&
     typeof receipt.replayed === 'boolean'
   )
 }
@@ -268,11 +298,17 @@ export function createNoteDeleteMachine(options: NoteDeleteMachineOptions): Note
   }
 
   /** 守卫失败：不发请求；phase=error + blockReason + 合成错误。 */
-  function failGuard(noteId: string, noteTitle: string, blockReason: string): void {
+  function failGuard(
+    noteId: string,
+    noteTitle: string,
+    noteContent: string,
+    blockReason: string,
+  ): void {
     setState({
       phase: 'error',
       noteId,
       noteTitle,
+      noteContent,
       expectedRevision: null,
       mutationId: null,
       error: guardError(blockReason),
@@ -285,6 +321,7 @@ export function createNoteDeleteMachine(options: NoteDeleteMachineOptions): Note
   function failWithUnknown(
     noteId: string,
     noteTitle: string,
+    noteContent: string,
     expectedRevision: number,
     mutationId: string,
   ): null {
@@ -292,6 +329,7 @@ export function createNoteDeleteMachine(options: NoteDeleteMachineOptions): Note
       phase: 'error',
       noteId,
       noteTitle,
+      noteContent,
       expectedRevision,
       mutationId,
       error: noteProtocolError(),
@@ -305,6 +343,7 @@ export function createNoteDeleteMachine(options: NoteDeleteMachineOptions): Note
   function failWithError(
     noteId: string,
     noteTitle: string,
+    noteContent: string,
     expectedRevision: number,
     mutationId: string,
     error: NoteApiError,
@@ -314,6 +353,7 @@ export function createNoteDeleteMachine(options: NoteDeleteMachineOptions): Note
       phase: 'error',
       noteId,
       noteTitle,
+      noteContent,
       expectedRevision,
       mutationId,
       error,
@@ -334,6 +374,7 @@ export function createNoteDeleteMachine(options: NoteDeleteMachineOptions): Note
   async function runDelete(
     noteId: string,
     noteTitle: string,
+    noteContent: string,
     expectedRevision: number,
     mutationId: string,
   ): Promise<string | null> {
@@ -341,6 +382,7 @@ export function createNoteDeleteMachine(options: NoteDeleteMachineOptions): Note
       phase: 'pending',
       noteId,
       noteTitle,
+      noteContent,
       expectedRevision,
       mutationId,
       error: null,
@@ -354,8 +396,14 @@ export function createNoteDeleteMachine(options: NoteDeleteMachineOptions): Note
         expected_revision: expectedRevision,
       })
       if (disposed) return null
-      if (!isReceiptForNote(receipt, noteId)) {
-        return failWithUnknown(noteId, noteTitle, expectedRevision, mutationId)
+      if (!isReceiptForNote(receipt, noteId, mutationId, expectedRevision)) {
+        return failWithUnknown(
+          noteId,
+          noteTitle,
+          noteContent,
+          expectedRevision,
+          mutationId,
+        )
       }
       clearDrafts(noteId)
       setState(createIdleState())
@@ -365,6 +413,7 @@ export function createNoteDeleteMachine(options: NoteDeleteMachineOptions): Note
       return failWithError(
         noteId,
         noteTitle,
+        noteContent,
         expectedRevision,
         mutationId,
         normalizeNoteApiError(error),
@@ -376,29 +425,31 @@ export function createNoteDeleteMachine(options: NoteDeleteMachineOptions): Note
     noteId: string,
     expectedRevision: number | null,
     noteTitle = '',
+    noteContent = '',
   ): void {
     if (disposed) return
     if (noteId.length === 0) return
     // 单在途：pending 期间不允许切换目标/重入。
     if (state.phase === 'pending') return
     if (isAdminReadonly) {
-      failGuard(noteId, noteTitle, 'admin_readonly')
+      failGuard(noteId, noteTitle, noteContent, 'admin_readonly')
       return
     }
     const block = noteDeleteBlockReason(capabilities)
     if (block !== null) {
-      failGuard(noteId, noteTitle, block)
+      failGuard(noteId, noteTitle, noteContent, block)
       return
     }
     if (expectedRevision === null || !Number.isInteger(expectedRevision) || expectedRevision < 1) {
       // 没有可用的 revision 基线：绝不退回旧无 revision 删除路径。
-      failGuard(noteId, noteTitle, 'note_revision_required')
+      failGuard(noteId, noteTitle, noteContent, 'note_revision_required')
       return
     }
     setState({
       phase: 'confirming',
       noteId,
       noteTitle,
+      noteContent,
       expectedRevision,
       mutationId: null,
       error: null,
@@ -415,7 +466,13 @@ export function createNoteDeleteMachine(options: NoteDeleteMachineOptions): Note
     const expectedRevision = state.expectedRevision
     if (noteId === null || expectedRevision === null) return null
     // 每次新尝试都生成新 mutation_id（绝不复用旧 id）。
-    return runDelete(noteId, state.noteTitle, expectedRevision, nextMutationId())
+    return runDelete(
+      noteId,
+      state.noteTitle,
+      state.noteContent,
+      expectedRevision,
+      nextMutationId(),
+    )
   }
 
   async function retry(): Promise<string | null> {
@@ -429,16 +486,33 @@ export function createNoteDeleteMachine(options: NoteDeleteMachineOptions): Note
     if (state.retryMode === 'same_mutation') {
       if (state.mutationId === null) return null
       // 同一 mutation_id + 同一 expected_revision = 完全相同的请求（契约 replay）。
-      return runDelete(noteId, state.noteTitle, expectedRevision, state.mutationId)
+      return runDelete(
+        noteId,
+        state.noteTitle,
+        state.noteContent,
+        expectedRevision,
+        state.mutationId,
+      )
     }
-    return runDelete(noteId, state.noteTitle, expectedRevision, nextMutationId())
+    return runDelete(
+      noteId,
+      state.noteTitle,
+      state.noteContent,
+      expectedRevision,
+      nextMutationId(),
+    )
   }
 
-  function reconfirm(expectedRevision: number | null): void {
+  function reconfirm(
+    expectedRevision: number | null,
+    noteTitle?: string,
+    noteContent?: string,
+  ): void {
     if (disposed) return
     if (state.phase !== 'error' || state.retryMode !== 'reconfirm') return
     const noteId = state.noteId
-    const noteTitle = state.noteTitle
+    const nextTitle = noteTitle ?? state.noteTitle
+    const nextContent = noteContent ?? state.noteContent
     if (noteId === null) return
     if (
       expectedRevision === null ||
@@ -452,7 +526,8 @@ export function createNoteDeleteMachine(options: NoteDeleteMachineOptions): Note
     setState({
       phase: 'confirming',
       noteId,
-      noteTitle,
+      noteTitle: nextTitle,
+      noteContent: nextContent,
       expectedRevision,
       mutationId: null,
       error: null,

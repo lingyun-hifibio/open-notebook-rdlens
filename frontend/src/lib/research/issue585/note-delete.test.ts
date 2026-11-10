@@ -207,9 +207,9 @@ describe('classifyNoteDeleteError', () => {
     }
   })
 
-  it('旧 mutation 被占用 → 冲突但换新 mutation 重试', () => {
+  it('旧 mutation 被占用 → stale_request（文案与 Retry 动作一致），换新 mutation 重试', () => {
     expect(classifyNoteDeleteError(apiError('mutation_id_reused'))).toEqual({
-      failureKind: 'conflict',
+      failureKind: 'stale_request',
       retryMode: 'new_mutation',
     })
   })
@@ -245,6 +245,7 @@ describe('createNoteDeleteMachine', () => {
       phase: 'idle',
       noteId: null,
       noteTitle: '',
+      noteContent: '',
       expectedRevision: null,
       mutationId: null,
       error: null,
@@ -254,11 +255,12 @@ describe('createNoteDeleteMachine', () => {
     })
   })
 
-  it('requestDelete → confirming（冻结 revision，不发请求）', () => {
-    requestDelete(7)
+  it('requestDelete → confirming（冻结 revision 与复核用标题/正文，不发请求）', () => {
+    actions().requestDelete(NOTE, 7, TITLE, '目标正文')
     expect(state().phase).toBe('confirming')
     expect(state().noteId).toBe(NOTE)
     expect(state().noteTitle).toBe(TITLE)
+    expect(state().noteContent).toBe('目标正文')
     expect(state().expectedRevision).toBe(7)
     expect(client.deleteNote).not.toHaveBeenCalled()
     expect(clearDrafts).not.toHaveBeenCalled()
@@ -279,7 +281,9 @@ describe('createNoteDeleteMachine', () => {
   })
 
   it('每次确认都生成新 mutation_id（不复用旧 id）', async () => {
-    client.deleteNote.mockResolvedValue(receipt())
+    client.deleteNote
+      .mockResolvedValueOnce(receipt({ mutation_id: 'nm1' }))
+      .mockResolvedValueOnce(receipt({ mutation_id: 'nm2' }))
     requestDelete(3)
     await actions().confirmDelete()
     requestDelete(3)
@@ -316,6 +320,33 @@ describe('createNoteDeleteMachine', () => {
     await expect(actions().confirmDelete()).resolves.toBeNull()
     expect(state().failureKind).toBe('unknown')
     expect(state().retryMode).toBe('same_mutation')
+    expect(clearDrafts).not.toHaveBeenCalled()
+  })
+
+  it('回执 mutation_id 与本次请求不一致 → 结果未知（防御网关/代理错配）', async () => {
+    client.deleteNote.mockResolvedValue(receipt({ mutation_id: 'nm_other' }))
+    requestDelete(3)
+
+    await expect(actions().confirmDelete()).resolves.toBeNull()
+    expect(state().failureKind).toBe('unknown')
+    expect(clearDrafts).not.toHaveBeenCalled()
+  })
+
+  it('回执 applied_revision 与冻结 expected_revision 不一致 → 结果未知', async () => {
+    client.deleteNote.mockResolvedValue(receipt({ applied_revision: 4 }))
+    requestDelete(3)
+
+    await expect(actions().confirmDelete()).resolves.toBeNull()
+    expect(state().failureKind).toBe('unknown')
+    expect(clearDrafts).not.toHaveBeenCalled()
+  })
+
+  it('回执 snapshot_hash 非 null（混入 save 形状）→ 结果未知', async () => {
+    client.deleteNote.mockResolvedValue(receipt({ snapshot_hash: HASH }))
+    requestDelete(3)
+
+    await expect(actions().confirmDelete()).resolves.toBeNull()
+    expect(state().failureKind).toBe('unknown')
     expect(clearDrafts).not.toHaveBeenCalled()
   })
 
@@ -376,7 +407,7 @@ describe('createNoteDeleteMachine', () => {
     ['note_revision_conflict', 409, 'conflict', 'reconfirm'],
     ['note_revision_exhausted', 409, 'conflict', 'reconfirm'],
     ['note_snapshot_fence_exhausted', 409, 'conflict', 'reconfirm'],
-    ['mutation_id_reused', 409, 'conflict', 'new_mutation'],
+    ['mutation_id_reused', 409, 'stale_request', 'new_mutation'],
     ['note_dependency_unavailable', 503, 'unavailable', 'same_mutation'],
     ['note_snapshot_unavailable', 503, 'unavailable', 'same_mutation'],
     ['note_store_unavailable', 503, 'unknown', 'same_mutation'],
@@ -449,11 +480,11 @@ describe('createNoteDeleteMachine', () => {
   it('旧 mutation 冲突重试：换新 mutation_id、同一 expected_revision', async () => {
     client.deleteNote
       .mockRejectedValueOnce(httpError(409, 'mutation_id_reused'))
-      .mockResolvedValueOnce(receipt())
+      .mockResolvedValueOnce(receipt({ mutation_id: 'nm2' }))
 
     requestDelete(3)
     await expect(actions().confirmDelete()).resolves.toBeNull()
-    expect(state().failureKind).toBe('conflict')
+    expect(state().failureKind).toBe('stale_request')
     expect(state().retryMode).toBe('new_mutation')
 
     await expect(actions().retry()).resolves.toBe(NOTE)
@@ -475,7 +506,7 @@ describe('createNoteDeleteMachine', () => {
           current_snapshot_hash: HASH,
         }),
       )
-      .mockResolvedValueOnce(receipt({ applied_revision: 4 }))
+      .mockResolvedValueOnce(receipt({ mutation_id: 'nm2', applied_revision: 4 }))
 
     requestDelete(3)
     await expect(actions().confirmDelete()).resolves.toBeNull()
@@ -486,9 +517,11 @@ describe('createNoteDeleteMachine', () => {
     await expect(actions().retry()).resolves.toBeNull()
     expect(client.deleteNote).toHaveBeenCalledTimes(1)
 
-    actions().reconfirm(4)
+    actions().reconfirm(4, '刷新后标题', '刷新后正文')
     expect(state().phase).toBe('confirming')
     expect(state().expectedRevision).toBe(4)
+    expect(state().noteTitle).toBe('刷新后标题')
+    expect(state().noteContent).toBe('刷新后正文')
     expect(state().error).toBeNull()
     expect(state().mutationId).toBeNull()
 

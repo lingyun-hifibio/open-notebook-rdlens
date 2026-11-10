@@ -30,6 +30,7 @@ import {
 } from '@/lib/hooks/use-research'
 import { useNoteCatalog } from '@/lib/research/issue585/use-note-catalog'
 import { useNoteCapabilities } from '@/lib/research/issue585/use-note-capabilities'
+import { getNoteD2, normalizeNoteApiError } from '@/lib/research/issue585/note-client'
 import { useNoteDelete } from '@/lib/research/issue585/use-note-delete'
 import { useNoteEditor } from '@/lib/research/issue585/use-note-editor'
 import { useNoteEnable } from '@/lib/research/issue585/use-note-enable'
@@ -437,20 +438,24 @@ export function NotesPanel({
     return true
   }
 
+  /** 若被删/已不存在的 Note 正打开在编辑器里，显式放弃本地并关闭编辑器。 */
+  const closeEditorForDeletedNote = async (noteId: string): Promise<void> => {
+    if (editorStateRef.current.note?.note_id !== noteId) return
+    editorActionsRef.current.discardLocal()
+    const closed = await editorActionsRef.current.closeEditor()
+    if (closed) setRequestedNoteId(null)
+  }
+
   /**
-   * 删除成功后的收尾：移除 Scope 选择 → 清理可恢复草稿入口 → 若删的是当前
-   * 打开文档则先显式放弃本地并关闭编辑器 → 刷新目录 → 成功 toast。
+   * 删除成功后的收尾：移除 Scope 选择 → 若删的是当前打开文档则显式放弃本地并
+   * 关闭编辑器 → 清理可恢复草稿入口 → 刷新目录 → 成功 toast。
    * 本地草稿缓存的全部 tab 分支已由状态机在确认回执后清理。
    */
   const finishDelete = async (noteId: string | null): Promise<void> => {
     if (noteId === null) return
     removeNote(noteId)
+    await closeEditorForDeletedNote(noteId)
     refreshRecoverableDrafts()
-    if (editorStateRef.current.note?.note_id === noteId) {
-      editorActionsRef.current.discardLocal()
-      const closed = await editorActionsRef.current.closeEditor()
-      if (closed) setRequestedNoteId(null)
-    }
     try {
       await catalog.refresh()
     } catch {
@@ -464,34 +469,69 @@ export function NotesPanel({
   }
 
   const retryDeleteNote = async (): Promise<void> => {
-    if (noteDelete.state.retryMode === 'reconfirm') {
-      // 409 冲突：先刷新目录，再用服务端已授权的当前 revision 重新二次确认；
-      // 拿不到新基线时（行已消失）复位并刷新（note_not_found 的收敛由用户
-      // 关闭对话框后的目录刷新承担）。
+    if (noteDelete.state.retryMode !== 'reconfirm') {
+      await finishDelete(await noteDelete.actions.retry())
+      return
+    }
+    // 409 冲突：方案 v4 §3.1 要求「按既有权限另行读取最新版」。先 GET 最新投影，
+    // 用最新 revision/标题/正文回到二次确认（用户先看到刷新后的目标再决定是否
+    // 删除），绝不在只拿到 409 detail 时直接复用旧标题确认；GET 404 → 目标已
+    // 消失（收敛为关闭+刷新）；其他读取失败保持错误态可再次重试，不降级猜测。
+    const noteId = noteDelete.state.noteId
+    if (noteId === null) {
+      noteDelete.actions.dismiss()
+      return
+    }
+    try {
+      const latest = await getNoteD2(projectId, noteId)
+      if (latest.access_state === 'restricted' || latest.revision === null) {
+        // 冲突窗口内权限变化/投影不可用：不沿用旧基线确认删除，收回对话框。
+        noteDelete.actions.dismiss()
+        try {
+          await catalog.refresh()
+        } catch {
+          // 刷新失败不改变“未删除”的事实。
+        }
+        return
+      }
       try {
         await catalog.refresh()
       } catch {
-        // 刷新失败不阻塞重新确认（revision 来自 409 detail）。
+        // 目录刷新失败不阻塞复核确认（目标数据来自最新一次读取）。
       }
-      noteDelete.actions.reconfirm(noteDelete.state.error?.currentRevision ?? null)
-      return
+      noteDelete.actions.reconfirm(latest.revision, latest.title, latest.content)
+    } catch (error) {
+      const apiError = normalizeNoteApiError(error)
+      if (apiError.code === 'note_not_found') {
+        noteDelete.actions.dismiss()
+        await closeEditorForDeletedNote(noteId)
+        refreshRecoverableDrafts()
+        try {
+          await catalog.refresh()
+        } catch {
+          // 忽略刷新失败。
+        }
+        return
+      }
+      toast({
+        title: t('common.error'),
+        description: t('research.notes.deleteDialog.refreshFailed'),
+        variant: 'destructive',
+      })
     }
-    await finishDelete(await noteDelete.actions.retry())
   }
 
   const dismissDeleteNote = async (): Promise<void> => {
     const noteId = noteDelete.state.noteId
     const failureKind = noteDelete.state.failureKind
     noteDelete.actions.dismiss()
-    // 404 终态：Note 已不存在。刷新目录；若它正打开在编辑器里，关闭编辑器
-    // （本地文本仍可从可恢复草稿入口取回——PR4 404 语义，不清草稿）。
+    // 404 终态：Note 已不存在。关闭当前编辑器（删除确认框已就「未保存修改
+    // 将丢弃」取得用户同意；当前标签页草稿随显式放弃清理，其他标签页分支
+    // 各自在打开/刷新时按服务端 404 收敛）。刷新可恢复草稿入口放在关闭之后，
+    // 避免列表短暂展示已失效条目；最后刷新目录。
     if (failureKind === 'not_found' && noteId !== null) {
+      await closeEditorForDeletedNote(noteId)
       refreshRecoverableDrafts()
-      if (editorStateRef.current.note?.note_id === noteId) {
-        editorActionsRef.current.discardLocal()
-        const closed = await editorActionsRef.current.closeEditor()
-        if (closed) setRequestedNoteId(null)
-      }
       try {
         await catalog.refresh()
       } catch {
@@ -612,7 +652,12 @@ export function NotesPanel({
           canDeleteD2
             ? (item) => {
                 if (!canDeleteCatalogNote(item)) return
-                noteDelete.actions.requestDelete(item.note_id, item.revision, item.title)
+                noteDelete.actions.requestDelete(
+                  item.note_id,
+                  item.revision,
+                  item.title,
+                  item.content,
+                )
               }
             : undefined
         }
@@ -699,6 +744,7 @@ export function NotesPanel({
         open={noteDelete.state.phase !== 'idle' && noteDelete.state.noteId !== null}
         phase={noteDelete.state.phase}
         noteTitle={noteDelete.state.noteTitle}
+        noteContent={noteDelete.state.noteContent}
         expectedRevision={noteDelete.state.expectedRevision}
         failureKind={noteDelete.state.failureKind}
         retryMode={noteDelete.state.retryMode}
@@ -767,6 +813,7 @@ export function NotesPanel({
                         editorDeleteTarget.note_id,
                         editorDeleteTarget.revision,
                         editor.state.title,
+                        editor.state.content,
                       )
                   : undefined
               }
