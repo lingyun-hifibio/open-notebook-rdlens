@@ -430,6 +430,8 @@ describe('结果与实际输入回看 + 手工摘入', () => {
     const first = lastSubmitInput()
     act(() => first.onNetworkError?.(new Error('offline')))
     await waitFor(() => expect(screen.getByTestId('writing-submit-error')).toBeInTheDocument())
+    // 已提交未结算：发送被禁用，只能走「原身份重试」（MEDIUM-4）。
+    expect(screen.getByTestId('writing-send')).toBeDisabled()
     editorMock.controller.flush.mockClear()
     await act(async () => {
       fireEvent.click(screen.getByTestId('writing-retry-same'))

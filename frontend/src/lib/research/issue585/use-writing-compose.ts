@@ -431,6 +431,33 @@ export function useWritingCompose(options: UseWritingComposeOptions): UseWriting
     [cacheScope, readCacheRecord, clock, notePermission, authGeneration],
   )
 
+  /** 清掉 400ms query debounce 定时器（提交/关闭时避免事后补写 choice）。 */
+  const clearQueryPersistTimer = useCallback((): void => {
+    if (queryPersistTimerRef.current !== null) {
+      clearTimeout(queryPersistTimerRef.current)
+      queryPersistTimerRef.current = null
+    }
+  }, [])
+
+  /**
+   * 写未发送 choice，但**不得遮蔽已提交未结算请求**（review round-3 MEDIUM-4）。
+   *
+   * `lastSubmission` 存在时只保留原 intent（恢复走 unknown 重试入口）；
+   * debounce 落盘、关闭 reset 落盘、选择变化落盘都走本函数。
+   */
+  const persistChoiceSafely = useCallback(
+    (choice: WritingCachedChoice | null): void => {
+      if (choice === null) {
+        persistRecord({ choice: null })
+        return
+      }
+      const existing = readCacheRecord()
+      if (existing?.lastSubmission != null) return
+      persistRecord({ choice })
+    },
+    [persistRecord, readCacheRecord],
+  )
+
   // ── 目标解析 ──
 
   const targetRef = useMemo<ResearchSessionRef | null>(() => {
@@ -587,6 +614,21 @@ export function useWritingCompose(options: UseWritingComposeOptions): UseWriting
         return
       }
       if (!stillCurrent()) return
+      // 未结算的提交优先于未发送 choice：否则「原 intent 重试」入口会被
+      // unsent 恢复遮蔽（round-3 MEDIUM-4）。
+      if (record.lastSubmission !== null) {
+        suppressChoicePersistRef.current = true
+        const submission = record.lastSubmission
+        submittedTargetRef.current = {
+          domain: 'research',
+          kind: submission.sessionKind,
+          projectId,
+          sessionId: submission.sessionId,
+          sourceId: submission.sessionKind === 'source' ? submission.sourceId : null,
+        }
+        setRecovery({ kind: 'unknown', cause: null, choice: null, submission })
+        return
+      }
       if (record.choice !== null) {
         suppressChoicePersistRef.current = true
         const choice = record.choice
@@ -637,20 +679,6 @@ export function useWritingCompose(options: UseWritingComposeOptions): UseWriting
         // 恢复完成：后续输入/选择必须能重新落盘（否则 suppress 常开，debounce
         // 与关闭 flush 全部被抑制，刷新仍丢最新输入）。
         suppressChoicePersistRef.current = false
-        return
-      }
-      if (record.lastSubmission !== null) {
-        suppressChoicePersistRef.current = true
-        // 结果未知/已冻结：恢复原请求身份（重放使用原会话，不换目标）。
-        const submission = record.lastSubmission
-        submittedTargetRef.current = {
-          domain: 'research',
-          kind: submission.sessionKind,
-          projectId,
-          sessionId: submission.sessionId,
-          sourceId: submission.sessionKind === 'source' ? submission.sourceId : null,
-        }
-        setRecovery({ kind: 'unknown', cause: null, choice: null, submission })
         return
       }
       // 既有记录但没有可恢复内容：允许后续选择正常落盘。
@@ -706,23 +734,29 @@ export function useWritingCompose(options: UseWritingComposeOptions): UseWriting
     if (cacheScope === null || currentNote === null) return
     const choice = buildChoice(selection, historyMode, queryRef.current)
     if (choice === null) return
-    persistRecord({ choice })
-  }, [cacheScope, currentNote, buildChoice, selection, historyMode, sessionChoiceKind, persistRecord])
+    persistChoiceSafely(choice)
+  }, [
+    cacheScope,
+    currentNote,
+    buildChoice,
+    selection,
+    historyMode,
+    sessionChoiceKind,
+    persistChoiceSafely,
+  ])
 
   // query 输入 debounce 落盘（400ms；关闭/reset 时也会显式落盘一次）。
   // 抑制标记在定时器触发时判断（恢复是异步的；若在 effect 建立时就跳过，
   // 恢复完成前键入的 query 会永远不落盘）。
   useEffect(() => {
     if (cacheScope === null || currentNote === null) return
-    if (queryPersistTimerRef.current !== null) {
-      clearTimeout(queryPersistTimerRef.current)
-    }
+    clearQueryPersistTimer()
     queryPersistTimerRef.current = setTimeout(() => {
       queryPersistTimerRef.current = null
       if (!mountedRef.current || suppressChoicePersistRef.current) return
       const choice = buildChoice(selection, historyMode, queryRef.current)
       if (choice === null) return
-      persistRecord({ choice })
+      persistChoiceSafely(choice)
     }, 400)
     return () => {
       if (queryPersistTimerRef.current !== null) {
@@ -738,7 +772,8 @@ export function useWritingCompose(options: UseWritingComposeOptions): UseWriting
     historyMode,
     sessionChoiceKind,
     query,
-    persistRecord,
+    persistChoiceSafely,
+    clearQueryPersistTimer,
   ])
 
   // ── 会话创建（不发送；失败同 id 重试） ──
@@ -1064,10 +1099,19 @@ export function useWritingCompose(options: UseWritingComposeOptions): UseWriting
         failCompose('validation', 'selection_invalid')
         return
       }
+      // 存在已提交未结算请求时，不得再走“新发送”路径（composer 已 saved 会
+      // 被 flush('submit') 判 skipped）；UI 此时应引导「原身份重试」。
+      if (readCacheRecord()?.lastSubmission != null && storedRequestRef.current === null) {
+        failCompose('submit', 'unknown')
+        return
+      }
       submitInFlightRef.current = true
+      // 提交会接管缓存记录：先清掉 400ms query debounce，避免其稍后把
+      // choice 写回并遮蔽 lastSubmission（round-3 MEDIUM-4）。
+      clearQueryPersistTimer()
       // 先持久化“已确认未发送”的选择（含最新 query）；刷新后可恢复。
       const confirmationChoice = buildChoice(selection, historyMode, query)
-      if (confirmationChoice !== null) persistRecord({ choice: confirmationChoice })
+      if (confirmationChoice !== null) persistChoiceSafely(confirmationChoice)
 
       setSubmission((previous) => ({ ...previous, stage: 'preparing_composer' }))
       // 契约 owner_user_id：优先 claims 数字串；否则用服务端 editor-state
@@ -1126,6 +1170,7 @@ export function useWritingCompose(options: UseWritingComposeOptions): UseWriting
         failCompose('validation', 'invalid_request')
         return
       }
+      clearQueryPersistTimer()
       persistRecord({
         choice: null,
         lastSubmission: {
@@ -1156,6 +1201,9 @@ export function useWritingCompose(options: UseWritingComposeOptions): UseWriting
       historyMode,
       buildChoice,
       persistRecord,
+      persistChoiceSafely,
+      clearQueryPersistTimer,
+      readCacheRecord,
       buildRequestFor,
       launchSubmission,
       failCompose,
@@ -1175,6 +1223,7 @@ export function useWritingCompose(options: UseWritingComposeOptions): UseWriting
   const retrySameSubmission = useCallback(async (): Promise<void> => {
     // 同一次提交只允许一条在途重试；重复点击不产生第二个请求/幂等键。
     if (submitInFlightRef.current) return
+    clearQueryPersistTimer()
     setComposeError(null)
     const record = readCacheRecord()
     const cachedSubmission = record?.lastSubmission ?? null
@@ -1250,6 +1299,7 @@ export function useWritingCompose(options: UseWritingComposeOptions): UseWriting
     failCompose,
     makeIdempotencyKey,
     ports,
+    clearQueryPersistTimer,
   ])
 
   const cancel = useCallback((): void => {
@@ -1278,11 +1328,13 @@ export function useWritingCompose(options: UseWritingComposeOptions): UseWriting
     abortRef.current?.('user_cancel')
     abortRef.current = null
     submitInFlightRef.current = false
+    clearQueryPersistTimer()
     // 关闭/重置时把当前输入（含 query）最后一次落盘，避免“只输入指令然后关闭”
-    // 后刷新恢复出旧 query（review MEDIUM-2）。
+    // 后刷新恢复出旧 query（review MEDIUM-2）；已提交未结算请求不被遮蔽
+    // （persistChoiceSafely）。
     if (!suppressChoicePersistRef.current && cacheScope !== null && currentNote !== null) {
       const choice = buildChoice(selection, historyMode, queryRef.current)
-      if (choice !== null) persistRecord({ choice })
+      if (choice !== null) persistChoiceSafely(choice)
     }
     setCreatedSession(null)
     setSubmission(IDLE_WRITING_SUBMISSION)
@@ -1296,7 +1348,15 @@ export function useWritingCompose(options: UseWritingComposeOptions): UseWriting
     sseRef.current = createSseState()
     // 新尝试：未发送选择与已确认/未确认的会话创建记录都保留在缓存中
     // （刷新后可恢复；未知创建必须用同一 session_id 重试，禁止重复创建）。
-  }, [cacheScope, currentNote, buildChoice, selection, historyMode, persistRecord])
+  }, [
+    cacheScope,
+    currentNote,
+    buildChoice,
+    selection,
+    historyMode,
+    persistChoiceSafely,
+    clearQueryPersistTimer,
+  ])
 
   const setSelection = useCallback((next: WritingSelection): void => {
     suppressChoicePersistRef.current = false

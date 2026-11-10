@@ -373,6 +373,41 @@ describe('写作入口 flush 编排（review round-2 HIGH-3）', () => {
     expect(flushCalls).toBe(1)
   })
 
+  it('LOW-4：flush 在途双击 → 只 flush 一次、只打开一个对话框', async () => {
+    capabilitiesMock.writingLocalAvailable = true
+    const handle = makeHandle()
+    handle.state.saveStatus = 'dirty'
+    let resolveFlush: (
+      value: 'conflict' | 'unsaved' | 'failed' | 'unknown' | 'restricted' | null,
+    ) => void = () => {}
+    let flushCalls = 0
+    handle.actions.flushForInsert = () => {
+      flushCalls += 1
+      return new Promise<'conflict' | 'unsaved' | 'failed' | 'unknown' | 'restricted' | null>(
+        (resolve) => {
+          resolveFlush = resolve
+        },
+      )
+    }
+    editorHandleMock.current = handle
+    render(
+      <NoteWorkspaceProvider>
+        <WritingProbe />
+      </NoteWorkspaceProvider>,
+    )
+    fireEvent.click(screen.getByTestId('open-writing'))
+    fireEvent.click(screen.getByTestId('open-writing'))
+    expect(flushCalls).toBe(1)
+    await act(async () => {
+      handle.state.saveStatus = 'saved'
+      resolveFlush(null)
+      await Promise.resolve()
+    })
+    await waitFor(() =>
+      expect(screen.getAllByTestId('writing-dialog-stub')).toHaveLength(1),
+    )
+  })
+
   it('flush 被阻断（conflict）→ 不打开对话框，显示可见 block reason', async () => {
     capabilitiesMock.writingLocalAvailable = true
     const handle = makeHandle()

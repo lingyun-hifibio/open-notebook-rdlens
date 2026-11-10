@@ -694,6 +694,115 @@ describe('review round 2 修复回归', () => {
   })
 })
 
+describe('review round 3 修复回归（MEDIUM-4）', () => {
+  it('提交未结算后 700ms debounce/关闭落盘不写 choice；重开 recovery=unknown 且可原身份重试', async () => {
+    const harness = makeHarness()
+    const first = renderHook(() =>
+      useWritingCompose(baseOptions({ ports: harness.ports })),
+    )
+    act(() => first.result.current.setQuery('改写'))
+    await act(async () => {
+      await first.result.current.submit(async () => SAVED)
+    })
+    act(() => harness.emitNetworkError())
+    expect(first.result.current.submission.error?.code).toBe('network_error')
+
+    // 提交后 700ms：deferred debounce 不得把 choice 写回（否则遮蔽 lastSubmission）。
+    await new Promise((resolve) => setTimeout(resolve, 750))
+    expect(readCache()?.lastSubmission).not.toBeNull()
+    expect(readCache()?.choice).toBeNull()
+
+    // 关闭 reset 的最后一次落盘同样不得写回 choice。
+    act(() => first.result.current.reset())
+    expect(readCache()?.lastSubmission).not.toBeNull()
+    expect(readCache()?.choice).toBeNull()
+    first.unmount()
+
+    const harness2 = makeHarness()
+    const second = renderHook(() =>
+      useWritingCompose(baseOptions({ ports: harness2.ports })),
+    )
+    await waitFor(() => expect(second.result.current.recovery?.kind).toBe('unknown'))
+    // 已结算前发送按钮应引导重试：原身份重放同一 intent/token。
+    const firstIntent = harness.submitCalls[0].request.writing_intent_hash
+    await act(async () => {
+      await second.result.current.retrySameSubmission()
+    })
+    expect(harness2.submitCalls).toHaveLength(1)
+    expect(harness2.submitCalls[0].request.writing_intent_hash).toBe(firstIntent)
+    expect(harness2.submitCalls[0].request.draft_token).toBe(
+      harness.submitCalls[0].request.draft_token,
+    )
+  })
+
+  it('缓存同时含 choice 与 lastSubmission → lastSubmission 优先（不显示 unsent）', async () => {
+    const submission = {
+      sessionId: 'sess_current',
+      sessionKind: 'global' as const,
+      sourceId: null,
+      writingIntentHash: '',
+      editorRevision: 12,
+      editorIntentHash: 'c'.repeat(64),
+      draftToken: 'draft_old',
+      query: '原指令',
+      modelId: 'm-local',
+      responseLanguage: 'zh',
+      documentContext: {
+        note_id: NOTE.noteId,
+        revision: NOTE.revision,
+        snapshot_hash: NOTE.snapshotHash,
+        selection: { kind: 'full' as const },
+      },
+      historyMode: 'none' as const,
+      createdAt: '2026-11-11T00:00:01.000Z',
+    }
+    const rebuilt = buildWritingSubmissionRequest({
+      projectId: 'p_demo',
+      ownerUserId: 42,
+      sessionKind: 'global',
+      sourceId: null,
+      sessionId: 'sess_current',
+      editorRevision: 12,
+      editorIntentHash: 'c'.repeat(64),
+      draftToken: 'draft_old',
+      query: '原指令',
+      modelId: 'm-local',
+      responseLanguage: 'zh',
+      documentContext: submission.documentContext,
+      historyMode: 'none',
+    })
+    expect(rebuilt.ok).toBe(true)
+    if (!rebuilt.ok) return
+    seedCache(
+      cacheRecord({
+        choice: {
+          documentSelection: {
+            note_id: NOTE.noteId,
+            revision: NOTE.revision,
+            snapshot_hash: NOTE.snapshotHash,
+            selection: { kind: 'range', start_utf16: 1, end_utf16: 3 },
+          },
+          historyMode: 'none',
+          sessionChoice: 'current',
+          sessionKind: 'global',
+          sourceId: null,
+          currentSessionId: 'sess_current',
+          query: '未发送的旧指令',
+          modelId: 'm-local',
+        },
+        lastSubmission: { ...submission, writingIntentHash: rebuilt.value.intentHash },
+      }),
+    )
+    const harness = makeHarness()
+    const { result } = renderHook(() =>
+      useWritingCompose(baseOptions({ ports: harness.ports })),
+    )
+    await waitFor(() => expect(result.current.recovery?.kind).toBe('unknown'))
+    expect(result.current.recovery?.kind).not.toBe('unsent')
+    expect(result.current.query).toBe('')
+  })
+})
+
 describe('review round 1 修复回归', () => {
   it('MEDIUM-1：新建会话成功即持久化 confirmed，刷新/重开不重复创建', async () => {
     const harness = makeHarness()

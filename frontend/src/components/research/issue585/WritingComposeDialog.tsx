@@ -178,7 +178,13 @@ export function WritingComposeDialog({
     compose.targetRef === null ||
     model.confirmedModelId === null ||
     compose.query.trim().length === 0 ||
-    compose.capacity.overLimit
+    compose.capacity.overLimit ||
+    // 已提交未结算（恢复 unknown，或本次提交为可重试的传输/结果未知错误）：
+    // 只能走「原身份重试」，避免 composer flush('submit')=skipped 被误显示为
+    // composerFailed（review round-3 MEDIUM-4）。
+    compose.recovery?.kind === 'unknown' ||
+    (compose.submission.stage === 'error' &&
+      compose.submission.error?.retryable === true)
 
   const handleSend = useCallback((): void => {
     setInsertError(null)
