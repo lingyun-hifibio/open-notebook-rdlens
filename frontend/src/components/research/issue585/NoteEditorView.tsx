@@ -543,10 +543,10 @@ export function NoteEditorView({
               textareaId="note-editor-markdown"
               placeholder={t('research.notes.editor.contentPlaceholder')}
             />
+            {/* 点击只由外层 content 容器统一委托，避免一次点击触发两次 openCitation。 */}
             <div
               className="max-h-[320px] min-h-[320px] overflow-auto rounded-md border p-3"
               data-testid="note-editor-split-preview"
-              onClick={handlePreviewClick}
             >
               <MarkdownRenderer>{splitPreviewContent}</MarkdownRenderer>
             </div>
