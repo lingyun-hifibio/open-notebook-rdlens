@@ -1715,6 +1715,24 @@ export const caES = {
         legacyBadge: "Legacy note",
         retry: "Retry",
         openNote: "Open note",
+        enableProtected: "Enable protected editing",
+      },
+      enable: {
+        title: "Enable protected editing?",
+        description:
+          "You need edit permission on this project. Enabling protected editing only adds protection fields — the title and content stay unchanged. After enabling, this note opens in the Markdown editor and the legacy form is no longer offered.",
+        confirm: "Enable protected editing",
+        pending: "Enabling protected editing…",
+        success: "Protected editing enabled",
+        confirmResult: "Confirm result",
+        errors: {
+          restricted: "You do not have permission to enable protected editing for this note.",
+          notFound: "This note no longer exists.",
+          unsupported: "This note cannot use the protected Markdown editor.",
+          conflict: "The note changed or this request was already used. Retry with a new request.",
+          unavailable: "Source dependencies cannot be verified right now. Retry to confirm the result.",
+          unknown: "The result could not be confirmed. Retry to check the same request before doing anything else.",
+        },
       },
       editor: {
         heading: "Markdown note",
