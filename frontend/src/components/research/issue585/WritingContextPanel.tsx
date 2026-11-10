@@ -63,8 +63,8 @@ export function WritingContextPanel({
   const restricted = projection.access_state === 'restricted'
   const selectionLabel =
     documentContext.selection_kind === 'full'
-      ? t('research.notes.writing.context.selection.full')
-      : t('research.notes.writing.context.selection.range', {
+      ? t('research.notes.writing.scope.full')
+      : t('research.notes.writing.scope.range', {
           start: documentContext.start_utf16 ?? 0,
           end: documentContext.end_utf16 ?? 0,
         })
