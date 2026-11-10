@@ -1742,6 +1742,32 @@ export const enUS = {
         openNote: "Open note",
         enableProtected: "Enable protected editing",
       },
+      deleteDialog: {
+        entry: "Delete note",
+        title: "Delete note?",
+        description:
+          "Permanently deletes “{{title}}”. This note cannot be restored.",
+        revision: "Revision {{revision}}",
+        impact:
+          "Content already inserted into documents is kept as a saved copy; deleting a note does not change those copies. Permissions are checked again when you confirm.",
+        unsavedLocal: "Unsaved changes in the open editor will be discarded.",
+        confirm: "Delete",
+        pending: "Deleting…",
+        success: "Note deleted",
+        confirmResult: "Confirm result",
+        refreshAndReview: "Refresh and review",
+        errors: {
+          restricted: "You do not have permission to delete this note.",
+          notFound: "This note no longer exists. Refresh the list to reconcile.",
+          conflict:
+            "This note changed after it was loaded. Refresh the list, review the latest version, and confirm again.",
+          unsupported: "This note cannot be deleted through the protected note API.",
+          unavailable:
+            "Dependencies cannot be verified right now. Retry to confirm the result.",
+          unknown:
+            "The result could not be confirmed. Confirm the result with the same request before doing anything else.",
+        },
+      },
       enable: {
         title: "Enable protected editing?",
         description:
