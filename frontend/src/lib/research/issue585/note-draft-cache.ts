@@ -37,6 +37,15 @@ export const NOTE_DRAFT_TAB_STORAGE_KEY = `${NOTE_DRAFT_STORAGE_NAMESPACE}.tab`
 const memoryFallback = new Map<string, string>()
 
 /**
+ * sessionStorage 不可用（隐私模式/策略禁用）时的进程内稳定 tabId。
+ *
+ * 必须稳定：草稿写入（machine）与恢复入口（NotesPanel）分别调用
+ * `readOrCreateNoteDraftTabId`，若每次返回新 id 会落到不同草稿分支 ⇒ 恢复入口
+ * 永远为空（Issue #1136 审查 MEDIUM-3）。同一 JS 进程/页面生命周期内复用。
+ */
+let memoryFallbackTabId: string | null = null
+
+/**
  * 删除持久值失败时的墓碑：后续读取返回 null，防止旧持久值在清理后“复活”。
  */
 const removedKeys = new Set<string>()
@@ -281,10 +290,11 @@ export function readOrCreateNoteDraftTabId(
       target.setItem(NOTE_DRAFT_TAB_STORAGE_KEY, created)
       return created
     } catch {
-      // 隐私模式/配额：退回进程内临时 id（本次会话仍可恢复）
+      // 隐私模式/配额：退回进程内稳定 id（本次会话仍可恢复；跨刷新不可恢复）
     }
   }
-  return createNoteDraftTabId()
+  if (memoryFallbackTabId === null) memoryFallbackTabId = createNoteDraftTabId()
+  return memoryFallbackTabId
 }
 
 /** 新 tabId（测试/显式新实例用）。 */
@@ -488,6 +498,74 @@ export function readNoteDraftForRetrieval(
   return isValidNoteDraftCacheRecord(raw, scope) ? raw : null
 }
 
+/**
+ * 可恢复草稿摘要（父级导航离开后的恢复入口列表项，Issue #1136）。
+ *
+ * 只含恢复入口所需的本地元数据，**不含正文**：正文恢复仍必须经
+ * `openNote`（服务端 `GET /notes/{id}` 权限确认）后再由 `readNoteDraft`
+ * 恢复，离线/403 不恢复正文（方案 §4.2/§4.4）。
+ */
+export interface RecoverableNoteDraftSummary {
+  readonly noteId: string
+  readonly title: string
+  readonly savedAt: string
+}
+
+/**
+ * 列出本标签页在指定 owner/project 下仍待恢复的草稿（Issue #1136：
+ * 工作台父级导航采用「自动保存＋可恢复」——导航不阻断，恢复入口显式可见）。
+ *
+ * 与 `readNoteDraftForRetrieval` 相同的身份作者权：要求已认证 owner、同项目、
+ * 当前 authGeneration 匹配；**不要求**当前文档权限，因为这里只报告“本浏览器
+ * 存在未保存草稿”，不恢复正文、不代表可编辑（权限受限的草稿在打开时清理）。
+ * 返回的 `title` 是用户自己写入本机缓存的元数据；UI 对目录中已标记
+ * `access_state='restricted'` 的笔记必须脱敏标题（见 NoteRecoveryInbox），
+ * 正文恢复/取回仍必须经 `openNote` 的服务端权限确认（方案 §4.2）。
+ * 只列出当前标签页分支（多标签各自独立草稿，互不覆盖，沿用契约 §4.2）。
+ */
+export function listRecoverableNoteDrafts(
+  ownerId: string,
+  projectId: string,
+  tabId: string,
+  authority: NoteDraftAuthority,
+  options?: CacheOptions,
+): RecoverableNoteDraftSummary[] {
+  if (!isNonEmptyString(ownerId) || !isNonEmptyString(projectId) || !isNonEmptyString(tabId)) {
+    return []
+  }
+  if (authority.authGeneration <= 0) return []
+  if (authority.authGeneration !== authority.currentAuthGeneration) return []
+  if (authority.authenticatedOwnerId === null) return []
+  if (authority.authenticatedOwnerId !== ownerId) return []
+  if (authority.currentProjectId !== projectId) return []
+
+  const entry = entryFor(options)
+  const prefix = `${NOTE_DRAFT_CACHE_PREFIX}.${noteDraftCacheSegment(ownerId)}.${noteDraftCacheSegment(projectId)}.`
+  const tabSegment = noteDraftCacheSegment(tabId)
+  const results: RecoverableNoteDraftSummary[] = []
+  for (const key of listStorageKeys(entry, prefix)) {
+    const segments = key.slice(prefix.length).split('.')
+    // 键尾部固定为 <encoded noteId>.<encoded tabId>（段内 `.` 已转义，分隔安全）。
+    if (segments.length !== 2 || segments[1] !== tabSegment) continue
+    let noteId: string
+    try {
+      noteId = decodeURIComponent(segments[0])
+    } catch {
+      continue
+    }
+    const scope: NoteDraftScope = { ownerId, projectId, noteId, tabId }
+    const raw = parseJson(readRaw(entry, key).value)
+    if (!isValidNoteDraftCacheRecord(raw, scope)) continue
+    results.push({ noteId, title: raw.title, savedAt: raw.savedAt })
+  }
+  // 最近编辑的草稿优先；同时间按 noteId 稳定排序（不依赖 Storage 枚举顺序）。
+  results.sort((a, b) => {
+    if (a.savedAt === b.savedAt) return a.noteId < b.noteId ? -1 : a.noteId > b.noteId ? 1 : 0
+    return a.savedAt < b.savedAt ? 1 : -1
+  })
+  return results
+}
+
 /** 删除单条草稿（ACK 清稿/显式放弃）。 */
 export function removeNoteDraft(scope: NoteDraftScope, options?: CacheOptions): boolean {
   if (!isNoteDraftScopeUsable(scope)) return false
@@ -525,4 +603,5 @@ export function removeNoteDraftsForNote(
 export function clearNoteDraftMemoryFallback(): void {
   memoryFallback.clear()
   removedKeys.clear()
+  memoryFallbackTabId = null
 }

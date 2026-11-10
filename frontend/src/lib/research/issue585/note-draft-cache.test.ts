@@ -14,6 +14,7 @@ import {
   clearNoteDraftMemoryFallback,
   createNoteDraftTabId,
   isValidNoteDraftCacheRecord,
+  listRecoverableNoteDrafts,
   noteDraftCacheSegment,
   noteDraftKey,
   readNoteDraft,
@@ -358,5 +359,153 @@ describe('cleanup and tab branches', () => {
     const fresh = readOrCreateNoteDraftTabId(new FakeStorage())
     expect(fresh).not.toBe(first)
     expect(createNoteDraftTabId()).not.toBe(createNoteDraftTabId())
+  })
+})
+
+describe('recoverable draft listing (Issue #1136)', () => {
+  it('lists current-tab drafts for the owner/project with summary fields only', () => {
+    const storage = new FakeStorage()
+    writeNoteDraft(scope(), record(), { storage })
+    writeNoteDraft(
+      scope({ noteId: 'note_2' }),
+      record({
+        noteId: 'note_2',
+        title: '',
+        content: '第二条正文',
+        savedAt: '2026-11-05T01:00:00.000Z',
+      }),
+      { storage },
+    )
+
+    const listed = listRecoverableNoteDrafts('7', 'proj_1', 'tab_1', authority(), { storage })
+
+    expect(listed.map((entry) => entry.noteId)).toEqual(['note_2', 'note_1'])
+    expect(listed[0]).toEqual({
+      noteId: 'note_2',
+      title: '',
+      savedAt: '2026-11-05T01:00:00.000Z',
+    })
+    // 摘要不得携带正文/令牌/未决 mutation 等记录字段（恢复正文仍走 openNote）。
+    for (const entry of listed) {
+      expect(Object.keys(entry).sort()).toEqual(['noteId', 'savedAt', 'title'])
+    }
+  })
+
+  it('handles encoded note ids (dots/percent/unicode) and skips malformed keys', () => {
+    const storage = new FakeStorage()
+    const noteIds = ['note.a', 'note%2E', '笔记/一', 'note with space']
+    for (const noteId of noteIds) {
+      writeNoteDraft(
+        scope({ noteId }),
+        record({ noteId, title: `标题-${noteId}` }),
+        { storage },
+      )
+    }
+    // 畸形键：段数异常 / 非法百分号转义 / 内部字段与键作用域不一致。
+    storage.setItem(`${NOTE_DRAFT_CACHE_PREFIX}.7.proj_1.onlynote`, '{}')
+    storage.setItem(`${NOTE_DRAFT_CACHE_PREFIX}.7.proj_1.note_%ZZ.tab_1`, '{}')
+    storage.setItem(
+      `${NOTE_DRAFT_CACHE_PREFIX}.7.proj_1.note_other.tab_1`,
+      JSON.stringify(record({ noteId: 'note_scope_mismatch' })),
+    )
+
+    const listed = listRecoverableNoteDrafts('7', 'proj_1', 'tab_1', authority(), { storage })
+
+    expect(listed.map((entry) => entry.noteId).sort()).toEqual([...noteIds].sort())
+    expect(listed.find((entry) => entry.noteId === '笔记/一')?.title).toBe('标题-笔记/一')
+  })
+
+  it('lists memory-fallback drafts and respects deletion tombstones', () => {
+    // storage=null：草稿只进内存兜底（quota/SecurityError 降级场景）。
+    writeNoteDraft(scope(), record(), { storage: null })
+    const fallbackListed = listRecoverableNoteDrafts('7', 'proj_1', 'tab_1', authority(), {
+      storage: null,
+    })
+    expect(fallbackListed.map((entry) => entry.noteId)).toEqual(['note_1'])
+
+    // 删除后必须留墓碑：同键不得再出现在列表里。
+    const storage = new FakeStorage()
+    writeNoteDraft(scope(), record(), { storage })
+    expect(
+      listRecoverableNoteDrafts('7', 'proj_1', 'tab_1', authority(), { storage }),
+    ).toHaveLength(1)
+    removeNoteDraft(scope(), { storage })
+    expect(
+      listRecoverableNoteDrafts('7', 'proj_1', 'tab_1', authority(), { storage }),
+    ).toEqual([])
+  })
+
+  it('returns a stable fallback tab id when sessionStorage is unavailable', () => {
+    const throwing = {
+      getItem: (): string | null => {
+        throw new Error('SecurityError')
+      },
+      setItem: (): void => {
+        throw new Error('SecurityError')
+      },
+    }
+    const first = readOrCreateNoteDraftTabId(throwing)
+    const second = readOrCreateNoteDraftTabId(throwing)
+    expect(first).toBe(second)
+    clearNoteDraftMemoryFallback()
+    const afterReset = readOrCreateNoteDraftTabId(throwing)
+    expect(afterReset).not.toBe(first)
+  })
+
+  it('isolates projects, owners, tabs and malformed records', () => {
+    const storage = new FakeStorage()
+    writeNoteDraft(scope(), record(), { storage })
+    writeNoteDraft(
+      scope({ projectId: 'proj_2' }),
+      record({ projectId: 'proj_2' }),
+      { storage },
+    )
+    writeNoteDraft(
+      scope({ ownerId: '8' }),
+      record({ ownerId: '8' }),
+      { storage },
+    )
+    writeNoteDraft(
+      scope({ tabId: 'tab_2' }),
+      record(),
+      { storage },
+    )
+    // 污染记录（额外键）必须被拒绝，而不是展示为可恢复草稿。
+    storage.setItem(
+      noteDraftKey(scope({ noteId: 'note_poison' })),
+      JSON.stringify({ ...record({ noteId: 'note_poison' }), token: 'secret' }),
+    )
+
+    const listed = listRecoverableNoteDrafts('7', 'proj_1', 'tab_1', authority(), { storage })
+
+    expect(listed.map((entry) => entry.noteId)).toEqual(['note_1'])
+  })
+
+  it('requires an authenticated owner, current generation and matching project', () => {
+    const storage = new FakeStorage()
+    writeNoteDraft(scope(), record(), { storage })
+
+    expect(
+      listRecoverableNoteDrafts('7', 'proj_1', 'tab_1', authority({ authenticatedOwnerId: null }), {
+        storage,
+      }),
+    ).toEqual([])
+    expect(
+      listRecoverableNoteDrafts('7', 'proj_1', 'tab_1', authority({ authGeneration: 0, currentAuthGeneration: 0 }), {
+        storage,
+      }),
+    ).toEqual([])
+    expect(
+      listRecoverableNoteDrafts('7', 'proj_1', 'tab_1', authority({ currentAuthGeneration: 4 }), {
+        storage,
+      }),
+    ).toEqual([])
+    expect(
+      listRecoverableNoteDrafts('8', 'proj_1', 'tab_1', authority(), { storage }),
+    ).toEqual([])
+    expect(
+      listRecoverableNoteDrafts('7', 'proj_2', 'tab_1', authority(), { storage }),
+    ).toEqual([])
+    expect(listRecoverableNoteDrafts('7', 'proj_1', '', authority(), { storage })).toEqual([])
   })
 })

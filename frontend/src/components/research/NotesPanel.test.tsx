@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { NotesPanel } from './NotesPanel'
 import { ResearchWorkspaceProvider } from '@/lib/embedded/workspace-context'
@@ -8,6 +8,12 @@ import * as researchApi from '@/lib/research/api'
 import { useNoteCatalog } from '@/lib/research/issue585/use-note-catalog'
 import { useNoteCapabilities } from '@/lib/research/issue585/use-note-capabilities'
 import { useNoteEditor } from '@/lib/research/issue585/use-note-editor'
+import {
+  clearNoteDraftMemoryFallback,
+  readOrCreateNoteDraftTabId,
+  removeNoteDraft,
+  writeNoteDraft,
+} from '@/lib/research/issue585/note-draft-cache'
 import type {
   NoteCapabilities,
   NoteEditorActions,
@@ -44,6 +50,12 @@ vi.mock('@/lib/research/api', () => ({
   createExport: vi.fn(),
   downloadExport: vi.fn(),
 }))
+
+const downloadLocalDraftMarkdownMock = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/research/issue585/note-download', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/research/issue585/note-download')>()
+  return { ...actual, downloadLocalDraftMarkdown: downloadLocalDraftMarkdownMock }
+})
 
 vi.mock('@/lib/research/issue585/use-note-catalog', () => ({
   useNoteCatalog: vi.fn(),
@@ -200,7 +212,9 @@ function makeWrapper(role: 'owner' | 'admin_readonly' = 'owner') {
     <QueryClientProvider client={queryClient}>
       {/* 基线修复（PR4 前置）：owner 查询身份需要 userId，否则列表查询
           enabled=false（基线 11 项红，非本 PR 功能引入）。 */}
-      <ResearchWorkspaceProvider projectId="proj_1" role={role} userId="u1">
+      {/* Issue #1136：已认证 shell 的 authGeneration≥1；可恢复草稿入口据此校验
+          身份代际（与 PR4 草稿缓存读授权一致）。 */}
+      <ResearchWorkspaceProvider projectId="proj_1" role={role} userId="u1" authGeneration={1}>
         <ResearchScopeProvider userId="u1" projectId="proj_1">
           {children}
         </ResearchScopeProvider>
@@ -208,6 +222,33 @@ function makeWrapper(role: 'owner' | 'admin_readonly' = 'owner') {
     </QueryClientProvider>
   )
   return { wrapper, queryClient }
+}
+
+/** Issue #1136：在真实 PR4 草稿缓存里种一条“服务端保存未完成”的本地草稿。 */
+const DRAFT_HASH = 'a'.repeat(64)
+
+function seedRecoverableDraft(
+  overrides: { noteId?: string; title?: string; projectId?: string; ownerId?: string } = {},
+): void {
+  const noteId = overrides.noteId ?? 'note_d2'
+  const projectId = overrides.projectId ?? 'proj_1'
+  const ownerId = overrides.ownerId ?? 'u1'
+  writeNoteDraft(
+    { ownerId, projectId, noteId, tabId: readOrCreateNoteDraftTabId() },
+    {
+      v: 1,
+      ownerId,
+      projectId,
+      noteId,
+      title: overrides.title ?? '受保护笔记',
+      content: '本地未保存正文',
+      baseRevision: 3,
+      baseSnapshotHash: DRAFT_HASH,
+      localSeq: 1,
+      pendingMutation: null,
+      savedAt: '2026-11-10T04:00:00.000Z',
+    },
+  )
 }
 
 function ScopeProbe() {
@@ -223,12 +264,14 @@ function ScopeProbe() {
 describe('NotesPanel', () => {
   beforeEach(() => {
     localStorage.clear()
+    clearNoteDraftMemoryFallback()
     vi.clearAllMocks()
     refreshCatalog.mockReset()
     refreshCatalog.mockImplementation(async () => undefined)
     refreshCapabilities.mockReset()
     refreshCapabilities.mockImplementation(async () => undefined)
     toastMock.mockClear()
+    downloadLocalDraftMarkdownMock.mockClear()
     stubCatalog([d2Note(), legacyNote()])
     stubCapabilities(allCapabilities())
     stubEditor()
@@ -708,5 +751,178 @@ describe('NotesPanel', () => {
     const checkbox = await screen.findByTestId('note-scope-note_legacy')
     expect(checkbox).toHaveAttribute('aria-label', 'research.notes.scopeSelect:旧笔记')
     expect(checkbox).toHaveAttribute('role', 'checkbox')
+  })
+
+  // ── Issue #1136：父级导航「自动保存＋可恢复」──────────────────────────────
+
+  it('父级导航后回到 Notes 目录：服务端保存未完成的草稿显式列出并可打开', async () => {
+    seedRecoverableDraft()
+    const { actions } = stubEditor()
+    const { wrapper } = makeWrapper()
+    render(<NotesPanel />, { wrapper })
+
+    const inbox = await screen.findByTestId('note-recovery-inbox')
+    expect(within(inbox).getByTestId('note-recovery-title-note_d2')).toHaveTextContent(
+      '受保护笔记',
+    )
+    fireEvent.click(screen.getByTestId('note-recovery-open-note_d2'))
+    await waitFor(() => expect(actions.openNote).toHaveBeenCalledWith('note_d2'))
+  })
+
+  it('没有待恢复草稿时不渲染恢复入口（避免噪声）', async () => {
+    const { wrapper } = makeWrapper()
+    render(<NotesPanel />, { wrapper })
+    await screen.findByTestId('note-catalog')
+    expect(screen.queryByTestId('note-recovery-inbox')).toBeNull()
+  })
+
+  it('编辑器已打开时不重复渲染恢复入口（打开后由编辑器恢复正文）', async () => {
+    seedRecoverableDraft()
+    stubEditor({ status: 'ready', note: d2Note() })
+    const { wrapper } = makeWrapper()
+    render(<NotesPanel />, { wrapper })
+    await screen.findByTestId('note-catalog')
+    expect(screen.queryByTestId('note-recovery-inbox')).toBeNull()
+  })
+
+  it('Admin 只读会话不展示恢复入口（无编辑入口）', async () => {
+    seedRecoverableDraft()
+    const { wrapper } = makeWrapper('admin_readonly')
+    render(<NotesPanel />, { wrapper })
+    await screen.findByTestId('note-catalog')
+    expect(screen.queryByTestId('note-recovery-inbox')).toBeNull()
+  })
+
+  it('其它项目/其它 owner 的草稿不会串到当前目录', async () => {
+    seedRecoverableDraft({ projectId: 'proj_other' })
+    const { wrapper } = makeWrapper()
+    render(<NotesPanel />, { wrapper })
+    await screen.findByTestId('note-catalog')
+    expect(screen.queryByTestId('note-recovery-inbox')).toBeNull()
+  })
+
+  it('保存完成后草稿清理，恢复入口随之消失（不残留旧提示）', async () => {
+    seedRecoverableDraft()
+    const { wrapper } = makeWrapper()
+    const { rerender } = render(<NotesPanel />, { wrapper })
+    // 先断言入口确实出现（否则“消失”断言在无实现时也恒真）。
+    expect(await screen.findByTestId('note-recovery-inbox')).toBeInTheDocument()
+
+    // ACK 成功后 PR4 writeCache 删除该草稿；模拟草稿已清理后的目录重扫。
+    removeNoteDraft({
+      ownerId: 'u1',
+      projectId: 'proj_1',
+      noteId: 'note_d2',
+      tabId: readOrCreateNoteDraftTabId(),
+    })
+    stubEditor({ status: 'idle', note: null, saveStatus: 'saved' })
+    rerender(<NotesPanel />)
+    await waitFor(() => expect(screen.queryByTestId('note-recovery-inbox')).toBeNull())
+  })
+
+  it('打开失败（离线/503）时恢复入口仍可见，且阻断视图 Close 不删除唯一草稿（HIGH-1）', async () => {
+    seedRecoverableDraft()
+    const { actions } = stubEditor({
+      status: 'error',
+      note: null,
+      saveStatus: 'failed',
+      error: { code: 'network_error', message: '', retryable: true, status: 0 },
+    })
+    const { wrapper } = makeWrapper()
+    render(<NotesPanel />, { wrapper })
+
+    // 打开失败：编辑器进入未加载阻断态，但恢复入口必须仍可见（否则用户
+    // 连“还有草稿”都看不到）。
+    expect(await screen.findByTestId('note-recovery-inbox')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('note-capability-close'))
+
+    // Close 只是关闭错误视图：不得静默 discardLocal 删除唯一持久草稿。
+    // （mock 编辑器不写存储，故这里只钉包装后的可观察契约；真实状态机下
+    // “草稿 key 保留”由独立审查 round-2 的 machine/UI 探针验证。）
+    expect(actions.discardLocal).not.toHaveBeenCalled()
+    expect(actions.closeEditor).toHaveBeenCalled()
+  })
+
+  it('404 + 仅空白草稿：与状态机同口径判“有本地文本”，关闭不再锁死（round-3 MEDIUM-1 回归）', async () => {
+    seedRecoverableDraft()
+    const { actions } = stubEditor({
+      status: 'error',
+      note: null,
+      saveStatus: 'failed',
+      blockReason: 'note_not_found',
+      // 只有空白：NoteEditorView 的 trim 判空不会弹二次确认，但 machine 的
+      // hasUnsyncedLocalText 视为未同步文本；wrapper 必须用严格长度允许放弃。
+      title: '   ',
+      content: '',
+      error: { code: 'note_not_found', message: '', retryable: false, status: 404 },
+    })
+    const { wrapper } = makeWrapper()
+    render(<NotesPanel />, { wrapper })
+
+    fireEvent.click(await screen.findByTestId('note-capability-close'))
+    expect(actions.discardLocal).toHaveBeenCalledTimes(1)
+    expect(actions.closeEditor).toHaveBeenCalled()
+  })
+
+  it('404 + 本地草稿：阻断态 Close 二次确认后可显式放弃（round-2 HIGH 回归）', async () => {
+    seedRecoverableDraft()
+    const { actions } = stubEditor({
+      status: 'error',
+      note: null,
+      saveStatus: 'failed',
+      blockReason: 'note_not_found',
+      title: '本地草稿标题',
+      content: '本地草稿正文',
+      error: { code: 'note_not_found', message: '', retryable: false, status: 404 },
+    })
+    const { wrapper } = makeWrapper()
+    render(<NotesPanel />, { wrapper })
+
+    // note_not_found 会把本地草稿回填进编辑器（有本地文本）⇒ Close 先二次确认，
+    // 确认后必须真正 discardLocal（PR4 显式放弃语义），不得被“打开失败 no-op”
+    // 锁死（否则既不能关闭、也不能切换笔记）。
+    fireEvent.click(await screen.findByTestId('note-capability-close'))
+    expect(actions.discardLocal).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByTestId('note-capability-close-confirm-action'))
+    expect(actions.discardLocal).toHaveBeenCalledTimes(1)
+    expect(actions.closeEditor).toHaveBeenCalled()
+  })
+
+  it('恢复入口提供复制/下载本地草稿（不打开编辑器也能取回，HIGH-1）', async () => {
+    seedRecoverableDraft()
+    stubEditor()
+    const clipboardWrite = vi.fn(async () => undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: clipboardWrite },
+      configurable: true,
+    })
+    const { wrapper } = makeWrapper()
+    render(<NotesPanel />, { wrapper })
+
+    await screen.findByTestId('note-recovery-inbox')
+    fireEvent.click(screen.getByTestId('note-recovery-copy-note_d2'))
+    expect(clipboardWrite).toHaveBeenCalledWith('本地未保存正文')
+    fireEvent.click(screen.getByTestId('note-recovery-download-note_d2'))
+    expect(downloadLocalDraftMarkdownMock).toHaveBeenCalledWith({
+      title: '受保护笔记',
+      content: '本地未保存正文',
+      noteId: 'note_d2',
+      savedAt: '2026-11-10T04:00:00.000Z',
+    })
+  })
+
+  it('目录中已确认 restricted 的草稿标题脱敏且不提供取回动作（MEDIUM-2）', async () => {
+    seedRecoverableDraft()
+    stubCatalog([d2Note({ note_id: 'note_d2', access_state: 'restricted' })])
+    stubEditor()
+    const { wrapper } = makeWrapper()
+    render(<NotesPanel />, { wrapper })
+
+    await screen.findByTestId('note-recovery-inbox')
+    const title = screen.getByTestId('note-recovery-title-note_d2')
+    expect(title).toHaveTextContent('research.notes.catalog.restricted')
+    expect(title).not.toHaveTextContent('受保护笔记')
+    expect(screen.queryByTestId('note-recovery-copy-note_d2')).toBeNull()
+    expect(screen.queryByTestId('note-recovery-download-note_d2')).toBeNull()
   })
 })
