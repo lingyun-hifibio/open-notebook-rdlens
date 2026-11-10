@@ -8,6 +8,11 @@ import * as researchApi from '@/lib/research/api'
 import { useNoteCatalog } from '@/lib/research/issue585/use-note-catalog'
 import { useNoteCapabilities } from '@/lib/research/issue585/use-note-capabilities'
 import { useNoteEditor } from '@/lib/research/issue585/use-note-editor'
+import { useNoteEnable } from '@/lib/research/issue585/use-note-enable'
+import type {
+  NoteEnableActions,
+  NoteEnableState,
+} from '@/lib/research/issue585/note-enable'
 import {
   clearNoteDraftMemoryFallback,
   readOrCreateNoteDraftTabId,
@@ -65,6 +70,9 @@ vi.mock('@/lib/research/issue585/use-note-capabilities', () => ({
 }))
 vi.mock('@/lib/research/issue585/use-note-editor', () => ({
   useNoteEditor: vi.fn(),
+}))
+vi.mock('@/lib/research/issue585/use-note-enable', () => ({
+  useNoteEnable: vi.fn(),
 }))
 
 // PR5/B3：页面级组合根的打开请求/目录刷新（Issue #1047 review M-2'）。
@@ -216,6 +224,42 @@ function stubEditor(state: Partial<NoteEditorState> = {}, actions: Partial<NoteE
   return { state: editorState, actions: editorActions }
 }
 
+function makeNoteEnableState(overrides: Partial<NoteEnableState> = {}): NoteEnableState {
+  return {
+    phase: 'idle',
+    noteId: null,
+    mutationId: null,
+    error: null,
+    failureKind: null,
+    retryMode: 'none',
+    blockReason: null,
+    ...overrides,
+  }
+}
+
+function makeNoteEnableActions(
+  overrides: Partial<NoteEnableActions> = {},
+): NoteEnableActions {
+  return {
+    requestEnable: vi.fn(),
+    cancel: vi.fn(),
+    confirmEnable: vi.fn(async () => null),
+    retry: vi.fn(async () => null),
+    dismiss: vi.fn(),
+    ...overrides,
+  }
+}
+
+function stubNoteEnable(
+  state: Partial<NoteEnableState> = {},
+  actions: Partial<NoteEnableActions> = {},
+) {
+  const enableState = makeNoteEnableState(state)
+  const enableActions = makeNoteEnableActions(actions)
+  vi.mocked(useNoteEnable).mockReturnValue({ state: enableState, actions: enableActions })
+  return { state: enableState, actions: enableActions }
+}
+
 function makeWrapper(role: 'owner' | 'admin_readonly' = 'owner') {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -288,6 +332,7 @@ describe('NotesPanel', () => {
     stubCatalog([d2Note(), legacyNote()])
     stubCapabilities(allCapabilities())
     stubEditor()
+    stubNoteEnable()
   })
 
   it('目录渲染 d2-v1 与旧未保护行：d2 行走新编辑器入口，旧行保留旧表单操作', async () => {
@@ -953,5 +998,153 @@ describe('NotesPanel', () => {
     await waitFor(() => expect(actions.openNote).toHaveBeenCalledWith('note_d2'))
     await waitFor(() => expect(consumeOpenNote).toHaveBeenCalledWith(7))
     await waitFor(() => expect(refreshCatalog).toHaveBeenCalled())
+  })
+
+  // ── Issue #1135：旧未保护 Note 的「启用受保护编辑」入口 ────────────────────
+
+  it('legacy 行在 note_editor.available 时显示启用入口；d2 行/受限行不显示', async () => {
+    stubCatalog([
+      d2Note(),
+      legacyNote(),
+      legacyNote({ note_id: 'note_restricted_legacy', access_state: 'restricted' }),
+    ])
+    const { wrapper } = makeWrapper()
+    render(<NotesPanel />, { wrapper })
+    await waitFor(() => expect(screen.getByText('旧笔记')).toBeInTheDocument())
+
+    // MEDIUM-1（round-1 审查）：入口必须是紧凑图标按钮（aria-label/title 复用
+    // 文案 key），不得把 legacy 行标题列挤掉；testid 保持不变。
+    const enableButton = screen.getByTestId('note-enable-note_legacy')
+    expect(enableButton).toHaveAttribute('aria-label', 'research.notes.catalog.enableProtected')
+    expect(enableButton).toHaveAttribute('title', 'research.notes.catalog.enableProtected')
+    expect(enableButton).toHaveClass('size-7')
+    expect(enableButton.querySelector('svg')).not.toBeNull()
+    expect(enableButton.textContent).toBe('')
+    expect(screen.queryByTestId('note-enable-note_d2')).toBeNull()
+    expect(screen.queryByTestId('note-enable-note_restricted_legacy')).toBeNull()
+  })
+
+  it('能力关闭或能力读取失败时启用入口不渲染（fail-closed，不回退旧表单）', async () => {
+    stubCapabilities(
+      allCapabilities({ noteEditor: { available: false, reason: 'disabled_by_flag' } }),
+    )
+    const { wrapper } = makeWrapper()
+    const { rerender } = render(<NotesPanel />, { wrapper })
+    await waitFor(() => expect(screen.getByText('旧笔记')).toBeInTheDocument())
+    expect(screen.queryByTestId('note-enable-note_legacy')).toBeNull()
+    // 旧未保护行的旧表单入口保持不变（能力故障不改变既有行为）
+    expect(screen.getByRole('button', { name: 'research.notes.edit' })).toBeInTheDocument()
+
+    stubCapabilities(null, {
+      error: { code: 'network_error', message: 'models down', retryable: true, status: 0 },
+    })
+    rerender(<NotesPanel />)
+    await waitFor(() => expect(screen.getByTestId('note-capability-blocked')).toBeInTheDocument())
+    expect(screen.queryByTestId('note-enable-note_legacy')).toBeNull()
+  })
+
+  it('Admin 只读会话不显示启用入口', async () => {
+    const { wrapper } = makeWrapper('admin_readonly')
+    render(<NotesPanel />, { wrapper })
+    await waitFor(() => expect(screen.getByText('旧笔记')).toBeInTheDocument())
+    expect(screen.queryByTestId('note-enable-note_legacy')).toBeNull()
+  })
+
+  it('点击启用入口请求启用；confirming 状态渲染对话框（note 标题来自目录）', async () => {
+    const { actions } = stubNoteEnable()
+    const { wrapper } = makeWrapper()
+    const { rerender } = render(<NotesPanel />, { wrapper })
+    await waitFor(() => expect(screen.getByTestId('note-enable-note_legacy')).toBeInTheDocument())
+    expect(screen.queryByTestId('note-enable-dialog')).toBeNull()
+
+    fireEvent.click(screen.getByTestId('note-enable-note_legacy'))
+    expect(actions.requestEnable).toHaveBeenCalledWith('note_legacy')
+
+    // 状态机进入 confirming 后渲染确认对话框（hook 为 mock，手动同步快照）。
+    const confirming = stubNoteEnable({ phase: 'confirming', noteId: 'note_legacy' })
+    rerender(<NotesPanel />)
+
+    const dialog = screen.getByTestId('note-enable-dialog')
+    expect(dialog).toHaveAttribute('data-phase', 'confirming')
+    expect(screen.getByTestId('note-enable-note-title')).toHaveTextContent('旧笔记')
+
+    fireEvent.click(screen.getByTestId('note-enable-cancel'))
+    expect(confirming.actions.cancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('确认启用成功：toast + 刷新目录 + 原地 openNote，且不调用旧表单保存', async () => {
+    const { actions: editorActions } = stubEditor()
+    const { wrapper } = makeWrapper()
+    const { rerender } = render(<NotesPanel />, { wrapper })
+    await waitFor(() => expect(screen.getByTestId('note-enable-note_legacy')).toBeInTheDocument())
+
+    // 先打开旧表单：启用成功后必须关闭旧表单路径。
+    fireEvent.click(screen.getByRole('button', { name: 'research.notes.edit' }))
+    expect(screen.getByTestId('legacy-note-form-hint')).toBeInTheDocument()
+
+    stubNoteEnable(
+      { phase: 'confirming', noteId: 'note_legacy' },
+      { confirmEnable: vi.fn(async () => 'note_legacy') },
+    )
+    rerender(<NotesPanel />)
+
+    fireEvent.click(screen.getByTestId('note-enable-confirm'))
+    await waitFor(() => expect(editorActions.openNote).toHaveBeenCalledWith('note_legacy'))
+    expect(refreshCatalog).toHaveBeenCalledTimes(1)
+    expect(toastMock).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'research.notes.enable.success' }),
+    )
+    expect(screen.queryByTestId('legacy-note-form-hint')).toBeNull()
+    expect(researchApi.updateNote).not.toHaveBeenCalled()
+  })
+
+  it('启用失败：错误对话框显示分类并提供同 mutation 重试，不调用旧表单保存', async () => {
+    const { actions } = stubNoteEnable(
+      {
+        phase: 'error',
+        noteId: 'note_legacy',
+        mutationId: 'nm1',
+        failureKind: 'unknown',
+        retryMode: 'same_mutation',
+        error: { code: 'network_error', message: '', retryable: true, status: 0 },
+      },
+      { retry: vi.fn(async () => null) },
+    )
+    const { wrapper } = makeWrapper()
+    render(<NotesPanel />, { wrapper })
+    await waitFor(() => expect(screen.getByTestId('note-enable-note_legacy')).toBeInTheDocument())
+
+    const error = screen.getByTestId('note-enable-error')
+    expect(error).toHaveAttribute('data-failure-kind', 'unknown')
+    expect(screen.getByTestId('note-enable-retry')).toHaveTextContent(
+      'research.notes.enable.confirmResult',
+    )
+
+    fireEvent.click(screen.getByTestId('note-enable-retry'))
+    expect(actions.retry).toHaveBeenCalledTimes(1)
+    expect(researchApi.updateNote).not.toHaveBeenCalled()
+  })
+
+  it('启用成功后目录刷新为 d2-v1 行：旧表单与启用入口消失，只保留新编辑器打开入口', async () => {
+    stubNoteEnable(
+      { phase: 'confirming', noteId: 'note_legacy' },
+      { confirmEnable: vi.fn(async () => 'note_legacy') },
+    )
+    const { wrapper } = makeWrapper()
+    const { rerender } = render(<NotesPanel />, { wrapper })
+    await waitFor(() => expect(screen.getByTestId('note-enable-confirm')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByTestId('note-enable-confirm'))
+    await waitFor(() => expect(refreshCatalog).toHaveBeenCalledTimes(1))
+
+    // 模拟 refresh 后服务端投影：同一 note_id 已受保护（d2-v1），状态机回 idle。
+    stubCatalog([d2Note({ note_id: 'note_legacy', title: '旧笔记' })])
+    stubNoteEnable()
+    rerender(<NotesPanel />)
+
+    await waitFor(() => expect(screen.getByTestId('note-open-note_legacy')).toBeInTheDocument())
+    expect(screen.queryByTestId('note-enable-note_legacy')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'research.notes.edit' })).toBeNull()
+    expect(screen.queryByTestId('note-enable-dialog')).toBeNull()
   })
 })

@@ -1715,6 +1715,24 @@ export const zhCN = {
         legacyBadge: "旧版笔记",
         retry: "重试",
         openNote: "打开笔记",
+        enableProtected: "启用受保护编辑",
+      },
+      enable: {
+        title: "启用受保护编辑？",
+        description:
+          "需要拥有该项目的编辑权限。启用只会添加保护字段，标题与正文保持不变；启用后将使用 Markdown 编辑器，旧表单路径不再出现。",
+        confirm: "启用受保护编辑",
+        pending: "正在启用受保护编辑…",
+        success: "已启用受保护编辑",
+        confirmResult: "确认结果",
+        errors: {
+          restricted: "你没有权限为该笔记启用受保护编辑。",
+          notFound: "该笔记已不存在。",
+          unsupported: "该笔记无法使用受保护的 Markdown 编辑器。",
+          conflict: "笔记已被修改或该请求已被使用，请以新的请求重试。",
+          unavailable: "暂时无法校验来源依赖，请重试以确认结果。",
+          unknown: "无法确认启用结果，请重试以确认同一请求后再继续。",
+        },
       },
       editor: {
         heading: "Markdown 笔记",
