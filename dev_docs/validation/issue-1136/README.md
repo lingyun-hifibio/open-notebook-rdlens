@@ -33,7 +33,7 @@
 | BEFORE 基线 | fork `origin/main` = `a4a76170c5016d0c4cfefae505aa8369be568a96`（2026-11-10） |
 | AFTER head | `46574030584ed3bfa11b75665c5fbf03fdb2ed52`（fork 分支 `agent/leave-guard-798df570c13c`） |
 | 证据分支 | `evidence/issue1136-leave-guard-20261110`（从 fork origin/main 创建；仅证据文件） |
-| 实现改动 | 10 files（`NotesPanel`/`ResearchWorkbench`/新增 `NoteRecoveryInbox` + draft-cache 摘要列举 + `use-note-editor` 身份切换前持久化 + 测试），见实现 PR |
+| 实现改动 | **8 files** = 4 源文件（`NotesPanel.tsx`、`ResearchWorkbench.tsx`、新增 `NoteRecoveryInbox.tsx`、`note-draft-cache.ts`）+ 4 个对应测试文件；`use-note-editor.ts` 及其测试与 `origin/main` 逐字节相同（**未改**；项目切换由 PR4 既有 unmount cleanup 持久化），见实现 PR。核对：`git diff --name-only origin/main 46574030584ed3bfa11b75665c5fbf03fdb2ed52 | wc -l` = 8 |
 | Harness | `dev_docs/validation/issue-1136/harness/`（捕获脚本、合成 gateway/host、runbook；公开安全，无密钥） |
 
 ## 入口路径说明（重要，如实记录）
