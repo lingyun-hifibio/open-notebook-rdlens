@@ -328,9 +328,97 @@ const PENDING_MUTATION_KEYS: ReadonlySet<string> = new Set([
   'createdAt',
   // 加性（PR4 core）：copy 未知结果重放所需的源基线 hash。
   'sourceSnapshotHash',
+  // 加性（PR5/B3）：fragment 未知结果重放所需的冻结请求与发起时选区。
+  'fragment',
+  'editorSelection',
+  'capturedLocalSeq',
 ])
 
-const PENDING_MUTATION_KINDS: ReadonlySet<string> = new Set(['save', 'create', 'copy'])
+const PENDING_MUTATION_KINDS: ReadonlySet<string> = new Set([
+  'save',
+  'create',
+  'copy',
+  'fragment',
+])
+
+const FRAGMENT_INPUT_KEYS: ReadonlySet<string> = new Set(['target', 'source'])
+const FRAGMENT_TARGET_KEYS: ReadonlySet<string> = new Set([
+  'kind',
+  'position_utf16',
+  'start_utf16',
+  'end_utf16',
+])
+const FRAGMENT_SOURCE_KEYS: ReadonlySet<string> = new Set([
+  'source_kind',
+  'source_id',
+  'source_version',
+  'expected_content_hash',
+  'selection',
+])
+const FRAGMENT_SOURCE_KINDS: ReadonlySet<string> = new Set([
+  'source',
+  'chat_message',
+  'note',
+  'legacy_insight',
+])
+
+function isSafeUtf16Offset(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 2 ** 53 - 1
+}
+
+function isClosedRecord(value: unknown, keys: ReadonlySet<string>): value is Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  return hasClosedKeys(value as Record<string, unknown>, keys)
+}
+
+/** 片段请求的最小形状校验（拒绝未知键，避免把任意载荷写进草稿缓存）。 */
+function isValidFragmentInput(value: unknown): boolean {
+  if (!isClosedRecord(value, FRAGMENT_INPUT_KEYS)) return false
+  const target = value.target
+  if (!isClosedRecord(target, FRAGMENT_TARGET_KEYS)) return false
+  if (target.kind === 'cursor') {
+    if (!isSafeUtf16Offset(target.position_utf16)) return false
+  } else if (target.kind === 'range') {
+    if (!isSafeUtf16Offset(target.start_utf16) || !isSafeUtf16Offset(target.end_utf16)) return false
+    if ((target.start_utf16 as number) >= (target.end_utf16 as number)) return false
+  } else {
+    return false
+  }
+  const source = value.source
+  if (!isClosedRecord(source, FRAGMENT_SOURCE_KEYS)) return false
+  if (typeof source.source_kind !== 'string' || !FRAGMENT_SOURCE_KINDS.has(source.source_kind)) {
+    return false
+  }
+  if (typeof source.source_id !== 'string' || source.source_id.length === 0) return false
+  if (source.source_version !== null && typeof source.source_version !== 'string') return false
+  if (
+    source.expected_content_hash !== null &&
+    (typeof source.expected_content_hash !== 'string' ||
+      !/^[0-9a-f]{64}$/.test(source.expected_content_hash))
+  ) {
+    return false
+  }
+  const selection = source.selection
+  if (typeof selection !== 'object' || selection === null || Array.isArray(selection)) return false
+  const selectionRecord = selection as Record<string, unknown>
+  if (selectionRecord.kind === 'full') {
+    return hasClosedKeys(selectionRecord, new Set(['kind']))
+  }
+  if (selectionRecord.kind === 'range') {
+    if (!hasClosedKeys(selectionRecord, new Set(['kind', 'start_utf16', 'end_utf16']))) return false
+    if (!isSafeUtf16Offset(selectionRecord.start_utf16)) return false
+    if (!isSafeUtf16Offset(selectionRecord.end_utf16)) return false
+    return (selectionRecord.start_utf16 as number) < (selectionRecord.end_utf16 as number)
+  }
+  return false
+}
+
+function isValidEditorSelection(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
+  const record = value as Record<string, unknown>
+  if (!hasClosedKeys(record, new Set(['start', 'end']))) return false
+  return isSafeUtf16Offset(record.start) && isSafeUtf16Offset(record.end)
+}
 
 function hasClosedKeys(
   record: Record<string, unknown>,
@@ -358,6 +446,24 @@ export function isValidPendingNoteMutation(value: unknown): value is PendingNote
   }
   if (typeof record.title !== 'string' || typeof record.content !== 'string') return false
   if (typeof record.createdAt !== 'string') return false
+  if (record.kind === 'fragment') {
+    if (!isValidFragmentInput(record.fragment)) return false
+    if (record.editorSelection !== null && record.editorSelection !== undefined) {
+      if (!isValidEditorSelection(record.editorSelection)) return false
+    }
+    if (record.capturedLocalSeq !== null && record.capturedLocalSeq !== undefined) {
+      if (!isValidRevision(record.capturedLocalSeq, 0)) return false
+    }
+    if (!isNonEmptyString(record.noteId)) return false
+    if (!isValidRevision(record.expectedRevision, 1)) return false
+  } else if (
+    record.fragment !== undefined ||
+    record.editorSelection !== undefined ||
+    record.capturedLocalSeq !== undefined
+  ) {
+    // 非 fragment 记录不得携带 fragment 载荷。
+    return false
+  }
   // 加性字段：仅 copy 重放需要；存在时必须是 hex64（或 null）。
   const sourceSnapshotHash = record.sourceSnapshotHash
   if (

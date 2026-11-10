@@ -25,7 +25,14 @@ import {
   NOTE_CONTRACT_HEADER,
   NOTE_CONTRACT_VALUE,
   type NoteApiError,
+  type NoteCitationBinding,
+  type NoteCitationSourceKind,
+  type NoteD2FragmentCreateRequest,
+  type NoteD2FragmentInsertRequest,
+  type NoteDocumentDependency,
   type NoteErrorCode,
+  type NoteLocator,
+  type NoteOrigin,
   type NoteReceipt,
   type ResearchNoteD2,
 } from './types'
@@ -93,6 +100,7 @@ const NOTE_ERROR_CODES: ReadonlySet<string> = new Set<NoteErrorCode>([
   'note_snapshot_unavailable',
   'note_dependency_unavailable',
   'note_store_unavailable',
+  'fragment_source_not_found',
   'network_error',
   'unknown_error',
 ])
@@ -265,6 +273,129 @@ function optionalHash(value: unknown): string | null {
  * `access_state='restricted'` 才是渲染依据）。旧 host 无新键时按等价
  * 「未保护」处理（`edit_schema=null`），绝不把缺失误读为受保护。
  */
+const NOTE_SOURCE_KINDS: ReadonlySet<string> = new Set([
+  'source',
+  'chat_message',
+  'note',
+  'legacy_insight',
+])
+
+function isNoteCitationSourceKind(value: unknown): value is NoteCitationSourceKind {
+  return typeof value === 'string' && NOTE_SOURCE_KINDS.has(value)
+}
+
+function isStableIdValue(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value)
+}
+
+/** locator：null 或标量袋（键小写 snake）；畸形返回 null，不伪造定位。 */
+function normalizeLocator(raw: unknown): NoteLocator | null {
+  if (!isRecord(raw)) return null
+  const normalized: NoteLocator = {}
+  for (const key of Object.keys(raw)) {
+    if (!/^[a-z][a-z0-9_]{0,63}$/.test(key)) return null
+    const value = raw[key]
+    if (value === null || typeof value === 'boolean') {
+      normalized[key] = value
+      continue
+    }
+    if (typeof value === 'number') {
+      if (!Number.isInteger(value) || Math.abs(value) > 9007199254740991) return null
+      normalized[key] = value
+      continue
+    }
+    if (typeof value === 'string') {
+      if (value.length > 256) return null
+      normalized[key] = value
+      continue
+    }
+    return null
+  }
+  return normalized
+}
+
+/** 单个引用绑定的防御性解析（畸形条目丢弃，不抛整篇失败）。 */
+function normalizeCitationBinding(raw: unknown): NoteCitationBinding | null {
+  if (!isRecord(raw)) return null
+  const bindingId = raw.binding_id
+  const sourceKind = raw.source_kind
+  const sourceId = raw.source_id
+  const sourceVersion = raw.source_version
+  const unresolved = raw.unresolved
+  if (!isStableIdValue(bindingId)) return null
+  if (!isNoteCitationSourceKind(sourceKind)) return null
+  if (typeof sourceId !== 'string' || sourceId.length === 0 || sourceId.length > 256) return null
+  if (sourceVersion !== null && typeof sourceVersion !== 'string') return null
+  if (typeof unresolved !== 'boolean') return null
+  return {
+    binding_id: bindingId,
+    source_kind: sourceKind,
+    source_id: sourceId,
+    source_version: sourceVersion,
+    locator: normalizeLocator(raw.locator),
+    unresolved,
+  }
+}
+
+/** 读数投影的加性三键：缺失/畸形 → 空数组（fail-safe，不伪造来源）。 */
+export function normalizeNoteCitationMetadata(raw: unknown): {
+  citation_bindings: NoteCitationBinding[]
+  origins: NoteOrigin[]
+  document_dependencies: NoteDocumentDependency[]
+} {
+  const record = isRecord(raw) ? raw : {}
+  const bindings = Array.isArray(record.citation_bindings)
+    ? record.citation_bindings
+        .map(normalizeCitationBinding)
+        .filter((item): item is NoteCitationBinding => item !== null)
+    : []
+  const origins: NoteOrigin[] = Array.isArray(record.origins)
+    ? record.origins.flatMap((item) => {
+        if (!isRecord(item)) return []
+        const originId = item.origin_id
+        const sourceKind = item.source_kind
+        const sourceId = item.source_id
+        if (!isStableIdValue(originId) || !isNoteCitationSourceKind(sourceKind)) return []
+        if (typeof sourceId !== 'string' || sourceId.length === 0) return []
+        const sourceVersion = item.source_version
+        if (sourceVersion !== null && typeof sourceVersion !== 'string') return []
+        return [{
+          origin_id: originId,
+          source_kind: sourceKind,
+          source_id: sourceId,
+          source_version: sourceVersion,
+          locator: normalizeLocator(item.locator),
+        }]
+      })
+    : []
+  const dependencies: NoteDocumentDependency[] = Array.isArray(record.document_dependencies)
+    ? record.document_dependencies.flatMap((item): NoteDocumentDependency[] => {
+        if (!isRecord(item)) return []
+        const noteId = item.note_id
+        const noteHash = item.note_content_hash
+        if (isStableIdValue(noteId) && typeof noteHash === 'string' && /^[0-9a-f]{64}$/.test(noteHash)) {
+          return [{ note_id: noteId, note_content_hash: noteHash }]
+        }
+        const documentId = item.document_id
+        const documentVersion = item.document_version
+        if (
+          typeof documentId === 'string' &&
+          documentId.length > 0 &&
+          typeof documentVersion === 'string' &&
+          documentVersion.length > 0
+        ) {
+          return [{ document_id: documentId, document_version: documentVersion }]
+        }
+        return []
+      })
+    : []
+  return {
+    citation_bindings: bindings,
+    origins,
+    document_dependencies: dependencies,
+  }
+}
+
 export function normalizeNoteD2(raw: unknown): ResearchNoteD2 {
   const record = requireRecord(raw)
   const accessState = record.access_state
@@ -276,6 +407,7 @@ export function normalizeNoteD2(raw: unknown): ResearchNoteD2 {
   ) {
     throw noteProtocolError()
   }
+  const citationMetadata = normalizeNoteCitationMetadata(record)
   return {
     note_id: requireString(record.note_id),
     project_id: typeof record.project_id === 'string' ? record.project_id : '',
@@ -293,6 +425,7 @@ export function normalizeNoteD2(raw: unknown): ResearchNoteD2 {
         : accessState === 'visible'
           ? 'visible'
           : null,
+    ...citationMetadata,
   }
 }
 
@@ -457,6 +590,39 @@ export async function copyNoteD2(
   return normalizeNoteReceipt(response.data)
 }
 
+/**
+ * 片段插入到已有 Note（D2-B3，§5/§5.1）：绑定 expected_revision；服务端解析
+ * 可信来源快照并在单事务写入正文/引用/出处/依赖 + 回执。来源不可读、选区
+ * 失效、权限失败时不产生空壳/部分写入（错误码见契约 §8 与 host B3 增量）。
+ */
+export async function insertNoteFragmentD2(
+  projectId: string,
+  noteId: string,
+  body: NoteD2FragmentInsertRequest,
+): Promise<NoteReceipt> {
+  const response = await apiClient.post<unknown>(
+    noteUrl(projectId, 'notes', noteId, 'fragments'),
+    body,
+    { headers: noteHeaders() },
+  )
+  return normalizeNoteReceipt(response.data)
+}
+
+/**
+ * 直接用可信片段新建 Note（§5.1〔R29〕）：与 fragments 共用来源描述/UTF-16
+ * 范围/服务端解析器；失败不创建空壳文档；成功后同一 mutation_id 重放返回
+ * 原回执（新 note_id 稳定）。
+ */
+export async function createNoteFragmentD2(
+  projectId: string,
+  body: NoteD2FragmentCreateRequest,
+): Promise<NoteReceipt> {
+  const response = await apiClient.post<unknown>(noteUrl(projectId, 'notes'), body, {
+    headers: noteHeaders(),
+  })
+  return normalizeNoteReceipt(response.data)
+}
+
 // ── 可注入的 client 形状（状态机以接口依赖注入，便于单测） ──
 
 export interface NoteApiClient {
@@ -467,6 +633,8 @@ export interface NoteApiClient {
   deleteNote: typeof deleteNoteD2
   enableNoteEditing: typeof enableNoteEditingD2
   copyNote: typeof copyNoteD2
+  insertFragment: typeof insertNoteFragmentD2
+  createNoteFragment: typeof createNoteFragmentD2
 }
 
 /** 生产默认实现（纯转发，便于测试注入 fake）。 */
@@ -478,4 +646,6 @@ export const noteApiClient: NoteApiClient = {
   deleteNote: deleteNoteD2,
   enableNoteEditing: enableNoteEditingD2,
   copyNote: copyNoteD2,
+  insertFragment: insertNoteFragmentD2,
+  createNoteFragment: createNoteFragmentD2,
 }

@@ -362,6 +362,7 @@ describe('cleanup and tab branches', () => {
   })
 })
 
+
 describe('recoverable draft listing (Issue #1136)', () => {
   it('lists current-tab drafts for the owner/project with summary fields only', () => {
     const storage = new FakeStorage()
@@ -509,3 +510,87 @@ describe('recoverable draft listing (Issue #1136)', () => {
     expect(listRecoverableNoteDrafts('7', 'proj_1', '', authority(), { storage })).toEqual([])
   })
 })
+
+// ── PR5/B3：fragment 未决 mutation 往返与闭合校验 ──
+
+describe('fragment pending mutation (PR5/B3)', () => {
+  const fragment = {
+    target: { kind: 'cursor' as const, position_utf16: 2 },
+    source: {
+      source_kind: 'source' as const,
+      source_id: 'src_1',
+      source_version: 'docv_1',
+      expected_content_hash: HASH,
+      selection: { kind: 'range' as const, start_utf16: 0, end_utf16: 3 },
+    },
+  }
+
+  it('round-trips a fragment pending mutation with its frozen request and selection', () => {
+    const pending = {
+      mutationId: 'nm_frag',
+      kind: 'fragment' as const,
+      noteId: 'note_1',
+      expectedRevision: 2,
+      title: '标题',
+      content: '正文',
+      createdAt: '2026-11-05T00:00:00.000Z',
+      fragment,
+      editorSelection: { start: 2, end: 2 },
+      capturedLocalSeq: 5,
+    }
+    const storage = new FakeStorage()
+    writeNoteDraft(scope(), record({ pendingMutation: pending }), { storage })
+    const restored = readNoteDraft(scope(), authority(), { storage })
+    expect(restored?.pendingMutation).toEqual(pending)
+  })
+
+  it('rejects fragment payloads with unknown keys or invalid targets', () => {
+    const invalid = [
+      { ...fragment, extra: 'token' },
+      { ...fragment, target: { kind: 'range', start_utf16: 4, end_utf16: 2 } },
+      { ...fragment, target: { kind: 'cursor', position_utf16: -1 } },
+      { ...fragment, target: { kind: 'cursor', position_utf16: 1.5 } },
+      { ...fragment, source: { ...fragment.source, source_kind: 'unknown' } },
+      { ...fragment, source: { ...fragment.source, expected_content_hash: 'not-a-hash' } },
+      { ...fragment, source: { ...fragment.source, selection: { kind: 'range', start_utf16: 3, end_utf16: 3 } } },
+    ]
+    for (const candidate of invalid) {
+      expect(
+        isValidNoteDraftCacheRecord(
+          record({
+            pendingMutation: {
+              mutationId: 'nm_frag',
+              kind: 'fragment',
+              noteId: 'note_1',
+              expectedRevision: 2,
+              title: 't',
+              content: 'c',
+              createdAt: '2026-11-05T00:00:00.000Z',
+              fragment: candidate as never,
+            },
+          }),
+        ),
+      ).toBe(false)
+    }
+  })
+
+  it('rejects fragment-only fields on non-fragment pending mutations', () => {
+    expect(
+      isValidNoteDraftCacheRecord(
+        record({
+          pendingMutation: {
+            mutationId: 'nm_save',
+            kind: 'save',
+            noteId: 'note_1',
+            expectedRevision: 2,
+            title: 't',
+            content: 'c',
+            createdAt: '2026-11-05T00:00:00.000Z',
+            fragment,
+          },
+        }),
+      ),
+    ).toBe(false)
+  })
+})
+

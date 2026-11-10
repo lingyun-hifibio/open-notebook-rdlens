@@ -29,6 +29,16 @@ vi.mock('@/lib/hooks/use-translation', () => ({
   }),
 }))
 
+const workspaceMock = vi.hoisted(() => ({
+  current: null as null | {
+    insertionAvailable: boolean
+    openExcerptInsert: (source: unknown) => void
+  },
+}))
+vi.mock('./issue585/NoteWorkspaceProvider', () => ({
+  useNoteWorkspaceOptional: () => workspaceMock.current,
+}))
+
 const toastMock = vi.fn()
 vi.mock('@/lib/hooks/use-toast', () => ({
   useToast: () => ({ toast: toastMock }),
@@ -319,5 +329,38 @@ describe('ResultActions saved-state reactivity（round-2 Medium-1）', () => {
     fireEvent.click(screen.getByTestId('save-as-note'))
     await waitFor(() => expect(screen.getByTestId('saved-note')).toBeTruthy())
     expect(api).toHaveBeenCalledTimes(1)
+  })
+
+  it('回答来源：能力可用时渲染摘入入口并提交 durable message_id', () => {
+    const openExcerptInsert = vi.fn()
+    workspaceMock.current = { insertionAvailable: true, openExcerptInsert }
+    renderActions({
+      originKind: 'chat',
+      originId: null,
+      excerptSource: { sourceKind: 'chat_message', sourceId: 'msg_42' },
+      content:
+        '[synthetic] The fictional D1 cohort reported ORR 42% (21/50) at a median follow-up of 9.4 months.',
+      title: 'Assistant message',
+    })
+    fireEvent.click(screen.getByTestId('excerpt-result'))
+    expect(openExcerptInsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceKind: 'chat_message',
+        sourceId: 'msg_42',
+        text: expect.stringContaining('ORR 42%'),
+      }),
+    )
+    workspaceMock.current = null
+  })
+
+  it('回答来源：能力关闭时不渲染摘入入口', () => {
+    workspaceMock.current = { insertionAvailable: false, openExcerptInsert: vi.fn() }
+    renderActions({
+      originKind: 'chat',
+      originId: null,
+      excerptSource: { sourceKind: 'chat_message', sourceId: 'msg_42' },
+    })
+    expect(screen.queryByTestId('excerpt-result')).toBeNull()
+    workspaceMock.current = null
   })
 })

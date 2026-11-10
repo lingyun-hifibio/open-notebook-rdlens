@@ -163,6 +163,8 @@ function createFakeClient() {
     deleteNote: vi.fn(),
     enableNoteEditing: vi.fn(),
     copyNote: vi.fn(),
+    insertFragment: vi.fn(),
+    createNoteFragment: vi.fn(),
   }
 }
 
@@ -1252,5 +1254,264 @@ describe('leave escape for blocked/restricted/failed states', () => {
     expect(await actions().flushBeforeLeave()).toBe('unknown')
     expect(await actions().closeEditor()).toBe(false)
     expect(state().leaveBlockReason).toBe('unknown')
+  })
+})
+
+
+// ── PR5/B3：片段插入与引用往返位置保护 ──
+
+const FRAGMENT_SOURCE = {
+  source_kind: 'source' as const,
+  source_id: 'src_orR_01',
+  source_version: 'docv_2026_11_01',
+  expected_content_hash: HASH_A,
+  selection: { kind: 'full' as const },
+}
+
+function fragmentInput(
+  target: { kind: 'cursor'; position_utf16: number } | { kind: 'range'; start_utf16: number; end_utf16: number } = {
+    kind: 'cursor',
+    position_utf16: 2,
+  },
+) {
+  return { target, source: FRAGMENT_SOURCE }
+}
+
+describe('fragment insertion (PR5/B3)', () => {
+  it('flushes the draft first, then inserts with the flushed revision and restores the cursor', async () => {
+    openReady()
+    await openNote()
+    const order: string[] = []
+    client.saveNote.mockImplementationOnce(async () => {
+      order.push('save')
+      return receipt({ applied_revision: 2, snapshot_hash: HASH_B })
+    })
+    client.insertFragment.mockImplementationOnce(async () => {
+      order.push('fragment')
+      return receipt({ applied_revision: 3, snapshot_hash: HASH_C })
+    })
+    client.getNote.mockResolvedValueOnce(
+      note({ revision: 3, snapshot_hash: HASH_C, content: '本地[[cite:cb_1]]草稿' }),
+    )
+    actions().setContent('本地草稿')
+    const result = await actions().insertFragment!(fragmentInput(), { start: 2, end: 2 })
+    expect(order).toEqual(['save', 'fragment'])
+    expect(client.insertFragment.mock.calls[0][2]).toMatchObject({
+      expected_revision: 2,
+      target: { kind: 'cursor', position_utf16: 2 },
+      source: FRAGMENT_SOURCE,
+    })
+    expect(result).toMatchObject({
+      ok: true,
+      noteId: 'n1',
+      appliedRevision: 3,
+      insertedRange: { start: 2, end: 15 },
+      replayed: false,
+    })
+    expect(state()).toMatchObject({
+      content: '本地[[cite:cb_1]]草稿',
+      saveStatus: 'saved',
+      inserting: false,
+      canUndo: true,
+      pendingMutationId: null,
+    })
+    expect(state().selectionRequest?.selection).toEqual({ start: 15, end: 15 })
+  })
+
+  it('does not insert when the pre-insert draft save fails (409 conflict)', async () => {
+    openReady()
+    await openNote()
+    client.saveNote.mockRejectedValueOnce(conflictError(2, HASH_B))
+    actions().setContent('本地草稿')
+    const result = await actions().insertFragment!(fragmentInput())
+    expect(result).toMatchObject({ ok: false, code: 'note_revision_conflict' })
+    expect(client.insertFragment).not.toHaveBeenCalled()
+    expect(state().saveStatus).toBe('conflict')
+    expect(state().content).toBe('本地草稿')
+  })
+
+  it('does not insert when the pre-insert save result is unknown', async () => {
+    openReady()
+    await openNote()
+    client.saveNote.mockRejectedValueOnce(apiError(503, 'note_store_unavailable', true))
+    actions().setContent('本地草稿')
+    const result = await actions().insertFragment!(fragmentInput())
+    expect(result).toMatchObject({ ok: false, retryable: true })
+    expect(client.insertFragment).not.toHaveBeenCalled()
+    expect(state().saveStatus).toBe('unknown')
+    expect(state().content).toBe('本地草稿')
+  })
+
+  it('keeps the same mutation id and local draft when the insert result is unknown, then replays it', async () => {
+    openReady()
+    await openNote()
+    client.insertFragment.mockRejectedValueOnce(apiError(503, 'note_store_unavailable', true))
+    const first = await actions().insertFragment!(fragmentInput(), { start: 2, end: 2 })
+    expect(first).toMatchObject({ ok: false, retryable: true })
+    expect(state()).toMatchObject({ saveStatus: 'unknown', content: '服务端正文', inserting: false })
+    expect(state().pendingMutationId).toBe('nm1')
+    const savedDraft = readCachedDraft()
+    expect(savedDraft?.pendingMutation?.kind).toBe('fragment')
+    expect(savedDraft?.pendingMutation?.fragment).toEqual(fragmentInput())
+
+    client.insertFragment.mockResolvedValueOnce(receipt({ applied_revision: 2, snapshot_hash: HASH_B }))
+    client.getNote.mockResolvedValueOnce(note({ revision: 2, snapshot_hash: HASH_B, content: '服务端[[cite:cb_1]]正文' }))
+    await actions().confirmPendingMutation()
+    expect(client.insertFragment).toHaveBeenCalledTimes(2)
+    expect(client.insertFragment.mock.calls[1][2]).toMatchObject({
+      mutation_id: 'nm1',
+      expected_revision: 1,
+      target: fragmentInput().target,
+      source: FRAGMENT_SOURCE,
+    })
+    expect(state()).toMatchObject({ saveStatus: 'saved', pendingMutationId: null })
+    expect(state().content).toBe('服务端[[cite:cb_1]]正文')
+  })
+
+  it('treats a replayed receipt as success and still reads back the note', async () => {
+    openReady()
+    await openNote()
+    client.insertFragment.mockResolvedValueOnce(receipt({ replayed: true, applied_revision: 4, snapshot_hash: HASH_C }))
+    client.getNote.mockResolvedValueOnce(note({ revision: 4, snapshot_hash: HASH_C, content: '正文[[cite:cb_1]]' }))
+    const result = await actions().insertFragment!(fragmentInput({ kind: 'range', start_utf16: 0, end_utf16: 1 }), null)
+    expect(result).toMatchObject({ ok: true, replayed: true, appliedRevision: 4 })
+    expect(state().content).toBe('正文[[cite:cb_1]]')
+  })
+
+  it('maps a 409 on the target to an explicit conflict state without retrying automatically', async () => {
+    openReady()
+    await openNote()
+    client.insertFragment.mockRejectedValueOnce(conflictError(5, HASH_C))
+    const result = await actions().insertFragment!(fragmentInput())
+    expect(result).toMatchObject({ ok: false, code: 'note_revision_conflict', retryable: false })
+    expect(state().saveStatus).toBe('conflict')
+    expect(state().conflict).toEqual({ currentRevision: 5, currentSnapshotHash: HASH_C })
+    expect(client.insertFragment).toHaveBeenCalledTimes(1)
+  })
+
+  it('maps restricted / missing source errors to explicit states', async () => {
+    openReady()
+    await openNote()
+    client.insertFragment.mockRejectedValueOnce(apiError(403, 'note_access_restricted'))
+    let result = await actions().insertFragment!(fragmentInput())
+    expect(result).toMatchObject({ ok: false, code: 'note_access_restricted' })
+    expect(state()).toMatchObject({ saveStatus: 'restricted', blockReason: 'note_access_restricted' })
+
+    client.getNote.mockResolvedValueOnce(note())
+    await openNote()
+    client.insertFragment.mockRejectedValueOnce(apiError(404, 'fragment_source_not_found'))
+    result = await actions().insertFragment!(fragmentInput())
+    expect(result).toMatchObject({ ok: false, code: 'fragment_source_not_found' })
+    expect(state().saveStatus).toBe('failed')
+  })
+
+  it('rejects out-of-bounds / surrogate-splitting targets before any request', async () => {
+    openReady()
+    await openNote()
+    const tooFar = await actions().insertFragment!(fragmentInput({ kind: 'cursor', position_utf16: 999 }))
+    expect(tooFar).toMatchObject({ ok: false, code: 'note_request_invalid' })
+    // 服务端正文 = '服务端正文'；拆第 1 个代理对 → 位置 1 在 BMP 内合法；
+    // 用一个含 emoji 的正文验证切代理对。
+    client.getNote.mockResolvedValueOnce(note({ note_id: 'n2', content: 'a😀b' }))
+    await openNote('n2')
+    const split = await actions().insertFragment!(fragmentInput({ kind: 'cursor', position_utf16: 2 }))
+    expect(split).toMatchObject({ ok: false, code: 'note_request_invalid' })
+    expect(client.insertFragment).not.toHaveBeenCalled()
+  })
+
+  it('keeps the returned insert result out of a superseded document (stale response never overwrites)', async () => {
+    openReady()
+    await openNote()
+    const readBack = deferred<ResearchNoteD2>()
+    client.insertFragment.mockResolvedValueOnce(receipt({ applied_revision: 2, snapshot_hash: HASH_B }))
+    client.getNote.mockReturnValueOnce(readBack.promise)
+    const insertion = actions().insertFragment!(fragmentInput())
+    await settle()
+    // 身份代际变化 + 打开另一文档（新文档不得被旧插入响应覆盖）。
+    machine.setIdentity({
+      projectId: 'proj_2',
+      viewerUserId: VIEWER,
+      authGeneration: GEN,
+      isAdminReadonly: false,
+    })
+    client.getNote.mockResolvedValueOnce(note({ note_id: 'n2', project_id: 'proj_2', content: '新文档' }))
+    await actions().openNote('n2')
+    readBack.resolve(note({ content: '旧插入结果' }))
+    const result = await insertion
+    expect(result.ok).toBe(false)
+    expect(state()).toMatchObject({ content: '新文档', status: 'ready' })
+    expect(state().note?.note_id).toBe('n2')
+  })
+
+  it('undo after insertion restores the pre-insert text and saves it as a new revision', async () => {
+    openReady()
+    await openNote()
+    client.insertFragment.mockResolvedValueOnce(receipt({ applied_revision: 2, snapshot_hash: HASH_B }))
+    client.getNote.mockResolvedValueOnce(note({ revision: 2, snapshot_hash: HASH_B, content: '服务端[[cite:cb_1]]正文' }))
+    const result = await actions().insertFragment!(fragmentInput(), { start: 3, end: 3 })
+    expect(result.ok).toBe(true)
+    expect(state().canUndo).toBe(true)
+
+    actions().undo()
+    expect(state().content).toBe('服务端正文')
+    expect(state().saveStatus).toBe('pending')
+    // 撤销后恢复插入前选区（3,3）。
+    expect(state().selectionRequest?.selection).toEqual({ start: 3, end: 3 })
+    client.saveNote.mockResolvedValueOnce(receipt({ applied_revision: 3, snapshot_hash: HASH_C }))
+    await vi.advanceTimersByTimeAsync(NOTE_SAVE_DEBOUNCE_MS)
+    await settle()
+    expect(client.saveNote.mock.calls[0][2]).toMatchObject({
+      expected_revision: 2,
+      content: '服务端正文',
+    })
+    expect(state().saveStatus).toBe('saved')
+  })
+
+  it('restores the citation-return position only when the local draft is unchanged', async () => {
+    openReady()
+    await openNote()
+    actions().setContent('本地草稿')
+    expect(actions().restoreEditorPosition!({
+      noteId: 'n1',
+      expectedLocalSeq: 0,
+      selection: { start: 1, end: 2 },
+      scrollTop: 40,
+    })).toBe(false)
+    expect(state().selectionRequest).toBeNull()
+    const seq = state().localSeq
+    expect(actions().restoreEditorPosition!({
+      noteId: 'n1',
+      expectedLocalSeq: seq ?? 0,
+      selection: { start: 1, end: 2 },
+      scrollTop: 40,
+    })).toBe(true)
+    expect(state().selectionRequest).toMatchObject({
+      selection: { start: 1, end: 2 },
+      scrollTop: 40,
+    })
+    // 其他文档不得恢复。
+    expect(actions().restoreEditorPosition!({
+      noteId: 'n2',
+      expectedLocalSeq: seq ?? 0,
+      selection: { start: 1, end: 2 },
+      scrollTop: null,
+    })).toBe(false)
+  })
+
+  it('exposes insertion state while the request is in flight (editing paused)', async () => {
+    openReady()
+    await openNote()
+    const pending = deferred<NoteReceipt>()
+    client.insertFragment.mockReturnValueOnce(pending.promise)
+    const insertion = actions().insertFragment!(fragmentInput())
+    await settle()
+    expect(state().inserting).toBe(true)
+    actions().setContent('编辑应被暂停')
+    expect(state().content).toBe('服务端正文')
+    expect(await actions().flushBeforeLeave()).toBe('saving')
+    pending.resolve(receipt({ applied_revision: 2, snapshot_hash: HASH_B }))
+    client.getNote.mockResolvedValueOnce(note({ revision: 2, snapshot_hash: HASH_B, content: '服务端正文[[cite:cb_1]]' }))
+    await insertion
+    expect(state()).toMatchObject({ inserting: false, saveStatus: 'saved' })
   })
 })

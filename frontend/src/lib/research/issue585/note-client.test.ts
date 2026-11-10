@@ -12,9 +12,11 @@ import { apiClient } from '@/lib/api/client'
 import {
   copyNoteD2,
   createNoteD2,
+  createNoteFragmentD2,
   deleteNoteD2,
   enableNoteEditingD2,
   getNoteD2,
+  insertNoteFragmentD2,
   isNoteApiError,
   isNoteErrorCode,
   listNotesD2,
@@ -361,5 +363,167 @@ describe('newNoteMutationId', () => {
     expect(first).toMatch(/^[A-Za-z0-9_-]{1,128}$/)
     expect(second).toMatch(/^[A-Za-z0-9_-]{1,128}$/)
     expect(first).not.toBe(second)
+  })
+})
+
+
+// ── PR5/B3：d2-v1 读投影增量与片段端点 ──
+
+describe('d2-v1 additive citation projection (PR5/B3)', () => {
+  it('parses citation_bindings / origins / document_dependencies from the detail projection', () => {
+    const normalized = normalizeNoteD2({
+      note_id: 'n1',
+      project_id: 'p1',
+      title: 't',
+      content: '正文[[cite:cb_1]]',
+      revision: 3,
+      snapshot_hash: 'a'.repeat(64),
+      edit_schema: 'd2-v1',
+      access_state: 'visible',
+      citation_bindings: [
+        {
+          binding_id: 'cb_1',
+          source_kind: 'source',
+          source_id: 'src_1',
+          source_version: 'docv_1',
+          locator: { document_version: 'docv_1', start_utf16: 0, end_utf16: 3 },
+          unresolved: false,
+        },
+      ],
+      origins: [
+        {
+          origin_id: 'origin_frag_1',
+          source_kind: 'source',
+          source_id: 'src_1',
+          source_version: 'docv_1',
+          locator: { document_version: 'docv_1' },
+        },
+      ],
+      document_dependencies: [
+        { document_id: 'doc_1', document_version: 'docv_1' },
+        { note_id: 'n0', note_content_hash: 'b'.repeat(64) },
+      ],
+    })
+    expect(normalized.citation_bindings).toEqual([
+      {
+        binding_id: 'cb_1',
+        source_kind: 'source',
+        source_id: 'src_1',
+        source_version: 'docv_1',
+        locator: { document_version: 'docv_1', start_utf16: 0, end_utf16: 3 },
+        unresolved: false,
+      },
+    ])
+    expect(normalized.origins).toHaveLength(1)
+    expect(normalized.document_dependencies).toEqual([
+      { document_id: 'doc_1', document_version: 'docv_1' },
+      { note_id: 'n0', note_content_hash: 'b'.repeat(64) },
+    ])
+  })
+
+  it('fails safe: malformed bindings are dropped and missing keys become empty arrays', () => {
+    const normalized = normalizeNoteD2({
+      note_id: 'n1',
+      content: 'x',
+      citation_bindings: [
+        { binding_id: 'has space', source_kind: 'source', source_id: 's', source_version: 'v', locator: null, unresolved: false },
+        { binding_id: 'cb_ok', source_kind: 'note', source_id: 'n0', source_version: `2:${'c'.repeat(64)}`, locator: null, unresolved: true },
+        { binding_id: 'cb_bad_locator', source_kind: 'source', source_id: 's', source_version: 'v', locator: { BadKey: 1 }, unresolved: false },
+        'not-an-object',
+      ],
+      origins: 'not-an-array',
+      document_dependencies: [{ document_id: 'doc' }],
+    })
+    expect(normalized.citation_bindings?.map((item) => item.binding_id)).toEqual([
+      'cb_ok',
+      'cb_bad_locator',
+    ])
+    expect(normalized.citation_bindings?.[0].locator).toBeNull()
+    expect(normalized.origins).toEqual([])
+    expect(normalized.document_dependencies).toEqual([])
+  })
+
+  it('normalizes the new fragment source 404 code', () => {
+    const apiError = normalizeNoteApiError(
+      axiosError(404, { code: 'fragment_source_not_found', message: 'm', retryable: false }),
+    )
+    expect(apiError.code).toBe('fragment_source_not_found')
+    expect(isNoteErrorCode('fragment_source_not_found')).toBe(true)
+  })
+})
+
+describe('fragment endpoints (PR5/B3)', () => {
+  const source = {
+    source_kind: 'note' as const,
+    source_id: 'n0',
+    source_version: `2:${'c'.repeat(64)}`,
+    expected_content_hash: null,
+    selection: { kind: 'full' as const },
+  }
+
+  it('POSTs the frozen fragment request shape with the d2-v1 header', async () => {
+    const receipt = {
+      note_id: 'n1',
+      mutation_id: 'nm_1',
+      applied_revision: 4,
+      snapshot_hash: 'a'.repeat(64),
+      saved_at: '2026-11-05T02:50:52.748Z',
+      replayed: false,
+    }
+    mocked.post.mockResolvedValueOnce({ data: receipt })
+    const result = await insertNoteFragmentD2('proj 1', 'note/1', {
+      mutation_id: 'nm_1',
+      expected_revision: 3,
+      target: { kind: 'cursor', position_utf16: 2 },
+      source,
+    })
+    expect(result).toEqual(receipt)
+    expect(mocked.post).toHaveBeenCalledWith(
+      '/v1/research/projects/proj%201/notes/note%2F1/fragments',
+      {
+        mutation_id: 'nm_1',
+        expected_revision: 3,
+        target: { kind: 'cursor', position_utf16: 2 },
+        source,
+      },
+      { headers: { [NOTE_CONTRACT_HEADER]: NOTE_CONTRACT_VALUE } },
+    )
+  })
+
+  it('creates a new note from a trusted fragment (no content key)', async () => {
+    const receipt = {
+      note_id: 'n_new',
+      mutation_id: 'nm_2',
+      applied_revision: 1,
+      snapshot_hash: 'b'.repeat(64),
+      saved_at: '2026-11-05T02:50:52.748Z',
+      replayed: false,
+    }
+    mocked.post.mockResolvedValueOnce({ data: receipt })
+    const result = await createNoteFragmentD2('p1', {
+      mutation_id: 'nm_2',
+      title: '引用片段',
+      fragment: { source },
+    })
+    expect(result).toEqual(receipt)
+    expect(mocked.post).toHaveBeenCalledWith(
+      '/v1/research/projects/p1/notes',
+      { mutation_id: 'nm_2', title: '引用片段', fragment: { source } },
+      { headers: { [NOTE_CONTRACT_HEADER]: NOTE_CONTRACT_VALUE } },
+    )
+    const body = mocked.post.mock.calls[0][1] as Record<string, unknown>
+    expect(body).not.toHaveProperty('content')
+  })
+
+  it('rejects malformed receipts as unknown (never settles as success)', async () => {
+    mocked.post.mockResolvedValueOnce({ data: { note_id: 'n1' } })
+    await expect(
+      insertNoteFragmentD2('p1', 'n1', {
+        mutation_id: 'nm_1',
+        expected_revision: 1,
+        target: { kind: 'cursor', position_utf16: 0 },
+        source,
+      }),
+    ).rejects.toMatchObject({ code: 'unknown_error', retryable: true })
   })
 })

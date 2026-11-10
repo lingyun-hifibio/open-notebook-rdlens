@@ -26,6 +26,7 @@ import {
   type ResearchQueryIdentity,
 } from '@/lib/api/query-client'
 import { useResearchWorkspaceOptional } from '@/lib/embedded/workspace-context'
+import { useNoteEditorSlot } from './note-workspace-slot'
 import { listModels } from '@/lib/research/api'
 import { normalizeNoteApiError } from './note-client'
 import type {
@@ -80,6 +81,10 @@ function useResearchIdentity(): {
 }
 
 export function useNoteCapabilities(projectId: string): NoteCapabilitiesResult {
+  // PR5/B3：Provider 内的能力投影共享同一份服务端读取（不重复请求、跨 pane 一致）。
+  // 仍无条件调用 hooks：槽位存在时查询 enabled=false，仅返回槽位结果。
+  const slot = useNoteEditorSlot()
+  const slotResult = slot !== null ? slot.capabilitiesResult : null
   const { identity, hasWorkspace } = useResearchIdentity()
   // 复用既有 /models 查询键（与 use-research-global-model / useResearchC05 /
   // useResearchD1e 共享缓存、零额外请求）；身份段保证旧代缓存不可见。
@@ -93,7 +98,8 @@ export function useNoteCapabilities(projectId: string): NoteCapabilitiesResult {
   const query = useQuery({
     queryKey,
     queryFn: () => listModels(projectId),
-    enabled: !!projectId && (!hasWorkspace || identity !== null),
+    enabled:
+      slotResult === null && !!projectId && (!hasWorkspace || identity !== null),
     refetchOnWindowFocus: true,
   })
 
@@ -114,6 +120,7 @@ export function useNoteCapabilities(projectId: string): NoteCapabilitiesResult {
     await refetch()
   }, [refetch])
 
+  if (slotResult !== null) return slotResult
   return {
     capabilities: query.data === undefined ? null : capabilities,
     isLoading: query.isLoading,

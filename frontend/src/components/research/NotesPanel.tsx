@@ -47,6 +47,7 @@ import { NoteCatalog } from './issue585/NoteCatalog'
 import { NoteCapabilityBlocked } from './issue585/NoteCapabilityBlocked'
 import { NoteEditorView } from './issue585/NoteEditorView'
 import { NoteRecoveryInbox } from './issue585/NoteRecoveryInbox'
+import { useNoteWorkspaceOptional } from './issue585/NoteWorkspaceProvider'
 import { blockReasonLabelKey, noteErrorLabelKey } from './issue585/note-ui-labels'
 
 /**
@@ -115,6 +116,12 @@ export function NotesPanel({
     capabilities: capabilitiesResult.capabilities,
     isAdminReadonly,
   })
+  // Issue #1047 PR5（B3）：页面级组合根（摘入对话框/引用阅读 overlay/打开请求）。
+  // 机器仍由本面板持有；引用阅读不卸载本面板 → 保留内存 undo 与草稿。
+  const noteWorkspace = useNoteWorkspaceOptional()
+  const consumeOpenNote = noteWorkspace?.consumeOpenNote
+  const pendingOpenNote = noteWorkspace?.pendingOpenNote ?? null
+  const notesChangedSeq = noteWorkspace?.notesChangedSeq ?? 0
 
   // 目录行点击后记录目标 note_id：打开失败/能力故障时供编辑器重试打开。
   const [requestedNoteId, setRequestedNoteId] = useState<string | null>(null)
@@ -124,6 +131,38 @@ export function NotesPanel({
   editorStateRef.current = editor.state
   const editorActionsRef = useRef(editor.actions)
   editorActionsRef.current = editor.actions
+
+  // 摘入成功后 provider 请求打开/定位 Note（非当前文档）。打开时先 flush 当前
+  // 草稿；成功后仅当仍停在目标文档时恢复光标。
+  const handledOpenSeqRef = useRef<number | null>(null)
+  const catalogRefresh = catalog.refresh
+  useEffect(() => {
+    if (pendingOpenNote === null || consumeOpenNote === undefined) return
+    if (handledOpenSeqRef.current === pendingOpenNote.seq) return
+    handledOpenSeqRef.current = pendingOpenNote.seq
+    void (async () => {
+      await editorActionsRef.current.openNote(pendingOpenNote.noteId)
+      const latest = editorStateRef.current
+      if (latest.note?.note_id === pendingOpenNote.noteId && pendingOpenNote.selection !== null) {
+        editorActionsRef.current.restoreEditorPosition?.({
+          noteId: pendingOpenNote.noteId,
+          expectedLocalSeq: latest.localSeq ?? 0,
+          selection: pendingOpenNote.selection,
+          scrollTop: 0,
+        })
+      }
+      consumeOpenNote(pendingOpenNote.seq)
+      await catalogRefresh()
+    })()
+  }, [catalogRefresh, consumeOpenNote, pendingOpenNote])
+
+  // 插入/另存后目录刷新（provider 递增 notesChangedSeq）。
+  const seenNotesChangedRef = useRef(notesChangedSeq)
+  useEffect(() => {
+    if (notesChangedSeq === seenNotesChangedRef.current) return
+    seenNotesChangedRef.current = notesChangedSeq
+    void catalogRefresh()
+  }, [catalogRefresh, notesChangedSeq])
 
   // 审查 A M3（PR4 缓解）＋ Issue #1136：NotesPanel 因切 pane/项目卸载、以及
   // 工作台父级导航（ResearchWorkbench）离开前，都尽力 flush 未决保存（不等待
@@ -400,6 +439,21 @@ export function NotesPanel({
         canEdit={!isAdminReadonly}
         activeNoteId={editor.state.note?.note_id ?? null}
         onOpenNote={(noteId) => void openD2Note(noteId)}
+        onExcerptNote={
+          noteWorkspace === null || !noteWorkspace.insertionAvailable
+            ? undefined
+            : (item) => {
+                if (item.revision === null || item.snapshot_hash === null) return
+                noteWorkspace.openExcerptInsert({
+                  sourceKind: 'note',
+                  sourceId: item.note_id,
+                  sourceVersion: `${item.revision}:${item.snapshot_hash}`,
+                  text: item.content,
+                  title: item.title,
+                  initialSelection: null,
+                })
+              }
+        }
         onRefresh={() => void catalog.refresh()}
         revealId={revealId}
         scopeControl={(item) => (

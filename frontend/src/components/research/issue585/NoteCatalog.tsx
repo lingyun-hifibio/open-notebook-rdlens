@@ -30,6 +30,8 @@ export interface NoteCatalogProps {
   activeNoteId?: string | null
   /** 打开 d2-v1 文档（旧未保护行不得调用；由 legacyActions 提供旧入口）。 */
   onOpenNote: (noteId: string) => void
+  /** Issue #1047 PR5（B3）：把该 Note 作为来源摘入其他文档（仅 d2-v1 行）。 */
+  onExcerptNote?: (item: ResearchNoteD2) => void
   onRefresh: () => void
   /** Save-as-Note 后的高亮目标（RWV2-23）。 */
   revealId?: string | null
@@ -71,6 +73,7 @@ export function NoteCatalog({
   canEdit,
   activeNoteId = null,
   onOpenNote,
+  onExcerptNote,
   onRefresh,
   revealId = null,
   scopeControl,
@@ -199,6 +202,18 @@ export function NoteCatalog({
               {legacyActions && !d2 && canEdit && (
                 <div className="flex shrink-0 gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                   {legacyActions(item)}
+                </div>
+              )}
+              {d2 && canEdit && !restricted && onExcerptNote !== undefined && (
+                <div className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    data-testid={`note-excerpt-${item.note_id}`}
+                    onClick={() => onExcerptNote(item)}
+                  >
+                    {t('research.notes.excerpt.entry')}
+                  </Button>
                 </div>
               )}
             </li>

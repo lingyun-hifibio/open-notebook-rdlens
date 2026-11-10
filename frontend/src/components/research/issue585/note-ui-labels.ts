@@ -44,6 +44,7 @@ const NOTE_ERROR_LABEL_KEYS: Record<NoteErrorCode, string> = {
   note_snapshot_unavailable: 'research.notes.editor.errors.note_snapshot_unavailable',
   note_dependency_unavailable: 'research.notes.editor.errors.note_dependency_unavailable',
   note_store_unavailable: 'research.notes.editor.errors.note_store_unavailable',
+  fragment_source_not_found: 'research.notes.editor.errors.fragment_source_not_found',
   network_error: 'research.notes.editor.errors.network_error',
   unknown_error: 'research.notes.editor.errors.unknown_error',
 }
