@@ -107,7 +107,7 @@ curl -sf "http://127.0.0.1:$HOST_PORT/health" >/dev/null || { echo "host not up"
 
 # 5) capture
 cd "$HERE"
-node capture.js --phase=after --host="http://127.0.0.1:$HOST_PORT/" --head="$AFTER_SHA"
+node capture.js --phase=after --host="http://127.0.0.1:$HOST_PORT/" --head="$AFTER_SHA" ${CAPTURE_ARGS:-}
 CAPTURE=$?
 echo "capture exit=$CAPTURE"
 

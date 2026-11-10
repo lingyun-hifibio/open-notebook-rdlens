@@ -79,6 +79,8 @@ const WIDTHS = (arg('widths', '1440,1024') || '1440,1024')
   .map((value) => Number(value.trim()))
   .filter((value) => Number.isFinite(value) && value > 0)
 const ONLY_SCENES = (arg('scenes', '') || '').split(',').filter(Boolean)
+/** Partial re-capture: merge captured scenes/screenshots into the existing manifest. */
+const MERGE = process.argv.includes('--merge')
 const OUT_DIR = path.resolve(arg('outdir', path.join(EVIDENCE_ROOT, 'screenshots', PHASE)))
 const LOG_FILE = path.resolve(arg('logfile', path.join(EVIDENCE_ROOT, 'capture.log')))
 const MANIFEST_FILE = path.resolve(
@@ -137,6 +139,11 @@ function gatewayCall(method, urlPath) {
 const stats = async () => (await gatewayCall('GET', '/__stats')).body || {}
 const currentNote = async (noteId) =>
   (await gatewayCall('GET', `/__note?note_id=${encodeURIComponent(noteId)}`)).body
+/** Single-note GET count (GET .../notes/{id}, i.e. the authenticated latest-read). */
+const detailGetCount = (raw) =>
+  (raw.note_requests || []).filter(
+    (entry) => entry.method === 'GET' && /\/notes\/[^/]+$/.test(String(entry.path)),
+  ).length
 
 async function resetHarness({ noteMode = 'editor_on', deleteMode = 'success', saveMode = 'ok' } = {}) {
   fs.writeFileSync(NOTE_MODE_FILE, noteMode)
@@ -154,6 +161,7 @@ function statsSummary(raw) {
     save_mode: raw.save_mode,
     models_requests: raw.models_requests,
     list_requests: (raw.list_requests || []).length,
+    detail_requests: (raw.detail_requests || []).length,
     semantic_deletes: raw.semantic_deletes,
     delete_replays: raw.delete_replays,
     legacy_deletes: (raw.legacy_deletes || []).length,
@@ -231,6 +239,7 @@ const HOOKS = {
   dialogRevision: ['[data-testid="note-delete-revision"]'],
   dialogImpact: ['[data-testid="note-delete-impact"]'],
   dialogUnsaved: ['[data-testid="note-delete-unsaved"]'],
+  dialogContent: ['[data-testid="note-delete-content"]'],
 }
 
 async function count(app, selector) {
@@ -365,6 +374,7 @@ const COPY = {
   dialogDescriptionIrreversible: 'This note cannot be restored.',
   dialogImpact:
     'Content already inserted into documents is kept as a saved copy; deleting a note does not change those copies. Permissions are checked again when you confirm.',
+  dialogContentLabel: 'Note content',
   dialogImpactMarker: 'kept as a saved copy',
   dialogPermissionsMarker: 'Permissions are checked again',
   unsavedLocal: 'Unsaved changes in the open editor will be discarded.',
@@ -412,6 +422,7 @@ async function collectState(boot) {
   counts.note_delete_revision = await count(app, HOOKS.dialogRevision[0])
   counts.note_delete_impact = await count(app, HOOKS.dialogImpact[0])
   counts.note_delete_unsaved = await count(app, HOOKS.dialogUnsaved[0])
+  counts.note_delete_content = await count(app, HOOKS.dialogContent[0])
 
   const dialogParts = await app
     .evaluate(() => {
@@ -421,6 +432,7 @@ async function collectState(boot) {
       }
       return {
         revision: read('note-delete-revision'),
+        content: read('note-delete-content'),
         impact: read('note-delete-impact'),
         unsaved: read('note-delete-unsaved'),
         status: read('note-delete-status'),
@@ -1319,6 +1331,14 @@ async function sceneE2After(browser, width, height) {
     state.dialogParts?.impact,
   )
   check(
+    'e2.dialog_content_block_visible',
+    state.counts.note_delete_content === 1 &&
+      dialogHas(state, COPY.dialogContentLabel) &&
+      dialogHas(state, 'Interim analysis of the fictional D1 cohort'),
+    `note-delete-content review block shows "${COPY.dialogContentLabel}" + the target note body`,
+    { count: state.counts.note_delete_content, text: state.dialogParts?.content },
+  )
+  check(
     'e2.catalog_path_no_unsaved_local_line',
     state.counts.note_delete_unsaved === 0 && dialogHas(state, COPY.unsavedLocal) === false,
     'note-delete-unsaved line is NOT rendered when no note is open with unsaved changes',
@@ -1630,6 +1650,15 @@ async function sceneE4After(browser, width, height) {
     'note-delete-unsaved element shows the exact unsavedLocal warning for the open note',
     { count: dialogState.counts.note_delete_unsaved, text: dialogState.dialogParts?.unsaved },
   )
+  check(
+    'e4.dialog_content_block_shows_current_editor_text',
+    dialogState.counts.note_delete_content === 1 &&
+      dialogHas(dialogState, COPY.dialogContentLabel) &&
+      dialogHas(dialogState, 'Interim analysis of the fictional D1 cohort') &&
+      dialogHas(dialogState, 'unsaved local line for E4'),
+    'note-delete-content shows the CURRENT editor body (server fixture + unsaved local text)',
+    { count: dialogState.counts.note_delete_content, text: dialogState.dialogParts?.content },
+  )
   await shot(boot, `${PREFIX}_e4_editor_delete_dialog_${width}`)
   const confirmed = await clickDialogButton(app, HOOKS.confirm)
   check('e4.confirm_clicked', confirmed.clicked, 'note-delete-confirm clicked from the editor dialog', confirmed)
@@ -1802,6 +1831,21 @@ async function sceneE6After(browser, width, height) {
   const clicked = await clickDeleteEntry(app, FIXTURE.d2NoteId)
   check('e6.delete_entry_clicked', clicked.clicked, 'note-delete-note_d2 clicked', clicked)
   await waitDialogPhase(app, 'confirming', 15000)
+  const initialConfirming = await collectState(boot)
+  check(
+    'e6.initial_content_block_is_stale_row_body',
+    initialConfirming.counts.note_delete_content === 1 &&
+      dialogHas(initialConfirming, 'Fictional dose-proportionality summary') &&
+      dialogHas(initialConfirming, 'refreshed after concurrent write') === false,
+    'before refresh the dialog review block shows the stale catalog body (no refreshed marker)',
+    { count: initialConfirming.counts.note_delete_content, text: initialConfirming.dialogParts?.content },
+  )
+  check(
+    'e6.initial_revision_is_one',
+    /revision\s*1\b/i.test(initialConfirming.dialogParts?.revision || ''),
+    'initial confirming dialog shows Revision 1',
+    initialConfirming.dialogParts?.revision,
+  )
   const confirmed = await clickDialogButton(app, HOOKS.confirm)
   check('e6.confirm_clicked', confirmed.clicked, 'note-delete-confirm clicked (first attempt)', confirmed)
   const errorShown = await waitFor(async () => (await count(app, HOOKS.error[0])) > 0, 25000)
@@ -1832,6 +1876,12 @@ async function sceneE6After(browser, width, height) {
     `conflict error copy is visible ("${COPY.errorConflict}")`,
     conflictState.dialogParts?.error,
   )
+  check(
+    'e6.error_phase_hides_review_block',
+    conflictState.counts.note_delete_content === 0,
+    'the error phase renders only the failure reason (no content review block)',
+    conflictState.counts.note_delete_content,
+  )
   await shot(boot, `${PREFIX}_e6_conflict_error_${width}`)
   const firstStats = await stats()
   check(
@@ -1845,9 +1895,24 @@ async function sceneE6After(browser, width, height) {
   check('e6.no_semantic_delete_on_conflict', firstStats.semantic_deletes === 0, '0 semantic deletes after the 409', firstStats.semantic_deletes)
   const firstMutationId = (firstStats.delete_requests || [])[0]?.mutation_id || null
 
+  const detailGetsBefore = detailGetCount(firstStats)
+  const listGetsBefore = (firstStats.list_requests || []).length
   const retried = await clickDialogButton(app, HOOKS.retry)
   check('e6.refresh_and_review_clicked', retried.clicked, 'Refresh and review clicked', retried)
   const backToConfirming = await waitDialogPhase(app, 'confirming', 25000)
+  const refreshStats = await stats()
+  check(
+    'e6.authorized_latest_read_via_get',
+    detailGetCount(refreshStats) - detailGetsBefore === 1,
+    'Refresh and review performs exactly 1 authenticated single-note GET (GET .../notes/{id}) before re-confirming',
+    { before: detailGetsBefore, after: detailGetCount(refreshStats) },
+  )
+  check(
+    'e6.catalog_refreshed_on_retry',
+    (refreshStats.list_requests || []).length > listGetsBefore,
+    'catalog notes list is refreshed as part of the review step',
+    { before: listGetsBefore, after: (refreshStats.list_requests || []).length },
+  )
   check(
     'e6.dialog_back_to_confirming',
     Boolean(backToConfirming),
@@ -1874,6 +1939,13 @@ async function sceneE6After(browser, width, height) {
     /revision\s*2\b/i.test(refreshed.dialogParts?.revision || ''),
     'note-delete-revision shows Revision 2 (the refreshed, server-authorized revision)',
     refreshed.dialogParts?.revision,
+  )
+  check(
+    'e6.refreshed_latest_body_shown',
+    refreshed.counts.note_delete_content === 1 &&
+      dialogHas(refreshed, 'refreshed after concurrent write'),
+    'note-delete-content shows the body returned by the authenticated latest-read (refreshed marker)',
+    { count: refreshed.counts.note_delete_content, text: refreshed.dialogParts?.content },
   )
   await shot(boot, `${PREFIX}_e6_refresh_confirming_${width}`)
   const confirmed2 = await clickDialogButton(app, HOOKS.confirm)
@@ -2463,6 +2535,7 @@ const SCENE_IDS = ONLY_SCENES.length > 0 ? ONLY_SCENES.map((id) => id.toLowerCas
 async function main() {
   banner(`Issue #1134 ${PHASE} capture — head=${HEAD} host=${HOST} widths=${WIDTHS.join(',')}`)
   log(`${PREFIX} env: node=${process.version} chrome=${CHROME} gateway=${GATEWAY} evidence=${EVIDENCE_ROOT}`)
+  log(`${PREFIX} merge_mode=${MERGE} scenes=${SCENE_IDS.join(',')}`)
   log(`${PREFIX} before_na_scenes=${JSON.stringify(PHASE === 'before' ? BEFORE_NA_SCENES : {})}`)
   const browser = await chromium.launch({
     executablePath: CHROME,
@@ -2509,7 +2582,7 @@ async function main() {
     (scene.deviations || []).map((entry) => ({ scene: scene.id, width: scene.width, ...entry })),
   )
 
-  const manifest = {
+  let manifest = {
     ticket: 'HiFiBiO-Therapeutics/RDLens#1134',
     title: 'd2-v1 Note 删除入口（目录行 + 编辑器工具栏 + 二次确认/失败重试）— fork Before/After visual evidence',
     evidence_kind: 'synthetic',
@@ -2556,6 +2629,50 @@ async function main() {
       assertions_fail: fail,
     },
     screenshots: shots,
+  }
+  if (MERGE && fs.existsSync(MANIFEST_FILE)) {
+    const previous = JSON.parse(fs.readFileSync(MANIFEST_FILE, 'utf8'))
+    const capturedSceneIds = [...new Set(sceneResults.map((scene) => scene.id))]
+    const capturedIdSet = new Set(capturedSceneIds)
+    const keptScenes = (previous.scenes || []).filter((scene) => !capturedIdSet.has(scene.id))
+    const mergedScenes = [...keptScenes, ...sceneResults].sort(
+      (a, b) => b.width - a.width || String(a.id).localeCompare(String(b.id)),
+    )
+    const newFiles = new Set(shots.map((entry) => entry.file))
+    const keptShots = (previous.screenshots || []).filter((entry) => !newFiles.has(entry.file))
+    const mergedShots = [...keptShots, ...shots].sort((a, b) => a.file.localeCompare(b.file))
+    const mergedAssertions = mergedScenes.flatMap((scene) =>
+      (scene.assertions || []).map((item) => ({ scene: scene.id, width: scene.width, ...item })),
+    )
+    const capturedHeads = { ...(previous.captured_heads || {}) }
+    for (const sceneId of capturedSceneIds) capturedHeads[sceneId] = HEAD
+    manifest = {
+      ...previous,
+      head: HEAD,
+      captured_at: new Date().toISOString(),
+      captured_heads: capturedHeads,
+      recapture: {
+        at: new Date().toISOString(),
+        scenes: capturedSceneIds,
+        previous_head: previous.head,
+        new_head: HEAD,
+      },
+      scenes: mergedScenes,
+      screenshots: mergedShots,
+      contract_deviations: mergedScenes.flatMap((scene) =>
+        (scene.deviations || []).map((entry) => ({ scene: scene.id, width: scene.width, ...entry })),
+      ),
+      totals: {
+        scenes: mergedScenes.length,
+        scene_errors: mergedScenes.filter((scene) => scene.error).length,
+        assertions: mergedAssertions.length,
+        assertions_pass: mergedAssertions.filter((item) => item.ok).length,
+        assertions_fail: mergedAssertions.filter((item) => !item.ok).length,
+      },
+    }
+    log(
+      `${PREFIX} merge: scenes=${capturedSceneIds.join(',')} previous_head=${previous.head} new_head=${HEAD} kept_scenes=${keptScenes.length} kept_screenshots=${keptShots.length}`,
+    )
   }
   fs.writeFileSync(MANIFEST_FILE, `${JSON.stringify(manifest, null, 2)}\n`)
   banner(`RESULT ${PHASE}: ${pass} PASS / ${fail} FAIL / ${scenesWithErrors.length} scene errors`)

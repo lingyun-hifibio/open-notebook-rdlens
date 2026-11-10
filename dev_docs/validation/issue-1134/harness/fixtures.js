@@ -163,6 +163,11 @@ function listPage(items) {
   return { items, next_cursor: null }
 }
 
+/** Content that a concurrent write produced (E6 409→GET-latest proof marker). */
+function refreshedNoteContent(noteId, previousContent) {
+  return `${previousContent}\n\n[synthetic] refreshed after concurrent write (${noteId})`
+}
+
 /** Receipt shape (`mutation_contract.build_receipt`); `snapshot_hash` null on delete. */
 function receipt({ noteId, mutationId, appliedRevision, snapshotHashValue, replayed = false }) {
   return {
@@ -439,6 +444,7 @@ module.exports = {
   legacyNoteView,
   d2NoteView,
   listPage,
+  refreshedNoteContent,
   receipt,
   syntheticNoteId,
   snapshotHash,

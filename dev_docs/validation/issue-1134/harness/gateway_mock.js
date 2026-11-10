@@ -268,6 +268,10 @@ const server = http.createServer(async (req, res) => {
       list_requests: counters.noteRequests.filter(
         (entry) => entry.method === 'GET' && String(entry.path).endsWith('/notes'),
       ),
+      detail_requests: counters.noteRequests.filter(
+        (entry) =>
+          entry.method === 'GET' && /\/notes\/[^/]+$/.test(String(entry.path)),
+      ),
       saves: counters.saves.slice(),
       delete_requests: counters.deletes.slice(),
       delete_applies: counters.deleteApplies.slice(),
@@ -664,10 +668,15 @@ const server = http.createServer(async (req, res) => {
         const attempts = deleteAttemptsByNote.get(noteId) || 0
         deleteAttemptsByNote.set(noteId, attempts + 1)
         if (attempts === 0) {
-          // Another tab wrote the note: refresh the stored revision, then report
-          // the conflict so the UI refreshes and re-reviews before deleting.
+          // Another tab wrote the note: refresh the stored revision AND content,
+          // then report the conflict so the UI re-reads the latest projection
+          // (GET .../notes/{id}) and re-reviews before deleting. The title stays
+          // unchanged; the content marker proves the dialog shows the freshly
+          // read body, not the stale catalog row.
           if (note.edit_schema === 'd2-v1') {
             note.revision += 1
+            note.content = fixtures.refreshedNoteContent(note.note_id, note.content)
+            note.updated_at = nowIso()
             note.snapshot_hash = fixtures.snapshotHash(
               note.note_id,
               note.revision,
