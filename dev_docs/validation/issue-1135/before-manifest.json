@@ -5,7 +5,7 @@
   "synthetic_declaration": "Real fork Next.js app (next dev --webpack, embedded iframe) + synthetic host page + route-mocked Research Gateway. No real RDLens host, PostgreSQL, SurrealDB, files, models, Feishu content, users or private data. All note titles/ids/content are [synthetic] fixtures (project p1, viewer 1, fabricated claims-only token).",
   "phase": "before",
   "head": "4986aa2e32fe3a50f1b5ccd9cc1709246c8be3da",
-  "baseline": "fork origin/main 34f531d (post-#1136)",
+  "baseline": "fork origin/main 4986aa2 (post-#127)",
   "captured_at": "2026-11-10T11:16:58.086Z",
   "host_url": "http://127.0.0.1:8990/",
   "gateway": "http://127.0.0.1:8961",

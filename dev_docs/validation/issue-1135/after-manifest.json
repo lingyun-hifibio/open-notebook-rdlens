@@ -5,7 +5,7 @@
   "synthetic_declaration": "Real fork Next.js app (next dev --webpack, embedded iframe) + synthetic host page + route-mocked Research Gateway. No real RDLens host, PostgreSQL, SurrealDB, files, models, Feishu content, users or private data. All note titles/ids/content are [synthetic] fixtures (project p1, viewer 1, fabricated claims-only token).",
   "phase": "after",
   "head": "537732fb9be012d93d6dd60bdb5c81d143cce43d",
-  "baseline": "fork origin/main 34f531d (post-#1136)",
+  "baseline": "fork origin/main 4986aa2 (post-#127)",
   "captured_at": "2026-11-10T11:19:52.613Z",
   "host_url": "http://127.0.0.1:8992/",
   "gateway": "http://127.0.0.1:8961",
@@ -5396,7 +5396,7 @@
     "full_suite": {
       "exit_code": 1,
       "tests_line": "Tests  59 failed | 3090 passed (3149)",
-      "baseline_note": "the fork origin/main baseline has known pre-existing SourceListPanel.test.tsx failures; full-suite failures are compared against that baseline and are not caused by this change (see README §Limitations)"
+      "baseline_note": "the fork origin/main baseline 4986aa2 (post-#127) has 59 known pre-existing failing tests in 5 files (page.sessions.provider 2, page.sessions 26, page.target 1, page.test 16, SourceListPanel 14); this PR's head has an identical failure set, so it adds no new failures (see README §Limitations and logs/baseline-failures-at-new-base.txt)"
     }
   },
   "implementation_diff": {
