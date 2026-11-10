@@ -1942,6 +1942,9 @@ export const ptBR = {
         },
         recovery: {
           unsent: "An unsent writing selection was restored after re-checking the note version and access.",
+          sessionChanged: 'The saved selection belonged to a different conversation. It was not restored or moved to the current conversation; choose again.',
+          restricted: 'The note is no longer readable, so the saved writing selection was cleared. Reopen the note to choose again.',
+          unavailable: 'The note version or access could not be verified right now. Nothing was restored; try again in a moment.',
           stale:
             "The note changed or access changed since the selection was saved. The old selection is invalid; choose again.",
           unknown:
@@ -1976,6 +1979,12 @@ export const ptBR = {
           intentConflict: "The same submission token was used with a different writing intent.",
           sessionNotFound: "The conversation could not be found.",
           ownerRequired: "Writing requires an owner session.",
+          sessionContractUnsupported: 'The server rejected the writing request because its session contract header is not supported. Reload and try again.',
+          sessionBusy: 'This conversation is busy. Wait for the running request to finish and try again.',
+          invalidRequest: 'The server rejected the writing request as invalid, so nothing was generated. Adjust the selection or instructions and try again.',
+          conflict: 'The writing request conflicted with the current conversation state. Review the input and try again.',
+          accessDenied: 'You do not have access to this conversation or writing input.',
+          generationFailed: 'Writing ended without a usable result. Retry with the original request identity.',
           invalidResponse: "The server response could not be verified.",
           networkError: "Network error. Your selection is kept; retry when the connection is back.",
           unknown: "The writing request failed.",

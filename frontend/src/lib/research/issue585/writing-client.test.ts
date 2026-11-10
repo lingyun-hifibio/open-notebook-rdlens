@@ -43,6 +43,7 @@ import {
   getWritingContext,
   locateWritingResultMessage,
   normalizeWritingApiError,
+  normalizeWritingHttpFailure,
   parseWritingContextProjection,
   resolveWritingResultMessage,
   submitWritingSubmission,
@@ -338,40 +339,136 @@ describe('错误归一化', () => {
       }),
     ).toMatchObject({ code: 'unknown_error', retryable: true })
   })
+
+  it('未知 422/409/403 不再冒充容量/上下文变化：归一到通用码', () => {
+    expect(
+      normalizeWritingApiError({
+        response: {
+          status: 422,
+          data: { detail: { code: 'some_new_422_code', retryable: false } },
+        },
+      }),
+    ).toMatchObject({ code: 'invalid_request', retryable: false, status: 422 })
+    expect(
+      normalizeWritingApiError({
+        response: { status: 409, data: { detail: { code: 'new_conflict' } } },
+      }),
+    ).toMatchObject({ code: 'conflict', status: 409 })
+    expect(
+      normalizeWritingApiError({
+        response: { status: 403, data: { detail: { message: 'denied' } } },
+      }),
+    ).toMatchObject({ code: 'access_denied', status: 403 })
+    // host 写作入口契约头拒绝：422 + session_contract_unsupported 稳定码。
+    expect(
+      normalizeWritingApiError({
+        response: {
+          status: 422,
+          data: { detail: { code: 'session_contract_unsupported' } },
+        },
+      }),
+    ).toMatchObject({ code: 'session_contract_unsupported', status: 422 })
+    // 409 稳定码 session_busy 保留 retryable。
+    expect(
+      normalizeWritingApiError({
+        response: {
+          status: 409,
+          data: { detail: { code: 'session_busy', retryable: true } },
+        },
+      }),
+    ).toMatchObject({ code: 'session_busy', retryable: true, status: 409 })
+  })
+
+  it('共享传输层归一化 normalizeWritingHttpFailure 与 axios 路径一致', () => {
+    expect(
+      normalizeWritingHttpFailure(422, {
+        detail: { code: 'session_contract_unsupported', retryable: false },
+      }),
+    ).toMatchObject({ code: 'session_contract_unsupported', status: 422 })
+    expect(normalizeWritingHttpFailure(422, { detail: { code: 'x' } })).toMatchObject({
+      code: 'invalid_request',
+    })
+    expect(normalizeWritingHttpFailure(503, null)).toMatchObject({
+      code: 'writing_input_unavailable',
+      retryable: true,
+    })
+  })
 })
 
-describe('结果消息定位（手工摘入需要耐久 message_id）', () => {
+describe('结果消息定位（按 generation_id 精确匹配耐久 message_id）', () => {
+  /**
+   * host headed chat 投递的确定性 id 规则：
+   * `msg_{generation_id}_assistant` / `msg_{generation_id}_user`
+   * （`chat/delivery.py`）。
+   */
   const detail = {
     session: {
       session_id: 'sess_a',
       title: null,
     },
     messages: [
-      { message_id: 'm1', role: 'user' as const, content: '请改写' },
-      { message_id: 'm2', role: 'assistant' as const, content: '改写结果' },
-      { message_id: 'm3', role: 'assistant' as const, content: '其它回答' },
+      { message_id: 'msg_gen_1_user', role: 'user' as const, content: '请改写' },
+      { message_id: 'msg_gen_1_assistant', role: 'assistant' as const, content: '改写结果' },
+      // 同正文的其它轮次：按 generation 定位不得误取。
+      { message_id: 'msg_gen_0_assistant', role: 'assistant' as const, content: '改写结果' },
+      { message_id: 'msg_gen_1_assistant_dup', role: 'assistant' as const, content: '其它回答' },
     ],
     cards: [],
     next_cursor: null,
   }
 
-  it('唯一匹配已发布正文 → 返回 message_id 及前一条 user', () => {
-    expect(resolveWritingResultMessage(detail, '改写结果')).toEqual({
+  it('按 generation_id 返回对应 assistant/user；同正文重复轮次不影响', () => {
+    expect(resolveWritingResultMessage(detail, '改写结果', 'gen_1')).toEqual({
       ok: true,
-      messageId: 'm2',
+      messageId: 'msg_gen_1_assistant',
       content: '改写结果',
-      userMessageId: 'm1',
+      userMessageId: 'msg_gen_1_user',
     })
   })
 
-  it('无匹配/空文本 → 失败，不猜测', () => {
-    expect(resolveWritingResultMessage(detail, '不存在的正文').ok).toBe(false)
-    expect(resolveWritingResultMessage(detail, '').ok).toBe(false)
+  it('generation 缺失 → no_generation（不按正文猜）', () => {
+    expect(resolveWritingResultMessage(detail, '改写结果', null)).toEqual({
+      ok: false,
+      reason: 'no_generation',
+    })
   })
 
-  it('locateWritingResultMessage 读取会话详情（desc 尾部窗口）', async () => {
+  it('generation 对应消息不存在 → not_found', () => {
+    expect(resolveWritingResultMessage(detail, '改写结果', 'gen_missing')).toEqual({
+      ok: false,
+      reason: 'not_found',
+    })
+  })
+
+  it('generation 对应消息正文不一致 → content_mismatch（不回退按正文搜索）', () => {
+    expect(resolveWritingResultMessage(detail, '改写结果', 'gen_x')).toEqual({
+      ok: false,
+      reason: 'not_found',
+    })
+    const mismatchDetail = {
+      ...detail,
+      messages: [
+        {
+          message_id: 'msg_gen_x_assistant',
+          role: 'assistant' as const,
+          content: '别的正文',
+        },
+      ],
+    }
+    expect(resolveWritingResultMessage(mismatchDetail, '改写结果', 'gen_x')).toEqual({
+      ok: false,
+      reason: 'content_mismatch',
+    })
+  })
+
+  it('locateWritingResultMessage 读取会话详情（desc 尾部窗口）并按 generation 定位', async () => {
     apiMocks.getResearchChatSession.mockResolvedValue(detail)
-    const located = await locateWritingResultMessage('p_demo', 'sess_a', '改写结果')
+    const located = await locateWritingResultMessage(
+      'p_demo',
+      'sess_a',
+      'gen_1',
+      '改写结果',
+    )
     expect(located.ok).toBe(true)
     expect(apiMocks.getResearchChatSession).toHaveBeenCalledWith('p_demo', 'sess_a', {
       order: 'desc',

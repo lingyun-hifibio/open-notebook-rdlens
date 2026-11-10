@@ -68,7 +68,11 @@ const AUTHORITY: WritingCacheAuthority = {
 }
 
 function validRecord(scope: WritingCacheScope = SCOPE): WritingCacheRecord {
-  const base = createWritingCacheRecord({ scope, now: '2026-11-11T00:00:00.000Z' })
+  const base = createWritingCacheRecord({
+    scope,
+    now: '2026-11-11T00:00:00.000Z',
+    authGeneration: AUTHORITY.currentAuthGeneration,
+  })
   return {
     ...base,
     choice: {
@@ -240,6 +244,58 @@ describe('读取授权（缓存不是授权凭据）', () => {
     expect(
       readWritingCacheRecord(otherScope, { storage, authority: AUTHORITY }),
     ).toBeNull()
+  })
+})
+
+describe('review round 1：确认会话/认证代际/旧记录归一', () => {
+  it('confirmedSessionCreate（创建成功）持久化并可读回', () => {
+    const storage = new FakeStorage()
+    const record = validRecord()
+    const withConfirmed: WritingCacheRecord = {
+      ...record,
+      pendingSessionCreate: null,
+      confirmedSessionCreate: {
+        sessionId: 'sess_confirmed',
+        sessionKind: 'global',
+        sourceId: null,
+        createdAt: '2026-11-11T00:00:00.000Z',
+      },
+    }
+    expect(writeWritingCacheRecord(SCOPE, withConfirmed, { storage }).ok).toBe(true)
+    const read = readWritingCacheRecord(SCOPE, { storage, authority: AUTHORITY })
+    expect(read?.confirmedSessionCreate?.sessionId).toBe('sess_confirmed')
+    expect(read?.pendingSessionCreate).toBeNull()
+  })
+
+  it('authGeneration 不符（旧认证代）→ 读取为 null', () => {
+    const storage = new FakeStorage()
+    expect(writeWritingCacheRecord(SCOPE, validRecord(), { storage }).ok).toBe(true)
+    expect(
+      readWritingCacheRecord(SCOPE, {
+        storage,
+        authority: { ...AUTHORITY, currentAuthGeneration: AUTHORITY.authGeneration + 1 },
+      }),
+    ).toBeNull()
+  })
+
+  it('旧版 v1 记录（无 authGeneration/confirmedSessionCreate）归一后可读', () => {
+    const storage = new FakeStorage()
+    const record = validRecord()
+    const {
+      authGeneration: _authGeneration,
+      confirmedSessionCreate: _confirmedSessionCreate,
+      ...legacy
+    } = record
+    void _authGeneration
+    void _confirmedSessionCreate
+    storage.setItem(writingCacheKey(SCOPE), JSON.stringify(legacy))
+    const read = readWritingCacheRecord(SCOPE, {
+      storage,
+      authority: { ...AUTHORITY, authGeneration: 0, currentAuthGeneration: 0 },
+    })
+    expect(read?.authGeneration).toBe(0)
+    expect(read?.confirmedSessionCreate).toBeNull()
+    expect(read?.choice?.query).toBe('请改写选段')
   })
 })
 

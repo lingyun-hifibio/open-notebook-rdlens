@@ -21,12 +21,19 @@ import { apiClient } from '@/lib/api/client'
 import {
   buildResearchUrl,
   createChatSession,
+  getEditorState,
   getResearchChatSession,
   openResearchWritingStream,
   type ResearchGlobalChatSessionDetail,
   type ResearchSessionAcceptReceipt,
 } from '../api'
-import { parseSessionRef, type ResearchSessionRef } from '@/lib/research/session-contract'
+import {
+  parseEditorResponse,
+  parseSessionRef,
+  type ResearchSessionRef,
+} from '@/lib/research/session-contract'
+import { getNoteD2 } from './note-client'
+import { normalizeNoteApiError } from './note-client'
 import type { ResearchSseEvent } from '@/lib/research/types'
 import {
   type WritingAccessState,
@@ -40,6 +47,7 @@ import {
   type WritingContextProjection,
   type WritingErrorCode,
   type WritingHistoryMode,
+  type WritingNoteVerification,
   type WritingSessionCreateResult,
   type WritingSelection,
   type WritingSubmissionRequest,
@@ -53,8 +61,14 @@ const WRITING_ERROR_CODES: ReadonlySet<string> = new Set<WritingErrorCode>([
   'writing_input_unavailable',
   'context_limit_exceeded',
   'submission_intent_conflict',
+  'session_contract_unsupported',
+  'session_busy',
+  'invalid_request',
+  'conflict',
+  'access_denied',
   'session_not_found',
   'chat_owner_required',
+  'generation_failed',
   'invalid_response',
   'network_error',
   'unknown_error',
@@ -129,12 +143,22 @@ function readRequestId(error: unknown, detail: Record<string, unknown> | null): 
   return typeof value === 'string' && value.length > 0 ? value : undefined
 }
 
+/**
+ * 状态码兜底推断（仅当服务端未给可识别 detail.code 时）。
+ *
+ * 不得把 422 一律当容量超限、409 一律当 context changed（review MEDIUM-6）：
+ * - 422 → 通用 `invalid_request`（容量语义只由显式 `context_limit_exceeded`）；
+ * - 409 → 通用 `conflict`（可重试性保留 detail 的 retryable/状态推断）；
+ * - 403 → 通用 `access_denied`（不冒充 owner 会话语义）；
+ * - 426 → `session_contract_unsupported`（host 的契约头拒绝状态）。
+ */
 function inferCodeFromStatus(status: number): WritingErrorCode | null {
   if (status === 0) return 'network_error'
-  if (status === 403) return 'chat_owner_required'
+  if (status === 403) return 'access_denied'
   if (status === 404) return 'session_not_found'
-  if (status === 409) return 'writing_context_changed'
-  if (status === 422) return 'context_limit_exceeded'
+  if (status === 409) return 'conflict'
+  if (status === 422) return 'invalid_request'
+  if (status === 426) return 'session_contract_unsupported'
   if (status === 503) return 'writing_input_unavailable'
   return null
 }
@@ -187,6 +211,36 @@ export function writingApiError(
 
 function invalidResponseError(): WritingApiError {
   return writingApiError('invalid_response', { status: 200, retryable: true })
+}
+
+/**
+ * 从传输层回调的 `(status, body)` 归一化写作 API 错误（共享给编排 hook）。
+ *
+ * 只接受已知稳定码；未知码按状态兜底（422→invalid_request、409→conflict、
+ * 403→access_denied、426→session_contract_unsupported），**不**把容量/上下文
+ * 变化文案套到所有同状态错误上；服务端 `retryable` 原样保留。
+ */
+export function normalizeWritingHttpFailure(
+  status: number,
+  body: unknown,
+): WritingApiError {
+  const detail =
+    isRecord(body) && isRecord(body.detail) ? body.detail : null
+  const rawCode = detail !== null && typeof detail.code === 'string' ? detail.code : null
+  const known = rawCode !== null && WRITING_ERROR_CODES.has(rawCode)
+  const code: WritingErrorCode = known
+    ? (rawCode as WritingErrorCode)
+    : (inferCodeFromStatus(status) ?? 'unknown_error')
+  const retryable =
+    detail !== null && typeof detail.retryable === 'boolean'
+      ? detail.retryable
+      : isTransportRetryableStatus(status)
+  return {
+    code,
+    message: detail !== null && typeof detail.message === 'string' ? detail.message : '',
+    retryable,
+    status,
+  }
 }
 
 // ── 会话创建（客户端预生成 session_id；同 id 重试） ──
@@ -556,49 +610,134 @@ export type WritingResultMessageResult =
       readonly ok: true
       readonly messageId: string
       readonly content: string
-      /** 该消息所属 assistant 之前的 user 消息 id（可为 null）。 */
       readonly userMessageId: string | null
     }
-  | { readonly ok: false }
+  | { readonly ok: false; readonly reason: 'no_generation' | 'not_found' | 'content_mismatch' }
 
 /**
- * 从会话详情定位刚完成的写作结果消息（手工摘入用）。
+ * 由 generation_id 生成 headed chat 投递的耐久 message_id。
  *
- * 只在能**唯一匹配**已发布正文时返回 message_id；匹配不到返回失败，绝不
- * 猜测或把其它回答当作写作结果。
+ * host 投递路径对同一次执行使用确定性 id（`chat/delivery.py`：
+ * `msg_{generation_id}_assistant` / `msg_{generation_id}_user`），因此写作结果
+ * 可以按 generation 精确定位，不按正文/序号猜测（review MEDIUM-7）。
+ */
+export function writingResultMessageId(generationId: string): string {
+  return `msg_${generationId}_assistant`
+}
+
+/** 写作请求对应的耐久 user message id（同源确定性规则）。 */
+export function writingResultUserMessageId(generationId: string): string {
+  return `msg_${generationId}_user`
+}
+
+/**
+ * 从会话详情按 generation_id 精确定位写作结果消息（手工摘入用）。
+ *
+ * - 候选取自确定性 `msg_{generationId}_assistant`；正文必须与已发布正文完全
+ *   相等（内容不一致 → 明确失败，不回退按正文搜索）；
+ * - 同正文重复出现的其它轮次不影响定位（按 generation，而不是按文本/序号）；
+ * - generation_id 缺失 → `no_generation`（调用方显示不可摘入原因）。
  */
 export function resolveWritingResultMessage(
   detail: ResearchGlobalChatSessionDetail,
   expectedContent: string,
+  generationId: string | null,
 ): WritingResultMessageResult {
-  if (expectedContent.length === 0) return { ok: false }
-  const messages = detail.messages
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index]
-    if (message.role !== 'assistant' || message.content !== expectedContent) continue
-    let userMessageId: string | null = null
-    for (let prior = index - 1; prior >= 0; prior -= 1) {
-      if (messages[prior].role === 'user') {
-        userMessageId = messages[prior].message_id
-        break
-      }
-    }
-    return { ok: true, messageId: message.message_id, content: message.content, userMessageId }
+  if (generationId === null || generationId.length === 0) {
+    return { ok: false, reason: 'no_generation' }
   }
-  return { ok: false }
+  if (expectedContent.length === 0) return { ok: false, reason: 'content_mismatch' }
+  const messageId = writingResultMessageId(generationId)
+  const match = detail.messages.find((message) => message.message_id === messageId)
+  if (match === undefined) return { ok: false, reason: 'not_found' }
+  if (match.role !== 'assistant' || match.content !== expectedContent) {
+    return { ok: false, reason: 'content_mismatch' }
+  }
+  const userMessageId = writingResultUserMessageId(generationId)
+  const hasUser = detail.messages.some((message) => message.message_id === userMessageId)
+  return {
+    ok: true,
+    messageId,
+    content: match.content,
+    userMessageId: hasUser ? userMessageId : null,
+  }
 }
 
-/** 拉取会话详情并定位写作结果（手工摘入前调用）。 */
+/** 拉取会话详情并按 generation 定位写作结果（手工摘入前调用）。 */
 export async function locateWritingResultMessage(
   projectId: string,
   sessionId: string,
+  generationId: string | null,
   expectedContent: string,
 ): Promise<WritingResultMessageResult> {
+  if (generationId === null) return { ok: false, reason: 'no_generation' }
   try {
     const detail = await getResearchChatSession(projectId, sessionId, { order: 'desc', limit: 50 })
-    return resolveWritingResultMessage(detail, expectedContent)
+    return resolveWritingResultMessage(detail, expectedContent, generationId)
   } catch {
-    return { ok: false }
+    return { ok: false, reason: 'not_found' }
+  }
+}
+
+// ── 服务端 owner 身份 / Note 权限重查（方案 §6.1.2；review LOW-3/MEDIUM-3） ──
+
+/**
+ * 解析契约 `owner_user_id`：优先现有会话 editor-state 服务端返回的
+ * `viewer_user_id`（正整数），不依赖宿主 `claims.sub` 必须是数字串。
+ *
+ * 返回 null = 服务端未能确认；调用方显示可见 `owner_unknown`，不伪造身份。
+ */
+export async function resolveWritingOwnerUserId(
+  projectId: string,
+  sessionRef: ResearchSessionRef,
+): Promise<number | null> {
+  try {
+    const raw = await getEditorState(projectId, {
+      kind: sessionRef.kind,
+      sessionId: sessionRef.sessionId,
+      sourceId: sessionRef.kind === 'source' ? (sessionRef.sourceId ?? null) : null,
+    })
+    const parsed = parseEditorResponse(raw)
+    if (!parsed.ok) return null
+    const value = parsed.value.viewerUserId
+    return Number.isSafeInteger(value) && value >= 1 ? value : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 恢复未发送选择前重新读取 Note（权限 + 版本），方案 §6.1.2。
+ *
+ * 只把服务端当前 `access_state=visible` 且 revision/snapshot_hash 可读的
+ * 结果当作可恢复依据；受限/不存在/暂不可判定均如实返回，不把 unknown
+ * 当作 visible。
+ */
+export async function verifyWritingNote(
+  projectId: string,
+  noteId: string,
+): Promise<WritingNoteVerification> {
+  try {
+    const note = await getNoteD2(projectId, noteId)
+    if (note.access_state === 'restricted') {
+      return { ok: false, reason: 'restricted' }
+    }
+    if (note.revision === null || note.snapshot_hash === null) {
+      return { ok: false, reason: 'unavailable' }
+    }
+    return { ok: true, revision: note.revision, snapshotHash: note.snapshot_hash }
+  } catch (error) {
+    const normalized = normalizeNoteApiError(error)
+    if (
+      normalized.code === 'note_access_restricted' ||
+      normalized.status === 403
+    ) {
+      return { ok: false, reason: 'restricted' }
+    }
+    if (normalized.code === 'note_not_found' || normalized.status === 404) {
+      return { ok: false, reason: 'not_found' }
+    }
+    return { ok: false, reason: 'unavailable' }
   }
 }
 

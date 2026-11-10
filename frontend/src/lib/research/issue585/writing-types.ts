@@ -166,8 +166,14 @@ export type WritingErrorCode =
   | 'writing_input_unavailable'
   | 'context_limit_exceeded'
   | 'submission_intent_conflict'
+  | 'session_contract_unsupported'
+  | 'session_busy'
+  | 'invalid_request'
+  | 'conflict'
+  | 'access_denied'
   | 'session_not_found'
   | 'chat_owner_required'
+  | 'generation_failed'
   | 'invalid_response'
   | 'network_error'
   | 'unknown_error'
@@ -202,6 +208,24 @@ export type WritingSessionChoice = WritingCurrentSessionChoice | WritingNewSessi
 export type WritingSessionCreateResult =
   | { readonly ok: true; readonly ref: ResearchSessionRef; readonly created: boolean }
   | { readonly ok: false; readonly error: WritingApiError }
+
+/**
+ * 恢复未发送选择前的 Note 权限/版本重查结果（方案 §6.1.2）。
+ *
+ * `restricted`：当前权限受限（清理缓存、只显示受限说明）；`not_found`：
+ * 文档已不存在；`unavailable`：服务端暂时无法判定权限/版本（不恢复正文/
+ * 选择，保留缓存并允许稍后重试）；`ok` 时返回服务端当前 revision/hash。
+ */
+export type WritingNoteVerification =
+  | {
+      readonly ok: true
+      readonly revision: number
+      readonly snapshotHash: string
+    }
+  | {
+      readonly ok: false
+      readonly reason: 'restricted' | 'not_found' | 'unavailable'
+    }
 
 // ── 提交/结果状态（UI 显式状态；不伪造成功） ──
 

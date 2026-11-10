@@ -82,6 +82,9 @@ interface FakeHarness {
   emitAccept: (generationId: string) => void
   emitHttpError: (status: number, body: unknown) => void
   emitNetworkError: () => void
+  emitEnd: () => void
+  verifyNoteCalls: Array<{ projectId: string; noteId: string }>
+  ownerResolutionCalls: Array<Parameters<WritingComposePorts['resolveOwnerUserId']>[1]>
 }
 
 function makeHarness(): FakeHarness {
@@ -89,6 +92,8 @@ function makeHarness(): FakeHarness {
   const submitCalls: Array<Parameters<WritingComposePorts['submitWriting']>[0]> = []
   const getContextCalls: string[] = []
   const createCalls: Array<Parameters<WritingComposePorts['createSession']>[0]> = []
+  const verifyNoteCalls: Array<{ projectId: string; noteId: string }> = []
+  const ownerResolutionCalls: Array<Parameters<WritingComposePorts['resolveOwnerUserId']>[1]> = []
   let current: Parameters<WritingComposePorts['submitWriting']>[0] | null = null
   const ports: WritingComposePorts = {
     createSession: vi.fn(async (input) => {
@@ -116,6 +121,18 @@ function makeHarness(): FakeHarness {
       getContextCalls.push(generationId)
       return { ok: true as const, projection: PROJECTION }
     }),
+    verifyNote: vi.fn(async (projectId, noteId) => {
+      verifyNoteCalls.push({ projectId, noteId })
+      return {
+        ok: true as const,
+        revision: NOTE.revision,
+        snapshotHash: NOTE.snapshotHash,
+      }
+    }),
+    resolveOwnerUserId: vi.fn(async (_projectId, ref) => {
+      ownerResolutionCalls.push(ref)
+      return 42
+    }),
   }
   return {
     ports,
@@ -134,6 +151,9 @@ function makeHarness(): FakeHarness {
       }),
     emitHttpError: (status, body) => current?.onHttpError?.(status, body),
     emitNetworkError: () => current?.onNetworkError?.(new Error('offline')),
+    emitEnd: () => current?.onEnd?.(),
+    verifyNoteCalls,
+    ownerResolutionCalls,
   }
 }
 
@@ -385,8 +405,11 @@ describe('composer 身份桥接与请求构造', () => {
     expect(harness.submitCalls).toHaveLength(0)
   })
 
-  it('owner 身份无法验证 → owner_unknown（不保存 composer）', async () => {
+  it('owner 身份无法验证（claims 非数字且服务端解析失败）→ owner_unknown（不保存 composer）', async () => {
     const harness = makeHarness()
+    ;(harness.ports as { resolveOwnerUserId: unknown }).resolveOwnerUserId = vi.fn(
+      async () => null,
+    )
     const ownerUnknown = renderHook(() =>
       useWritingCompose(baseOptions({ ports: harness.ports, viewerUserId: 'abc' })),
     )
@@ -635,6 +658,271 @@ describe('SSE reducer 交叉校验（事件累积语义）', () => {
     state = applySseEvent(state, answerEvent(1, 'a'))
     state = applySseEvent(state, answerEvent(2, 'b'))
     expect(state.answer).toBe('ab')
+  })
+})
+
+describe('review round 1 修复回归', () => {
+  it('MEDIUM-1：新建会话成功即持久化 confirmed，刷新/重开不重复创建', async () => {
+    const harness = makeHarness()
+    const options = baseOptions({
+      ports: harness.ports,
+      currentRef: null,
+      sourceId: null,
+    })
+    const first = renderHook(() => useWritingCompose(options))
+    act(() => first.result.current.setSelection({ kind: 'full' }))
+    await act(async () => {
+      await first.result.current.createSession()
+    })
+    expect(harness.createCalls).toHaveLength(1)
+    const createdId = first.result.current.createdSession?.sessionId
+    expect(createdId).toBe('sess_client_fixed')
+    expect(readCache()?.confirmedSessionCreate).toMatchObject({
+      sessionId: 'sess_client_fixed',
+      sessionKind: 'global',
+      sourceId: null,
+    })
+    first.unmount()
+
+    const harness2 = makeHarness()
+    const second = renderHook(() => useWritingCompose({ ...options, ports: harness2.ports }))
+    await waitFor(() => expect(second.result.current.createdSession?.sessionId).toBe(createdId))
+    // 刷新恢复：不再次创建（服务端不出现重复空会话）。
+    expect(harness2.createCalls).toHaveLength(0)
+  })
+
+  it('MEDIUM-2：输入的 query 随 debounce 落盘，刷新后恢复', async () => {
+    const harness = makeHarness()
+    const first = renderHook(() => useWritingCompose(baseOptions({ ports: harness.ports })))
+    act(() => first.result.current.setQuery('未发送的指令'))
+    await waitFor(() => expect(readCache()?.choice?.query).toBe('未发送的指令'))
+    first.unmount()
+
+    const harness2 = makeHarness()
+    const second = renderHook(() => useWritingCompose(baseOptions({ ports: harness2.ports })))
+    await waitFor(() => expect(second.result.current.recovery?.kind).toBe('unsent'))
+    expect(second.result.current.query).toBe('未发送的指令')
+  })
+
+  it('HIGH-2：缓存选择属于其它会话 → stale(session)，不静默改投当前会话', () => {
+    seedCache(
+      cacheRecord({
+        choice: {
+          documentSelection: {
+            note_id: NOTE.noteId,
+            revision: NOTE.revision,
+            snapshot_hash: NOTE.snapshotHash,
+            selection: { kind: 'range', start_utf16: 1, end_utf16: 3 },
+          },
+          historyMode: 'current',
+          sessionChoice: 'current',
+          sessionKind: 'global',
+          sourceId: null,
+          currentSessionId: 'sess_other',
+          query: '旧会话的指令',
+          modelId: 'm-local',
+        },
+      }),
+    )
+    const harness = makeHarness()
+    const { result } = renderHook(() =>
+      useWritingCompose(baseOptions({ ports: harness.ports })),
+    )
+    return waitFor(() => expect(result.current.recovery?.kind).toBe('stale')).then(() => {
+      expect(result.current.recovery?.cause).toBe('session')
+      expect(result.current.query).toBe('')
+      expect(readCache()?.choice ?? null).toBeNull()
+    })
+  })
+
+  it('HIGH-2：source 会话缓存不得在 global surface 恢复', async () => {
+    seedCache(
+      cacheRecord({
+        choice: {
+          documentSelection: {
+            note_id: NOTE.noteId,
+            revision: NOTE.revision,
+            snapshot_hash: NOTE.snapshotHash,
+            selection: { kind: 'full' },
+          },
+          historyMode: 'none',
+          sessionChoice: 'current',
+          sessionKind: 'source',
+          sourceId: 'src_1',
+          currentSessionId: 'sess_src',
+          query: '来源指令',
+          modelId: 'm-local',
+        },
+      }),
+    )
+    const harness = makeHarness()
+    const { result } = renderHook(() =>
+      useWritingCompose(baseOptions({ ports: harness.ports })),
+    )
+    await waitFor(() => expect(result.current.recovery?.kind).toBe('stale'))
+    expect(result.current.recovery?.cause).toBe('session')
+    expect(result.current.query).toBe('')
+    expect(result.current.sessionChoiceKind).toBe('current')
+  })
+
+  it('MEDIUM-3：恢复前重查 Note；服务端受限 → 清理缓存并只显示受限', async () => {
+    seedCache(
+      cacheRecord({
+        choice: {
+          documentSelection: {
+            note_id: NOTE.noteId,
+            revision: NOTE.revision,
+            snapshot_hash: NOTE.snapshotHash,
+            selection: { kind: 'full' },
+          },
+          historyMode: 'none',
+          sessionChoice: 'current',
+          sessionKind: 'global',
+          sourceId: null,
+          currentSessionId: 'sess_current',
+          query: '待恢复',
+          modelId: 'm-local',
+        },
+      }),
+    )
+    const harness = makeHarness()
+    ;(harness.ports as { verifyNote: unknown }).verifyNote = vi.fn(
+      async () => ({ ok: false as const, reason: 'restricted' as const }),
+    )
+    const { result } = renderHook(() =>
+      useWritingCompose(baseOptions({ ports: harness.ports })),
+    )
+    await waitFor(() => expect(result.current.recovery?.kind).toBe('restricted'))
+    expect(harness.ports.verifyNote).toHaveBeenCalledWith('p_demo', NOTE.noteId)
+    expect(readCache()).toBeNull()
+    expect(result.current.query).toBe('')
+  })
+
+  it('MEDIUM-3：权限/版本暂不可判定 → unavailable，保留缓存不恢复正文', async () => {
+    seedCache(
+      cacheRecord({
+        choice: {
+          documentSelection: {
+            note_id: NOTE.noteId,
+            revision: NOTE.revision,
+            snapshot_hash: NOTE.snapshotHash,
+            selection: { kind: 'full' },
+          },
+          historyMode: 'none',
+          sessionChoice: 'current',
+          sessionKind: 'global',
+          sourceId: null,
+          currentSessionId: 'sess_current',
+          query: '待恢复',
+          modelId: 'm-local',
+        },
+      }),
+    )
+    const harness = makeHarness()
+    ;(harness.ports as { verifyNote: unknown }).verifyNote = vi.fn(
+      async () => ({ ok: false as const, reason: 'unavailable' as const }),
+    )
+    const { result } = renderHook(() =>
+      useWritingCompose(baseOptions({ ports: harness.ports })),
+    )
+    await waitFor(() => expect(result.current.recovery?.kind).toBe('unavailable'))
+    expect(result.current.query).toBe('')
+    expect(readCache()?.choice?.query).toBe('待恢复')
+  })
+
+  it('MEDIUM-4：composer ACK 等待期间重复发送 → 单次保存/单次提交', async () => {
+    const harness = makeHarness()
+    const { result } = renderHook(() =>
+      useWritingCompose(baseOptions({ ports: harness.ports })),
+    )
+    act(() => result.current.setQuery('改写'))
+    let resolveSave: ((value: typeof SAVED) => void) | null = null
+    const saveComposer = vi.fn(
+      () =>
+        new Promise<typeof SAVED>((resolve) => {
+          resolveSave = resolve
+        }),
+    )
+    let firstSubmit: Promise<void> | null = null
+    act(() => {
+      firstSubmit = result.current.submit(saveComposer)
+    })
+    expect(saveComposer).toHaveBeenCalledTimes(1)
+    expect(result.current.submission.stage).toBe('preparing_composer')
+    // 第二次点击：single-flight 直接忽略。
+    await act(async () => {
+      await result.current.submit(saveComposer)
+    })
+    expect(saveComposer).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      resolveSave?.(SAVED)
+      await firstSubmit
+    })
+    expect(harness.submitCalls).toHaveLength(1)
+  })
+
+  it('MEDIUM-5：EOF 无终态 → 结算为可重试错误；重放同原身份', async () => {
+    const harness = makeHarness()
+    const { result } = renderHook(() =>
+      useWritingCompose(baseOptions({ ports: harness.ports })),
+    )
+    act(() => result.current.setQuery('改写'))
+    await act(async () => {
+      await result.current.submit(async () => SAVED)
+    })
+    act(() => {
+      harness.emitAccept('gen_1')
+      harness.emitEvent(answerEvent(1, '部分'))
+      harness.emitEnd()
+    })
+    expect(result.current.submission.stage).toBe('error')
+    expect(result.current.submission.error?.retryable).toBe(true)
+    const firstIntent = harness.submitCalls[0].request.writing_intent_hash
+    await act(async () => {
+      await result.current.retrySameSubmission()
+    })
+    expect(harness.submitCalls).toHaveLength(2)
+    expect(harness.submitCalls[1].request.writing_intent_hash).toBe(firstIntent)
+    expect(harness.submitCalls[1].request.draft_token).toBe(harness.submitCalls[0].request.draft_token)
+  })
+
+  it('MEDIUM-6：422 未知码不冒充容量超限；session_contract_unsupported 原样可见', async () => {
+    const harness = makeHarness()
+    const { result } = renderHook(() =>
+      useWritingCompose(baseOptions({ ports: harness.ports })),
+    )
+    act(() => result.current.setQuery('改写'))
+    await act(async () => {
+      await result.current.submit(async () => SAVED)
+    })
+    act(() => {
+      harness.emitHttpError(422, { detail: { code: 'session_contract_unsupported' } })
+    })
+    expect(result.current.submission.error?.code).toBe('session_contract_unsupported')
+    act(() => {
+      harness.emitHttpError(422, { detail: { code: 'new_422_code' } })
+    })
+    expect(result.current.submission.error?.code).toBe('invalid_request')
+    act(() => {
+      harness.emitHttpError(409, { detail: { code: 'new_conflict' } })
+    })
+    expect(result.current.submission.error?.code).toBe('conflict')
+  })
+
+  it('LOW-3：claims.sub 非数字时用服务端 viewer_user_id 解析 owner 并成功提交', async () => {
+    const harness = makeHarness()
+    const { result } = renderHook(() =>
+      useWritingCompose(
+        baseOptions({ ports: harness.ports, viewerUserId: 'user_1' }),
+      ),
+    )
+    act(() => result.current.setQuery('改写'))
+    await act(async () => {
+      await result.current.submit(async () => SAVED)
+    })
+    expect(harness.ownerResolutionCalls).toHaveLength(1)
+    expect(harness.submitCalls).toHaveLength(1)
+    expect(harness.submitCalls[0].sessionRef.sessionId).toBe('sess_current')
   })
 })
 

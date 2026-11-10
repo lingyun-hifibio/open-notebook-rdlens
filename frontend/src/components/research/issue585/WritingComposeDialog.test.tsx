@@ -121,6 +121,7 @@ const NOTE = {
   revision: 4,
   snapshotHash: 'a'.repeat(64),
   content: 'abcdef',
+  accessState: 'visible' as const,
 }
 
 const PROJECTION: WritingContextProjection = {
@@ -394,6 +395,13 @@ describe('结果与实际输入回看 + 手工摘入', () => {
       await Promise.resolve()
     })
     await waitFor(() => expect(noteWorkspaceMock.value?.openExcerptInsert).toHaveBeenCalled())
+    // MEDIUM-7：按 generation_id 定位耐久消息，不按正文/序号猜。
+    expect(clientMocks.locateWritingResultMessage).toHaveBeenCalledWith(
+      'p_demo',
+      'sess_current',
+      'gen_1',
+      '改写结果',
+    )
     expect(noteWorkspaceMock.value?.openExcerptInsert).toHaveBeenCalledWith(
       expect.objectContaining({
         sourceKind: 'chat_message',

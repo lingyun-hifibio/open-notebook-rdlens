@@ -281,6 +281,14 @@ export function NoteWorkspaceProvider({
         revision: note.revision,
         snapshotHash: note.snapshot_hash,
         content: state.content,
+        // d2-v1 access_state 原样透传（restricted 不进入写作入口；unknown 保持
+        // unknown 让恢复侧走 fail-closed 的真实重查）。
+        accessState:
+          note.access_state === 'restricted'
+            ? 'restricted'
+            : note.access_state === 'visible'
+              ? 'visible'
+              : 'unknown',
       },
       initialSelection: pendingWritingSelection,
     })
@@ -314,7 +322,10 @@ export function NoteWorkspaceProvider({
           currentProjectId: projectId,
           authGeneration: authGeneration ?? 0,
           currentAuthGeneration: authGeneration ?? 0,
-          notePermission: 'visible',
+          // 权限投影来自当前已加载的 d2-v1 Note，而不是常量 visible；缓存记录
+          // 另有 authGeneration 比对，代际不符时读取为 null（review MEDIUM-3）。
+          notePermission:
+            currentEditorNote?.access_state === 'visible' ? 'visible' : 'unknown',
         },
       },
     )

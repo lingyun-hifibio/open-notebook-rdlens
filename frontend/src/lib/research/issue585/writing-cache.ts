@@ -101,6 +101,18 @@ export interface WritingCachedChoice {
   readonly modelId: string
 }
 
+/**
+ * 已确认创建成功的新会话（方案 §6.1.1「创建成功后保存该会话 composer」）。
+ *
+ * 创建成功即持久化；刷新/重开对话框时直接复用该会话（禁止重复创建）。
+ */
+export interface WritingConfirmedSessionCreate {
+  readonly sessionId: string
+  readonly sessionKind: ResearchSessionKind
+  readonly sourceId: string | null
+  readonly createdAt: string
+}
+
 /** 未决的新会话创建（客户端预生成 session_id；失败同 id 重试，禁止重复创建）。 */
 export interface WritingPendingSessionCreate {
   /** 写作尝试标识：同一尝试的重试复用 session_id，新尝试才生成新 id。 */
@@ -142,8 +154,12 @@ export interface WritingCacheRecord {
   readonly noteId: string
   readonly tabId: string
   readonly updatedAt: string
+  /** 写入时的认证代际；读取时与服务端确认的当前代际比较（防旧代恢复）。 */
+  readonly authGeneration: number
   readonly choice: WritingCachedChoice | null
   readonly pendingSessionCreate: WritingPendingSessionCreate | null
+  /** 已确认创建成功的新会话（刷新后复用，禁止重复创建）。 */
+  readonly confirmedSessionCreate: WritingConfirmedSessionCreate | null
   readonly lastSubmission: WritingCachedSubmission | null
 }
 
@@ -331,6 +347,15 @@ function hasClosedKeys(value: Record<string, unknown>, keys: readonly string[]):
   return actual.length === keys.length && keys.every((key) => key in value)
 }
 
+function isSafeCount(value: unknown): value is number {
+  return (
+    typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value <= Number.MAX_SAFE_INTEGER
+  )
+}
+
 function isRevision(value: unknown, minimum: number): value is number {
   return (
     typeof value === 'number' &&
@@ -407,6 +432,19 @@ function isValidPendingCreate(value: unknown): value is WritingPendingSessionCre
   )
 }
 
+function isValidConfirmedCreate(value: unknown): value is WritingConfirmedSessionCreate {
+  if (!isRecord(value)) return false
+  return (
+    hasClosedKeys(value, ['sessionId', 'sessionKind', 'sourceId', 'createdAt']) &&
+    typeof value.sessionId === 'string' &&
+    /^[A-Za-z0-9_-]{1,128}$/.test(value.sessionId) &&
+    SESSION_KINDS.includes(value.sessionKind as ResearchSessionKind) &&
+    (value.sourceId === null || isNonEmptyString(value.sourceId)) &&
+    (value.sessionKind === 'source' ? isNonEmptyString(value.sourceId) : value.sourceId === null) &&
+    isNonEmptyString(value.createdAt)
+  )
+}
+
 function isValidSubmission(value: unknown): value is WritingCachedSubmission {
   if (!isRecord(value)) return false
   return (
@@ -453,8 +491,10 @@ export function isValidWritingCacheRecord(value: unknown): value is WritingCache
       'noteId',
       'tabId',
       'updatedAt',
+      'authGeneration',
       'choice',
       'pendingSessionCreate',
+      'confirmedSessionCreate',
       'lastSubmission',
     ]) &&
     value.v === 1 &&
@@ -463,8 +503,11 @@ export function isValidWritingCacheRecord(value: unknown): value is WritingCache
     isNonEmptyString(value.noteId) &&
     isNonEmptyString(value.tabId) &&
     isNonEmptyString(value.updatedAt) &&
+    isSafeCount(value.authGeneration) &&
     (value.choice === null || isValidChoice(value.choice)) &&
     (value.pendingSessionCreate === null || isValidPendingCreate(value.pendingSessionCreate)) &&
+    (value.confirmedSessionCreate === null ||
+      isValidConfirmedCreate(value.confirmedSessionCreate)) &&
     (value.lastSubmission === null || isValidSubmission(value.lastSubmission))
   )
 }
@@ -508,7 +551,7 @@ export function readWritingCacheRecord(
   }
   const entry = entryFor(options)
   const raw = readRaw(entry, writingCacheKey(scope))
-  const parsed = parseJson(raw)
+  const parsed = normalizeLegacyWritingCacheRecord(parseJson(raw))
   if (!isValidWritingCacheRecord(parsed)) return null
   if (
     parsed.ownerId !== scope.ownerId ||
@@ -518,7 +561,53 @@ export function readWritingCacheRecord(
   ) {
     return null
   }
+  // 认证代际不符：旧代缓存不得在刷新/重新认证后恢复（方案 §6.1.2/§4.2）。
+  if (
+    options.authority !== undefined &&
+    parsed.authGeneration !== options.authority.currentAuthGeneration
+  ) {
+    return null
+  }
   return parsed
+}
+
+/**
+ * 旧版记录（本 PR 早期写入的 v1 记录尚无声明的两个加性字段）归一：
+ * `authGeneration` 缺省按 0、`confirmedSessionCreate` 缺省 null。
+ *
+ * 只补这两个已知加性字段，不改变“闭合键集”保证：补后再走严格校验，
+ * 其它任意附加键仍被拒绝。
+ */
+function normalizeLegacyWritingCacheRecord(value: unknown): unknown {
+  if (!isRecord(value) || value.v !== 1) return value
+  const hasAuth = 'authGeneration' in value
+  const hasConfirmed = 'confirmedSessionCreate' in value
+  if (hasAuth && hasConfirmed) return value
+  const legacyKeys = [
+    'v',
+    'ownerId',
+    'projectId',
+    'noteId',
+    'tabId',
+    'updatedAt',
+    'choice',
+    'pendingSessionCreate',
+    'lastSubmission',
+  ]
+  if (!hasClosedKeys(value, legacyKeys)) return value
+  return {
+    v: value.v,
+    ownerId: value.ownerId,
+    projectId: value.projectId,
+    noteId: value.noteId,
+    tabId: value.tabId,
+    updatedAt: value.updatedAt,
+    authGeneration: 0,
+    choice: value.choice,
+    pendingSessionCreate: value.pendingSessionCreate,
+    confirmedSessionCreate: null,
+    lastSubmission: value.lastSubmission,
+  }
 }
 
 function invalidWrite(reason: WritingCacheWriteReason): WritingCacheWriteResult {
@@ -607,6 +696,8 @@ export function clearWritingCacheMemoryFallback(): void {
 export function createWritingCacheRecord(input: {
   readonly scope: WritingCacheScope
   readonly now: string
+  /** 写入时的认证代际（缺省 0 仅用于测试/历史宿主）。 */
+  readonly authGeneration?: number
 }): WritingCacheRecord {
   return {
     v: 1,
@@ -615,8 +706,10 @@ export function createWritingCacheRecord(input: {
     noteId: input.scope.noteId,
     tabId: input.scope.tabId,
     updatedAt: input.now,
+    authGeneration: input.authGeneration ?? 0,
     choice: null,
     pendingSessionCreate: null,
+    confirmedSessionCreate: null,
     lastSubmission: null,
   }
 }

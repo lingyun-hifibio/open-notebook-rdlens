@@ -61,6 +61,8 @@ export interface WritingDialogNoteSnapshot {
   readonly revision: number
   readonly snapshotHash: string
   readonly content: string
+  /** 打开时捕获的 d2-v1 access_state（用于缓存授权；恢复前还会服务端重查）。 */
+  readonly accessState: 'visible' | 'restricted' | 'unknown'
 }
 
 export interface WritingComposeDialogProps {
@@ -123,7 +125,14 @@ export function WritingComposeDialog({
     currentRef: launch?.currentRef ?? null,
     sourceId: launch?.sourceId ?? null,
     currentNote: dialogNote,
-    notePermission: note === null ? 'unknown' : 'visible',
+    notePermission:
+      note === null
+        ? 'unknown'
+        : note.accessState === 'restricted'
+          ? 'restricted'
+          : note.accessState === 'unknown'
+            ? 'unknown'
+            : 'visible',
     initialSelection,
     openSession: launch?.openSession,
   })
@@ -198,9 +207,12 @@ export function WritingComposeDialog({
     void (async () => {
       let messageId = resultMessageId
       if (messageId === null) {
+        // 按 generation_id 精确定位耐久 message_id（不按正文/序号猜）。
+        const generationId = compose.submission.generationId
         const located = await locateWritingResultMessage(
           workspace.projectId,
           target.sessionId,
+          generationId,
           answer,
         )
         if (!located.ok) {
@@ -223,6 +235,7 @@ export function WritingComposeDialog({
     })()
   }, [
     compose.submission.answer,
+    compose.submission.generationId,
     compose.targetRef,
     noteWorkspace,
     resultMessageId,
@@ -267,8 +280,16 @@ export function WritingComposeDialog({
               {compose.recovery.kind === 'unsent'
                 ? t('research.notes.writing.recovery.unsent')
                 : compose.recovery.kind === 'stale'
-                  ? t('research.notes.writing.recovery.stale')
-                  : t('research.notes.writing.recovery.unknown')}
+                  ? t(
+                      compose.recovery.cause === 'session'
+                        ? 'research.notes.writing.recovery.sessionChanged'
+                        : 'research.notes.writing.recovery.stale',
+                    )
+                  : compose.recovery.kind === 'restricted'
+                    ? t('research.notes.writing.recovery.restricted')
+                    : compose.recovery.kind === 'unavailable'
+                      ? t('research.notes.writing.recovery.unavailable')
+                      : t('research.notes.writing.recovery.unknown')}
             </p>
             {compose.recovery.kind !== 'unsent' && (
               <div className="mt-1 flex flex-wrap gap-2">

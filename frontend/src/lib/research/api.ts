@@ -1504,6 +1504,25 @@ export type ResearchChatStreamOptions =
 /** attach 阶段 202 的有界退避缺省值（毫秒）：最多 3 次重试、共 4 次 attach POST。 */
 export const DEFAULT_ATTACH_RETRY_DELAYS_MS: readonly number[] = [300, 600, 1000]
 
+/**
+ * 写作 202 受理回执的闭合 10 键（host `writing_submission.WRITING_RECEIPT_KEYS`）。
+ *
+ * 会话变体保持 #602 既有宽松形状（不新增严格性）；写作变体要求恰好这 10 键，
+ * 形状漂移直接协议失败，不猜测/不 attach（review LOW-1）。
+ */
+export const WRITING_ACCEPT_RECEIPT_KEYS: readonly string[] = [
+  'session_ref',
+  'draft_token',
+  'idempotency_key',
+  'acceptance_state',
+  'generation_id',
+  'generation_state',
+  'accepted_editor_revision',
+  'editor_intent_hash',
+  'submitted_draft_text',
+  'context_report',
+]
+
 /** 202 受理回执的传输层投影（只用于「同一提交」校验与记录）。 */
 export interface ResearchSessionAcceptReceipt {
   readonly generationId: string
@@ -1550,11 +1569,22 @@ export function parseSessionAcceptReceipt(
     readonly draftToken: string
     readonly editorIntentHash: string
   },
+  options: { readonly strictKeys?: readonly string[] } = {},
 ): ResearchSessionAcceptReceiptResult {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return invalidAcceptReceipt('body')
   }
   const record = value as Record<string, unknown>
+  if (options.strictKeys !== undefined) {
+    const actual = Object.keys(record)
+    const expectedKeys = options.strictKeys
+    if (
+      actual.length !== expectedKeys.length ||
+      !expectedKeys.every((key) => Object.prototype.hasOwnProperty.call(record, key))
+    ) {
+      return invalidAcceptReceipt('body_keys')
+    }
+  }
   if (record.acceptance_state !== 'accepted') return invalidAcceptReceipt('acceptance_state')
   const refResult = parseSessionRef(record.session_ref)
   if (!refResult.ok) return invalidAcceptReceipt('session_ref')
@@ -1793,8 +1823,10 @@ function openResearchStreamImpl(
     'X-Research-Contract': contractHeader,
     'Idempotency-Key': idempotencyKey,
   }
-  if (sessionOptions !== null) {
-    // 02 §2：所有新协议请求必带会话契约头。
+  if (sessionOptions !== null || writingOptions !== null) {
+    // 02 §2 / #1048 PR7：所有新协议请求必带会话契约头。写作变体与 #602 会话
+    // 提交走同一传输保障（host 在读取 body 之前先校验该头，缺失即 422
+    // `session_contract_unsupported`）。
     headers[SESSION_CONTRACT_HEADER] = SESSION_CONTRACT_VERSION
   }
   if (token) {
@@ -1982,6 +2014,7 @@ function openResearchStreamImpl(
       readonly editorIntentHash: string
     },
     response: Response,
+    strictKeys?: readonly string[],
   ): Promise<ResearchSessionAcceptReceiptResult> => {
     let body: unknown = null
     try {
@@ -1989,7 +2022,11 @@ function openResearchStreamImpl(
     } catch {
       return { ok: false, reason: 'invalid_accept_receipt:body' }
     }
-    return parseSessionAcceptReceipt(body, expected)
+    return parseSessionAcceptReceipt(
+      body,
+      expected,
+      strictKeys === undefined ? {} : { strictKeys },
+    )
   }
 
   /**
@@ -2112,6 +2149,7 @@ function openResearchStreamImpl(
             editorIntentHash: expectedSubmission.editorIntentHash,
           },
           first,
+          writingOptions !== null ? WRITING_ACCEPT_RECEIPT_KEYS : undefined,
         )
         if (!receipt.ok) {
           clearWatchdog()
