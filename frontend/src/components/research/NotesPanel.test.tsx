@@ -837,19 +837,34 @@ describe('NotesPanel', () => {
     fireEvent.click(screen.getByTestId('note-capability-close'))
 
     // Close 只是关闭错误视图：不得静默 discardLocal 删除唯一持久草稿。
+    // （mock 编辑器不写存储，故这里只钉包装后的可观察契约；真实状态机下
+    // “草稿 key 保留”由独立审查 round-2 的 machine/UI 探针验证。）
     expect(actions.discardLocal).not.toHaveBeenCalled()
     expect(actions.closeEditor).toHaveBeenCalled()
-    expect(
-      localStorage.getItem(
-        [
-          'rdlens.research.note.v1',
-          'u1',
-          'proj_1',
-          'note_d2',
-          readOrCreateNoteDraftTabId(),
-        ].join('.'),
-      ),
-    ).not.toBeNull()
+  })
+
+  it('404 + 本地草稿：阻断态 Close 二次确认后可显式放弃（round-2 HIGH 回归）', async () => {
+    seedRecoverableDraft()
+    const { actions } = stubEditor({
+      status: 'error',
+      note: null,
+      saveStatus: 'failed',
+      blockReason: 'note_not_found',
+      title: '本地草稿标题',
+      content: '本地草稿正文',
+      error: { code: 'note_not_found', message: '', retryable: false, status: 404 },
+    })
+    const { wrapper } = makeWrapper()
+    render(<NotesPanel />, { wrapper })
+
+    // note_not_found 会把本地草稿回填进编辑器（有本地文本）⇒ Close 先二次确认，
+    // 确认后必须真正 discardLocal（PR4 显式放弃语义），不得被“打开失败 no-op”
+    // 锁死（否则既不能关闭、也不能切换笔记）。
+    fireEvent.click(await screen.findByTestId('note-capability-close'))
+    expect(actions.discardLocal).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByTestId('note-capability-close-confirm-action'))
+    expect(actions.discardLocal).toHaveBeenCalledTimes(1)
+    expect(actions.closeEditor).toHaveBeenCalled()
   })
 
   it('恢复入口提供复制/下载本地草稿（不打开编辑器也能取回，HIGH-1）', async () => {

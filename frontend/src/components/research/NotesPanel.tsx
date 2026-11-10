@@ -337,17 +337,22 @@ export function NotesPanel({
   const showCapabilityAlert =
     !isAdminReadonly && capabilitiesResult.error !== null && !editorVisible
 
-  // 审查 HIGH-1：打开失败（文档未加载）时，阻断视图的 Close 会 discardLocal
-  // 并删除唯一持久草稿——那不是用户对已加载编辑的显式放弃，属静默丢弃。该
-  // 状态下把 discardLocal 变为 no-op：关闭仍可进行，草稿保留并继续显示在恢复
-  // 入口；已加载文档的显式放弃/冲突放弃路径不变。
+  // 审查 HIGH-1：打开失败（文档未加载、编辑器里没有任何本地文本）时，阻断视图
+  // 的 Close 会 discardLocal 并删除唯一持久草稿——那不是用户对已加载编辑的
+  // 显式放弃，属静默丢弃。仅该“空编辑器 + 打开失败”状态把 discardLocal 变为
+  // no-op：关闭仍可进行、草稿保留并继续显示在恢复入口。
+  // 注意不能只按 state shape 判断：`note_not_found` 分支会把草稿文本回填到
+  // state（note-editor-machine.ts handleOpenFailure），此时必须允许 PR4 的显式
+  // 放弃（二次确认后关闭），否则 404 会把用户锁在编辑器里（审查 round-2 HIGH）。
   const editorActionsForView = useMemo<NoteEditorActions>(() => {
     const actions = editor.actions
     return {
       ...actions,
       discardLocal: () => {
         const current = editorStateRef.current
-        if (current.note === null && current.status === 'error') return
+        const hasLocalText =
+          current.title.trim().length > 0 || current.content.trim().length > 0
+        if (current.note === null && current.status === 'error' && !hasLocalText) return
         actions.discardLocal()
       },
     }
