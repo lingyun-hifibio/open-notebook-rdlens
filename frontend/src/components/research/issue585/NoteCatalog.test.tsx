@@ -92,8 +92,8 @@ describe('NoteCatalog', () => {
     expect(screen.queryByTestId('note-open-note_legacy')).toBeNull()
   })
 
-  it('受限行只显示占位，不渲染标题/正文', () => {
-    renderCatalog({ items: [restrictedNote()] })
+  it('受限行只显示占位，不渲染标题/正文，也不渲染摘入死入口', () => {
+    renderCatalog({ items: [restrictedNote()], onExcerptNote: vi.fn() })
     const row = screen.getByTestId('note-catalog-row-note_restricted')
     expect(row).toHaveAttribute('data-restricted', 'true')
     expect(screen.getByTestId('note-catalog-restricted-note_restricted')).toHaveTextContent(
@@ -101,6 +101,7 @@ describe('NoteCatalog', () => {
     )
     expect(row.textContent).not.toContain('受保护笔记')
     expect(row.textContent).not.toContain('受保护正文')
+    expect(screen.queryByTestId('note-excerpt-note_restricted')).toBeNull()
   })
 
   it('空白新建入口在 canCreate=true 时可用并触发回调', () => {

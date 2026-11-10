@@ -1,16 +1,24 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { MarkdownEditor } from '@/components/ui/markdown-editor'
+import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
 import { useTranslation } from '@/lib/hooks/use-translation'
+import {
+  buildCitationNumbering,
+  decorateCitationMarkersForPreview,
+  parseCitationAnchorHref,
+} from '@/lib/research/issue585/excerpt'
 import type {
   NoteCapabilities,
+  NoteCitationBinding,
   NoteEditorActions,
   NoteEditorState,
 } from '@/lib/research/issue585/types'
+import { useNoteWorkspaceOptional } from './NoteWorkspaceProvider'
 import { NoteCapabilityBlocked } from './NoteCapabilityBlocked'
 import { NoteConflictDialog } from './NoteConflictDialog'
 import { NoteDraftRecoveryBanner } from './NoteDraftRecoveryBanner'
@@ -81,6 +89,9 @@ export function NoteEditorView({
   onRetryCapabilities,
 }: NoteEditorViewProps) {
   const { t } = useTranslation()
+  const noteWorkspace = useNoteWorkspaceOptional()
+  const editorRootRef = useRef<HTMLDivElement | null>(null)
+  const appliedSelectionSeqRef = useRef(0)
   const [viewMode, setViewMode] = useState<ViewMode>('split')
   const [copyState, setCopyState] = useState<'idle' | 'copying' | 'copied' | 'failed'>('idle')
   const [leaveCopyState, setLeaveCopyState] = useState<'idle' | 'copying' | 'copied' | 'failed'>('idle')
@@ -89,6 +100,122 @@ export function NoteEditorView({
   const [conflictDismissed, setConflictDismissed] = useState(false)
   const [leaveDismissed, setLeaveDismissed] = useState(false)
   const [recoveryDismissed, setRecoveryDismissed] = useState(false)
+
+  const citationBindings = useMemo<NoteCitationBinding[]>(
+    () => state.note?.citation_bindings ?? [],
+    [state.note?.citation_bindings],
+  )
+  const citationNumbering = useMemo(
+    () => buildCitationNumbering(state.content, citationBindings),
+    [citationBindings, state.content],
+  )
+  // 内联引用装饰：full Preview 用整段装饰值；split 由下方独立预览子树装饰
+  // （textarea 始终显示原始 marker，避免把展示用锚点写回可编辑正文）。
+  const previewContent = useMemo(
+    () =>
+      viewMode === 'preview'
+        ? decorateCitationMarkersForPreview(state.content, citationNumbering)
+        : state.content,
+    [citationNumbering, state.content, viewMode],
+  )
+  const splitPreviewContent = useMemo(
+    () => decorateCitationMarkersForPreview(state.content, citationNumbering),
+    [citationNumbering, state.content],
+  )
+
+  /** 编辑器 textarea 的当前 UTF-16 选区（无 textarea 时返回 null）。 */
+  function readEditorSelection(): { start: number; end: number } | null {
+    const root = editorRootRef.current
+    if (root === null) return null
+    const textarea = root.querySelector('textarea')
+    if (textarea === null) return null
+    const start = textarea.selectionStart ?? 0
+    const end = textarea.selectionEnd ?? 0
+    return Number.isInteger(start) && Number.isInteger(end) ? { start, end } : null
+  }
+
+  /** 编辑器最近的可滚动祖先（引用返回时恢复滚动位置）。 */
+  function findScrollParent(): HTMLElement | null {
+    let node: HTMLElement | null = editorRootRef.current
+    while (node !== null) {
+      if (node.scrollHeight > node.clientHeight + 4) return node
+      node = node.parentElement
+    }
+    return null
+  }
+
+  function readScrollTop(): number | null {
+    const parent = findScrollParent()
+    return parent === null ? null : parent.scrollTop
+  }
+
+  function openCitation(bindingId: string): void {
+    const binding = citationBindings.find((item) => item.binding_id === bindingId)
+    if (binding === undefined || noteWorkspace === null) return
+    noteWorkspace.openCitation(binding, readEditorSelection(), readScrollTop())
+  }
+
+  function handlePreviewClick(event: React.MouseEvent<HTMLDivElement>): void {
+    const target = event.target as HTMLElement | null
+    const anchor = target?.closest?.('a[href^="#cite-"]') as HTMLAnchorElement | null
+    if (anchor === null || anchor === undefined) return
+    const bindingId = parseCitationAnchorHref(anchor.getAttribute('href'))
+    if (bindingId === null) return
+    event.preventDefault()
+    openCitation(bindingId)
+  }
+
+  /** Note → 其他文档摘入：确认层使用当前 Markdown 原串与 textarea 选区。 */
+  function openExcerptInsertForNote(): void {
+    const note = state.note
+    if (note === null || noteWorkspace === null) return
+    if (note.revision === null || note.snapshot_hash === null) return
+    if (note.edit_schema !== 'd2-v1') return
+    noteWorkspace.openExcerptInsert({
+      sourceKind: 'note',
+      sourceId: note.note_id,
+      sourceVersion: `${note.revision}:${note.snapshot_hash}`,
+      text: state.content,
+      title: state.title.trim().length > 0 ? state.title : t('research.notes.editor.untitled'),
+      initialSelection: readEditorSelection(),
+    })
+  }
+
+  // 恢复位置请求（插入成功/撤销/引用返回）：只在 seq 递增时应用一次。
+  useEffect(() => {
+    const request = state.selectionRequest
+    if (request === undefined || request === null) return
+    if (request.seq === appliedSelectionSeqRef.current) return
+    appliedSelectionSeqRef.current = request.seq
+    if (request.scrollTop !== null) {
+      const parent = findScrollParent()
+      if (parent !== null) parent.scrollTop = request.scrollTop
+    }
+    if (request.selection !== null) {
+      const root = editorRootRef.current
+      const textarea = root?.querySelector('textarea') ?? null
+      if (textarea !== null) {
+        const max = textarea.value.length
+        const start = Math.max(0, Math.min(request.selection.start, max))
+        const end = Math.max(0, Math.min(request.selection.end, max))
+        try {
+          textarea.setSelectionRange(start, end)
+          textarea.focus?.()
+        } catch {
+          // jsdom/受限宿主不实现 selection API 时忽略（不伪造位置）。
+        }
+      }
+    }
+  }, [state.selectionRequest])
+
+  const excerptEntryAvailable =
+    noteWorkspace !== null &&
+    noteWorkspace.insertionAvailable &&
+    state.note !== null &&
+    state.note.edit_schema === 'd2-v1' &&
+    state.note.revision !== null &&
+    state.note.snapshot_hash !== null &&
+    state.content.length > 0
 
   // 新冲突出现时重新打开对话框；冲突消失后复位“继续编辑”状态。
   useEffect(() => {
@@ -255,7 +382,13 @@ export function NoteEditorView({
   const revision = state.note?.revision ?? null
 
   return (
-    <div className="space-y-3" data-testid="note-editor" data-save-status={state.saveStatus}>
+    <div
+      className="space-y-3"
+      data-testid="note-editor"
+      data-save-status={state.saveStatus}
+      data-inserting={state.inserting === true ? 'true' : 'false'}
+      ref={editorRootRef}
+    >
       <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <h3 className="truncate text-sm font-semibold">
@@ -330,11 +463,16 @@ export function NoteEditorView({
           id="note-editor-title"
           data-testid="note-editor-title"
           value={state.title}
-          onChange={(event) => actions.setTitle(event.target.value)}
+          onChange={(event) => {
+            if (state.inserting === true) return
+            actions.setTitle(event.target.value)
+          }}
           onCompositionStart={() => actions.beginComposition()}
           onCompositionEnd={() => actions.endComposition()}
           placeholder={t('research.notes.editor.titlePlaceholder')}
           disabled={isAdminReadonly}
+          readOnly={state.inserting === true}
+          aria-readonly={state.inserting === true}
         />
       </div>
 
@@ -361,24 +499,113 @@ export function NoteEditorView({
             )}
           </Button>
         ))}
+        {excerptEntryAvailable && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={openExcerptInsertForNote}
+            disabled={state.inserting === true}
+            data-testid="note-editor-excerpt"
+          >
+            {t('research.notes.excerpt.entry')}
+          </Button>
+        )}
       </div>
 
-      {/* IME composition 事件从内部 textarea 冒泡到这里：期间不提交中间态。 */}
+      {state.inserting === true && (
+        <p className="text-xs text-muted-foreground" role="status" data-testid="note-editor-inserting">
+          {t('research.notes.excerpt.insertingPause')}
+        </p>
+      )}
+
+      {/* IME composition 事件从内部 textarea 冒泡到这里：期间不提交中间态。
+          插入期间除 pointer-events 外再加 `inert`（键盘/焦点/点击整体禁用），
+          onChange 也拒绝写状态机：绝不让键入内容在服务端回填时静默丢失。 */}
       <div
-        className="min-w-0"
+        className={`min-w-0${state.inserting === true ? ' pointer-events-none opacity-60' : ''}`}
         onCompositionStart={() => actions.beginComposition()}
         onCompositionEnd={() => actions.endComposition()}
+        onClick={handlePreviewClick}
         data-testid="note-editor-content"
+        aria-busy={state.inserting === true}
+        inert={state.inserting === true}
       >
-        <MarkdownEditor
-          value={state.content}
-          onChange={(value) => actions.setContent(value ?? '')}
-          preview={PREVIEW_BY_MODE[viewMode]}
-          height={320}
-          textareaId="note-editor-markdown"
-          placeholder={t('research.notes.editor.contentPlaceholder')}
-        />
+        {viewMode === 'split' ? (
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2" data-testid="note-editor-split">
+            <MarkdownEditor
+              value={state.content}
+              onChange={(value) => {
+                if (state.inserting === true) return
+                actions.setContent(value ?? '')
+              }}
+              preview="edit"
+              height={320}
+              textareaId="note-editor-markdown"
+              placeholder={t('research.notes.editor.contentPlaceholder')}
+            />
+            {/* 点击只由外层 content 容器统一委托，避免一次点击触发两次 openCitation。 */}
+            <div
+              className="max-h-[320px] min-h-[320px] overflow-auto rounded-md border p-3"
+              data-testid="note-editor-split-preview"
+            >
+              <MarkdownRenderer>{splitPreviewContent}</MarkdownRenderer>
+            </div>
+          </div>
+        ) : (
+          <MarkdownEditor
+            value={previewContent}
+            onChange={(value) => {
+              if (state.inserting === true) return
+              actions.setContent(value ?? '')
+            }}
+            preview={PREVIEW_BY_MODE[viewMode]}
+            height={320}
+            textareaId="note-editor-markdown"
+            placeholder={t('research.notes.editor.contentPlaceholder')}
+          />
+        )}
       </div>
+
+      {citationBindings.length > 0 && (
+        <div className="space-y-1 border-t pt-2" data-testid="note-citation-list">
+          <p className="text-xs font-medium text-muted-foreground">
+            {t('research.notes.citation.listTitle')}
+          </p>
+          <ul className="space-y-1">
+            {citationNumbering.bindings.map((binding) => (
+              <li key={binding.binding_id}>
+                <button
+                  type="button"
+                  className="text-left text-xs underline-offset-2 hover:underline"
+                  data-testid={`note-citation-${binding.binding_id}`}
+                  data-source-kind={binding.source_kind}
+                  onClick={() => openCitation(binding.binding_id)}
+                >
+                  <span className="mr-1 font-semibold text-primary">
+                    [{citationNumbering.numbers.get(binding.binding_id)}]
+                  </span>
+                  <span className="text-foreground">{binding.source_id}</span>
+                  <span className="ml-1 text-muted-foreground">
+                    {binding.source_version ?? ''}
+                  </span>
+                  {binding.unresolved && (
+                    <span className="ml-1 text-amber-700">
+                      {t('research.notes.citation.state.unresolved')}
+                    </span>
+                  )}
+                </button>
+              </li>
+            ))}
+          </ul>
+          {citationNumbering.unknownBindingIds.length > 0 && (
+            <p className="text-xs text-amber-700" data-testid="note-citation-unknown">
+              {t('research.notes.citation.unknownMarkers', {
+                count: citationNumbering.unknownBindingIds.length,
+              })}
+            </p>
+          )}
+        </div>
+      )}
 
       <NoteConflictDialog
         open={conflictDialogOpen}

@@ -2082,6 +2082,14 @@ export function ResearchChatPanel({
                                 : Promise.resolve(null))
                             : undefined
                         }
+                        excerptSource={
+                          turn.serverMessageId !== null
+                            ? {
+                                sourceKind: 'chat_message',
+                                sourceId: turn.serverMessageId,
+                              }
+                            : null
+                        }
                         showSave={
                           turn.generationId !== null ||
                           turn.serverMessageId !== null

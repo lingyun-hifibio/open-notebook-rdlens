@@ -12,6 +12,7 @@ import { ResearchJobsProvider } from '@/components/research/ResearchJobsProvider
 import { ResearchHeader } from '@/components/research/ResearchHeader'
 import { ResearchEgressConsentDialog } from '@/components/research/ResearchEgressConsentDialog'
 import { ResearchWorkbench } from '@/components/research/ResearchWorkbench'
+import { NoteWorkspaceProvider } from '@/components/research/issue585/NoteWorkspaceProvider'
 import { ResearchWorkspace } from '@/components/research/ResearchWorkspace'
 import { ResearchSourceChatPanel } from '@/components/research/ResearchSourceChatPanel'
 import { ResearchLayout } from '@/components/research/ResearchLayout'
@@ -799,6 +800,13 @@ function ResearchPageContent() {
           )}
         </div>
         <div className="min-h-0 flex-1" data-testid="legacy-session-content">
+          {/* Issue #1047 PR5（B3）：摘入对话框 + 引用阅读 overlay 的页面级组合根。
+              编辑器 machine 仍由 NotesPanel 持有；overlay 不卸载 NotesPanel。 */}
+          <NoteWorkspaceProvider
+            onNotesChanged={(noteId) => {
+              if (noteId !== null) revealSavedArtifact('note', noteId)
+            }}
+          >
           <ResearchLayout
             layoutId={sourceDesktop ? 'source-desktop' : 'global'}
             axis="horizontal"
@@ -914,6 +922,7 @@ function ResearchPageContent() {
               </div>,
             ]}
           </ResearchLayout>
+          </NoteWorkspaceProvider>
         </div>
       </div>
     </>

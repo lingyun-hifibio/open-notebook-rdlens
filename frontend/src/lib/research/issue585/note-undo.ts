@@ -16,9 +16,17 @@ export const NOTE_UNDO_GROUP_MS = 750
 /** 撤销栈深度上限（避免长时间编辑占用无界内存）。 */
 export const NOTE_UNDO_MAX_ENTRIES = 100
 
+/** 撤销时恢复的编辑器选区（UTF-16；加性 PR5/B3：片段插入/引用返回）。 */
+export interface NoteUndoSelection {
+  start: number
+  end: number
+}
+
 export interface NoteUndoSnapshot {
   title: string
   content: string
+  /** 可选：撤销后要恢复的选区（缺省保持当前光标，不伪造位置）。 */
+  selection?: NoteUndoSelection
 }
 
 export interface NoteUndoStackOptions {
@@ -78,7 +86,11 @@ export class NoteUndoStack {
     this.lastObserveAt = now
     if (sameGroup) return
     this.groupOpen = true
-    this.entries.push({ title: previous.title, content: previous.content })
+    this.entries.push({
+      title: previous.title,
+      content: previous.content,
+      ...(previous.selection === undefined ? {} : { selection: previous.selection }),
+    })
     if (this.entries.length > this.maxEntries) {
       this.entries.splice(0, this.entries.length - this.maxEntries)
     }

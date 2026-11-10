@@ -7,7 +7,7 @@
  * MarkdownEditor 用轻量替身（其 sanitize/KaTeX 行为由
  * `components/ui/markdown-editor.test.tsx` 独立覆盖）。
  */
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { NoteEditorView } from './NoteEditorView'
 import type {
@@ -16,6 +16,11 @@ import type {
   NoteEditorState,
   ResearchNoteD2,
 } from '@/lib/research/issue585/types'
+
+const workspaceMock = vi.hoisted(() => ({ current: null as unknown as Record<string, unknown> | null }))
+vi.mock('./NoteWorkspaceProvider', () => ({
+  useNoteWorkspaceOptional: () => workspaceMock.current,
+}))
 
 vi.mock('@/lib/hooks/use-translation', () => ({
   useTranslation: () => ({
@@ -204,9 +209,12 @@ describe('NoteEditorView', () => {
 
   it('三种预览模式切换（edit/split/preview）', () => {
     renderEditor()
-    expect(screen.getByTestId('markdown-editor')).toHaveAttribute('data-preview', 'live')
+    // 默认 split：左侧原始编辑区（preview=edit）+ 右侧独立装饰预览子树。
+    expect(screen.getByTestId('markdown-editor')).toHaveAttribute('data-preview', 'edit')
+    expect(screen.getByTestId('note-editor-split-preview')).toBeInTheDocument()
     fireEvent.click(screen.getByTestId('note-editor-view-edit'))
     expect(screen.getByTestId('markdown-editor')).toHaveAttribute('data-preview', 'edit')
+    expect(screen.queryByTestId('note-editor-split-preview')).toBeNull()
     fireEvent.click(screen.getByTestId('note-editor-preview'))
     expect(screen.getByTestId('markdown-editor')).toHaveAttribute('data-preview', 'preview')
   })
@@ -470,5 +478,134 @@ describe('NoteEditorView', () => {
     renderEditor({ status: 'loading', note: null, title: '', content: '' })
     expect(screen.getByTestId('note-editor-loading')).toBeInTheDocument()
     expect(screen.queryByTestId('markdown-editor')).toBeNull()
+  })
+})
+
+
+// ── Issue #1047 PR5（D3）：引用 marker / 引用列表 / 摘入入口 / 位置恢复 ──
+
+const citationNote: ResearchNoteD2 = {
+  ...note,
+  content: '正文[[cite:cb_1]] 结束[[cite:cb_missing]]',
+  revision: 4,
+  snapshot_hash: 'd'.repeat(64),
+  citation_bindings: [
+    {
+      binding_id: 'cb_1',
+      source_kind: 'source',
+      source_id: 'src_1',
+      source_version: 'docv_1',
+      locator: { document_version: 'docv_1', start_utf16: 0, end_utf16: 3 },
+      unresolved: false,
+    },
+  ],
+}
+
+afterEach(() => {
+  workspaceMock.current = null
+})
+
+describe('NoteEditorView citations / excerpt entry (PR5/B3)', () => {
+  it('renders citation markers as clickable numbered references and reports unknown markers', () => {
+    workspaceMock.current = { openCitation: vi.fn() }
+    renderEditor({ note: citationNote, content: citationNote.content })
+    expect(screen.getByTestId('note-citation-list')).toBeInTheDocument()
+    expect(screen.getByTestId('note-citation-cb_1')).toHaveTextContent('[1]')
+    expect(screen.getByTestId('note-citation-unknown')).toBeInTheDocument()
+  })
+
+  it('opens the citation reader with the current editor selection and scroll position', () => {
+    const openCitation = vi.fn()
+    workspaceMock.current = { openCitation }
+    renderEditor({ note: citationNote, content: citationNote.content })
+    const textarea = screen.getByTestId('markdown-editor') as HTMLTextAreaElement
+    textarea.setSelectionRange(1, 3)
+    fireEvent.click(screen.getByTestId('note-citation-cb_1'))
+    expect(openCitation).toHaveBeenCalledWith(
+      expect.objectContaining({ binding_id: 'cb_1', source_id: 'src_1' }),
+      { start: 1, end: 3 },
+      null,
+    )
+  })
+
+  it('decorates markers into numbered preview anchors only in preview mode', () => {
+    workspaceMock.current = { openCitation: vi.fn() }
+    renderEditor({ note: citationNote, content: citationNote.content })
+    fireEvent.click(screen.getByTestId('note-editor-preview'))
+    expect(screen.getByTestId('markdown-editor')).toHaveValue(
+      '正文[1](#cite-cb_1) 结束[[cite:cb_missing]]',
+    )
+    fireEvent.click(screen.getByTestId('note-editor-view-edit'))
+    expect(screen.getByTestId('markdown-editor')).toHaveValue(citationNote.content)
+  })
+
+  it('opens the excerpt dialog for the note source with the frozen version', () => {
+    const openExcerptInsert = vi.fn()
+    workspaceMock.current = { openExcerptInsert, insertionAvailable: true }
+    renderEditor({ note: citationNote, content: '正文 A' })
+    fireEvent.click(screen.getByTestId('note-editor-excerpt'))
+    expect(openExcerptInsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceKind: 'note',
+        sourceId: 'note_d2',
+        sourceVersion: `4:${'d'.repeat(64)}`,
+        text: '正文 A',
+        title: '受保护笔记',
+      }),
+    )
+  })
+
+  it('hides the excerpt entry without a workspace provider (fail-safe)', () => {
+    workspaceMock.current = null
+    renderEditor({ note: citationNote, content: citationNote.content })
+    expect(screen.queryByTestId('note-editor-excerpt')).toBeNull()
+    expect(screen.queryByTestId('note-citation-list')).not.toBeNull()
+  })
+
+  it('renders clickable numbered citations in the default split preview', () => {
+    const openCitation = vi.fn()
+    workspaceMock.current = { openCitation }
+    renderEditor({ note: citationNote, content: citationNote.content })
+    const preview = screen.getByTestId('note-editor-split-preview')
+    const anchor = preview.querySelector('a[href="#cite-cb_1"]')
+    expect(anchor).not.toBeNull()
+    expect(anchor?.textContent).toBe('1')
+    fireEvent.click(anchor as HTMLElement)
+    const openCitationMock = vi.mocked(openCitation)
+    expect(openCitationMock.mock.calls[0]?.[0]).toMatchObject({ binding_id: 'cb_1' })
+  })
+
+  it('pauses the editor body (inert + readOnly + no-op change) while an insertion is in progress', () => {
+    const { actions } = renderEditor({ inserting: true })
+    expect(screen.getByTestId('note-editor')).toHaveAttribute('data-inserting', 'true')
+    expect(screen.getByTestId('note-editor-inserting')).toBeInTheDocument()
+    const content = screen.getByTestId('note-editor-content')
+    expect(content.className).toContain('pointer-events-none')
+    expect(content).toHaveAttribute('inert')
+    expect(content).toHaveAttribute('aria-busy', 'true')
+    expect(screen.getByTestId('note-editor-title')).toHaveAttribute('readonly')
+    fireEvent.change(screen.getByTestId('markdown-editor'), {
+      target: { value: '插入中键入的内容' },
+    })
+    fireEvent.change(screen.getByTestId('note-editor-title'), {
+      target: { value: '插入中改标题' },
+    })
+    expect(actions.setContent).not.toHaveBeenCalled()
+    expect(actions.setTitle).not.toHaveBeenCalled()
+  })
+
+  it('applies a selection-restore request to the editor textarea exactly once', () => {
+    const { rerender, state, actions } = renderEditor()
+    const textarea = screen.getByTestId('markdown-editor') as HTMLTextAreaElement
+    rerender(
+      <NoteEditorView
+        state={{ ...state, selectionRequest: { selection: { start: 1, end: 3 }, scrollTop: null, seq: 1 } }}
+        actions={actions}
+        capabilities={readyCapabilities}
+        onRequestClose={vi.fn()}
+      />,
+    )
+    expect(textarea.selectionStart).toBe(1)
+    expect(textarea.selectionEnd).toBe(3)
   })
 })

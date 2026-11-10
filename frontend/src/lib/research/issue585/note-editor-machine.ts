@@ -42,14 +42,20 @@ import {
   type NoteDraftScope,
 } from './note-draft-cache'
 import { downloadLocalDraftMarkdown, type NoteLocalDraftInput } from './note-download'
+import { computeInsertedRange, splitsSurrogatePair } from './excerpt'
 import { NoteUndoStack } from './note-undo'
 import {
+  type EditorTextSelectionSnapshot,
   type NoteApiError,
   type NoteCapabilities,
   type NoteDraftCacheRecord,
   type NoteEditorActions,
   type NoteEditorConflict,
+  type NoteEditorPositionRestoreRequest,
+  type NoteEditorSelectionRequest,
   type NoteEditorState,
+  type NoteInsertFragmentInput,
+  type NoteInsertFragmentResult,
   type NoteLeaveBlockReason,
   type NoteReceipt,
   type NoteSaveStatus,
@@ -131,7 +137,7 @@ export interface NoteEditorMachine {
 // ── 内部状态 ──
 
 interface InFlightWrite {
-  readonly kind: 'save' | 'create' | 'copy'
+  readonly kind: 'save' | 'create' | 'copy' | 'fragment'
   readonly mutationId: string
   readonly noteId: string | null
   readonly capturedSeq: number
@@ -141,6 +147,9 @@ interface InFlightWrite {
   readonly generation: number
   readonly projectId: string
   readonly openToken: number
+  /** 加性（PR5/B3）：片段插入请求（同 mutation 重放）与发起时选区。 */
+  readonly fragment?: NoteInsertFragmentInput
+  readonly editorSelection?: EditorTextSelectionSnapshot | null
 }
 
 interface MachineState {
@@ -170,6 +179,11 @@ interface MachineState {
   composing: boolean
   /** 服务端已确认正文所在 revision/hash 是否被本地编辑推进（localSeq > ackedSeq）。 */
   dirty: boolean
+  /** PR5/B3：片段插入进行中（正文编辑暂停，方案 §4.3）。 */
+  inserting: boolean
+  /** PR5/B3：界面需应用的选区/滚动恢复指令（seq 递增触发）。 */
+  selectionRequest: NoteEditorSelectionRequest | null
+  selectionSeq: number
 }
 
 function createInitialState(): MachineState {
@@ -198,6 +212,9 @@ function createInitialState(): MachineState {
     inFlight: null,
     composing: false,
     dirty: false,
+    inserting: false,
+    selectionRequest: null,
+    selectionSeq: 0,
   }
 }
 
@@ -421,6 +438,10 @@ export function createNoteEditorMachine(
       error: state.error,
       authGeneration: currentGeneration,
       leaveBlockReason: state.leaveBlockReason,
+      localSeq: state.localSeq,
+      baseRevision: state.serverRevision,
+      inserting: state.inserting,
+      selectionRequest: state.selectionRequest,
     }
   }
 
@@ -459,6 +480,9 @@ export function createNoteEditorMachine(
       loadLatest,
       discardLocal,
       flushBeforeLeave,
+      flushForInsert,
+      insertFragment,
+      restoreEditorPosition,
     }
   }
 
@@ -543,6 +567,7 @@ export function createNoteEditorMachine(
   function canEdit(): boolean {
     return (
       !disposed &&
+      !state.inserting &&
       state.status === 'ready' &&
       state.note !== null &&
       state.note.edit_schema === NOTE_EDIT_SCHEMA_D2_V1 &&
@@ -711,6 +736,8 @@ export function createNoteEditorMachine(
     state.leaveBlockReason = null
     state.status = 'ready'
     state.composing = false
+    state.inserting = false
+    state.selectionRequest = null
     localContentPreserved = false
     capabilityBlockedAtLoad = false
     undoStack.clear()
@@ -782,7 +809,7 @@ export function createNoteEditorMachine(
 
     const pendingMutation =
       record.pendingMutation !== null &&
-      record.pendingMutation.kind === 'save' &&
+      (record.pendingMutation.kind === 'save' || record.pendingMutation.kind === 'fragment') &&
       record.pendingMutation.noteId === state.noteId
         ? record.pendingMutation
         : null
@@ -1048,6 +1075,488 @@ export function createNoteEditorMachine(
     writeCache()
   }
 
+  // ── PR5/B3：片段插入保护（方案 §4.3/§5） ──
+
+  /** 把 UTF-16 选区收敛到当前正文的安全边界；切代理对返回 null。 */
+  function clampSelection(
+    content: string,
+    selection: EditorTextSelectionSnapshot,
+  ): EditorTextSelectionSnapshot | null {
+    const max = content.length
+    const start = Math.max(0, Math.min(selection.start, max))
+    const end = Math.max(0, Math.min(selection.end, max))
+    if (splitsSurrogatePair(content, start) || splitsSurrogatePair(content, end)) return null
+    return { start: Math.min(start, end), end: Math.max(start, end) }
+  }
+
+  function validateFragmentTarget(
+    content: string,
+    target: NoteInsertFragmentInput['target'],
+  ): NoteApiError | null {
+    if (target.kind === 'cursor') {
+      if (!Number.isInteger(target.position_utf16) || target.position_utf16 < 0) {
+        return stateError('note_request_invalid', 'invalid fragment cursor', false, 422)
+      }
+      if (target.position_utf16 > content.length) {
+        return stateError('note_request_invalid', 'fragment cursor is out of bounds', false, 422)
+      }
+      if (splitsSurrogatePair(content, target.position_utf16)) {
+        return stateError('note_request_invalid', 'fragment cursor splits a surrogate pair', false, 422)
+      }
+      return null
+    }
+    const { start_utf16: start, end_utf16: end } = target
+    if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || start >= end) {
+      return stateError('note_request_invalid', 'invalid fragment range', false, 422)
+    }
+    if (end > content.length) {
+      return stateError('note_request_invalid', 'fragment range is out of bounds', false, 422)
+    }
+    if (splitsSurrogatePair(content, start) || splitsSurrogatePair(content, end)) {
+      return stateError('note_request_invalid', 'fragment range splits a surrogate pair', false, 422)
+    }
+    return null
+  }
+
+  /**
+   * 未知/不可重试结果的状态归并。可重试（retryable）时保留同一 pending
+   * mutation（同 mutation_id 重放）；其余按契约稳定码落到显式状态。
+   */
+  function settleFragmentFailure(
+    write: InFlightWrite,
+    apiError: NoteApiError,
+  ): NoteInsertFragmentResult {
+    if (isStaleWrite(write)) {
+      return { ok: false, code: apiError.code, retryable: false }
+    }
+    state.inFlight = null
+    state.inserting = false
+    state.error = apiError
+    if (apiError.retryable) {
+      state.saveStatus = 'unknown'
+      state.leaveBlockReason = 'unknown'
+      writeCache()
+      emit()
+      return {
+        ok: false,
+        code: apiError.code,
+        retryable: true,
+        pendingMutationId: state.pendingMutation?.mutationId ?? write.mutationId,
+      }
+    }
+    state.pendingMutation = null
+    state.pendingMutationId = null
+    switch (apiError.code) {
+      case 'note_revision_conflict':
+        state.conflict = {
+          currentRevision: apiError.currentRevision ?? null,
+          currentSnapshotHash: apiError.currentSnapshotHash ?? null,
+        }
+        state.saveStatus = 'conflict'
+        break
+      case 'note_access_restricted':
+        state.saveStatus = 'restricted'
+        state.blockReason = 'note_access_restricted'
+        cleanupPersistentDrafts()
+        break
+      case 'note_not_found':
+      case 'fragment_source_not_found':
+        state.saveStatus = 'failed'
+        break
+      case 'note_revision_required':
+      case 'note_edit_schema_unsupported':
+      case 'note_revision_exhausted':
+      case 'note_snapshot_fence_exhausted':
+        state.saveStatus = 'blocked'
+        state.blockReason = apiError.code
+        break
+      default:
+        state.saveStatus = 'failed'
+        break
+    }
+    writeCache()
+    emit()
+    return { ok: false, code: apiError.code, retryable: false }
+  }
+
+  /** 回执已确认后的读回与落盘：再按身份/localSeq 判定是否允许覆盖编辑器。 */
+  async function completeFragmentWrite(
+    write: InFlightWrite,
+    receipt: NoteReceipt,
+  ): Promise<NoteInsertFragmentResult> {
+    if (isStaleWrite(write)) {
+      state.inserting = false
+      return { ok: false, code: 'note_store_unavailable', retryable: false }
+    }
+    state.inFlight = null
+    const isCurrentDocument = (): boolean =>
+      !disposed &&
+      write.openToken === openToken &&
+      write.projectId === currentProjectId &&
+      write.generation === currentGeneration &&
+      state.noteId === write.noteId
+    if (!isCurrentDocument()) {
+      // 过期响应：绝不覆盖新打开的文档；服务端已应用也不回填本地状态。
+      state.inserting = false
+      if (state.noteId === write.noteId) {
+        state.pendingMutation = null
+        state.pendingMutationId = null
+        writeCache()
+      }
+      emit()
+      return { ok: false, code: 'note_store_unavailable', retryable: false }
+    }
+    const unchangedSinceStart = (): boolean =>
+      state.localSeq === write.capturedSeq &&
+      state.title === write.capturedTitle &&
+      state.content === write.capturedContent
+    if (!unchangedSinceStart()) {
+      // 期间产生新草稿：不加载回执/GET 旧正文覆盖；进入冲突态由用户选择。
+      state.serverRevision = receipt.applied_revision
+      state.serverSnapshotHash = receipt.snapshot_hash ?? state.serverSnapshotHash
+      state.pendingMutation = null
+      state.pendingMutationId = null
+      state.inserting = false
+      state.conflict = {
+        currentRevision: receipt.applied_revision,
+        currentSnapshotHash: receipt.snapshot_hash ?? state.serverSnapshotHash,
+      }
+      state.saveStatus = 'conflict'
+      state.error = null
+      state.leaveBlockReason = null
+      writeCache()
+      emit()
+      return { ok: false, code: 'note_revision_conflict', retryable: false }
+    }
+    let loaded: ResearchNoteD2
+    try {
+      loaded = await client.getNote(write.projectId, write.noteId ?? '')
+    } catch (error) {
+      if (!isCurrentDocument()) {
+        state.inserting = false
+        emit()
+        return { ok: false, code: 'note_store_unavailable', retryable: false }
+      }
+      if (!unchangedSinceStart()) {
+        state.inserting = false
+        state.serverRevision = receipt.applied_revision
+        state.serverSnapshotHash = receipt.snapshot_hash ?? state.serverSnapshotHash
+        state.pendingMutation = null
+        state.pendingMutationId = null
+        state.conflict = {
+          currentRevision: receipt.applied_revision,
+          currentSnapshotHash: receipt.snapshot_hash ?? state.serverSnapshotHash,
+        }
+        state.saveStatus = 'conflict'
+        writeCache()
+        emit()
+        return { ok: false, code: 'note_revision_conflict', retryable: false }
+      }
+      // 服务端已应用但读回失败：保留同一 mutation 待确认（重放 replayed=true 再读）。
+      const apiError = normalizeNoteApiError(error)
+      state.error = apiError
+      state.inserting = false
+      if (apiError.retryable) {
+        state.saveStatus = 'unknown'
+        state.leaveBlockReason = 'unknown'
+      } else {
+        state.saveStatus = 'failed'
+        state.pendingMutation = null
+        state.pendingMutationId = null
+      }
+      writeCache()
+      emit()
+      return apiError.retryable
+        ? {
+            ok: false,
+            code: apiError.code,
+            retryable: true,
+            pendingMutationId: write.mutationId,
+          }
+        : { ok: false, code: apiError.code, retryable: false }
+    }
+    if (!isCurrentDocument() || !unchangedSinceStart()) {
+      // 读回期间身份/草稿再次变化：保留当前编辑器，不套用旧结果。
+      state.inserting = false
+      state.serverRevision = Math.max(
+        state.serverRevision ?? receipt.applied_revision,
+        receipt.applied_revision,
+      )
+      state.serverSnapshotHash = receipt.snapshot_hash ?? state.serverSnapshotHash
+      state.pendingMutation = null
+      state.pendingMutationId = null
+      state.conflict = {
+        currentRevision: receipt.applied_revision,
+        currentSnapshotHash: receipt.snapshot_hash ?? state.serverSnapshotHash,
+      }
+      state.saveStatus = 'conflict'
+      writeCache()
+      emit()
+      return { ok: false, code: 'note_revision_conflict', retryable: false }
+    }
+    const insertedRange =
+      computeInsertedRange(write.capturedContent, loaded.content) ?? {
+        start: loaded.content.length,
+        end: loaded.content.length,
+      }
+    // 单次插入 = 一个普通撤销单元：保存插入前正文与选区，自动保存 ACK 不清空。
+    undoStack.observe(
+      {
+        title: write.capturedTitle,
+        content: write.capturedContent,
+        ...(write.editorSelection === null || write.editorSelection === undefined
+          ? {}
+          : { selection: write.editorSelection }),
+      },
+      { breakGroup: true },
+    )
+    state.note = loaded
+    state.serverRevision = loaded.revision ?? receipt.applied_revision
+    state.serverSnapshotHash =
+      loaded.snapshot_hash ?? receipt.snapshot_hash ?? state.serverSnapshotHash
+    state.baseTitle = loaded.title
+    state.baseContent = loaded.content
+    state.title = loaded.title
+    state.content = loaded.content
+    state.localSeq += 1
+    state.ackedSeq = state.localSeq
+    state.dirty = false
+    state.pendingMutation = null
+    state.pendingMutationId = null
+    state.conflict = null
+    state.error = null
+    state.leaveBlockReason = null
+    state.inserting = false
+    state.status = 'ready'
+    localContentPreserved = false
+    if (loaded.access_state === 'restricted') {
+      state.saveStatus = 'restricted'
+      state.blockReason = 'note_access_restricted'
+      cleanupPersistentDrafts()
+    } else if (loaded.edit_schema !== NOTE_EDIT_SCHEMA_D2_V1) {
+      state.saveStatus = 'blocked'
+      state.blockReason = 'note_edit_schema_unsupported'
+    } else {
+      state.saveStatus = 'saved'
+    }
+    const cursor = clampSelection(state.content, {
+      start: insertedRange.end,
+      end: insertedRange.end,
+    })
+    if (cursor !== null) {
+      state.selectionSeq += 1
+      state.selectionRequest = { selection: cursor, scrollTop: null, seq: state.selectionSeq }
+    }
+    writeCache()
+    emit()
+    return {
+      ok: true,
+      noteId: loaded.note_id,
+      appliedRevision: state.serverRevision ?? receipt.applied_revision,
+      snapshotHash: state.serverSnapshotHash,
+      insertedRange,
+      replayed: receipt.replayed,
+    }
+  }
+
+  /** 提交片段请求（新请求与同 mutation 重放共用）。 */
+  async function dispatchFragment(
+    write: InFlightWrite,
+  ): Promise<NoteInsertFragmentResult> {
+    const fragment = write.fragment
+    if (fragment === undefined) {
+      state.inserting = false
+      return { ok: false, code: 'note_request_invalid', retryable: false }
+    }
+    state.inFlight = write
+    state.inserting = true
+    state.saveStatus = 'saving'
+    state.error = null
+    state.leaveBlockReason = null
+    emit()
+    try {
+      const receipt = await client.insertFragment(write.projectId, write.noteId ?? '', {
+        mutation_id: write.mutationId,
+        expected_revision: write.expectedRevision ?? 1,
+        target: fragment.target,
+        source: fragment.source,
+      })
+      return await completeFragmentWrite(write, receipt)
+    } catch (error) {
+      if (isStaleWrite(write)) {
+        state.inFlight = null
+        state.inserting = false
+        emit()
+        return { ok: false, code: 'note_store_unavailable', retryable: false }
+      }
+      return settleFragmentFailure(write, normalizeNoteApiError(error))
+    }
+  }
+
+  /**
+   * 片段插入（当前打开文档）。
+   *
+   * 顺序（方案 §4.3）：先 flush 当前草稿（失败/冲突/未知结果不发插入）→ 暂停
+   * 正文编辑 → 提交 → 读回对齐 revision → 仅在身份/localSeq/正文未变化时
+   * 应用并恢复光标；结果未知保留同一 mutation 与本地草稿供确认重放。
+   */
+  async function insertFragment(
+    input: NoteInsertFragmentInput,
+    editorSelection?: EditorTextSelectionSnapshot | null,
+  ): Promise<NoteInsertFragmentResult> {
+    if (disposed || state.status !== 'ready' || state.noteId === null) {
+      return { ok: false, code: 'note_revision_required', retryable: false }
+    }
+    if (
+      state.pendingMutation !== null &&
+      (state.saveStatus === 'unknown' || state.inserting)
+    ) {
+      return {
+        ok: false,
+        code: 'note_store_unavailable',
+        retryable: true,
+        pendingMutationId: state.pendingMutation.mutationId,
+      }
+    }
+    if (state.inFlight !== null) await waitForSettle()
+    if (disposed || state.status !== 'ready' || state.noteId === null) {
+      return { ok: false, code: 'note_revision_required', retryable: false }
+    }
+    const targetError = validateFragmentTarget(state.content, input.target)
+    if (targetError !== null) {
+      state.error = targetError
+      state.saveStatus = 'failed'
+      emit()
+      return { ok: false, code: 'note_request_invalid', retryable: false }
+    }
+    endCompositionInternal()
+    clearDebounce()
+    if (state.dirty) {
+      // 插入前先落盘当前草稿；保存失败/冲突/未知结果不继续插入。
+      await saveNow()
+    }
+    if (disposed || state.status !== 'ready' || state.noteId === null) {
+      return { ok: false, code: 'note_revision_required', retryable: false }
+    }
+    if (state.inFlight !== null) await waitForSettle()
+    if (state.dirty || state.pendingMutation !== null) {
+      const code: NoteApiError['code'] =
+        state.saveStatus === 'conflict'
+          ? 'note_revision_conflict'
+          : state.saveStatus === 'restricted'
+            ? 'note_access_restricted'
+            : state.saveStatus === 'blocked'
+              ? 'note_edit_schema_unsupported'
+              : 'note_store_unavailable'
+      return { ok: false, code, retryable: code === 'note_store_unavailable' }
+    }
+    const noteId = state.noteId
+    const expectedRevision = state.serverRevision
+    if (noteId === null || expectedRevision === null) {
+      return { ok: false, code: 'note_revision_required', retryable: false }
+    }
+    const mutationId = nextMutationId()
+    const capturedSeq = state.localSeq
+    const capturedTitle = state.title
+    const capturedContent = state.content
+    const selection =
+      editorSelection === null || editorSelection === undefined
+        ? null
+        : clampSelection(capturedContent, editorSelection)
+    const pendingMutation: PendingNoteMutation = {
+      mutationId,
+      kind: 'fragment',
+      noteId,
+      expectedRevision,
+      title: capturedTitle,
+      content: capturedContent,
+      createdAt: now().toISOString(),
+      fragment: input,
+      editorSelection: selection,
+      capturedLocalSeq: capturedSeq,
+    }
+    state.pendingMutation = pendingMutation
+    state.pendingMutationId = mutationId
+    writeCache()
+    const write: InFlightWrite = {
+      kind: 'fragment',
+      mutationId,
+      noteId,
+      capturedSeq,
+      capturedTitle,
+      capturedContent,
+      expectedRevision,
+      generation: currentGeneration,
+      projectId: currentProjectId,
+      openToken,
+      fragment: input,
+      editorSelection: selection,
+    }
+    return dispatchFragment(write)
+  }
+
+  /** 未知结果的同一 mutation_id 重放（同目标、同 expected_revision、同请求）。 */
+  async function replayFragment(pending: PendingNoteMutation): Promise<void> {
+    if (disposed || state.inFlight !== null) return
+    if (
+      pending.noteId === null ||
+      pending.noteId !== state.noteId ||
+      pending.fragment === null ||
+      pending.fragment === undefined ||
+      pending.expectedRevision === null
+    ) {
+      state.pendingMutation = null
+      state.pendingMutationId = null
+      state.saveStatus = 'failed'
+      state.error = stateError(
+        'note_request_invalid',
+        'fragment replay is missing the frozen request',
+        false,
+        422,
+      )
+      writeCache()
+      emit()
+      return
+    }
+    const write: InFlightWrite = {
+      kind: 'fragment',
+      mutationId: pending.mutationId,
+      noteId: pending.noteId,
+      capturedSeq: pending.capturedLocalSeq ?? state.localSeq,
+      capturedTitle: pending.title,
+      capturedContent: pending.content,
+      expectedRevision: pending.expectedRevision,
+      generation: currentGeneration,
+      projectId: currentProjectId,
+      openToken,
+      fragment: pending.fragment,
+      editorSelection: pending.editorSelection ?? null,
+    }
+    await dispatchFragment(write)
+  }
+
+  /**
+   * 引用核查返回时恢复原选区/滚动位置（方案 §5.2）。
+   * 只在文档与 localSeq 仍匹配时生效；否则保留当前光标（返回 false，不回放旧坐标）。
+   */
+  function restoreEditorPosition(request: NoteEditorPositionRestoreRequest): boolean {
+    if (disposed || state.status !== 'ready' || state.noteId !== request.noteId) return false
+    if (state.localSeq !== request.expectedLocalSeq) return false
+    let selection: EditorTextSelectionSnapshot | null = null
+    if (request.selection !== null) {
+      selection = clampSelection(state.content, request.selection)
+      if (selection === null) return false
+    }
+    state.selectionSeq += 1
+    state.selectionRequest = {
+      selection,
+      scrollTop: request.scrollTop,
+      seq: state.selectionSeq,
+    }
+    emit()
+    return true
+  }
+
   async function confirmPendingMutation(): Promise<void> {
     if (disposed) return
     const pending = state.pendingMutation
@@ -1110,6 +1619,11 @@ export function createNoteEditorMachine(
         handleSaveFailure(write, normalizeNoteApiError(error))
         emit()
       }
+      return
+    }
+
+    if (pending.kind === 'fragment') {
+      await replayFragment(pending)
       return
     }
 
@@ -1188,6 +1702,13 @@ export function createNoteEditorMachine(
     state.content = snapshot.content
     state.localSeq += 1
     state.dirty = state.localSeq > state.ackedSeq
+    if (snapshot.selection !== undefined) {
+      const restored = clampSelection(state.content, snapshot.selection)
+      if (restored !== null) {
+        state.selectionSeq += 1
+        state.selectionRequest = { selection: restored, scrollTop: null, seq: state.selectionSeq }
+      }
+    }
     if (state.saveStatus === 'failed') {
       state.saveStatus = 'pending'
     } else if (state.saveStatus === 'saved' || state.saveStatus === 'idle') {
@@ -1595,6 +2116,8 @@ export function createNoteEditorMachine(
   async function flushBeforeLeave(): Promise<NoteLeaveBlockReason | null> {
     if (disposed) return null
     if (state.composing) endCompositionInternal()
+    // 片段插入进行中：不得静默导航（结果未知或仍在写），先等结算/确认。
+    if (state.inserting) return 'saving'
     if (localContentPreserved) {
       discardLocalInternal()
       emit()
@@ -1630,6 +2153,17 @@ export function createNoteEditorMachine(
     if (state.dirty) return 'unsaved'
     if (hasUnsyncedLocalText()) return 'unsaved'
     return null
+  }
+
+  /**
+   * 摘入前 flush（review LOW-4）：复用 flushBeforeLeave 的全部守卫，但
+   * `localContentPreserved` 分支不静默 discard 本地正文（插入不是导航）；
+   * 返回 'unsaved' 让对话框显式阻断，用户可先处理副本再插入。
+   */
+  async function flushForInsert(): Promise<NoteLeaveBlockReason | null> {
+    if (disposed) return null
+    if (localContentPreserved) return 'unsaved'
+    return flushBeforeLeave()
   }
 
   async function closeEditor(): Promise<boolean> {
@@ -1778,6 +2312,7 @@ export function createNoteEditorMachine(
   function hasUnfinishedWork(): boolean {
     if (disposed) return false
     return (
+      state.inserting ||
       state.inFlight !== null ||
       state.pendingMutation !== null ||
       state.dirty ||

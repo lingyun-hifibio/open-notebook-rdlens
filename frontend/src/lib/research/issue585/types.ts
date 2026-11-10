@@ -26,6 +26,142 @@ export interface ResearchNoteD2 extends ResearchNote {
   snapshot_hash: string | null
   edit_schema: string | null
   access_state?: 'visible' | 'restricted' | null
+  /**
+   * Issue #1047 PR5（B3）加性读投影（仅详情 + d2-v1 头；受限时不出现）。
+   *
+   * 可选：旧 host / 受限占位 / 既有测试替身可能没有这些键，消费方必须
+   * fail-safe 成空数组，绝不据此伪造引用或来源。
+   */
+  citation_bindings?: NoteCitationBinding[]
+  origins?: NoteOrigin[]
+  document_dependencies?: NoteDocumentDependency[]
+}
+
+// ---------------------------------------------------------------------------
+// Issue #1047 PR5（D2-B3）：片段入文档与引用往返
+// ---------------------------------------------------------------------------
+
+/** 统一来源描述的四类来源（方案 §5）。 */
+export type NoteCitationSourceKind = 'source' | 'chat_message' | 'note' | 'legacy_insight'
+
+/** locator 标量袋（冻结契约：值为 JSON 标量；键语义由 B3 约定）。 */
+export type NoteLocatorScalar = string | number | boolean | null
+export type NoteLocator = Record<string, NoteLocatorScalar>
+
+/** 可见引用绑定（冻结 6 键；`binding_id` 在文档内稳定，不因插入重排）。 */
+export interface NoteCitationBinding {
+  binding_id: string
+  source_kind: NoteCitationSourceKind
+  source_id: string
+  source_version: string | null
+  locator: NoteLocator | null
+  /** 锚点失效：保留来源关系、禁止伪造新位置（契约 `unresolved`）。 */
+  unresolved: boolean
+}
+
+/** 出处（冻结 5 键）。 */
+export interface NoteOrigin {
+  origin_id: string
+  source_kind: NoteCitationSourceKind
+  source_id: string
+  source_version: string | null
+  locator: NoteLocator | null
+}
+
+/** 授权依赖（两种互斥形状，沿用既有 `content_dependencies` 表示）。 */
+export type NoteDocumentDependency =
+  | { note_id: string; note_content_hash: string }
+  | { document_id: string; document_version: string }
+
+/** 片段来源选区：整段或 UTF-16 半开区间（`[start, end)`）。 */
+export type NoteFragmentSelection =
+  | { kind: 'full' }
+  | { kind: 'range'; start_utf16: number; end_utf16: number }
+
+/** 片段目标：光标插入或选区替换（UTF-16 半开区间）。 */
+export type NoteFragmentTargetDescriptor =
+  | { kind: 'cursor'; position_utf16: number }
+  | { kind: 'range'; start_utf16: number; end_utf16: number }
+
+/** 片段来源描述（wire；不提交可信全文）。 */
+export interface NoteFragmentSourceDescriptor {
+  source_kind: NoteCitationSourceKind
+  source_id: string
+  source_version: string | null
+  expected_content_hash: string | null
+  selection: NoteFragmentSelection
+}
+
+/** `POST /notes/{note_id}/fragments` 请求体（冻结形状）。 */
+export interface NoteD2FragmentInsertRequest {
+  mutation_id: string
+  expected_revision: number
+  target: NoteFragmentTargetDescriptor
+  source: NoteFragmentSourceDescriptor
+}
+
+/** `POST /notes` 的 fragment 变体（新目标；不同时提供 content）。 */
+export interface NoteD2FragmentCreateRequest {
+  mutation_id: string
+  title: string
+  fragment: { source: NoteFragmentSourceDescriptor }
+}
+
+/** 机器动作入参：目标由调用方按当前编辑器选区计算。 */
+export interface NoteInsertFragmentInput {
+  target: NoteFragmentTargetDescriptor
+  source: NoteFragmentSourceDescriptor
+}
+
+/** 机器动作结果（不抛异常；未知结果保留 pending mutation 供同 ID 重放）。 */
+export type NoteInsertFragmentResult =
+  | {
+      ok: true
+      noteId: string
+      appliedRevision: number
+      snapshotHash: string | null
+      insertedRange: { start: number; end: number }
+      replayed: boolean
+    }
+  | {
+      ok: false
+      code: NoteErrorCode
+      retryable: boolean
+      /** 服务端可能已应用：保留同一 mutation_id，先确认再继续编辑。 */
+      pendingMutationId?: string
+    }
+
+/** 引用阅读器请求（点击正文引用后进入的独立阅读上下文）。 */
+export interface NoteCitationReaderRequest {
+  binding: NoteCitationBinding
+  /** 点击时所在文档 identity（返回时只按此匹配恢复光标）。 */
+  noteId: string
+  localSeq: number
+  baseRevision: number | null
+  selection: EditorTextSelectionSnapshot | null
+  scrollTop: number | null
+}
+
+/** 编辑器 textarea 的 UTF-16 选区/光标（返回时恢复的目标）。 */
+export interface EditorTextSelectionSnapshot {
+  start: number
+  end: number
+}
+
+/** 编辑器位置恢复请求（返回引用核查时调用；localSeq 不匹配则保留当前光标）。 */
+export interface NoteEditorPositionRestoreRequest {
+  noteId: string
+  expectedLocalSeq: number
+  selection: EditorTextSelectionSnapshot | null
+  scrollTop: number | null
+}
+
+/** 恢复位置请求在界面上的渲染指令（递增 seq 触发 textarea 定位/滚动）。 */
+export interface NoteEditorSelectionRequest {
+  /** null = 只恢复滚动位置，不改动当前光标。 */
+  selection: EditorTextSelectionSnapshot | null
+  scrollTop: number | null
+  seq: number
 }
 
 /** 变更回执（契约 §4；删除的 snapshot_hash 为 null）。 */
@@ -52,6 +188,8 @@ export type NoteErrorCode =
   | 'note_snapshot_unavailable'
   | 'note_dependency_unavailable'
   | 'note_store_unavailable'
+  /** host B3 新增：片段来源/版本不存在（404，不泄露存在性）。 */
+  | 'fragment_source_not_found'
   | 'network_error'
   | 'unknown_error'
 
@@ -130,6 +268,17 @@ export interface NoteEditorState {
   authGeneration: number
   /** 应用内离开被阻断时的原因（closeEditor/flushBeforeLeave 结果也用它）。 */
   leaveBlockReason: NoteLeaveBlockReason | null
+  /**
+   * 加性（PR5/B3）：当前本地编辑序号与已确认服务端基线。
+   * 引用往返只在 `localSeq` 与点击时一致才恢复原选区（§5.2）；缺失时按不可
+   * 恢复处理（保留当前光标），绝不回放旧坐标。
+   */
+  localSeq?: number
+  baseRevision?: number | null
+  /** 片段插入进行中：正文编辑暂停（方案 §4.3）。 */
+  inserting?: boolean
+  /** 请求 textarea 恢复光标/选区（插入成功、撤销、引用返回；seq 递增触发）。 */
+  selectionRequest?: NoteEditorSelectionRequest | null
 }
 
 /**
@@ -168,6 +317,30 @@ export interface NoteEditorActions {
   discardLocal: () => void
   /** 应用内导航前置检查：flush 完成返回 null；被阻断返回原因。 */
   flushBeforeLeave: () => Promise<NoteLeaveBlockReason | null>
+  /**
+   * 摘入前 flush（加性）：与 flushBeforeLeave 同守卫，但**不**触发
+   * `localContentPreserved` 的 discardLocalInternal 副作用——插入不是导航，
+   * 不能静默丢弃本地正文；该态按 `unsaved` 阻断插入。
+   */
+  flushForInsert?: () => Promise<NoteLeaveBlockReason | null>
+  /**
+   * 加性（PR5/B3）：把可信片段插入当前打开文档。
+   *
+   * 保护序列：先 flush 当前草稿（失败/冲突/未知结果不发插入）→ 暂停正文编辑
+   * → 同 mutation_id 提交 → GET 对齐新 revision → 仅当 localSeq/项目/文档/
+   * authGeneration 仍匹配时加载结果并恢复光标 → 单次插入作为一个普通撤销单元。
+   * 结果未知时保留本地草稿与操作身份，`confirmPendingMutation` 用同一
+   * mutation_id 重放；过期响应绝不覆盖新打开的文档。
+   */
+  insertFragment?: (
+    input: NoteInsertFragmentInput,
+    editorSelection?: EditorTextSelectionSnapshot | null,
+  ) => Promise<NoteInsertFragmentResult>
+  /**
+   * 加性（PR5/B3）：引用核查返回时恢复原文档的选区和滚动位置。
+   * 仅在身份/文档/localSeq 匹配时生效；否则保留当前光标（返回 false）。
+   */
+  restoreEditorPosition?: (request: NoteEditorPositionRestoreRequest) => boolean
 }
 
 export interface UseNoteEditorResult {
@@ -232,7 +405,11 @@ export interface NoteDraftCacheRecord {
 /** 未决 mutation 快照（未知结果时用于同请求确认；不含令牌）。 */
 export interface PendingNoteMutation {
   mutationId: string
-  kind: 'save' | 'create' | 'copy'
+  /**
+   * 加性（PR5/B3）：`fragment` = 片段插入（同 mutation_id 重放，GET 对齐新
+   * revision 后恢复光标）；旧缓存记录只含 save/create/copy，读取保持兼容。
+   */
+  kind: 'save' | 'create' | 'copy' | 'fragment'
   noteId: string | null
   expectedRevision: number | null
   title: string
@@ -244,4 +421,10 @@ export interface PendingNoteMutation {
    * 缺少该键的旧缓存记录仍按合法记录读取（仅 copy 重放要求存在）。
    */
   sourceSnapshotHash?: string | null
+  /** 加性（PR5/B3）：`fragment` 重放所需的冻结请求（target + source）。 */
+  fragment?: NoteInsertFragmentInput | null
+  /** 加性（PR5/B3）：片段插入发起时的编辑器 UTF-16 选区（撤销/恢复用）。 */
+  editorSelection?: EditorTextSelectionSnapshot | null
+  /** 加性（PR5/B3）：片段插入发起时的 localSeq（重放时判断本地草稿是否仍匹配）。 */
+  capturedLocalSeq?: number
 }

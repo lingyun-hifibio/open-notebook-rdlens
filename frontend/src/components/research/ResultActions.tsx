@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useToast } from '@/lib/hooks/use-toast'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
+import { useNoteWorkspaceOptional } from './issue585/NoteWorkspaceProvider'
 import { useSaveResearchResult, useSavedResultEntry } from '@/lib/hooks/use-research'
 import { buildResultCopyText, type ResultCopyCitation } from './result-copy'
 import type {
@@ -47,6 +48,11 @@ export interface ResultActionsProps {
   onViewInsight?: (insightId: string) => void
   onViewNote?: (noteId: string) => void
   onContinueResearch?: () => void
+  /**
+   * Issue #1047 PR5（B3）：回答摘入的来源身份（chat_message = 耐久 message_id）。
+   * 缺失时不渲染摘入入口（搜索/转换结果不是四类可信来源，保持原行为）。
+   */
+  excerptSource?: { sourceKind: 'chat_message'; sourceId: string } | null
 }
 
 type SavePhase =
@@ -77,10 +83,12 @@ export function ResultActions({
   onViewInsight,
   onViewNote,
   onContinueResearch,
+  excerptSource = null,
 }: ResultActionsProps) {
   const { t } = useTranslation()
   const { toast } = useToast()
   const { projectId, isAdminReadonly } = useResearchWorkspace()
+  const noteWorkspace = useNoteWorkspaceOptional()
   const saveMutation = useSaveResearchResult(projectId)
 
   const owner = !isAdminReadonly
@@ -263,6 +271,30 @@ export function ResultActions({
         >
           {t('research.resultActions.copy')}
         </Button>
+        {owner &&
+          noteWorkspace !== null &&
+          noteWorkspace.insertionAvailable &&
+          excerptSource !== null &&
+          content.length > 0 && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              data-testid="excerpt-result"
+              onClick={() =>
+                noteWorkspace.openExcerptInsert({
+                  sourceKind: excerptSource.sourceKind,
+                  sourceId: excerptSource.sourceId,
+                  sourceVersion: null,
+                  text: content,
+                  title: title ?? t('research.notes.excerpt.sourceKinds.answer'),
+                  initialSelection: null,
+                })
+              }
+            >
+              {t('research.notes.excerpt.entry')}
+            </Button>
+          )}
         {renderContinue && (
           <Button
             type="button"

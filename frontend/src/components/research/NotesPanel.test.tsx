@@ -67,6 +67,18 @@ vi.mock('@/lib/research/issue585/use-note-editor', () => ({
   useNoteEditor: vi.fn(),
 }))
 
+// PR5/B3：页面级组合根的打开请求/目录刷新（Issue #1047 review M-2'）。
+const workspaceMock = vi.hoisted(() => ({
+  current: null as null | {
+    pendingOpenNote?: { noteId: string; selection: { start: number; end: number } | null; seq: number } | null
+    consumeOpenNote?: (seq: number) => void
+    notesChangedSeq?: number
+  },
+}))
+vi.mock('./issue585/NoteWorkspaceProvider', () => ({
+  useNoteWorkspaceOptional: () => workspaceMock.current,
+}))
+
 vi.mock('@/lib/hooks/use-translation', () => ({
   useTranslation: () => ({
     t: (key: string, opts?: Record<string, unknown>) =>
@@ -266,6 +278,7 @@ describe('NotesPanel', () => {
     localStorage.clear()
     clearNoteDraftMemoryFallback()
     vi.clearAllMocks()
+    workspaceMock.current = null
     refreshCatalog.mockReset()
     refreshCatalog.mockImplementation(async () => undefined)
     refreshCapabilities.mockReset()
@@ -924,5 +937,21 @@ describe('NotesPanel', () => {
     expect(title).not.toHaveTextContent('受保护笔记')
     expect(screen.queryByTestId('note-recovery-copy-note_d2')).toBeNull()
     expect(screen.queryByTestId('note-recovery-download-note_d2')).toBeNull()
+  })
+
+  it('消费摘入后的打开请求：openNote 目标文档并刷新目录', async () => {
+    const { actions } = stubEditor()
+    const consumeOpenNote = vi.fn()
+    workspaceMock.current = {
+      pendingOpenNote: { noteId: 'note_d2', selection: { start: 2, end: 4 }, seq: 7 },
+      consumeOpenNote,
+      notesChangedSeq: 0,
+    }
+    const { wrapper } = makeWrapper()
+    render(<NotesPanel />, { wrapper })
+
+    await waitFor(() => expect(actions.openNote).toHaveBeenCalledWith('note_d2'))
+    await waitFor(() => expect(consumeOpenNote).toHaveBeenCalledWith(7))
+    await waitFor(() => expect(refreshCatalog).toHaveBeenCalled())
   })
 })

@@ -17,6 +17,7 @@
 
 import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import { useResearchWorkspaceOptional } from '@/lib/embedded/workspace-context'
+import { useNoteEditorSlot } from './note-workspace-slot'
 import {
   createNoteEditorMachine,
   isUnfinishedSaveStatus,
@@ -39,6 +40,10 @@ export function useNoteEditor(options: UseNoteEditorOptions): {
   state: NoteEditorState
   actions: NoteEditorActions
 } {
+  // PR5/B3：页面级 Provider 持有唯一编辑会话时消费同一个 machine（跨 pane 保留
+  // 草稿与内存 undo）。全部 hook 保持无条件调用：槽位存在时只是不创建本地
+  // machine，避免条件调用 hook；Provider 是否存在在组件树内是稳定的。
+  const slot = useNoteEditorSlot()
   const { projectId, capabilities, isAdminReadonly } = options
   const workspace = useResearchWorkspaceOptional()
   const viewerUserId = workspace?.userId ?? ''
@@ -46,7 +51,7 @@ export function useNoteEditor(options: UseNoteEditorOptions): {
   const identityKey = `${projectId}\u0000${viewerUserId}`
 
   const boundRef = useRef<BoundEditor | null>(null)
-  if (boundRef.current === null || boundRef.current.key !== identityKey) {
+  if (slot === null && (boundRef.current === null || boundRef.current.key !== identityKey)) {
     boundRef.current?.machine.dispose()
     boundRef.current = {
       key: identityKey,
@@ -59,28 +64,33 @@ export function useNoteEditor(options: UseNoteEditorOptions): {
       }),
     }
   }
-  const machine = boundRef.current.machine
+  const machine = boundRef.current?.machine ?? null
 
   // 能力/只读矩阵变化：同步进状态机（不重建，保留本地文本与 undo）。
   useEffect(() => {
-    machine.updateCapabilities(capabilities)
+    machine?.updateCapabilities(capabilities)
   }, [machine, capabilities])
 
   // 身份/代际变化：同 viewer 的代际变化保留本地编辑；项目/viewer 变化会因
   // identityKey 变化重建状态机，此处再同步一次以覆盖渲染间竞态。
   useEffect(() => {
-    machine.setIdentity({ projectId, viewerUserId, authGeneration, isAdminReadonly })
+    machine?.setIdentity({ projectId, viewerUserId, authGeneration, isAdminReadonly })
   }, [machine, projectId, viewerUserId, authGeneration, isAdminReadonly])
 
-  const state = useSyncExternalStore(
-    machine.subscribe,
-    machine.getState,
-    machine.getState,
+  const subscribe = useMemo(
+    () => (slot === null && machine !== null ? machine.subscribe : () => () => {}),
+    [machine, slot],
   )
-  const actions: NoteEditorActions = useMemo(
-    () => machine.getActions(),
-    [machine],
+  const getSnapshot = useMemo(
+    () => (slot === null && machine !== null ? machine.getState : () => slotStateFallback(slot)),
+    [machine, slot],
   )
+  const state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+  const actions: NoteEditorActions = useMemo(() => {
+    if (slot !== null) return slot.actions
+    if (machine === null) throw new Error('note editor machine is not available')
+    return machine.getActions()
+  }, [machine, slot])
 
   // 组件卸载 / React StrictMode effect 双调用（setup→cleanup→setup）的 cleanup：
   // 只做非永久停止（清 debounce + 同步落本地草稿），**绝不永久 dispose**——同一
@@ -89,8 +99,8 @@ export function useNoteEditor(options: UseNoteEditorOptions): {
   // 永久销毁只发生在身份/项目真正替换时（见上方渲染分支）。
   useEffect(
     () => () => {
-      machine.persistLocalDraft()
-      machine.stop()
+      machine?.persistLocalDraft()
+      machine?.stop()
     },
     [machine],
   )
@@ -98,6 +108,7 @@ export function useNoteEditor(options: UseNoteEditorOptions): {
   // 离开保护：beforeunload 仅在存在未完成保存时提示；pagehide 只做同步持久化。
   useEffect(() => {
     if (typeof window === 'undefined') return
+    if (machine === null) return
     const onBeforeUnload = (event: BeforeUnloadEvent): void => {
       const current = machine.getState()
       const unfinished =
@@ -118,5 +129,12 @@ export function useNoteEditor(options: UseNoteEditorOptions): {
     }
   }, [machine])
 
+  if (slot !== null) return { state: slot.state, actions: slot.actions }
   return { state, actions }
+}
+
+/** 槽位存在时 useSyncExternalStore 的占位快照（真实状态直接来自槽位）。 */
+function slotStateFallback(slot: ReturnType<typeof useNoteEditorSlot>): NoteEditorState {
+  if (slot !== null) return slot.state
+  throw new Error('note editor slot is not available')
 }

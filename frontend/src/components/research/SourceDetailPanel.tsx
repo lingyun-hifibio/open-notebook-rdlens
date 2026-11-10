@@ -35,6 +35,12 @@ import {
   selectionDisplayRange,
   type SelectionChunkSource,
 } from '@/lib/research/selection-range'
+import {
+  joinSourceSnapshotText,
+  resolveSourceCitationReading,
+  type SourceCitationReadingLocator,
+} from '@/lib/research/issue585/excerpt'
+import { useNoteWorkspaceOptional } from './issue585/NoteWorkspaceProvider'
 import type {
   WireSelectionContext,
   WireSelectionProjection,
@@ -93,6 +99,8 @@ export function SourceDetailPanel({
   returnTargetAvailable,
   returnUnavailable,
   onReturnToAnswer,
+  citationLocator = null,
+  citationVersionLabel = null,
 }: {
   sourceId: string
   highlightPageIdx?: number | null
@@ -109,9 +117,18 @@ export function SourceDetailPanel({
   returnUnavailable?: boolean
   /** 「返回原回答」：切回会话 surface 并滚动到目标 message。 */
   onReturnToAnswer?: () => void
+  /**
+   * Issue #1047 PR5（B3）：Note 正文引用跳回来源时的定位（joined 快照文本的
+   * UTF-16 偏移 + 精确版本 + 快照摘要）。只在能唯一校验时高亮；版本/摘要/
+   * 位置失配显示明确状态，不把旧 offset 套到新正文。
+   */
+  citationLocator?: SourceCitationReadingLocator | null
+  /** 引用版本标签（来源 binding.source_version；null = 未知）。 */
+  citationVersionLabel?: string | null
 }) {
   const { t } = useTranslation()
   const { projectId } = useResearchWorkspace()
+  const noteWorkspace = useNoteWorkspaceOptional()
   const { data, isLoading, isError, error, refetch } = useResearchSource(projectId, sourceId)
   // Issue #1013 §2.11：能力键 fail-closed（缺失/畸形/false → 选段 UI 全部不可用）。
   const d1e = useResearchD1e(projectId)
@@ -172,6 +189,41 @@ export function SourceDetailPanel({
       })),
     [data?.markdown_chunks],
   )
+  // Issue #1047 PR5（B3）：引用版本/摘要/位置校验（joined 快照文本口径）。
+  const citationReading = useMemo(
+    () =>
+      resolveSourceCitationReading(
+        (data?.markdown_chunks ?? []).map((chunk) => ({
+          chunk_id: chunk.chunk_id,
+          chunk_ordinal: chunk.chunk_ordinal,
+          page_idx: chunk.page_idx,
+          markdown: chunk.markdown,
+          content_hash: chunk.content_hash,
+        })),
+        citationLocator,
+        typeof data?.document_version === 'string' ? data.document_version : null,
+      ),
+    [citationLocator, data?.document_version, data?.markdown_chunks],
+  )
+  const citationHighlightedChunkIds = useMemo(
+    () => (citationReading.state === 'ok' ? citationReading.chunkIds : []),
+    [citationReading],
+  )
+  // 引用定位：滚动到第一个命中 chunk（只在校验通过时）。
+  const citationScrollKey = citationHighlightedChunkIds.join('|')
+  useEffect(() => {
+    if (citationScrollKey.length === 0) return
+    const root = rootRef.current
+    if (root === null) return
+    const firstId = citationHighlightedChunkIds[0]
+    const node = Array.from(root.querySelectorAll<HTMLElement>('[data-chunk-id]')).find(
+      (candidate) => candidate.dataset.chunkId === firstId,
+    )
+    node?.scrollIntoView?.({ block: 'center' })
+    // 只在命中集合变化时滚动（不干扰用户阅读）。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [citationScrollKey])
+
   const chunkIdentities = useMemo<ReaderChunkIdentity[]>(
     () =>
       chunkSources.map((chunk) => ({
@@ -695,6 +747,62 @@ export function SourceDetailPanel({
     }
   }, [chunkSources, data?.title, selectionEnabled, sourceId])
 
+  const excerptSelectionAvailable =
+    pendingAction !== null &&
+    noteWorkspace !== null &&
+    noteWorkspace.insertionAvailable &&
+    typeof data?.document_version === 'string' &&
+    data.document_version.length > 0
+
+  /**
+   * 来源选段 → 摘入确认层：把 per-chunk 偏移换算到 joined 快照文本的
+   * UTF-16 偏移（host B3 唯一口径），并打开原始 Markdown 确认层。
+   */
+  const excerptPendingSelection = (): void => {
+    if (pendingAction === null || noteWorkspace === null || data?.document_version === undefined) {
+      return
+    }
+    const ordered = [...chunkSources].sort(
+      (left, right) => left.chunkOrdinal - right.chunkOrdinal,
+    )
+    const fullText = joinSourceSnapshotText(
+      ordered.map((chunk) => ({
+        chunk_id: chunk.chunkId,
+        chunk_ordinal: chunk.chunkOrdinal,
+        page_idx: chunk.pageIdx,
+        markdown: chunk.markdown,
+        content_hash: chunk.contentHash,
+      })),
+    )
+    let offset = 0
+    let start: number | null = null
+    let end: number | null = null
+    for (const chunk of ordered) {
+      if (chunk.chunkId === pendingAction.payload.selection.chunkId) {
+        start = offset + pendingAction.payload.selection.startOffset
+        end = offset + pendingAction.payload.selection.endOffset
+        break
+      }
+      offset += chunk.markdown.length + 2 // "\n\n" join
+    }
+    if (start === null || end === null || start >= end) return
+    noteWorkspace.openExcerptInsert({
+      sourceKind: 'source',
+      sourceId,
+      sourceVersion: data.document_version,
+      text: fullText,
+      title: data.title ?? sourceId,
+      initialSelection: { start, end },
+    })
+    setPendingAction(null)
+    setSelectionNotice(null)
+    try {
+      window.getSelection()?.removeAllRanges()
+    } catch {
+      // 忽略 Selection 不可用的宿主。
+    }
+  }
+
   const discussPendingSelection = (): void => {
     if (pendingAction === null || onDiscussSelection === undefined) return
     onDiscussSelection(pendingAction.payload)
@@ -935,6 +1043,35 @@ export function SourceDetailPanel({
           )}
         </section>
       )}
+      {citationLocator !== null && citationReading.state !== 'ok' && (
+        <p
+          className="rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800"
+          role="status"
+          data-testid={`source-citation-state-${citationReading.state}`}
+        >
+          {t(
+            citationReading.state === 'old_version'
+              ? 'research.notes.citation.state.oldVersion'
+              : citationReading.state === 'content_mismatch'
+                ? 'research.notes.citation.state.contentMismatch'
+                : 'research.notes.citation.state.positionUnavailable',
+          )}
+          {citationVersionLabel !== null && (
+            <span className="ml-1 text-amber-700">
+              ({citationVersionLabel})
+            </span>
+          )}
+        </p>
+      )}
+      {citationLocator !== null && citationReading.state === 'ok' && (
+        <p
+          className="text-xs text-muted-foreground"
+          role="status"
+          data-testid="source-citation-state-ok"
+        >
+          {t('research.notes.citation.state.ok')} · {citationReading.start}–{citationReading.end}
+        </p>
+      )}
       {data.markdown_chunks.length === 0 && (
         <p className="text-sm text-muted-foreground">{t('research.sources.empty')}</p>
       )}
@@ -946,16 +1083,26 @@ export function SourceDetailPanel({
         // 才回落到数组下标——选段/锚点路径会因缺 content_hash 而拒绝，不猜测。
         const chunkOrdinal = chunk.chunk_ordinal ?? chunkIndex
         const selectionHighlighted = highlightChunkId !== null && chunk.chunk_id === highlightChunkId
+        const citationHighlighted = citationHighlightedChunkIds.includes(chunk.chunk_id)
         return (
           <section
             key={chunk.chunk_id}
-            data-testid={highlighted ? 'chunk-highlight' : selectionHighlighted ? 'selection-highlight' : undefined}
+            data-testid={
+              citationHighlighted
+                ? 'citation-highlight'
+                : highlighted
+                  ? 'chunk-highlight'
+                  : selectionHighlighted
+                    ? 'selection-highlight'
+                    : undefined
+            }
             data-chunk-id={chunk.chunk_id}
             data-chunk-ordinal={chunkOrdinal}
             data-chunk-page={chunk.page_idx}
             className={cn(
               'rounded-md border p-3',
-              (highlighted || selectionHighlighted) && 'border-primary ring-1 ring-primary',
+              (highlighted || selectionHighlighted || citationHighlighted) &&
+                'border-primary ring-1 ring-primary',
             )}
           >
             {/* §2.6：定位标签按声明格式 Page/Slide/Sheet（0-based+1 展示），
@@ -1006,14 +1153,26 @@ export function SourceDetailPanel({
           className="fixed z-50 -translate-x-1/2 -translate-y-full pb-1"
           style={{ left: pendingAction.left, top: pendingAction.top }}
         >
-          <Button
-            size="sm"
-            data-testid="source-selection-discuss"
-            title={selectionActionTitle(pendingAction, t)}
-            onClick={discussPendingSelection}
-          >
-            {t('research.selection.discuss')}
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              size="sm"
+              data-testid="source-selection-discuss"
+              title={selectionActionTitle(pendingAction, t)}
+              onClick={discussPendingSelection}
+            >
+              {t('research.selection.discuss')}
+            </Button>
+            {excerptSelectionAvailable && (
+              <Button
+                size="sm"
+                variant="outline"
+                data-testid="source-selection-excerpt"
+                onClick={excerptPendingSelection}
+              >
+                {t('research.notes.excerpt.entry')}
+              </Button>
+            )}
+          </div>
         </div>
       )}
     </div>
