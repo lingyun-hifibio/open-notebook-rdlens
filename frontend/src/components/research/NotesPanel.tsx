@@ -266,8 +266,9 @@ export function NotesPanel({
       )}
 
       {/* Issue #1136：服务端保存未完成时，回到 Notes 目录显式列出可恢复草稿
-          （标题/缓存时间/打开笔记；打开后由编辑器恢复正文与 PR4 冲突/未知态）。 */}
-      {!isAdminReadonly && editor.state.note === null && (
+          （标题/缓存时间/打开笔记；打开后由编辑器恢复正文与 PR4 冲突/未知态）。
+          仅在编辑器完全关闭（非 loading/打开态）时展示，避免与编辑器重复。 */}
+      {!isAdminReadonly && !editorVisible && (
         <NoteRecoveryInbox
           drafts={recoverableDrafts}
           onOpen={(noteId) => void openD2Note(noteId)}
