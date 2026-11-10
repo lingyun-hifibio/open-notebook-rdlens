@@ -886,7 +886,7 @@
           "contract": "evidence contract §2: 点遮罩 → 关闭对话框（不发送请求）",
           "observed": "overlay pointer-down outside does NOT close the confirming dialog; Radix AlertDialog prevents outside interaction unless NoteDeleteDialog opts in via onPointerDownOutside/onInteractOutside",
           "impact": "Esc and Cancel still close the dialog without a request; no DELETE was emitted by the overlay click",
-          "evidence": "scenes[].contract_deviations / capture.log e2.overlay_click_observed"
+          "evidence": "scenes[].contract_deviations / capture.log.txt e2.overlay_click_observed"
         }
       ],
       "stats": {
@@ -3465,7 +3465,7 @@
           "contract": "evidence contract §2: 点遮罩 → 关闭对话框（不发送请求）",
           "observed": "overlay pointer-down outside does NOT close the confirming dialog; Radix AlertDialog prevents outside interaction unless NoteDeleteDialog opts in via onPointerDownOutside/onInteractOutside",
           "impact": "Esc and Cancel still close the dialog without a request; no DELETE was emitted by the overlay click",
-          "evidence": "scenes[].contract_deviations / capture.log e2.overlay_click_observed"
+          "evidence": "scenes[].contract_deviations / capture.log.txt e2.overlay_click_observed"
         }
       ],
       "stats": {
@@ -5221,7 +5221,7 @@
       "contract": "evidence contract §2: 点遮罩 → 关闭对话框（不发送请求）",
       "observed": "overlay pointer-down outside does NOT close the confirming dialog; Radix AlertDialog prevents outside interaction unless NoteDeleteDialog opts in via onPointerDownOutside/onInteractOutside",
       "impact": "Esc and Cancel still close the dialog without a request; no DELETE was emitted by the overlay click",
-      "evidence": "scenes[].contract_deviations / capture.log e2.overlay_click_observed"
+      "evidence": "scenes[].contract_deviations / capture.log.txt e2.overlay_click_observed"
     },
     {
       "scene": "E2",
@@ -5229,7 +5229,7 @@
       "contract": "evidence contract §2: 点遮罩 → 关闭对话框（不发送请求）",
       "observed": "overlay pointer-down outside does NOT close the confirming dialog; Radix AlertDialog prevents outside interaction unless NoteDeleteDialog opts in via onPointerDownOutside/onInteractOutside",
       "impact": "Esc and Cancel still close the dialog without a request; no DELETE was emitted by the overlay click",
-      "evidence": "scenes[].contract_deviations / capture.log e2.overlay_click_observed"
+      "evidence": "scenes[].contract_deviations / capture.log.txt e2.overlay_click_observed"
     }
   ],
   "totals": {
@@ -5237,7 +5237,8 @@
     "scene_errors": 0,
     "assertions": 426,
     "assertions_pass": 426,
-    "assertions_fail": 0
+    "assertions_fail": 0,
+    "source": "recomputed from scenes[] (measured), not carried over from a previous merge"
   },
   "screenshots": [
     {
@@ -10425,38 +10426,178 @@
     "note": "implementation branch only (fork branch agent/note-delete-ui-a35682a0d739); the evidence branch is not part of the implementation PR diff"
   },
   "captured_heads": {
-    "E2": "cb628c48e4e5fc95174e231e95ab56423df0b412",
-    "E4": "cb628c48e4e5fc95174e231e95ab56423df0b412",
-    "E6": "cb628c48e4e5fc95174e231e95ab56423df0b412",
     "E1": "f2e9f8131dc109a381e7465452361e1b03b2a29c",
-    "E10": "f2e9f8131dc109a381e7465452361e1b03b2a29c",
-    "E11": "f2e9f8131dc109a381e7465452361e1b03b2a29c",
+    "E2": "cb628c48e4e5fc95174e231e95ab56423df0b412",
     "E3": "f2e9f8131dc109a381e7465452361e1b03b2a29c",
+    "E4": "cb628c48e4e5fc95174e231e95ab56423df0b412",
     "E5": "f2e9f8131dc109a381e7465452361e1b03b2a29c",
+    "E6": "cb628c48e4e5fc95174e231e95ab56423df0b412",
     "E7": "f2e9f8131dc109a381e7465452361e1b03b2a29c",
     "E8": "f2e9f8131dc109a381e7465452361e1b03b2a29c",
-    "E9": "f2e9f8131dc109a381e7465452361e1b03b2a29c"
-  },
-  "recapture": {
-    "at": "2026-11-10T17:00:29.699Z",
-    "scenes": [
-      "E6"
-    ],
-    "previous_head": "cb628c48e4e5fc95174e231e95ab56423df0b412",
-    "new_head": "cb628c48e4e5fc95174e231e95ab56423df0b412"
+    "E9": "f2e9f8131dc109a381e7465452361e1b03b2a29c",
+    "E10": "f2e9f8131dc109a381e7465452361e1b03b2a29c",
+    "E11": "f2e9f8131dc109a381e7465452361e1b03b2a29c"
   },
   "recapture_history": [
     {
-      "at": "2026-11-10T17:00:29.699Z",
-      "previous_head": "f2e9f8131dc109a381e7465452361e1b03b2a29c",
-      "new_head": "cb628c48e4e5fc95174e231e95ab56423df0b412",
+      "round": 1,
+      "at": "2026-11-10T16:26:53.352Z",
+      "head": "f2e9f8131dc109a381e7465452361e1b03b2a29c",
+      "scenes": [
+        "E1",
+        "E2",
+        "E3",
+        "E4",
+        "E5",
+        "E6",
+        "E7",
+        "E8",
+        "E9",
+        "E10",
+        "E11"
+      ],
+      "screenshots_regenerated": [
+        "after_e10_existing_off_blocked_1024.png",
+        "after_e10_existing_off_blocked_1440.png",
+        "after_e11_legacy_delete_dialog_1024.png",
+        "after_e11_legacy_delete_dialog_1440.png",
+        "after_e11_legacy_deleted_1024.png",
+        "after_e11_legacy_deleted_1440.png",
+        "after_e1_row_actions_1024.png",
+        "after_e1_row_actions_1440.png",
+        "after_e2_delete_dialog_1024.png",
+        "after_e2_delete_dialog_1440.png",
+        "after_e3_deleted_catalog_1024.png",
+        "after_e3_deleted_catalog_1440.png",
+        "after_e4_after_delete_1024.png",
+        "after_e4_after_delete_1440.png",
+        "after_e4_editor_delete_dialog_1024.png",
+        "after_e4_editor_delete_dialog_1440.png",
+        "after_e5_restricted_error_1024.png",
+        "after_e5_restricted_error_1440.png",
+        "after_e6_conflict_error_1024.png",
+        "after_e6_conflict_error_1440.png",
+        "after_e6_deleted_1024.png",
+        "after_e6_deleted_1440.png",
+        "after_e6_refresh_confirming_1024.png",
+        "after_e6_refresh_confirming_1440.png",
+        "after_e7_after_confirm_result_1024.png",
+        "after_e7_after_confirm_result_1440.png",
+        "after_e7_unknown_error_1024.png",
+        "after_e7_unknown_error_1440.png",
+        "after_e8_after_retry_1024.png",
+        "after_e8_after_retry_1440.png",
+        "after_e8_dependency_error_1024.png",
+        "after_e8_dependency_error_1440.png",
+        "after_e9_admin_readonly_1024.png",
+        "after_e9_admin_readonly_1440.png"
+      ],
+      "notes": "Initial full AFTER capture (11 scenes x 2 viewports) on the base before the round-1 review fixes; all 34 AFTER screenshots were produced by this run."
+    },
+    {
+      "round": 2,
+      "at": "2026-11-10T16:58:36.658Z",
+      "head": "cb628c48e4e5fc95174e231e95ab56423df0b412",
       "scenes": [
         "E2",
         "E4",
         "E6"
       ],
-      "reason": "round-1 review fixes: dialog content review block (note-delete-content), 409 Refresh-and-review now performs an authenticated single-note GET and re-confirms with the freshly read title/body, delete-receipt-specific validation (note_id/mutation_id/applied_revision==expected_revision/snapshot_hash null), 404 draft-declaration convergence, stale_request failure copy",
-      "screenshots_regenerated": []
+      "screenshots_regenerated": [
+        "after_e2_delete_dialog_1024.png",
+        "after_e2_delete_dialog_1440.png",
+        "after_e4_after_delete_1024.png",
+        "after_e4_after_delete_1440.png",
+        "after_e4_editor_delete_dialog_1024.png",
+        "after_e4_editor_delete_dialog_1440.png",
+        "after_e6_conflict_error_1024.png",
+        "after_e6_conflict_error_1440.png",
+        "after_e6_deleted_1024.png",
+        "after_e6_deleted_1440.png",
+        "after_e6_refresh_confirming_1024.png",
+        "after_e6_refresh_confirming_1440.png"
+      ],
+      "notes": "Round-1 review fix head cb628c4: only E2/E4/E6 were re-captured (12 files written). This run had 2 FAIL assertions caused by a harness assertion-placement bug (E6 content block was asserted in the error phase); the implementation was unchanged and E6 was re-captured in round 3 after the harness fix."
+    },
+    {
+      "round": 3,
+      "at": "2026-11-10T17:00:10.428Z",
+      "head": "cb628c48e4e5fc95174e231e95ab56423df0b412",
+      "scenes": [
+        "E6"
+      ],
+      "screenshots_regenerated": [
+        "after_e6_conflict_error_1024.png",
+        "after_e6_conflict_error_1440.png",
+        "after_e6_deleted_1024.png",
+        "after_e6_deleted_1440.png",
+        "after_e6_refresh_confirming_1024.png",
+        "after_e6_refresh_confirming_1440.png"
+      ],
+      "notes": "E6-only re-capture at cb628c4 after the harness assertion-placement fix: 62 PASS / 0 FAIL / 0 scene errors (both viewports). Implementation head unchanged."
     }
-  ]
+  ],
+  "screenshots_rewritten_in_place": [
+    {
+      "file": "after_e2_delete_dialog_1024.png",
+      "sha256_before": "2e6457ef69fc9ecf04abf80874ed94cc18fb48399c24c7a75961f28cd741c1d3",
+      "sha256_after": "0b8e01d094fe86f3ea1385047dc8060503466a079c51b8758139141e46958253",
+      "last_round": 2
+    },
+    {
+      "file": "after_e2_delete_dialog_1440.png",
+      "sha256_before": "e365776a0a3aab0c47b9caeb7d7d66e9377e9c0b8028bdfc60715debd60d5645",
+      "sha256_after": "fad8adcc1140e55791ea8d05fb926502cef8488ba8b79e0b1c6e4b95e7ebf05c",
+      "last_round": 2
+    },
+    {
+      "file": "after_e4_editor_delete_dialog_1024.png",
+      "sha256_before": "1eca979a05ba41055d7921e09d11ed17b9db3018983b1801a00e49feb6fb7f7a",
+      "sha256_after": "d8b8023aaa4f35a3c17648ee8a108ab4c776f271ff17facc1e31e7979b4bcec3",
+      "last_round": 2
+    },
+    {
+      "file": "after_e4_editor_delete_dialog_1440.png",
+      "sha256_before": "0c7396bdffda06ac545afedccf0ce0a37e3077e0f8ae61d51813ca4e69835561",
+      "sha256_after": "66ed30ecab9a388f0f6e9702e9c0a6b76de3cc6255b3c58e110943e35f9e826e",
+      "last_round": 2
+    },
+    {
+      "file": "after_e6_conflict_error_1024.png",
+      "sha256_before": "ef707135dae086cb2abfbf7a0a3ded734485bc6dbf970e805a4f6aec7f345c16",
+      "sha256_after": "4089420457dd476489fa27ef1f455e44cc69a1669db967e22078a095b9be19da",
+      "last_round": 3
+    },
+    {
+      "file": "after_e6_conflict_error_1440.png",
+      "sha256_before": "880c0d3729334c291468cd8d846df77769fa908aebf06374e4c6dc51a941dc15",
+      "sha256_after": "cc298544cd683894d8be6b1b18b18a0ed275d297626fca9af752484067521a54",
+      "last_round": 3
+    },
+    {
+      "file": "after_e6_refresh_confirming_1024.png",
+      "sha256_before": "2ca392f527950eed0e5e1598f8d4a8d3368083183540843efb89f20e01045d39",
+      "sha256_after": "afd996dec021c8f30c8ad438fada112b6d748ea7c6b5643d62bbe740fadcd707",
+      "last_round": 3
+    },
+    {
+      "file": "after_e6_refresh_confirming_1440.png",
+      "sha256_before": "7cdc982ec79f33ec843bbaa854347db6b29fef3d341468f2c0a3c87ea26be900",
+      "sha256_after": "adf044cc5cc43510839a73bce84a6f194eb7b34632053fbafb32fa257b4a566b",
+      "last_round": 3
+    }
+  ],
+  "recorded_capture_log": "capture.log.txt",
+  "capture_log_note": "The fork repo .gitignore excludes *.log, so the capture log is committed as capture.log.txt (non-.log suffix); README references use the same name.",
+  "round2_metadata_cleanup": {
+    "at": "2026-11-11T01:16:00+08:00",
+    "changes": [
+      "LOW-5: recapture_history is append-only (3 rounds) with per-round screenshots_regenerated lists; totals and captured_heads recomputed from measured scenes[]",
+      "LOW-5: screenshots_rewritten_in_place lists the 8 byte-level changed screenshots between the two evidence commits with before/after sha256",
+      "LOW-6: capture log committed as capture.log.txt (repo .gitignore excludes *.log)",
+      "LOW-7: README wording corrected for the partial re-capture (per-scene heads; E3/E7/E8 success/replay not re-run on cb628c4)"
+    ],
+    "product_head": "cb628c48e4e5fc95174e231e95ab56423df0b412",
+    "chromium_assertions_re_run": false
+  }
 }

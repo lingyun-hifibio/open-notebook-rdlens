@@ -6,18 +6,22 @@
 - **AFTER head**：`cb628c48e4e5fc95174e231e95ab56423df0b412`（fork 分支 `agent/note-delete-ui-a35682a0d739`，base `f3e4e47`，3 commits：`f07149b` 状态机/hook/对话框 → `f2e9f81` 目录行+编辑器接线 → `cb628c4` round-1 审查修复；27 文件）。
 - **证据分支**：`evidence/note-delete-ui-a35682a0d739`（本分支，从 fork `origin/main` 创建，**不属于实现 PR diff**；仅 `dev_docs/validation/issue-1134/` 证据文件）。
 
-## round-1 审查修复后的部分重采（captured_heads）
+## 部分重采（captured_heads）与 round-1 修复
 
-独立审查 round-1（0 BLOCKING / 0 HIGH / 2 MEDIUM / 6 LOW）后实现 head 从 `f2e9f81` 前进到 `cb628c4`。按 Lead 约定**只重采受影响的 E2/E4/E6**（两视口），其余场景沿用 `f2e9f81` 的截图与断言：
+独立审查 round-1（0 BLOCKING / 0 HIGH / 2 MEDIUM / 6 LOW）后实现 head 从 `f2e9f81` 前进到 `cb628c4`；round-2 复核通过（0 BLOCKING / 0 HIGH / 0 MEDIUM / 7 LOW），实现 head 保持 `cb628c4`，本轮仅做文档/元数据收尾，**未再重跑 Chromium 断言**。按 Lead 约定重采范围与采集 head 如下：
 
 | 场景 | 截图/断言采集时 head | 说明 |
 |---|---|---|
-| E2 确认对话框（+E12） | `cb628c48e4e5fc95174e231e95ab56423df0b412` | 新增目标正文复核块 `note-delete-content`（label “Note content”）；断言 +1 |
-| E4 编辑器内删除（未保存文本） | `cb628c48e4e5fc95174e231e95ab56423df0b412` | 同上；正文块显示**当前编辑器正文**（含未保存本地文本）；断言 +1 |
-| E6 409 → Refresh and review | `cb628c48e4e5fc95174e231e95ab56423df0b412` | 复核改为「先执行 1 次已认证单条 GET 读取最新投影，再用最新 revision/标题/正文回到二次确认」；断言 +6（含 `note-delete-content` 显示 GET 返回正文、单条 GET 计数 +1） |
-| E1/E3/E5/E7/E8/E9/E10/E11 | `f2e9f8131dc109a381e7465452361e1b03b2a29c` | 无 UI/文案/行为变化（实现 diff `f2e9f81..cb628c4` 仅涉及删除对话框正文块、409 复核路径、回执专有校验、404 草稿声明与 `stale_request` 文案），保留原截图/断言；E9/E10/E11 重新通过容差逐像素等价复核 |
+| E2 确认对话框（+E12） | `cb628c48e4e5fc95174e231e95ab56423df0b412` | **重采于 cb628c4**。新增目标正文复核块 `note-delete-content`（label “Note content”）；断言 22→23（每视口） |
+| E4 编辑器内删除（未保存文本） | `cb628c48e4e5fc95174e231e95ab56423df0b412` | **重采于 cb628c4**。同上；正文块显示**当前编辑器正文**（含未保存本地文本）；断言 22→23（每视口） |
+| E6 409 → Refresh and review | `cb628c48e4e5fc95174e231e95ab56423df0b412` | **重采于 cb628c4**。复核改为「先执行 1 次已认证单条 GET 读取最新投影，再用最新 revision/标题/正文回到二次确认」；断言 25→31（每视口，含 `note-delete-content` 显示 GET 返回正文、单条 GET 计数 +1） |
+| E1/E5/E9/E10/E11 | `f2e9f8131dc109a381e7465452361e1b03b2a29c` | **未在 cb628c4 重跑**，保留 f2e9f81 截图与断言；E9/E10/E11 的容差逐像素等价在最终 44 张截图上重跑仍 8/8 PASS |
+| E3/E7/E8 | `f2e9f8131dc109a381e7465452361e1b03b2a29c` | **未在 cb628c4 重跑**（success/replay 路径）。原因：round-1 新增的 delete 回执专有校验（LOW-5）在契约合规的 mock 回执下不可观测；残余风险低（错配回执的失败分支由实现仓 `note-delete.test.ts` 单测覆盖）。E7 的 replay 回执字段已按同一约束实现并由 f2e9f81 采集覆盖 |
 
-`after-manifest.json` 的 `captured_heads` / `recapture_history` 记录该拆分；`f2e9f81..cb628c4` 的实现差异集中在：`NoteDeleteDialog`（`note-delete-content`）、`NotesPanel`（409 复核先 `getNoteD2` 最新版 + `reconfirm(revision,title,content)`；404 消息文案；删除后关闭编辑器顺序）、`note-delete.ts`（delete 回执专有校验：`note_id` 目标 / `mutation_id` 回显 / `applied_revision === expected_revision` / `snapshot_hash === null`；`stale_request` 失败分类）、14 locale 文案。
+- `after-manifest.json` 用 **`recapture_history`（append-only，3 轮）**记录每次采集的 `at/head/scenes/screenshots_regenerated/notes`：round 1 = `f2e9f81` 全量（34 张 AFTER）；round 2 = `cb628c4` 仅 E2/E4/E6（写入 12 张，其中该轮 E6 有 2 条断言因 **harness 断言位置 bug** 误报，实现未变，E6 在 round 3 以修好的 harness 重采）；round 3 = `cb628c4` 仅 E6（写入 6 张，62 PASS / 0 FAIL）。
+- 跨证据提交**字节级变化**的截图恰好 8 张，记录在 `screenshots_rewritten_in_place`（含 before/after sha256）：E2 对话框 ×2、E4 编辑器对话框 ×2、E6 conflict ×2、E6 refresh_confirming ×2；其余“重新生成”的文件字节未变。
+- `captured_heads` 与 `totals`（426 assertions / 22 scene runs / 0 fail）由 `scenes[]` 实测重算（`totals.source` 标注）。
+- `f2e9f81..cb628c4` 的实现差异：`NoteDeleteDialog`（`note-delete-content`）、`NotesPanel`（409 复核先 `getNoteD2` 最新版 + `reconfirm(revision,title,content)`；404 消息文案；删除后关闭编辑器顺序）、`note-delete.ts`（delete 回执专有校验：`note_id` 目标 / `mutation_id` 回显 / `applied_revision === expected_revision` / `snapshot_hash === null`；`stale_request` 失败分类）、14 locale 文案。这些差异影响 E2/E4/E6 的 DOM/文案；E1/E5/E9/E10/E11 的断言未依赖被改字段。
 
 ## 结论摘要
 
@@ -77,7 +81,7 @@ fork 前端自 W1 #1104 起，`/research` 默认渲染目标壳 `TargetShell`；
 
 ## 浏览器行为断言（Before vs After）
 
-每场景在两种视口各跑一遍（BEFORE 8 scene runs / AFTER 22 scene runs）；每条断言记录 expected/actual 到 `capture.log`，汇总在 `before-manifest.json` / `after-manifest.json` 的 `scenes[].assertions`；截图时刻的 DOM testid 计数与 gateway 计数记录在 `screenshots[].dom_counts` / `gateway_stats`；E1 另记录 `scenes[].layout`（真实 Chromium boundingBox）。
+每场景在两种视口各跑一遍（BEFORE 8 scene runs / AFTER 22 scene runs）；每条断言记录 expected/actual 到 `capture.log.txt`，汇总在 `before-manifest.json` / `after-manifest.json` 的 `scenes[].assertions`；截图时刻的 DOM testid 计数与 gateway 计数记录在 `screenshots[].dom_counts` / `gateway_stats`；E1 另记录 `scenes[].layout`（真实 Chromium boundingBox）。
 
 ### BEFORE（基线缺口，`f3e4e47`）
 
@@ -155,7 +159,7 @@ E1/E2/E9/E10 均 0×DELETE（仅查看/打开对话框不触网）。E3/E4 各 1
 
 ## 已知契约偏差（known deviation，不计入 FAIL、不写成 PASS）
 
-- 契约 §2「点遮罩 → 关闭对话框」：**当前实现不满足**。Radix `AlertDialog` 原语默认阻止外部交互（`onPointerDownOutside`/`onInteractOutside → preventDefault`），`NoteDeleteDialog` 未覆写；实测遮罩点击后对话框保持 confirming、DELETE=0。Lead 裁决：接受为该原语语义的 known deviation（不是本 PR 引入的缺陷，也不是 #1134 验收项；pending 单在途时 Esc/遮罩均不可关闭属预期）。证据记录在 `after-manifest.json.contract_deviations`（E2 两视口）与 `capture.log` 的 `CONTRACT-DEVIATION overlay-dismiss` 行；E2 断言为 `e2.overlay_click_no_dismiss_observed`（记录观察到的事实），**没有** `overlay_dismiss_without_request` 的 PASS。Esc 与 Cancel 均验证为「关闭对话框且 DELETE=0」。
+- 契约 §2「点遮罩 → 关闭对话框」：**当前实现不满足**。Radix `AlertDialog` 原语默认阻止外部交互（`onPointerDownOutside`/`onInteractOutside → preventDefault`），`NoteDeleteDialog` 未覆写；实测遮罩点击后对话框保持 confirming、DELETE=0。Lead 裁决：接受为该原语语义的 known deviation（不是本 PR 引入的缺陷，也不是 #1134 验收项；pending 单在途时 Esc/遮罩均不可关闭属预期）。证据记录在 `after-manifest.json.contract_deviations`（E2 两视口）与 `capture.log.txt` 的 `CONTRACT-DEVIATION overlay-dismiss` 行；E2 断言为 `e2.overlay_click_no_dismiss_observed`（记录观察到的事实），**没有** `overlay_dismiss_without_request` 的 PASS。Esc 与 Cancel 均验证为「关闭对话框且 DELETE=0」。
 
 ## 场景与截图
 
@@ -245,7 +249,7 @@ WT_BEFORE=<scratch>/fork-before WT_AFTER=<scratch>/fork-after \
 2. **入口 surface**：对比发生在前端 legacy 回归入口 `?legacy=1` 的 `ResearchWorkbench`；默认 `TargetShell` 的 Notes 集成不在本 issue 范围，**不声称生产默认入口可达**。
 3. **BEFORE 的 E2–E8/E12 为 N/A**：基线（`f3e4e47`）根本没有 d2-v1 删除入口/删除 mutation（`deleteNoteD2` 客户端方法虽在 PR4 冻结契约中存在，但无 UI 调用路径），无法在基线重现这些确认/错误/未知状态；未伪造基线截图。
 4. **错误注入为网关路由 mock**：403/409/503/unknown 由 mock 按契约错误信封返回；不覆盖真实 Gateway/存储/依赖的故障注入。
-5. **部分重采（`captured_heads`）**：E2/E4/E6 在 round-1 修复后的 `cb628c4` 采集，其余场景在 `f2e9f81` 采集；两者之间的实现 diff 不触及这些表面，且 E9/E10/E11 重新通过容差逐像素等价。若需严格单一 head 的全量重采，可按「复现 §3」在 `cb628c4` 跑一次全量（约 6 分钟）。
+5. **部分重采与未重跑路径（`captured_heads`）**：E2/E4/E6 重采于 `cb628c4`；E1/E3/E5/E7/E8/E9/E10/E11 采集于 `f2e9f81`，**未在 cb628c4 重跑**。其中 E3/E7/E8 的 success/replay 路径未重跑，是因为 round-1 新增的 delete 回执专有校验在契约合规 mock 回执下不可见（错配回执分支由实现仓单测覆盖，残余风险低）。E9/E10/E11 重新通过容差逐像素等价。若需严格单一 head 的全量重采，可按「复现 §3」在 `cb628c4` 跑一次全量（约 6 分钟）；本轮按 Lead 要求不重跑 Chromium 断言。
 6. **非确定性**：next dev/HMR 加载帧、toast 出现时机、目录刷新瞬间的 loading 文案会随运行时刻不同；**不声称截图跨次运行 byte-identical**；`screenshots.sha256` 只对本次提交的快照有效。
 7. **intentional HTTP 失败**：`restricted403`/`conflict409`/`dependency503`/`unknown503_apply`/`fail503` 会让 Chromium 记录资源级 “Failed to load resource … 403/503” console 条目（浏览器自动日志）；已与意外 page/console error 分开记录，本证据断言 **unexpected = 0**。
 8. **light/en-US 单主题**、两档视口（1440×900 / 1024×768）；未覆盖 dark/RTL/移动宽度/键盘或 IME 实体输入（实现仓单测覆盖交互边界）。
@@ -260,7 +264,7 @@ WT_BEFORE=<scratch>/fork-before WT_AFTER=<scratch>/fork-after \
 | `README.md` | 本文件 |
 | `screenshots/before/*.png` / `screenshots/after/*.png` | Before/After 截图（10 + 34 = 44 张；E2/E4/E6 AFTER 于 `cb628c4` 重采） |
 | `screenshots.sha256` | 全部截图的 sha256（44 行） |
-| `capture.log` | 逐命令/逐截图/DOM testid 计数/`/__stats`/console 证据日志（含首轮 `f2e9f81` AFTER 记录与 round-1 部分重采记录） |
-| `before-manifest.json` / `after-manifest.json` | 修订（full SHA）、`captured_heads`、`recapture_history`、环境、场景、断言、布局、计数、截图 sha256、worktree 清洁度、config patch hash、像素门、契约偏差、实现 diff |
+| `capture.log.txt` | 逐命令/逐截图/DOM testid 计数/`/__stats`/console 证据日志（含 `f2e9f81` 首轮 AFTER 与 `cb628c4` 部分重采记录）。**注意**：fork 仓库 `.gitignore` 排除 `*.log`，因此以 `capture.log.txt`（非 `.log` 后缀）纳入本证据分支，README 引用同名 |
+| `before-manifest.json` / `after-manifest.json` | 修订（full SHA）、`captured_heads`、append-only `recapture_history`（3 轮，含逐轮 `screenshots_regenerated`）、`screenshots_rewritten_in_place`（8 张字节级变化 + before/after sha256）、环境、场景、断言、布局、计数、截图 sha256、worktree 清洁度、config patch hash、像素门、契约偏差、实现 diff |
 | `logs/` | gateway/host/dev 日志、config patch provenance、worktree provenance、像素等价比较 |
 | `harness/` | 可复现 harness（`capture.js`（含 `--merge` 部分重采）、`host_server.js`、`gateway_mock.js`、`fixtures.js`、`run_before.sh`、`run_after.sh`、`finalize_evidence.sh`、`probe.js`、`verify_pixel_equivalence.py`） |

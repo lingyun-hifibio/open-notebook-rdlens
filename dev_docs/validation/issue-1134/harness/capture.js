@@ -82,7 +82,7 @@ const ONLY_SCENES = (arg('scenes', '') || '').split(',').filter(Boolean)
 /** Partial re-capture: merge captured scenes/screenshots into the existing manifest. */
 const MERGE = process.argv.includes('--merge')
 const OUT_DIR = path.resolve(arg('outdir', path.join(EVIDENCE_ROOT, 'screenshots', PHASE)))
-const LOG_FILE = path.resolve(arg('logfile', path.join(EVIDENCE_ROOT, 'capture.log')))
+const LOG_FILE = path.resolve(arg('logfile', path.join(EVIDENCE_ROOT, 'capture.log.txt')))
 const MANIFEST_FILE = path.resolve(
   arg('manifest', path.join(EVIDENCE_ROOT, `${PHASE}-manifest.json`)),
 )
@@ -1413,7 +1413,7 @@ async function sceneE2After(browser, width, height) {
       observed:
         'overlay pointer-down outside does NOT close the confirming dialog; Radix AlertDialog prevents outside interaction unless NoteDeleteDialog opts in via onPointerDownOutside/onInteractOutside',
       impact: 'Esc and Cancel still close the dialog without a request; no DELETE was emitted by the overlay click',
-      evidence: 'scenes[].contract_deviations / capture.log e2.overlay_click_observed',
+      evidence: 'scenes[].contract_deviations / capture.log.txt e2.overlay_click_observed',
     }
     log(`${PREFIX} ${scene} CONTRACT-DEVIATION overlay-dismiss observed=not-closed deletes=${overlayDeletes}`)
     check(
@@ -2651,12 +2651,22 @@ async function main() {
       head: HEAD,
       captured_at: new Date().toISOString(),
       captured_heads: capturedHeads,
-      recapture: {
-        at: new Date().toISOString(),
-        scenes: capturedSceneIds,
-        previous_head: previous.head,
-        new_head: HEAD,
-      },
+      recapture_history: [
+        ...(previous.recapture_history || []),
+        {
+          round: (previous.recapture_history || []).length + 1,
+          at: new Date().toISOString(),
+          head: HEAD,
+          scenes: capturedSceneIds,
+          screenshots_regenerated: shots.map((entry) => entry.file).sort(),
+          notes: `Partial re-capture merged into the existing manifest: scenes ${capturedSceneIds.join(
+            ',',
+          )} at head ${HEAD} (previous manifest head ${previous.head}).`,
+        },
+      ],
+      screenshots_rewritten_in_place: [
+        ...(previous.screenshots_rewritten_in_place || []),
+      ],
       scenes: mergedScenes,
       screenshots: mergedShots,
       contract_deviations: mergedScenes.flatMap((scene) =>
@@ -2668,6 +2678,7 @@ async function main() {
         assertions: mergedAssertions.length,
         assertions_pass: mergedAssertions.filter((item) => item.ok).length,
         assertions_fail: mergedAssertions.filter((item) => !item.ok).length,
+        source: 'recomputed from scenes[] (measured), not carried over from a previous merge',
       },
     }
     log(
