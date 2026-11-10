@@ -47,10 +47,6 @@ export function useNoteEditor(options: UseNoteEditorOptions): {
 
   const boundRef = useRef<BoundEditor | null>(null)
   if (boundRef.current === null || boundRef.current.key !== identityKey) {
-    // Issue #1136：项目/身份切换由宿主（父级）驱动，hook 无法阻断；永久销毁旧
-    // 状态机前先同步落本机草稿，保证切回原项目时 Notes 目录的可恢复草稿入口
-    // 能找回未完成的本地文本（每次编辑已 writeCache，这里覆盖最后一次输入）。
-    boundRef.current?.machine.persistLocalDraft()
     boundRef.current?.machine.dispose()
     boundRef.current = {
       key: identityKey,

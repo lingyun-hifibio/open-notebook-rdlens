@@ -37,6 +37,15 @@ export const NOTE_DRAFT_TAB_STORAGE_KEY = `${NOTE_DRAFT_STORAGE_NAMESPACE}.tab`
 const memoryFallback = new Map<string, string>()
 
 /**
+ * sessionStorage 不可用（隐私模式/策略禁用）时的进程内稳定 tabId。
+ *
+ * 必须稳定：草稿写入（machine）与恢复入口（NotesPanel）分别调用
+ * `readOrCreateNoteDraftTabId`，若每次返回新 id 会落到不同草稿分支 ⇒ 恢复入口
+ * 永远为空（Issue #1136 审查 MEDIUM-3）。同一 JS 进程/页面生命周期内复用。
+ */
+let memoryFallbackTabId: string | null = null
+
+/**
  * 删除持久值失败时的墓碑：后续读取返回 null，防止旧持久值在清理后“复活”。
  */
 const removedKeys = new Set<string>()
@@ -281,10 +290,11 @@ export function readOrCreateNoteDraftTabId(
       target.setItem(NOTE_DRAFT_TAB_STORAGE_KEY, created)
       return created
     } catch {
-      // 隐私模式/配额：退回进程内临时 id（本次会话仍可恢复）
+      // 隐私模式/配额：退回进程内稳定 id（本次会话仍可恢复；跨刷新不可恢复）
     }
   }
-  return createNoteDraftTabId()
+  if (memoryFallbackTabId === null) memoryFallbackTabId = createNoteDraftTabId()
+  return memoryFallbackTabId
 }
 
 /** 新 tabId（测试/显式新实例用）。 */
@@ -499,9 +509,6 @@ export interface RecoverableNoteDraftSummary {
   readonly noteId: string
   readonly title: string
   readonly savedAt: string
-  /** 存在未决 mutation（上次保存结果未知），恢复后需先确认。 */
-  readonly pendingMutation: boolean
-  readonly tabId: string
 }
 
 /**
@@ -511,6 +518,9 @@ export interface RecoverableNoteDraftSummary {
  * 与 `readNoteDraftForRetrieval` 相同的身份作者权：要求已认证 owner、同项目、
  * 当前 authGeneration 匹配；**不要求**当前文档权限，因为这里只报告“本浏览器
  * 存在未保存草稿”，不恢复正文、不代表可编辑（权限受限的草稿在打开时清理）。
+ * 返回的 `title` 是用户自己写入本机缓存的元数据；UI 对目录中已标记
+ * `access_state='restricted'` 的笔记必须脱敏标题（见 NoteRecoveryInbox），
+ * 正文恢复/取回仍必须经 `openNote` 的服务端权限确认（方案 §4.2）。
  * 只列出当前标签页分支（多标签各自独立草稿，互不覆盖，沿用契约 §4.2）。
  */
 export function listRecoverableNoteDrafts(
@@ -546,13 +556,7 @@ export function listRecoverableNoteDrafts(
     const scope: NoteDraftScope = { ownerId, projectId, noteId, tabId }
     const raw = parseJson(readRaw(entry, key).value)
     if (!isValidNoteDraftCacheRecord(raw, scope)) continue
-    results.push({
-      noteId,
-      title: raw.title,
-      savedAt: raw.savedAt,
-      pendingMutation: raw.pendingMutation !== null,
-      tabId,
-    })
+    results.push({ noteId, title: raw.title, savedAt: raw.savedAt })
   }
   // 最近编辑的草稿优先；同时间按 noteId 稳定排序（不依赖 Storage 枚举顺序）。
   results.sort((a, b) => {
@@ -599,4 +603,5 @@ export function removeNoteDraftsForNote(
 export function clearNoteDraftMemoryFallback(): void {
   memoryFallback.clear()
   removedKeys.clear()
+  memoryFallbackTabId = null
 }

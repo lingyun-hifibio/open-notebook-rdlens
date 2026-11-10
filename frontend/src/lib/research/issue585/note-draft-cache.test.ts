@@ -384,43 +384,72 @@ describe('recoverable draft listing (Issue #1136)', () => {
       noteId: 'note_2',
       title: '',
       savedAt: '2026-11-05T01:00:00.000Z',
-      pendingMutation: false,
-      tabId: 'tab_1',
     })
-    // 摘要不得携带正文/令牌等记录字段（恢复正文仍走 openNote 权限校验）。
+    // 摘要不得携带正文/令牌/未决 mutation 等记录字段（恢复正文仍走 openNote）。
     for (const entry of listed) {
-      expect(Object.keys(entry).sort()).toEqual([
-        'noteId',
-        'pendingMutation',
-        'savedAt',
-        'tabId',
-        'title',
-      ])
+      expect(Object.keys(entry).sort()).toEqual(['noteId', 'savedAt', 'title'])
     }
   })
 
-  it('marks pending mutations so the recovery UI can warn about unknown results', () => {
+  it('handles encoded note ids (dots/percent/unicode) and skips malformed keys', () => {
     const storage = new FakeStorage()
-    writeNoteDraft(
-      scope(),
-      record({
-        pendingMutation: {
-          mutationId: 'nm_pending',
-          kind: 'save',
-          noteId: 'note_1',
-          expectedRevision: 2,
-          title: '标题',
-          content: '正文',
-          createdAt: '2026-11-05T00:00:00.000Z',
-        },
-      }),
-      { storage },
+    const noteIds = ['note.a', 'note%2E', '笔记/一', 'note with space']
+    for (const noteId of noteIds) {
+      writeNoteDraft(
+        scope({ noteId }),
+        record({ noteId, title: `标题-${noteId}` }),
+        { storage },
+      )
+    }
+    // 畸形键：段数异常 / 非法百分号转义 / 内部字段与键作用域不一致。
+    storage.setItem(`${NOTE_DRAFT_CACHE_PREFIX}.7.proj_1.onlynote`, '{}')
+    storage.setItem(`${NOTE_DRAFT_CACHE_PREFIX}.7.proj_1.note_%ZZ.tab_1`, '{}')
+    storage.setItem(
+      `${NOTE_DRAFT_CACHE_PREFIX}.7.proj_1.note_other.tab_1`,
+      JSON.stringify(record({ noteId: 'note_scope_mismatch' })),
     )
 
     const listed = listRecoverableNoteDrafts('7', 'proj_1', 'tab_1', authority(), { storage })
 
-    expect(listed).toHaveLength(1)
-    expect(listed[0].pendingMutation).toBe(true)
+    expect(listed.map((entry) => entry.noteId).sort()).toEqual([...noteIds].sort())
+    expect(listed.find((entry) => entry.noteId === '笔记/一')?.title).toBe('标题-笔记/一')
+  })
+
+  it('lists memory-fallback drafts and respects deletion tombstones', () => {
+    // storage=null：草稿只进内存兜底（quota/SecurityError 降级场景）。
+    writeNoteDraft(scope(), record(), { storage: null })
+    const fallbackListed = listRecoverableNoteDrafts('7', 'proj_1', 'tab_1', authority(), {
+      storage: null,
+    })
+    expect(fallbackListed.map((entry) => entry.noteId)).toEqual(['note_1'])
+
+    // 删除后必须留墓碑：同键不得再出现在列表里。
+    const storage = new FakeStorage()
+    writeNoteDraft(scope(), record(), { storage })
+    expect(
+      listRecoverableNoteDrafts('7', 'proj_1', 'tab_1', authority(), { storage }),
+    ).toHaveLength(1)
+    removeNoteDraft(scope(), { storage })
+    expect(
+      listRecoverableNoteDrafts('7', 'proj_1', 'tab_1', authority(), { storage }),
+    ).toEqual([])
+  })
+
+  it('returns a stable fallback tab id when sessionStorage is unavailable', () => {
+    const throwing = {
+      getItem: (): string | null => {
+        throw new Error('SecurityError')
+      },
+      setItem: (): void => {
+        throw new Error('SecurityError')
+      },
+    }
+    const first = readOrCreateNoteDraftTabId(throwing)
+    const second = readOrCreateNoteDraftTabId(throwing)
+    expect(first).toBe(second)
+    clearNoteDraftMemoryFallback()
+    const afterReset = readOrCreateNoteDraftTabId(throwing)
+    expect(afterReset).not.toBe(first)
   })
 
   it('isolates projects, owners, tabs and malformed records', () => {

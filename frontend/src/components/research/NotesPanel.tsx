@@ -32,10 +32,16 @@ import { useNoteCapabilities } from '@/lib/research/issue585/use-note-capabiliti
 import { useNoteEditor } from '@/lib/research/issue585/use-note-editor'
 import {
   listRecoverableNoteDrafts,
+  readNoteDraftForRetrieval,
   readOrCreateNoteDraftTabId,
   type RecoverableNoteDraftSummary,
 } from '@/lib/research/issue585/note-draft-cache'
-import type { ResearchNoteD2 } from '@/lib/research/issue585/types'
+import { downloadLocalDraftMarkdown } from '@/lib/research/issue585/note-download'
+import type {
+  NoteDraftCacheRecord,
+  NoteEditorActions,
+  ResearchNoteD2,
+} from '@/lib/research/issue585/types'
 import { AdminReadOnlyBanner } from './AdminReadOnlyBanner'
 import { NoteCatalog } from './issue585/NoteCatalog'
 import { NoteCapabilityBlocked } from './issue585/NoteCapabilityBlocked'
@@ -140,28 +146,100 @@ export function NotesPanel({
   // 篇才看到恢复横幅”的静默恢复路径。正文恢复仍走 openNote（服务端权限确认）。
   const draftTabId = useMemo(() => readOrCreateNoteDraftTabId(), [])
   const [recoverableDrafts, setRecoverableDrafts] = useState<RecoverableNoteDraftSummary[]>([])
+  const draftAuthority = useCallback(
+    (): {
+      authenticatedOwnerId: string | null
+      currentProjectId: string
+      authGeneration: number
+      currentAuthGeneration: number
+      permissionConfirmed: boolean
+    } => {
+      const generation = authGeneration ?? 0
+      return {
+        authenticatedOwnerId: userId !== undefined && userId.length > 0 ? userId : null,
+        currentProjectId: projectId,
+        authGeneration: generation,
+        currentAuthGeneration: generation,
+        // 列表/取回只读本地草稿，不恢复正文；文本恢复仍由 openNote 做服务端
+        // 权限确认（方案 §4.2：离线/403/404 不恢复正文）。
+        permissionConfirmed: false,
+      }
+    },
+    [authGeneration, projectId, userId],
+  )
   const refreshRecoverableDrafts = useCallback(() => {
     if (isAdminReadonly) {
       setRecoverableDrafts([])
       return
     }
-    const generation = authGeneration ?? 0
     setRecoverableDrafts(
-      listRecoverableNoteDrafts(userId ?? '', projectId, draftTabId, {
-        authenticatedOwnerId: userId !== undefined && userId.length > 0 ? userId : null,
-        currentProjectId: projectId,
-        authGeneration: generation,
-        currentAuthGeneration: generation,
-        // 列表只报告本地草稿存在性，不恢复正文；权限确认仍由 openNote 完成。
-        permissionConfirmed: false,
-      }),
+      listRecoverableNoteDrafts(userId ?? '', projectId, draftTabId, draftAuthority()),
     )
-  }, [authGeneration, draftTabId, isAdminReadonly, projectId, userId])
+  }, [draftAuthority, draftTabId, isAdminReadonly, projectId, userId])
   const editorNoteId = editor.state.note?.note_id ?? null
   const editorSaveStatus = editor.state.saveStatus
+  const editorStatus = editor.state.status
   useEffect(() => {
     refreshRecoverableDrafts()
   }, [refreshRecoverableDrafts, editorNoteId, editorSaveStatus])
+  // 窗口重新获得焦点时重扫：切走 Notes 后在途 save 若已 ACK 成功（草稿被清理），
+  // 列表不应残留“未保存”假条目（审查 LOW-1）。
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const onFocus = (): void => refreshRecoverableDrafts()
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [refreshRecoverableDrafts])
+
+  // 目录中已确认权限受限的笔记：恢复入口不展示其缓存标题/取回动作（方案
+  // §4.2）；打开该行会走 PR4 403 路径并清理对应草稿（审查 MEDIUM-2）。
+  const restrictedNoteIds = useMemo(
+    () =>
+      new Set(
+        catalog.items
+          .filter((item) => item.access_state === 'restricted')
+          .map((item) => item.note_id),
+      ),
+    [catalog.items],
+  )
+
+  const readRecoverableDraftRecord = useCallback(
+    (noteId: string): NoteDraftCacheRecord | null =>
+      readNoteDraftForRetrieval(
+        { ownerId: userId ?? '', projectId, noteId, tabId: draftTabId },
+        draftAuthority(),
+      ),
+    [draftAuthority, draftTabId, projectId, userId],
+  )
+
+  // 审查 HIGH-1：打开失败（离线/503）时编辑器会把文档置为未加载阻断态，其
+  // “关闭”会 discardLocal 并删除唯一持久草稿。恢复入口必须在打开之前就能
+  // 显式取回文本——只在用户点击时读缓存，不填充编辑器、不改保存状态。
+  const copyRecoverableDraft = useCallback(
+    (noteId: string) => {
+      const record = readRecoverableDraftRecord(noteId)
+      if (record === null) return
+      const clipboard =
+        typeof navigator === 'object' && navigator !== null ? navigator.clipboard : undefined
+      if (clipboard !== undefined && typeof clipboard.writeText === 'function') {
+        void clipboard.writeText(record.content).catch(() => undefined)
+      }
+    },
+    [readRecoverableDraftRecord],
+  )
+  const downloadRecoverableDraft = useCallback(
+    (noteId: string) => {
+      const record = readRecoverableDraftRecord(noteId)
+      if (record === null) return
+      downloadLocalDraftMarkdown({
+        title: record.title,
+        content: record.content,
+        noteId,
+        savedAt: record.savedAt,
+      })
+    },
+    [readRecoverableDraftRecord],
+  )
 
   // 旧未保护 Note 的旧表单（行为与 #1045 前一致；仅 edit_schema=null 行走这里）。
   const updateMutation = useUpdateResearchNote(projectId)
@@ -248,10 +326,32 @@ export function NotesPanel({
       'capability_unknown')
 
   const editorVisible = editor.state.note !== null || editor.state.status !== 'idle'
+  // 恢复入口在编辑器完全关闭时展示；**打开失败**（status=error 且未加载文档）
+  // 时也保留——该阻断视图的 Close 不能成为删除唯一草稿的静默路径（审查 HIGH-1）。
+  const showRecoveryInbox =
+    !isAdminReadonly &&
+    editor.state.note === null &&
+    (editorStatus === 'idle' || editorStatus === 'error')
   // 目录级能力阻断提示只在编辑器未打开时展示；编辑器打开后由
   // NoteEditorView 自己渲染阻断态（避免重复的 note-capability-blocked）。
   const showCapabilityAlert =
     !isAdminReadonly && capabilitiesResult.error !== null && !editorVisible
+
+  // 审查 HIGH-1：打开失败（文档未加载）时，阻断视图的 Close 会 discardLocal
+  // 并删除唯一持久草稿——那不是用户对已加载编辑的显式放弃，属静默丢弃。该
+  // 状态下把 discardLocal 变为 no-op：关闭仍可进行，草稿保留并继续显示在恢复
+  // 入口；已加载文档的显式放弃/冲突放弃路径不变。
+  const editorActionsForView = useMemo<NoteEditorActions>(() => {
+    const actions = editor.actions
+    return {
+      ...actions,
+      discardLocal: () => {
+        const current = editorStateRef.current
+        if (current.note === null && current.status === 'error') return
+        actions.discardLocal()
+      },
+    }
+  }, [editor.actions])
 
   return (
     <div className="space-y-3">
@@ -266,12 +366,15 @@ export function NotesPanel({
       )}
 
       {/* Issue #1136：服务端保存未完成时，回到 Notes 目录显式列出可恢复草稿
-          （标题/缓存时间/打开笔记；打开后由编辑器恢复正文与 PR4 冲突/未知态）。
-          仅在编辑器完全关闭（非 loading/打开态）时展示，避免与编辑器重复。 */}
-      {!isAdminReadonly && !editorVisible && (
+          （标题/缓存时间/复制/下载/打开笔记；打开后由编辑器恢复正文与 PR4
+          冲突/未知态）。打开失败时也保留（见 showRecoveryInbox）。 */}
+      {showRecoveryInbox && (
         <NoteRecoveryInbox
           drafts={recoverableDrafts}
+          restrictedNoteIds={restrictedNoteIds}
           onOpen={(noteId) => void openD2Note(noteId)}
+          onCopyLocal={copyRecoverableDraft}
+          onDownloadLocal={downloadRecoverableDraft}
         />
       )}
 
@@ -377,7 +480,7 @@ export function NotesPanel({
           <CardContent className="space-y-3 p-3">
             <NoteEditorView
               state={editor.state}
-              actions={editor.actions}
+              actions={editorActionsForView}
               capabilities={capabilitiesResult.capabilities}
               isAdminReadonly={isAdminReadonly}
               onRequestClose={() => void closeEditor()}

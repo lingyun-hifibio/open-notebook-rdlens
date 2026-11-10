@@ -235,6 +235,8 @@ describe('ResearchWorkbench', () => {
     toastMock.mockClear()
     Element.prototype.scrollIntoView = vi.fn()
     noteCatalogStub.items = []
+    noteEditorSpies.flushBeforeLeave.mockReset()
+    noteEditorSpies.flushBeforeLeave.mockImplementation(async () => null)
   })
 
   it('分组导航：两个 group heading 可见；默认 Sources 子视图渲染 SourceListPanel（复选框可达）', async () => {
@@ -358,11 +360,21 @@ describe('ResearchWorkbench', () => {
     // 进入 Notes：NotesPanel 挂载并注册离开回调
     fireEvent.click(screen.getByRole('button', { name: 'research.workbench.tabNotes' }))
     await screen.findByTestId('note-catalog')
-    noteEditorSpies.flushBeforeLeave.mockClear()
 
-    // 切到 Sources：离开前调用守卫（NotesPanel 卸载 cleanup 也会兜底 flush）
+    // 记录每次 flush 时 NotesPanel 是否仍在 DOM：守卫必须在面板卸载**之前**
+    // 触发（否则这条测试与“仅靠 unmount cleanup”不可区分，审查 MEDIUM-1）。
+    const catalogVisibleAtCall: boolean[] = []
+    noteEditorSpies.flushBeforeLeave.mockImplementation(async () => {
+      catalogVisibleAtCall.push(screen.queryByTestId('note-catalog') !== null)
+      return null
+    })
+
+    // 切到 Sources：守卫先 flush（catalog 仍在），随后卸载 cleanup 再兜底 flush。
     fireEvent.click(screen.getByRole('button', { name: 'research.workbench.tabSources' }))
-    expect(noteEditorSpies.flushBeforeLeave).toHaveBeenCalled()
+    await waitFor(() => expect(noteEditorSpies.flushBeforeLeave).toHaveBeenCalled())
+    expect(catalogVisibleAtCall[0]).toBe(true)
+    // 已知的双 flush（守卫 + 卸载 cleanup）如实钉住，见 PR 描述。
+    expect(noteEditorSpies.flushBeforeLeave).toHaveBeenCalledTimes(2)
 
     // 重新进入 Notes 只是挂载，不应在“进入”时误触发离开保护
     noteEditorSpies.flushBeforeLeave.mockClear()
