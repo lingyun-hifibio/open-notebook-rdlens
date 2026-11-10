@@ -4,9 +4,9 @@
   "evidence_kind": "synthetic",
   "synthetic_declaration": "Real fork Next.js app (next dev --webpack, embedded iframe) + synthetic host page + route-mocked Research Gateway. No real RDLens host, PostgreSQL, SurrealDB, files, models, Feishu content, users or private data. All note titles/ids/content are [synthetic] fixtures (project p1/p2, viewer 1).",
   "phase": "after",
-  "head": "4200e3b4bdfd5dafb8dc19ff94763ed0069b5176",
+  "head": "4856b4b05bbd10eb7db8c2070d7c88a110905ed4",
   "baseline": "fork origin/main a4a76170c5016d0c4cfefae505aa8369be568a96",
-  "captured_at": "2026-11-10T06:02:04.874Z",
+  "captured_at": "2026-11-10T06:20:08.658Z",
   "host_url": "http://127.0.0.1:8974/",
   "gateway": "http://127.0.0.1:8941",
   "save_mode_file": "/tmp/issue1046-save-mode",
@@ -33,7 +33,7 @@
       "id": "R1",
       "width": 1440,
       "save_mode": "unknown503",
-      "marker": "[synthetic] R1 pane-switch unsaved recovery marker 366916",
+      "marker": "[synthetic] R1 pane-switch unsaved recovery marker 450905",
       "stats": {
         "models_requests": 2,
         "creates": 0,
@@ -41,7 +41,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nm4b938a6296444d7bb33fffe155f4c4c7",
+            "mutation_id": "nmc78e47e85c194da79d5151d4a0148ccc",
             "expected_revision": 3,
             "mode": "unknown503",
             "status": 503
@@ -142,7 +142,7 @@
           "ok": true,
           "expected": "restored editor content contains the typed unsaved marker",
           "actual": {
-            "marker": "[synthetic] R1 pane-switch unsaved recovery marker 366916",
+            "marker": "[synthetic] R1 pane-switch unsaved recovery marker 450905",
             "present": true
           }
         },
@@ -170,7 +170,7 @@
           "ok": true,
           "expected": "editor textarea in view contains the restored unsaved marker",
           "actual": {
-            "marker": "[synthetic] R1 pane-switch unsaved recovery marker 366916",
+            "marker": "[synthetic] R1 pane-switch unsaved recovery marker 450905",
             "present": true
           }
         },
@@ -198,14 +198,14 @@
           }
         }
       ],
-      "duration_ms": 17108
+      "duration_ms": 17070
     },
     {
       "id": "R2",
       "width": 1440,
       "save_mode": "unknown503",
       "driving_method": "window.__hostSendToken(projectId) re-posts research-v0 token on the same channel/nonce; legacy shell (iframe ?legacy=1) has no project-name element, switch asserted by host hook result + /projects/<id>/ gateway requests + workspace remount",
-      "marker": "[synthetic] R2 project-switch unsaved recovery marker 383965",
+      "marker": "[synthetic] R2 project-switch unsaved recovery marker 467958",
       "project_requests": {
         "p1": 25,
         "p2": 11
@@ -217,7 +217,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nmae1abeab3aae40428a2fd4e57d217e8f",
+            "mutation_id": "nmac3a73649d324870b61fe1cc0a7d7489",
             "expected_revision": 3,
             "mode": "unknown503",
             "status": 503
@@ -347,7 +347,7 @@
           "ok": true,
           "expected": "restored editor contains the typed unsaved marker",
           "actual": {
-            "marker": "[synthetic] R2 project-switch unsaved recovery marker 383965",
+            "marker": "[synthetic] R2 project-switch unsaved recovery marker 467958",
             "present": true
           }
         },
@@ -384,7 +384,7 @@
           "ok": true,
           "expected": "editor textarea in view contains the restored unsaved marker",
           "actual": {
-            "marker": "[synthetic] R2 project-switch unsaved recovery marker 383965",
+            "marker": "[synthetic] R2 project-switch unsaved recovery marker 467958",
             "present": true
           }
         },
@@ -395,13 +395,13 @@
           "actual": []
         }
       ],
-      "duration_ms": 17625
+      "duration_ms": 17727
     },
     {
       "id": "R3",
       "width": 1440,
       "save_mode": "unknown503",
-      "marker": "[synthetic] R3 reload unsaved recovery marker 401702",
+      "marker": "[synthetic] R3 reload unsaved recovery marker 485590",
       "stats": {
         "models_requests": 4,
         "creates": 0,
@@ -409,7 +409,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nme4d11659d69d45988d5ac880df1a95d9",
+            "mutation_id": "nmc9ef515ca1a24d24b4cc0dd856b5b95e",
             "expected_revision": 3,
             "mode": "unknown503",
             "status": 503
@@ -491,7 +491,7 @@
           "ok": true,
           "expected": "restored editor contains the typed unsaved marker after reload",
           "actual": {
-            "marker": "[synthetic] R3 reload unsaved recovery marker 401702",
+            "marker": "[synthetic] R3 reload unsaved recovery marker 485590",
             "present": true
           }
         },
@@ -528,7 +528,7 @@
           "ok": true,
           "expected": "editor textarea in view contains the restored unsaved marker",
           "actual": {
-            "marker": "[synthetic] R3 reload unsaved recovery marker 401702",
+            "marker": "[synthetic] R3 reload unsaved recovery marker 485590",
             "present": true
           }
         },
@@ -545,13 +545,13 @@
           "actual": 3
         }
       ],
-      "duration_ms": 17913
+      "duration_ms": 17863
     },
     {
       "id": "R4",
       "width": 1440,
       "save_mode": "conflict",
-      "marker": "[synthetic] R4 conflict recovery marker 419448",
+      "marker": "[synthetic] R4 conflict recovery marker 503522",
       "stats": {
         "models_requests": 2,
         "creates": 0,
@@ -559,7 +559,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nmc1feee4184ee49a2a58814c69429320d",
+            "mutation_id": "nm47c8959c16c84e3fac9193f1ede95ba7",
             "expected_revision": 3,
             "mode": "conflict",
             "status": 409
@@ -635,7 +635,7 @@
           "ok": true,
           "expected": "restored editor content contains the typed unsaved marker",
           "actual": {
-            "marker": "[synthetic] R4 conflict recovery marker 419448",
+            "marker": "[synthetic] R4 conflict recovery marker 503522",
             "present": true
           }
         },
@@ -674,7 +674,7 @@
           "ok": true,
           "expected": "editor textarea still contains the restored unsaved marker",
           "actual": {
-            "marker": "[synthetic] R4 conflict recovery marker 419448",
+            "marker": "[synthetic] R4 conflict recovery marker 503522",
             "present": true
           }
         },
@@ -693,13 +693,13 @@
           ]
         }
       ],
-      "duration_ms": 16320
+      "duration_ms": 16366
     },
     {
       "id": "R5",
       "width": 1440,
       "save_mode": "success",
-      "marker": "[synthetic] R5 steady-state saved marker 435861",
+      "marker": "[synthetic] R5 steady-state saved marker 519855",
       "stats": {
         "models_requests": 2,
         "creates": 0,
@@ -707,7 +707,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nm0f9bfc5c155d4bcbbd588722007c4d42",
+            "mutation_id": "nm65afa1a23be54c6ab26a66bdaf40b9cb",
             "expected_revision": 3,
             "mode": "success",
             "status": 200
@@ -782,13 +782,13 @@
           "actual": 4
         }
       ],
-      "duration_ms": 12341
+      "duration_ms": 12312
     },
     {
       "id": "R1",
       "width": 1024,
       "save_mode": "unknown503",
-      "marker": "[synthetic] R1 pane-switch unsaved recovery marker 448129",
+      "marker": "[synthetic] R1 pane-switch unsaved recovery marker 532222",
       "stats": {
         "models_requests": 2,
         "creates": 0,
@@ -796,7 +796,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nm470660287770485c9ffec2d93ab4fa54",
+            "mutation_id": "nmf689f52187b144b2858ddc37b97b8266",
             "expected_revision": 3,
             "mode": "unknown503",
             "status": 503
@@ -897,7 +897,7 @@
           "ok": true,
           "expected": "restored editor content contains the typed unsaved marker",
           "actual": {
-            "marker": "[synthetic] R1 pane-switch unsaved recovery marker 448129",
+            "marker": "[synthetic] R1 pane-switch unsaved recovery marker 532222",
             "present": true
           }
         },
@@ -925,7 +925,7 @@
           "ok": true,
           "expected": "editor textarea in view contains the restored unsaved marker",
           "actual": {
-            "marker": "[synthetic] R1 pane-switch unsaved recovery marker 448129",
+            "marker": "[synthetic] R1 pane-switch unsaved recovery marker 532222",
             "present": true
           }
         },
@@ -953,14 +953,14 @@
           }
         }
       ],
-      "duration_ms": 16897
+      "duration_ms": 17067
     },
     {
       "id": "R2",
       "width": 1024,
       "save_mode": "unknown503",
       "driving_method": "window.__hostSendToken(projectId) re-posts research-v0 token on the same channel/nonce; legacy shell (iframe ?legacy=1) has no project-name element, switch asserted by host hook result + /projects/<id>/ gateway requests + workspace remount",
-      "marker": "[synthetic] R2 project-switch unsaved recovery marker 465102",
+      "marker": "[synthetic] R2 project-switch unsaved recovery marker 549219",
       "project_requests": {
         "p1": 25,
         "p2": 11
@@ -972,7 +972,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nm85eef57164304849bfeddb83cebbf655",
+            "mutation_id": "nma13f4cba7329415885ba8f267373e7f7",
             "expected_revision": 3,
             "mode": "unknown503",
             "status": 503
@@ -1102,7 +1102,7 @@
           "ok": true,
           "expected": "restored editor contains the typed unsaved marker",
           "actual": {
-            "marker": "[synthetic] R2 project-switch unsaved recovery marker 465102",
+            "marker": "[synthetic] R2 project-switch unsaved recovery marker 549219",
             "present": true
           }
         },
@@ -1139,7 +1139,7 @@
           "ok": true,
           "expected": "editor textarea in view contains the restored unsaved marker",
           "actual": {
-            "marker": "[synthetic] R2 project-switch unsaved recovery marker 465102",
+            "marker": "[synthetic] R2 project-switch unsaved recovery marker 549219",
             "present": true
           }
         },
@@ -1150,13 +1150,13 @@
           "actual": []
         }
       ],
-      "duration_ms": 17601
+      "duration_ms": 17458
     },
     {
       "id": "R3",
       "width": 1024,
       "save_mode": "unknown503",
-      "marker": "[synthetic] R3 reload unsaved recovery marker 482731",
+      "marker": "[synthetic] R3 reload unsaved recovery marker 566734",
       "stats": {
         "models_requests": 4,
         "creates": 0,
@@ -1164,7 +1164,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nmaf5f05696ae24eca8d4182008bdb1bd0",
+            "mutation_id": "nm6bfc3caa9fbd45f0b70d7219c30cd94b",
             "expected_revision": 3,
             "mode": "unknown503",
             "status": 503
@@ -1246,7 +1246,7 @@
           "ok": true,
           "expected": "restored editor contains the typed unsaved marker after reload",
           "actual": {
-            "marker": "[synthetic] R3 reload unsaved recovery marker 482731",
+            "marker": "[synthetic] R3 reload unsaved recovery marker 566734",
             "present": true
           }
         },
@@ -1283,7 +1283,7 @@
           "ok": true,
           "expected": "editor textarea in view contains the restored unsaved marker",
           "actual": {
-            "marker": "[synthetic] R3 reload unsaved recovery marker 482731",
+            "marker": "[synthetic] R3 reload unsaved recovery marker 566734",
             "present": true
           }
         },
@@ -1300,13 +1300,13 @@
           "actual": 3
         }
       ],
-      "duration_ms": 17865
+      "duration_ms": 17809
     },
     {
       "id": "R4",
       "width": 1024,
       "save_mode": "conflict",
-      "marker": "[synthetic] R4 conflict recovery marker 500576",
+      "marker": "[synthetic] R4 conflict recovery marker 584454",
       "stats": {
         "models_requests": 2,
         "creates": 0,
@@ -1314,7 +1314,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nm3a5493e8e02a4485833f51558ed4823a",
+            "mutation_id": "nm95208016215f4152b4f640211137dc83",
             "expected_revision": 3,
             "mode": "conflict",
             "status": 409
@@ -1390,7 +1390,7 @@
           "ok": true,
           "expected": "restored editor content contains the typed unsaved marker",
           "actual": {
-            "marker": "[synthetic] R4 conflict recovery marker 500576",
+            "marker": "[synthetic] R4 conflict recovery marker 584454",
             "present": true
           }
         },
@@ -1429,7 +1429,7 @@
           "ok": true,
           "expected": "editor textarea still contains the restored unsaved marker",
           "actual": {
-            "marker": "[synthetic] R4 conflict recovery marker 500576",
+            "marker": "[synthetic] R4 conflict recovery marker 584454",
             "present": true
           }
         },
@@ -1448,13 +1448,13 @@
           ]
         }
       ],
-      "duration_ms": 16295
+      "duration_ms": 16220
     },
     {
       "id": "R5",
       "width": 1024,
       "save_mode": "success",
-      "marker": "[synthetic] R5 steady-state saved marker 516830",
+      "marker": "[synthetic] R5 steady-state saved marker 600698",
       "stats": {
         "models_requests": 2,
         "creates": 0,
@@ -1462,7 +1462,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nma20970af4ccd4c0cabd0f1aac9b45585",
+            "mutation_id": "nmc5b058eded1f4cce8526bcfdc1e90ff9",
             "expected_revision": 3,
             "mode": "success",
             "status": 200
@@ -1537,7 +1537,7 @@
           "actual": 4
         }
       ],
-      "duration_ms": 12335
+      "duration_ms": 12214
     }
   ],
   "totals": {
@@ -1550,8 +1550,8 @@
   "screenshots": [
     {
       "file": "after_r1_pane_switch_1440.png",
-      "bytes": 116505,
-      "sha256": "804641205b729c9d54379cc624ef9dd396b4a168a8683943f08b938580904494",
+      "bytes": 116526,
+      "sha256": "9c6fa73420f871cdb617ba747ff833f79107c8095b75cf1a34d739f5a983272c",
       "dom_counts": {
         "note_recovery_inbox": 1,
         "note_recovery_rows": 1,
@@ -1572,7 +1572,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nm4b938a6296444d7bb33fffe155f4c4c7",
+            "mutation_id": "nmc78e47e85c194da79d5151d4a0148ccc",
             "expected_revision": 3,
             "mode": "unknown503",
             "status": 503
@@ -1610,7 +1610,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nm4b938a6296444d7bb33fffe155f4c4c7",
+            "mutation_id": "nmc78e47e85c194da79d5151d4a0148ccc",
             "expected_revision": 3,
             "mode": "unknown503",
             "status": 503
@@ -1626,8 +1626,8 @@
     },
     {
       "file": "after_r1_restored_draft_1440.png",
-      "bytes": 126156,
-      "sha256": "5421b41fb75c9146f8285adbe4f14b3abd520a2b99e51c38eb530850e8c28b42",
+      "bytes": 126222,
+      "sha256": "bff1687241ed3140109acc17489220b14391a735a433d88da063fb56411a0114",
       "dom_counts": {
         "note_recovery_inbox": 0,
         "note_recovery_rows": 0,
@@ -1648,7 +1648,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nm4b938a6296444d7bb33fffe155f4c4c7",
+            "mutation_id": "nmc78e47e85c194da79d5151d4a0148ccc",
             "expected_revision": 3,
             "mode": "unknown503",
             "status": 503
@@ -1686,7 +1686,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nmae1abeab3aae40428a2fd4e57d217e8f",
+            "mutation_id": "nmac3a73649d324870b61fe1cc0a7d7489",
             "expected_revision": 3,
             "mode": "unknown503",
             "status": 503
@@ -1702,8 +1702,8 @@
     },
     {
       "file": "after_r2_project_switch_1440.png",
-      "bytes": 116536,
-      "sha256": "c9055f19499f9ecaea79531f3928af68f6c897e6e18b565ede8af1a9afcadb0e",
+      "bytes": 116371,
+      "sha256": "6dfd17a46cd8acea7987eae04f467a8ddd23355f30776640a53bde59e8832983",
       "dom_counts": {
         "note_recovery_inbox": 1,
         "note_recovery_rows": 1,
@@ -1724,7 +1724,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nmae1abeab3aae40428a2fd4e57d217e8f",
+            "mutation_id": "nmac3a73649d324870b61fe1cc0a7d7489",
             "expected_revision": 3,
             "mode": "unknown503",
             "status": 503
@@ -1762,7 +1762,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nmae1abeab3aae40428a2fd4e57d217e8f",
+            "mutation_id": "nmac3a73649d324870b61fe1cc0a7d7489",
             "expected_revision": 3,
             "mode": "unknown503",
             "status": 503
@@ -1778,8 +1778,8 @@
     },
     {
       "file": "after_r2_restored_draft_1440.png",
-      "bytes": 127370,
-      "sha256": "9f2abf8852b193644afa224285e38063ce5f072c3f96161a7641f4ff2f0bc571",
+      "bytes": 127028,
+      "sha256": "95344d10607e42a68711cddf9305c157f677398676f1f388bfbc0c5e15812664",
       "dom_counts": {
         "note_recovery_inbox": 0,
         "note_recovery_rows": 0,
@@ -1800,7 +1800,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nmae1abeab3aae40428a2fd4e57d217e8f",
+            "mutation_id": "nmac3a73649d324870b61fe1cc0a7d7489",
             "expected_revision": 3,
             "mode": "unknown503",
             "status": 503
@@ -1816,8 +1816,8 @@
     },
     {
       "file": "after_r3_reload_1440.png",
-      "bytes": 118309,
-      "sha256": "d70d419887377871cf4ae16d300abd25794281947cdd2a447d7ae649b91a9a9f",
+      "bytes": 118393,
+      "sha256": "81c901a1327e3bf8cb1376d86d3b7439a661fef9d0e47aa43e9b22a78569b0cb",
       "dom_counts": {
         "note_recovery_inbox": 1,
         "note_recovery_rows": 1,
@@ -1838,7 +1838,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nme4d11659d69d45988d5ac880df1a95d9",
+            "mutation_id": "nmc9ef515ca1a24d24b4cc0dd856b5b95e",
             "expected_revision": 3,
             "mode": "unknown503",
             "status": 503
@@ -1876,7 +1876,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nme4d11659d69d45988d5ac880df1a95d9",
+            "mutation_id": "nmc9ef515ca1a24d24b4cc0dd856b5b95e",
             "expected_revision": 3,
             "mode": "unknown503",
             "status": 503
@@ -1892,8 +1892,8 @@
     },
     {
       "file": "after_r3_restored_draft_1440.png",
-      "bytes": 130280,
-      "sha256": "e1b32eef6cef09fae4f79ec3a332b043ea507982e03764ded23bf72ed0d6aba0",
+      "bytes": 130524,
+      "sha256": "37bcec1e0b271f87dd6fc4eb58160c18c78c04a28f43c1fb15744e2f0c885d8b",
       "dom_counts": {
         "note_recovery_inbox": 0,
         "note_recovery_rows": 0,
@@ -1914,7 +1914,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nme4d11659d69d45988d5ac880df1a95d9",
+            "mutation_id": "nmc9ef515ca1a24d24b4cc0dd856b5b95e",
             "expected_revision": 3,
             "mode": "unknown503",
             "status": 503
@@ -1930,8 +1930,8 @@
     },
     {
       "file": "after_r4_conflict_1440.png",
-      "bytes": 116336,
-      "sha256": "e483ee03b50d1efecb4f03fe9691591d2d0fc60d2891498ef99fd52ba6b3dc92",
+      "bytes": 116422,
+      "sha256": "f27c86d8d453cbb750cc0863280a8899983793c78aedaffbee13b072b0988736",
       "dom_counts": {
         "note_recovery_inbox": 1,
         "note_recovery_rows": 1,
@@ -1952,7 +1952,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nmc1feee4184ee49a2a58814c69429320d",
+            "mutation_id": "nm47c8959c16c84e3fac9193f1ede95ba7",
             "expected_revision": 3,
             "mode": "conflict",
             "status": 409
@@ -1968,8 +1968,8 @@
     },
     {
       "file": "after_r4_conflict_restored_1440.png",
-      "bytes": 120810,
-      "sha256": "4d1e1c8abf0ac74b1cd204eef27fa31c980538b522cf6c8615415cf65babeccf",
+      "bytes": 121106,
+      "sha256": "fe32482401877cd1258a8cb7e47d33eae5a5010d044a7cda82092386da6a3c2e",
       "dom_counts": {
         "note_recovery_inbox": 0,
         "note_recovery_rows": 0,
@@ -1990,7 +1990,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nmc1feee4184ee49a2a58814c69429320d",
+            "mutation_id": "nm47c8959c16c84e3fac9193f1ede95ba7",
             "expected_revision": 3,
             "mode": "conflict",
             "status": 409
@@ -2028,7 +2028,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nmc1feee4184ee49a2a58814c69429320d",
+            "mutation_id": "nm47c8959c16c84e3fac9193f1ede95ba7",
             "expected_revision": 3,
             "mode": "conflict",
             "status": 409
@@ -2044,8 +2044,8 @@
     },
     {
       "file": "after_r5_steady_state_1440.png",
-      "bytes": 106306,
-      "sha256": "eb886d644de544a1c85cc4a35646d2abe615264dd5b28c3f3129e6cde5cb7d86",
+      "bytes": 106292,
+      "sha256": "9dedaf6335269797def4c6880323d5a0727a7365dd39d256319dbab862a7f9b2",
       "dom_counts": {
         "note_recovery_inbox": 0,
         "note_recovery_rows": 0,
@@ -2066,7 +2066,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nm0f9bfc5c155d4bcbbd588722007c4d42",
+            "mutation_id": "nm65afa1a23be54c6ab26a66bdaf40b9cb",
             "expected_revision": 3,
             "mode": "success",
             "status": 200
@@ -2082,8 +2082,8 @@
     },
     {
       "file": "after_r1_pane_switch_1024.png",
-      "bytes": 88988,
-      "sha256": "8346cc65a83116a9e023dff5ac7fdf07beb57bd4016153514170f7630c9bea1d",
+      "bytes": 89118,
+      "sha256": "f8d8995d74ca4d6d47b36df82c93ff18b41ae42104650da1d979a85a875c99d2",
       "dom_counts": {
         "note_recovery_inbox": 1,
         "note_recovery_rows": 1,
@@ -2104,7 +2104,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nm470660287770485c9ffec2d93ab4fa54",
+            "mutation_id": "nmf689f52187b144b2858ddc37b97b8266",
             "expected_revision": 3,
             "mode": "unknown503",
             "status": 503
@@ -2142,7 +2142,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nm470660287770485c9ffec2d93ab4fa54",
+            "mutation_id": "nmf689f52187b144b2858ddc37b97b8266",
             "expected_revision": 3,
             "mode": "unknown503",
             "status": 503
@@ -2158,8 +2158,8 @@
     },
     {
       "file": "after_r1_restored_draft_1024.png",
-      "bytes": 101777,
-      "sha256": "b7de5e46c91198ce5e3a634b7873ac1d0f849605bab1b940efab6b87c2ad2cef",
+      "bytes": 101775,
+      "sha256": "2807c76eb9c842a4733abd4bb1daf6e8bf8eb2c88867b241203536b076238b15",
       "dom_counts": {
         "note_recovery_inbox": 0,
         "note_recovery_rows": 0,
@@ -2180,7 +2180,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nm470660287770485c9ffec2d93ab4fa54",
+            "mutation_id": "nmf689f52187b144b2858ddc37b97b8266",
             "expected_revision": 3,
             "mode": "unknown503",
             "status": 503
@@ -2218,7 +2218,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nm85eef57164304849bfeddb83cebbf655",
+            "mutation_id": "nma13f4cba7329415885ba8f267373e7f7",
             "expected_revision": 3,
             "mode": "unknown503",
             "status": 503
@@ -2234,8 +2234,8 @@
     },
     {
       "file": "after_r2_project_switch_1024.png",
-      "bytes": 88963,
-      "sha256": "7bc1b4ab8bbb3590a09fd6cae4ff8c57faee52814e65394169a348f4f3319f18",
+      "bytes": 89195,
+      "sha256": "8c63e6e41151fee0c0d844bf789e01a03156ab0c37b51485ffdd802531d1ea38",
       "dom_counts": {
         "note_recovery_inbox": 1,
         "note_recovery_rows": 1,
@@ -2256,7 +2256,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nm85eef57164304849bfeddb83cebbf655",
+            "mutation_id": "nma13f4cba7329415885ba8f267373e7f7",
             "expected_revision": 3,
             "mode": "unknown503",
             "status": 503
@@ -2294,7 +2294,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nm85eef57164304849bfeddb83cebbf655",
+            "mutation_id": "nma13f4cba7329415885ba8f267373e7f7",
             "expected_revision": 3,
             "mode": "unknown503",
             "status": 503
@@ -2310,8 +2310,8 @@
     },
     {
       "file": "after_r2_restored_draft_1024.png",
-      "bytes": 102849,
-      "sha256": "a9b94dc3f3b16ae494f181f9f2cc39371d893b302fb7053b9ec9eea75f8e5a80",
+      "bytes": 102892,
+      "sha256": "203523f320d9898f0b8afb7a43ae6555816579a57f4b1fbb54c8cdce8a82dd1e",
       "dom_counts": {
         "note_recovery_inbox": 0,
         "note_recovery_rows": 0,
@@ -2332,7 +2332,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nm85eef57164304849bfeddb83cebbf655",
+            "mutation_id": "nma13f4cba7329415885ba8f267373e7f7",
             "expected_revision": 3,
             "mode": "unknown503",
             "status": 503
@@ -2348,8 +2348,8 @@
     },
     {
       "file": "after_r3_reload_1024.png",
-      "bytes": 91109,
-      "sha256": "c2d17c08180fbb45a216c46766afcaeb84708b0eb271569fe15130f2051de33a",
+      "bytes": 91143,
+      "sha256": "eac9922929c631a347b2f1d092a5192111bd49a32e93eea2efc48f6eea6a0f88",
       "dom_counts": {
         "note_recovery_inbox": 1,
         "note_recovery_rows": 1,
@@ -2370,7 +2370,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nmaf5f05696ae24eca8d4182008bdb1bd0",
+            "mutation_id": "nm6bfc3caa9fbd45f0b70d7219c30cd94b",
             "expected_revision": 3,
             "mode": "unknown503",
             "status": 503
@@ -2408,7 +2408,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nmaf5f05696ae24eca8d4182008bdb1bd0",
+            "mutation_id": "nm6bfc3caa9fbd45f0b70d7219c30cd94b",
             "expected_revision": 3,
             "mode": "unknown503",
             "status": 503
@@ -2424,8 +2424,8 @@
     },
     {
       "file": "after_r3_restored_draft_1024.png",
-      "bytes": 103612,
-      "sha256": "01d01a8809a8f2d3fce3dc6f7eb36619f92f4996b378fca0b64cea6d007d2efe",
+      "bytes": 103811,
+      "sha256": "96cfac5b9d98791d9ca0a486e0c3fb39f507c9b76a034b7535a02ca1e789e6a6",
       "dom_counts": {
         "note_recovery_inbox": 0,
         "note_recovery_rows": 0,
@@ -2446,7 +2446,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nmaf5f05696ae24eca8d4182008bdb1bd0",
+            "mutation_id": "nm6bfc3caa9fbd45f0b70d7219c30cd94b",
             "expected_revision": 3,
             "mode": "unknown503",
             "status": 503
@@ -2462,8 +2462,8 @@
     },
     {
       "file": "after_r4_conflict_1024.png",
-      "bytes": 89003,
-      "sha256": "1a87402f5793f29f547377eda9f80010092e38a3bf0cd4eec3c780d9c6ea0c66",
+      "bytes": 89223,
+      "sha256": "8660a1dbc62f974d93bfc45c96f8dac99040bdd5dcf0e19e5cabd7e5191aa4b0",
       "dom_counts": {
         "note_recovery_inbox": 1,
         "note_recovery_rows": 1,
@@ -2484,7 +2484,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nm3a5493e8e02a4485833f51558ed4823a",
+            "mutation_id": "nm95208016215f4152b4f640211137dc83",
             "expected_revision": 3,
             "mode": "conflict",
             "status": 409
@@ -2500,8 +2500,8 @@
     },
     {
       "file": "after_r4_conflict_restored_1024.png",
-      "bytes": 96316,
-      "sha256": "dfd89ae3edbaa4f3a78d319cbcf0a45787fded70034545c055ad496a0cba2f71",
+      "bytes": 96134,
+      "sha256": "627ee353038febc2e8fe40c118e96b01165f1566dc5df671fb8be5912c8479cf",
       "dom_counts": {
         "note_recovery_inbox": 0,
         "note_recovery_rows": 0,
@@ -2522,7 +2522,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nm3a5493e8e02a4485833f51558ed4823a",
+            "mutation_id": "nm95208016215f4152b4f640211137dc83",
             "expected_revision": 3,
             "mode": "conflict",
             "status": 409
@@ -2560,7 +2560,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nm3a5493e8e02a4485833f51558ed4823a",
+            "mutation_id": "nm95208016215f4152b4f640211137dc83",
             "expected_revision": 3,
             "mode": "conflict",
             "status": 409
@@ -2598,7 +2598,7 @@
         "saves": [
           {
             "note_id": "note_d1",
-            "mutation_id": "nma20970af4ccd4c0cabd0f1aac9b45585",
+            "mutation_id": "nmc5b058eded1f4cce8526bcfdc1e90ff9",
             "expected_revision": 3,
             "mode": "success",
             "status": 200
@@ -2613,7 +2613,7 @@
       }
     }
   ],
-  "final_head": "4200e3b4bdfd5dafb8dc19ff94763ed0069b5176",
+  "final_head": "4856b4b05bbd10eb7db8c2070d7c88a110905ed4",
   "worktree_provenance": {
     "before": {
       "name": "before",
@@ -2631,7 +2631,7 @@
     "after": {
       "name": "after",
       "worktree": "/home/lchen/.dsh/state/superagent/work/leave-guard-798df570c13c-evidence/fork-after",
-      "head": "4200e3b4bdfd5dafb8dc19ff94763ed0069b5176",
+      "head": "4856b4b05bbd10eb7db8c2070d7c88a110905ed4",
       "status_porcelain": "",
       "config_ts": {
         "sha256_current": "2192fb227c1dc58c95b5a89c724fa5b8e8d2ad9e8ab7652ab9479556cde42fb6",
@@ -2648,14 +2648,14 @@
     }
   },
   "local_verification": {
-    "head": "4200e3b4bdfd5dafb8dc19ff94763ed0069b5176",
+    "head": "4856b4b05bbd10eb7db8c2070d7c88a110905ed4",
     "log": "logs/local-verification.txt",
-    "summary": "head=4200e3b4bdfd5dafb8dc19ff94763ed0069b5176 tsc=0 eslint=0 vitest=0 build=0 full=1",
+    "summary": "head=4856b4b05bbd10eb7db8c2070d7c88a110905ed4 tsc=0 eslint=0 vitest=0 build=0 full=1",
     "exit_code": 0,
     "pr_ci": "fork repo has no GitHub Actions checks configured; these local command results are the verification evidence",
     "full_suite": {
       "exit_code": 1,
-      "tests_line": "Tests  14 failed | 2959 passed (2973)",
+      "tests_line": "Tests  14 failed | 2960 passed (2974)",
       "baseline_note": "14 failed / 2959 passed (total 2973) = pre-existing SourceListPanel.test.tsx baseline failures, identical at origin/main; not caused by this change"
     }
   },

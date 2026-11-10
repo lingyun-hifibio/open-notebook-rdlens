@@ -1,8 +1,8 @@
-local verification (issue #1136) — head=4200e3b4bdfd5dafb8dc19ff94763ed0069b5176
+local verification (issue #1136) — head=4856b4b05bbd10eb7db8c2070d7c88a110905ed4
 worktree=/home/lchen/.dsh/state/superagent/work/leave-guard-798df570c13c-evidence/fork-after
-started=2026-11-10T14:02:20+08:00
+started=2026-11-10T14:20:23+08:00
 node=v22.20.0
-head-rev=4200e3b4bdfd5dafb8dc19ff94763ed0069b5176
+head-rev=4856b4b05bbd10eb7db8c2070d7c88a110905ed4
 
 === tsc -b ===
 $ npx tsc -b
@@ -18,9 +18,9 @@ exit=0
   
    RUN  v4.1.9 /home/lchen/.dsh/state/superagent/work/leave-guard-798df570c13c-evidence/fork-after/frontend
   
-   ✓ src/lib/research/issue585/note-draft-cache.test.ts (24 tests) 21ms
-   ✓ src/components/research/issue585/NoteRecoveryInbox.test.tsx (8 tests) 117ms
-   ✓ src/lib/research/issue585/use-note-editor.test.tsx (9 tests) 46ms
+   ✓ src/lib/research/issue585/note-draft-cache.test.ts (24 tests) 13ms
+   ✓ src/components/research/issue585/NoteRecoveryInbox.test.tsx (8 tests) 73ms
+   ✓ src/lib/research/issue585/use-note-editor.test.tsx (9 tests) 52ms
   stderr | src/components/research/ResearchWorkbench.test.tsx > ResearchWorkbench > RWV2-13：Edit scope 请求聚焦左栏编辑面（scopeEditRequest 递增 → 模式单选获得焦点）
   An update to ResearchJobsProvider inside a test was not wrapped in act(...).
   
@@ -45,15 +45,15 @@ exit=0
   
   This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
   
-   ✓ src/components/research/ResearchWorkbench.test.tsx (17 tests) 378ms
-   ✓ src/components/research/NotesPanel.test.tsx (39 tests) 1473ms
-       ✓ 搜索框输入经过 300ms 防抖后才以搜索词请求目录（词法搜索，不生成向量）  325ms
-       ✓ 目录结果不本地缓存：搜索变化后只渲染 hook 当前返回值（旧结果不回填）  610ms
+   ✓ src/components/research/ResearchWorkbench.test.tsx (17 tests) 353ms
+   ✓ src/components/research/NotesPanel.test.tsx (40 tests) 1443ms
+       ✓ 搜索框输入经过 300ms 防抖后才以搜索词请求目录（词法搜索，不生成向量）  314ms
+       ✓ 目录结果不本地缓存：搜索变化后只渲染 hook 当前返回值（旧结果不回填）  614ms
   
    Test Files  5 passed (5)
-        Tests  97 passed (97)
-     Start at  14:02:23
-     Duration  2.25s (transform 1.06s, setup 243ms, import 1.81s, tests 2.04s, environment 974ms)
+        Tests  98 passed (98)
+     Start at  14:20:26
+     Duration  2.26s (transform 893ms, setup 259ms, import 1.64s, tests 1.93s, environment 1.16s)
   
 
 === next production build ===
@@ -62,15 +62,15 @@ exit=0
   
   [Next.js Rewrites] Proxying /api/* to http://localhost:5055/api/*
     Creating an optimized production build ...
-  ✓ Compiled successfully in 3.6s
+  ✓ Compiled successfully in 4.0s
     Running TypeScript ...
-    Finished TypeScript in 11.1s ...
+    Finished TypeScript in 11.0s ...
     Collecting page data using 21 workers ...
     Generating static pages using 21 workers (0/16) ...
     Generating static pages using 21 workers (4/16) 
     Generating static pages using 21 workers (8/16) 
     Generating static pages using 21 workers (12/16) 
-  ✓ Generating static pages using 21 workers (16/16) in 466ms
+  ✓ Generating static pages using 21 workers (16/16) in 383ms
     Finalizing page optimization ...
   
   Route (app)
@@ -139,11 +139,11 @@ exit=1
   
   
    Test Files  1 failed | 179 passed (180)
-        Tests  14 failed | 2959 passed (2973)
-     Start at  14:02:43
-     Duration  16.02s (transform 28.07s, setup 13.59s, import 85.70s, tests 86.55s, environment 61.98s)
+        Tests  14 failed | 2960 passed (2974)
+     Start at  14:20:46
+     Duration  16.11s (transform 30.28s, setup 14.84s, import 94.37s, tests 89.54s, environment 63.96s)
   
 
 === summary ===
-head=4200e3b4bdfd5dafb8dc19ff94763ed0069b5176 tsc=0 eslint=0 vitest=0 build=0 full=1
-finished=2026-11-10T14:02:59+08:00
+head=4856b4b05bbd10eb7db8c2070d7c88a110905ed4 tsc=0 eslint=0 vitest=0 build=0 full=1
+finished=2026-11-10T14:21:02+08:00
