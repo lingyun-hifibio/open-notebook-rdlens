@@ -265,6 +265,64 @@ describe('contract v1 客户端（Phase 2b）', () => {
     expect((calls[0].data as { model_id?: string }).model_id).toBe('m1')
   })
 
+  it('#1017 createCompare C05 声明范围：带 c05-v1 头 + 精确 source_scope/顶层 note_ids，不混用 legacy 字段', async () => {
+    installAdapter(() => ({
+      status: 202,
+      data: { job_id: 'job_c05', status: 'queued' },
+    }))
+    await researchApi.createCompare(
+      P,
+      {
+        job_type: 'deep_compare',
+        source_scope: { mode: 'all', source_ids: [], single_source_id: null },
+        note_ids: [],
+        group_size: 6,
+        mode: 'deep_compare',
+        model_id: 'm1',
+      },
+      { idempotencyKey: 'ik-c05', contract: 'c05-v1' },
+    )
+    expect(calls[0].url).toBe(`/v1/research/projects/${P}/compare/jobs`)
+    expect(calls[0].method).toBe('POST')
+    // 头唯一：C05 分支不得同时带 legacy v1 语义
+    expect(String(calls[0].headers['X-Research-Contract'])).toBe('c05-v1')
+    expect(String(calls[0].headers['Idempotency-Key'])).toBe('ik-c05')
+    const wire = calls[0].data as Record<string, unknown>
+    // 冻结载荷：source_scope 仅三键；空集合用 []；note_ids 与 source_scope 同级
+    expect(wire.source_scope).toEqual({
+      mode: 'all',
+      source_ids: [],
+      single_source_id: null,
+    })
+    expect(Object.keys(wire.source_scope as Record<string, unknown>).sort()).toEqual([
+      'mode',
+      'single_source_id',
+      'source_ids',
+    ])
+    expect(wire.note_ids).toEqual([])
+    // C05 分支不发送 legacy document_ids（服务端按声明范围解析）
+    expect(wire.document_ids).toBeUndefined()
+    expect(wire.group_size).toBe(6)
+    expect(wire.model_id).toBe('m1')
+  })
+
+  it('#1017 createCompare legacy 默认：不传 contract 仍带 v1 头（既有字节不变）', async () => {
+    installAdapter(() => ({
+      status: 202,
+      data: { job_id: 'job_legacy', status: 'queued' },
+    }))
+    await researchApi.createCompare(
+      P,
+      { job_type: 'deep_compare', document_ids: ['d1', 'd2'], model_id: 'm1' },
+      { idempotencyKey: 'ik-legacy' },
+    )
+    expect(String(calls[0].headers['X-Research-Contract'])).toBe('v1')
+    const wire = calls[0].data as Record<string, unknown>
+    expect(wire.document_ids).toEqual(['d1', 'd2'])
+    expect(wire.source_scope).toBeUndefined()
+    expect(wire.note_ids).toBeUndefined()
+  })
+
   it('#243 runTransformation 请求体携带 required model_id（运行时模型快照）', async () => {
     installAdapter(() => ({ status: 200, data: { request_id: 'r1' } }))
     await researchApi.runTransformation(P, 'trans_1', {

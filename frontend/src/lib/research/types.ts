@@ -137,6 +137,18 @@ export interface ResearchJob {
   updated_at: string
   /** COV-08：research_coverage Job 额外返回 coverage 段（§12.1） */
   coverage?: ResearchCoverageJobView
+  /**
+   * #1017：deep_compare Job 的加性读回段（`GET /jobs/{id}`，D1-C 契约
+   * flag on 时出现）：声明范围／实际覆盖／实际模型／结果引用。列表端点
+   * 不加该键（避免 N+1），Activity 卡经「查看报告」触发详情读取。
+   */
+  compare?: ResearchCompareJobView
+  /**
+   * #1017：canonical 校验记录（`GET /jobs/{id}` 顶层，D1-C 契约 flag on
+   * 时出现）。旧 Job（D1-H 前完成）读回 `not_run`，非 completed 读回
+   * `not_recorded`；任何状态都不得被 UI 渲染成「校验通过」。
+   */
+  verification_record?: ResearchVerificationRecord
 }
 
 export interface ResearchEvidenceItem {
@@ -491,13 +503,44 @@ export interface ResearchCoverageReportResponse {
   retry_of_generation_id?: string
 }
 
+/**
+ * #1017：C05 声明范围的 `source_scope` 成员（冻结三键 `{mode, source_ids,
+ * single_source_id}`；空集合用 `[]` 而不是 `null`，`all` 的 `source_ids`
+ * 恒为 `[]`）。形状由 `c05-request.buildSourceScope` 唯一构造，本类型只做
+ * wire 表达。
+ */
+export interface ResearchCompareSourceScope {
+  mode: 'all' | 'selected'
+  source_ids: string[]
+  /**
+   * 冻结形状允许 `single` 模式携带字符串；Compare 是多来源 Job，**不发送**
+   * `single`（服务端拒绝），本动作的实际取值恒为 `null`。
+   */
+  single_source_id: string | null
+}
+
 export interface ResearchCompareCreateRequest {
   job_type: 'deep_compare' // 契约 §8.3 必填（RDLens JobCreateRequest）
-  document_ids: string[]
+  /**
+   * legacy 分支必填（既有 `v1` 头 + document_ids 字节不变）；#1017 的 C05
+   * 声明范围分支**省略**该字段——服务端按 `source_scope` 解析，不能把
+   * 声明范围降级成客户端已加载列表。
+   */
+  document_ids?: string[]
   group_size?: number
   mode?: string
   /** Issue #243 §6.7：正式前端必填——顶层 confirmed 全局模型快照（不变量 2） */
   model_id: string
+  /**
+   * #1017：仅当 `capabilities.c05.entries.compare.execution_ready === true`
+   * 时出现；形状 = `{mode, source_ids, single_source_id}`（三键恒在）。
+   */
+  source_scope?: ResearchCompareSourceScope
+  /**
+   * #1017：C05 顶层成员（与 `source_scope` 同级，不是其成员）。Compare 是
+   * Source-only 动作，恒为 `[]`。
+   */
+  note_ids?: string[]
 }
 
 export interface ResearchCompareCreateResponse {
@@ -516,6 +559,107 @@ export interface ResearchCompareReportResponse {
   status: string
   report: { ref: string; markdown: string }
   citations: ResearchCoverageCitation[]
+}
+
+// ── #1017（D1-H）：deep_compare 结果回访读回 wire 形状 ──
+//
+// 全部键都是**加性**的：flag off / 旧后端不返回时按缺失处理（不崩溃、不
+// 伪造状态）。`GET /jobs/{id}/report` 的键集不变（正文/引用 + 410/503），
+// 范围/版本/模型/校验展示只能经 `GET /jobs/{id}` 读取（计划 §2.5）。
+
+/** canonical 校验状态闭集（D1-C 8 状态，`verification_record.STATUSES`） */
+export type ResearchVerificationStatus =
+  | 'not_recorded'
+  | 'not_run'
+  | 'partial'
+  | 'pass'
+  | 'repaired'
+  | 'degraded'
+  | 'failed'
+  | 'unavailable'
+
+/** `deterministic` 段（12 键 canon 记录成员；全部可选按容错解析） */
+export interface ResearchVerificationDeterministic {
+  executed?: boolean
+  checks?: string[]
+  findings?: { check?: string; fixable?: boolean }[]
+}
+
+/** `GET /jobs/{id}` 顶层 `verification_record`（canonical 12 键的读侧投影） */
+export interface ResearchVerificationRecord {
+  schema_version?: string | number
+  status: ResearchVerificationStatus | string
+  executor?: string
+  deterministic?: ResearchVerificationDeterministic
+  repair?: { attempted?: boolean; outcome?: string; failure_code?: string | null }
+  advisory_critic?: Record<string, unknown>
+  offline_evidence?: { ref?: string | null }
+  repair_attempted?: boolean
+  findings?: { kind?: string; fixable?: boolean }[]
+  repair_failure?: string | null
+  critic?: unknown
+  critic_skipped?: boolean
+}
+
+/**
+ * `compare.scope.warnings[].documents[]` 元素：host `ScopeWarning.documents`
+ * 是触发版本回退的**三元组对象**（`{document_id, used_version,
+ * skipped_version}`），不是字符串（审查 LOW-1/LOW-5）。UI 当前只展示
+ * warning 数量，不直接渲染该数组。
+ */
+export interface ResearchCompareJobWarningDocument {
+  document_id?: string
+  used_version?: string
+  skipped_version?: string | null
+}
+
+/**
+ * `compare.scope.warnings` 元素：host 透传 scope 快照的 warning **对象**
+ * （`{code, message, documents[]}`），不是纯字符串（审查 LOW-1）。
+ */
+export interface ResearchCompareJobWarning {
+  code?: string
+  message?: string
+  documents?: ResearchCompareJobWarningDocument[]
+}
+
+/** `GET /jobs/{id}` 的 `compare.scope` 段（声明范围与解析版本） */
+export interface ResearchCompareJobScope {
+  contract_version?: string
+  requested_mode?: string | null
+  /** 声明来源集合（`selected` 时为 provider source ids；`all` 为空/缺省） */
+  source_ids?: string[]
+  resolved_refs?: { document_id: string; document_version: string }[]
+  resolved_count?: number
+  warnings?: ResearchCompareJobWarning[]
+}
+
+/** `GET /jobs/{id}` 的 `compare.coverage` 段（有界覆盖计数） */
+export interface ResearchCompareJobCoverage {
+  included_count?: number
+  failed_count?: number
+  included_doc_ids?: string[]
+  failed_doc_ids?: string[]
+}
+
+/** `GET /jobs/{id}` 的 `compare.model` 段（实际模型快照） */
+export interface ResearchCompareJobModel {
+  model_id?: string | null
+  provider_id?: string | null
+  execution_revision?: string | null
+}
+
+/** `GET /jobs/{id}` 的 `compare.result` 段（结果 Artifact 引用） */
+export interface ResearchCompareJobResult {
+  ref?: string | null
+}
+
+/** `GET /jobs/{id}` 的加性 `compare` 段（仅 deep_compare；不含校验记录） */
+export interface ResearchCompareJobView {
+  scope?: ResearchCompareJobScope | null
+  coverage?: ResearchCompareJobCoverage | null
+  model?: ResearchCompareJobModel | null
+  result?: ResearchCompareJobResult | null
 }
 
 

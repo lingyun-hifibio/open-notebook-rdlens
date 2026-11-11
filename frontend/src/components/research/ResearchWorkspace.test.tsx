@@ -50,6 +50,24 @@ vi.mock('@/lib/research/api', async (importOriginal) => {
 // 被测对象不是全局模型本身：用测试替身提供 confirmed 模型（本地、可执行）
 vi.mock('@/lib/hooks/use-research-global-model')
 
+// #1017（D1-H）：C05 compare 能力位替身。默认 false = legacy 路径（既有
+// 用例语义不变）；需要 C05 父层装配的用例显式置 true。
+const c05CompareFixture = vi.hoisted(() => ({ compareReady: false }))
+vi.mock('@/lib/hooks/use-research-c05', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/hooks/use-research-c05')>()
+  return {
+    ...actual,
+    useResearchC05: () => ({
+      caps: null,
+      loading: false,
+      dispatchReady: (entry: string) => entry === 'compare' && c05CompareFixture.compareReady,
+      unavailableReason: () => '',
+      supportsMode: () => false,
+      previewSupported: false,
+    }),
+  }
+})
+
 // 受控替身：SearchPanel 在本文件不承担真实 preview 逻辑（v1 测试覆盖）；
 // 暴露 active prop + 保留一个本地输入，供 keep-alive/active 语义断言
 vi.mock('./ResearchSearchPanel', () => ({
@@ -207,6 +225,7 @@ describe('ResearchWorkspace（RWV2-40 五动作主区；#445）', () => {
     vi.clearAllMocks()
     toastMock.mockClear()
     resetGlobalModelStub()
+    c05CompareFixture.compareReady = false
     vi.mocked(api.listSources).mockResolvedValue({ items: [source], next_cursor: null })
     vi.mocked(api.listNotes).mockResolvedValue({ items: [note], next_cursor: null })
   })
@@ -584,6 +603,112 @@ describe('ResearchWorkspace（RWV2-40 五动作主区；#445）', () => {
       'research.globalModel.selectModelHint',
     )
     expect(api.openResearchChatStream).not.toHaveBeenCalled()
+  })
+
+  it('#1017 capability true + all：父层装配 C05 声明范围（c05-v1 + 三键 source_scope + 顶层 note_ids），不再被空选阻断', async () => {
+    tokenStore.setResearchToken(researchToken(), 9999999999)
+    c05CompareFixture.compareReady = true
+    seedScope('all', [])
+    vi.mocked(api.listSources).mockResolvedValue({
+      items: [source, { ...source, source_id: 'src_2', document_id: 'doc_2' }],
+      next_cursor: null,
+    })
+    vi.mocked(api.createCompare).mockResolvedValue({ job_id: 'job_c05', status: 'queued' })
+    vi.mocked(api.getJob).mockResolvedValue({
+      job_id: 'job_c05',
+      project_id: 'proj_1',
+      job_type: 'deep_compare',
+      status: 'queued',
+      stage: null,
+      progress: 0,
+      model_id: 'm-local',
+      generation_epoch: 1,
+      retry_count: 0,
+      last_error: null,
+      result_ref: null,
+      created_at: '2026-08-06T02:00:00Z',
+      updated_at: '2026-08-06T02:00:00Z',
+    })
+    renderHarness()
+    switchTo('compare')
+
+    const createButton = await screen.findByTestId('compare-create')
+    await waitFor(() => expect(createButton).not.toBeDisabled())
+    // capability true：`all` 不再显示 legacy 阻断，也不假装知道客户端集合
+    expect(screen.queryByTestId('compare-entire-project')).toBeNull()
+    fireEvent.click(createButton)
+
+    await waitFor(() => expect(api.createCompare).toHaveBeenCalledTimes(1))
+    expect(api.createCompare).toHaveBeenCalledWith(
+      'proj_1',
+      {
+        job_type: 'deep_compare',
+        source_scope: { mode: 'all', source_ids: [], single_source_id: null },
+        note_ids: [],
+        group_size: undefined,
+        mode: 'deep_compare',
+        model_id: 'm-local',
+      },
+      { contract: 'c05-v1' },
+    )
+    const wire = vi.mocked(api.createCompare).mock.calls[0][1] as unknown as Record<string, unknown>
+    expect(wire.document_ids).toBeUndefined()
+    expect(await screen.findByTestId('compare-submitted')).toBeInTheDocument()
+  })
+
+  it('#1017 capability true + selected：父层按 scope 快照发送 provider source_ids（不是已加载映射的 document_ids）', async () => {
+    tokenStore.setResearchToken(researchToken(), 9999999999)
+    c05CompareFixture.compareReady = true
+    seedScope('selected', ['src_1', 'src_2'])
+    vi.mocked(api.listSources).mockResolvedValue({
+      items: [source, { ...source, source_id: 'src_2', document_id: 'doc_2' }],
+      next_cursor: null,
+    })
+    vi.mocked(api.createCompare).mockResolvedValue({ job_id: 'job_c05b', status: 'queued' })
+    vi.mocked(api.getJob).mockResolvedValue({
+      job_id: 'job_c05b',
+      project_id: 'proj_1',
+      job_type: 'deep_compare',
+      status: 'queued',
+      stage: null,
+      progress: 0,
+      model_id: 'm-local',
+      generation_epoch: 1,
+      retry_count: 0,
+      last_error: null,
+      result_ref: null,
+      created_at: '2026-08-06T02:00:00Z',
+      updated_at: '2026-08-06T02:00:00Z',
+    })
+    renderHarness()
+    switchTo('compare')
+
+    const createButton = await screen.findByTestId('compare-create')
+    await waitFor(() => expect(createButton).not.toBeDisabled())
+    fireEvent.click(createButton)
+    await waitFor(() => expect(api.createCompare).toHaveBeenCalledTimes(1))
+
+    const wire = vi.mocked(api.createCompare).mock.calls[0][1] as unknown as Record<string, unknown>
+    expect(wire.source_scope).toEqual({
+      mode: 'selected',
+      source_ids: ['src_1', 'src_2'],
+      single_source_id: null,
+    })
+    expect(wire.note_ids).toEqual([])
+    expect(wire.document_ids).toBeUndefined()
+    expect(vi.mocked(api.createCompare).mock.calls[0][2]).toEqual({ contract: 'c05-v1' })
+  })
+
+  it('#1017 capability false + all：legacy 阻断与 legacy 头不变（不静默降级/不误发 C05）', async () => {
+    tokenStore.setResearchToken(researchToken(), 9999999999)
+    c05CompareFixture.compareReady = false
+    seedScope('all', [])
+    renderHarness()
+    switchTo('compare')
+
+    expect(await screen.findByTestId('compare-entire-project')).toBeInTheDocument()
+    expect(screen.getByTestId('compare-create')).toBeDisabled()
+    expect(api.createCompare).not.toHaveBeenCalled()
   })
 
   it('#243：无可用全局模型时 Compare 创建禁用并展示引导（评审 Important-2）', async () => {

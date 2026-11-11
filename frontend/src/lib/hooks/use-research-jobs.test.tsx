@@ -129,6 +129,90 @@ describe('useResearchJobs', () => {
     expect(result.current.error).toMatch(/select a research model/i)
   })
 
+  it('#1017 C05 声明范围 all：不触发 legacy 空选守卫，发 c05-v1 + 精确三键 source_scope + 顶层 note_ids', async () => {
+    vi.mocked(getJob).mockResolvedValue(job('job_c05', 'queued'))
+    vi.mocked(createCompare).mockResolvedValue({ job_id: 'job_c05', status: 'queued' })
+    const { result } = renderHook(() => useResearchJobs({ projectId: 'proj_1' }))
+
+    act(() => {
+      result.current.createCompareDeclaredScope({ mode: 'all', sourceIds: [] }, MODEL, 6)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+
+    expect(createCompare).toHaveBeenCalledWith(
+      'proj_1',
+      {
+        job_type: 'deep_compare',
+        source_scope: { mode: 'all', source_ids: [], single_source_id: null },
+        note_ids: [],
+        group_size: 6,
+        mode: 'deep_compare',
+        model_id: MODEL,
+      },
+      { contract: 'c05-v1' },
+    )
+    // 不得把声明范围降级成 legacy document_ids 载荷
+    const wire = vi.mocked(createCompare).mock.calls[0][1] as unknown as Record<string, unknown>
+    expect(wire.document_ids).toBeUndefined()
+    expect(result.current.errorCode).toBeNull()
+  })
+
+  it('#1017 C05 声明范围 selected：source_ids 原样发送（含分页外 id），不写 document_ids', async () => {
+    vi.mocked(getJob).mockResolvedValue(job('job_c05', 'queued'))
+    vi.mocked(createCompare).mockResolvedValue({ job_id: 'job_c05', status: 'queued' })
+    const { result } = renderHook(() => useResearchJobs({ projectId: 'proj_1' }))
+
+    act(() => {
+      result.current.createCompareDeclaredScope(
+        { mode: 'selected', sourceIds: ['src_1', 'src_2', 'src_offpage'] },
+        MODEL,
+      )
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+
+    const [projectArg, wire, options] = vi.mocked(createCompare).mock.calls[0]
+    const selectedWire = wire as unknown as Record<string, unknown>
+    expect(projectArg).toBe('proj_1')
+    expect(selectedWire.source_scope).toEqual({
+      mode: 'selected',
+      source_ids: ['src_1', 'src_2', 'src_offpage'],
+      single_source_id: null,
+    })
+    expect(selectedWire.note_ids).toEqual([])
+    expect(selectedWire.document_ids).toBeUndefined()
+    expect(options).toEqual({ contract: 'c05-v1' })
+  })
+
+  it('#1017 C05 声明范围 selected 空/超硬上限：前置拒绝且不发请求（稳定码）', async () => {
+    const { result } = renderHook(() => useResearchJobs({ projectId: 'proj_1' }))
+
+    act(() => {
+      result.current.createCompareDeclaredScope({ mode: 'selected', sourceIds: [] }, MODEL)
+    })
+    expect(createCompare).not.toHaveBeenCalled()
+    expect(result.current.errorCode).toBe('compare-empty')
+
+    const over50 = Array.from({ length: 51 }, (_, i) => `src_${i}`)
+    act(() => {
+      result.current.createCompareDeclaredScope({ mode: 'selected', sourceIds: over50 }, MODEL)
+    })
+    expect(createCompare).not.toHaveBeenCalled()
+    expect(result.current.errorCode).toBe('compare-over-hard')
+  })
+
+  it('#1017 C05 声明范围无模型：fail-closed 不发请求', async () => {
+    const { result } = renderHook(() => useResearchJobs({ projectId: 'proj_1' }))
+    act(() => {
+      result.current.createCompareDeclaredScope({ mode: 'all', sourceIds: [] }, '')
+    })
+    expect(createCompare).not.toHaveBeenCalled()
+    expect(result.current.errorCode).toBe('no-model')
+  })
+
   it('创建 Compare 成功后写入 localStorage 并拉取 Job 状态', async () => {
     vi.mocked(createCompare).mockResolvedValue({ job_id: 'job_new', status: 'queued' })
     vi.mocked(getJob).mockResolvedValue(job('job_new', 'queued'))

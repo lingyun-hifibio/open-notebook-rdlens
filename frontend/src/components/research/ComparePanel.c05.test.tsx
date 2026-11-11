@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { useEffect } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { ComparePanel } from './ComparePanel'
-import { ResearchScopeProvider, scopeStorageKey } from '@/lib/research/scope'
+import {
+  ResearchScopeProvider,
+  scopeStorageKey,
+  useResearchScope,
+} from '@/lib/research/scope'
 import {
   COMPARE_MIN_DOCUMENTS,
   checkCompareDocumentFloor,
@@ -164,5 +169,202 @@ describe('ComparePanel · 阻断原因与文案（D-20 / T38）', () => {
     expect(screen.getByTestId('compare-empty')).toHaveTextContent('research.compareEmpty')
     expect(screen.queryByTestId('compare-entire-project')).toBeNull()
     expect(screen.queryByTestId('compare-single-document')).toBeNull()
+  })
+})
+
+// ── Issue #1017（D1-H）：capability 位驱动的 C05 声明范围 ──────────────────
+//
+// 能力 true（`capabilities.c05.entries.compare.execution_ready === true`，
+// 由父层以 `c05Ready` 下发）时：
+// - `all` 不再阻断（文档集合由服务端解析）；
+// - `selected` 发送 scope provider 的 `source_ids`（不再映射 document_ids），
+//   仅对已加载且可判文档身份的行按 document_id 去重；分页外 selected 原样
+//   保留（服务端解析/稳定拒绝），不静默丢弃。
+// 能力 false 时既有 legacy 行为逐字节不变（另有 ComparePanel.test.tsx 覆盖）。
+
+function renderC05Panel({
+  rows,
+  selected,
+  mode = 'selected',
+  onCreate = vi.fn(async () => true),
+  error = null,
+  errorCode = null,
+  c05Ready = true,
+}: {
+  rows: ResearchSource[]
+  selected: string[]
+  mode?: 'all' | 'selected'
+  onCreate?: ReturnType<typeof vi.fn>
+  error?: string | null
+  errorCode?: string | null
+  c05Ready?: boolean
+}) {
+  seedScope(mode, selected)
+  return {
+    onCreate,
+    ...render(
+      <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+        <ComparePanel
+          sources={rows}
+          isCreating={false}
+          error={error}
+          errorCode={errorCode}
+          onCreate={onCreate as unknown as (ids: string[], groupSize?: number) => Promise<boolean>}
+          c05Ready={c05Ready}
+        />
+      </ResearchScopeProvider>,
+    ),
+  }
+}
+
+describe('ComparePanel · C05 声明范围（#1017）', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+  afterEach(() => {
+    cleanup()
+    localStorage.clear()
+  })
+
+  it('#1017 capability true + all：不再阻断，提交声明范围（onCreate 收到空 source 集合）', async () => {
+    const rows = [source({ source_id: 'src_1' }), source({ source_id: 'src_2' })]
+    const { onCreate } = renderC05Panel({ rows, selected: [], mode: 'all' })
+
+    const button = screen.getByTestId('compare-create')
+    expect(button).not.toBeDisabled()
+    // 既有「需先选择资料」阻断文案消失；改为声明范围说明
+    expect(screen.queryByTestId('compare-entire-project')).toBeNull()
+    expect(screen.getByTestId('compare-declared-all')).toHaveTextContent(
+      'research.compareScopeAllHint',
+    )
+
+    fireEvent.click(button)
+    await waitFor(() => expect(onCreate).toHaveBeenCalledTimes(1))
+    // C05 `all`：客户端没有 document_ids；父层按 scope 快照装配 source_scope
+    expect(onCreate.mock.calls[0][0]).toEqual([])
+    expect(await screen.findByTestId('compare-submitted')).toBeInTheDocument()
+  })
+
+  it('#1017 capability true + selected：发送 provider source_ids（不是 document_ids），列表外 selected 不丢弃', async () => {
+    const rows = [source({ source_id: 'src_1' }), source({ source_id: 'src_2' })]
+    // src_offpage 不在已加载列表 → 仍须发送（服务端解析精确版本），不得静默丢弃
+    const { onCreate } = renderC05Panel({ rows, selected: ['src_1', 'src_2', 'src_offpage'] })
+
+    expect(screen.getByTestId('compare-declared-unloaded')).toHaveTextContent(
+      'research.compareScopeSelectedUnloaded',
+    )
+    fireEvent.click(screen.getByTestId('compare-create'))
+    await waitFor(() => expect(onCreate).toHaveBeenCalledTimes(1))
+    expect(onCreate.mock.calls[0][0]).toEqual(['src_1', 'src_2', 'src_offpage'])
+    // 不得映射成 legacy document_ids（那是 capability false 的行为）
+    expect(onCreate.mock.calls[0][0]).not.toContain('doc_src_1')
+  })
+
+  it('#1017 capability true + selected：已加载同文档多版本按 document_id 去重（保留首个）', async () => {
+    const rows = [
+      source({ source_id: 'src_v1', document_id: 'doc_A', document_version: 'v1' }),
+      source({ source_id: 'src_v2', document_id: 'doc_A', document_version: 'v2' }),
+      source({ source_id: 'src_b', document_id: 'doc_B', document_version: 'v1' }),
+    ]
+    const { onCreate } = renderC05Panel({
+      rows,
+      selected: ['src_v1', 'src_v2', 'src_b'],
+    })
+
+    expect(screen.getByTestId('compare-merged-versions')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('compare-create'))
+    await waitFor(() => expect(onCreate).toHaveBeenCalledTimes(1))
+    // 已加载范围内同文档 v1+v2 合并为一份（保留首个）；不同文档保留
+    expect(onCreate.mock.calls[0][0]).toEqual(['src_v1', 'src_b'])
+  })
+
+  it('#1017 capability true + selected：去重后不足两份 → 阻断（不冒充空选）', () => {
+    const rows = [
+      source({ source_id: 'src_v1', document_id: 'doc_A', document_version: 'v1' }),
+      source({ source_id: 'src_v2', document_id: 'doc_A', document_version: 'v2' }),
+    ]
+    renderC05Panel({ rows, selected: ['src_v1', 'src_v2'] })
+
+    expect(screen.getByTestId('compare-single-document')).toHaveTextContent(
+      'research.compareNeedsTwoDocuments',
+    )
+    expect(screen.queryByTestId('compare-empty')).toBeNull()
+    expect(screen.getByTestId('compare-create')).toBeDisabled()
+  })
+
+  it('#1017 capability true + single 范围：Compare 不提供 → 阻断并显示专用文案', () => {
+    seedScope('selected', ['src_1', 'src_2'])
+    function SingleBridge() {
+      const { setSingle, bindSession } = useResearchScope()
+      useEffect(() => {
+        setSingle('src_1', 'sess_1')
+        bindSession('sess_1')
+      }, [bindSession, setSingle])
+      return null
+    }
+    const onCreate = vi.fn(async () => true)
+    render(
+      <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+        <SingleBridge />
+        <ComparePanel
+          sources={[source({ source_id: 'src_1' }), source({ source_id: 'src_2' })]}
+          isCreating={false}
+          error={null}
+          onCreate={onCreate}
+          c05Ready
+        />
+      </ResearchScopeProvider>,
+    )
+
+    expect(screen.getByTestId('compare-declared-single-unsupported')).toHaveTextContent(
+      'research.compareScopeSingleUnsupported',
+    )
+    expect(screen.getByTestId('compare-create')).toBeDisabled()
+    // single 不得被静默改写成 all/selected 派发
+    expect(onCreate).not.toHaveBeenCalled()
+  })
+
+  it('#1017 capability false 回归：all 仍阻断、selected 仍映射 document_ids（legacy 字节不变）', async () => {
+    const rows = [source({ source_id: 'src_1' }), source({ source_id: 'src_2' })]
+    // 能力 false 由父层不下发 c05Ready（默认 false）
+    seedScope('all', [])
+    const onCreateAll = vi.fn(async () => true)
+    const view = render(
+      <ResearchScopeProvider userId={USER_ID} projectId={PROJECT_ID}>
+        <ComparePanel
+          sources={rows}
+          isCreating={false}
+          error={null}
+          onCreate={onCreateAll}
+        />
+      </ResearchScopeProvider>,
+    )
+    expect(screen.getByTestId('compare-entire-project')).toBeInTheDocument()
+    expect(screen.getByTestId('compare-create')).toBeDisabled()
+    expect(screen.queryByTestId('compare-declared-all')).toBeNull()
+    view.unmount()
+
+    const { onCreate } = renderC05Panel({
+      rows,
+      selected: ['src_1', 'src_2'],
+      c05Ready: false,
+    })
+    fireEvent.click(screen.getByTestId('compare-create'))
+    await waitFor(() => expect(onCreate).toHaveBeenCalledTimes(1))
+    // capability false：legacy 送 document_ids（不是 source_ids）
+    expect(onCreate.mock.calls[0][0]).toEqual(['doc_src_1', 'doc_src_2'])
+  })
+
+  it('#1017 服务端 422 compare_duplicate_document_versions → 稳定文案显示（不静默合并/丢弃）', () => {
+    renderC05Panel({
+      rows: [source({ source_id: 'src_1' }), source({ source_id: 'src_2' })],
+      selected: ['src_1', 'src_2'],
+      error: 'compare_duplicate_document_versions',
+      errorCode: 'compare_duplicate_document_versions',
+    })
+
+    expect(screen.getByTestId('compare-error')).toHaveTextContent(
+      'research.errors.compareDuplicateDocumentVersions',
+    )
   })
 })
