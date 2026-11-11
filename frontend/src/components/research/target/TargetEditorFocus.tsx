@@ -28,6 +28,7 @@ import type {
   NoteEditorState,
 } from '@/lib/research/issue585/types'
 import { NoteEditorView } from '../issue585/NoteEditorView'
+import { NoteExportAction } from '../issue585/NoteExportAction'
 import { NoteSaveStatus } from '../issue585/NoteSaveStatus'
 import { useNoteWorkspaceOptional } from '../issue585/NoteWorkspaceProvider'
 import {
@@ -222,6 +223,13 @@ export function TargetEditorFocus({
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
+          {/* #1191 PR-B（W3-G2）：单份 Markdown 导出唯一入口（当前权限/撤权
+              阻断由 hook fail-closed；旧整包 JSON 导出语义不变）。 */}
+          <NoteExportAction
+            editor={noteWorkspace?.editor ?? null}
+            capabilities={capabilities}
+            isAdminReadonly={isAdminReadonly}
+          />
           {layout.asideCollapsible && (
             <Button
               type="button"

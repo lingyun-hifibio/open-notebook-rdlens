@@ -1639,6 +1639,17 @@ export const zhCN = {
       degradedPage: "引用页不可用，原文保留",
     },
     notes: {
+      export: {
+        action: "导出 Markdown",
+        exporting: "正在导出…",
+        exported: "已导出 Markdown",
+        requestId: "请求 ID：{{requestId}}",
+        hint: {
+          restricted: "请刷新权限后重试；你也可以在编辑器中下载本地草稿以保留正文。",
+          refreshCatalog: "笔记列表可能已过期，请刷新后重试。",
+          unknownResult: "结果未知。请用同一导出请求重试；同一请求不会产生重复导出记录。",
+        },
+      },
       newNote: "新建笔记",
       titleLabel: "标题",
       contentLabel: "内容",
@@ -1794,6 +1805,10 @@ export const zhCN = {
           blocked: "编辑不可用",
         },
         errors: {
+          export_request_invalid: "导出请求被判定为无效。",
+          export_request_conflict: "该导出请求键已绑定到另一份导出。请重试导出以创建新请求。",
+          export_snapshot_unavailable: "导出服务暂时不可用，结果未知。请用同一导出请求重试。",
+          export_not_found: "未找到该导出记录，请重新导出。",
           network_error: "网络错误。文本已保留在本地；恢复连接后请重试。",
           unknown_error: "保存未完成。",
           note_not_found: "该笔记已不存在。你仍可复制或下载本地文本。",
