@@ -594,6 +594,40 @@ describe('NoteEditorView citations / excerpt entry (PR5/B3)', () => {
     expect(actions.setTitle).not.toHaveBeenCalled()
   })
 
+  // Issue #1134：编辑器工具栏的删除入口（父层判定可见性后以 onRequestDelete 注入）。
+  it('renders the delete entry only when onRequestDelete is provided and calls it', () => {
+    const onRequestDelete = vi.fn()
+    renderEditor({}, {}, { onRequestDelete })
+    const entry = screen.getByTestId('note-editor-delete')
+    expect(entry).toHaveAttribute('aria-label', 'research.notes.deleteDialog.entry')
+    expect(entry).toHaveAttribute('title', 'research.notes.deleteDialog.entry')
+    fireEvent.click(entry)
+    expect(onRequestDelete).toHaveBeenCalledTimes(1)
+  })
+
+  it('hides the delete entry without onRequestDelete (legacy/Admin/能力不可用)', () => {
+    renderEditor()
+    expect(screen.queryByTestId('note-editor-delete')).toBeNull()
+  })
+
+  it('disables the delete entry while saving or while an insertion is in progress', () => {
+    renderEditor({ saveStatus: 'saving' }, {}, { onRequestDelete: vi.fn() })
+    expect(screen.getByTestId('note-editor-delete')).toBeDisabled()
+    cleanup()
+
+    renderEditor({ inserting: true }, {}, { onRequestDelete: vi.fn() })
+    expect(screen.getByTestId('note-editor-delete')).toBeDisabled()
+  })
+
+  it('does not render the delete entry in terminal blocked states', () => {
+    renderEditor(
+      { blockReason: 'note_access_restricted', saveStatus: 'restricted' },
+      {},
+      { onRequestDelete: vi.fn() },
+    )
+    expect(screen.queryByTestId('note-editor-delete')).toBeNull()
+  })
+
   it('applies a selection-restore request to the editor textarea exactly once', () => {
     const { rerender, state, actions } = renderEditor()
     const textarea = screen.getByTestId('markdown-editor') as HTMLTextAreaElement

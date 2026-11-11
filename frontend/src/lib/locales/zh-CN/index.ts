@@ -1717,6 +1717,31 @@ export const zhCN = {
         openNote: "打开笔记",
         enableProtected: "启用受保护编辑",
       },
+      deleteDialog: {
+        entry: "删除笔记",
+        title: "删除笔记？",
+        description: "将永久删除“{{title}}”。此笔记无法恢复。",
+        revision: "版本 {{revision}}",
+        impact:
+          "已插入文档的内容是独立保存的副本，删除笔记不会改变这些副本。确认时服务端会再次校验权限。",
+        unsavedLocal: "编辑器中未保存的修改将被丢弃。",
+        confirm: "删除",
+        pending: "正在删除…",
+        success: "笔记已删除",
+        contentLabel: "笔记内容",
+        refreshFailed: "无法刷新该笔记，请重试。",
+        confirmResult: "确认结果",
+        refreshAndReview: "刷新并复核",
+        errors: {
+          restricted: "你已无权删除此笔记。",
+          notFound: "该笔记已不存在，请刷新列表。",
+          conflict: "该笔记在加载后发生了变更。请刷新列表、复核最新版本后再次确认。",
+          staleRequest: "本次删除请求已被使用，请重试删除。",
+          unsupported: "该笔记无法通过受保护笔记接口删除。",
+          unavailable: "当前无法校验依赖，请重试以确认结果。",
+          unknown: "无法确认删除结果。请先用同一请求确认结果，再执行其他操作。",
+        },
+      },
       enable: {
         title: "启用受保护编辑？",
         description:

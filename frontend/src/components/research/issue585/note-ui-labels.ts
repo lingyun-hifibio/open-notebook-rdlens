@@ -17,6 +17,7 @@ import type {
   NoteSaveStatus,
 } from '@/lib/research/issue585/types'
 import type { NoteEnableFailureKind } from '@/lib/research/issue585/note-enable'
+import type { NoteDeleteFailureKind } from '@/lib/research/issue585/note-delete'
 
 /** 保存状态 → 文案 key（方案 §4.1 的九类显式状态）。 */
 const SAVE_STATUS_LABEL_KEYS: Record<NoteSaveStatus, string> = {
@@ -81,6 +82,27 @@ const NOTE_ENABLE_FAILURE_LABEL_KEYS: Record<NoteEnableFailureKind, string> = {
   conflict: 'research.notes.enable.errors.conflict',
   unavailable: 'research.notes.enable.errors.unavailable',
   unknown: 'research.notes.enable.errors.unknown',
+}
+
+/** Issue #1134：删除失败分类 → 文案 key（字面量映射，Unused Key Detection 兼容）。 */
+const NOTE_DELETE_FAILURE_LABEL_KEYS: Record<NoteDeleteFailureKind, string> = {
+  restricted: 'research.notes.deleteDialog.errors.restricted',
+  not_found: 'research.notes.deleteDialog.errors.notFound',
+  conflict: 'research.notes.deleteDialog.errors.conflict',
+  stale_request: 'research.notes.deleteDialog.errors.staleRequest',
+  unsupported: 'research.notes.deleteDialog.errors.unsupported',
+  unavailable: 'research.notes.deleteDialog.errors.unavailable',
+  unknown: 'research.notes.deleteDialog.errors.unknown',
+}
+
+/** 删除失败分类 → 文案 key；未知分类落到通用「结果未知」文案。 */
+export function noteDeleteFailureLabelKey(
+  kind: NoteDeleteFailureKind | null | undefined,
+): string {
+  if (typeof kind === 'string' && kind in NOTE_DELETE_FAILURE_LABEL_KEYS) {
+    return NOTE_DELETE_FAILURE_LABEL_KEYS[kind as NoteDeleteFailureKind]
+  }
+  return 'research.notes.deleteDialog.errors.unknown'
 }
 
 /** 启用失败分类 → 文案 key；未知分类落到通用「结果未知」文案。 */

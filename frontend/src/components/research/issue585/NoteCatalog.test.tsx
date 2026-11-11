@@ -200,4 +200,41 @@ describe('NoteCatalog', () => {
     renderCatalog({ items: [d2Note()], revealId: 'note_d2' })
     expect(screen.getByTestId('note-catalog-row-note_d2').className).toContain('ring-primary')
   })
+
+  // Issue #1134：d2-v1 行删除入口（仅 d2-v1 非受限行，调用方判定 canDeleteNote）。
+  it('d2-v1 行提供删除入口：点击回传该行（不触网、不误伤旧行）', () => {
+    const onRequestDelete = vi.fn()
+    renderCatalog({ items: [d2Note(), legacyNote()], onRequestDelete })
+
+    const entry = screen.getByTestId('note-delete-note_d2')
+    expect(entry).toHaveAttribute('aria-label', 'research.notes.deleteDialog.entry')
+    expect(entry).toHaveAttribute('title', 'research.notes.deleteDialog.entry')
+    fireEvent.click(entry)
+    expect(onRequestDelete).toHaveBeenCalledWith(expect.objectContaining({ note_id: 'note_d2' }))
+    // 旧未保护行不出现 d2-v1 删除入口（旧 Delete 由 legacyActions 提供）。
+    expect(screen.queryByTestId('note-delete-note_legacy')).toBeNull()
+  })
+
+  it('canDeleteNote 返回 false（能力/权限/revision 不足）时不渲染删除入口', () => {
+    renderCatalog({ items: [d2Note()], onRequestDelete: vi.fn(), canDeleteNote: () => false })
+    expect(screen.queryByTestId('note-delete-note_d2')).toBeNull()
+  })
+
+  it('受限行与 Admin 只读不渲染删除入口', () => {
+    renderCatalog({ items: [restrictedNote()], onRequestDelete: vi.fn() })
+    expect(screen.queryByTestId('note-delete-note_restricted')).toBeNull()
+
+    renderCatalog({ items: [d2Note()], onRequestDelete: vi.fn(), canEdit: false })
+    expect(screen.queryByTestId('note-delete-note_d2')).toBeNull()
+  })
+
+  it('删除入口与摘入入口共存（同一行操作区，均为紧凑控件）', () => {
+    renderCatalog({ items: [d2Note()], onRequestDelete: vi.fn(), onExcerptNote: vi.fn() })
+    const entry = screen.getByTestId('note-delete-note_d2')
+    const excerpt = screen.getByTestId('note-excerpt-note_d2')
+    expect(entry).toBeInTheDocument()
+    expect(excerpt).toBeInTheDocument()
+    // 删除入口是图标按钮（size-7），不得使用会挤压标题列的文本按钮。
+    expect(entry.className).toContain('size-7')
+  })
 })
