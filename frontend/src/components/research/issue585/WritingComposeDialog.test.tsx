@@ -424,7 +424,8 @@ describe('结果与实际输入回看 + 手工摘入', () => {
     // 审查 L-3：交接顺序必须是“先关闭写作对话框，再打开确认层”。
     const onCloseOrder = onClose.mock.invocationCallOrder[0]
     const openOrder = noteWorkspaceMock.value?.openExcerptInsert.mock.invocationCallOrder[0]
-    expect(onCloseOrder).toBeLessThan(openOrder ?? Number.POSITIVE_INFINITY)
+    expect(openOrder).toBeDefined()
+    expect(onCloseOrder).toBeLessThan(openOrder as number)
   })
 
   it('目标会话缺失时显式报错，不静默 no-op（#1190 / W3-G14）', async () => {
@@ -497,16 +498,9 @@ describe('结果与实际输入回看 + 手工摘入', () => {
       await Promise.resolve()
     })
     expect(clientMocks.locateWritingResultMessage).toHaveBeenCalledTimes(1)
-    // 用户（父级）在定位请求返回前关闭写作对话框。
-    view.rerender(
-      <WritingComposeDialog
-        open={false}
-        onClose={onClose}
-        note={NOTE}
-        initialSelection={{ kind: 'range' as const, start_utf16: 1, end_utf16: 3 }}
-        writingAvailable
-      />,
-    )
+    // 生产形态（NoteWorkspaceProvider）是条件挂载：关闭 = 卸载（`open` 恒 true，
+    // 父级不会用 `open=false` 重渲染）。因此这里必须用 unmount 模拟真实关闭。
+    view.unmount()
     await act(async () => {
       resolveLocate({ ok: true, messageId: 'msg_result', content: '改写结果', userMessageId: 'msg_user' })
       await Promise.resolve()
