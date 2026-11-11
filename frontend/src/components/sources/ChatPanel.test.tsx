@@ -1,19 +1,26 @@
 import { render, screen, fireEvent } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { ChatPanel } from './ChatPanel'
+import type { SourceChatMessage } from '@/lib/types/api'
 
-// useTranslation is mocked globally in setup.ts (t returns the key string)
+// 这两个 mock 在模块级闭包里固定对象/函数身份，使组件的 useCallback 依赖不会在
+// 每次 render 时失效（真实实现中的 openModal/t 同样是稳定引用）。
+vi.mock('@/lib/hooks/use-modal-manager', () => {
+  const openModal = vi.fn()
+  return { useModalManager: () => ({ openModal }) }
+})
 
-vi.mock('@/lib/hooks/use-modal-manager', () => ({
-  useModalManager: () => ({ openModal: vi.fn() }),
-}))
+vi.mock('@/lib/hooks/use-translation', () => {
+  const t = (key: string) => key
+  return { useTranslation: () => ({ t, language: 'en-US', setLanguage: vi.fn() }) }
+})
 
 // Keep the message-content deps light for this composer-focused test.
 vi.mock('@/components/sources/MessageActions', () => ({
   MessageActions: () => null,
 }))
 
-describe('ChatPanel composer', () => {
+describe('ChatPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     // jsdom does not implement scrollIntoView (used by the auto-scroll effect).
@@ -106,5 +113,37 @@ describe('ChatPanel composer', () => {
     fireEvent.keyDown(textarea, { key: 'Enter', ctrlKey: true })
 
     expect(onSendMessage).not.toHaveBeenCalled()
+  })
+
+  // #1202：MarkdownRenderer 的 `a` 覆盖项必须由调用方保持引用稳定，否则父级
+  // 重渲染（如流式结束、消息列表刷新）会卸载重建链接子树，链接上的选区被折叠。
+  it('keeps the reference link override stable across re-renders of a message', () => {
+    const messages: SourceChatMessage[] = [
+      { id: 'm1', type: 'human', content: 'Where is it documented?' },
+      { id: 'm2', type: 'ai', content: 'See [docs](https://example.com) for details.' },
+    ]
+    const { container, rerender } = render(
+      <ChatPanel
+        messages={messages}
+        isStreaming={false}
+        contextIndicators={null}
+        onSendMessage={vi.fn()}
+      />
+    )
+    const link = container.querySelector('a[href="https://example.com"]')
+    expect(link).not.toBeNull()
+
+    // 同样的 id/内容，但换成新的消息对象：模拟消息列表刷新导致的 ChatMessage
+    // 重渲染（memo 因 message 引用变化而放行）。
+    rerender(
+      <ChatPanel
+        messages={messages.map((message) => ({ ...message }))}
+        isStreaming={false}
+        contextIndicators={null}
+        onSendMessage={vi.fn()}
+      />
+    )
+
+    expect(container.querySelector('a[href="https://example.com"]')).toBe(link)
   })
 })

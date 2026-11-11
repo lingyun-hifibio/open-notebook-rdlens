@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { render } from '@testing-library/react'
+import type { ReactNode } from 'react'
 
 import { MarkdownRenderer } from './markdown-renderer'
 
@@ -56,5 +57,29 @@ describe('MarkdownRenderer', () => {
     expect(container.querySelector('p')?.firstChild).toBe(textNode)
     expect(window.getSelection()?.toString()).toBe('alpha')
     window.getSelection()?.removeAllRanges()
+  })
+
+  // #1202：调用方传入的 components 覆盖项必须保持引用稳定；稳定的覆盖映射在
+  // 重渲染后不得卸载/重建自定义元素（覆盖项按引用透传给 ReactMarkdown，元素
+  // 类型因此保持同一引用）。若覆盖项每次 render 被误当成新类型，<a> 节点会被替换。
+  it('keeps a stable component override mounted across re-renders', () => {
+    const StableLink = ({ href, children }: { href?: string; children?: ReactNode }) => (
+      <a data-testid="override-link" href={href}>
+        {children}
+      </a>
+    )
+    const components = { a: StableLink }
+
+    const { container, rerender } = render(
+      <MarkdownRenderer components={components}>{'[docs](https://example.com)'}</MarkdownRenderer>
+    )
+    const link = container.querySelector('a[data-testid="override-link"]')
+    expect(link).not.toBeNull()
+
+    rerender(
+      <MarkdownRenderer components={components}>{'[docs](https://example.com)'}</MarkdownRenderer>
+    )
+
+    expect(container.querySelector('a[data-testid="override-link"]')).toBe(link)
   })
 })
