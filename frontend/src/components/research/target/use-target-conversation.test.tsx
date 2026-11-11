@@ -641,6 +641,25 @@ describe('useTargetConversation · 清稿 ACK / 切换会话', () => {
     )
   })
 
+  it('openSession 返回 activate 的真实 boolean（拒绝 → false，不假装已打开）', async () => {
+    displayFixture.display = { surface: 'global', ref: SESSION_REF }
+    const { result } = renderHook(useTargetHarness, { wrapper })
+    await waitFor(() => expect(result.current.conversation.sessionWired).toBe(true))
+    runtimeFixture.runtime.activate.mockReturnValueOnce(false)
+    let accepted: boolean | undefined
+    act(() => {
+      accepted = result.current.conversation.openSession(SESSION_REF_2)
+    })
+    expect(accepted).toBe(false)
+    // 被拒绝：不切换 active ref、不写 display 指针（诚实导航语义）。
+    expect(result.current.conversation.activeRef?.sessionId).toBe('sess_1')
+    expect(runtimeFixture.runtime.setDisplayPointer).not.toHaveBeenCalledWith({
+      version: 1,
+      surface: 'global',
+      ref: SESSION_REF_2,
+    })
+  })
+
   it('切换会话：openSession 激活新 ref 并写 display 指针', async () => {
     displayFixture.display = { surface: 'global', ref: SESSION_REF }
     const { result } = renderHook(useTargetHarness, { wrapper })

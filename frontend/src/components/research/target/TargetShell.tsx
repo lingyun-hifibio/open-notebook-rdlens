@@ -36,7 +36,17 @@ import { TargetRightPane } from './TargetRightPane'
 import { TargetSecondaryView } from './TargetSecondaryView'
 import { TargetTopicOverview } from './TargetTopicOverview'
 import { TargetReaderFocus } from './TargetReaderFocus'
+import { TargetEditorFocus } from './TargetEditorFocus'
+import {
+  TargetNotesWorkspaceProvider,
+  useTargetNotesWorkspace,
+} from './TargetNotesWorkspace'
 import { useTargetConversation } from './use-target-conversation'
+import {
+  WritingLaunchProvider,
+  type WritingLaunchValue,
+} from '@/lib/research/issue585/writing-launch'
+import { NoteWorkspaceProvider } from '../issue585/NoteWorkspaceProvider'
 import { useResearchPurposeCapability } from './use-purpose-capability'
 import {
   citationReaderRequest,
@@ -125,9 +135,7 @@ function windowReturnTargetStorages(): {
  * 不改变范围/检索载荷。
  */
 export function TargetShell() {
-  const { t } = useTranslation()
-  const { projectId, isAdminReadonly } = useResearchWorkspace()
-  const host = useResearchHostOptional()
+  const { projectId } = useResearchWorkspace()
   const purposeInferenceAvailable = useResearchPurposeCapability(projectId)
   /**
    * W2 #1077/BEH-11：阅读器显式「讨论选段」→ composer chip。必须声明在
@@ -138,6 +146,71 @@ export function TargetShell() {
     purposeInferenceAvailable,
     getPendingSelection: () => pendingSelection,
   })
+  /**
+   * #1191 W3-G1：W3 provider 三层挂在默认目标壳内（旧壳 `ResearchPageContent` 的
+   * 挂载保持不变）：
+   * - `WritingLaunchProvider` 最外层（写作对话框读取当前会话/导航）；
+   * - `NoteWorkspaceProvider` 中间层（唯一编辑器 machine + 摘入/引用/写作对话框）；
+   * - `TargetNotesWorkspaceProvider` 内层（目标壳目录/能力/删除/启用/overlay 编排）。
+   */
+  const [revealNote, setRevealNote] = useState<string | null>(null)
+  const writingLaunch = useMemo<WritingLaunchValue>(
+    () => ({
+      currentRef: conversation.activeRef,
+      // 目标壳只有 headed global 对话面；source 会话选段一律不携带。
+      sourceId: null,
+      openSession: conversation.openSession,
+    }),
+    [conversation.activeRef, conversation.openSession],
+  )
+  return (
+    <WritingLaunchProvider value={writingLaunch}>
+      <NoteWorkspaceProvider
+        onNotesChanged={(noteId) => {
+          if (noteId !== null) setRevealNote(noteId)
+        }}
+      >
+        <TargetNotesWorkspaceProvider>
+          <TargetShellBody
+            conversation={conversation}
+            pendingSelection={pendingSelection}
+            onSetPendingSelection={setPendingSelection}
+            onClearPendingSelection={() => setPendingSelection(null)}
+            revealNote={revealNote}
+            onRevealHandled={() => setRevealNote(null)}
+          />
+        </TargetNotesWorkspaceProvider>
+      </NoteWorkspaceProvider>
+    </WritingLaunchProvider>
+  )
+}
+
+/**
+ * 目标壳内层：消费三层 provider 与 conversation，拥有工作台 JSX、overlay
+ * inert/焦点管理与宽屏编辑器 overlay 的渲染（计划 §2.1.1 控制方向 seam：
+ * `editorRequest`/`openEditor`/`closeEditor` 归 `TargetNotesWorkspaceProvider`，
+ * 本层只读 context，不反向写 provider state）。
+ */
+function TargetShellBody({
+  conversation,
+  pendingSelection,
+  onSetPendingSelection,
+  onClearPendingSelection,
+  revealNote,
+  onRevealHandled,
+}: {
+  conversation: ReturnType<typeof useTargetConversation>
+  pendingSelection: ResearchPendingSelection | null
+  onSetPendingSelection: (pending: ResearchPendingSelection | null) => void
+  onClearPendingSelection: () => void
+  revealNote: string | null
+  onRevealHandled: () => void
+}) {
+  const { t } = useTranslation()
+  const { projectId, isAdminReadonly } = useResearchWorkspace()
+  const host = useResearchHostOptional()
+  // W3 #1191：目标壳 Notes 编排 context（目录/能力/删除/启用/编辑器 overlay）。
+  const notesWorkspace = useTargetNotesWorkspace()
   // 稳定成员引用（React hook 依赖按值比较；避免整个 conversation 对象抖动）。
   const {
     activeRef: conversationActiveRef,
@@ -239,11 +312,13 @@ export function TargetShell() {
     media.versionState,
   ])
 
-  // —— W2 #1077：工作台内容 inert（关闭后移除；不卸载状态） ——
+  // —— W2 #1077 / W3 #1191：工作台内容 inert（关闭后移除；不卸载状态） ——
+  // 同一时刻最多一个 focus view（reader/editor 互斥）。
+  const workspaceOverlayOpen = readerRequest !== null || notesWorkspace.editorRequest !== null
   useEffect(() => {
     const node = shellContentRef.current
     if (node === null) return
-    if (readerRequest !== null) {
+    if (workspaceOverlayOpen) {
       node.setAttribute('inert', '')
       node.setAttribute('aria-hidden', 'true')
     } else {
@@ -254,7 +329,53 @@ export function TargetShell() {
       node.removeAttribute('inert')
       node.removeAttribute('aria-hidden')
     }
-  }, [readerRequest])
+  }, [workspaceOverlayOpen])
+
+  // —— W3 #1191 / X17：identity/项目切换由 provider 强制关闭 overlay；shell 只
+  // 负责把焦点还给触发控件（已移除时回工作台输入区，同 reader 语义）。 ——
+  const editorOpenedRef = useRef(false)
+  const takeEditorTrigger = notesWorkspace.takeEditorTrigger
+  useEffect(() => {
+    if (notesWorkspace.editorRequest !== null) {
+      editorOpenedRef.current = true
+      return
+    }
+    if (!editorOpenedRef.current) return
+    editorOpenedRef.current = false
+    const trigger = takeEditorTrigger()
+    if (trigger !== null && trigger.isConnected) {
+      trigger.focus()
+      return
+    }
+    shellRef.current
+      ?.querySelector<HTMLElement>('[data-testid="chat-input"]')
+      ?.focus({ preventScroll: true })
+  }, [notesWorkspace.editorRequest, takeEditorTrigger])
+
+  // —— W3 #1191 / X1：同一时刻最多一个 focus view（reader/editor 互斥） ——
+  useEffect(() => {
+    if (notesWorkspace.editorRequest !== null && readerRequest !== null) {
+      setReaderRequest(null)
+    }
+  }, [notesWorkspace.editorRequest, readerRequest])
+
+  // —— W3 #1191 / BEH-09：保存为笔记/摘入后打开成果目录并 reveal 该行 ——
+  const revealNoteInCatalog = notesWorkspace.revealNoteInCatalog
+  useEffect(() => {
+    if (revealNote === null) return
+    setRightPane('outcomes')
+    revealNoteInCatalog(revealNote)
+    onRevealHandled()
+  }, [onRevealHandled, revealNote, revealNoteInCatalog])
+
+  // —— W3 #1191 / BEH-09：回答「查看笔记」只 reveal 目录行，不自动打开编辑器 ——
+  const handleViewNote = useCallback(
+    (noteId: string) => {
+      setRightPane('outcomes')
+      revealNoteInCatalog(noteId)
+    },
+    [revealNoteInCatalog],
+  )
 
   // —— W2 #1077：关闭阅读器后焦点回触发控件（工作台不重挂载） ——
   useEffect(() => {
@@ -331,6 +452,7 @@ export function TargetShell() {
     const handler = (event: KeyboardEvent): void => {
       if (event.key !== 'Escape') return
       if (readerRequest !== null) return
+      if (notesWorkspace.editorRequest !== null) return
       const target = event.target
       // 弹层（Radix Dialog/Popover，role=dialog/listbox）自行处理 Esc，不抢。
       if (
@@ -344,7 +466,7 @@ export function TargetShell() {
     }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
-  }, [rightPane, closeRightPane, readerRequest])
+  }, [rightPane, closeRightPane, readerRequest, notesWorkspace.editorRequest])
 
   const openSourcePreview = useCallback(
     (sourceId: string, trigger: HTMLElement | null, initialPageIdx: number | null = null) => {
@@ -511,10 +633,10 @@ export function TargetShell() {
   const handleDiscussSelection = useCallback(
     (pending: ResearchPendingSelection) => {
       // 目标壳只有 headed global 对话面；来源会话选段一律不携带（不改变范围）。
-      setPendingSelection({ ...pending, target: 'global' })
+      onSetPendingSelection({ ...pending, target: 'global' })
       closeReader()
     },
-    [closeReader],
+    [closeReader, onSetPendingSelection],
   )
 
   /** 阅读器「只问此来源」：复用既有 single-pin；成功后关闭 overlay 露出 chip。 */
@@ -577,18 +699,18 @@ export function TargetShell() {
         quote: quote.length > 40 ? `${quote.slice(0, 40)}…` : quote,
       }),
       title: quote,
-      onRemove: () => setPendingSelection(null),
+      onRemove: () => onClearPendingSelection(),
     }
-  }, [pendingSelection, t])
+  }, [onClearPendingSelection, pendingSelection, t])
 
   // 发送成功才清 pending 选段（失败保留可重试）；范围/检索载荷不变。
   const handleComposerSend = useCallback(
     async (text: string): Promise<boolean> => {
       const sent = await conversationSend(text)
-      if (sent) setPendingSelection(null)
+      if (sent) onClearPendingSelection()
       return sent
     },
-    [conversationSend],
+    [conversationSend, onClearPendingSelection],
   )
   const conversationView = { ...conversation, send: handleComposerSend }
 
@@ -691,6 +813,7 @@ export function TargetShell() {
               onOpenHistory={handleOpenHistory}
               onNewConversation={() => void conversation.newSession()}
               onOpenCitation={openCitation}
+              onViewNote={handleViewNote}
               rightPane={rightPane}
               onOpenRightPane={openPane}
               onOpenSearch={() => setCenterView('evidence-search')}
@@ -792,6 +915,25 @@ export function TargetShell() {
 
       {/* W2 #1077（UI 规格 v1 §5.7/BEH-05）：宽屏阅读器 overlay。
           覆盖整个工作台（fixed inset-0），不新增路由、不卸载 shell。 */}
+      {notesWorkspace.editorRequest !== null && (
+        <TargetEditorFocus
+          state={notesWorkspace.editor.state}
+          actions={notesWorkspace.editor.actions}
+          capabilities={notesWorkspace.capabilities.capabilities}
+          isAdminReadonly={isAdminReadonly}
+          viewportWidth={viewportWidth}
+          onRequestClose={() => void notesWorkspace.requestCloseEditor()}
+          onRetryCapabilities={notesWorkspace.refreshCapabilities}
+          onRetryOpen={
+            notesWorkspace.retryOpenNoteId !== null ? notesWorkspace.retryOpenEditor : undefined
+          }
+          onRequestDelete={
+            notesWorkspace.editorDeleteAvailable ? notesWorkspace.onRequestDeleteEditor : undefined
+          }
+          onCopySaved={notesWorkspace.onEditorCopySaved}
+        />
+      )}
+
       {readerRequest !== null && (
         <TargetReaderFocus
           request={readerRequest}

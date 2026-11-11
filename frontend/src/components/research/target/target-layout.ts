@@ -174,3 +174,79 @@ export function resolveTargetReaderLayout(
     bodyColumnWidth: Math.min(bodyMaxWidth, Math.max(available, 0)),
   }
 }
+
+// ---------------------------------------------------------------------------
+// W3 #1191：目标壳宽屏 Markdown 编辑器（focus view）尺寸/断点（UI 规格 v1
+// §3.2/§5.8 UI-19；实施计划 §2.1.3）。
+//
+// 与 W2 阅读器同一模式：判定全部是纯函数（组件传入真实 viewport 宽度），
+// 保证 1440 正文 970 + aside 330 = 1300 居中；1024–1279 aside 默认折叠、
+// 展开时正文让宽；任何视口都不产生整页横向滚动（正文列 + aside ≤ 视口宽度）。
+// ---------------------------------------------------------------------------
+
+/** UI-19 正文列最大宽度（§3.2；居中）。 */
+export const TARGET_EDITOR_BODY_MAX_WIDTH = 970
+/** UI-19 aside 固定宽度（§3.2）。 */
+export const TARGET_EDITOR_ASIDE_WIDTH = 330
+/** UI-19 返回条高度（沿用 UI-18 阅读器 65px 先例；UI-19 未单独规定）。 */
+export const TARGET_EDITOR_BACK_BAR_HEIGHT = 65
+/** UI-19 aside 折叠断点：<1280 默认折叠为可展开开关。 */
+export const TARGET_EDITOR_ASIDE_BREAKPOINT = 1280
+
+export interface TargetEditorLayoutInput {
+  /** 实际视口宽度（CSS px）；非法/缺失按 1024 处理。 */
+  viewportWidth: number
+  /** 用户是否展开 aside（仅 <1280 有意义；≥1280 恒显示）。 */
+  asideExpanded: boolean
+}
+
+export interface TargetEditorLayout {
+  /** <1280 → true（aside 可折叠，默认收起） */
+  asideCollapsible: boolean
+  /** aside 是否显示：≥1280 恒 true；<1280 由展开态决定 */
+  asideVisible: boolean
+  /** aside 宽度（固定 330） */
+  asideWidth: number
+  /** 正文列最大宽度（970） */
+  bodyMaxWidth: number
+  /**
+   * 正文列可用宽度 = min(970, 视口 − aside（若显示）)。
+   *
+   * 展开 aside 时正文**让宽**（不覆盖正文、不横向滚动）。
+   */
+  bodyColumnWidth: number
+}
+
+/** 视口宽度归一：非法/缺失（NaN/Infinity/≤0）按 1024 处理。 */
+function normalizeEditorViewport(viewportWidth: number): number {
+  if (!Number.isFinite(viewportWidth) || viewportWidth <= 0) {
+    return TARGET_MIN_VIEWPORT
+  }
+  return viewportWidth
+}
+
+/**
+ * UI-19 编辑器 overlay 布局推导。
+ *
+ * - `asideCollapsible`：视口 <1280 时 aside 默认折叠（可展开）；
+ * - `asideVisible`：≥1280 恒显示；<1280 只在展开时显示；
+ * - `bodyColumnWidth`：aside 可见时正文让出 330px，上限 970；
+ *   两者之和恒 ≤ 视口宽度（不产生整页横向滚动）。
+ */
+export function resolveTargetEditorLayout(
+  input: TargetEditorLayoutInput,
+): TargetEditorLayout {
+  const viewportWidth = normalizeEditorViewport(input.viewportWidth)
+  const asideCollapsible = viewportWidth < TARGET_EDITOR_ASIDE_BREAKPOINT
+  const asideVisible = !asideCollapsible || input.asideExpanded === true
+  const asideWidth = TARGET_EDITOR_ASIDE_WIDTH
+  const bodyMaxWidth = TARGET_EDITOR_BODY_MAX_WIDTH
+  const available = viewportWidth - (asideVisible ? asideWidth : 0)
+  return {
+    asideCollapsible,
+    asideVisible,
+    asideWidth,
+    bodyMaxWidth,
+    bodyColumnWidth: Math.min(bodyMaxWidth, Math.max(available, 0)),
+  }
+}
