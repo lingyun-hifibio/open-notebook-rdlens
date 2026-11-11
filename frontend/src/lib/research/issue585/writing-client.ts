@@ -28,6 +28,8 @@ import {
   type ResearchSessionAcceptReceipt,
 } from '../api'
 import {
+  SESSION_CONTRACT_HEADER,
+  SESSION_CONTRACT_VERSION,
   parseEditorResponse,
   parseSessionRef,
   type ResearchSessionRef,
@@ -584,6 +586,11 @@ export function parseWritingContextProjection(raw: unknown): WritingContextResul
 /**
  * `GET /v1/research/projects/{project_id}/writing-contexts/{generation_id}`。
  *
+ * 该端点属于新增会话路由，服务端 `_session_new_route_gate` 要求
+ * `X-Research-Session-Contract: research-session-v1`；缺头会得到 422
+ * `session_contract_unsupported`（#1190 / W3-G13）。本函数与同目录其它
+ * 会话/写作调用一样显式携带协议头，不依赖调用点补头。
+ *
  * 验证所属项目/调用者权限由服务端负责；受限时只返回受限状态。
  */
 export async function getWritingContext(
@@ -596,6 +603,7 @@ export async function getWritingContext(
   try {
     const response = await apiClient.get<unknown>(
       buildResearchUrl(projectId, `/writing-contexts/${encodeURIComponent(generationId)}`),
+      { headers: { [SESSION_CONTRACT_HEADER]: SESSION_CONTRACT_VERSION } },
     )
     return parseWritingContextProjection(response.data)
   } catch (error) {

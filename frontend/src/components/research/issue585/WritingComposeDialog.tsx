@@ -146,6 +146,20 @@ export function WritingComposeDialog({
   })
   const editorRef = useRef(editor)
   editorRef.current = editor
+  // #1190（W3-G14）：摘入定位是异步网络请求；用户可能在定位返回前关闭写作对话框。
+  // 生产形态（NoteWorkspaceProvider）是**条件挂载**：关闭 = 卸载，`open` 恒为 true，
+  // 故必须用 mountedRef（effect cleanup）判断卸载，而非只依赖 openRef（受控形态）。
+  // insertAttemptRef 给每次交接绑定请求代次，关闭/新尝试会让旧代理请求失效（审查 R2-2）。
+  const openRef = useRef(open)
+  openRef.current = open
+  const mountedRef = useRef(true)
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+  const insertAttemptRef = useRef(0)
 
   // 关闭时重置编排态（不丢弃缓存中的未发送选择；下次打开会重新检查）。
   // 只在 open true→false 的边沿执行，避免每次 render 都 setState 形成循环。
@@ -198,6 +212,8 @@ export function WritingComposeDialog({
    * 组件在关闭时由父级卸载，因此必须在 onClose 之前同步执行。
    */
   const handleClose = useCallback((): void => {
+    // 关闭即作废在途的摘入定位，避免其返回后再交接/二次 onClose。
+    insertAttemptRef.current += 1
     compose.reset()
     onClose()
   }, [compose, onClose])
@@ -213,13 +229,24 @@ export function WritingComposeDialog({
   const handleInsertExcerpt = useCallback((): void => {
     const answer = compose.submission.answer
     const target = compose.targetRef
-    if (answer.length === 0 || target === null) return
+    if (target === null) {
+      // #1190（W3-G14）：不静默 no-op；目标会话缺失时给出**对应原因**（不套用
+      // “无法定位结果消息”的文案——结果本身已定位到，缺的是可写入的目标会话）。
+      setInsertError(t('research.notes.writing.composeErrors.sessionRequired'))
+      return
+    }
+    if (answer.length === 0) {
+      setInsertError(t('research.notes.writing.result.insertUnavailable'))
+      return
+    }
     if (noteWorkspace === null || !noteWorkspace.insertionAvailable) {
       setInsertError(t('research.notes.writing.result.insertUnavailable'))
       return
     }
     setInsertBusy(true)
     setInsertError(null)
+    const attempt = insertAttemptRef.current + 1
+    insertAttemptRef.current = attempt
     void (async () => {
       let messageId = resultMessageId
       if (messageId === null) {
@@ -231,6 +258,8 @@ export function WritingComposeDialog({
           generationId,
           answer,
         )
+        // 用户在定位返回前关闭（生产=卸载）或已发起新尝试：不再写状态/交接。
+        if (!mountedRef.current || attempt !== insertAttemptRef.current) return
         if (!located.ok) {
           setInsertBusy(false)
           setInsertError(t('research.notes.writing.result.insertUnavailable'))
@@ -240,6 +269,15 @@ export function WritingComposeDialog({
         setResultMessageId(messageId)
       }
       setInsertBusy(false)
+      // 用户在定位请求返回前关闭了写作对话框：不再交接（否则会在已关闭/已卸载的
+      // 对话上二次 onClose，并把摘入确认层弹在一个用户已离开的流程上）。
+      if (!mountedRef.current || !openRef.current || attempt !== insertAttemptRef.current) return
+      // #1190（W3-G14）：摘入确认层必须让用户看得见。写作对话框与确认层同为
+      // z-50，而 Radix Dialog 的 portal 在 DOM 中位于应用根之后，确认层会被
+      // 写作对话框盖住（点击「摘入笔记」于是表现为静默 no-op，确认层既不可
+      // 见也不可点）。这里按单模态交接：先关闭写作对话框（未发送选择/指令
+      // 照常落缓存），再打开 #1047 的摘入确认层。
+      handleClose()
       noteWorkspace.openExcerptInsert({
         sourceKind: 'chat_message',
         sourceId: messageId,
@@ -257,6 +295,7 @@ export function WritingComposeDialog({
     resultMessageId,
     workspace.projectId,
     note?.title,
+    handleClose,
     t,
   ])
 
