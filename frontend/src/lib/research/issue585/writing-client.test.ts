@@ -246,6 +246,11 @@ describe('getWritingContext / 读投影解析', () => {
     expect(
       clientMocks.get.mock.calls[0][0],
     ).toBe('/v1/research/projects/p_demo/writing-contexts/gen_1')
+    // #1190（W3-G13）：writing-contexts 属于新增会话路由，必须带 session 契约头；
+    // 缺头服务端返回 422 session_contract_unsupported（UI 回看面板不可用）。
+    expect(clientMocks.get.mock.calls[0][1]).toEqual({
+      headers: { 'X-Research-Session-Contract': 'research-session-v1' },
+    })
   })
 
   it('受限投影只能带 null 正文；带正文 → invalid_response', () => {

@@ -366,7 +366,8 @@ describe('发送：composer ACK 后 11 键请求', () => {
 
 describe('结果与实际输入回看 + 手工摘入', () => {
   it('SSE done 后展示 writing_checks 缺失提示，并复用摘入确认层', async () => {
-    renderDialog()
+    const onClose = vi.fn()
+    renderDialog({ onClose })
     fireEvent.change(screen.getByTestId('writing-query'), { target: { value: '改写' } })
     await act(async () => {
       fireEvent.click(screen.getByTestId('writing-send'))
@@ -417,6 +418,43 @@ describe('结果与实际输入回看 + 手工摘入', () => {
         text: '改写结果',
       }),
     )
+    // #1190（W3-G14）：确认层与写作对话框同为 z-50，写作对话框的 portal 在 DOM 之后，
+    // 不先关闭写作对话框，确认层会被盖住（用户看到静默 no-op）。
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('目标会话缺失时显式报错，不静默 no-op（#1190 / W3-G14）', async () => {
+    renderDialog()
+    fireEvent.change(screen.getByTestId('writing-query'), { target: { value: '改写' } })
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('writing-send'))
+      await Promise.resolve()
+    })
+    await waitFor(() => expect(clientMocks.submitWritingSubmission).toHaveBeenCalledTimes(1))
+    const input = lastSubmitInput()
+    act(() => {
+      input.onAcceptReceipt?.({
+        generationId: 'gen_1',
+        idempotencyKey: 'w1_key',
+        editorRevision: 77,
+        sessionRef: CURRENT_REF,
+      })
+      input.onEvent({ event_id: 1, type: 'answer', delta: '改写结果' })
+      input.onEvent({ event_id: 2, type: 'done', completion_status: 'completed' })
+    })
+    await waitFor(() =>
+      expect(screen.getByTestId('writing-result-answer')).toHaveTextContent('改写结果'),
+    )
+    // 结果产生后把目标会话切到尚未创建的新会话 → targetRef=null（原实现静默 return）。
+    fireEvent.click(screen.getByTestId('writing-session-new'))
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('writing-insert-excerpt'))
+      await Promise.resolve()
+    })
+    expect(screen.getByTestId('writing-insert-error')).toHaveTextContent(
+      'research.notes.writing.result.insertUnavailable',
+    )
+    expect(noteWorkspaceMock.value?.openExcerptInsert).not.toHaveBeenCalled()
   })
 
   it('结果未知（网络错误）→ 用原请求身份重试，不重新保存 composer', async () => {

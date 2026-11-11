@@ -213,7 +213,12 @@ export function WritingComposeDialog({
   const handleInsertExcerpt = useCallback((): void => {
     const answer = compose.submission.answer
     const target = compose.targetRef
-    if (answer.length === 0 || target === null) return
+    if (answer.length === 0 || target === null) {
+      // #1190（W3-G14）：不静默 no-op。结果或目标会话缺失时给出可读原因，
+      // 而不是直接 return（原实现点击后无对话框/无请求/无错误提示）。
+      setInsertError(t('research.notes.writing.result.insertUnavailable'))
+      return
+    }
     if (noteWorkspace === null || !noteWorkspace.insertionAvailable) {
       setInsertError(t('research.notes.writing.result.insertUnavailable'))
       return
@@ -240,6 +245,12 @@ export function WritingComposeDialog({
         setResultMessageId(messageId)
       }
       setInsertBusy(false)
+      // #1190（W3-G14）：摘入确认层必须让用户看得见。写作对话框与确认层同为
+      // z-50，而 Radix Dialog 的 portal 在 DOM 中位于应用根之后，确认层会被
+      // 写作对话框盖住（点击「摘入笔记」于是表现为静默 no-op，确认层既不可
+      // 见也不可点）。这里按单模态交接：先关闭写作对话框（未发送选择/指令
+      // 照常落缓存），再打开 #1047 的摘入确认层。
+      handleClose()
       noteWorkspace.openExcerptInsert({
         sourceKind: 'chat_message',
         sourceId: messageId,
@@ -257,6 +268,7 @@ export function WritingComposeDialog({
     resultMessageId,
     workspace.projectId,
     note?.title,
+    handleClose,
     t,
   ])
 
