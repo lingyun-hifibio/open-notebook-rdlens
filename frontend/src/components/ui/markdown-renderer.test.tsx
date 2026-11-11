@@ -31,4 +31,30 @@ describe('MarkdownRenderer', () => {
     expect(container.querySelector('code')?.textContent).toBe('npm ci')
     expect(container.querySelectorAll('span[class*="token"]').length).toBe(0)
   })
+
+  // #1192（W3-G12）：内联 component 映射若每次 render 都新建函数，React 会把同名
+  // 元素当成新类型而卸载重建 —— 浏览器随即折叠已有的文本选区，来源选段的
+  // 「讨论选段/摘入文档」入口随之消失。此用例锁定「重渲染不替换正文 DOM」。
+  it('keeps markdown DOM nodes and live text selections across re-renders', () => {
+    const { container, rerender } = render(<MarkdownRenderer>{'alpha beta gamma'}</MarkdownRenderer>)
+    const paragraph = container.querySelector('p')
+    const textNode = paragraph?.firstChild ?? null
+    expect(paragraph).not.toBeNull()
+    expect(textNode).not.toBeNull()
+
+    const range = document.createRange()
+    range.setStart(textNode as Text, 0)
+    range.setEnd(textNode as Text, 'alpha'.length)
+    const selection = window.getSelection()
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+    expect(selection?.toString()).toBe('alpha')
+
+    rerender(<MarkdownRenderer>{'alpha beta gamma'}</MarkdownRenderer>)
+
+    expect(container.querySelector('p')).toBe(paragraph)
+    expect(container.querySelector('p')?.firstChild).toBe(textNode)
+    expect(window.getSelection()?.toString()).toBe('alpha')
+    window.getSelection()?.removeAllRanges()
+  })
 })
