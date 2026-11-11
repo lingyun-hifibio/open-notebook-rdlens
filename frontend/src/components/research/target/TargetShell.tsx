@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useMediaQuery } from '@/lib/hooks/use-media-query'
-import { useResearchD1e } from '@/lib/hooks/use-research-c05'
+import { useResearchC05, useResearchD1e } from '@/lib/hooks/use-research-c05'
 import { useSourceMedia } from '@/lib/hooks/use-source-media'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
 import { useResearchHostOptional } from '@/lib/embedded/host-context'
@@ -33,6 +33,7 @@ import { TargetTopBar } from './TargetTopBar'
 import { TargetSourcesPane } from './TargetSourcesPane'
 import { TargetConversation } from './TargetConversation'
 import { TargetRightPane } from './TargetRightPane'
+import { projectCompareDeclaredSelection } from '../ComparePanel'
 import { TargetSecondaryView } from './TargetSecondaryView'
 import { TargetTopicOverview } from './TargetTopicOverview'
 import { TargetReaderFocus } from './TargetReaderFocus'
@@ -192,6 +193,10 @@ export function TargetShell() {
 
   // W2 #1077（§5.7）：D1-E 阅读能力 fail-closed（只有严格 ready 才启用入口）。
   const d1e = useResearchD1e(projectId)
+  // #1017（D1-H）：Compare 的 C05 声明范围能力位（与 ResearchWorkspace 同一
+  // 判定来源：`capabilities.c05.entries.compare.execution_ready`）。
+  const c05 = useResearchC05(projectId)
+  const c05CompareReady = c05.dispatchReady('compare')
   const readerReady = d1e.ready
   const media = useSourceMedia({
     projectId,
@@ -736,7 +741,37 @@ export function TargetShell() {
                 isCreating: jobsController.isCreating,
                 error: jobsController.error,
                 errorCode: jobsController.errorCode ?? null,
+                c05Ready: c05CompareReady,
                 onCreate: async (documentIds, groupSize) => {
+                  // #1017（D1-H）：与 ResearchWorkspace 同一判定/装配口径——
+                  // 能力 true 时父层按 scope provider 快照装配 C05 声明范围；
+                  // `all` 不再被 legacy 空选守卫阻断；`selected` 直接发送
+                  // provider source ids；能力 false 时既有 legacy 路径不变。
+                  if (c05CompareReady) {
+                    const snapshot = scopeApi.getSnapshot()
+                    if (snapshot.mode === 'single') return false
+                    const declared = projectCompareDeclaredSelection(
+                      snapshot.mode,
+                      snapshot.sourceIds,
+                      sources,
+                    )
+                    const scopeLabel = formatScopeLabel(snapshot, t)
+                    const sent = await runGuarded(
+                      (modelId) => {
+                        jobsController.createCompareDeclaredScope(
+                          {
+                            mode: snapshot.mode === 'all' ? 'all' : 'selected',
+                            sourceIds: declared.sourceIds,
+                          },
+                          modelId,
+                          groupSize,
+                        )
+                        return true
+                      },
+                      { scopeLabel },
+                    )
+                    return sent === true
+                  }
                   const scopeLabel = formatScopeLabel(
                     {
                       mode: 'selected',

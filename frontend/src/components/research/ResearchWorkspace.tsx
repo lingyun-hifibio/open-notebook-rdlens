@@ -39,7 +39,7 @@ import {
 // 回访/生成 Dialog（独立兄弟节点；不触碰 ChatPanel 内部与主区动作枚举）。
 import { TopicOverviewEntry } from './TopicOverviewEntry'
 import { TopicOverviewDialog } from './TopicOverviewDialog'
-import { ComparePanel } from './ComparePanel'
+import { ComparePanel, projectCompareDeclaredSelection } from './ComparePanel'
 import { MindMapPlaceholder } from './MindMapPlaceholder'
 import { TransformationsPanel } from './TransformationsPanel'
 import {
@@ -319,6 +319,7 @@ export function ResearchWorkspace({
     error: jobsError,
     errorCode: jobsErrorCode,
     createCompare: createCompareJob,
+    createCompareDeclaredScope,
     registerCoverageJob,
     retryCoverage,
     refreshActivity,
@@ -525,6 +526,41 @@ export function ResearchWorkspace({
       documentIds: readonly string[],
       groupSize?: number,
     ): Promise<boolean> => {
+      // #1017（D1-H）：能力位是唯一判定——就绪时由**父层**按 scope provider
+      // 快照装配 C05 声明范围（`source_scope` 三键 + 顶层 `note_ids: []`）；
+      // `all` 不再被 legacy 空选守卫阻断，`selected` 直接发送 provider
+      // source ids（仅已加载且可判文档身份的行按 document_id 去重），
+      // 不再由已加载 `sources` 数组映射 `document_ids`。
+      // 能力 false → 既有 legacy 派发逐字节不变；任何情况下都不把 C05
+      // 请求静默降级为 legacy（`client_must_not_auto_downgrade`）。
+      if (c05.dispatchReady('compare')) {
+        const snapshot = scopeApi.getSnapshot()
+        // Compare 不提供 single（面板显式阻断；服务端同样以
+        // `compare_scope_mode_unsupported` 拒绝，不静默改写成 all/selected）。
+        if (snapshot.mode === 'single') return false
+        const declared = projectCompareDeclaredSelection(
+          snapshot.mode,
+          snapshot.sourceIds,
+          sources,
+        )
+        const scopeLabel = formatScopeLabel(snapshot, t)
+        const sent = await runGuarded(
+          (modelId) => {
+            createCompareDeclaredScope(
+              {
+                mode: snapshot.mode === 'all' ? 'all' : 'selected',
+                sourceIds: declared.sourceIds,
+              },
+              modelId,
+              groupSize,
+            )
+            return true
+          },
+          { scopeLabel },
+        )
+        return sent === true
+      }
+      // ── legacy（capability false）：既有路径与提示文案不变 ──
       const scopeLabel = formatScopeLabel(
         {
           mode: 'selected',
@@ -543,7 +579,15 @@ export function ResearchWorkspace({
       )
       return sent === true
     },
-    [createCompareJob, runGuarded, t],
+    [
+      c05,
+      createCompareDeclaredScope,
+      createCompareJob,
+      runGuarded,
+      scopeApi,
+      sources,
+      t,
+    ],
   )
 
   // COV-09：all_selected 受理后登记进 Jobs 控制器（localStorage + 轮询）
@@ -987,6 +1031,7 @@ export function ResearchWorkspace({
             onCreate={createCompare}
             modelBlocked={!canExecute}
             blockedHint={blockedHint}
+            c05Ready={c05.dispatchReady('compare')}
           />
         )
       case 'mind-map':

@@ -44,8 +44,13 @@ import {
 } from '@/lib/research/api'
 import { canCancelJob, isJobTerminal } from '@/lib/research/jobs'
 import { checkCompareSelection, COMPARE_HARD_MAX } from '@/lib/research/compare'
+import { buildSourceScope } from '@/lib/research/c05-request'
 import { extractResearchErrorCode } from '@/lib/research/errors'
-import type { ResearchJob } from '@/lib/research/types'
+import type {
+  ResearchCompareCreateRequest,
+  ResearchCompareSourceScope,
+  ResearchJob,
+} from '@/lib/research/types'
 
 export const POLL_INTERVAL_MS = 3000
 
@@ -137,6 +142,23 @@ export interface UseResearchJobsResult {
    */
   createCompare: (
     documentIds: readonly string[],
+    modelId: string,
+    groupSize?: number,
+  ) => ResearchJob | null
+  /**
+   * #1017（D1-H）：C05 声明范围派发——仅当
+   * `capabilities.c05.entries.compare.execution_ready === true` 时由父层
+   * 调用；payload 为 `{source_scope:{mode,source_ids,single_source_id},
+   * note_ids:[]}` + `c05-v1` 头。
+   *
+   * 与 legacy `createCompare` 的唯一纪律差别：`all` 没有客户端空选守卫
+   * （文档集合由服务端在受理时点解析）；`selected` 的 `sourceIds` 由
+   * scope provider 快照（已加载范围内按 `document_id` 去重）提供，仍按
+   * 文档硬上限做客户端预检。能力 false 时调用方必须走 `createCompare`，
+   * **不得**把 C05 请求降级成 legacy。
+   */
+  createCompareDeclaredScope: (
+    declared: { mode: 'all' | 'selected'; sourceIds: readonly string[] },
     modelId: string,
     groupSize?: number,
   ) => ResearchJob | null
@@ -489,6 +511,27 @@ export function useResearchJobs({ projectId }: { projectId: string }): UseResear
     return () => window.removeEventListener('focus', onFocus)
   }, [projectId, refreshPage1])
 
+  /** #1017：C05 与 legacy 共用的受理后登记/回源/刷新链（调用点决定发送形状）。 */
+  const dispatchCompareCreate = useCallback((
+    send: () => Promise<{ job_id: string }>,
+  ) => {
+    setIsCreating(true)
+    send()
+      .then(({ job_id }) => {
+        knownIdsRef.current.add(job_id)
+        writeStoredJobId(projectId, job_id)
+        void getJobSafe(job_id)
+        void refreshPage1()
+      })
+      .catch((err: Error) => {
+        setError(err.message || '')
+        setErrorCode(extractResearchErrorCode(err))
+      })
+      .finally(() => {
+        setIsCreating(false)
+      })
+  }, [getJobSafe, projectId, refreshPage1])
+
   const createCompareJob = useCallback((
     documentIds: readonly string[],
     modelId: string,
@@ -513,29 +556,68 @@ export function useResearchJobs({ projectId }: { projectId: string }): UseResear
       setErrorCode('no-model')
       return null
     }
-    setIsCreating(true)
-    createCompare(projectId, {
+    dispatchCompareCreate(() => createCompare(projectId, {
       job_type: 'deep_compare', // 契约 §8.3 必填（RDLens JobCreateRequest）
       document_ids: [...documentIds],
       group_size: groupSize,
       mode: 'deep_compare',
       model_id: modelId,
-    })
-      .then(({ job_id }) => {
-        knownIdsRef.current.add(job_id)
-        writeStoredJobId(projectId, job_id)
-        void getJobSafe(job_id)
-        void refreshPage1()
-      })
-      .catch((err: Error) => {
-        setError(err.message || '')
-        setErrorCode(extractResearchErrorCode(err))
-      })
-      .finally(() => {
-        setIsCreating(false)
-      })
+    }))
     return null
-  }, [getJobSafe, projectId, refreshPage1])
+  }, [dispatchCompareCreate, projectId])
+
+  /**
+   * #1017（D1-H）：C05 声明范围分支。`source_scope` 由唯一构造函数
+   * `buildSourceScope` 生成（三键、空集合 `[]`），`note_ids` 置顶层且恒
+   * `[]`；服务端在受理时点解析 `all`/`selected` 的精确版本集合。
+   */
+  const createCompareDeclaredScope = useCallback((
+    declared: { mode: 'all' | 'selected'; sourceIds: readonly string[] },
+    modelId: string,
+    groupSize?: number,
+  ): ResearchJob | null => {
+    setError(null)
+    setErrorCode(null)
+    // `all`：没有客户端文档集合 → 跳过 legacy 空选守卫（不是静默放宽：
+    // 服务端解析空/超限时以稳定码拒绝）。`selected`：仍做文档上限预检。
+    if (declared.mode === 'selected') {
+      const check = checkCompareSelection(declared.sourceIds)
+      if (!check.ok) {
+        if (check.reason === 'over_hard') {
+          setError(`Cannot compare more than ${COMPARE_HARD_MAX} documents (selected ${check.count})`)
+          setErrorCode('compare-over-hard')
+        } else {
+          setError('Select at least one source document to compare')
+          setErrorCode('compare-empty')
+        }
+        return null
+      }
+    }
+    if (!modelId) {
+      setError('Select a research model before starting a comparison')
+      setErrorCode('no-model')
+      return null
+    }
+    // `buildSourceScope` 是冻结形状的唯一构造函数（三键、空集合 `[]`）；
+    // `declared.mode` 的类型已排除 `single`，故此处只可能是 all/selected
+    // （类型断言仅收窄 mode 联合，不改变 payload 形状）。
+    const sourceScope = buildSourceScope({
+      mode: declared.mode,
+      sourceIds: [...declared.sourceIds],
+      noteIds: [],
+      singleSourceId: null,
+    }) as ResearchCompareSourceScope
+    const request: ResearchCompareCreateRequest = {
+      job_type: 'deep_compare',
+      source_scope: sourceScope,
+      note_ids: [],
+      group_size: groupSize,
+      mode: 'deep_compare',
+      model_id: modelId,
+    }
+    dispatchCompareCreate(() => createCompare(projectId, request, { contract: 'c05-v1' }))
+    return null
+  }, [dispatchCompareCreate, projectId])
 
   const cancel = useCallback((jobId: string) => {
     setError(null)
@@ -616,6 +698,7 @@ export function useResearchJobs({ projectId }: { projectId: string }): UseResear
     refreshActivity,
     ensureCoverageDetails,
     createCompare: createCompareJob,
+    createCompareDeclaredScope,
     cancel,
     registerCoverageJob,
     registerJob,

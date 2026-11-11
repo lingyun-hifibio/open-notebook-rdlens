@@ -115,6 +115,17 @@ export const RESEARCH_ERROR_USER_COPY: Record<string, string> = {
   source_access_restricted: 'research.errors.sourceAccessRestricted',
   source_ref_mismatch: 'research.errors.sourceRefMismatch',
   session_store_unavailable: 'research.errors.sessionStoreUnavailable',
+
+  // ── Issue #1017（D1-H）：Compare 声明范围/回访稳定码 ──
+  // 4 个接受前拒绝码（host §2.2/§2.11；`single`/空/超限/同文档多版本）由
+  // 提交路径到达用户面，必须给主文案而不是 generic 兜底（服务端 422 不得
+  // 静默合并/丢弃）；2 个 report 410 码由回访视图映射为受限占位。
+  compare_scope_mode_unsupported: 'research.errors.compareScopeModeUnsupported',
+  compare_scope_empty: 'research.errors.compareScopeEmpty',
+  compare_scope_exceeds_limit: 'research.errors.compareScopeExceedsLimit',
+  compare_duplicate_document_versions: 'research.errors.compareDuplicateDocumentVersions',
+  compare_report_sources_revoked: 'research.errors.compareReportSourcesRevoked',
+  compare_report_sources_unverifiable: 'research.errors.compareReportSourcesUnverifiable',
 }
 
 /** 未知/内部码统一兜底（raw 只作次级诊断，不作主消息——AC8）。 */

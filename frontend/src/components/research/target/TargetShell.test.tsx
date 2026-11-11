@@ -111,6 +111,9 @@ vi.mock('@/lib/hooks/use-media-query', () => ({
 // - TargetReaderFocus：捕获 props（request/return/answer/选段）并用最小假控件
 //   触发 shell 回调（真实 reader 形态由 reader-ui 自己的测试覆盖）。
 const d1eFixture = vi.hoisted(() => ({ ready: false }))
+// #1017（D1-H）：C05 compare 能力位替身。默认 false = legacy 路径（既有用例
+// 语义不变）；需要 target 壳 C05 父层装配的用例显式置 true。
+const c05CompareFixture = vi.hoisted(() => ({ compareReady: false }))
 
 vi.mock('@/lib/hooks/use-research-c05', () => ({
   useResearchD1e: () => ({
@@ -121,7 +124,7 @@ vi.mock('@/lib/hooks/use-research-c05', () => ({
   useResearchC05: () => ({
     caps: null,
     loading: false,
-    dispatchReady: () => false,
+    dispatchReady: (entry: string) => entry === 'compare' && c05CompareFixture.compareReady,
     unavailableReason: () => '',
     supportsMode: () => false,
     previewSupported: false,
@@ -357,6 +360,8 @@ const jobsFixture = vi.hoisted(() => ({
   error: null as string | null,
   errorCode: null as string | null,
   createCompare: vi.fn(),
+  // #1017：target 壳的 C05 父层装配入口（既有 createCompare 保持 legacy 语义）
+  createCompareDeclaredScope: vi.fn(),
 }))
 
 vi.mock('@/components/research/ResearchJobsProvider', () => ({
@@ -933,6 +938,40 @@ describe('composer（UI-10，§5.5）', () => {
     expect(screen.getByTestId('rdlens-target-deep-research-reason')).toHaveTextContent(
       'research.target.secondary.deepResearchUnavailable',
     )
+  })
+
+  it('#1017 capability true + all：target 壳按 C05 声明范围派发（不再被 legacy 空选阻断）', async () => {
+    c05CompareFixture.compareReady = true
+    jobsFixture.createCompareDeclaredScope.mockClear()
+    jobsFixture.createCompare.mockClear()
+    renderShell()
+    fireEvent.click(screen.getByTestId('rdlens-target-secondary-compare'))
+    const createButton = await screen.findByTestId('compare-create')
+    await waitFor(() => expect(createButton).not.toBeDisabled())
+    expect(screen.queryByTestId('compare-entire-project')).toBeNull()
+    fireEvent.click(createButton)
+
+    await waitFor(() => expect(jobsFixture.createCompareDeclaredScope).toHaveBeenCalledTimes(1))
+    // 父层按 scope provider 快照装配：all → 空 source 集合，模型沿用 confirmed 快照
+    expect(jobsFixture.createCompareDeclaredScope).toHaveBeenCalledWith(
+      { mode: 'all', sourceIds: [] },
+      'model_1',
+      undefined,
+    )
+    expect(jobsFixture.createCompare).not.toHaveBeenCalled()
+    c05CompareFixture.compareReady = false
+  })
+
+  it('#1017 capability false + all：target 壳保持 legacy 阻断（不发 C05）', async () => {
+    c05CompareFixture.compareReady = false
+    jobsFixture.createCompareDeclaredScope.mockClear()
+    jobsFixture.createCompare.mockClear()
+    renderShell()
+    fireEvent.click(screen.getByTestId('rdlens-target-secondary-compare'))
+    expect(await screen.findByTestId('compare-entire-project')).toBeInTheDocument()
+    expect(screen.getByTestId('compare-create')).toBeDisabled()
+    expect(jobsFixture.createCompareDeclaredScope).not.toHaveBeenCalled()
+    expect(jobsFixture.createCompare).not.toHaveBeenCalled()
   })
 
   it('证据搜索打开既有面板作为中央次级视图并可返回对话', async () => {

@@ -38,6 +38,8 @@ export function TargetSecondaryView({
     onCreate: (documentIds: string[], groupSize?: number) => Promise<boolean>
     modelBlocked: boolean
     blockedHint: string | null
+    /** #1017：`capabilities.c05.entries.compare.execution_ready === true` */
+    c05Ready: boolean
   }
   onCitationJump: (sourceId: string, pageIdx: number | null) => void
 }) {
@@ -111,6 +113,7 @@ export function TargetSecondaryView({
             onCreate={compare.onCreate}
             modelBlocked={compare.modelBlocked}
             blockedHint={compare.blockedHint}
+            c05Ready={compare.c05Ready}
           />
           </div>
         )}

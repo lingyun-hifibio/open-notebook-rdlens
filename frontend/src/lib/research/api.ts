@@ -963,16 +963,19 @@ export async function createTopicOverview(
 export async function createCompare(
   projectId: string,
   request: ResearchCompareCreateRequest,
-  options: { idempotencyKey?: string } = {},
+  options: { idempotencyKey?: string; contract?: 'v1' | 'c05-v1' } = {},
 ): Promise<ResearchCompareCreateResponse> {
-  // #238：v1 契约（Phase 6 锁死：无头/无幂等键 → 426/422）
+  // #238：v1 契约（Phase 6 锁死：无头/无幂等键 → 426/422）。
+  // #1017：C05 声明范围分支显式带 `X-Research-Contract: c05-v1`，**不混用**
+  // legacy `v1`（头/载荷不匹配会被服务端 422 `scope_header_payload_mismatch`；
+  // 也禁止把 C05 请求静默降级成 legacy）。默认值保持既有 `v1` 逐字节不变。
   const idempotencyKey = options.idempotencyKey ?? newIdempotencyKey()
   const response = await apiClient.post<ResearchCompareCreateResponse>(
     researchPath(projectId, 'compare', 'jobs'),
     request,
     {
       headers: {
-        'X-Research-Contract': 'v1',
+        'X-Research-Contract': options.contract ?? 'v1',
         'Idempotency-Key': idempotencyKey,
       },
     },
