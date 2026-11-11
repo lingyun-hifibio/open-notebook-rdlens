@@ -643,3 +643,90 @@ describe('NoteEditorView citations / excerpt entry (PR5/B3)', () => {
     expect(textarea.selectionEnd).toBe(3)
   })
 })
+
+/**
+ * Issue #1048 PR7：本地写作入口（全文/选区）。
+ *
+ * 只验证编辑器侧接线：能力门控（fail-closed）、入口捕获的 UTF-16 选区、
+ * 无选区时明确提示而不静默改选全文、未发送选择提示与打开前阻断原因。
+ */
+describe('NoteEditorView local writing entry (Issue #1048 PR7)', () => {
+  function writingWorkspace(overrides: Record<string, unknown> = {}) {
+    return {
+      openExcerptInsert: vi.fn(),
+      openCitation: vi.fn(),
+      insertionAvailable: true,
+      writingAvailable: true,
+      openWriting: vi.fn(async () => undefined),
+      writingBlockReason: null,
+      clearWritingBlock: vi.fn(),
+      writingDraftPending: false,
+      ...overrides,
+    }
+  }
+
+  it('writing_local 不可用时不渲染写作入口（默认关闭 fail-closed）', () => {
+    workspaceMock.current = writingWorkspace({ writingAvailable: false })
+    renderEditor()
+    expect(screen.queryByTestId('note-editor-write-full')).toBeNull()
+    expect(screen.queryByTestId('note-editor-write-selection')).toBeNull()
+  })
+
+  it('无 workspace provider 时不渲染写作入口', () => {
+    workspaceMock.current = null
+    renderEditor()
+    expect(screen.queryByTestId('note-editor-write-full')).toBeNull()
+  })
+
+  it('全文写作入口传递 full 选择', () => {
+    const workspace = writingWorkspace()
+    workspaceMock.current = workspace
+    renderEditor()
+    fireEvent.click(screen.getByTestId('note-editor-write-full'))
+    expect(workspace.openWriting).toHaveBeenCalledWith({ kind: 'full' })
+  })
+
+  it('选区写作入口捕获 textarea 的 UTF-16 半开区间', () => {
+    const workspace = writingWorkspace()
+    workspaceMock.current = workspace
+    renderEditor()
+    const textarea = screen.getByTestId('markdown-editor') as HTMLTextAreaElement
+    textarea.setSelectionRange(1, 3)
+    fireEvent.click(screen.getByTestId('note-editor-write-selection'))
+    expect(workspace.openWriting).toHaveBeenCalledWith({
+      kind: 'range',
+      start_utf16: 1,
+      end_utf16: 3,
+    })
+  })
+
+  it('无有效选区时明确提示，不静默改选全文', () => {
+    const workspace = writingWorkspace()
+    workspaceMock.current = workspace
+    renderEditor()
+    fireEvent.click(screen.getByTestId('note-editor-write-selection'))
+    expect(workspace.openWriting).not.toHaveBeenCalled()
+    expect(screen.getByTestId('note-editor-writing-selection-hint')).toHaveTextContent(
+      'research.notes.writing.entry.selectionEmpty',
+    )
+  })
+
+  it('存在未发送写作选择时显示恢复提示', () => {
+    workspaceMock.current = writingWorkspace({ writingDraftPending: true })
+    renderEditor()
+    expect(screen.getByTestId('note-editor-writing-draft-pending')).toHaveTextContent(
+      'research.notes.writing.entry.draftPending',
+    )
+  })
+
+  it('打开写作被阻断时显示原因并可关闭提示', () => {
+    const workspace = writingWorkspace({ writingBlockReason: 'conflict' })
+    workspaceMock.current = workspace
+    renderEditor()
+    const blocked = screen.getByTestId('note-editor-writing-blocked')
+    expect(blocked).toHaveTextContent('research.notes.writing.entry.blocked')
+    expect(blocked).toHaveTextContent('research.notes.leave.conflict')
+    fireEvent.click(screen.getByTestId('note-editor-writing-blocked-dismiss'))
+    expect(workspace.clearWritingBlock).toHaveBeenCalledTimes(1)
+  })
+})

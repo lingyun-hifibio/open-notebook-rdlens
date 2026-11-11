@@ -7,7 +7,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useNoteWorkspaceOptional } from './NoteWorkspaceProvider'
 import { NoteWorkspaceProvider } from './NoteWorkspaceProvider'
 import type { NoteCitationBinding } from '@/lib/research/issue585/types'
@@ -57,20 +57,32 @@ function makeHandle() {
     selectionRequest: null,
   }
   const restoreEditorPosition = vi.fn(() => true)
-  const actions = { restoreEditorPosition }
+  const actions: {
+    restoreEditorPosition: ReturnType<typeof vi.fn>
+    flushForInsert: () => Promise<
+      'conflict' | 'unsaved' | 'failed' | 'unknown' | 'restricted' | null
+    >
+  } = {
+    restoreEditorPosition,
+    flushForInsert: vi.fn(async () => null),
+  }
   return { state, actions, restoreEditorPosition }
 }
 
 vi.mock('@/lib/research/issue585/use-note-editor', () => ({
   useNoteEditor: () => ({ state: editorHandleMock.current.state, actions: editorHandleMock.current.actions }),
 }))
+const capabilitiesMock = vi.hoisted(() => ({ writingLocalAvailable: false }))
 vi.mock('@/lib/research/issue585/use-note-capabilities', () => ({
   useNoteCapabilities: () => ({
     capabilities: {
       noteEditor: { available: true, reason: null },
       noteEditorExisting: { available: true, reason: null },
       markdownExport: { available: false, reason: 'not_ready' },
-      writingLocal: { available: false, reason: 'not_ready' },
+      writingLocal: {
+        available: capabilitiesMock.writingLocalAvailable,
+        reason: capabilitiesMock.writingLocalAvailable ? null : 'not_ready',
+      },
       writingExternal: { available: false, reason: 'not_ready' },
     },
     isLoading: false,
@@ -101,6 +113,23 @@ vi.mock('./NoteCitationReader', () => ({
         {request.binding.binding_id}
       </button>
     ),
+}))
+
+vi.mock('./WritingComposeDialog', () => ({
+  WritingComposeDialog: ({
+    open,
+    note,
+    initialSelection,
+  }: {
+    open: boolean
+    note: { noteId: string; revision: number } | null
+    initialSelection: { kind: string }
+  }) =>
+    open && note !== null ? (
+      <div data-testid="writing-dialog-stub">
+        {note.noteId}:{note.revision}:{initialSelection.kind}
+      </div>
+    ) : null,
 }))
 
 vi.mock('./ExcerptInsertDialog', () => ({
@@ -177,6 +206,7 @@ function Probe() {
 
 beforeEach(() => {
   editorHandleMock.current = makeHandle()
+  capabilitiesMock.writingLocalAvailable = false
 })
 
 describe('NoteWorkspaceProvider', () => {
@@ -284,5 +314,128 @@ describe('NoteWorkspaceProvider', () => {
       </NoteWorkspaceProvider>,
     )
     expect(screen.queryByTestId('insert-stub')).not.toBeInTheDocument()
+  })
+})
+
+
+describe('写作入口 flush 编排（review round-2 HIGH-3）', () => {
+  function WritingProbe() {
+    const workspace = useNoteWorkspaceOptional()
+    return (
+      <div>
+        <button
+          type="button"
+          data-testid="open-writing"
+          onClick={() => void workspace?.openWriting({ kind: 'full' })}
+        >
+          open
+        </button>
+        <span data-testid="writing-block">{workspace?.writingBlockReason ?? ''}</span>
+      </div>
+    )
+  }
+
+  it('dirty Note 慢 flush：保存完成后首击仍会打开对话框（不静默）', async () => {
+    capabilitiesMock.writingLocalAvailable = true
+    const handle = makeHandle()
+    handle.state.saveStatus = 'dirty'
+    let resolveFlush: (
+      value: 'conflict' | 'unsaved' | 'failed' | 'unknown' | 'restricted' | null,
+    ) => void = () => {}
+    let flushCalls = 0
+    handle.actions.flushForInsert = () => {
+      flushCalls += 1
+      return new Promise<'conflict' | 'unsaved' | 'failed' | 'unknown' | 'restricted' | null>(
+        (resolve) => {
+          resolveFlush = resolve
+        },
+      )
+    }
+    editorHandleMock.current = handle
+    render(
+      <NoteWorkspaceProvider>
+        <WritingProbe />
+      </NoteWorkspaceProvider>,
+    )
+    fireEvent.click(screen.getByTestId('open-writing'))
+    // flush 在途：尚未打开，但也不是静默结束（处于等待）。
+    expect(screen.queryByTestId('writing-dialog-stub')).toBeNull()
+
+    // 保存完成（dirty → saved）后 flush 成功返回：effect 应重新评估并打开。
+    await act(async () => {
+      handle.state.saveStatus = 'saved'
+      resolveFlush(null)
+      await Promise.resolve()
+    })
+    await waitFor(() =>
+      expect(screen.getByTestId('writing-dialog-stub')).toHaveTextContent('n1:3:full'),
+    )
+    expect(flushCalls).toBe(1)
+  })
+
+  it('LOW-4：flush 在途双击 → 只 flush 一次、只打开一个对话框', async () => {
+    capabilitiesMock.writingLocalAvailable = true
+    const handle = makeHandle()
+    handle.state.saveStatus = 'dirty'
+    let resolveFlush: (
+      value: 'conflict' | 'unsaved' | 'failed' | 'unknown' | 'restricted' | null,
+    ) => void = () => {}
+    let flushCalls = 0
+    handle.actions.flushForInsert = () => {
+      flushCalls += 1
+      return new Promise<'conflict' | 'unsaved' | 'failed' | 'unknown' | 'restricted' | null>(
+        (resolve) => {
+          resolveFlush = resolve
+        },
+      )
+    }
+    editorHandleMock.current = handle
+    render(
+      <NoteWorkspaceProvider>
+        <WritingProbe />
+      </NoteWorkspaceProvider>,
+    )
+    fireEvent.click(screen.getByTestId('open-writing'))
+    fireEvent.click(screen.getByTestId('open-writing'))
+    expect(flushCalls).toBe(1)
+    await act(async () => {
+      handle.state.saveStatus = 'saved'
+      resolveFlush(null)
+      await Promise.resolve()
+    })
+    await waitFor(() =>
+      expect(screen.getAllByTestId('writing-dialog-stub')).toHaveLength(1),
+    )
+  })
+
+  it('flush 被阻断（conflict）→ 不打开对话框，显示可见 block reason', async () => {
+    capabilitiesMock.writingLocalAvailable = true
+    const handle = makeHandle()
+    handle.state.saveStatus = 'dirty'
+    handle.actions.flushForInsert = async () => 'conflict'
+    editorHandleMock.current = handle
+    render(
+      <NoteWorkspaceProvider>
+        <WritingProbe />
+      </NoteWorkspaceProvider>,
+    )
+    fireEvent.click(screen.getByTestId('open-writing'))
+    await waitFor(() => expect(screen.getByTestId('writing-block')).toHaveTextContent('conflict'))
+    expect(screen.queryByTestId('writing-dialog-stub')).toBeNull()
+  })
+
+  it('缺少 flush 能力 → unsaved block reason（不静默）', async () => {
+    capabilitiesMock.writingLocalAvailable = true
+    const handle = makeHandle()
+    const partialHandle = { state: handle.state, actions: { restoreEditorPosition: handle.restoreEditorPosition } }
+    editorHandleMock.current = partialHandle as unknown as typeof handle
+    render(
+      <NoteWorkspaceProvider>
+        <WritingProbe />
+      </NoteWorkspaceProvider>,
+    )
+    fireEvent.click(screen.getByTestId('open-writing'))
+    await waitFor(() => expect(screen.getByTestId('writing-block')).toHaveTextContent('unsaved'))
+    expect(screen.queryByTestId('writing-dialog-stub')).toBeNull()
   })
 })

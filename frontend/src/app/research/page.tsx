@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ResearchWorkspaceShell } from '@/lib/embedded/shell'
 import { isEmbeddedMode } from '@/lib/embedded/config'
@@ -13,6 +13,10 @@ import { ResearchHeader } from '@/components/research/ResearchHeader'
 import { ResearchEgressConsentDialog } from '@/components/research/ResearchEgressConsentDialog'
 import { ResearchWorkbench } from '@/components/research/ResearchWorkbench'
 import { NoteWorkspaceProvider } from '@/components/research/issue585/NoteWorkspaceProvider'
+import {
+  WritingLaunchProvider,
+  type WritingLaunchValue,
+} from '@/lib/research/issue585/writing-launch'
 import { ResearchWorkspace } from '@/components/research/ResearchWorkspace'
 import { ResearchSourceChatPanel } from '@/components/research/ResearchSourceChatPanel'
 import { ResearchLayout } from '@/components/research/ResearchLayout'
@@ -728,6 +732,24 @@ function ResearchPageContent() {
 
   const sourceMode = navSourceFocusActive && navSelectedSourceId !== null
   const sourceDesktop = sourceMode && isDesktop
+
+  // Issue #1048 PR7：写作入口的会话导航上下文（Notes 编辑器位于左栏）。
+  // 「当前会话」= 当前 surface 显示中的会话；新建会话在 source surface 保持
+  // 该来源绑定（方案 §6.1.1）。创建/选择只激活显示，不自动发送。
+  const writingLaunch = useMemo<WritingLaunchValue>(
+    () => ({
+      currentRef: sourceMode ? navActiveSourceRef : navActiveGlobalRef,
+      sourceId: sourceMode ? navSelectedSourceId : null,
+      openSession,
+    }),
+    [
+      sourceMode,
+      navActiveSourceRef,
+      navActiveGlobalRef,
+      navSelectedSourceId,
+      openSession,
+    ],
+  )
   const compact = !isDesktop
   const focusedSourceId = sourceMode ? navSelectedSourceId : null
   // Issue #1013 §2.11：composer 选段 chip（来源名/版本/page/1-based 位置/摘要）。
@@ -802,6 +824,7 @@ function ResearchPageContent() {
         <div className="min-h-0 flex-1" data-testid="legacy-session-content">
           {/* Issue #1047 PR5（B3）：摘入对话框 + 引用阅读 overlay 的页面级组合根。
               编辑器 machine 仍由 NotesPanel 持有；overlay 不卸载 NotesPanel。 */}
+          <WritingLaunchProvider value={writingLaunch}>
           <NoteWorkspaceProvider
             onNotesChanged={(noteId) => {
               if (noteId !== null) revealSavedArtifact('note', noteId)
@@ -923,6 +946,7 @@ function ResearchPageContent() {
             ]}
           </ResearchLayout>
           </NoteWorkspaceProvider>
+          </WritingLaunchProvider>
         </div>
       </div>
     </>

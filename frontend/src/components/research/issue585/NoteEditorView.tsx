@@ -25,7 +25,7 @@ import { NoteConflictDialog } from './NoteConflictDialog'
 import { NoteDraftRecoveryBanner } from './NoteDraftRecoveryBanner'
 import { NoteLeaveGuardDialog } from './NoteLeaveGuardDialog'
 import { NoteSaveStatus } from './NoteSaveStatus'
-import { blockReasonLabelKey } from './note-ui-labels'
+import { blockReasonLabelKey, leaveReasonLabelKey } from './note-ui-labels'
 
 type ViewMode = 'edit' | 'split' | 'preview'
 
@@ -107,6 +107,7 @@ export function NoteEditorView({
   const [conflictDismissed, setConflictDismissed] = useState(false)
   const [leaveDismissed, setLeaveDismissed] = useState(false)
   const [recoveryDismissed, setRecoveryDismissed] = useState(false)
+  const [writingSelectionHint, setWritingSelectionHint] = useState(false)
 
   const citationBindings = useMemo<NoteCitationBinding[]>(
     () => state.note?.citation_bindings ?? [],
@@ -223,6 +224,42 @@ export function NoteEditorView({
     state.note.revision !== null &&
     state.note.snapshot_hash !== null &&
     state.content.length > 0
+
+  /**
+   * Issue #1048 PR7：本地写作入口（全文/选区）。
+   * 只在服务端 `writing_local.available=true`（默认关闭）、非 Admin、且当前
+   * 文档是已加载的 d2-v1 Note 时渲染；能力读取失败按不可用处理。
+   */
+  const writingEntryAvailable =
+    noteWorkspace !== null &&
+    noteWorkspace.writingAvailable &&
+    state.note !== null &&
+    state.note.edit_schema === 'd2-v1' &&
+    state.note.revision !== null &&
+    state.note.snapshot_hash !== null &&
+    state.content.length > 0
+
+  function startWritingFull(): void {
+    if (noteWorkspace === null) return
+    setWritingSelectionHint(false)
+    void noteWorkspace.openWriting({ kind: 'full' })
+  }
+
+  function startWritingSelection(): void {
+    if (noteWorkspace === null) return
+    const selection = readEditorSelection()
+    if (selection === null || selection.start >= selection.end) {
+      // 不静默改成全文：无有效选区时明确提示并让用户重新选择。
+      setWritingSelectionHint(true)
+      return
+    }
+    setWritingSelectionHint(false)
+    void noteWorkspace.openWriting({
+      kind: 'range',
+      start_utf16: selection.start,
+      end_utf16: selection.end,
+    })
+  }
 
   // 新冲突出现时重新打开对话框；冲突消失后复位“继续编辑”状态。
   useEffect(() => {
@@ -535,7 +572,64 @@ export function NoteEditorView({
             {t('research.notes.excerpt.entry')}
           </Button>
         )}
+        {writingEntryAvailable && (
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={startWritingFull}
+              disabled={state.inserting === true}
+              data-testid="note-editor-write-full"
+            >
+              {t('research.notes.writing.entry.full')}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={startWritingSelection}
+              disabled={state.inserting === true}
+              data-testid="note-editor-write-selection"
+            >
+              {t('research.notes.writing.entry.selection')}
+            </Button>
+            {noteWorkspace?.writingDraftPending === true && (
+              <span
+                className="text-xs text-muted-foreground"
+                role="status"
+                data-testid="note-editor-writing-draft-pending"
+              >
+                {t('research.notes.writing.entry.draftPending')}
+              </span>
+            )}
+          </>
+        )}
       </div>
+      {writingSelectionHint && (
+        <p className="text-xs text-destructive" role="alert" data-testid="note-editor-writing-selection-hint">
+          {t('research.notes.writing.entry.selectionEmpty')}
+        </p>
+      )}
+      {noteWorkspace?.writingBlockReason != null && (
+        <div
+          className="rounded-md border p-2 text-xs"
+          role="alert"
+          data-testid="note-editor-writing-blocked"
+        >
+          <p className="font-medium">{t('research.notes.writing.entry.blocked')}</p>
+          <p className="text-muted-foreground">
+            {t(leaveReasonLabelKey(noteWorkspace.writingBlockReason))}
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => noteWorkspace.clearWritingBlock()}
+            data-testid="note-editor-writing-blocked-dismiss"
+          >
+            {t('common.close')}
+          </Button>
+        </div>
+      )}
 
       {state.inserting === true && (
         <p className="text-xs text-muted-foreground" role="status" data-testid="note-editor-inserting">
