@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 vi.mock('@/lib/hooks/use-translation', () => ({
@@ -528,6 +528,164 @@ vi.mock('./use-target-conversation', async () => {
   }
 })
 
+// W3 #1191：目标壳 W3 接线（provider 以 mock 边界挂载——真实 provider 编排放
+// `TargetNotesWorkspace.test.tsx`/`target-w3-wiring.test.tsx`；shell 只验证
+// 成果入口→目录→编辑器 overlay、inert/焦点、reveal 与 reader/editor 互斥）。
+const notesWorkspaceFixture = vi.hoisted(() => ({
+  value: null as unknown as Record<string, unknown>,
+  providerProps: null as Record<string, unknown> | null,
+}))
+
+vi.mock('./TargetNotesWorkspace', async () => {
+  const React = await import('react')
+  return {
+    TargetNotesWorkspaceProvider: (props: { children?: React.ReactNode }) => {
+      notesWorkspaceFixture.providerProps = props as unknown as Record<string, unknown>
+      return React.createElement(React.Fragment, null, props.children)
+    },
+    useTargetNotesWorkspace: () => notesWorkspaceFixture.value,
+    TargetNotesWorkspaceContext: React.createContext(null),
+  }
+})
+
+const noteWorkspaceProviderFixture = vi.hoisted(() => ({
+  props: null as Record<string, unknown> | null,
+}))
+vi.mock('@/components/research/issue585/NoteWorkspaceProvider', async () => {
+  const React = await import('react')
+  return {
+    NoteWorkspaceProvider: (props: { children?: React.ReactNode } & Record<string, unknown>) => {
+      noteWorkspaceProviderFixture.props = props
+      return React.createElement(React.Fragment, null, props.children)
+    },
+    useNoteWorkspaceOptional: () => null,
+  }
+})
+
+const editorFocusFixture = vi.hoisted(() => ({
+  props: null as Record<string, unknown> | null,
+}))
+vi.mock('./TargetEditorFocus', async () => {
+  const React = await import('react')
+  return {
+    TargetEditorFocus: (props: Record<string, unknown>) => {
+      editorFocusFixture.props = props
+      return React.createElement(
+        'div',
+        { 'data-testid': 'fake-editor-overlay', role: 'dialog', 'aria-modal': 'true' },
+        React.createElement('span', { 'data-testid': 'fake-editor-title' }, String(
+          (props.state as { title?: string }).title ?? '',
+        )),
+        React.createElement('button', {
+          'data-testid': 'fake-editor-close',
+          onClick: props.onRequestClose as () => void,
+        }),
+      )
+    },
+  }
+})
+
+function makeNotesWorkspaceValue(): Record<string, unknown> {
+  return {
+    projectId: 'proj_1',
+    isAdminReadonly: false,
+    catalog: {
+      items: [
+        {
+          note_id: 'note_w3',
+          project_id: 'proj_1',
+          title: 'W3 笔记',
+          content: 'W3 正文',
+          note_type: 'human',
+          created_at: '2026-11-01T00:00:00Z',
+          updated_at: '2026-11-01T00:00:00Z',
+          revision: 2,
+          snapshot_hash: 'a'.repeat(64),
+          edit_schema: 'd2-v1',
+          access_state: 'visible',
+        },
+      ],
+      isLoading: false,
+      error: null,
+      refresh: vi.fn(async () => undefined),
+    },
+    capabilities: {
+      capabilities: {
+        noteEditor: { available: true, reason: null },
+        noteEditorExisting: { available: true, reason: null },
+        markdownExport: { available: true, reason: null },
+        writingLocal: { available: true, reason: null },
+        writingExternal: { available: false, reason: 'not_ready' },
+      },
+      isLoading: false,
+      error: null,
+      refresh: vi.fn(async () => undefined),
+    },
+    editor: {
+      state: {
+        status: 'idle',
+        note: null,
+        title: '',
+        content: '',
+        saveStatus: 'idle',
+        conflict: null,
+        pendingMutationId: null,
+        cacheStatus: 'ok',
+        restoredFromCache: false,
+        canUndo: false,
+        blockReason: null,
+        error: null,
+        authGeneration: 0,
+        leaveBlockReason: null,
+      },
+      actions: {
+        closeEditor: vi.fn(async () => true),
+        openNote: vi.fn(async () => undefined),
+        createBlankNote: vi.fn(async () => null),
+        saveNow: vi.fn(async () => undefined),
+        retrySave: vi.fn(async () => undefined),
+        setTitle: vi.fn(),
+        setContent: vi.fn(),
+        discardLocal: vi.fn(),
+        loadLatest: vi.fn(async () => undefined),
+        saveAsCopy: vi.fn(async () => null),
+        flushBeforeLeave: vi.fn(async () => null),
+      },
+    },
+    search: '',
+    setSearch: vi.fn(),
+    revealId: null,
+    revealNoteInCatalog: vi.fn(),
+    canCreate: true,
+    createBlockedReason: null,
+    createPending: false,
+    onCreateBlank: vi.fn(),
+    onOpenNote: vi.fn(),
+    excerptAvailable: true,
+    onExcerptNote: vi.fn(),
+    canDeleteNote: () => true,
+    onRequestDelete: vi.fn(),
+    editorDeleteAvailable: false,
+    onRequestDeleteEditor: vi.fn(),
+    canEnableProtected: true,
+    onRequestEnable: vi.fn(),
+    recoverableDrafts: [],
+    restrictedNoteIds: new Set<string>(),
+    onOpenRecovery: vi.fn(),
+    onCopyRecovery: vi.fn(),
+    onDownloadRecovery: vi.fn(),
+    editorRequest: null,
+    openEditor: vi.fn(),
+    requestCloseEditor: vi.fn(async () => true),
+    takeEditorTrigger: vi.fn(() => null),
+    retryOpenNoteId: null,
+    retryOpenEditor: vi.fn(),
+    refreshCatalog: vi.fn(async () => undefined),
+    refreshCapabilities: vi.fn(),
+    onEditorCopySaved: vi.fn(),
+  }
+}
+
 function sessionFixture(options: {
   hasMore?: boolean
   loading?: boolean
@@ -701,6 +859,10 @@ beforeEach(() => {
   sourceMediaFixture.result.sourceType = 'pdf'
   sourceMediaFixture.result.pageImage = { status: 'idle', url: null, failure: null }
   readerFocusFixture.props = null
+  editorFocusFixture.props = null
+  notesWorkspaceFixture.providerProps = null
+  noteWorkspaceProviderFixture.props = null
+  notesWorkspaceFixture.value = makeNotesWorkspaceValue()
   chatPanelFixture.scrollToMessage = null
   conversationFixture.flags.setWorkPurpose.mockClear()
   conversationFixture.send.mockClear()
@@ -807,8 +969,11 @@ describe('UI-02 顶栏（§5.2 / D-UI-01）', () => {
     await waitFor(() =>
       expect(screen.getByTestId('rdlens-target-right-pane')).toHaveAttribute('data-pane-kind', 'outcomes'),
     )
-    expect(screen.getByTestId('rdlens-target-outcome-item')).toBeInTheDocument()
-    expect(screen.getByText('research.target.rightPane.outcomesReadOnly')).toBeInTheDocument()
+    // W3 #1191：成果目录接入 d2-v1 W3 目录（旧只读列表/文案删除）。
+    expect(screen.getByTestId('rdlens-target-outcomes-panel')).toBeInTheDocument()
+    expect(screen.getByTestId('note-catalog-row-note_w3')).toBeInTheDocument()
+    expect(screen.queryByTestId('rdlens-target-outcome-item')).toBeNull()
+    expect(screen.queryByText('research.target.rightPane.outcomesReadOnly')).toBeNull()
   })
 })
 
@@ -1848,5 +2013,113 @@ describe('W2 #1077 overlay 保活 / inert / 焦点', () => {
     expect(screen.getByTestId('chat-input')).toHaveValue('Draft stays')
     // 焦点回触发控件（「打开原文」按钮）。
     await waitFor(() => expect(document.activeElement).toBe(openOriginal))
+  })
+})
+
+describe('W3 #1191 目标壳编辑器 overlay 接线', () => {
+  /** 修改 mock context 后重渲染 shell（fixture 值由 beforeEach 重置为默认）。 */
+  function rerenderShell(ui: ReturnType<typeof renderShell>) {
+    ui.rerender(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <ResearchWorkspaceProvider projectId="proj_1" role="owner" userId="user_1">
+          <ResearchScopeProvider userId="user_1" projectId="proj_1">
+            <ResearchHostProvider projectName="Project Alpha">
+              <TargetShell />
+              <ScopeProbe />
+            </ResearchHostProvider>
+          </ResearchScopeProvider>
+        </ResearchWorkspaceProvider>
+      </QueryClientProvider>,
+    )
+  }
+
+  it('编辑器打开：工作台 inert+aria-hidden，overlay 可交互且对话/右栏保活；关闭后移除 inert', async () => {
+    const ui = renderShell()
+    const content = screen.getByTestId('rdlens-target-shell-content')
+    fireEvent.click(screen.getByTestId('rdlens-target-outcomes-trigger'))
+    await screen.findByTestId('rdlens-target-outcomes-panel')
+
+    const value = notesWorkspaceFixture.value as {
+      editorRequest: unknown
+      editor: { state: Record<string, unknown> & { title: string } }
+      takeEditorTrigger: (() => HTMLElement | null) | undefined
+    }
+    value.editorRequest = { kind: 'attached' }
+    value.editor.state = { ...value.editor.state, status: 'ready', title: 'W3 笔记' }
+    rerenderShell(ui)
+
+    const overlay = await screen.findByTestId('fake-editor-overlay')
+    expect(overlay).toBeInTheDocument()
+    expect(screen.getByTestId('fake-editor-title')).toHaveTextContent('W3 笔记')
+    expect(content).toHaveAttribute('inert')
+    expect(content).toHaveAttribute('aria-hidden', 'true')
+    // 工作台保活：对话与右栏仍在 DOM（未卸载）。
+    expect(screen.getByTestId('chat-panel')).toBeInTheDocument()
+    expect(screen.getByTestId('rdlens-target-right-pane')).toBeInTheDocument()
+    // overlay 关闭请求经 provider requestCloseEditor。
+    fireEvent.click(screen.getByTestId('fake-editor-close'))
+    expect(
+      (notesWorkspaceFixture.value as { requestCloseEditor: { mock: { calls: unknown[][] } } })
+        .requestCloseEditor.mock.calls.length,
+    ).toBeGreaterThanOrEqual(1)
+
+    // 关闭后（provider 清除请求）移除 inert 并把焦点还给触发控件。
+    const trigger = document.createElement('button')
+    document.body.appendChild(trigger)
+    trigger.focus()
+    ;(notesWorkspaceFixture.value as { editorRequest: unknown; takeEditorTrigger: () => HTMLElement | null })
+      .takeEditorTrigger = () => trigger
+    ;(notesWorkspaceFixture.value as { editorRequest: unknown }).editorRequest = null
+    rerenderShell(ui)
+    await waitFor(() => expect(screen.queryByTestId('fake-editor-overlay')).toBeNull())
+    expect(content).not.toHaveAttribute('inert')
+    expect(content).not.toHaveAttribute('aria-hidden')
+    await waitFor(() => expect(document.activeElement).toBe(trigger))
+    trigger.remove()
+  })
+
+  it('编辑器打开时 Esc 不关闭底层右栏（overlay 拥有 Esc）', async () => {
+    const ui = renderShell()
+    fireEvent.click(screen.getByTestId('rdlens-target-outcomes-trigger'))
+    await screen.findByTestId('rdlens-target-outcomes-panel')
+    ;(notesWorkspaceFixture.value as { editorRequest: unknown }).editorRequest = { kind: 'attached' }
+    rerenderShell(ui)
+    await screen.findByTestId('fake-editor-overlay')
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.getByTestId('rdlens-target-right-pane')).toBeInTheDocument()
+  })
+
+  it('reader 打开时编辑请求仍同一时刻最多一个 focus view（reader 关闭，不叠加双层）', async () => {
+    d1eFixture.ready = true
+    const ui = renderShell()
+    fireEvent.click(screen.getByTestId('simulate-citation'))
+    await screen.findByTestId('rdlens-target-right-pane')
+    fireEvent.click(screen.getByTestId('rdlens-target-open-original'))
+    await screen.findByTestId('rdlens-target-reader')
+    ;(notesWorkspaceFixture.value as { editorRequest: unknown }).editorRequest = { kind: 'attached' }
+    rerenderShell(ui)
+    await screen.findByTestId('fake-editor-overlay')
+    await waitFor(() => expect(screen.queryByTestId('rdlens-target-reader')).toBeNull())
+  })
+
+  it('onNotesChanged：保存/摘入成功后打开成果目录并 reveal 该行', async () => {
+    renderShell()
+    const providerProps = noteWorkspaceProviderFixture.props as {
+      onNotesChanged?: (noteId: string | null) => void
+    }
+    expect(typeof providerProps.onNotesChanged).toBe('function')
+    act(() => {
+      providerProps.onNotesChanged?.('note_w3')
+    })
+    await waitFor(() =>
+      expect(screen.getByTestId('rdlens-target-outcomes-panel')).toBeInTheDocument(),
+    )
+    expect(
+      (
+        notesWorkspaceFixture.value as {
+          revealNoteInCatalog: { mock: { calls: unknown[][] } }
+        }
+      ).revealNoteInCatalog.mock.calls.at(-1),
+    ).toEqual(['note_w3'])
   })
 })

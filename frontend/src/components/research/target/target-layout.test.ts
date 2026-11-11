@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   TARGET_CENTER_MIN_WIDTH,
+  TARGET_EDITOR_ASIDE_BREAKPOINT,
+  TARGET_EDITOR_ASIDE_WIDTH,
+  TARGET_EDITOR_BACK_BAR_HEIGHT,
+  TARGET_EDITOR_BODY_MAX_WIDTH,
   TARGET_LEFT_PANE_WIDTH,
   TARGET_READER_ASIDE_BREAKPOINT,
   TARGET_READER_ASIDE_MAX_WIDTH,
@@ -10,6 +14,7 @@ import {
   TARGET_READER_BODY_MAX_WIDTH,
   TARGET_RIGHT_PANE_WIDTH,
   TARGET_THREE_COLUMN_VIEWPORT,
+  resolveTargetEditorLayout,
   resolveTargetLayout,
   resolveTargetReaderLayout,
   targetBreakpointForWidth,
@@ -193,6 +198,78 @@ describe('resolveTargetReaderLayout（§5.7）', () => {
       expect(layout.asideCollapsible).toBe(true)
       expect(layout.asideVisible).toBe(false)
       expect(layout.bodyColumnWidth).toBe(830)
+    }
+  })
+})
+
+describe('resolveTargetEditorLayout（UI-19 §2.1.3 / UI 规格 v1 §3.2）', () => {
+  it('常量：正文列 970、aside 330、返回条 65、aside 断点 1280', () => {
+    expect(TARGET_EDITOR_BODY_MAX_WIDTH).toBe(970)
+    expect(TARGET_EDITOR_ASIDE_WIDTH).toBe(330)
+    expect(TARGET_EDITOR_BACK_BAR_HEIGHT).toBe(65)
+    expect(TARGET_EDITOR_ASIDE_BREAKPOINT).toBe(1280)
+  })
+
+  it('1440：aside 恒显示 330，正文列 970（970 + 330 = 1300 ≤ 1440）', () => {
+    for (const asideExpanded of [false, true]) {
+      const layout = resolveTargetEditorLayout({ viewportWidth: 1440, asideExpanded })
+      expect(layout.asideCollapsible).toBe(false)
+      expect(layout.asideVisible).toBe(true)
+      expect(layout.asideWidth).toBe(330)
+      expect(layout.bodyMaxWidth).toBe(970)
+      expect(layout.bodyColumnWidth).toBe(970)
+      expect(layout.bodyColumnWidth + (layout.asideVisible ? layout.asideWidth : 0)).toBeLessThanOrEqual(
+        1440,
+      )
+    }
+  })
+
+  it('1024：aside 默认折叠、正文占满可用宽度（min(970, 1024)）', () => {
+    const layout = resolveTargetEditorLayout({ viewportWidth: 1024, asideExpanded: false })
+    expect(layout.asideCollapsible).toBe(true)
+    expect(layout.asideVisible).toBe(false)
+    expect(layout.asideWidth).toBe(330)
+    expect(layout.bodyColumnWidth).toBe(970)
+    expect(layout.bodyColumnWidth).toBeLessThanOrEqual(1024)
+  })
+
+  it('1024 + 展开 aside：正文让宽到 694（不覆盖正文、不横向滚动）', () => {
+    const layout = resolveTargetEditorLayout({ viewportWidth: 1024, asideExpanded: true })
+    expect(layout.asideCollapsible).toBe(true)
+    expect(layout.asideVisible).toBe(true)
+    expect(layout.asideWidth).toBe(330)
+    expect(layout.bodyColumnWidth).toBe(694)
+    expect(layout.bodyColumnWidth + layout.asideWidth).toBe(1024)
+  })
+
+  it('断点边界：1279 可折叠默认收起，1280 恒显示', () => {
+    const compact = resolveTargetEditorLayout({ viewportWidth: 1279, asideExpanded: false })
+    expect(compact.asideCollapsible).toBe(true)
+    expect(compact.asideVisible).toBe(false)
+    const wide = resolveTargetEditorLayout({ viewportWidth: 1280, asideExpanded: false })
+    expect(wide.asideCollapsible).toBe(false)
+    expect(wide.asideVisible).toBe(true)
+    // 1280 − 330 = 950 → 上限 970
+    expect(wide.bodyColumnWidth).toBe(950)
+  })
+
+  it('任意视口组合：正文列 ≤970、列宽之和 ≤ 视口（无整页横向滚动）', () => {
+    for (const viewportWidth of [1024, 1100, 1200, 1279, 1280, 1366, 1440, 1600, 1920]) {
+      for (const asideExpanded of [false, true]) {
+        const layout = resolveTargetEditorLayout({ viewportWidth, asideExpanded })
+        expect(layout.bodyColumnWidth).toBeLessThanOrEqual(TARGET_EDITOR_BODY_MAX_WIDTH)
+        const occupied = layout.bodyColumnWidth + (layout.asideVisible ? layout.asideWidth : 0)
+        expect(occupied).toBeLessThanOrEqual(viewportWidth)
+      }
+    }
+  })
+
+  it('视口非法/缺失按 1024 处理', () => {
+    for (const viewportWidth of [Number.NaN, Number.POSITIVE_INFINITY, 0, -100]) {
+      const layout = resolveTargetEditorLayout({ viewportWidth, asideExpanded: false })
+      expect(layout.asideCollapsible).toBe(true)
+      expect(layout.asideVisible).toBe(false)
+      expect(layout.bodyColumnWidth).toBe(970)
     }
   })
 })

@@ -47,6 +47,7 @@ export function TargetConversation({
   onOpenHistory,
   onNewConversation,
   onOpenCitation,
+  onViewNote,
   rightPane,
   onOpenRightPane,
   onOpenSearch,
@@ -69,6 +70,11 @@ export function TargetConversation({
     trigger: HTMLElement | null,
     messageId: string | null,
   ) => void
+  /**
+   * #1191 W3-G1（BEH-09）：回答结果「查看笔记」→ 目标壳打开右栏成果目录并
+   * reveal 该行（不自动打开编辑器；不传时既有 ResultActions 行为不变）。
+   */
+  onViewNote?: (noteId: string) => void
   /** 当前右栏面板（aria-expanded 与真实状态一致） */
   rightPane: TargetRightPaneKind | null
   onOpenRightPane: (kind: 'conversations', trigger: HTMLElement) => void
@@ -322,6 +328,7 @@ export function TargetConversation({
           sendDisabled={!conversation.canExecute}
           blockedHint={conversation.blockedHint}
           onCitationReturn={handleCitationReturn}
+          onViewNote={onViewNote}
           scrollToMessage={scrollToMessage}
           onSelectionJump={onSelectionJump}
           backgroundNotice={conversation.backgroundNotice}

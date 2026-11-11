@@ -206,7 +206,8 @@ export interface TargetConversationState {
    */
   sendWithPurpose: (text: string, purpose: ResearchWorkPurpose | null) => Promise<boolean>
   clearSendError: () => void
-  openSession: (ref: ResearchSessionRef) => void
+  /** 激活会话（不发送）；返回 false = 导航被拒绝（无 runtime/身份失效）。 */
+  openSession: (ref: ResearchSessionRef) => boolean
   newSession: () => Promise<void>
   /** 「只问此来源」：无活动会话时返回 false（不制造未绑定 pin） */
   pinSingleSource: (sourceId: string) => boolean
@@ -730,9 +731,7 @@ export function useTargetConversation(options: {
   )
 
   const openSession = useCallback(
-    (ref: ResearchSessionRef) => {
-      activate(ref)
-    },
+    (ref: ResearchSessionRef): boolean => activate(ref),
     [activate],
   )
 

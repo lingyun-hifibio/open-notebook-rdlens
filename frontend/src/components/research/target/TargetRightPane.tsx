@@ -6,7 +6,7 @@ import { X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/lib/hooks/use-translation'
 import { useResearchWorkspace } from '@/lib/embedded/workspace-context'
-import { useResearchSources, useResearchNotes } from '@/lib/hooks/use-research'
+import { useResearchSources } from '@/lib/hooks/use-research'
 import type { UseResearchSessionsResult } from '@/lib/hooks/use-research-sessions'
 import { formatResearchTimestamp } from '@/lib/research/format'
 import type { ResearchJob } from '@/lib/research/types'
@@ -17,6 +17,7 @@ import {
   RESEARCH_SESSION_SWITCHER_PLACEHOLDERS,
 } from '../ResearchSessionSwitcher'
 import { translateOrFallback } from '@/lib/locales/translate-or-fallback'
+import { TargetOutcomesPane } from './TargetOutcomesPane'
 import {
   TARGET_RIGHT_PANE_TITLE_KEYS,
   type TargetCitationPreview,
@@ -94,7 +95,6 @@ export function TargetRightPane({
   const { projectId } = useResearchWorkspace()
   const closeRef = useRef<HTMLButtonElement | null>(null)
   const sourcesQuery = useResearchSources(projectId)
-  const notesQuery = useResearchNotes(projectId)
   const title = t(TARGET_RIGHT_PANE_TITLE_KEYS[kind])
 
   // 打开面板 → 焦点进入（标题区关闭按钮；不抢焦点到正文）。
@@ -202,15 +202,9 @@ export function TargetRightPane({
             locale={language}
           />
         )}
-        {kind === 'outcomes' && (
-          <OutcomesCatalog
-            notes={notesQuery.data?.items ?? []}
-            loading={notesQuery.isLoading}
-            error={notesQuery.isError}
-            onRetry={() => void notesQuery.refetch()}
-            locale={language}
-          />
-        )}
+        {/* #1191 W3-G1：成果目录接入 d2-v1 W3 目录（编排/状态机由常驻
+            `TargetNotesWorkspaceProvider` 持有，右栏只渲染目录与入口）。 */}
+        {kind === 'outcomes' && <TargetOutcomesPane />}
         {kind === 'tasks' && <TaskHistory jobs={jobs} locale={language} />}
       </div>
     </aside>
@@ -605,69 +599,6 @@ function ConversationHistory({
       >
         {t('research.target.conversation.newConversation')}
       </Button>
-    </div>
-  )
-}
-
-function OutcomesCatalog({
-  notes,
-  loading,
-  error,
-  onRetry,
-  locale,
-}: {
-  notes: readonly { note_id: string; title: string; updated_at: string | null }[]
-  loading: boolean
-  error: boolean
-  onRetry: () => void
-  locale: string
-}) {
-  const { t } = useTranslation()
-  return (
-    <div className="space-y-3 px-5 py-4" data-testid="rdlens-target-outcomes-panel">
-      {loading && (
-        <p className="text-sm" role="status" aria-busy="true" style={{ color: 'var(--rdlens-ink-muted)' }}>
-          {t('research.target.sources.loading')}
-        </p>
-      )}
-      {!loading && error && (
-        <div className="space-y-2" role="alert">
-          <p className="text-sm" style={{ color: 'var(--rdlens-warning)' }}>
-            {t('research.target.rightPane.outcomesUnavailable')}
-          </p>
-          <Button type="button" size="sm" variant="outline" onClick={onRetry}>
-            {t('research.target.sources.retry')}
-          </Button>
-        </div>
-      )}
-      {!loading && !error && notes.length === 0 && (
-        <EmptyState
-          title={t('research.target.rightPane.outcomesEmpty')}
-          hint={t('research.target.rightPane.outcomesHint')}
-        />
-      )}
-      {!loading && !error && notes.length > 0 && (
-        <ul className="space-y-1">
-          {notes.map((note) => {
-            const updated = formatResearchTimestamp(note.updated_at, { lang: locale })
-            return (
-              <li key={note.note_id} className="min-w-0" data-testid="rdlens-target-outcome-item">
-                <p className="truncate text-sm" title={note.title}>
-                  {note.title}
-                </p>
-                {updated !== null && (
-                  <p className="text-xs" style={{ color: 'var(--rdlens-ink-muted)' }}>
-                    {updated}
-                  </p>
-                )}
-              </li>
-            )
-          })}
-        </ul>
-      )}
-      <p className="text-xs" style={{ color: 'var(--rdlens-ink-muted)' }}>
-        {t('research.target.rightPane.outcomesReadOnly')}
-      </p>
     </div>
   )
 }
