@@ -2,7 +2,7 @@
 
 - **Issue**：`HiFiBiO-Therapeutics/RDLens#1017`（D1-H 多来源→基础比较与回访，主单）
 - **实施计划**：`HiFiBiO-Therapeutics/RDLens#1188`（已合入；本证据对应 §2.5 wire、§2.9 fork 设计、§3.3 fork 白名单、§5.2 vitest 矩阵、§5.3 视觉证据）
-- **Host 配对 PR**：`HiFiBiO-Therapeutics/RDLens#<host-pr>`（host 半，实施中/待合入；fork 侧按计划 §2.5 契约实现）
+- **Host 配对 PR**：`HiFiBiO-Therapeutics/RDLens#1206`（OPEN；head `347f8b170ec18ba9975de9ac996c0cc6217e722c`；host 合入后按计划 §4.3.2 回填 host 合并 readback sha；fork 侧按计划 §2.5 契约实现）
 - **实现 PR**：`lingyun-hifibio/open-notebook-rdlens#135`（当前 head `0201cc96d9a6787b0ad6c2529b7a4c29f007d80b`；AFTER 截图采集于
   `d80e074bc66671cc11afeef7c29ee99b00ad62e2`，其后 head 仅含 LOW-5 纯类型声明修正，无运行时/UI 变化，按审查结论未重采）
 - **证据分支**：`evidence/issue1017-20261111`（本分支，从 fork `origin/main` 创建；**不属于实现 PR diff**）
