@@ -1,0 +1,64 @@
+[
+  {
+    "scenario": "S12b",
+    "phase": "before",
+    "width": 1440,
+    "checks": {
+      "target_shell": true,
+      "w3_catalog_visible": false,
+      "editor_before_click_absent": true,
+      "note_catalog_absent": true,
+      "editor_absent": true,
+      "readonly_text_present": true
+    },
+    "shots": [
+      "/tmp/1191-evidence/screenshots/before__s12b_01-target-shell__1440x900.png",
+      "/tmp/1191-evidence/screenshots/before__s12b_02-outcomes-panel__1440x900.png"
+    ],
+    "expected_gap": true
+  },
+  {
+    "scenario": "S10",
+    "phase": "before",
+    "width": 1440,
+    "checks": {
+      "export_entry_absent": true,
+      "w3_editor_absent": true
+    },
+    "shots": [
+      "/tmp/1191-evidence/screenshots/before__s10_01-no-w3-export-entry__1440x900.png"
+    ],
+    "expected_gap": true
+  },
+  {
+    "scenario": "S12b",
+    "phase": "before",
+    "width": 1024,
+    "checks": {
+      "target_shell": true,
+      "w3_catalog_visible": false,
+      "editor_before_click_absent": true,
+      "note_catalog_absent": true,
+      "editor_absent": true,
+      "readonly_text_present": true
+    },
+    "shots": [
+      "/tmp/1191-evidence/screenshots/before__s12b_01-target-shell__1024x768.png",
+      "/tmp/1191-evidence/screenshots/before__s12b_02-outcomes-panel__1024x768.png"
+    ],
+    "expected_gap": true
+  },
+  {
+    "scenario": "S10",
+    "phase": "before",
+    "width": 1024,
+    "checks": {
+      "export_entry_absent": true,
+      "w3_editor_absent": true
+    },
+    "shots": [
+      "/tmp/1191-evidence/screenshots/before__s10_01-no-w3-export-entry__1024x768.png"
+    ],
+    "expected_gap": true
+  }
+]

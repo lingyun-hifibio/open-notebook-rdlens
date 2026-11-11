@@ -1,0 +1,58 @@
+[
+  {
+    "scenario": "S12b",
+    "phase": "after",
+    "width": 1440,
+    "checks": {
+      "target_shell": true,
+      "w3_catalog_visible": true,
+      "editor_before_click_absent": true,
+      "editor_overlay": true,
+      "editor_title": "[synthetic] Citation round-trip note",
+      "editor_revision": "Revision 2",
+      "save_status": "saved",
+      "writing_entry": true,
+      "delete_entry": true,
+      "close_entry": true,
+      "closed_and_catalog_kept": true
+    },
+    "shots": [
+      "/tmp/1191-evidence/screenshots-pr-a/after__s12b_01-target-shell__1440x900.png",
+      "/tmp/1191-evidence/screenshots-pr-a/after__s12b_02-outcomes-panel__1440x900.png",
+      "/tmp/1191-evidence/screenshots-pr-a/after__s12b_03-editor-overlay__1440x900.png",
+      "/tmp/1191-evidence/screenshots-pr-a/after__s12b_04-closed-back-to-catalog__1440x900.png"
+    ]
+  },
+  {
+    "scenario": "S10",
+    "skipped": true
+  },
+  {
+    "scenario": "S12b",
+    "phase": "after",
+    "width": 1024,
+    "checks": {
+      "target_shell": true,
+      "w3_catalog_visible": true,
+      "editor_before_click_absent": true,
+      "editor_overlay": true,
+      "editor_title": "[synthetic] Citation round-trip note",
+      "editor_revision": "Revision 2",
+      "save_status": "saved",
+      "writing_entry": true,
+      "delete_entry": true,
+      "close_entry": true,
+      "closed_and_catalog_kept": true
+    },
+    "shots": [
+      "/tmp/1191-evidence/screenshots-pr-a/after__s12b_01-target-shell__1024x768.png",
+      "/tmp/1191-evidence/screenshots-pr-a/after__s12b_02-outcomes-panel__1024x768.png",
+      "/tmp/1191-evidence/screenshots-pr-a/after__s12b_03-editor-overlay__1024x768.png",
+      "/tmp/1191-evidence/screenshots-pr-a/after__s12b_04-closed-back-to-catalog__1024x768.png"
+    ]
+  },
+  {
+    "scenario": "S10",
+    "skipped": true
+  }
+]

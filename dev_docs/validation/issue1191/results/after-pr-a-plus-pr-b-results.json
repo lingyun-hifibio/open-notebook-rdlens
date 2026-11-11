@@ -1,0 +1,116 @@
+[
+  {
+    "scenario": "S12b",
+    "phase": "after",
+    "width": 1440,
+    "checks": {
+      "target_shell": true,
+      "w3_catalog_visible": true,
+      "editor_before_click_absent": true,
+      "editor_overlay": true,
+      "editor_title": "[synthetic] Citation round-trip note",
+      "editor_revision": "Revision 2",
+      "save_status": "saved",
+      "writing_entry": true,
+      "delete_entry": true,
+      "close_entry": true,
+      "closed_and_catalog_kept": true
+    },
+    "shots": [
+      "/tmp/1191-evidence/screenshots/after__s12b_01-target-shell__1440x900.png",
+      "/tmp/1191-evidence/screenshots/after__s12b_02-outcomes-panel__1440x900.png",
+      "/tmp/1191-evidence/screenshots/after__s12b_03-editor-overlay__1440x900.png",
+      "/tmp/1191-evidence/screenshots/after__s12b_04-closed-back-to-catalog__1440x900.png"
+    ]
+  },
+  {
+    "scenario": "S10",
+    "phase": "after",
+    "width": 1440,
+    "checks": {
+      "export_entry_visible": true,
+      "filename": "[synthetic] Citation round-trip note.md",
+      "bytes": 644,
+      "utf8_no_bom": true,
+      "not_json": true,
+      "has_markdown_heading": true,
+      "has_version_anchor": true,
+      "has_note_body": true,
+      "status_exported": "Markdown exported",
+      "server_contract": "d2-v1",
+      "server_idempotency_key_present": true,
+      "server_body_keys": [
+        "format",
+        "revision",
+        "snapshot_hash"
+      ],
+      "server_body": {
+        "revision": 2,
+        "snapshot_hash": "b5223e5f617546b7edc71dc6e4b45529f08faca0310d9786ee6d4c0647d2cad2",
+        "format": "markdown"
+      },
+      "download_gets": 1
+    },
+    "shots": [
+      "/tmp/1191-evidence/screenshots/after__s10_01-editor-export-entry__1440x900.png",
+      "/tmp/1191-evidence/screenshots/after__s10_02-exported__1440x900.png"
+    ]
+  },
+  {
+    "scenario": "S12b",
+    "phase": "after",
+    "width": 1024,
+    "checks": {
+      "target_shell": true,
+      "w3_catalog_visible": true,
+      "editor_before_click_absent": true,
+      "editor_overlay": true,
+      "editor_title": "[synthetic] Citation round-trip note",
+      "editor_revision": "Revision 2",
+      "save_status": "saved",
+      "writing_entry": true,
+      "delete_entry": true,
+      "close_entry": true,
+      "closed_and_catalog_kept": true
+    },
+    "shots": [
+      "/tmp/1191-evidence/screenshots/after__s12b_01-target-shell__1024x768.png",
+      "/tmp/1191-evidence/screenshots/after__s12b_02-outcomes-panel__1024x768.png",
+      "/tmp/1191-evidence/screenshots/after__s12b_03-editor-overlay__1024x768.png",
+      "/tmp/1191-evidence/screenshots/after__s12b_04-closed-back-to-catalog__1024x768.png"
+    ]
+  },
+  {
+    "scenario": "S10",
+    "phase": "after",
+    "width": 1024,
+    "checks": {
+      "export_entry_visible": true,
+      "filename": "[synthetic] Citation round-trip note.md",
+      "bytes": 644,
+      "utf8_no_bom": true,
+      "not_json": true,
+      "has_markdown_heading": true,
+      "has_version_anchor": true,
+      "has_note_body": true,
+      "status_exported": "Markdown exported",
+      "server_contract": "d2-v1",
+      "server_idempotency_key_present": true,
+      "server_body_keys": [
+        "format",
+        "revision",
+        "snapshot_hash"
+      ],
+      "server_body": {
+        "revision": 2,
+        "snapshot_hash": "b5223e5f617546b7edc71dc6e4b45529f08faca0310d9786ee6d4c0647d2cad2",
+        "format": "markdown"
+      },
+      "download_gets": 2
+    },
+    "shots": [
+      "/tmp/1191-evidence/screenshots/after__s10_01-editor-export-entry__1024x768.png",
+      "/tmp/1191-evidence/screenshots/after__s10_02-exported__1024x768.png"
+    ]
+  }
+]
