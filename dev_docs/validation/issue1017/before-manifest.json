@@ -1,0 +1,1420 @@
+{
+  "issue": 1017,
+  "phase": "before",
+  "head": "d959635ebf5f642b6e8a75fb9a89896fe366683d",
+  "host": "http://127.0.0.1:8972/",
+  "gateway": "http://127.0.0.1:8941",
+  "chrome": "/home/lchen/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome",
+  "viewports": [
+    {
+      "width": 1440,
+      "height": 900
+    },
+    {
+      "width": 1024,
+      "height": 768
+    }
+  ],
+  "theme": "light",
+  "locale": "en-US",
+  "started_at": "2026-11-11T07:47:01.148Z",
+  "summary": {
+    "pass": 64,
+    "fail": 0,
+    "total": 64,
+    "scene_errors": 0,
+    "scenes": 20
+  },
+  "scenes": [
+    {
+      "phase": "before",
+      "scene": "cap_off_all",
+      "width": 1440,
+      "height": 900,
+      "ok": 3,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "all_blocked_legacy",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "create_disabled_legacy",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "no_create_request",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "before",
+      "scene": "cap_off_selected",
+      "width": 1440,
+      "height": 900,
+      "ok": 6,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "create_enabled_selected",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "create_request_captured",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "legacy_header_v1",
+          "ok": true,
+          "expected": "v1",
+          "actual": "v1"
+        },
+        {
+          "name": "legacy_body_document_ids",
+          "ok": true,
+          "expected": [
+            "doc_alpha",
+            "doc_beta"
+          ],
+          "actual": [
+            "doc_alpha",
+            "doc_beta"
+          ]
+        },
+        {
+          "name": "legacy_body_no_source_scope",
+          "ok": true,
+          "expected": true,
+          "actual": false
+        },
+        {
+          "name": "legacy_body_no_note_ids",
+          "ok": true,
+          "expected": true,
+          "actual": false
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "before",
+      "scene": "cap_on_all",
+      "width": 1440,
+      "height": 900,
+      "ok": 3,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "all_still_blocked_before",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "create_disabled_before",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "no_create_request_before",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "before",
+      "scene": "cap_on_selected",
+      "width": 1440,
+      "height": 900,
+      "ok": 3,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "create_request_captured",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "legacy_header_v1",
+          "ok": true,
+          "expected": "v1",
+          "actual": "v1"
+        },
+        {
+          "name": "legacy_body_document_ids",
+          "ok": true,
+          "expected": [
+            "doc_alpha",
+            "doc_beta"
+          ],
+          "actual": [
+            "doc_alpha",
+            "doc_beta"
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "before",
+      "scene": "report_pass",
+      "width": 1440,
+      "height": 900,
+      "ok": 3,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "report_body_visible",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "before_no_readback_section",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        },
+        {
+          "name": "before_no_verification_status",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "before",
+      "scene": "report_degraded",
+      "width": 1440,
+      "height": 900,
+      "ok": 3,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "report_body_visible",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "before_no_readback_section",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        },
+        {
+          "name": "before_no_verification_status",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "before",
+      "scene": "report_partial",
+      "width": 1440,
+      "height": 900,
+      "ok": 3,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "report_body_visible",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "before_no_readback_section",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        },
+        {
+          "name": "before_no_verification_status",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "before",
+      "scene": "report_not_run",
+      "width": 1440,
+      "height": 900,
+      "ok": 3,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "report_body_visible",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "before_no_readback_section",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        },
+        {
+          "name": "before_no_verification_status",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "before",
+      "scene": "report_410_revoked",
+      "width": 1440,
+      "height": 900,
+      "ok": 3,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "before_no_restricted_placeholder",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        },
+        {
+          "name": "before_no_report_body",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        },
+        {
+          "name": "before_generic_error_shown",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "before",
+      "scene": "report_503",
+      "width": 1440,
+      "height": 900,
+      "ok": 2,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "before_generic_error_shown",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "before_no_retry_button",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "before",
+      "scene": "cap_off_all",
+      "width": 1024,
+      "height": 768,
+      "ok": 3,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "all_blocked_legacy",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "create_disabled_legacy",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "no_create_request",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "before",
+      "scene": "cap_off_selected",
+      "width": 1024,
+      "height": 768,
+      "ok": 6,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "create_enabled_selected",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "create_request_captured",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "legacy_header_v1",
+          "ok": true,
+          "expected": "v1",
+          "actual": "v1"
+        },
+        {
+          "name": "legacy_body_document_ids",
+          "ok": true,
+          "expected": [
+            "doc_alpha",
+            "doc_beta"
+          ],
+          "actual": [
+            "doc_alpha",
+            "doc_beta"
+          ]
+        },
+        {
+          "name": "legacy_body_no_source_scope",
+          "ok": true,
+          "expected": true,
+          "actual": false
+        },
+        {
+          "name": "legacy_body_no_note_ids",
+          "ok": true,
+          "expected": true,
+          "actual": false
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "before",
+      "scene": "cap_on_all",
+      "width": 1024,
+      "height": 768,
+      "ok": 3,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "all_still_blocked_before",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "create_disabled_before",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "no_create_request_before",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "before",
+      "scene": "cap_on_selected",
+      "width": 1024,
+      "height": 768,
+      "ok": 3,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "create_request_captured",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "legacy_header_v1",
+          "ok": true,
+          "expected": "v1",
+          "actual": "v1"
+        },
+        {
+          "name": "legacy_body_document_ids",
+          "ok": true,
+          "expected": [
+            "doc_alpha",
+            "doc_beta"
+          ],
+          "actual": [
+            "doc_alpha",
+            "doc_beta"
+          ]
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "before",
+      "scene": "report_pass",
+      "width": 1024,
+      "height": 768,
+      "ok": 3,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "report_body_visible",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "before_no_readback_section",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        },
+        {
+          "name": "before_no_verification_status",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "before",
+      "scene": "report_degraded",
+      "width": 1024,
+      "height": 768,
+      "ok": 3,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "report_body_visible",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "before_no_readback_section",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        },
+        {
+          "name": "before_no_verification_status",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "before",
+      "scene": "report_partial",
+      "width": 1024,
+      "height": 768,
+      "ok": 3,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "report_body_visible",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "before_no_readback_section",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        },
+        {
+          "name": "before_no_verification_status",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "before",
+      "scene": "report_not_run",
+      "width": 1024,
+      "height": 768,
+      "ok": 3,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "report_body_visible",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "before_no_readback_section",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        },
+        {
+          "name": "before_no_verification_status",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "before",
+      "scene": "report_410_revoked",
+      "width": 1024,
+      "height": 768,
+      "ok": 3,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "before_no_restricted_placeholder",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        },
+        {
+          "name": "before_no_report_body",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        },
+        {
+          "name": "before_generic_error_shown",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "before",
+      "scene": "report_503",
+      "width": 1024,
+      "height": 768,
+      "ok": 2,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "before_generic_error_shown",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "before_no_retry_button",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        }
+      ],
+      "error": null
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "before_cap_off_all_1440.png",
+      "scene": "cap_off_all",
+      "width": 1440,
+      "height": 900,
+      "phase": "before",
+      "head": "d959635ebf5f642b6e8a75fb9a89896fe366683d",
+      "bytes": 97859,
+      "sha256": "ffed87ae683112da3cef3e1fa218970b6a84e67855b73b1812a83abc3710c1b6",
+      "dom_counts": {
+        "compare_create": 1,
+        "compare_entire_project": 1,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 0,
+        "activity_dialog": 0,
+        "report_toggle": 0,
+        "report_content": 0,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 0
+      },
+      "create_disabled": true,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "off",
+        "report": "plain",
+        "create_requests": 0,
+        "report_requests": 0
+      }
+    },
+    {
+      "file": "before_cap_off_selected_1440.png",
+      "scene": "cap_off_selected",
+      "width": 1440,
+      "height": 900,
+      "phase": "before",
+      "head": "d959635ebf5f642b6e8a75fb9a89896fe366683d",
+      "bytes": 92532,
+      "sha256": "9ec6b6e10b0d7a8fb99b9d41efb3e45193dbd248033f6f4a49a582b6c98d29f8",
+      "dom_counts": {
+        "compare_create": 1,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 1,
+        "activity_dialog": 0,
+        "report_toggle": 0,
+        "report_content": 0,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 0
+      },
+      "create_disabled": false,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "off",
+        "report": "plain",
+        "create_requests": 1,
+        "report_requests": 0
+      }
+    },
+    {
+      "file": "before_cap_on_all_1440.png",
+      "scene": "cap_on_all",
+      "width": 1440,
+      "height": 900,
+      "phase": "before",
+      "head": "d959635ebf5f642b6e8a75fb9a89896fe366683d",
+      "bytes": 97883,
+      "sha256": "5a77c31ba64d68f3164ca456663f246f4c4073ccc3af5e4cf5f831c6347a0083",
+      "dom_counts": {
+        "compare_create": 1,
+        "compare_entire_project": 1,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 0,
+        "activity_dialog": 0,
+        "report_toggle": 0,
+        "report_content": 0,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 0
+      },
+      "create_disabled": true,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "on",
+        "report": "plain",
+        "create_requests": 0,
+        "report_requests": 0
+      }
+    },
+    {
+      "file": "before_cap_on_selected_1440.png",
+      "scene": "cap_on_selected",
+      "width": 1440,
+      "height": 900,
+      "phase": "before",
+      "head": "d959635ebf5f642b6e8a75fb9a89896fe366683d",
+      "bytes": 92532,
+      "sha256": "9ec6b6e10b0d7a8fb99b9d41efb3e45193dbd248033f6f4a49a582b6c98d29f8",
+      "dom_counts": {
+        "compare_create": 1,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 1,
+        "activity_dialog": 0,
+        "report_toggle": 0,
+        "report_content": 0,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 0
+      },
+      "create_disabled": false,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "on",
+        "report": "plain",
+        "create_requests": 1,
+        "report_requests": 0
+      }
+    },
+    {
+      "file": "before_report_pass_1440.png",
+      "scene": "report_pass",
+      "width": 1440,
+      "height": 900,
+      "phase": "before",
+      "head": "d959635ebf5f642b6e8a75fb9a89896fe366683d",
+      "bytes": 94803,
+      "sha256": "97659b2557663759d024f29500756885523651edd77a946584bcf30002eeec1b",
+      "dom_counts": {
+        "compare_create": 0,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 0,
+        "activity_dialog": 1,
+        "report_toggle": 1,
+        "report_content": 1,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 1
+      },
+      "create_disabled": null,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "on",
+        "report": "pass",
+        "create_requests": 0,
+        "report_requests": 1
+      }
+    },
+    {
+      "file": "before_report_degraded_1440.png",
+      "scene": "report_degraded",
+      "width": 1440,
+      "height": 900,
+      "phase": "before",
+      "head": "d959635ebf5f642b6e8a75fb9a89896fe366683d",
+      "bytes": 94803,
+      "sha256": "97659b2557663759d024f29500756885523651edd77a946584bcf30002eeec1b",
+      "dom_counts": {
+        "compare_create": 0,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 0,
+        "activity_dialog": 1,
+        "report_toggle": 1,
+        "report_content": 1,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 1
+      },
+      "create_disabled": null,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "on",
+        "report": "degraded",
+        "create_requests": 0,
+        "report_requests": 1
+      }
+    },
+    {
+      "file": "before_report_partial_1440.png",
+      "scene": "report_partial",
+      "width": 1440,
+      "height": 900,
+      "phase": "before",
+      "head": "d959635ebf5f642b6e8a75fb9a89896fe366683d",
+      "bytes": 94803,
+      "sha256": "97659b2557663759d024f29500756885523651edd77a946584bcf30002eeec1b",
+      "dom_counts": {
+        "compare_create": 0,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 0,
+        "activity_dialog": 1,
+        "report_toggle": 1,
+        "report_content": 1,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 1
+      },
+      "create_disabled": null,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "on",
+        "report": "partial",
+        "create_requests": 0,
+        "report_requests": 1
+      }
+    },
+    {
+      "file": "before_report_not_run_1440.png",
+      "scene": "report_not_run",
+      "width": 1440,
+      "height": 900,
+      "phase": "before",
+      "head": "d959635ebf5f642b6e8a75fb9a89896fe366683d",
+      "bytes": 94803,
+      "sha256": "97659b2557663759d024f29500756885523651edd77a946584bcf30002eeec1b",
+      "dom_counts": {
+        "compare_create": 0,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 0,
+        "activity_dialog": 1,
+        "report_toggle": 1,
+        "report_content": 1,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 1
+      },
+      "create_disabled": null,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "on",
+        "report": "not_run",
+        "create_requests": 0,
+        "report_requests": 1
+      }
+    },
+    {
+      "file": "before_report_410_revoked_1440.png",
+      "scene": "report_410_revoked",
+      "width": 1440,
+      "height": 900,
+      "phase": "before",
+      "head": "d959635ebf5f642b6e8a75fb9a89896fe366683d",
+      "bytes": 95463,
+      "sha256": "57a0e321d0d0a325190ad56d0bf69fedc694fa53153d3c239a2153600f66b5c0",
+      "dom_counts": {
+        "compare_create": 0,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 0,
+        "activity_dialog": 1,
+        "report_toggle": 1,
+        "report_content": 0,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 0
+      },
+      "create_disabled": null,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "on",
+        "report": "revoked",
+        "create_requests": 0,
+        "report_requests": 1
+      }
+    },
+    {
+      "file": "before_report_503_1440.png",
+      "scene": "report_503",
+      "width": 1440,
+      "height": 900,
+      "phase": "before",
+      "head": "d959635ebf5f642b6e8a75fb9a89896fe366683d",
+      "bytes": 95463,
+      "sha256": "57a0e321d0d0a325190ad56d0bf69fedc694fa53153d3c239a2153600f66b5c0",
+      "dom_counts": {
+        "compare_create": 0,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 0,
+        "activity_dialog": 1,
+        "report_toggle": 1,
+        "report_content": 0,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 0
+      },
+      "create_disabled": null,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "on",
+        "report": "unavailable503",
+        "create_requests": 0,
+        "report_requests": 1
+      }
+    },
+    {
+      "file": "before_cap_off_all_1024.png",
+      "scene": "cap_off_all",
+      "width": 1024,
+      "height": 768,
+      "phase": "before",
+      "head": "d959635ebf5f642b6e8a75fb9a89896fe366683d",
+      "bytes": 94571,
+      "sha256": "85aa78a6bf7911b3d3c74c801602965cc227d3ab6b72fb2012704fe66c65c618",
+      "dom_counts": {
+        "compare_create": 1,
+        "compare_entire_project": 1,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 0,
+        "activity_dialog": 0,
+        "report_toggle": 0,
+        "report_content": 0,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 0
+      },
+      "create_disabled": true,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "off",
+        "report": "plain",
+        "create_requests": 0,
+        "report_requests": 0
+      }
+    },
+    {
+      "file": "before_cap_off_selected_1024.png",
+      "scene": "cap_off_selected",
+      "width": 1024,
+      "height": 768,
+      "phase": "before",
+      "head": "d959635ebf5f642b6e8a75fb9a89896fe366683d",
+      "bytes": 88500,
+      "sha256": "ad11583b9ea8d43ac06e37516f31fe9ef72726b72f407bd8bfaa72b94559a731",
+      "dom_counts": {
+        "compare_create": 1,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 1,
+        "activity_dialog": 0,
+        "report_toggle": 0,
+        "report_content": 0,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 0
+      },
+      "create_disabled": false,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "off",
+        "report": "plain",
+        "create_requests": 1,
+        "report_requests": 0
+      }
+    },
+    {
+      "file": "before_cap_on_all_1024.png",
+      "scene": "cap_on_all",
+      "width": 1024,
+      "height": 768,
+      "phase": "before",
+      "head": "d959635ebf5f642b6e8a75fb9a89896fe366683d",
+      "bytes": 94619,
+      "sha256": "4e65fbbf346e5d488ee475549d2a8e0696c98545d623fecbcc6dbc58eaccaad6",
+      "dom_counts": {
+        "compare_create": 1,
+        "compare_entire_project": 1,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 0,
+        "activity_dialog": 0,
+        "report_toggle": 0,
+        "report_content": 0,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 0
+      },
+      "create_disabled": true,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "on",
+        "report": "plain",
+        "create_requests": 0,
+        "report_requests": 0
+      }
+    },
+    {
+      "file": "before_cap_on_selected_1024.png",
+      "scene": "cap_on_selected",
+      "width": 1024,
+      "height": 768,
+      "phase": "before",
+      "head": "d959635ebf5f642b6e8a75fb9a89896fe366683d",
+      "bytes": 88491,
+      "sha256": "0a5ce57609d65235e977f0cb23ec050bb8c5f5a0be0b2e8ffcbc85354d15d41a",
+      "dom_counts": {
+        "compare_create": 1,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 1,
+        "activity_dialog": 0,
+        "report_toggle": 0,
+        "report_content": 0,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 0
+      },
+      "create_disabled": false,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "on",
+        "report": "plain",
+        "create_requests": 1,
+        "report_requests": 0
+      }
+    },
+    {
+      "file": "before_report_pass_1024.png",
+      "scene": "report_pass",
+      "width": 1024,
+      "height": 768,
+      "phase": "before",
+      "head": "d959635ebf5f642b6e8a75fb9a89896fe366683d",
+      "bytes": 81784,
+      "sha256": "5908bb438999f0462eab8c946ae8122d4d9685a07d319827c12f897fcae04890",
+      "dom_counts": {
+        "compare_create": 0,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 0,
+        "activity_dialog": 1,
+        "report_toggle": 1,
+        "report_content": 1,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 1
+      },
+      "create_disabled": null,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "on",
+        "report": "pass",
+        "create_requests": 0,
+        "report_requests": 1
+      }
+    },
+    {
+      "file": "before_report_degraded_1024.png",
+      "scene": "report_degraded",
+      "width": 1024,
+      "height": 768,
+      "phase": "before",
+      "head": "d959635ebf5f642b6e8a75fb9a89896fe366683d",
+      "bytes": 81784,
+      "sha256": "5908bb438999f0462eab8c946ae8122d4d9685a07d319827c12f897fcae04890",
+      "dom_counts": {
+        "compare_create": 0,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 0,
+        "activity_dialog": 1,
+        "report_toggle": 1,
+        "report_content": 1,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 1
+      },
+      "create_disabled": null,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "on",
+        "report": "degraded",
+        "create_requests": 0,
+        "report_requests": 1
+      }
+    },
+    {
+      "file": "before_report_partial_1024.png",
+      "scene": "report_partial",
+      "width": 1024,
+      "height": 768,
+      "phase": "before",
+      "head": "d959635ebf5f642b6e8a75fb9a89896fe366683d",
+      "bytes": 81784,
+      "sha256": "5908bb438999f0462eab8c946ae8122d4d9685a07d319827c12f897fcae04890",
+      "dom_counts": {
+        "compare_create": 0,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 0,
+        "activity_dialog": 1,
+        "report_toggle": 1,
+        "report_content": 1,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 1
+      },
+      "create_disabled": null,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "on",
+        "report": "partial",
+        "create_requests": 0,
+        "report_requests": 1
+      }
+    },
+    {
+      "file": "before_report_not_run_1024.png",
+      "scene": "report_not_run",
+      "width": 1024,
+      "height": 768,
+      "phase": "before",
+      "head": "d959635ebf5f642b6e8a75fb9a89896fe366683d",
+      "bytes": 81784,
+      "sha256": "5908bb438999f0462eab8c946ae8122d4d9685a07d319827c12f897fcae04890",
+      "dom_counts": {
+        "compare_create": 0,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 0,
+        "activity_dialog": 1,
+        "report_toggle": 1,
+        "report_content": 1,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 1
+      },
+      "create_disabled": null,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "on",
+        "report": "not_run",
+        "create_requests": 0,
+        "report_requests": 1
+      }
+    },
+    {
+      "file": "before_report_410_revoked_1024.png",
+      "scene": "report_410_revoked",
+      "width": 1024,
+      "height": 768,
+      "phase": "before",
+      "head": "d959635ebf5f642b6e8a75fb9a89896fe366683d",
+      "bytes": 87025,
+      "sha256": "1de38540f4f8b0015eba3ebd4455740d3d28a71db06fc3696fd4ec108816285c",
+      "dom_counts": {
+        "compare_create": 0,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 0,
+        "activity_dialog": 1,
+        "report_toggle": 1,
+        "report_content": 0,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 0
+      },
+      "create_disabled": null,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "on",
+        "report": "revoked",
+        "create_requests": 0,
+        "report_requests": 1
+      }
+    },
+    {
+      "file": "before_report_503_1024.png",
+      "scene": "report_503",
+      "width": 1024,
+      "height": 768,
+      "phase": "before",
+      "head": "d959635ebf5f642b6e8a75fb9a89896fe366683d",
+      "bytes": 87025,
+      "sha256": "1de38540f4f8b0015eba3ebd4455740d3d28a71db06fc3696fd4ec108816285c",
+      "dom_counts": {
+        "compare_create": 0,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 0,
+        "activity_dialog": 1,
+        "report_toggle": 1,
+        "report_content": 0,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 0
+      },
+      "create_disabled": null,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "on",
+        "report": "unavailable503",
+        "create_requests": 0,
+        "report_requests": 1
+      }
+    }
+  ]
+}

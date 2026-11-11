@@ -1,0 +1,93 @@
+Issue #1017 (D1-H) fork — local verification (real command output)
+BEFORE = fork origin/main d959635 (extracted via git archive)
+AFTER  = implementation head aaa3b080d1f0c39edefa5eec9d9db0a32651861a
+Node: v22.20.0
+Worktree: /home/lchen/.dsh/state/superagent/work/compare-implementation-7028627e2a92-fork
+
+================================================================
+AFTER — selected vitest (8 files; per plan §5.2 fork matrix)
+$ cd frontend && npx vitest run <8 selected files>
+exit=0
+  This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+  
+   ✓ src/components/research/ComparePanel.c05.test.tsx (14 tests) 59ms
+   ✓ src/lib/hooks/use-research-jobs.test.tsx (40 tests) 63ms
+   ✓ src/components/research/ComparePanel.test.tsx (12 tests) 82ms
+   ✓ src/components/research/ResearchJobList.compare.test.tsx (6 tests) 75ms
+   ✓ src/components/research/CompareReportView.test.tsx (13 tests) 117ms
+   ✓ src/components/research/ResearchWorkspace.test.tsx (31 tests) 480ms
+   ✓ src/components/research/target/TargetShell.test.tsx (72 tests) 1560ms
+  
+   Test Files  8 passed (8)
+        Tests  201 passed (201)
+     Start at  15:56:21
+     Duration  2.72s (transform 1.80s, setup 483ms, import 3.66s, tests 2.44s, environment 1.55s)
+
+================================================================
+AFTER — full vitest (`npm run test`, includes 14-locale parity/unused-key)
+$ cd frontend && npm run test
+exit=1 (same 59 pre-existing failures as baseline, see below)
+   Test Files  5 failed | 193 passed (198)
+        Tests  59 failed | 3338 passed (3397)
+     Start at  15:52:36
+     Duration  16.93s (transform 40.68s, setup 17.88s, import 123.50s, tests 92.22s, environment 68.01s)
+  
+  EXIT=1
+
+BEFORE — full vitest on the untouched baseline (same environment)
+$ cd frontend && npm run test
+exit=1
+   Test Files  5 failed | 192 passed (197)
+        Tests  59 failed | 3305 passed (3364)
+     Start at  15:33:49
+     Duration  16.75s (transform 35.11s, setup 18.63s, import 116.27s, tests 91.61s, environment 67.20s)
+  
+  EXIT=1
+
+Pre-existing failing test files (identical set/count on BEFORE and AFTER):
+    2  src/app/research/page.sessions.provider.test.tsx
+   26  src/app/research/page.sessions.test.tsx
+    1  src/app/research/page.target.test.tsx
+   16  src/app/research/page.test.tsx
+   14  src/components/research/SourceListPanel.test.tsx
+
+================================================================
+AFTER — lint (`npm run lint`)
+$ cd frontend && npm run lint
+exit=1 (pre-existing repo-wide violations; identical count to baseline)
+    437:7   error    'transport' is never reassigned. Use 'const' instead  prefer-const
+  
+  ✖ 66 problems (5 errors, 61 warnings)
+    3 errors and 1 warning potentially fixable with the `--fix` option.
+
+BEFORE — lint on the untouched baseline
+$ cd frontend && npm run lint
+exit=1
+    437:7   error    'transport' is never reassigned. Use 'const' instead  prefer-const
+  
+  ✖ 66 problems (5 errors, 61 warnings)
+    3 errors and 1 warning potentially fixable with the `--fix` option.
+
+Lint on the 31 changed files only (AFTER): 0 errors, warnings identical
+to the same files in BEFORE (pre-existing).
+
+================================================================
+AFTER — type check + production build
+$ cd frontend && npx tsc -b
+exit=0
+$ cd frontend && npm run build
+  
+  
+  ƒ Proxy (Middleware)
+  
+  ○  (Static)   prerendered as static content
+  ƒ  (Dynamic)  server-rendered on demand
+  
+  BUILD_EXIT=0
+
+================================================================
+BEFORE/AFTER reproducibility note
+The harness-only patch to frontend/src/lib/embedded/config.ts (static
+NEXT_PUBLIC_* member access; Next dev does not inline dynamic
+process.env[CONST]) is applied for capture and restored afterwards;
+both sides restored to sha256 2192fb22…42fb6 (see logs/config-*.sha256).

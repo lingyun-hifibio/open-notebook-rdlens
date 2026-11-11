@@ -1,0 +1,2006 @@
+{
+  "issue": 1017,
+  "phase": "after",
+  "head": "aaa3b080d1f0c39edefa5eec9d9db0a32651861a",
+  "host": "http://127.0.0.1:8974/",
+  "gateway": "http://127.0.0.1:8941",
+  "chrome": "/home/lchen/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome",
+  "viewports": [
+    {
+      "width": 1440,
+      "height": 900
+    },
+    {
+      "width": 1024,
+      "height": 768
+    }
+  ],
+  "theme": "light",
+  "locale": "en-US",
+  "started_at": "2026-11-11T07:55:20.863Z",
+  "summary": {
+    "pass": 126,
+    "fail": 0,
+    "total": 126,
+    "scene_errors": 0,
+    "scenes": 20
+  },
+  "scenes": [
+    {
+      "phase": "after",
+      "scene": "cap_off_all",
+      "width": 1440,
+      "height": 900,
+      "ok": 3,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "all_blocked_legacy",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "create_disabled_legacy",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "no_create_request",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "after",
+      "scene": "cap_off_selected",
+      "width": 1440,
+      "height": 900,
+      "ok": 6,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "create_enabled_selected",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "create_request_captured",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "legacy_header_v1",
+          "ok": true,
+          "expected": "v1",
+          "actual": "v1"
+        },
+        {
+          "name": "legacy_body_document_ids",
+          "ok": true,
+          "expected": [
+            "doc_alpha",
+            "doc_beta"
+          ],
+          "actual": [
+            "doc_alpha",
+            "doc_beta"
+          ]
+        },
+        {
+          "name": "legacy_body_no_source_scope",
+          "ok": true,
+          "expected": true,
+          "actual": false
+        },
+        {
+          "name": "legacy_body_no_note_ids",
+          "ok": true,
+          "expected": true,
+          "actual": false
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "after",
+      "scene": "cap_on_all",
+      "width": 1440,
+      "height": 900,
+      "ok": 10,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "all_not_blocked_after",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        },
+        {
+          "name": "create_enabled_after",
+          "ok": true,
+          "expected": false,
+          "actual": false
+        },
+        {
+          "name": "declared_scope_notice",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "create_request_captured",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "c05_header",
+          "ok": true,
+          "expected": "c05-v1",
+          "actual": "c05-v1"
+        },
+        {
+          "name": "c05_source_scope_all",
+          "ok": true,
+          "expected": {
+            "mode": "all",
+            "source_ids": [],
+            "single_source_id": null
+          },
+          "actual": {
+            "mode": "all",
+            "source_ids": [],
+            "single_source_id": null
+          }
+        },
+        {
+          "name": "c05_source_scope_keys",
+          "ok": true,
+          "expected": "mode,single_source_id,source_ids",
+          "actual": "mode,single_source_id,source_ids"
+        },
+        {
+          "name": "c05_note_ids_empty",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "c05_no_document_ids",
+          "ok": true,
+          "expected": true,
+          "actual": false
+        },
+        {
+          "name": "submitted_notice",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "after",
+      "scene": "cap_on_selected",
+      "width": 1440,
+      "height": 900,
+      "ok": 5,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "create_request_captured",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "c05_header",
+          "ok": true,
+          "expected": "c05-v1",
+          "actual": "c05-v1"
+        },
+        {
+          "name": "c05_source_scope_selected",
+          "ok": true,
+          "expected": {
+            "mode": "selected",
+            "source_ids": [
+              "src_alpha",
+              "src_beta"
+            ],
+            "single_source_id": null
+          },
+          "actual": {
+            "mode": "selected",
+            "source_ids": [
+              "src_alpha",
+              "src_beta"
+            ],
+            "single_source_id": null
+          }
+        },
+        {
+          "name": "c05_note_ids_empty",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "c05_no_document_ids",
+          "ok": true,
+          "expected": true,
+          "actual": false
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "after",
+      "scene": "report_pass",
+      "width": 1440,
+      "height": 900,
+      "ok": 7,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "report_body_visible",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_readback_section",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_scope_section",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_verification_section",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_verification_status",
+          "ok": true,
+          "expected": "pass",
+          "actual": "pass"
+        },
+        {
+          "name": "after_verification_text",
+          "ok": true,
+          "expected": "Verified — required checks executed with no findings",
+          "actual": "Verified — required checks executed with no findings"
+        },
+        {
+          "name": "after_model_section",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "after",
+      "scene": "report_degraded",
+      "width": 1440,
+      "height": 900,
+      "ok": 8,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "report_body_visible",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_readback_section",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_scope_section",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_verification_section",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_verification_status",
+          "ok": true,
+          "expected": "degraded",
+          "actual": "degraded"
+        },
+        {
+          "name": "after_verification_text",
+          "ok": true,
+          "expected": "Degraded — verification found unsupported cited claims",
+          "actual": "Degraded — verification found unsupported cited claims"
+        },
+        {
+          "name": "after_not_rendered_as_pass",
+          "ok": true,
+          "expected": "no pass text",
+          "actual": "Degraded — verification found unsupported cited claims"
+        },
+        {
+          "name": "after_model_section",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "after",
+      "scene": "report_partial",
+      "width": 1440,
+      "height": 900,
+      "ok": 8,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "report_body_visible",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_readback_section",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_scope_section",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_verification_section",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_verification_status",
+          "ok": true,
+          "expected": "partial",
+          "actual": "partial"
+        },
+        {
+          "name": "after_verification_text",
+          "ok": true,
+          "expected": "Partially checked — some checks were skipped, so this is not a pass",
+          "actual": "Partially checked — some checks were skipped, so this is not a pass"
+        },
+        {
+          "name": "after_not_rendered_as_pass",
+          "ok": true,
+          "expected": "no pass text",
+          "actual": "Partially checked — some checks were skipped, so this is not a pass"
+        },
+        {
+          "name": "after_model_section",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "after",
+      "scene": "report_not_run",
+      "width": 1440,
+      "height": 900,
+      "ok": 8,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "report_body_visible",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_readback_section",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_scope_section",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_verification_section",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_verification_status",
+          "ok": true,
+          "expected": "not_run",
+          "actual": "not_run"
+        },
+        {
+          "name": "after_verification_text",
+          "ok": true,
+          "expected": "Not verified — this job ran before comparison verification existed",
+          "actual": "Not verified — this job ran before comparison verification existed"
+        },
+        {
+          "name": "after_not_rendered_as_pass",
+          "ok": true,
+          "expected": "no pass text",
+          "actual": "Not verified — this job ran before comparison verification existed"
+        },
+        {
+          "name": "after_scope_missing_not_recorded",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "after",
+      "scene": "report_410_revoked",
+      "width": 1440,
+      "height": 900,
+      "ok": 4,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "after_restricted_placeholder",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_no_report_body",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        },
+        {
+          "name": "after_restricted_explains_revoke",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "report_request_410",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "after",
+      "scene": "report_503",
+      "width": 1440,
+      "height": 900,
+      "ok": 4,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "after_retryable_shown",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_retry_button",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_no_report_body",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        },
+        {
+          "name": "after_retry_renders_report",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "after",
+      "scene": "cap_off_all",
+      "width": 1024,
+      "height": 768,
+      "ok": 3,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "all_blocked_legacy",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "create_disabled_legacy",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "no_create_request",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "after",
+      "scene": "cap_off_selected",
+      "width": 1024,
+      "height": 768,
+      "ok": 6,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "create_enabled_selected",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "create_request_captured",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "legacy_header_v1",
+          "ok": true,
+          "expected": "v1",
+          "actual": "v1"
+        },
+        {
+          "name": "legacy_body_document_ids",
+          "ok": true,
+          "expected": [
+            "doc_alpha",
+            "doc_beta"
+          ],
+          "actual": [
+            "doc_alpha",
+            "doc_beta"
+          ]
+        },
+        {
+          "name": "legacy_body_no_source_scope",
+          "ok": true,
+          "expected": true,
+          "actual": false
+        },
+        {
+          "name": "legacy_body_no_note_ids",
+          "ok": true,
+          "expected": true,
+          "actual": false
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "after",
+      "scene": "cap_on_all",
+      "width": 1024,
+      "height": 768,
+      "ok": 10,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "all_not_blocked_after",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        },
+        {
+          "name": "create_enabled_after",
+          "ok": true,
+          "expected": false,
+          "actual": false
+        },
+        {
+          "name": "declared_scope_notice",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "create_request_captured",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "c05_header",
+          "ok": true,
+          "expected": "c05-v1",
+          "actual": "c05-v1"
+        },
+        {
+          "name": "c05_source_scope_all",
+          "ok": true,
+          "expected": {
+            "mode": "all",
+            "source_ids": [],
+            "single_source_id": null
+          },
+          "actual": {
+            "mode": "all",
+            "source_ids": [],
+            "single_source_id": null
+          }
+        },
+        {
+          "name": "c05_source_scope_keys",
+          "ok": true,
+          "expected": "mode,single_source_id,source_ids",
+          "actual": "mode,single_source_id,source_ids"
+        },
+        {
+          "name": "c05_note_ids_empty",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "c05_no_document_ids",
+          "ok": true,
+          "expected": true,
+          "actual": false
+        },
+        {
+          "name": "submitted_notice",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "after",
+      "scene": "cap_on_selected",
+      "width": 1024,
+      "height": 768,
+      "ok": 5,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "create_request_captured",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "c05_header",
+          "ok": true,
+          "expected": "c05-v1",
+          "actual": "c05-v1"
+        },
+        {
+          "name": "c05_source_scope_selected",
+          "ok": true,
+          "expected": {
+            "mode": "selected",
+            "source_ids": [
+              "src_alpha",
+              "src_beta"
+            ],
+            "single_source_id": null
+          },
+          "actual": {
+            "mode": "selected",
+            "source_ids": [
+              "src_alpha",
+              "src_beta"
+            ],
+            "single_source_id": null
+          }
+        },
+        {
+          "name": "c05_note_ids_empty",
+          "ok": true,
+          "expected": [],
+          "actual": []
+        },
+        {
+          "name": "c05_no_document_ids",
+          "ok": true,
+          "expected": true,
+          "actual": false
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "after",
+      "scene": "report_pass",
+      "width": 1024,
+      "height": 768,
+      "ok": 7,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "report_body_visible",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_readback_section",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_scope_section",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_verification_section",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_verification_status",
+          "ok": true,
+          "expected": "pass",
+          "actual": "pass"
+        },
+        {
+          "name": "after_verification_text",
+          "ok": true,
+          "expected": "Verified — required checks executed with no findings",
+          "actual": "Verified — required checks executed with no findings"
+        },
+        {
+          "name": "after_model_section",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "after",
+      "scene": "report_degraded",
+      "width": 1024,
+      "height": 768,
+      "ok": 8,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "report_body_visible",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_readback_section",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_scope_section",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_verification_section",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_verification_status",
+          "ok": true,
+          "expected": "degraded",
+          "actual": "degraded"
+        },
+        {
+          "name": "after_verification_text",
+          "ok": true,
+          "expected": "Degraded — verification found unsupported cited claims",
+          "actual": "Degraded — verification found unsupported cited claims"
+        },
+        {
+          "name": "after_not_rendered_as_pass",
+          "ok": true,
+          "expected": "no pass text",
+          "actual": "Degraded — verification found unsupported cited claims"
+        },
+        {
+          "name": "after_model_section",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "after",
+      "scene": "report_partial",
+      "width": 1024,
+      "height": 768,
+      "ok": 8,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "report_body_visible",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_readback_section",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_scope_section",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_verification_section",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_verification_status",
+          "ok": true,
+          "expected": "partial",
+          "actual": "partial"
+        },
+        {
+          "name": "after_verification_text",
+          "ok": true,
+          "expected": "Partially checked — some checks were skipped, so this is not a pass",
+          "actual": "Partially checked — some checks were skipped, so this is not a pass"
+        },
+        {
+          "name": "after_not_rendered_as_pass",
+          "ok": true,
+          "expected": "no pass text",
+          "actual": "Partially checked — some checks were skipped, so this is not a pass"
+        },
+        {
+          "name": "after_model_section",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "after",
+      "scene": "report_not_run",
+      "width": 1024,
+      "height": 768,
+      "ok": 8,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "report_body_visible",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_readback_section",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_scope_section",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_verification_section",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_verification_status",
+          "ok": true,
+          "expected": "not_run",
+          "actual": "not_run"
+        },
+        {
+          "name": "after_verification_text",
+          "ok": true,
+          "expected": "Not verified — this job ran before comparison verification existed",
+          "actual": "Not verified — this job ran before comparison verification existed"
+        },
+        {
+          "name": "after_not_rendered_as_pass",
+          "ok": true,
+          "expected": "no pass text",
+          "actual": "Not verified — this job ran before comparison verification existed"
+        },
+        {
+          "name": "after_scope_missing_not_recorded",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "after",
+      "scene": "report_410_revoked",
+      "width": 1024,
+      "height": 768,
+      "ok": 4,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "after_restricted_placeholder",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_no_report_body",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        },
+        {
+          "name": "after_restricted_explains_revoke",
+          "ok": true,
+          "expected": true,
+          "actual": true
+        },
+        {
+          "name": "report_request_410",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        }
+      ],
+      "error": null
+    },
+    {
+      "phase": "after",
+      "scene": "report_503",
+      "width": 1024,
+      "height": 768,
+      "ok": 4,
+      "fail": 0,
+      "assertions": [
+        {
+          "name": "after_retryable_shown",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_retry_button",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        },
+        {
+          "name": "after_no_report_body",
+          "ok": true,
+          "expected": 0,
+          "actual": 0
+        },
+        {
+          "name": "after_retry_renders_report",
+          "ok": true,
+          "expected": ">0",
+          "actual": 1
+        }
+      ],
+      "error": null
+    }
+  ],
+  "screenshots": [
+    {
+      "file": "after_cap_off_all_1440.png",
+      "scene": "cap_off_all",
+      "width": 1440,
+      "height": 900,
+      "phase": "after",
+      "head": "aaa3b080d1f0c39edefa5eec9d9db0a32651861a",
+      "bytes": 97883,
+      "sha256": "5a77c31ba64d68f3164ca456663f246f4c4073ccc3af5e4cf5f831c6347a0083",
+      "dom_counts": {
+        "compare_create": 1,
+        "compare_entire_project": 1,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 0,
+        "activity_dialog": 0,
+        "report_toggle": 0,
+        "report_content": 0,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 0
+      },
+      "create_disabled": true,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "off",
+        "report": "plain",
+        "create_requests": 0,
+        "report_requests": 0
+      }
+    },
+    {
+      "file": "after_cap_off_selected_1440.png",
+      "scene": "cap_off_selected",
+      "width": 1440,
+      "height": 900,
+      "phase": "after",
+      "head": "aaa3b080d1f0c39edefa5eec9d9db0a32651861a",
+      "bytes": 92513,
+      "sha256": "214f1f71e0cd0ffee0a66dda6dba4cf8c62a3da516ffecbfe797b890f7c10bf7",
+      "dom_counts": {
+        "compare_create": 1,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 1,
+        "activity_dialog": 0,
+        "report_toggle": 0,
+        "report_content": 0,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 0
+      },
+      "create_disabled": false,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "off",
+        "report": "plain",
+        "create_requests": 1,
+        "report_requests": 0
+      }
+    },
+    {
+      "file": "after_cap_on_all_1440.png",
+      "scene": "cap_on_all",
+      "width": 1440,
+      "height": 900,
+      "phase": "after",
+      "head": "aaa3b080d1f0c39edefa5eec9d9db0a32651861a",
+      "bytes": 99777,
+      "sha256": "b253516864c3921daf952ada25d51578c1b09bd3c221ad7c11330924c308a0eb",
+      "dom_counts": {
+        "compare_create": 1,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 1,
+        "compare_submitted": 0,
+        "activity_dialog": 0,
+        "report_toggle": 0,
+        "report_content": 0,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 0
+      },
+      "create_disabled": false,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "on",
+        "report": "plain",
+        "create_requests": 0,
+        "report_requests": 0
+      }
+    },
+    {
+      "file": "after_cap_on_all_submitted_1440.png",
+      "scene": "cap_on_all_submitted",
+      "width": 1440,
+      "height": 900,
+      "phase": "after",
+      "head": "aaa3b080d1f0c39edefa5eec9d9db0a32651861a",
+      "bytes": 106039,
+      "sha256": "f2346ad31152bebe665607d9d6987b86ddaf4e111c914938bf17560a7235596f",
+      "dom_counts": {
+        "compare_create": 1,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 1,
+        "compare_submitted": 1,
+        "activity_dialog": 0,
+        "report_toggle": 0,
+        "report_content": 0,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 0
+      },
+      "create_disabled": false,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "on",
+        "report": "plain",
+        "create_requests": 1,
+        "report_requests": 0
+      }
+    },
+    {
+      "file": "after_cap_on_selected_1440.png",
+      "scene": "cap_on_selected",
+      "width": 1440,
+      "height": 900,
+      "phase": "after",
+      "head": "aaa3b080d1f0c39edefa5eec9d9db0a32651861a",
+      "bytes": 92513,
+      "sha256": "214f1f71e0cd0ffee0a66dda6dba4cf8c62a3da516ffecbfe797b890f7c10bf7",
+      "dom_counts": {
+        "compare_create": 1,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 1,
+        "activity_dialog": 0,
+        "report_toggle": 0,
+        "report_content": 0,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 0
+      },
+      "create_disabled": false,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "on",
+        "report": "plain",
+        "create_requests": 1,
+        "report_requests": 0
+      }
+    },
+    {
+      "file": "after_report_pass_1440.png",
+      "scene": "report_pass",
+      "width": 1440,
+      "height": 900,
+      "phase": "after",
+      "head": "aaa3b080d1f0c39edefa5eec9d9db0a32651861a",
+      "bytes": 95335,
+      "sha256": "62a172c3e7feecc1a4bec8fc7eab1607d6c94a658667bad0a44f66b0bfb5cd09",
+      "dom_counts": {
+        "compare_create": 0,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 0,
+        "activity_dialog": 1,
+        "report_toggle": 1,
+        "report_content": 1,
+        "report_readback": 1,
+        "report_scope": 1,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 1,
+        "report_model": 1,
+        "report_verification": 1,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 1
+      },
+      "create_disabled": null,
+      "verification": {
+        "status": "pass",
+        "text": "Verified — required checks executed with no findings"
+      },
+      "gateway_stats": {
+        "capability": "on",
+        "report": "pass",
+        "create_requests": 0,
+        "report_requests": 1
+      }
+    },
+    {
+      "file": "after_report_degraded_1440.png",
+      "scene": "report_degraded",
+      "width": 1440,
+      "height": 900,
+      "phase": "after",
+      "head": "aaa3b080d1f0c39edefa5eec9d9db0a32651861a",
+      "bytes": 95365,
+      "sha256": "606807012fdac811bf573d8f1f2a893159dbef6cef4d97d7251478630a69263f",
+      "dom_counts": {
+        "compare_create": 0,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 0,
+        "activity_dialog": 1,
+        "report_toggle": 1,
+        "report_content": 1,
+        "report_readback": 1,
+        "report_scope": 1,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 1,
+        "report_model": 1,
+        "report_verification": 1,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 1
+      },
+      "create_disabled": null,
+      "verification": {
+        "status": "degraded",
+        "text": "Degraded — verification found unsupported cited claims"
+      },
+      "gateway_stats": {
+        "capability": "on",
+        "report": "degraded",
+        "create_requests": 0,
+        "report_requests": 1
+      }
+    },
+    {
+      "file": "after_report_partial_1440.png",
+      "scene": "report_partial",
+      "width": 1440,
+      "height": 900,
+      "phase": "after",
+      "head": "aaa3b080d1f0c39edefa5eec9d9db0a32651861a",
+      "bytes": 96242,
+      "sha256": "10201f3c9d1a0d237ae86e53157a1ce4cf04f1f78718bb0c096be14b73875c3c",
+      "dom_counts": {
+        "compare_create": 0,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 0,
+        "activity_dialog": 1,
+        "report_toggle": 1,
+        "report_content": 1,
+        "report_readback": 1,
+        "report_scope": 1,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 1,
+        "report_model": 1,
+        "report_verification": 1,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 1
+      },
+      "create_disabled": null,
+      "verification": {
+        "status": "partial",
+        "text": "Partially checked — some checks were skipped, so this is not a pass"
+      },
+      "gateway_stats": {
+        "capability": "on",
+        "report": "partial",
+        "create_requests": 0,
+        "report_requests": 1
+      }
+    },
+    {
+      "file": "after_report_not_run_1440.png",
+      "scene": "report_not_run",
+      "width": 1440,
+      "height": 900,
+      "phase": "after",
+      "head": "aaa3b080d1f0c39edefa5eec9d9db0a32651861a",
+      "bytes": 96935,
+      "sha256": "b2661d83f58d5b171f283f0a6c8971653e2b1b5018ae0991a5392ad2d239e64b",
+      "dom_counts": {
+        "compare_create": 0,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 0,
+        "activity_dialog": 1,
+        "report_toggle": 1,
+        "report_content": 1,
+        "report_readback": 1,
+        "report_scope": 1,
+        "report_scope_empty": 1,
+        "report_scope_resolved": 0,
+        "report_model": 1,
+        "report_verification": 1,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 1
+      },
+      "create_disabled": null,
+      "verification": {
+        "status": "not_run",
+        "text": "Not verified — this job ran before comparison verification existed"
+      },
+      "gateway_stats": {
+        "capability": "on",
+        "report": "not_run",
+        "create_requests": 0,
+        "report_requests": 1
+      }
+    },
+    {
+      "file": "after_report_410_revoked_1440.png",
+      "scene": "report_410_revoked",
+      "width": 1440,
+      "height": 900,
+      "phase": "after",
+      "head": "aaa3b080d1f0c39edefa5eec9d9db0a32651861a",
+      "bytes": 97520,
+      "sha256": "c8cc6a700b6085368510a087f518110350fd06d36119e06b375595555daccea4",
+      "dom_counts": {
+        "compare_create": 0,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 0,
+        "activity_dialog": 1,
+        "report_toggle": 1,
+        "report_content": 0,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 1,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 0
+      },
+      "create_disabled": null,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "on",
+        "report": "revoked",
+        "create_requests": 0,
+        "report_requests": 1
+      }
+    },
+    {
+      "file": "after_report_503_1440.png",
+      "scene": "report_503",
+      "width": 1440,
+      "height": 900,
+      "phase": "after",
+      "head": "aaa3b080d1f0c39edefa5eec9d9db0a32651861a",
+      "bytes": 96647,
+      "sha256": "8336200f82c32a6cbedf05abbc02d3c25bb1d79511742f6cdc19529a39ed5a7d",
+      "dom_counts": {
+        "compare_create": 0,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 0,
+        "activity_dialog": 1,
+        "report_toggle": 1,
+        "report_content": 0,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 0,
+        "report_retryable": 1,
+        "report_retry_button": 1,
+        "markdown_blocks": 0
+      },
+      "create_disabled": null,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "on",
+        "report": "unavailable503",
+        "create_requests": 0,
+        "report_requests": 1
+      }
+    },
+    {
+      "file": "after_report_503_retried_1440.png",
+      "scene": "report_503_retried",
+      "width": 1440,
+      "height": 900,
+      "phase": "after",
+      "head": "aaa3b080d1f0c39edefa5eec9d9db0a32651861a",
+      "bytes": 95335,
+      "sha256": "62a172c3e7feecc1a4bec8fc7eab1607d6c94a658667bad0a44f66b0bfb5cd09",
+      "dom_counts": {
+        "compare_create": 0,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 0,
+        "activity_dialog": 1,
+        "report_toggle": 1,
+        "report_content": 1,
+        "report_readback": 1,
+        "report_scope": 1,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 1,
+        "report_model": 1,
+        "report_verification": 1,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 1
+      },
+      "create_disabled": null,
+      "verification": {
+        "status": "pass",
+        "text": "Verified — required checks executed with no findings"
+      },
+      "gateway_stats": {
+        "capability": "on",
+        "report": "pass",
+        "create_requests": 0,
+        "report_requests": 2
+      }
+    },
+    {
+      "file": "after_cap_off_all_1024.png",
+      "scene": "cap_off_all",
+      "width": 1024,
+      "height": 768,
+      "phase": "after",
+      "head": "aaa3b080d1f0c39edefa5eec9d9db0a32651861a",
+      "bytes": 94571,
+      "sha256": "85aa78a6bf7911b3d3c74c801602965cc227d3ab6b72fb2012704fe66c65c618",
+      "dom_counts": {
+        "compare_create": 1,
+        "compare_entire_project": 1,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 0,
+        "activity_dialog": 0,
+        "report_toggle": 0,
+        "report_content": 0,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 0
+      },
+      "create_disabled": true,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "off",
+        "report": "plain",
+        "create_requests": 0,
+        "report_requests": 0
+      }
+    },
+    {
+      "file": "after_cap_off_selected_1024.png",
+      "scene": "cap_off_selected",
+      "width": 1024,
+      "height": 768,
+      "phase": "after",
+      "head": "aaa3b080d1f0c39edefa5eec9d9db0a32651861a",
+      "bytes": 88500,
+      "sha256": "ad11583b9ea8d43ac06e37516f31fe9ef72726b72f407bd8bfaa72b94559a731",
+      "dom_counts": {
+        "compare_create": 1,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 1,
+        "activity_dialog": 0,
+        "report_toggle": 0,
+        "report_content": 0,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 0
+      },
+      "create_disabled": false,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "off",
+        "report": "plain",
+        "create_requests": 1,
+        "report_requests": 0
+      }
+    },
+    {
+      "file": "after_cap_on_all_1024.png",
+      "scene": "cap_on_all",
+      "width": 1024,
+      "height": 768,
+      "phase": "after",
+      "head": "aaa3b080d1f0c39edefa5eec9d9db0a32651861a",
+      "bytes": 95587,
+      "sha256": "1c40916f7d4ac41e9bb305a33b26b317654233d372168c9492ba731ff54d0805",
+      "dom_counts": {
+        "compare_create": 1,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 1,
+        "compare_submitted": 0,
+        "activity_dialog": 0,
+        "report_toggle": 0,
+        "report_content": 0,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 0
+      },
+      "create_disabled": false,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "on",
+        "report": "plain",
+        "create_requests": 0,
+        "report_requests": 0
+      }
+    },
+    {
+      "file": "after_cap_on_all_submitted_1024.png",
+      "scene": "cap_on_all_submitted",
+      "width": 1024,
+      "height": 768,
+      "phase": "after",
+      "head": "aaa3b080d1f0c39edefa5eec9d9db0a32651861a",
+      "bytes": 101535,
+      "sha256": "fba9a8e82387a129e15e6e0d91a42d14c982b1c4c09fcf2eed53c62fcb49d312",
+      "dom_counts": {
+        "compare_create": 1,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 1,
+        "compare_submitted": 1,
+        "activity_dialog": 0,
+        "report_toggle": 0,
+        "report_content": 0,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 0
+      },
+      "create_disabled": false,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "on",
+        "report": "plain",
+        "create_requests": 1,
+        "report_requests": 0
+      }
+    },
+    {
+      "file": "after_cap_on_selected_1024.png",
+      "scene": "cap_on_selected",
+      "width": 1024,
+      "height": 768,
+      "phase": "after",
+      "head": "aaa3b080d1f0c39edefa5eec9d9db0a32651861a",
+      "bytes": 88491,
+      "sha256": "0a5ce57609d65235e977f0cb23ec050bb8c5f5a0be0b2e8ffcbc85354d15d41a",
+      "dom_counts": {
+        "compare_create": 1,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 1,
+        "activity_dialog": 0,
+        "report_toggle": 0,
+        "report_content": 0,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 0
+      },
+      "create_disabled": false,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "on",
+        "report": "plain",
+        "create_requests": 1,
+        "report_requests": 0
+      }
+    },
+    {
+      "file": "after_report_pass_1024.png",
+      "scene": "report_pass",
+      "width": 1024,
+      "height": 768,
+      "phase": "after",
+      "head": "aaa3b080d1f0c39edefa5eec9d9db0a32651861a",
+      "bytes": 83937,
+      "sha256": "987bcf0ccf225fb164d983ef48e7645b16f538b00ad2ee674de7b45ad705b9cb",
+      "dom_counts": {
+        "compare_create": 0,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 0,
+        "activity_dialog": 1,
+        "report_toggle": 1,
+        "report_content": 1,
+        "report_readback": 1,
+        "report_scope": 1,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 1,
+        "report_model": 1,
+        "report_verification": 1,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 1
+      },
+      "create_disabled": null,
+      "verification": {
+        "status": "pass",
+        "text": "Verified — required checks executed with no findings"
+      },
+      "gateway_stats": {
+        "capability": "on",
+        "report": "pass",
+        "create_requests": 0,
+        "report_requests": 1
+      }
+    },
+    {
+      "file": "after_report_degraded_1024.png",
+      "scene": "report_degraded",
+      "width": 1024,
+      "height": 768,
+      "phase": "after",
+      "head": "aaa3b080d1f0c39edefa5eec9d9db0a32651861a",
+      "bytes": 84285,
+      "sha256": "03b165e3412a5741f1668769c472add1d1956942cbf424c69fffa182b09a22b0",
+      "dom_counts": {
+        "compare_create": 0,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 0,
+        "activity_dialog": 1,
+        "report_toggle": 1,
+        "report_content": 1,
+        "report_readback": 1,
+        "report_scope": 1,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 1,
+        "report_model": 1,
+        "report_verification": 1,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 1
+      },
+      "create_disabled": null,
+      "verification": {
+        "status": "degraded",
+        "text": "Degraded — verification found unsupported cited claims"
+      },
+      "gateway_stats": {
+        "capability": "on",
+        "report": "degraded",
+        "create_requests": 0,
+        "report_requests": 1
+      }
+    },
+    {
+      "file": "after_report_partial_1024.png",
+      "scene": "report_partial",
+      "width": 1024,
+      "height": 768,
+      "phase": "after",
+      "head": "aaa3b080d1f0c39edefa5eec9d9db0a32651861a",
+      "bytes": 84769,
+      "sha256": "45298c5a03561b9480770138d40a691fa2be7a9e9d658984451cfe5fd11212ca",
+      "dom_counts": {
+        "compare_create": 0,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 0,
+        "activity_dialog": 1,
+        "report_toggle": 1,
+        "report_content": 1,
+        "report_readback": 1,
+        "report_scope": 1,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 1,
+        "report_model": 1,
+        "report_verification": 1,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 1
+      },
+      "create_disabled": null,
+      "verification": {
+        "status": "partial",
+        "text": "Partially checked — some checks were skipped, so this is not a pass"
+      },
+      "gateway_stats": {
+        "capability": "on",
+        "report": "partial",
+        "create_requests": 0,
+        "report_requests": 1
+      }
+    },
+    {
+      "file": "after_report_not_run_1024.png",
+      "scene": "report_not_run",
+      "width": 1024,
+      "height": 768,
+      "phase": "after",
+      "head": "aaa3b080d1f0c39edefa5eec9d9db0a32651861a",
+      "bytes": 83279,
+      "sha256": "fd179e7a8e0860be9814e0c89f70292369f6c2fb99fcb459356850a8598134fb",
+      "dom_counts": {
+        "compare_create": 0,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 0,
+        "activity_dialog": 1,
+        "report_toggle": 1,
+        "report_content": 1,
+        "report_readback": 1,
+        "report_scope": 1,
+        "report_scope_empty": 1,
+        "report_scope_resolved": 0,
+        "report_model": 1,
+        "report_verification": 1,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 1
+      },
+      "create_disabled": null,
+      "verification": {
+        "status": "not_run",
+        "text": "Not verified — this job ran before comparison verification existed"
+      },
+      "gateway_stats": {
+        "capability": "on",
+        "report": "not_run",
+        "create_requests": 0,
+        "report_requests": 1
+      }
+    },
+    {
+      "file": "after_report_410_revoked_1024.png",
+      "scene": "report_410_revoked",
+      "width": 1024,
+      "height": 768,
+      "phase": "after",
+      "head": "aaa3b080d1f0c39edefa5eec9d9db0a32651861a",
+      "bytes": 87635,
+      "sha256": "ccbd72c1a7351e7d9f40bfd2a05c00d31e7c45c59f3c5e0a2d8583b94db4b898",
+      "dom_counts": {
+        "compare_create": 0,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 0,
+        "activity_dialog": 1,
+        "report_toggle": 1,
+        "report_content": 0,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 1,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 0
+      },
+      "create_disabled": null,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "on",
+        "report": "revoked",
+        "create_requests": 0,
+        "report_requests": 1
+      }
+    },
+    {
+      "file": "after_report_503_1024.png",
+      "scene": "report_503",
+      "width": 1024,
+      "height": 768,
+      "phase": "after",
+      "head": "aaa3b080d1f0c39edefa5eec9d9db0a32651861a",
+      "bytes": 86768,
+      "sha256": "06e192e4a3b42146d54fc0190ebe1c398ddab18160f2c3f340c0c2d98be4886a",
+      "dom_counts": {
+        "compare_create": 0,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 0,
+        "activity_dialog": 1,
+        "report_toggle": 1,
+        "report_content": 0,
+        "report_readback": 0,
+        "report_scope": 0,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 0,
+        "report_model": 0,
+        "report_verification": 0,
+        "report_restricted": 0,
+        "report_retryable": 1,
+        "report_retry_button": 1,
+        "markdown_blocks": 0
+      },
+      "create_disabled": null,
+      "verification": null,
+      "gateway_stats": {
+        "capability": "on",
+        "report": "unavailable503",
+        "create_requests": 0,
+        "report_requests": 1
+      }
+    },
+    {
+      "file": "after_report_503_retried_1024.png",
+      "scene": "report_503_retried",
+      "width": 1024,
+      "height": 768,
+      "phase": "after",
+      "head": "aaa3b080d1f0c39edefa5eec9d9db0a32651861a",
+      "bytes": 83932,
+      "sha256": "8849937da66f3a98960af9688d65a7ef4ca9bdf486dbc99ad6c1261c52070340",
+      "dom_counts": {
+        "compare_create": 0,
+        "compare_entire_project": 0,
+        "compare_empty": 0,
+        "compare_declared_all": 0,
+        "compare_submitted": 0,
+        "activity_dialog": 1,
+        "report_toggle": 1,
+        "report_content": 1,
+        "report_readback": 1,
+        "report_scope": 1,
+        "report_scope_empty": 0,
+        "report_scope_resolved": 1,
+        "report_model": 1,
+        "report_verification": 1,
+        "report_restricted": 0,
+        "report_retryable": 0,
+        "report_retry_button": 0,
+        "markdown_blocks": 1
+      },
+      "create_disabled": null,
+      "verification": {
+        "status": "pass",
+        "text": "Verified — required checks executed with no findings"
+      },
+      "gateway_stats": {
+        "capability": "on",
+        "report": "pass",
+        "create_requests": 0,
+        "report_requests": 2
+      }
+    }
+  ]
+}
