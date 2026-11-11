@@ -190,6 +190,17 @@ export type NoteErrorCode =
   | 'note_store_unavailable'
   /** host B3 新增：片段来源/版本不存在（404，不泄露存在性）。 */
   | 'fragment_source_not_found'
+  /**
+   * Issue #1191 PR-B（#1050 已冻结导出契约，纯追加）：单份 Markdown 导出。
+   *
+   * 这四个码原本不在前端闭集里，导致 409 `export_request_conflict` 等被
+   * 归一成 `unknown_error`（冲突/不支持无法诚实呈现）。加入闭集后
+   * `normalizeNoteApiError` 会原样保留契约码，文案由 `note-ui-labels` 映射。
+   */
+  | 'export_request_invalid'
+  | 'export_request_conflict'
+  | 'export_snapshot_unavailable'
+  | 'export_not_found'
   | 'network_error'
   | 'unknown_error'
 

@@ -18,6 +18,7 @@ import type {
 } from '@/lib/research/issue585/types'
 import type { NoteEnableFailureKind } from '@/lib/research/issue585/note-enable'
 import type { NoteDeleteFailureKind } from '@/lib/research/issue585/note-delete'
+import type { NoteExportFailure } from '@/lib/research/issue585/note-export'
 
 /** 保存状态 → 文案 key（方案 §4.1 的九类显式状态）。 */
 const SAVE_STATUS_LABEL_KEYS: Record<NoteSaveStatus, string> = {
@@ -47,6 +48,11 @@ const NOTE_ERROR_LABEL_KEYS: Record<NoteErrorCode, string> = {
   note_dependency_unavailable: 'research.notes.editor.errors.note_dependency_unavailable',
   note_store_unavailable: 'research.notes.editor.errors.note_store_unavailable',
   fragment_source_not_found: 'research.notes.editor.errors.fragment_source_not_found',
+  // Issue #1191 PR-B（#1050 冻结导出契约码）：Record 必须保持穷尽。
+  export_request_invalid: 'research.notes.editor.errors.export_request_invalid',
+  export_request_conflict: 'research.notes.editor.errors.export_request_conflict',
+  export_snapshot_unavailable: 'research.notes.editor.errors.export_snapshot_unavailable',
+  export_not_found: 'research.notes.editor.errors.export_not_found',
   network_error: 'research.notes.editor.errors.network_error',
   unknown_error: 'research.notes.editor.errors.unknown_error',
 }
@@ -179,4 +185,64 @@ export function formatCachedAt(value: string | null | undefined): string | null 
   const parsed = new Date(value)
   if (Number.isNaN(parsed.getTime())) return null
   return parsed.toLocaleString()
+}
+
+// ---------------------------------------------------------------------------
+// Issue #1191 PR-B：单份 Markdown 导出（#1050 已冻结契约）的失败/提示文案。
+//
+// 与上方错误码映射同一个纪律：字面量映射表（Unused Key Detection 兼容）、
+// 未知码落到通用文案、绝不展示原始响应体/堆栈。flush 被离开保护阻断时复用
+// 既有 leave 文案（同一份诚实原因）。
+// ---------------------------------------------------------------------------
+
+/** 导出失败提示 key（能力/权限/刷新/结果未知），字面量映射。 */
+const NOTE_EXPORT_HINT_LABEL_KEYS = {
+  restricted: 'research.notes.export.hint.restricted',
+  refreshCatalog: 'research.notes.export.hint.refreshCatalog',
+  unknownResult: 'research.notes.export.hint.unknownResult',
+} as const
+
+/** 导出失败 → 主文案 key（稳定码映射；畸形响应/下载失败按“结果未知”）。 */
+export function noteExportFailureLabelKey(failure: NoteExportFailure): string {
+  if (failure.kind === 'blocked') return leaveReasonLabelKey(failure.reason)
+  if (failure.kind === 'invalid_response' || failure.kind === 'download_unavailable') {
+    return 'research.notes.editor.errors.unknown_error'
+  }
+  if (failure.kind === 'not_exportable') return noteErrorLabelKey(failure.reason)
+  return noteErrorLabelKey(failure.code)
+}
+
+/** 导出失败 → 附加提示 key（无附加提示时 null）。 */
+export function noteExportFailureHintKey(failure: NoteExportFailure): string | null {
+  if (failure.kind === 'blocked' || failure.kind === 'not_exportable') return null
+  if (failure.kind === 'invalid_response' || failure.kind === 'download_unavailable') {
+    return NOTE_EXPORT_HINT_LABEL_KEYS.unknownResult
+  }
+  switch (failure.code) {
+    case 'note_access_restricted':
+      return NOTE_EXPORT_HINT_LABEL_KEYS.restricted
+    case 'note_not_found':
+      // 创建时文档不存在：目录可能已过期。
+      return NOTE_EXPORT_HINT_LABEL_KEYS.refreshCatalog
+    case 'export_not_found':
+    case 'note_revision_conflict':
+    case 'export_request_conflict':
+    case 'note_edit_schema_unsupported':
+    case 'export_request_invalid':
+    case 'note_request_invalid':
+      return null
+    default:
+      // 503（结果未知）/网络/存储类：同幂等键重试安全。
+      return failure.retryable ? NOTE_EXPORT_HINT_LABEL_KEYS.unknownResult : null
+  }
+}
+
+/** 仅 422 类“请求被拒”展示 request_id（便于支持核查，不展示原始响应体）。 */
+export function noteExportFailureRequestId(failure: NoteExportFailure): string | null {
+  if (failure.kind !== 'api') return null
+  if (failure.requestId === null || failure.requestId.length === 0) return null
+  if (failure.code !== 'export_request_invalid' && failure.code !== 'note_request_invalid') {
+    return null
+  }
+  return failure.requestId
 }
