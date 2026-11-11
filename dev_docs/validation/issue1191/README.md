@@ -16,8 +16,13 @@ Gateway）。**不是** #1150 的 L2 验收证据：S12b / S10 的 PASS 仍只�
 | 侧 | fork 仓 head | 说明 |
 |---|---|---|
 | Before | `d959635eb`（fork `main`，含 #131） | W3 已交付但仅 legacy 壳可达；目标壳右栏成果目录只读 |
-| After（PR-A） | `dd7dfee67`（PR-A 分支 head） | 目标壳接入 W3 目录/编辑器/写作入口（无导出按钮） |
-| After（PR-A + PR-B） | `a7987c5e5`（PR-B 分支 head，stacked on PR-A） | 追加宽屏编辑器动作区「Export Markdown」入口 |
+| After（PR-A，截图采集 head） | `dd7dfee67` | 目标壳接入 W3 目录/编辑器/写作入口（无导出按钮） |
+| After（PR-A + PR-B，截图采集 head） | `a7987c5e5`（stacked on PR-A） | 追加宽屏编辑器动作区「Export Markdown」入口 |
+
+> 最终 review head：PR-A `23a608602`、PR-B `6855fc34c`（PR-B rebase 到 PR-A 最终
+> head）。相对截图采集 head，最终 head 只多一个 **Tab 焦点陷阱修复**（嵌套模态
+> 打开时暂停；`TargetEditorFocus.tsx` + 其测试，2 文件 18 行），不改变本目录
+> 任何已截取视觉状态；截图无需重采。
 
 PR-A 的 Before/After = `d959635eb` → `dd7dfee67`；PR-B 的 Before/After =
 `d959635eb` → `a7987c5e5`（PR-B 分支含 PR-A，符合计划 stacked 关系）。
