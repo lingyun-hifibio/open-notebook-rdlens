@@ -142,6 +142,9 @@ const HOOKS = {
   reportScope: '[data-testid="compare-report-scope"]',
   reportScopeEmpty: '[data-testid="compare-report-scope-empty"]',
   reportScopeResolved: '[data-testid="compare-report-scope-resolved"]',
+  reportScopeDeclaredSources: '[data-testid="compare-report-scope-declared-sources"]',
+  reportCoverageCounts: '[data-testid="compare-report-coverage-counts"]',
+  reportCoverageUnavailable: '[data-testid="compare-report-coverage-unavailable"]',
   reportModel: '[data-testid="compare-report-model"]',
   reportModelId: '[data-testid="compare-report-model-id"]',
   reportVerification: '[data-testid="compare-report-verification"]',
@@ -210,6 +213,9 @@ async function collectState(boot) {
       report_scope: await count(app, HOOKS.reportScope),
       report_scope_empty: await count(app, HOOKS.reportScopeEmpty),
       report_scope_resolved: await count(app, HOOKS.reportScopeResolved),
+      report_scope_declared_sources: await count(app, HOOKS.reportScopeDeclaredSources),
+      report_coverage_counts: await count(app, HOOKS.reportCoverageCounts),
+      report_coverage_unavailable: await count(app, HOOKS.reportCoverageUnavailable),
       report_model: await count(app, HOOKS.reportModel),
       report_verification: await count(app, HOOKS.reportVerification),
       report_restricted: await count(app, HOOKS.reportRestricted),
@@ -600,6 +606,25 @@ async function runReportScene(browser, width, height, { scene, reportMode, expec
       check('after_scope_missing_not_recorded', state.counts.report_scope_empty > 0, '>0', state.counts.report_scope_empty)
     } else {
       check('after_model_section', state.counts.report_model > 0, '>0', state.counts.report_model)
+    }
+    // MEDIUM-1：selected 声明范围展示「来源数」（pass 场景为 selected scope）；
+    // 真实覆盖计数（非畸形）走 counts 行。
+    if (expected.status === 'pass') {
+      check(
+        'after_declared_sources',
+        state.counts.report_scope_declared_sources > 0,
+        '>0',
+        state.counts.report_scope_declared_sources,
+      )
+      check(
+        'after_coverage_counts',
+        state.counts.report_coverage_counts > 0 && state.counts.report_coverage_unavailable === 0,
+        'counts>0 & unavailable=0',
+        JSON.stringify({
+          counts: state.counts.report_coverage_counts,
+          unavailable: state.counts.report_coverage_unavailable,
+        }),
+      )
     }
   }
   await boot.context.close()

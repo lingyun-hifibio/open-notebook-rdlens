@@ -3,34 +3,42 @@
 - **Issue**：`HiFiBiO-Therapeutics/RDLens#1017`（D1-H 多来源→基础比较与回访，主单）
 - **实施计划**：`HiFiBiO-Therapeutics/RDLens#1188`（已合入；本证据对应 §2.5 wire、§2.9 fork 设计、§3.3 fork 白名单、§5.2 vitest 矩阵、§5.3 视觉证据）
 - **Host 配对 PR**：`HiFiBiO-Therapeutics/RDLens#<host-pr>`（host 半，实施中/待合入；fork 侧按计划 §2.5 契约实现）
-- **实现 PR**：`lingyun-hifibio/open-notebook-rdlens#<fork-pr>`（head `aaa3b080d1f0c39edefa5eec9d9db0a32651861a`）
+- **实现 PR**：`lingyun-hifibio/open-notebook-rdlens#135`（head `d80e074bc66671cc11afeef7c29ee99b00ad62e2`；AFTER 截图在该 head 上重采）
 - **证据分支**：`evidence/issue1017-20261111`（本分支，从 fork `origin/main` 创建；**不属于实现 PR diff**）
 - **BEFORE 基线**：fork `origin/main` = `d959635ebf5f642b6e8a75fb9a89896fe366683d`（2026-11-11 fetch）
-- **AFTER 实现 head**：`aaa3b080d1f0c39edefa5eec9d9db0a32651861a`
+- **AFTER 实现 head**：`d80e074bc66671cc11afeef7c29ee99b00ad62e2`
+  （独立审查 round 1 的 MEDIUM-1/LOW-1/LOW-2 修复后重采；BEFORE 截图不变，
+  仍为 `d959635`）
+
 - **界面入口**：`/research?legacy=1`（既有 legacy 回归入口，沿用 #1136 证据做法；**不新增路由/Tab**）
+
+**审查修复重采说明**：round 1 判定 0 BLOCKING/HIGH（2 MEDIUM / 3 LOW）。
+本次重采覆盖：MEDIUM-1（`selected` 声明范围新增「Declared sources: N」来源数）、
+LOW-2（畸形 coverage 不再伪造 0）。LOW-1 只改 wire 类型/安全渲染（截图不变），
+LOW-3 为 README 笔误修正。重采后 AFTER 断言为 **130 PASS / 0 FAIL**。
 
 ## 结论摘要
 
 本证据覆盖 issue #1017 的 fork 半：能力位 `capabilities.c05.entries.compare.execution_ready`
 驱动的 C05 声明范围派发，以及 `CompareReportView` 的范围/版本/实际模型/校验状态回访与
-410/503 终态。BEFORE（`d959635`）不具备这些能力；AFTER（`aaa3b08`）在能力 true 时
+410/503 终态。BEFORE（`d959635`）不具备这些能力；AFTER（`d80e074`，审查修复后重采）在能力 true 时
 按声明范围派发、在能力 false 时保持既有 legacy 行为（UI 逐字节等价，见 §复现性）。
 
-| 场景 | BEFORE（d959635） | AFTER（aaa3b08） |
+| 场景 | BEFORE（d959635） | AFTER（d80e074） |
 |---|---|---|
 | `cap_off_all`：能力 false + 全部资料 | `all` 阻断（"Compare requires an explicit source selection"），创建禁用，**零请求** | 同左（legacy 回退，UI 字节等价） |
 | `cap_off_selected`：能力 false + 已选 2 源 | 提交 legacy：头 `v1`、body `document_ids:["doc_alpha","doc_beta"]`、无 `source_scope` | 同左（逐 wire 字段相同） |
 | `cap_on_all`：能力 true + 全部资料 | 能力位不被消费：`all` 仍阻断、零请求 | `all` 可提交：头 `c05-v1`、`source_scope:{mode:"all",source_ids:[],single_source_id:null}`、`note_ids:[]`、无 `document_ids`；UI 显示声明范围说明 |
 | `cap_on_selected`：能力 true + 已选 2 源 | legacy 映射：头 `v1` + `document_ids` | C05 声明范围：头 `c05-v1`、`source_scope:{mode:"selected",source_ids:["src_alpha","src_beta"],single_source_id:null}`、`note_ids:[]`、无 `document_ids` |
-| `report_pass` | 仅正文 + 引用，无范围/模型/校验分区 | 新增「声明范围与实际范围 / 实际覆盖 / 实际模型 / 校验状态」，显示 `Verified — required checks executed with no findings` |
+| `report_pass` | 仅正文 + 引用，无范围/模型/校验分区 | 新增「声明范围与实际范围 / 实际覆盖 / 实际模型 / 校验状态」；selected 场景显示 `Selected sources / Declared sources: 3 / Resolved versions: 3`，校验状态 `Verified — required checks executed with no findings` |
 | `report_degraded` | 仅正文（无法区分校验状态） | 显式 `Degraded — verification found unsupported cited claims` + `Findings: 1`（**不显示为通过**） |
 | `report_partial` | 仅正文 | 显式 `Partially checked — some checks were skipped, so this is not a pass` |
 | `report_not_run`（旧 Job） | 仅正文 | 显式 `Not verified — this job ran before comparison verification existed`；范围显示 "Scope was not recorded for this job."（**绝不渲染为通过**） |
 | `report_410_revoked` | 统一泛化错误 `Report is not available yet`（无解释、可误读） | 受限占位：`Report restricted / This report is no longer readable because one or more of its sources have been revoked.`；**不渲染正文/引用** |
 | `report_503` | 同一泛化错误，无重试入口 | 可重试态 + `Retry` 按钮；点击后服务端恢复 → 正文与校验分区正常渲染（`report_requests=2`） |
 
-浏览器行为断言：**BEFORE 64 PASS / 0 FAIL（20 scene runs）**；**AFTER 126 PASS / 0 FAIL /
-0 scene errors（20 scene runs，另含 AFTER 3 张补充运行截图）**。所有断言均为真实 headless
+浏览器行为断言：**BEFORE 64 PASS / 0 FAIL（20 scene runs）**；**AFTER 130 PASS / 0 FAIL /
+0 scene errors（20 scene runs，另含 AFTER 4 张补充运行截图：submitted×2 + retried×2）**。所有断言均为真实 headless
 Chromium 驱动真实 fork Next.js 应用 + mock Gateway 请求计数，不是组件测试断言。
 
 ## 证据性质与公开安全声明（synthetic）
@@ -56,7 +64,7 @@ Chromium 驱动真实 fork Next.js 应用 + mock Gateway 请求计数，不是�
 | 漂移内容 | `f4491e6..d959635` 仅 4 个文件：`frontend/src/components/research/issue585/WritingComposeDialog.tsx`、其测试、`src/lib/research/issue585/writing-client.ts`、其测试（W3 写作回看，均不在 #1017 §3.3 白名单），与 Compare 无关 |
 | 重采的 `path:line` 事实（`d959635`） | `ComparePanel.tsx`：`all` 阻断 `:77`、selected 映射 `:62-75`、`onCreate` `:93`；`CompareReportView.tsx`：report 读取 `:29-33`、正文 `:57`；`use-compare-report.ts`：`:26`（一次性读取，无终态区分）；`ResearchWorkspace.tsx`：父层派发 `:523-546`、ComparePanel 渲染 `:987`；target 壳派发 `TargetShell.tsx:739-757`、`TargetSecondaryView.tsx:34-41`；`api.v1.test.ts:251-266`（compare 仍断 legacy `v1` 头） |
 | BEFORE 采集方式 | `git archive d959635` 解出的干净副本（不修改任何 worktree/main checkout），`frontend/node_modules` 符号链接到共享安装目录 |
-| AFTER 采集方式 | 实现 PR 的 worktree（head `aaa3b08`） |
+| AFTER 采集方式 | 实现 PR 的 worktree（head `d80e074`，round-1 修复后重采） |
 | 漂移诚实记录 | 计划 §1/§2.9 的 fork pin 行号与 `d959635` 基本一致（差异 ≤2 行，均为无关段落）；证据与实现按 `d959635` 行为基线 |
 
 ## 环境与端口（两侧一致，仅端口不同）
@@ -152,11 +160,11 @@ BEFORE `v1`+`document_ids` ↔ AFTER `c05-v1`+`source_scope.source_ids`（见 §
 | partial | ![report_partial before](screenshots/before/before_report_partial_1440.png) | ![report_partial after](screenshots/after/after_report_partial_1440.png) |
 | not_run（旧 Job） | ![report_not_run before](screenshots/before/before_report_not_run_1440.png) | ![report_not_run after](screenshots/after/after_report_not_run_1440.png) |
 
-AFTER 分区内容（pass 场景）：`Declared scope and actual scope`（All sources in the
-project / Resolved versions: 3）、`Actual coverage`（Included: 3, failed: 0）、
-`Actual model`（m-local-qwen / Provider: local-sglang / Execution revision:
-rev-synthetic-9）、`Verification status`（Verified — required checks executed with no
-findings / Executor: compare_verifier）。
+AFTER 分区内容（pass 场景，`requested_mode=selected`）：`Declared scope and actual
+scope`（Selected sources / **Declared sources: 3** / Resolved versions: 3）、
+`Actual coverage`（Included: 3, failed: 0）、`Actual model`（m-local-qwen /
+Provider: local-sglang / Execution revision: rev-synthetic-9）、`Verification status`
+（Verified — required checks executed with no findings / Executor: compare_verifier）。
 
 ### 4) report 端点终态：410 受限 / 503 可重试
 
@@ -212,7 +220,7 @@ after cap_off_selected ASSERT PASS legacy_body_no_source_scope expected=true act
 | 阶段 | 断言计数 | 说明 |
 |---|---|---|
 | BEFORE | 64 PASS / 0 FAIL / 0 scene errors | 10 scenes × 2 视口；覆盖 legacy 阻断/映射、报告正文可读、410/503 泛化错误 |
-| AFTER | 126 PASS / 0 FAIL / 0 scene errors | 10 scenes × 2 视口（另 3 张补充运行截图：submitted×2、retried×2 中的 1024/1440）；覆盖 C05 派发 wire、readback 分区、状态文案、受限占位、可重试与重试成功 |
+| AFTER | 130 PASS / 0 FAIL / 0 scene errors | 10 scenes × 2 视口（另 4 张补充运行截图：submitted×2、retried×2）；覆盖 C05 派发 wire、readback 分区（含声明来源数）、状态文案、受限占位、可重试与重试成功 |
 
 关键断言（原样取自 `capture.log`）：
 
@@ -224,6 +232,8 @@ before report_410_revoked ASSERT PASS before_generic_error_shown expected=true a
 before report_503 ASSERT PASS before_no_retry_button expected=0 actual=0
 after cap_on_all  ASSERT PASS all_not_blocked_after expected=0 actual=0
 after cap_on_all  ASSERT PASS declared_scope_notice expected=">0" actual=1
+after report_pass ASSERT PASS after_declared_sources expected=">0" actual=1
+after report_pass ASSERT PASS after_coverage_counts expected="counts>0 & unavailable=0" actual={"counts":1,"unavailable":0}
 after report_pass ASSERT PASS after_verification_status expected="pass" actual="pass"
 after report_degraded ASSERT PASS after_not_rendered_as_pass expected="no pass text" actual="Degraded — verification found unsupported cited claims"
 after report_partial ASSERT PASS after_not_rendered_as_pass expected="no pass text" actual="Partially checked — some checks were skipped, so this is not a pass"
@@ -244,10 +254,10 @@ after report_503 ASSERT PASS after_retry_renders_report expected=">0" actual=1
 
 ## 本地命令结果（真实输出，详见 `local-verification.txt`）
 
-| 命令 | BEFORE（d959635） | AFTER（aaa3b08） |
+| 命令 | BEFORE（d959635） | AFTER（d80e074） |
 |---|---|---|
-| `npx vitest run <计划 §5.2 选定文件>` | 7 files / 168 tests passed | **8 files / 201 tests passed**, exit 0（新增 `CompareReportView.test.tsx` 1 文件 + 33 用例） |
-| `npm run test`（全量，含 14 locale parity/unused-key） | 59 failed / 3305 passed（197 files；预先存在的 `src/app/research/*` 5 文件 + `SourceListPanel` 失败） | 59 failed / **3338 passed**（198 files；**失败集合/数量与基线逐项相同**，无新增失败；通过数 +33 = 新增 1 文件 33 用例） |
+| `npx vitest run <计划 §5.2 选定文件>` | 7 files / 168 tests passed | **8 files / 204 tests passed**, exit 0（新增 `CompareReportView.test.tsx` 1 文件 + 36 用例） |
+| `npm run test`（全量，含 14 locale parity/unused-key） | 59 failed / 3305 passed（197 files；预先存在的 `src/app/research/*` 5 文件 + `SourceListPanel` 失败） | 59 failed / **3341 passed**（198 files；**失败集合/数量与基线逐项相同**，无新增失败；通过数 +36 = 新增 1 文件 36 用例） |
 | `npm run lint` | 66 problems（5 errors / 61 warnings，均为预先存在） | 66 problems（5 errors / 61 warnings，**与基线逐项相同**；改动文件 0 新增告警） |
 | `npx tsc -b` | — | exit 0 |
 | `npm run build`（Next 生产构建） | — | exit 0 |

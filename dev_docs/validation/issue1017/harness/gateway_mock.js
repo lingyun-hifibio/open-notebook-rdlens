@@ -237,13 +237,16 @@ function reportModeDetail(reportMode) {
   }
   const verification =
     verificationByMode[reportMode] ?? verificationByMode.plain
+  // `pass` 场景用 selected 声明范围（3 个 provider source ids），用于展示
+  // 计划 §2.9「声明范围与实际范围」的「来源数」；其余场景保持 all。
+  const selectedScope = reportMode === 'pass'
   return {
     ...job,
     compare: {
       scope: {
         contract_version: 'c05-v1',
-        requested_mode: 'all',
-        source_ids: [],
+        requested_mode: selectedScope ? 'selected' : 'all',
+        source_ids: selectedScope ? SOURCES.map((source) => source.source_id) : [],
         resolved_refs: SOURCES.map((source) => ({
           document_id: source.document_id,
           document_version: source.document_version,
