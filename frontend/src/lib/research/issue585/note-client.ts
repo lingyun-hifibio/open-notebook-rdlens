@@ -20,7 +20,7 @@
 
 import { apiClient } from '@/lib/api/client'
 import type { ResearchPage } from '@/lib/types/research'
-import { buildResearchUrl } from '../api'
+import { buildResearchUrl, parseContentDispositionFilename } from '../api'
 import {
   NOTE_CONTRACT_HEADER,
   NOTE_CONTRACT_VALUE,
@@ -101,6 +101,12 @@ const NOTE_ERROR_CODES: ReadonlySet<string> = new Set<NoteErrorCode>([
   'note_dependency_unavailable',
   'note_store_unavailable',
   'fragment_source_not_found',
+  // Issue #1191 PR-B（#1050 冻结导出契约码，纯追加）：不加入闭集时 409
+  // `export_request_conflict` 等会被归一成 `unknown_error`。
+  'export_request_invalid',
+  'export_request_conflict',
+  'export_snapshot_unavailable',
+  'export_not_found',
   'network_error',
   'unknown_error',
 ])
@@ -621,6 +627,126 @@ export async function createNoteFragmentD2(
     headers: noteHeaders(),
   })
   return normalizeNoteReceipt(response.data)
+}
+
+// ── 单份 Markdown 导出（Issue #1191 PR-B；#1050 已冻结契约，纯追加） ──
+//
+// 权威依据：host `src/rdlens/research/router.py` 的
+// `POST /v1/research/projects/{project_id}/notes/{note_id}/exports` 与
+// `GET /v1/research/projects/{project_id}/export/{export_id}/file`，
+// 以及 `issue585/export_contract.py`（体闭合三键）与
+// `issue585/note_export_store.py`（响应固定键 + 相对 download_url）。
+//
+// 本层只做传输与错误归一；响应形状校验/幂等键绑定/文件名/下载触发在
+// `./note-export.ts`（纯逻辑，可单测）。
+
+/** 幂等键请求头（服务端必填；同一导出请求重试复用同一键）。 */
+export const NOTE_EXPORT_IDEMPOTENCY_HEADER = 'Idempotency-Key'
+
+/** `POST /notes/{id}/exports` 请求体（契约闭合三键，不多不少）。 */
+export interface NoteD2ExportRequest {
+  revision: number
+  snapshot_hash: string
+  format: 'markdown'
+}
+
+/** `POST /notes/{id}/exports` 的原始响应（201 新建 / 200 幂等重放）。 */
+export interface NoteD2ExportResponseEnvelope {
+  /** HTTP 状态（201=新建，200=replayed）。 */
+  status: number
+  /** 未校验的响应体；由 `parseNoteExportResponse` 防御性解析。 */
+  data: unknown
+}
+
+/** 导出文件下载结果（文件名来自 Content-Disposition，跨域时可能读不到）。 */
+export interface NoteExportFileBlob {
+  blob: Blob
+  filename: string | null
+}
+
+/**
+ * 创建（或幂等重放）单份 Markdown 导出记录。
+ *
+ * 头恒含 d2-v1 契约头与 `Idempotency-Key`；体由调用方按冻结三键构造。
+ * 返回原始状态/响应体，**不**在此处判定成功（畸形响应绝不冒充成功）。
+ */
+export async function requestNoteExportD2(
+  projectId: string,
+  noteId: string,
+  body: NoteD2ExportRequest,
+  idempotencyKey: string,
+  signal?: AbortSignal,
+): Promise<NoteD2ExportResponseEnvelope> {
+  const response = await apiClient.post<unknown>(
+    noteUrl(projectId, 'notes', noteId, 'exports'),
+    body,
+    {
+      headers: {
+        ...noteHeaders(),
+        [NOTE_EXPORT_IDEMPOTENCY_HEADER]: idempotencyKey,
+      },
+      ...(signal ? { signal } : {}),
+    },
+  )
+  return { status: response.status, data: response.data }
+}
+
+/**
+ * 下载导出文件：`downloadUrl` 必须是上一步响应里的相对 `download_url`，
+ * **原样**交给 apiClient（不自行拼路径、不换成绝对地址）。
+ */
+export async function downloadNoteExportFile(
+  downloadUrl: string,
+  signal?: AbortSignal,
+): Promise<NoteExportFileBlob> {
+  const response = await apiClient.get<Blob>(downloadUrl, {
+    responseType: 'blob',
+    ...(signal ? { signal } : {}),
+  })
+  const headers = response.headers as Record<string, unknown> | undefined
+  const disposition = headers?.['content-disposition']
+  return {
+    blob: response.data,
+    filename: parseContentDispositionFilename(
+      typeof disposition === 'string' ? disposition : null,
+    ),
+  }
+}
+
+/** 导出路径的错误归一上下文：创建记录 vs 下载文件（404 语义不同）。 */
+export type NoteExportOperation = 'create' | 'download'
+
+/**
+ * 导出请求/下载的错误归一（在通用归一之上补导出语义）。
+ *
+ * - 409 的三个码（`note_revision_conflict`/`export_request_conflict`/
+ *   `note_edit_schema_unsupported`）**由包络 detail.code 决定**：扩码后
+ *   `normalizeNoteApiError` 会原样保留它们；无 detail.code 时 409 仍是歧义
+ *   状态，保持 `unknown_error`（结果未知），绝不猜成成功或任一冲突码。
+ * - 422（导出路径上没有其它 422 语义）→ `export_request_invalid`；
+ *   503 结果未知 → `export_snapshot_unavailable`（可重试同一幂等键）。
+ * - 404：创建时 Note 不存在 → `note_not_found`；下载时导出记录不存在
+ *   → `export_not_found`。
+ */
+export function normalizeNoteExportApiError(
+  error: unknown,
+  operation: NoteExportOperation = 'create',
+): NoteApiError {
+  const normalized = normalizeNoteApiError(error)
+  if (normalized.status === 404 && normalized.code === 'note_not_found') {
+    return operation === 'download'
+      ? { ...normalized, code: 'export_not_found' }
+      : normalized
+  }
+  if (normalized.code !== 'unknown_error') return normalized
+  // 无包络 detail.code 时的状态级兜底（只在导出路径的无歧义状态上）。
+  if (normalized.status === 422) {
+    return { ...normalized, code: 'export_request_invalid', retryable: false }
+  }
+  if (normalized.status === 503) {
+    return { ...normalized, code: 'export_snapshot_unavailable', retryable: true }
+  }
+  return normalized
 }
 
 // ── 可注入的 client 形状（状态机以接口依赖注入，便于单测） ──

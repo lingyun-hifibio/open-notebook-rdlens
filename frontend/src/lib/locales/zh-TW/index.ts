@@ -1640,6 +1640,17 @@ export const zhTW = {
       degradedPage: "引用頁不可用，原文保留",
     },
     notes: {
+      export: {
+        action: "匯出 Markdown",
+        exporting: "正在匯出…",
+        exported: "已匯出 Markdown",
+        requestId: "請求 ID：{{requestId}}",
+        hint: {
+          restricted: "請重新整理權限後重試；你也可以在編輯器中下載本機草稿以保留正文。",
+          refreshCatalog: "筆記清單可能已過期，請重新整理後重試。",
+          unknownResult: "結果未知。請用同一匯出請求重試；同一請求不會產生重複匯出記錄。",
+        },
+      },
       newNote: "新增筆記",
       titleLabel: "標題",
       contentLabel: "內容",
@@ -1798,6 +1809,10 @@ export const zhTW = {
           blocked: "Editing unavailable",
         },
         errors: {
+          export_request_invalid: "匯出請求被判定為無效。",
+          export_request_conflict: "該匯出請求鍵已綁定到另一份匯出。請重試匯出以建立新請求。",
+          export_snapshot_unavailable: "匯出服務暫時無法使用，結果未知。請用同一匯出請求重試。",
+          export_not_found: "找不到該匯出記錄，請重新匯出。",
           network_error:
             "Network error. Your text is kept locally; retry when the connection is back.",
           unknown_error: "The save did not complete.",

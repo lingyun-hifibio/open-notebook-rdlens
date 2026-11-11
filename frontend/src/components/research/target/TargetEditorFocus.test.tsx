@@ -20,8 +20,9 @@ vi.mock('./issue585/NoteWorkspaceProvider', () => ({
   useNoteWorkspaceOptional: () => null,
 }))
 
+const workspaceFixture = vi.hoisted(() => ({ current: null as unknown }))
 vi.mock('../issue585/NoteWorkspaceProvider', () => ({
-  useNoteWorkspaceOptional: () => null,
+  useNoteWorkspaceOptional: () => workspaceFixture.current,
 }))
 
 vi.mock('@/lib/hooks/use-translation', () => ({
@@ -122,6 +123,7 @@ function renderFocus(
     viewportWidth?: number
     onRequestClose?: () => void
     onRequestDelete?: () => void
+    capabilities?: NoteCapabilities
   } = {},
 ) {
   const actions = makeActions(overrides.actions)
@@ -131,7 +133,7 @@ function renderFocus(
     <TargetEditorFocus
       state={state}
       actions={actions}
-      capabilities={readyCapabilities}
+      capabilities={overrides.capabilities ?? readyCapabilities}
       isAdminReadonly={false}
       viewportWidth={overrides.viewportWidth ?? 1440}
       onRequestClose={onRequestClose}
@@ -142,7 +144,10 @@ function renderFocus(
   return { ...utils, state, actions, onRequestClose }
 }
 
-afterEach(() => cleanup())
+afterEach(() => {
+  cleanup()
+  workspaceFixture.current = null
+})
 
 describe('TargetEditorFocus（UI-19）', () => {
   it('渲染 overlay 与既有 note-editor（标题/保存状态/正文），返回按钮打开即聚焦', async () => {
@@ -260,5 +265,36 @@ describe('TargetEditorFocus（UI-19）', () => {
     first.unmount()
     renderFocus({ onRequestDelete: vi.fn() })
     expect(screen.getByTestId('note-editor-delete')).toBeInTheDocument()
+  })
+})
+
+describe('TargetEditorFocus × PR-B 单份导出入口（W3-G2）', () => {
+  const exportCapabilities: NoteCapabilities = {
+    ...readyCapabilities,
+    markdownExport: { available: true, reason: null },
+  }
+  const workspaceWithEditor = {
+    editor: { state: makeState(), actions: makeActions() },
+    writingDraftPending: false,
+    openCitation: vi.fn(),
+  }
+
+  it('动作区挂载导出入口（能力可用 + d2-v1 + 已保存 revision/snapshot）', () => {
+    workspaceFixture.current = workspaceWithEditor
+    renderFocus({ capabilities: exportCapabilities })
+    expect(screen.getByTestId('note-export-markdown')).toBeInTheDocument()
+    expect(screen.getByTestId('note-export-status')).toBeInTheDocument()
+  })
+
+  it('能力关闭时不渲染导出入口（fail-closed，无假控件）', () => {
+    workspaceFixture.current = workspaceWithEditor
+    renderFocus({ capabilities: readyCapabilities })
+    expect(screen.queryByTestId('note-export-markdown')).toBeNull()
+  })
+
+  it('无编辑器句柄时不渲染导出入口', () => {
+    workspaceFixture.current = null
+    renderFocus({ capabilities: exportCapabilities })
+    expect(screen.queryByTestId('note-export-markdown')).toBeNull()
   })
 })

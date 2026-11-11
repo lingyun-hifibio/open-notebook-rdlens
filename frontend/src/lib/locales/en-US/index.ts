@@ -1662,6 +1662,17 @@ export const enUS = {
       degradedPage: "Referenced page unavailable; original text is retained",
     },
     notes: {
+      export: {
+        action: "Export Markdown",
+        exporting: "Exporting…",
+        exported: "Markdown exported",
+        requestId: "Request ID: {{requestId}}",
+        hint: {
+          restricted: "Refresh your access, or download the local draft from the editor to keep your text.",
+          refreshCatalog: "The note list may be out of date. Refresh it to reconcile.",
+          unknownResult: "The result could not be confirmed. Retry the export; the same request will not create a duplicate export.",
+        },
+      },
       newNote: "New note",
       titleLabel: "Title",
       contentLabel: "Content",
@@ -1823,6 +1834,10 @@ export const enUS = {
           blocked: "Editing unavailable",
         },
         errors: {
+          export_request_invalid: "The export request was rejected as invalid.",
+          export_request_conflict: "This export request key is already bound to a different export. Retry the export to create a fresh request.",
+          export_snapshot_unavailable: "The export service is temporarily unavailable and the result is unknown. Retry with the same export request.",
+          export_not_found: "This export could not be found. Export the note again.",
           network_error:
             "Network error. Your text is kept locally; retry when the connection is back.",
           unknown_error: "The save did not complete.",
