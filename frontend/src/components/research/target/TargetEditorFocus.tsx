@@ -114,7 +114,9 @@ export function TargetEditorFocus({
         ),
       )
       const root = dialogRef.current
-      return openDialogs.some((node) => node !== root && (root === null || !root.contains(node)))
+      // 任何嵌套且打开中的 dialog/alertdialog 都暂停 overlay 的 Tab 焦点陷阱
+      // （Radix 模态自身管理焦点；overlay 内打开的离开保护/冲突对话框同样适用）。
+      return openDialogs.some((node) => node !== root)
     }
     const onKeyDown = (event: KeyboardEvent): void => {
       const root = dialogRef.current

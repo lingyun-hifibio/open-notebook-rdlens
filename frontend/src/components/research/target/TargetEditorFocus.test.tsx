@@ -178,6 +178,21 @@ describe('TargetEditorFocus（UI-19）', () => {
     nested.remove()
   })
 
+  it('存在嵌套模态（overlay 内打开的 dialog）时暂停 Tab 焦点陷阱', () => {
+    renderFocus()
+    const overlay = screen.getByTestId('rdlens-target-editor')
+    const nested = document.createElement('div')
+    nested.setAttribute('role', 'dialog')
+    nested.setAttribute('data-state', 'open')
+    overlay.appendChild(nested)
+    // 焦点置于 overlay 之外（陷阱原本会把焦点拉回 overlay 内）。
+    ;(document.activeElement as HTMLElement | null)?.blur?.()
+    const event = new KeyboardEvent('keydown', { key: 'Tab', cancelable: true, bubbles: true })
+    const notPrevented = document.dispatchEvent(event)
+    expect(notPrevented).toBe(true)
+    nested.remove()
+  })
+
   it('引用阅读打开时 Esc 不关闭编辑器', () => {
     const onRequestClose = vi.fn()
     renderFocus({ onRequestClose })
