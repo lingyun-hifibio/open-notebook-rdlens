@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useCallback, useState, useRef, useEffect, useId } from 'react'
+import { memo, useCallback, useMemo, useState, useRef, useEffect, useId } from 'react'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -387,13 +387,16 @@ function AIMessageContent({
   // Convert references to compact markdown with numbered citations
   const markdownWithCompactRefs = convertReferencesToCompactMarkdown(content, t('common.references'))
 
-  // Create custom link component for compact references
-  const LinkComponent = createCompactReferenceLinkComponent(onReferenceClick)
+  // #1202：MarkdownRenderer 的 `components` 覆盖项必须保持引用稳定——每次 render
+  // 新建的 `a` 组件函数会被 React 当成新类型，重渲染时卸载重建链接子树，
+  // 用户正在链接文本上做的选区会随节点替换被折叠。
+  const components = useMemo(
+    () => ({ a: createCompactReferenceLinkComponent(onReferenceClick) }),
+    [onReferenceClick],
+  )
 
   return (
-    <MarkdownRenderer components={{
-      a: LinkComponent
-    }}>
+    <MarkdownRenderer components={components}>
       {markdownWithCompactRefs}
     </MarkdownRenderer>
   )

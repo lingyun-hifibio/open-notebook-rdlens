@@ -57,6 +57,15 @@ type Components = {
 
 const EMPTY_COMPONENTS: Components = {}
 
+/**
+ * Markdown 渲染器。
+ *
+ * 调用方约定（#1202）：传入的 `components` 覆盖项及其中的自定义组件函数必须
+ * 在重渲染之间保持**引用稳定**——用模块级常量，或用 `useMemo` 缓存映射与
+ * 组件函数（依赖只放真正会改变渲染结果的值）。每次 render 新建内联覆盖项会
+ * 让 `mergedComponents` 变化，React 会把同名元素当成新组件类型卸载重建；
+ * 与 #1192 同类，包含链接等自定义元素的文本选区会因此被折叠。
+ */
 export function MarkdownRenderer({ children, components: extraComponents = EMPTY_COMPONENTS }: { children: React.ReactNode , components?: Components }) {
 
   const { getEffectiveTheme } = useThemeStore()
@@ -106,7 +115,8 @@ export function MarkdownRenderer({ children, components: extraComponents = EMPTY
     },
   }), [isDark])
 
-  // 合并调用方覆盖项：保持默认映射的稳定身份，调用方自身也应传入稳定引用。
+  // 合并调用方覆盖项：保持默认映射的稳定身份。调用方自身也必须传入稳定引用
+  // （见组件 docstring 的调用方约定），否则 `<a>` 等自定义元素仍会被重建。
   const mergedComponents = useMemo<Components>(
     () => ({...components, ...extraComponents}),
     [components, extraComponents],

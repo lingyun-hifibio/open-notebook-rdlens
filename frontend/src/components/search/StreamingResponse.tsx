@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { CheckCircle, Sparkles, Lightbulb, ChevronDown } from 'lucide-react'
-import { useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
 import { convertReferencesToMarkdownLinks, createReferenceLinkComponent } from '@/lib/utils/source-references'
 import { useModalManager } from '@/lib/hooks/use-modal-manager'
@@ -35,7 +35,8 @@ export function StreamingResponse({
   const { openModal } = useModalManager()
   const { t } = useTranslation()
 
-  const handleReferenceClick = (type: string, id: string) => {
+  // #1202：固定回调身份，下游 `components` 覆盖项才能跨重渲染保持稳定。
+  const handleReferenceClick = useCallback((type: string, id: string) => {
     const modalType = type === 'source_insight' ? 'insight' : type as 'source' | 'note' | 'insight'
 
     try {
@@ -47,7 +48,7 @@ export function StreamingResponse({
       const typeLabel = type === 'source_insight' ? 'insight' : type
       toast.error(t('common.itemNotFound', { type: typeLabel }))
     }
-  }
+  }, [openModal, t])
 
   if (!strategy && !answers.length && !finalAnswer && !isStreaming) {
     return null
@@ -168,13 +169,15 @@ function FinalAnswerContent({
   // Convert references to markdown links
   const markdownWithLinks = convertReferencesToMarkdownLinks(content)
 
-  // Create custom link component
-  const LinkComponent = createReferenceLinkComponent(onReferenceClick)
+  // #1202：覆盖项引用稳定（见 MarkdownRenderer 的调用方约定），避免重渲染时
+  // React 把 `a` 当成新组件类型而卸载重建链接子树、折叠选区。
+  const components = useMemo(
+    () => ({ a: createReferenceLinkComponent(onReferenceClick) }),
+    [onReferenceClick],
+  )
 
   return (
-    <MarkdownRenderer components={{
-      a: LinkComponent
-    }}>
+    <MarkdownRenderer components={components}>
       {markdownWithLinks}
     </MarkdownRenderer>
   )
