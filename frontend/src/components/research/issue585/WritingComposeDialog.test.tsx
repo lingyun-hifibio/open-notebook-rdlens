@@ -421,6 +421,10 @@ describe('结果与实际输入回看 + 手工摘入', () => {
     // #1190（W3-G14）：确认层与写作对话框同为 z-50，写作对话框的 portal 在 DOM 之后，
     // 不先关闭写作对话框，确认层会被盖住（用户看到静默 no-op）。
     expect(onClose).toHaveBeenCalledTimes(1)
+    // 审查 L-3：交接顺序必须是“先关闭写作对话框，再打开确认层”。
+    const onCloseOrder = onClose.mock.invocationCallOrder[0]
+    const openOrder = noteWorkspaceMock.value?.openExcerptInsert.mock.invocationCallOrder[0]
+    expect(onCloseOrder).toBeLessThan(openOrder ?? Number.POSITIVE_INFINITY)
   })
 
   it('目标会话缺失时显式报错，不静默 no-op（#1190 / W3-G14）', async () => {
@@ -451,10 +455,65 @@ describe('结果与实际输入回看 + 手工摘入', () => {
       fireEvent.click(screen.getByTestId('writing-insert-excerpt'))
       await Promise.resolve()
     })
+    // 目标会话缺失 → 对应原因（不是“无法定位结果消息”的通用文案）。
     expect(screen.getByTestId('writing-insert-error')).toHaveTextContent(
-      'research.notes.writing.result.insertUnavailable',
+      'research.notes.writing.composeErrors.sessionRequired',
     )
     expect(noteWorkspaceMock.value?.openExcerptInsert).not.toHaveBeenCalled()
+  })
+
+  it('定位结果返回前关闭对话框 → 不打开确认层、不二次 onClose（#1190 审查 M-1）', async () => {
+    const onClose = vi.fn()
+    let resolveLocate: (value: unknown) => void = () => {}
+    clientMocks.locateWritingResultMessage.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveLocate = resolve
+        }),
+    )
+    const view = renderDialog({ onClose })
+    fireEvent.change(screen.getByTestId('writing-query'), { target: { value: '改写' } })
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('writing-send'))
+      await Promise.resolve()
+    })
+    await waitFor(() => expect(clientMocks.submitWritingSubmission).toHaveBeenCalledTimes(1))
+    const input = lastSubmitInput()
+    act(() => {
+      input.onAcceptReceipt?.({
+        generationId: 'gen_1',
+        idempotencyKey: 'w1_key',
+        editorRevision: 77,
+        sessionRef: CURRENT_REF,
+      })
+      input.onEvent({ event_id: 1, type: 'answer', delta: '改写结果' })
+      input.onEvent({ event_id: 2, type: 'done', completion_status: 'completed' })
+    })
+    await waitFor(() =>
+      expect(screen.getByTestId('writing-result-answer')).toHaveTextContent('改写结果'),
+    )
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('writing-insert-excerpt'))
+      await Promise.resolve()
+    })
+    expect(clientMocks.locateWritingResultMessage).toHaveBeenCalledTimes(1)
+    // 用户（父级）在定位请求返回前关闭写作对话框。
+    view.rerender(
+      <WritingComposeDialog
+        open={false}
+        onClose={onClose}
+        note={NOTE}
+        initialSelection={{ kind: 'range' as const, start_utf16: 1, end_utf16: 3 }}
+        writingAvailable
+      />,
+    )
+    await act(async () => {
+      resolveLocate({ ok: true, messageId: 'msg_result', content: '改写结果', userMessageId: 'msg_user' })
+      await Promise.resolve()
+    })
+    expect(noteWorkspaceMock.value?.openExcerptInsert).not.toHaveBeenCalled()
+    // 关闭动作由用户/父级触发；交接路径不得再调用一次 onClose。
+    expect(onClose).not.toHaveBeenCalled()
   })
 
   it('结果未知（网络错误）→ 用原请求身份重试，不重新保存 composer', async () => {
