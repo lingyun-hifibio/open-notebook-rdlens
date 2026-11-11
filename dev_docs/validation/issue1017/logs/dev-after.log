@@ -1,0 +1,39 @@
+▲ Next.js 16.2.6 (webpack)
+- Local:         http://localhost:8913
+- Network:       http://192.168.5.82:8913
+✓ Ready in 173ms
+⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of /home/lchen/pnpm-lock.yaml as the root directory.
+ To silence this warning, set `outputFileTracingRoot` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/output#caveats for more information.
+ Detected additional lockfiles: 
+   * /home/lchen/.dsh/state/superagent/work/compare-implementation-7028627e2a92-fork/frontend/package-lock.json
+
+[Next.js Rewrites] Proxying /api/* to http://localhost:5055/api/*
+[Next.js Rewrites] Proxying /api/* to http://localhost:5055/api/*
+- Experiments (use with caution):
+  · proxyClientMaxBodySize: "100mb"
+
+○ Compiling /research ...
+ GET /research?legacy=1 200 in 4.1s (next.js: 3.7s, proxy.ts: 84ms, application-code: 371ms)
+ GET /research?legacy=1 200 in 298ms (next.js: 1794µs, proxy.ts: 5ms, application-code: 292ms)
+ GET /research?legacy=1 200 in 22ms (next.js: 1309µs, proxy.ts: 2ms, application-code: 18ms)
+ GET /research?legacy=1 200 in 19ms (next.js: 1365µs, proxy.ts: 2ms, application-code: 16ms)
+ GET /research?legacy=1 200 in 28ms (next.js: 2ms, proxy.ts: 4ms, application-code: 21ms)
+ GET /research?legacy=1 200 in 33ms (next.js: 2ms, proxy.ts: 4ms, application-code: 26ms)
+ GET /research?legacy=1 200 in 22ms (next.js: 1076µs, proxy.ts: 3ms, application-code: 18ms)
+ GET /research?legacy=1 200 in 27ms (next.js: 1817µs, proxy.ts: 3ms, application-code: 23ms)
+ GET /research?legacy=1 200 in 27ms (next.js: 1537µs, proxy.ts: 4ms, application-code: 22ms)
+ GET /research?legacy=1 200 in 28ms (next.js: 1990µs, proxy.ts: 4ms, application-code: 22ms)
+ GET /research?legacy=1 200 in 21ms (next.js: 1634µs, proxy.ts: 3ms, application-code: 17ms)
+ GET /research?legacy=1 200 in 31ms (next.js: 1896µs, proxy.ts: 3ms, application-code: 26ms)
+ GET /research?legacy=1 200 in 19ms (next.js: 1750µs, proxy.ts: 3ms, application-code: 15ms)
+ GET /research?legacy=1 200 in 17ms (next.js: 971µs, proxy.ts: 1806µs, application-code: 14ms)
+ GET /research?legacy=1 200 in 20ms (next.js: 3ms, proxy.ts: 2ms, application-code: 15ms)
+ GET /research?legacy=1 200 in 16ms (next.js: 924µs, proxy.ts: 2ms, application-code: 13ms)
+ GET /research?legacy=1 200 in 28ms (next.js: 2ms, proxy.ts: 3ms, application-code: 24ms)
+ GET /research?legacy=1 200 in 16ms (next.js: 1008µs, proxy.ts: 1772µs, application-code: 13ms)
+ GET /research?legacy=1 200 in 29ms (next.js: 1876µs, proxy.ts: 3ms, application-code: 24ms)
+ GET /research?legacy=1 200 in 28ms (next.js: 1742µs, proxy.ts: 3ms, application-code: 23ms)
+ GET /research?legacy=1 200 in 28ms (next.js: 2ms, proxy.ts: 3ms, application-code: 23ms)
+[?25h

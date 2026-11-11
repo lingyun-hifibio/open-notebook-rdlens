@@ -3,12 +3,14 @@
 - **Issue**：`HiFiBiO-Therapeutics/RDLens#1017`（D1-H 多来源→基础比较与回访，主单）
 - **实施计划**：`HiFiBiO-Therapeutics/RDLens#1188`（已合入；本证据对应 §2.5 wire、§2.9 fork 设计、§3.3 fork 白名单、§5.2 vitest 矩阵、§5.3 视觉证据）
 - **Host 配对 PR**：`HiFiBiO-Therapeutics/RDLens#<host-pr>`（host 半，实施中/待合入；fork 侧按计划 §2.5 契约实现）
-- **实现 PR**：`lingyun-hifibio/open-notebook-rdlens#135`（head `d80e074bc66671cc11afeef7c29ee99b00ad62e2`；AFTER 截图在该 head 上重采）
+- **实现 PR**：`lingyun-hifibio/open-notebook-rdlens#135`（当前 head `0201cc96d9a6787b0ad6c2529b7a4c29f007d80b`；AFTER 截图采集于
+  `d80e074bc66671cc11afeef7c29ee99b00ad62e2`，其后 head 仅含 LOW-5 纯类型声明修正，无运行时/UI 变化，按审查结论未重采）
 - **证据分支**：`evidence/issue1017-20261111`（本分支，从 fork `origin/main` 创建；**不属于实现 PR diff**）
 - **BEFORE 基线**：fork `origin/main` = `d959635ebf5f642b6e8a75fb9a89896fe366683d`（2026-11-11 fetch）
-- **AFTER 实现 head**：`d80e074bc66671cc11afeef7c29ee99b00ad62e2`
-  （独立审查 round 1 的 MEDIUM-1/LOW-1/LOW-2 修复后重采；BEFORE 截图不变，
-  仍为 `d959635`）
+- **AFTER 截图采集 head**：`d80e074bc66671cc11afeef7c29ee99b00ad62e2`（独立审查 round 1 的
+  MEDIUM-1/LOW-1/LOW-2 修复后重采；BEFORE 截图不变，仍为 `d959635`）。
+  当前实现 head `0201cc96d9a6787b0ad6c2529b7a4c29f007d80b` 相对采集 head 仅多 LOW-5 的**纯类型声明**修正
+  （`ResearchCompareJobWarning.documents` 对象数组；TS 类型擦除，无运行时/UI 变化）。
 
 - **界面入口**：`/research?legacy=1`（既有 legacy 回归入口，沿用 #1136 证据做法；**不新增路由/Tab**）
 
@@ -16,6 +18,9 @@
 本次重采覆盖：MEDIUM-1（`selected` 声明范围新增「Declared sources: N」来源数）、
 LOW-2（畸形 coverage 不再伪造 0）。LOW-1 只改 wire 类型/安全渲染（截图不变），
 LOW-3 为 README 笔误修正。重采后 AFTER 断言为 **130 PASS / 0 FAIL**。
+round 2（delta）判定 0 BLOCKING/HIGH；MEDIUM-3 按重采后实测值更正本 README 的
+「逐字节相同」表述（见 §复现性），LOW-4 将 capture 日志纳入版本控制，LOW-5 收紧
+warning `documents` 类型（纯类型，无 UI 变化）。
 
 ## 结论摘要
 
@@ -116,8 +121,9 @@ Chromium 驱动真实 fork Next.js 应用 + mock Gateway 请求计数，不是�
 |---|---|
 | ![cap_off_all before](screenshots/before/before_cap_off_all_1440.png) | ![cap_off_all after](screenshots/after/after_cap_off_all_1440.png) |
 
-`all` 仍被阻断、创建禁用、零创建请求（两侧断言均 PASS）。1024 截图为**逐字节相同**
-（sha256 `85aa78a6…`）。
+`all` 仍被阻断、创建禁用、零创建请求（两侧断言均 PASS）。1024×768 的
+`cap_off_selected` 截图逐字节相同（sha256 `ad11583b…`）；`cap_off_all` 仅 32 px
+文字抗锯齿差异（内容一致，见 §复现性）。
 
 **BEFORE / AFTER（`cap_off_selected`，1440）**
 
@@ -149,7 +155,8 @@ AFTER 额外提交态截图（`after_cap_on_all_submitted_1440.png`，
 
 提交态 UI 视觉相同（两侧均显示 "Compare job created"）；差别只在 wire：
 BEFORE `v1`+`document_ids` ↔ AFTER `c05-v1`+`source_scope.source_ids`（见 §wire 断言）。
-1024 截图两侧逐字节相同（sha256 `0a5ce576…`），证明 UI 层无回归。
+1440 截图两侧逐字节相同（sha256 `9ec6b6e1…`）；1024 仅 5 px 抗锯齿差异
+（`0a5ce576…` → `ad11583b…`，内容一致），UI 内容/布局无回归。
 
 ### 3) 结果回访：范围/覆盖/实际模型/校验状态
 
@@ -244,14 +251,22 @@ after report_503 ASSERT PASS after_retryable_shown expected=">0" actual=1
 after report_503 ASSERT PASS after_retry_renders_report expected=">0" actual=1
 ```
 
-## 复现性（两侧 UI 逐字节等价性）
+## 复现性（两侧 UI 等价性，实测值）
 
-- **1024×768**：`cap_off_all`、`cap_off_selected`、`cap_on_selected` 三张 BEFORE/AFTER
-  截图 sha256 **完全相同**（如 `cap_off_selected_1024` = `ad11583b…`，`cap_on_selected_1024`
-  = `0a5ce576…`），证明能力 false 与纯 wire 变化场景的 UI 层零回归。
-- **1440×900**：同场景截图像素差仅 7–45 px（字体抗锯齿/边框 1–3 px 条带；`PIL`
-  `ImageChops.difference` bbox 见 `capture.log` 与 `python3` 复核），内容一致。
-
+- **逐字节相同**（sha256 完全相同）：`cap_off_selected` 1024（`ad11583b…`）、
+  `cap_off_selected` 1440 与 `cap_on_selected` 1440（均为 `9ec6b6e1…`）。
+- **仅抗锯齿差异**（内容/布局一致，diff 为 1–3 px 文字条带）：
+  - `cap_off_all` 1024：`85aa78a6…` → `77077ff5…`，**32 px**（bbox y=33–36，标题文字
+    抗锯齿条带）；
+  - `cap_off_all` 1440：`ffed87ae…` → `5a77c31b…`，**45 px**（同一条带）；
+  - `cap_on_selected` 1024：`0a5ce576…` → `ad11583b…`，**5 px**（bbox
+    (338,318)-(340,322)，提交态提示文案抗锯齿）。
+- 测量方法：对 `screenshots/{before,after}/` 当前提交文件做
+  `PIL.ImageChops.difference` 后统计非零 RGB 像素数（bbox 同时记录）；可复跑
+  `harness/capture.js` 后按同名文件复算。
+- 结论：能力 false 与「仅 wire 变化」场景的 **UI 内容/布局无回归**；像素差仅来自字体
+  抗锯齿/1–3 px 条带；wire 字段与浏览器行为断言逐项相同（见 §wire 断言与 §浏览器行为
+  断言）。早期草稿的「三张全部逐字节相同」表述已按重采后的实测值更正（审查 MEDIUM-3）。
 ## 本地命令结果（真实输出，详见 `local-verification.txt`）
 
 | 命令 | BEFORE（d959635） | AFTER（d80e074） |

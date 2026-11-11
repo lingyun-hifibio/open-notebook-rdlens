@@ -1,31 +1,28 @@
 Issue #1017 (D1-H) fork — local verification (real command output)
 BEFORE = fork origin/main d959635 (extracted via git archive)
-AFTER  = implementation head d80e074bc66671cc11afeef7c29ee99b00ad62e2
-         (review round-1 fixes: MEDIUM-1 declared source count, LOW-1 warning-object
-          type, LOW-2 no fabricated coverage counts; re-verified after the fix)
+AFTER  = implementation head 0201cc96d9a6787b0ad6c2529b7a4c29f007d80b
+         (evidence captured at d80e074bc66671cc11afeef7c29ee99b00ad62e2; head 0201cc96d9a6787b0ad6c2529b7a4c29f007d80b adds only the LOW-5
+          type-only warning-documents fix — no runtime/UI change; all checks
+          below were re-run on 0201cc96d9a6787b0ad6c2529b7a4c29f007d80b)
 Node: v22.20.0
 Worktree: /home/lchen/.dsh/state/superagent/work/compare-implementation-7028627e2a92-fork
 
 ================================================================
-AFTER — selected vitest (8 files; per plan §5.2 fork matrix)
-$ cd frontend && npx vitest run <8 selected files>
-exit=0
-   ✓ src/components/research/ComparePanel.c05.test.tsx (14 tests) 60ms
-   ✓ src/lib/hooks/use-research-jobs.test.tsx (40 tests) 62ms
-   ✓ src/components/research/ComparePanel.test.tsx (12 tests) 88ms
+AFTER — selected vitest (8 files; per plan §5.2 fork matrix) + locale gate
+$ cd frontend && npx vitest run <8 selected files> src/lib/locales/index.test.ts
+$ exit=0
+   ✓ src/components/research/ComparePanel.test.tsx (12 tests) 86ms
    ✓ src/components/research/ResearchJobList.compare.test.tsx (6 tests) 75ms
-   ✓ src/components/research/CompareReportView.test.tsx (16 tests) 136ms
-   ✓ src/components/research/ResearchWorkspace.test.tsx (31 tests) 495ms
-   ✓ src/components/research/target/TargetShell.test.tsx (72 tests) 1576ms
+   ✓ src/components/research/CompareReportView.test.tsx (16 tests) 139ms
+   ✓ src/components/research/ResearchWorkspace.test.tsx (31 tests) 556ms
+   ✓ src/components/research/target/TargetShell.test.tsx (72 tests) 1743ms
+   ✓ src/lib/locales/index.test.ts (27 tests) 11712ms
+       ✓ all en-US leaf keys should be referenced in source files  11599ms
   
-   Test Files  8 passed (8)
-        Tests  204 passed (204)
-     Start at  16:39:34
-     Duration  2.66s (transform 1.76s, setup 388ms, import 3.47s, tests 2.50s, environment 1.53s)
-
-AFTER — locale parity/unused-key gate (part of the full run, listed explicitly)
-$ cd frontend && npx vitest run src/lib/locales/index.test.ts
-27 tests passed (parity 13 locales + placeholders + unused-key), exit=0
+   Test Files  9 passed (9)
+        Tests  231 passed (231)
+     Start at  16:58:49
+     Duration  12.62s (transform 2.85s, setup 351ms, import 5.10s, tests 14.45s, environment 1.70s)
 
 ================================================================
 AFTER — full vitest (`npm run test`, includes 14-locale parity/unused-key)
@@ -33,27 +30,10 @@ $ cd frontend && npm run test
 exit=1 (same 59 pre-existing failures as baseline, see below)
    Test Files  5 failed | 193 passed (198)
         Tests  59 failed | 3341 passed (3400)
-     Start at  16:37:42
-     Duration  17.60s (transform 47.54s, setup 19.98s, import 139.09s, tests 94.04s, environment 75.18s)
+     Start at  16:59:22
+     Duration  17.43s (transform 43.38s, setup 19.96s, import 136.58s, tests 96.00s, environment 70.36s)
   
   EXIT=1
-
-BEFORE — full vitest on the untouched baseline (same environment)
-$ cd frontend && npm run test
-exit=1
-   Test Files  5 failed | 192 passed (197)
-        Tests  59 failed | 3305 passed (3364)
-     Start at  15:33:49
-     Duration  16.75s (transform 35.11s, setup 18.63s, import 116.27s, tests 91.61s, environment 67.20s)
-  
-  EXIT=1
-
-Pre-existing failing test files (identical set/count on BEFORE and AFTER):
-    2  src/app/research/page.sessions.provider.test.tsx
-   26  src/app/research/page.sessions.test.tsx
-    1  src/app/research/page.target.test.tsx
-   16  src/app/research/page.test.tsx
-   14  src/components/research/SourceListPanel.test.tsx
 
 ================================================================
 AFTER — lint (`npm run lint`)

@@ -1,0 +1,415 @@
+2026-11-11T15:45:12+08:00
+===== ISSUE #1017 VISUAL EVIDENCE — BEFORE phase =====
+2026-11-11T07:45:23.048Z phase=before host=http://127.0.0.1:8972/ head=d959635ebf5f642b6e8a75fb9a89896fe366683d widths=1440,1024 scenes=cap_off_all,cap_off_selected,cap_on_all,cap_on_selected,report_pass,report_degraded,report_partial,report_not_run,report_410_revoked,report_503
+2026-11-11T07:45:23.048Z gateway=http://127.0.0.1:8941 chrome=/home/lchen/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome
+===== before scene=cap_off_all width=1440x900 =====
+2026-11-11T07:45:23.184Z before harness reset: capability=off report=plain
+2026-11-11T07:45:26.203Z before boot width=1440 host=http://127.0.0.1:8972/ frame=http://127.0.0.1:8911/research?legacy=1
+2026-11-11T07:45:27.225Z SHOT before_cap_off_all_1440.png (97859 bytes, sha256=ffed87ae683112da…)
+2026-11-11T07:45:27.225Z SHOT-DOM before_cap_off_all_1440.png {"compare_create":1,"compare_entire_project":1,"compare_empty":0,"compare_declared_all":0,"compare_submitted":0,"activity_dialog":0,"report_toggle":0,"report_content":0,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_model":0,"report_verification":0,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":0}
+2026-11-11T07:45:27.225Z before cap_off_all ASSERT PASS all_blocked_legacy expected=">0" actual=1
+2026-11-11T07:45:27.225Z before cap_off_all ASSERT PASS create_disabled_legacy expected=true actual=true
+2026-11-11T07:45:27.226Z before cap_off_all ASSERT PASS no_create_request expected=0 actual=0
+===== before scene=cap_off_selected width=1440x900 =====
+2026-11-11T07:45:27.231Z before harness reset: capability=off report=plain
+2026-11-11T07:45:29.418Z before boot width=1440 host=http://127.0.0.1:8972/ frame=http://127.0.0.1:8911/research?legacy=1
+2026-11-11T07:45:31.354Z before cap_off_selected ASSERT PASS create_enabled_selected expected=true actual=true
+2026-11-11T07:45:32.575Z before cap_off_selected ASSERT PASS create_request_captured expected=true actual=true
+2026-11-11T07:45:32.575Z before cap_off_selected ASSERT PASS legacy_header_v1 expected="v1" actual="v1"
+2026-11-11T07:45:32.575Z before cap_off_selected ASSERT PASS legacy_body_document_ids expected=["doc_alpha","doc_beta"] actual=["doc_alpha","doc_beta"]
+2026-11-11T07:45:32.575Z before cap_off_selected ASSERT PASS legacy_body_no_source_scope expected=true actual=false
+2026-11-11T07:45:32.575Z before cap_off_selected ASSERT PASS legacy_body_no_note_ids expected=true actual=false
+2026-11-11T07:45:32.623Z SHOT before_cap_off_selected_1440.png (92532 bytes, sha256=9ec6b6e10b0d7a8f…)
+2026-11-11T07:45:32.623Z SHOT-DOM before_cap_off_selected_1440.png {"compare_create":1,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":1,"activity_dialog":0,"report_toggle":0,"report_content":0,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_model":0,"report_verification":0,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":0}
+===== before scene=cap_on_all width=1440x900 =====
+2026-11-11T07:45:32.628Z before harness reset: capability=on report=plain
+2026-11-11T07:45:34.893Z before boot width=1440 host=http://127.0.0.1:8972/ frame=http://127.0.0.1:8911/research?legacy=1
+2026-11-11T07:45:35.905Z SHOT before_cap_on_all_1440.png (97883 bytes, sha256=5a77c31ba64d68f3…)
+2026-11-11T07:45:35.905Z SHOT-DOM before_cap_on_all_1440.png {"compare_create":1,"compare_entire_project":1,"compare_empty":0,"compare_declared_all":0,"compare_submitted":0,"activity_dialog":0,"report_toggle":0,"report_content":0,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_model":0,"report_verification":0,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":0}
+2026-11-11T07:45:35.905Z before cap_on_all ASSERT PASS all_still_blocked_before expected=">0" actual=1
+2026-11-11T07:45:35.905Z before cap_on_all ASSERT PASS create_disabled_before expected=true actual=true
+2026-11-11T07:45:35.906Z before cap_on_all ASSERT PASS no_create_request_before expected=0 actual=0
+===== before scene=cap_on_selected width=1440x900 =====
+2026-11-11T07:45:35.909Z before harness reset: capability=on report=plain
+2026-11-11T07:45:38.102Z before boot width=1440 host=http://127.0.0.1:8972/ frame=http://127.0.0.1:8911/research?legacy=1
+2026-11-11T07:45:41.293Z before cap_on_selected ASSERT PASS create_request_captured expected=true actual=true
+2026-11-11T07:45:41.293Z before cap_on_selected ASSERT PASS legacy_header_v1 expected="v1" actual="v1"
+2026-11-11T07:45:41.293Z before cap_on_selected ASSERT PASS legacy_body_document_ids expected=["doc_alpha","doc_beta"] actual=["doc_alpha","doc_beta"]
+2026-11-11T07:45:41.341Z SHOT before_cap_on_selected_1440.png (92532 bytes, sha256=9ec6b6e10b0d7a8f…)
+2026-11-11T07:45:41.342Z SHOT-DOM before_cap_on_selected_1440.png {"compare_create":1,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":1,"activity_dialog":0,"report_toggle":0,"report_content":0,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_model":0,"report_verification":0,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":0}
+===== before scene=report_pass width=1440x900 =====
+2026-11-11T07:45:41.347Z before harness reset: capability=on report=pass
+2026-11-11T07:45:43.647Z before boot width=1440 host=http://127.0.0.1:8972/ frame=http://127.0.0.1:8911/research?legacy=1
+2026-11-11T07:45:46.608Z SHOT before_report_pass_1440.png (94803 bytes, sha256=97659b2557663759…)
+2026-11-11T07:45:46.608Z SHOT-DOM before_report_pass_1440.png {"compare_create":0,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":0,"activity_dialog":1,"report_toggle":1,"report_content":1,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_model":0,"report_verification":0,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":1}
+2026-11-11T07:45:46.608Z before report_pass ASSERT PASS report_body_visible expected=">0" actual=1
+2026-11-11T07:45:46.608Z before report_pass ASSERT PASS before_no_readback_section expected=0 actual=0
+2026-11-11T07:45:46.608Z before report_pass ASSERT PASS before_no_verification_status expected=0 actual=0
+===== before scene=report_degraded width=1440x900 =====
+2026-11-11T07:45:46.612Z before harness reset: capability=on report=degraded
+2026-11-11T07:45:48.875Z before boot width=1440 host=http://127.0.0.1:8972/ frame=http://127.0.0.1:8911/research?legacy=1
+2026-11-11T07:45:51.821Z SHOT before_report_degraded_1440.png (94803 bytes, sha256=97659b2557663759…)
+2026-11-11T07:45:51.821Z SHOT-DOM before_report_degraded_1440.png {"compare_create":0,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":0,"activity_dialog":1,"report_toggle":1,"report_content":1,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_model":0,"report_verification":0,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":1}
+2026-11-11T07:45:51.821Z before report_degraded ASSERT PASS report_body_visible expected=">0" actual=1
+2026-11-11T07:45:51.821Z before report_degraded ASSERT PASS before_no_readback_section expected=0 actual=0
+2026-11-11T07:45:51.821Z before report_degraded ASSERT PASS before_no_verification_status expected=0 actual=0
+===== before scene=report_partial width=1440x900 =====
+2026-11-11T07:45:51.825Z before harness reset: capability=on report=partial
+2026-11-11T07:45:54.058Z before boot width=1440 host=http://127.0.0.1:8972/ frame=http://127.0.0.1:8911/research?legacy=1
+2026-11-11T07:45:57.035Z SHOT before_report_partial_1440.png (94803 bytes, sha256=97659b2557663759…)
+2026-11-11T07:45:57.035Z SHOT-DOM before_report_partial_1440.png {"compare_create":0,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":0,"activity_dialog":1,"report_toggle":1,"report_content":1,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_model":0,"report_verification":0,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":1}
+2026-11-11T07:45:57.035Z before report_partial ASSERT PASS report_body_visible expected=">0" actual=1
+2026-11-11T07:45:57.035Z before report_partial ASSERT PASS before_no_readback_section expected=0 actual=0
+2026-11-11T07:45:57.035Z before report_partial ASSERT PASS before_no_verification_status expected=0 actual=0
+===== before scene=report_not_run width=1440x900 =====
+2026-11-11T07:45:57.041Z before harness reset: capability=on report=not_run
+2026-11-11T07:45:59.323Z before boot width=1440 host=http://127.0.0.1:8972/ frame=http://127.0.0.1:8911/research?legacy=1
+2026-11-11T07:46:02.292Z SHOT before_report_not_run_1440.png (94803 bytes, sha256=97659b2557663759…)
+2026-11-11T07:46:02.292Z SHOT-DOM before_report_not_run_1440.png {"compare_create":0,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":0,"activity_dialog":1,"report_toggle":1,"report_content":1,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_model":0,"report_verification":0,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":1}
+2026-11-11T07:46:02.292Z before report_not_run ASSERT PASS report_body_visible expected=">0" actual=1
+2026-11-11T07:46:02.292Z before report_not_run ASSERT PASS before_no_readback_section expected=0 actual=0
+2026-11-11T07:46:02.292Z before report_not_run ASSERT PASS before_no_verification_status expected=0 actual=0
+===== before scene=report_410_revoked width=1440x900 =====
+2026-11-11T07:46:02.297Z before harness reset: capability=on report=revoked
+2026-11-11T07:46:04.617Z before boot width=1440 host=http://127.0.0.1:8972/ frame=http://127.0.0.1:8911/research?legacy=1
+2026-11-11T07:46:07.573Z SHOT before_report_410_revoked_1440.png (95463 bytes, sha256=57a0e321d0d0a325…)
+2026-11-11T07:46:07.573Z SHOT-DOM before_report_410_revoked_1440.png {"compare_create":0,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":0,"activity_dialog":1,"report_toggle":1,"report_content":0,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_model":0,"report_verification":0,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":0}
+2026-11-11T07:46:07.573Z before report_410_revoked ASSERT PASS before_no_restricted_placeholder expected=0 actual=0
+2026-11-11T07:46:07.573Z before report_410_revoked ASSERT PASS before_no_report_body expected=0 actual=0
+2026-11-11T07:46:07.573Z before report_410_revoked ASSERT PASS before_generic_error_shown expected=true actual=true
+===== before scene=report_503 width=1440x900 =====
+2026-11-11T07:46:07.577Z before harness reset: capability=on report=unavailable503
+2026-11-11T07:46:09.793Z before boot width=1440 host=http://127.0.0.1:8972/ frame=http://127.0.0.1:8911/research?legacy=1
+2026-11-11T07:46:12.741Z SHOT before_report_503_1440.png (95463 bytes, sha256=57a0e321d0d0a325…)
+2026-11-11T07:46:12.741Z SHOT-DOM before_report_503_1440.png {"compare_create":0,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":0,"activity_dialog":1,"report_toggle":1,"report_content":0,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_model":0,"report_verification":0,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":0}
+2026-11-11T07:46:12.741Z before report_503 ASSERT PASS before_generic_error_shown expected=true actual=true
+2026-11-11T07:46:12.741Z before report_503 ASSERT PASS before_no_retry_button expected=0 actual=0
+===== before scene=cap_off_all width=1024x768 =====
+2026-11-11T07:46:12.745Z before harness reset: capability=off report=plain
+2026-11-11T07:46:14.940Z before boot width=1024 host=http://127.0.0.1:8972/ frame=http://127.0.0.1:8911/research?legacy=1
+2026-11-11T07:46:15.963Z SHOT before_cap_off_all_1024.png (94571 bytes, sha256=85aa78a6bf7911b3…)
+2026-11-11T07:46:15.963Z SHOT-DOM before_cap_off_all_1024.png {"compare_create":1,"compare_entire_project":1,"compare_empty":0,"compare_declared_all":0,"compare_submitted":0,"activity_dialog":0,"report_toggle":0,"report_content":0,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_model":0,"report_verification":0,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":0}
+2026-11-11T07:46:15.963Z before cap_off_all ASSERT PASS all_blocked_legacy expected=">0" actual=1
+2026-11-11T07:46:15.963Z before cap_off_all ASSERT PASS create_disabled_legacy expected=true actual=true
+2026-11-11T07:46:15.964Z before cap_off_all ASSERT PASS no_create_request expected=0 actual=0
+===== before scene=cap_off_selected width=1024x768 =====
+2026-11-11T07:46:15.968Z before harness reset: capability=off report=plain
+2026-11-11T07:46:18.235Z before boot width=1024 host=http://127.0.0.1:8972/ frame=http://127.0.0.1:8911/research?legacy=1
+2026-11-11T07:46:20.170Z before cap_off_selected ASSERT PASS create_enabled_selected expected=true actual=true
+2026-11-11T07:46:21.406Z before cap_off_selected ASSERT PASS create_request_captured expected=true actual=true
+2026-11-11T07:46:21.406Z before cap_off_selected ASSERT PASS legacy_header_v1 expected="v1" actual="v1"
+2026-11-11T07:46:21.406Z before cap_off_selected ASSERT PASS legacy_body_document_ids expected=["doc_alpha","doc_beta"] actual=["doc_alpha","doc_beta"]
+2026-11-11T07:46:21.406Z before cap_off_selected ASSERT PASS legacy_body_no_source_scope expected=true actual=false
+2026-11-11T07:46:21.406Z before cap_off_selected ASSERT PASS legacy_body_no_note_ids expected=true actual=false
+2026-11-11T07:46:21.437Z SHOT before_cap_off_selected_1024.png (88500 bytes, sha256=ad11583b9ea8d43a…)
+2026-11-11T07:46:21.437Z SHOT-DOM before_cap_off_selected_1024.png {"compare_create":1,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":1,"activity_dialog":0,"report_toggle":0,"report_content":0,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_model":0,"report_verification":0,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":0}
+===== before scene=cap_on_all width=1024x768 =====
+2026-11-11T07:46:21.440Z before harness reset: capability=on report=plain
+2026-11-11T07:46:23.655Z before boot width=1024 host=http://127.0.0.1:8972/ frame=http://127.0.0.1:8911/research?legacy=1
+2026-11-11T07:46:24.694Z SHOT before_cap_on_all_1024.png (94619 bytes, sha256=4e65fbbf346e5d48…)
+2026-11-11T07:46:24.694Z SHOT-DOM before_cap_on_all_1024.png {"compare_create":1,"compare_entire_project":1,"compare_empty":0,"compare_declared_all":0,"compare_submitted":0,"activity_dialog":0,"report_toggle":0,"report_content":0,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_model":0,"report_verification":0,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":0}
+2026-11-11T07:46:24.694Z before cap_on_all ASSERT PASS all_still_blocked_before expected=">0" actual=1
+2026-11-11T07:46:24.694Z before cap_on_all ASSERT PASS create_disabled_before expected=true actual=true
+2026-11-11T07:46:24.694Z before cap_on_all ASSERT PASS no_create_request_before expected=0 actual=0
+===== before scene=cap_on_selected width=1024x768 =====
+2026-11-11T07:46:24.697Z before harness reset: capability=on report=plain
+2026-11-11T07:46:26.926Z before boot width=1024 host=http://127.0.0.1:8972/ frame=http://127.0.0.1:8911/research?legacy=1
+2026-11-11T07:46:30.090Z before cap_on_selected ASSERT PASS create_request_captured expected=true actual=true
+2026-11-11T07:46:30.090Z before cap_on_selected ASSERT PASS legacy_header_v1 expected="v1" actual="v1"
+2026-11-11T07:46:30.090Z before cap_on_selected ASSERT PASS legacy_body_document_ids expected=["doc_alpha","doc_beta"] actual=["doc_alpha","doc_beta"]
+2026-11-11T07:46:30.118Z SHOT before_cap_on_selected_1024.png (88491 bytes, sha256=0a5ce57609d65235…)
+2026-11-11T07:46:30.118Z SHOT-DOM before_cap_on_selected_1024.png {"compare_create":1,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":1,"activity_dialog":0,"report_toggle":0,"report_content":0,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_model":0,"report_verification":0,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":0}
+===== before scene=report_pass width=1024x768 =====
+2026-11-11T07:46:30.121Z before harness reset: capability=on report=pass
+2026-11-11T07:46:32.355Z before boot width=1024 host=http://127.0.0.1:8972/ frame=http://127.0.0.1:8911/research?legacy=1
+2026-11-11T07:46:35.296Z SHOT before_report_pass_1024.png (81784 bytes, sha256=5908bb438999f046…)
+2026-11-11T07:46:35.296Z SHOT-DOM before_report_pass_1024.png {"compare_create":0,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":0,"activity_dialog":1,"report_toggle":1,"report_content":1,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_model":0,"report_verification":0,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":1}
+2026-11-11T07:46:35.296Z before report_pass ASSERT PASS report_body_visible expected=">0" actual=1
+2026-11-11T07:46:35.296Z before report_pass ASSERT PASS before_no_readback_section expected=0 actual=0
+2026-11-11T07:46:35.296Z before report_pass ASSERT PASS before_no_verification_status expected=0 actual=0
+===== before scene=report_degraded width=1024x768 =====
+2026-11-11T07:46:35.299Z before harness reset: capability=on report=degraded
+2026-11-11T07:46:37.515Z before boot width=1024 host=http://127.0.0.1:8972/ frame=http://127.0.0.1:8911/research?legacy=1
+2026-11-11T07:46:40.468Z SHOT before_report_degraded_1024.png (81784 bytes, sha256=5908bb438999f046…)
+2026-11-11T07:46:40.469Z SHOT-DOM before_report_degraded_1024.png {"compare_create":0,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":0,"activity_dialog":1,"report_toggle":1,"report_content":1,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_model":0,"report_verification":0,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":1}
+2026-11-11T07:46:40.469Z before report_degraded ASSERT PASS report_body_visible expected=">0" actual=1
+2026-11-11T07:46:40.469Z before report_degraded ASSERT PASS before_no_readback_section expected=0 actual=0
+2026-11-11T07:46:40.469Z before report_degraded ASSERT PASS before_no_verification_status expected=0 actual=0
+===== before scene=report_partial width=1024x768 =====
+2026-11-11T07:46:40.472Z before harness reset: capability=on report=partial
+2026-11-11T07:46:42.713Z before boot width=1024 host=http://127.0.0.1:8972/ frame=http://127.0.0.1:8911/research?legacy=1
+2026-11-11T07:46:45.649Z SHOT before_report_partial_1024.png (81784 bytes, sha256=5908bb438999f046…)
+2026-11-11T07:46:45.649Z SHOT-DOM before_report_partial_1024.png {"compare_create":0,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":0,"activity_dialog":1,"report_toggle":1,"report_content":1,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_model":0,"report_verification":0,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":1}
+2026-11-11T07:46:45.649Z before report_partial ASSERT PASS report_body_visible expected=">0" actual=1
+2026-11-11T07:46:45.649Z before report_partial ASSERT PASS before_no_readback_section expected=0 actual=0
+2026-11-11T07:46:45.649Z before report_partial ASSERT PASS before_no_verification_status expected=0 actual=0
+===== before scene=report_not_run width=1024x768 =====
+2026-11-11T07:46:45.653Z before harness reset: capability=on report=not_run
+2026-11-11T07:46:47.847Z before boot width=1024 host=http://127.0.0.1:8972/ frame=http://127.0.0.1:8911/research?legacy=1
+2026-11-11T07:46:50.803Z SHOT before_report_not_run_1024.png (81784 bytes, sha256=5908bb438999f046…)
+2026-11-11T07:46:50.803Z SHOT-DOM before_report_not_run_1024.png {"compare_create":0,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":0,"activity_dialog":1,"report_toggle":1,"report_content":1,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_model":0,"report_verification":0,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":1}
+2026-11-11T07:46:50.803Z before report_not_run ASSERT PASS report_body_visible expected=">0" actual=1
+2026-11-11T07:46:50.803Z before report_not_run ASSERT PASS before_no_readback_section expected=0 actual=0
+2026-11-11T07:46:50.803Z before report_not_run ASSERT PASS before_no_verification_status expected=0 actual=0
+===== before scene=report_410_revoked width=1024x768 =====
+2026-11-11T07:46:50.807Z before harness reset: capability=on report=revoked
+2026-11-11T07:46:53.031Z before boot width=1024 host=http://127.0.0.1:8972/ frame=http://127.0.0.1:8911/research?legacy=1
+2026-11-11T07:46:55.981Z SHOT before_report_410_revoked_1024.png (87025 bytes, sha256=1de38540f4f8b001…)
+2026-11-11T07:46:55.981Z SHOT-DOM before_report_410_revoked_1024.png {"compare_create":0,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":0,"activity_dialog":1,"report_toggle":1,"report_content":0,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_model":0,"report_verification":0,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":0}
+2026-11-11T07:46:55.981Z before report_410_revoked ASSERT PASS before_no_restricted_placeholder expected=0 actual=0
+2026-11-11T07:46:55.981Z before report_410_revoked ASSERT PASS before_no_report_body expected=0 actual=0
+2026-11-11T07:46:55.981Z before report_410_revoked ASSERT PASS before_generic_error_shown expected=true actual=true
+===== before scene=report_503 width=1024x768 =====
+2026-11-11T07:46:55.984Z before harness reset: capability=on report=unavailable503
+2026-11-11T07:46:58.174Z before boot width=1024 host=http://127.0.0.1:8972/ frame=http://127.0.0.1:8911/research?legacy=1
+2026-11-11T07:47:01.116Z SHOT before_report_503_1024.png (87025 bytes, sha256=1de38540f4f8b001…)
+2026-11-11T07:47:01.116Z SHOT-DOM before_report_503_1024.png {"compare_create":0,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":0,"activity_dialog":1,"report_toggle":1,"report_content":0,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_model":0,"report_verification":0,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":0}
+2026-11-11T07:47:01.116Z before report_503 ASSERT PASS before_generic_error_shown expected=true actual=true
+2026-11-11T07:47:01.116Z before report_503 ASSERT PASS before_no_retry_button expected=0 actual=0
+===== RESULT before: 64 PASS / 0 FAIL / 0 scene errors =====
+2026-11-11T07:47:01.148Z manifest written: /home/lchen/.dsh/state/superagent/work/compare-implementation-7028627e2a92-evidence/dev_docs/validation/issue1017/before-manifest.json
+===== ISSUE #1017 VISUAL EVIDENCE — AFTER phase =====
+2026-11-11T08:39:20.219Z phase=after host=http://127.0.0.1:8974/ head=d80e074bc66671cc11afeef7c29ee99b00ad62e2 widths=1440,1024 scenes=cap_off_all,cap_off_selected,cap_on_all,cap_on_selected,report_pass,report_degraded,report_partial,report_not_run,report_410_revoked,report_503
+2026-11-11T08:39:20.220Z gateway=http://127.0.0.1:8941 chrome=/home/lchen/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome
+===== after scene=cap_off_all width=1440x900 =====
+2026-11-11T08:39:20.379Z after harness reset: capability=off report=plain
+2026-11-11T08:39:22.950Z after boot width=1440 host=http://127.0.0.1:8974/ frame=http://127.0.0.1:8913/research?legacy=1
+2026-11-11T08:39:23.977Z SHOT after_cap_off_all_1440.png (97883 bytes, sha256=5a77c31ba64d68f3…)
+2026-11-11T08:39:23.977Z SHOT-DOM after_cap_off_all_1440.png {"compare_create":1,"compare_entire_project":1,"compare_empty":0,"compare_declared_all":0,"compare_submitted":0,"activity_dialog":0,"report_toggle":0,"report_content":0,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_scope_declared_sources":0,"report_coverage_counts":0,"report_coverage_unavailable":0,"report_model":0,"report_verification":0,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":0}
+2026-11-11T08:39:23.978Z after cap_off_all ASSERT PASS all_blocked_legacy expected=">0" actual=1
+2026-11-11T08:39:23.978Z after cap_off_all ASSERT PASS create_disabled_legacy expected=true actual=true
+2026-11-11T08:39:23.978Z after cap_off_all ASSERT PASS no_create_request expected=0 actual=0
+===== after scene=cap_off_selected width=1440x900 =====
+2026-11-11T08:39:23.985Z after harness reset: capability=off report=plain
+2026-11-11T08:39:26.175Z after boot width=1440 host=http://127.0.0.1:8974/ frame=http://127.0.0.1:8913/research?legacy=1
+2026-11-11T08:39:28.127Z after cap_off_selected ASSERT PASS create_enabled_selected expected=true actual=true
+2026-11-11T08:39:29.414Z after cap_off_selected ASSERT PASS create_request_captured expected=true actual=true
+2026-11-11T08:39:29.414Z after cap_off_selected ASSERT PASS legacy_header_v1 expected="v1" actual="v1"
+2026-11-11T08:39:29.414Z after cap_off_selected ASSERT PASS legacy_body_document_ids expected=["doc_alpha","doc_beta"] actual=["doc_alpha","doc_beta"]
+2026-11-11T08:39:29.414Z after cap_off_selected ASSERT PASS legacy_body_no_source_scope expected=true actual=false
+2026-11-11T08:39:29.414Z after cap_off_selected ASSERT PASS legacy_body_no_note_ids expected=true actual=false
+2026-11-11T08:39:29.454Z SHOT after_cap_off_selected_1440.png (92532 bytes, sha256=9ec6b6e10b0d7a8f…)
+2026-11-11T08:39:29.454Z SHOT-DOM after_cap_off_selected_1440.png {"compare_create":1,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":1,"activity_dialog":0,"report_toggle":0,"report_content":0,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_scope_declared_sources":0,"report_coverage_counts":0,"report_coverage_unavailable":0,"report_model":0,"report_verification":0,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":0}
+===== after scene=cap_on_all width=1440x900 =====
+2026-11-11T08:39:29.459Z after harness reset: capability=on report=plain
+2026-11-11T08:39:31.694Z after boot width=1440 host=http://127.0.0.1:8974/ frame=http://127.0.0.1:8913/research?legacy=1
+2026-11-11T08:39:32.719Z SHOT after_cap_on_all_1440.png (99785 bytes, sha256=1b4492c53d26ed7c…)
+2026-11-11T08:39:32.719Z SHOT-DOM after_cap_on_all_1440.png {"compare_create":1,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":1,"compare_submitted":0,"activity_dialog":0,"report_toggle":0,"report_content":0,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_scope_declared_sources":0,"report_coverage_counts":0,"report_coverage_unavailable":0,"report_model":0,"report_verification":0,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":0}
+2026-11-11T08:39:32.719Z after cap_on_all ASSERT PASS all_not_blocked_after expected=0 actual=0
+2026-11-11T08:39:32.719Z after cap_on_all ASSERT PASS create_enabled_after expected=false actual=false
+2026-11-11T08:39:32.719Z after cap_on_all ASSERT PASS declared_scope_notice expected=">0" actual=1
+2026-11-11T08:39:33.979Z after cap_on_all ASSERT PASS create_request_captured expected=true actual=true
+2026-11-11T08:39:33.979Z after cap_on_all ASSERT PASS c05_header expected="c05-v1" actual="c05-v1"
+2026-11-11T08:39:33.979Z after cap_on_all ASSERT PASS c05_source_scope_all expected={"mode":"all","source_ids":[],"single_source_id":null} actual={"mode":"all","source_ids":[],"single_source_id":null}
+2026-11-11T08:39:33.979Z after cap_on_all ASSERT PASS c05_source_scope_keys expected="mode,single_source_id,source_ids" actual="mode,single_source_id,source_ids"
+2026-11-11T08:39:33.979Z after cap_on_all ASSERT PASS c05_note_ids_empty expected=[] actual=[]
+2026-11-11T08:39:33.979Z after cap_on_all ASSERT PASS c05_no_document_ids expected=true actual=false
+2026-11-11T08:39:34.012Z SHOT after_cap_on_all_submitted_1440.png (106092 bytes, sha256=5103181ff69c979f…)
+2026-11-11T08:39:34.012Z SHOT-DOM after_cap_on_all_submitted_1440.png {"compare_create":1,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":1,"compare_submitted":1,"activity_dialog":0,"report_toggle":0,"report_content":0,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_scope_declared_sources":0,"report_coverage_counts":0,"report_coverage_unavailable":0,"report_model":0,"report_verification":0,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":0}
+2026-11-11T08:39:34.012Z after cap_on_all ASSERT PASS submitted_notice expected=">0" actual=1
+===== after scene=cap_on_selected width=1440x900 =====
+2026-11-11T08:39:34.015Z after harness reset: capability=on report=plain
+2026-11-11T08:39:36.194Z after boot width=1440 host=http://127.0.0.1:8974/ frame=http://127.0.0.1:8913/research?legacy=1
+2026-11-11T08:39:39.363Z after cap_on_selected ASSERT PASS create_request_captured expected=true actual=true
+2026-11-11T08:39:39.363Z after cap_on_selected ASSERT PASS c05_header expected="c05-v1" actual="c05-v1"
+2026-11-11T08:39:39.363Z after cap_on_selected ASSERT PASS c05_source_scope_selected expected={"mode":"selected","source_ids":["src_alpha","src_beta"],"single_source_id":null} actual={"mode":"selected","source_ids":["src_alpha","src_beta"],"single_source_id":null}
+2026-11-11T08:39:39.363Z after cap_on_selected ASSERT PASS c05_note_ids_empty expected=[] actual=[]
+2026-11-11T08:39:39.363Z after cap_on_selected ASSERT PASS c05_no_document_ids expected=true actual=false
+2026-11-11T08:39:39.397Z SHOT after_cap_on_selected_1440.png (92532 bytes, sha256=9ec6b6e10b0d7a8f…)
+2026-11-11T08:39:39.397Z SHOT-DOM after_cap_on_selected_1440.png {"compare_create":1,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":1,"activity_dialog":0,"report_toggle":0,"report_content":0,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_scope_declared_sources":0,"report_coverage_counts":0,"report_coverage_unavailable":0,"report_model":0,"report_verification":0,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":0}
+===== after scene=report_pass width=1440x900 =====
+2026-11-11T08:39:39.401Z after harness reset: capability=on report=pass
+2026-11-11T08:39:41.598Z after boot width=1440 host=http://127.0.0.1:8974/ frame=http://127.0.0.1:8913/research?legacy=1
+2026-11-11T08:39:44.604Z SHOT after_report_pass_1440.png (95906 bytes, sha256=e72d4ce9c7de6550…)
+2026-11-11T08:39:44.604Z SHOT-DOM after_report_pass_1440.png {"compare_create":0,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":0,"activity_dialog":1,"report_toggle":1,"report_content":1,"report_readback":1,"report_scope":1,"report_scope_empty":0,"report_scope_resolved":1,"report_scope_declared_sources":1,"report_coverage_counts":1,"report_coverage_unavailable":0,"report_model":1,"report_verification":1,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":1}
+2026-11-11T08:39:44.604Z after report_pass ASSERT PASS report_body_visible expected=">0" actual=1
+2026-11-11T08:39:44.604Z after report_pass ASSERT PASS after_readback_section expected=">0" actual=1
+2026-11-11T08:39:44.604Z after report_pass ASSERT PASS after_scope_section expected=">0" actual=1
+2026-11-11T08:39:44.604Z after report_pass ASSERT PASS after_verification_section expected=">0" actual=1
+2026-11-11T08:39:44.604Z after report_pass ASSERT PASS after_verification_status expected="pass" actual="pass"
+2026-11-11T08:39:44.604Z after report_pass ASSERT PASS after_verification_text expected="Verified — required checks executed with no findings" actual="Verified — required checks executed with no findings"
+2026-11-11T08:39:44.604Z after report_pass ASSERT PASS after_model_section expected=">0" actual=1
+2026-11-11T08:39:44.604Z after report_pass ASSERT PASS after_declared_sources expected=">0" actual=1
+2026-11-11T08:39:44.604Z after report_pass ASSERT PASS after_coverage_counts expected="counts>0 & unavailable=0" actual="{\"counts\":1,\"unavailable\":0}"
+===== after scene=report_degraded width=1440x900 =====
+2026-11-11T08:39:44.607Z after harness reset: capability=on report=degraded
+2026-11-11T08:39:46.799Z after boot width=1440 host=http://127.0.0.1:8974/ frame=http://127.0.0.1:8913/research?legacy=1
+2026-11-11T08:39:49.742Z SHOT after_report_degraded_1440.png (95365 bytes, sha256=606807012fdac811…)
+2026-11-11T08:39:49.742Z SHOT-DOM after_report_degraded_1440.png {"compare_create":0,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":0,"activity_dialog":1,"report_toggle":1,"report_content":1,"report_readback":1,"report_scope":1,"report_scope_empty":0,"report_scope_resolved":1,"report_scope_declared_sources":0,"report_coverage_counts":1,"report_coverage_unavailable":0,"report_model":1,"report_verification":1,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":1}
+2026-11-11T08:39:49.742Z after report_degraded ASSERT PASS report_body_visible expected=">0" actual=1
+2026-11-11T08:39:49.742Z after report_degraded ASSERT PASS after_readback_section expected=">0" actual=1
+2026-11-11T08:39:49.742Z after report_degraded ASSERT PASS after_scope_section expected=">0" actual=1
+2026-11-11T08:39:49.742Z after report_degraded ASSERT PASS after_verification_section expected=">0" actual=1
+2026-11-11T08:39:49.742Z after report_degraded ASSERT PASS after_verification_status expected="degraded" actual="degraded"
+2026-11-11T08:39:49.742Z after report_degraded ASSERT PASS after_verification_text expected="Degraded — verification found unsupported cited claims" actual="Degraded — verification found unsupported cited claims"
+2026-11-11T08:39:49.742Z after report_degraded ASSERT PASS after_not_rendered_as_pass expected="no pass text" actual="Degraded — verification found unsupported cited claims"
+2026-11-11T08:39:49.742Z after report_degraded ASSERT PASS after_model_section expected=">0" actual=1
+===== after scene=report_partial width=1440x900 =====
+2026-11-11T08:39:49.746Z after harness reset: capability=on report=partial
+2026-11-11T08:39:52.024Z after boot width=1440 host=http://127.0.0.1:8974/ frame=http://127.0.0.1:8913/research?legacy=1
+2026-11-11T08:39:54.980Z SHOT after_report_partial_1440.png (96242 bytes, sha256=10201f3c9d1a0d23…)
+2026-11-11T08:39:54.980Z SHOT-DOM after_report_partial_1440.png {"compare_create":0,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":0,"activity_dialog":1,"report_toggle":1,"report_content":1,"report_readback":1,"report_scope":1,"report_scope_empty":0,"report_scope_resolved":1,"report_scope_declared_sources":0,"report_coverage_counts":1,"report_coverage_unavailable":0,"report_model":1,"report_verification":1,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":1}
+2026-11-11T08:39:54.980Z after report_partial ASSERT PASS report_body_visible expected=">0" actual=1
+2026-11-11T08:39:54.980Z after report_partial ASSERT PASS after_readback_section expected=">0" actual=1
+2026-11-11T08:39:54.980Z after report_partial ASSERT PASS after_scope_section expected=">0" actual=1
+2026-11-11T08:39:54.980Z after report_partial ASSERT PASS after_verification_section expected=">0" actual=1
+2026-11-11T08:39:54.980Z after report_partial ASSERT PASS after_verification_status expected="partial" actual="partial"
+2026-11-11T08:39:54.980Z after report_partial ASSERT PASS after_verification_text expected="Partially checked — some checks were skipped, so this is not a pass" actual="Partially checked — some checks were skipped, so this is not a pass"
+2026-11-11T08:39:54.980Z after report_partial ASSERT PASS after_not_rendered_as_pass expected="no pass text" actual="Partially checked — some checks were skipped, so this is not a pass"
+2026-11-11T08:39:54.980Z after report_partial ASSERT PASS after_model_section expected=">0" actual=1
+===== after scene=report_not_run width=1440x900 =====
+2026-11-11T08:39:54.985Z after harness reset: capability=on report=not_run
+2026-11-11T08:39:57.193Z after boot width=1440 host=http://127.0.0.1:8974/ frame=http://127.0.0.1:8913/research?legacy=1
+2026-11-11T08:40:00.168Z SHOT after_report_not_run_1440.png (96935 bytes, sha256=b2661d83f58d5b17…)
+2026-11-11T08:40:00.168Z SHOT-DOM after_report_not_run_1440.png {"compare_create":0,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":0,"activity_dialog":1,"report_toggle":1,"report_content":1,"report_readback":1,"report_scope":1,"report_scope_empty":1,"report_scope_resolved":0,"report_scope_declared_sources":0,"report_coverage_counts":0,"report_coverage_unavailable":0,"report_model":1,"report_verification":1,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":1}
+2026-11-11T08:40:00.168Z after report_not_run ASSERT PASS report_body_visible expected=">0" actual=1
+2026-11-11T08:40:00.168Z after report_not_run ASSERT PASS after_readback_section expected=">0" actual=1
+2026-11-11T08:40:00.168Z after report_not_run ASSERT PASS after_scope_section expected=">0" actual=1
+2026-11-11T08:40:00.168Z after report_not_run ASSERT PASS after_verification_section expected=">0" actual=1
+2026-11-11T08:40:00.168Z after report_not_run ASSERT PASS after_verification_status expected="not_run" actual="not_run"
+2026-11-11T08:40:00.168Z after report_not_run ASSERT PASS after_verification_text expected="Not verified — this job ran before comparison verification existed" actual="Not verified — this job ran before comparison verification existed"
+2026-11-11T08:40:00.168Z after report_not_run ASSERT PASS after_not_rendered_as_pass expected="no pass text" actual="Not verified — this job ran before comparison verification existed"
+2026-11-11T08:40:00.168Z after report_not_run ASSERT PASS after_scope_missing_not_recorded expected=">0" actual=1
+===== after scene=report_410_revoked width=1440x900 =====
+2026-11-11T08:40:00.173Z after harness reset: capability=on report=revoked
+2026-11-11T08:40:02.449Z after boot width=1440 host=http://127.0.0.1:8974/ frame=http://127.0.0.1:8913/research?legacy=1
+2026-11-11T08:40:05.394Z SHOT after_report_410_revoked_1440.png (97520 bytes, sha256=c8cc6a700b608536…)
+2026-11-11T08:40:05.394Z SHOT-DOM after_report_410_revoked_1440.png {"compare_create":0,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":0,"activity_dialog":1,"report_toggle":1,"report_content":0,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_scope_declared_sources":0,"report_coverage_counts":0,"report_coverage_unavailable":0,"report_model":0,"report_verification":0,"report_restricted":1,"report_retryable":0,"report_retry_button":0,"markdown_blocks":0}
+2026-11-11T08:40:05.394Z after report_410_revoked ASSERT PASS after_restricted_placeholder expected=">0" actual=1
+2026-11-11T08:40:05.394Z after report_410_revoked ASSERT PASS after_no_report_body expected=0 actual=0
+2026-11-11T08:40:05.394Z after report_410_revoked ASSERT PASS after_restricted_explains_revoke expected=true actual=true
+2026-11-11T08:40:05.394Z after report_410_revoked ASSERT PASS report_request_410 expected=">0" actual=1
+===== after scene=report_503 width=1440x900 =====
+2026-11-11T08:40:05.398Z after harness reset: capability=on report=unavailable503
+2026-11-11T08:40:07.675Z after boot width=1440 host=http://127.0.0.1:8974/ frame=http://127.0.0.1:8913/research?legacy=1
+2026-11-11T08:40:10.684Z SHOT after_report_503_1440.png (96647 bytes, sha256=8336200f82c32a6c…)
+2026-11-11T08:40:10.684Z SHOT-DOM after_report_503_1440.png {"compare_create":0,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":0,"activity_dialog":1,"report_toggle":1,"report_content":0,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_scope_declared_sources":0,"report_coverage_counts":0,"report_coverage_unavailable":0,"report_model":0,"report_verification":0,"report_restricted":0,"report_retryable":1,"report_retry_button":1,"markdown_blocks":0}
+2026-11-11T08:40:10.685Z after report_503 ASSERT PASS after_retryable_shown expected=">0" actual=1
+2026-11-11T08:40:10.685Z after report_503 ASSERT PASS after_retry_button expected=">0" actual=1
+2026-11-11T08:40:10.685Z after report_503 ASSERT PASS after_no_report_body expected=0 actual=0
+2026-11-11T08:40:10.685Z after harness report mode -> pass
+2026-11-11T08:40:12.319Z after report_503 ASSERT PASS after_retry_renders_report expected=">0" actual=1
+2026-11-11T08:40:12.369Z SHOT after_report_503_retried_1440.png (95335 bytes, sha256=62a172c3e7feecc1…)
+2026-11-11T08:40:12.369Z SHOT-DOM after_report_503_retried_1440.png {"compare_create":0,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":0,"activity_dialog":1,"report_toggle":1,"report_content":1,"report_readback":1,"report_scope":1,"report_scope_empty":0,"report_scope_resolved":1,"report_scope_declared_sources":0,"report_coverage_counts":1,"report_coverage_unavailable":0,"report_model":1,"report_verification":1,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":1}
+===== after scene=cap_off_all width=1024x768 =====
+2026-11-11T08:40:12.374Z after harness reset: capability=off report=plain
+2026-11-11T08:40:14.654Z after boot width=1024 host=http://127.0.0.1:8974/ frame=http://127.0.0.1:8913/research?legacy=1
+2026-11-11T08:40:15.669Z SHOT after_cap_off_all_1024.png (94613 bytes, sha256=77077ff5b66cfeee…)
+2026-11-11T08:40:15.669Z SHOT-DOM after_cap_off_all_1024.png {"compare_create":1,"compare_entire_project":1,"compare_empty":0,"compare_declared_all":0,"compare_submitted":0,"activity_dialog":0,"report_toggle":0,"report_content":0,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_scope_declared_sources":0,"report_coverage_counts":0,"report_coverage_unavailable":0,"report_model":0,"report_verification":0,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":0}
+2026-11-11T08:40:15.669Z after cap_off_all ASSERT PASS all_blocked_legacy expected=">0" actual=1
+2026-11-11T08:40:15.669Z after cap_off_all ASSERT PASS create_disabled_legacy expected=true actual=true
+2026-11-11T08:40:15.670Z after cap_off_all ASSERT PASS no_create_request expected=0 actual=0
+===== after scene=cap_off_selected width=1024x768 =====
+2026-11-11T08:40:15.675Z after harness reset: capability=off report=plain
+2026-11-11T08:40:17.957Z after boot width=1024 host=http://127.0.0.1:8974/ frame=http://127.0.0.1:8913/research?legacy=1
+2026-11-11T08:40:19.905Z after cap_off_selected ASSERT PASS create_enabled_selected expected=true actual=true
+2026-11-11T08:40:21.127Z after cap_off_selected ASSERT PASS create_request_captured expected=true actual=true
+2026-11-11T08:40:21.127Z after cap_off_selected ASSERT PASS legacy_header_v1 expected="v1" actual="v1"
+2026-11-11T08:40:21.127Z after cap_off_selected ASSERT PASS legacy_body_document_ids expected=["doc_alpha","doc_beta"] actual=["doc_alpha","doc_beta"]
+2026-11-11T08:40:21.127Z after cap_off_selected ASSERT PASS legacy_body_no_source_scope expected=true actual=false
+2026-11-11T08:40:21.127Z after cap_off_selected ASSERT PASS legacy_body_no_note_ids expected=true actual=false
+2026-11-11T08:40:21.162Z SHOT after_cap_off_selected_1024.png (88500 bytes, sha256=ad11583b9ea8d43a…)
+2026-11-11T08:40:21.162Z SHOT-DOM after_cap_off_selected_1024.png {"compare_create":1,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":1,"activity_dialog":0,"report_toggle":0,"report_content":0,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_scope_declared_sources":0,"report_coverage_counts":0,"report_coverage_unavailable":0,"report_model":0,"report_verification":0,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":0}
+===== after scene=cap_on_all width=1024x768 =====
+2026-11-11T08:40:21.167Z after harness reset: capability=on report=plain
+2026-11-11T08:40:23.430Z after boot width=1024 host=http://127.0.0.1:8974/ frame=http://127.0.0.1:8913/research?legacy=1
+2026-11-11T08:40:24.437Z SHOT after_cap_on_all_1024.png (95584 bytes, sha256=5652348d1d4c1b70…)
+2026-11-11T08:40:24.438Z SHOT-DOM after_cap_on_all_1024.png {"compare_create":1,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":1,"compare_submitted":0,"activity_dialog":0,"report_toggle":0,"report_content":0,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_scope_declared_sources":0,"report_coverage_counts":0,"report_coverage_unavailable":0,"report_model":0,"report_verification":0,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":0}
+2026-11-11T08:40:24.438Z after cap_on_all ASSERT PASS all_not_blocked_after expected=0 actual=0
+2026-11-11T08:40:24.438Z after cap_on_all ASSERT PASS create_enabled_after expected=false actual=false
+2026-11-11T08:40:24.438Z after cap_on_all ASSERT PASS declared_scope_notice expected=">0" actual=1
+2026-11-11T08:40:25.675Z after cap_on_all ASSERT PASS create_request_captured expected=true actual=true
+2026-11-11T08:40:25.675Z after cap_on_all ASSERT PASS c05_header expected="c05-v1" actual="c05-v1"
+2026-11-11T08:40:25.675Z after cap_on_all ASSERT PASS c05_source_scope_all expected={"mode":"all","source_ids":[],"single_source_id":null} actual={"mode":"all","source_ids":[],"single_source_id":null}
+2026-11-11T08:40:25.675Z after cap_on_all ASSERT PASS c05_source_scope_keys expected="mode,single_source_id,source_ids" actual="mode,single_source_id,source_ids"
+2026-11-11T08:40:25.675Z after cap_on_all ASSERT PASS c05_note_ids_empty expected=[] actual=[]
+2026-11-11T08:40:25.675Z after cap_on_all ASSERT PASS c05_no_document_ids expected=true actual=false
+2026-11-11T08:40:25.711Z SHOT after_cap_on_all_submitted_1024.png (101530 bytes, sha256=a23e8d7e7338ad47…)
+2026-11-11T08:40:25.711Z SHOT-DOM after_cap_on_all_submitted_1024.png {"compare_create":1,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":1,"compare_submitted":1,"activity_dialog":0,"report_toggle":0,"report_content":0,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_scope_declared_sources":0,"report_coverage_counts":0,"report_coverage_unavailable":0,"report_model":0,"report_verification":0,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":0}
+2026-11-11T08:40:25.711Z after cap_on_all ASSERT PASS submitted_notice expected=">0" actual=1
+===== after scene=cap_on_selected width=1024x768 =====
+2026-11-11T08:40:25.715Z after harness reset: capability=on report=plain
+2026-11-11T08:40:27.978Z after boot width=1024 host=http://127.0.0.1:8974/ frame=http://127.0.0.1:8913/research?legacy=1
+2026-11-11T08:40:31.142Z after cap_on_selected ASSERT PASS create_request_captured expected=true actual=true
+2026-11-11T08:40:31.142Z after cap_on_selected ASSERT PASS c05_header expected="c05-v1" actual="c05-v1"
+2026-11-11T08:40:31.142Z after cap_on_selected ASSERT PASS c05_source_scope_selected expected={"mode":"selected","source_ids":["src_alpha","src_beta"],"single_source_id":null} actual={"mode":"selected","source_ids":["src_alpha","src_beta"],"single_source_id":null}
+2026-11-11T08:40:31.142Z after cap_on_selected ASSERT PASS c05_note_ids_empty expected=[] actual=[]
+2026-11-11T08:40:31.142Z after cap_on_selected ASSERT PASS c05_no_document_ids expected=true actual=false
+2026-11-11T08:40:31.170Z SHOT after_cap_on_selected_1024.png (88500 bytes, sha256=ad11583b9ea8d43a…)
+2026-11-11T08:40:31.170Z SHOT-DOM after_cap_on_selected_1024.png {"compare_create":1,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":1,"activity_dialog":0,"report_toggle":0,"report_content":0,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_scope_declared_sources":0,"report_coverage_counts":0,"report_coverage_unavailable":0,"report_model":0,"report_verification":0,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":0}
+===== after scene=report_pass width=1024x768 =====
+2026-11-11T08:40:31.173Z after harness reset: capability=on report=pass
+2026-11-11T08:40:33.471Z after boot width=1024 host=http://127.0.0.1:8974/ frame=http://127.0.0.1:8913/research?legacy=1
+2026-11-11T08:40:36.421Z SHOT after_report_pass_1024.png (84840 bytes, sha256=5a92097b1bedf075…)
+2026-11-11T08:40:36.421Z SHOT-DOM after_report_pass_1024.png {"compare_create":0,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":0,"activity_dialog":1,"report_toggle":1,"report_content":1,"report_readback":1,"report_scope":1,"report_scope_empty":0,"report_scope_resolved":1,"report_scope_declared_sources":1,"report_coverage_counts":1,"report_coverage_unavailable":0,"report_model":1,"report_verification":1,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":1}
+2026-11-11T08:40:36.421Z after report_pass ASSERT PASS report_body_visible expected=">0" actual=1
+2026-11-11T08:40:36.421Z after report_pass ASSERT PASS after_readback_section expected=">0" actual=1
+2026-11-11T08:40:36.421Z after report_pass ASSERT PASS after_scope_section expected=">0" actual=1
+2026-11-11T08:40:36.421Z after report_pass ASSERT PASS after_verification_section expected=">0" actual=1
+2026-11-11T08:40:36.421Z after report_pass ASSERT PASS after_verification_status expected="pass" actual="pass"
+2026-11-11T08:40:36.421Z after report_pass ASSERT PASS after_verification_text expected="Verified — required checks executed with no findings" actual="Verified — required checks executed with no findings"
+2026-11-11T08:40:36.421Z after report_pass ASSERT PASS after_model_section expected=">0" actual=1
+2026-11-11T08:40:36.421Z after report_pass ASSERT PASS after_declared_sources expected=">0" actual=1
+2026-11-11T08:40:36.421Z after report_pass ASSERT PASS after_coverage_counts expected="counts>0 & unavailable=0" actual="{\"counts\":1,\"unavailable\":0}"
+===== after scene=report_degraded width=1024x768 =====
+2026-11-11T08:40:36.425Z after harness reset: capability=on report=degraded
+2026-11-11T08:40:38.692Z after boot width=1024 host=http://127.0.0.1:8974/ frame=http://127.0.0.1:8913/research?legacy=1
+2026-11-11T08:40:41.654Z SHOT after_report_degraded_1024.png (84285 bytes, sha256=03b165e3412a5741…)
+2026-11-11T08:40:41.654Z SHOT-DOM after_report_degraded_1024.png {"compare_create":0,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":0,"activity_dialog":1,"report_toggle":1,"report_content":1,"report_readback":1,"report_scope":1,"report_scope_empty":0,"report_scope_resolved":1,"report_scope_declared_sources":0,"report_coverage_counts":1,"report_coverage_unavailable":0,"report_model":1,"report_verification":1,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":1}
+2026-11-11T08:40:41.654Z after report_degraded ASSERT PASS report_body_visible expected=">0" actual=1
+2026-11-11T08:40:41.654Z after report_degraded ASSERT PASS after_readback_section expected=">0" actual=1
+2026-11-11T08:40:41.654Z after report_degraded ASSERT PASS after_scope_section expected=">0" actual=1
+2026-11-11T08:40:41.654Z after report_degraded ASSERT PASS after_verification_section expected=">0" actual=1
+2026-11-11T08:40:41.654Z after report_degraded ASSERT PASS after_verification_status expected="degraded" actual="degraded"
+2026-11-11T08:40:41.654Z after report_degraded ASSERT PASS after_verification_text expected="Degraded — verification found unsupported cited claims" actual="Degraded — verification found unsupported cited claims"
+2026-11-11T08:40:41.654Z after report_degraded ASSERT PASS after_not_rendered_as_pass expected="no pass text" actual="Degraded — verification found unsupported cited claims"
+2026-11-11T08:40:41.654Z after report_degraded ASSERT PASS after_model_section expected=">0" actual=1
+===== after scene=report_partial width=1024x768 =====
+2026-11-11T08:40:41.658Z after harness reset: capability=on report=partial
+2026-11-11T08:40:43.868Z after boot width=1024 host=http://127.0.0.1:8974/ frame=http://127.0.0.1:8913/research?legacy=1
+2026-11-11T08:40:46.809Z SHOT after_report_partial_1024.png (84769 bytes, sha256=45298c5a03561b94…)
+2026-11-11T08:40:46.809Z SHOT-DOM after_report_partial_1024.png {"compare_create":0,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":0,"activity_dialog":1,"report_toggle":1,"report_content":1,"report_readback":1,"report_scope":1,"report_scope_empty":0,"report_scope_resolved":1,"report_scope_declared_sources":0,"report_coverage_counts":1,"report_coverage_unavailable":0,"report_model":1,"report_verification":1,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":1}
+2026-11-11T08:40:46.809Z after report_partial ASSERT PASS report_body_visible expected=">0" actual=1
+2026-11-11T08:40:46.809Z after report_partial ASSERT PASS after_readback_section expected=">0" actual=1
+2026-11-11T08:40:46.809Z after report_partial ASSERT PASS after_scope_section expected=">0" actual=1
+2026-11-11T08:40:46.809Z after report_partial ASSERT PASS after_verification_section expected=">0" actual=1
+2026-11-11T08:40:46.809Z after report_partial ASSERT PASS after_verification_status expected="partial" actual="partial"
+2026-11-11T08:40:46.809Z after report_partial ASSERT PASS after_verification_text expected="Partially checked — some checks were skipped, so this is not a pass" actual="Partially checked — some checks were skipped, so this is not a pass"
+2026-11-11T08:40:46.809Z after report_partial ASSERT PASS after_not_rendered_as_pass expected="no pass text" actual="Partially checked — some checks were skipped, so this is not a pass"
+2026-11-11T08:40:46.809Z after report_partial ASSERT PASS after_model_section expected=">0" actual=1
+===== after scene=report_not_run width=1024x768 =====
+2026-11-11T08:40:46.813Z after harness reset: capability=on report=not_run
+2026-11-11T08:40:49.057Z after boot width=1024 host=http://127.0.0.1:8974/ frame=http://127.0.0.1:8913/research?legacy=1
+2026-11-11T08:40:51.998Z SHOT after_report_not_run_1024.png (83279 bytes, sha256=fd179e7a8e0860be…)
+2026-11-11T08:40:51.998Z SHOT-DOM after_report_not_run_1024.png {"compare_create":0,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":0,"activity_dialog":1,"report_toggle":1,"report_content":1,"report_readback":1,"report_scope":1,"report_scope_empty":1,"report_scope_resolved":0,"report_scope_declared_sources":0,"report_coverage_counts":0,"report_coverage_unavailable":0,"report_model":1,"report_verification":1,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":1}
+2026-11-11T08:40:51.998Z after report_not_run ASSERT PASS report_body_visible expected=">0" actual=1
+2026-11-11T08:40:51.998Z after report_not_run ASSERT PASS after_readback_section expected=">0" actual=1
+2026-11-11T08:40:51.998Z after report_not_run ASSERT PASS after_scope_section expected=">0" actual=1
+2026-11-11T08:40:51.998Z after report_not_run ASSERT PASS after_verification_section expected=">0" actual=1
+2026-11-11T08:40:51.998Z after report_not_run ASSERT PASS after_verification_status expected="not_run" actual="not_run"
+2026-11-11T08:40:51.998Z after report_not_run ASSERT PASS after_verification_text expected="Not verified — this job ran before comparison verification existed" actual="Not verified — this job ran before comparison verification existed"
+2026-11-11T08:40:51.998Z after report_not_run ASSERT PASS after_not_rendered_as_pass expected="no pass text" actual="Not verified — this job ran before comparison verification existed"
+2026-11-11T08:40:51.998Z after report_not_run ASSERT PASS after_scope_missing_not_recorded expected=">0" actual=1
+===== after scene=report_410_revoked width=1024x768 =====
+2026-11-11T08:40:52.002Z after harness reset: capability=on report=revoked
+2026-11-11T08:40:54.224Z after boot width=1024 host=http://127.0.0.1:8974/ frame=http://127.0.0.1:8913/research?legacy=1
+2026-11-11T08:40:57.190Z SHOT after_report_410_revoked_1024.png (87635 bytes, sha256=ccbd72c1a7351e7d…)
+2026-11-11T08:40:57.190Z SHOT-DOM after_report_410_revoked_1024.png {"compare_create":0,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":0,"activity_dialog":1,"report_toggle":1,"report_content":0,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_scope_declared_sources":0,"report_coverage_counts":0,"report_coverage_unavailable":0,"report_model":0,"report_verification":0,"report_restricted":1,"report_retryable":0,"report_retry_button":0,"markdown_blocks":0}
+2026-11-11T08:40:57.190Z after report_410_revoked ASSERT PASS after_restricted_placeholder expected=">0" actual=1
+2026-11-11T08:40:57.190Z after report_410_revoked ASSERT PASS after_no_report_body expected=0 actual=0
+2026-11-11T08:40:57.190Z after report_410_revoked ASSERT PASS after_restricted_explains_revoke expected=true actual=true
+2026-11-11T08:40:57.191Z after report_410_revoked ASSERT PASS report_request_410 expected=">0" actual=1
+===== after scene=report_503 width=1024x768 =====
+2026-11-11T08:40:57.194Z after harness reset: capability=on report=unavailable503
+2026-11-11T08:40:59.457Z after boot width=1024 host=http://127.0.0.1:8974/ frame=http://127.0.0.1:8913/research?legacy=1
+2026-11-11T08:41:02.428Z SHOT after_report_503_1024.png (86768 bytes, sha256=06e192e4a3b42146…)
+2026-11-11T08:41:02.428Z SHOT-DOM after_report_503_1024.png {"compare_create":0,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":0,"activity_dialog":1,"report_toggle":1,"report_content":0,"report_readback":0,"report_scope":0,"report_scope_empty":0,"report_scope_resolved":0,"report_scope_declared_sources":0,"report_coverage_counts":0,"report_coverage_unavailable":0,"report_model":0,"report_verification":0,"report_restricted":0,"report_retryable":1,"report_retry_button":1,"markdown_blocks":0}
+2026-11-11T08:41:02.428Z after report_503 ASSERT PASS after_retryable_shown expected=">0" actual=1
+2026-11-11T08:41:02.428Z after report_503 ASSERT PASS after_retry_button expected=">0" actual=1
+2026-11-11T08:41:02.428Z after report_503 ASSERT PASS after_no_report_body expected=0 actual=0
+2026-11-11T08:41:02.429Z after harness report mode -> pass
+2026-11-11T08:41:04.061Z after report_503 ASSERT PASS after_retry_renders_report expected=">0" actual=1
+2026-11-11T08:41:04.104Z SHOT after_report_503_retried_1024.png (83932 bytes, sha256=8849937da66f3a98…)
+2026-11-11T08:41:04.104Z SHOT-DOM after_report_503_retried_1024.png {"compare_create":0,"compare_entire_project":0,"compare_empty":0,"compare_declared_all":0,"compare_submitted":0,"activity_dialog":1,"report_toggle":1,"report_content":1,"report_readback":1,"report_scope":1,"report_scope_empty":0,"report_scope_resolved":1,"report_scope_declared_sources":0,"report_coverage_counts":1,"report_coverage_unavailable":0,"report_model":1,"report_verification":1,"report_restricted":0,"report_retryable":0,"report_retry_button":0,"markdown_blocks":1}
+===== RESULT after: 130 PASS / 0 FAIL / 0 scene errors =====
+2026-11-11T08:41:04.156Z manifest written: /home/lchen/.dsh/state/superagent/work/compare-implementation-7028627e2a92-evidence/dev_docs/validation/issue1017/after-manifest.json
