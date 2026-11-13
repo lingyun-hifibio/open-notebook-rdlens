@@ -404,6 +404,7 @@ export function ResearchChatPanel({
   showCoverageScopeSelector = true,
   showSessionScopeBar = true,
   showSessionHeader = true,
+  submissionStatusPlacement = 'pinned',
 }: {
   turns: ResearchChatTurn[]
   isStreaming: boolean
@@ -582,6 +583,14 @@ export function ResearchChatPanel({
   showSessionScopeBar?: boolean
   /** W1 #1104：隐藏面板内会话标题条（目标壳 UI-07 自己渲染标题/历史/新对话）。 */
   showSessionHeader?: boolean
+  /**
+   * #1234（R-14）：提交状态卡的呈现位置。
+   * - `pinned`（默认，旧壳行为不变）：固定在消息区上方，不随消息滚动；
+   * - `scrolled`：作为消息内容随消息区滚动。目标壳在 1024 视口 + 右栏打开时
+   *   消息区高度有限，固定状态卡会把消息列表压到不可用（R-14）；目标壳显式
+   *   选择随消息滚动，保证消息区拿到完整高度且状态卡仍可滚动查看。
+   */
+  submissionStatusPlacement?: 'pinned' | 'scrolled'
 }) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
@@ -1755,6 +1764,36 @@ export function ResearchChatPanel({
     settleFollowTailRef.current()
   }, [wired, surfaceActive, stableMessageIdSignature, editorSnapshot?.positionUnavailable])
 
+  // #1234（R-14）：提交状态卡唯一节点——按 `submissionStatusPlacement` 决定
+  // 渲染在消息区上方（pinned，旧壳默认）或消息滚动内容内（scrolled，目标壳）。
+  const submissionStatusNode =
+    sessionWired && submissionView !== null ? (
+      <ResearchSubmissionStatus
+        submissionView={submissionView}
+        currentDraft={editorSnapshot?.draftText ?? null}
+        contextReport={
+          submissionLookup?.contextReport !== null &&
+          submissionLookup?.contextReport !== undefined
+            ? submissionLookup.contextReport
+            : null
+        }
+        visibility={sessionVisibility.visibility ?? undefined}
+        onLookup={() => {
+          void sessionConversation?.lookupSubmission(submissionLookup?.token)
+          void refreshMarkerLookups?.(editorSnapshot?.draftToken ?? null)
+        }}
+        onRestore={(text) => {
+          editorHandle?.setDraftText(text)
+          void sessionConversation?.lookupSubmission(submissionLookup?.token)
+        }}
+        onCopy={(text) => {
+          if (typeof navigator !== 'undefined' && navigator.clipboard) {
+            void navigator.clipboard.writeText(text)
+          }
+        }}
+      />
+    ) : null
+
   return (
     <div
       ref={panelRootRef}
@@ -1825,32 +1864,9 @@ export function ResearchChatPanel({
           </div>
         </div>
       )}
-      {sessionWired && submissionView !== null && (
-        <div className="shrink-0 border-b px-3 py-2">
-          <ResearchSubmissionStatus
-            submissionView={submissionView}
-            currentDraft={editorSnapshot?.draftText ?? null}
-            contextReport={
-              submissionLookup?.contextReport !== null &&
-              submissionLookup?.contextReport !== undefined
-                ? submissionLookup.contextReport
-                : null
-            }
-            visibility={sessionVisibility.visibility ?? undefined}
-            onLookup={() => {
-              void sessionConversation?.lookupSubmission(submissionLookup?.token)
-              void refreshMarkerLookups?.(editorSnapshot?.draftToken ?? null)
-            }}
-            onRestore={(text) => {
-              editorHandle?.setDraftText(text)
-              void sessionConversation?.lookupSubmission(submissionLookup?.token)
-            }}
-            onCopy={(text) => {
-              if (typeof navigator !== 'undefined' && navigator.clipboard) {
-                void navigator.clipboard.writeText(text)
-              }
-            }}
-          />
+      {submissionStatusPlacement === 'pinned' && submissionStatusNode !== null && (
+        <div className="shrink-0 border-b px-3 py-2" data-testid="chat-submission-status-band">
+          {submissionStatusNode}
         </div>
       )}
       {showSessionScopeBar && wired && !noActiveSession && (
@@ -2310,6 +2326,11 @@ export function ResearchChatPanel({
           <p className="text-xs text-muted-foreground" data-testid="chat-streaming">
             {t('research.chatStreaming')}
           </p>
+        )}
+        {submissionStatusPlacement === 'scrolled' && submissionStatusNode !== null && (
+          <div className="pt-1" data-testid="chat-submission-status-band">
+            {submissionStatusNode}
+          </div>
         )}
       </div>
 

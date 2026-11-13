@@ -26,6 +26,18 @@ const CENTER_BODY_MAX_WIDTH = '850px'
 const CENTER_COMPOSER_MAX_WIDTH = '682px'
 
 /**
+ * #1234（R-14）：消息区最小高度（px）。
+ *
+ * 目标壳在 1024 视口 + 右栏打开时，标题区/概览入口/composer 占去大部分高度；
+ * 若消息区可被 flex 压到 0，回答动作行会落到 composer 覆盖区（指针拦截）。
+ * 取 160：UI 规格 §3.1 最低支持工作台高度 600px 下 `600 − 133(标题区)
+ * − 77(概览行) − 270(composer) = 120`，故 160 只在参考视口及以上成立；
+ * 更矮时由外层滚动容器（`rdlens-target-conversation-scroll`）滚动，
+ * composer 仍固定在底部。
+ */
+const MESSAGE_AREA_MIN_HEIGHT_PX = 160
+
+/**
  * UI-07 中央对话（W1 #1104；UI 规格 v1 §5.4）。
  *
  * - 标题区：上下文 kicker + 对话标题 + 一句说明 + 历史/新对话（位于标题右侧，
@@ -173,203 +185,215 @@ export function TargetConversation({
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="rdlens-target-conversation">
+      {/* #1234（R-14）：标题区/概览行/消息区放入同一垂直滚动容器——消息区有
+          最小高度，空间不足时滚动容器滚动（标题区可滚出），composer 仍固定在
+          中央列底部（下方兄弟节点，不在滚动容器内）。空间充足时容器不滚动，
+          与既有布局一致。 */}
       <div
-        className="shrink-0 border-b pb-3 pt-5"
-        style={{
-          borderColor: 'var(--rdlens-line)',
-          paddingInline: CENTER_INLINE_PADDING,
-        }}
-        data-testid="rdlens-target-conversation-header"
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto"
+        data-testid="rdlens-target-conversation-scroll"
       >
-        {/* N4：标题区与正文列使用同一内宽容器（850 居中），左缘一致 */}
-        <div style={{ maxWidth: CENTER_BODY_MAX_WIDTH, width: '100%', marginInline: 'auto' }}>
-        <div className="flex min-w-0 items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p
-              className="text-[11px] font-medium uppercase tracking-wide"
-              style={{ color: 'var(--rdlens-ink-muted)' }}
-            >
-              {t('research.target.conversation.kicker')}
-            </p>
-            <h2
-              className="rdlens-serif mt-0.5 min-w-0 truncate text-[23px] font-medium leading-snug"
-              title={title}
-              data-testid="rdlens-target-conversation-title"
-            >
-              {title}
-            </h2>
-            {/* §5.4 UI-07「一句说明」：解释本对话的用途边界 */}
-            <p
-              className="mt-1 text-sm leading-relaxed"
-              style={{ color: 'var(--rdlens-ink-muted)' }}
-              data-testid="rdlens-target-conversation-description"
-            >
-              {t('research.target.conversation.description')}
-            </p>
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-[38px] gap-1.5"
-              disabled={!historyAvailable}
-              title={historyAvailable ? undefined : historyUnavailableReason ?? undefined}
-              aria-describedby={historyAvailable ? undefined : 'rdlens-target-history-reason'}
-              aria-expanded={rightPane === 'conversations'}
-              // A11Y-03：仅在面板真实渲染时输出 aria-controls（关闭时不悬空）
-              aria-controls={rightPane !== null ? 'rdlens-target-right-pane' : undefined}
-              onClick={(event) => {
-                if (rightPane !== 'conversations') {
-                  onOpenRightPane('conversations', event.currentTarget)
-                  return
-                }
-                onOpenHistory(event.currentTarget)
-              }}
-              data-testid="rdlens-target-history-trigger"
-            >
-              <History aria-hidden="true" className="h-4 w-4" />
-              <span className="max-xl:hidden">{t('research.target.conversation.history')}</span>
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-[38px] gap-1.5"
-              disabled={!createAvailable}
-              title={createAvailable ? undefined : createUnavailableReason ?? undefined}
-              aria-describedby={createAvailable ? undefined : 'rdlens-target-new-reason'}
-              onClick={onNewConversation}
-              data-testid="rdlens-target-new-conversation"
-            >
-              <Plus aria-hidden="true" className="h-4 w-4" />
-              <span className="max-xl:hidden">{t('research.target.conversation.newConversation')}</span>
-            </Button>
-          </div>
-        </div>
-        {/* 不可用原因常显（不是假控件：按钮 disabled 且原因可见，F15）。 */}
-        {!historyAvailable && (
-          <p
-            id="rdlens-target-history-reason"
-            className="mt-2 text-xs"
-            style={{ color: 'var(--rdlens-ink-muted)' }}
-            data-testid="rdlens-target-history-unavailable"
-          >
-            {historyUnavailableReason}
-          </p>
-        )}
-        {!createAvailable && (
-          <p
-            id="rdlens-target-new-reason"
-            className="mt-2 text-xs"
-            style={{ color: 'var(--rdlens-ink-muted)' }}
-            data-testid="rdlens-target-new-unavailable"
-          >
-            {createUnavailableReason ?? t('research.target.conversation.newUnavailable')}
-          </p>
-        )}
-        {/* F3：runtime 可用但无活动会话——明确的新建会话入口，不静默走 legacy。 */}
-        {conversation.noActiveSession && (
-          <div
-            className="mt-3 space-y-2 rounded-[4px] px-3 py-2"
-            style={{ backgroundColor: 'var(--rdlens-field)' }}
-            data-testid="rdlens-target-no-session"
-          >
-            <p className="text-sm font-medium">{t('research.target.conversation.noActiveSession')}</p>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={!createAvailable}
-              onClick={onNewConversation}
-              data-testid="rdlens-target-no-session-new"
-            >
-              {t('research.target.conversation.newConversation')}
-            </Button>
-          </div>
-        )}
-        </div>
-      </div>
-
-      {/* #1125/D-UI-04=A：中央对话起始位置的轻量概览入口行（标题区之下、
-          消息区之上）。仅当 shell 注入时渲染；与正文列同内边距/同最大宽度
-          （850），不覆盖/不拦截消息区与 composer。 */}
-      {overviewSlot !== undefined && (
         <div
-          className="shrink-0"
-          style={{ paddingInline: CENTER_INLINE_PADDING }}
-          data-testid="rdlens-target-overview-slot"
+          className="shrink-0 border-b pb-3 pt-5"
+          style={{
+            borderColor: 'var(--rdlens-line)',
+            paddingInline: CENTER_INLINE_PADDING,
+          }}
+          data-testid="rdlens-target-conversation-header"
         >
+          {/* N4：标题区与正文列使用同一内宽容器（850 居中），左缘一致 */}
           <div style={{ maxWidth: CENTER_BODY_MAX_WIDTH, width: '100%', marginInline: 'auto' }}>
-            {overviewSlot}
+          <div className="flex min-w-0 items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p
+                className="text-[11px] font-medium uppercase tracking-wide"
+                style={{ color: 'var(--rdlens-ink-muted)' }}
+              >
+                {t('research.target.conversation.kicker')}
+              </p>
+              <h2
+                className="rdlens-serif mt-0.5 min-w-0 truncate text-[23px] font-medium leading-snug"
+                title={title}
+                data-testid="rdlens-target-conversation-title"
+              >
+                {title}
+              </h2>
+              {/* §5.4 UI-07「一句说明」：解释本对话的用途边界 */}
+              <p
+                className="mt-1 text-sm leading-relaxed"
+                style={{ color: 'var(--rdlens-ink-muted)' }}
+                data-testid="rdlens-target-conversation-description"
+              >
+                {t('research.target.conversation.description')}
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-[38px] gap-1.5"
+                disabled={!historyAvailable}
+                title={historyAvailable ? undefined : historyUnavailableReason ?? undefined}
+                aria-describedby={historyAvailable ? undefined : 'rdlens-target-history-reason'}
+                aria-expanded={rightPane === 'conversations'}
+                // A11Y-03：仅在面板真实渲染时输出 aria-controls（关闭时不悬空）
+                aria-controls={rightPane !== null ? 'rdlens-target-right-pane' : undefined}
+                onClick={(event) => {
+                  if (rightPane !== 'conversations') {
+                    onOpenRightPane('conversations', event.currentTarget)
+                    return
+                  }
+                  onOpenHistory(event.currentTarget)
+                }}
+                data-testid="rdlens-target-history-trigger"
+              >
+                <History aria-hidden="true" className="h-4 w-4" />
+                <span className="max-xl:hidden">{t('research.target.conversation.history')}</span>
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-[38px] gap-1.5"
+                disabled={!createAvailable}
+                title={createAvailable ? undefined : createUnavailableReason ?? undefined}
+                aria-describedby={createAvailable ? undefined : 'rdlens-target-new-reason'}
+                onClick={onNewConversation}
+                data-testid="rdlens-target-new-conversation"
+              >
+                <Plus aria-hidden="true" className="h-4 w-4" />
+                <span className="max-xl:hidden">{t('research.target.conversation.newConversation')}</span>
+              </Button>
+            </div>
+          </div>
+          {/* 不可用原因常显（不是假控件：按钮 disabled 且原因可见，F15）。 */}
+          {!historyAvailable && (
+            <p
+              id="rdlens-target-history-reason"
+              className="mt-2 text-xs"
+              style={{ color: 'var(--rdlens-ink-muted)' }}
+              data-testid="rdlens-target-history-unavailable"
+            >
+              {historyUnavailableReason}
+            </p>
+          )}
+          {!createAvailable && (
+            <p
+              id="rdlens-target-new-reason"
+              className="mt-2 text-xs"
+              style={{ color: 'var(--rdlens-ink-muted)' }}
+              data-testid="rdlens-target-new-unavailable"
+            >
+              {createUnavailableReason ?? t('research.target.conversation.newUnavailable')}
+            </p>
+          )}
+          {/* F3：runtime 可用但无活动会话——明确的新建会话入口，不静默走 legacy。 */}
+          {conversation.noActiveSession && (
+            <div
+              className="mt-3 space-y-2 rounded-[4px] px-3 py-2"
+              style={{ backgroundColor: 'var(--rdlens-field)' }}
+              data-testid="rdlens-target-no-session"
+            >
+              <p className="text-sm font-medium">{t('research.target.conversation.noActiveSession')}</p>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={!createAvailable}
+                onClick={onNewConversation}
+                data-testid="rdlens-target-no-session-new"
+              >
+                {t('research.target.conversation.newConversation')}
+              </Button>
+            </div>
+          )}
           </div>
         </div>
-      )}
 
-      {/* 消息内容面：复用既有 ChatPanel；关闭其会话标题/范围条/composer，
-          避免重复范围权威与重复标题（目标壳 composer 在中央列底部）。 */}
-      <div
-        className="min-h-0 flex-1"
-        style={{ paddingInline: CENTER_INLINE_PADDING }}
-        data-testid="rdlens-target-message-area-padded"
-      >
+        {/* #1125/D-UI-04=A：中央对话起始位置的轻量概览入口行（标题区之下、
+            消息区之上）。仅当 shell 注入时渲染；与正文列同内边距/同最大宽度
+            （850），不覆盖/不拦截消息区与 composer。 */}
+        {overviewSlot !== undefined && (
+          <div
+            className="shrink-0"
+            style={{ paddingInline: CENTER_INLINE_PADDING }}
+            data-testid="rdlens-target-overview-slot"
+          >
+            <div style={{ maxWidth: CENTER_BODY_MAX_WIDTH, width: '100%', marginInline: 'auto' }}>
+              {overviewSlot}
+            </div>
+          </div>
+        )}
+
+        {/* 消息内容面：复用既有 ChatPanel；关闭其会话标题/范围条/composer，
+            避免重复范围权威与重复标题（目标壳 composer 在中央列底部）。 */}
         <div
-          className="h-full min-h-0"
-          data-testid="rdlens-target-message-area"
-          style={{ maxWidth: CENTER_BODY_MAX_WIDTH, width: '100%', marginInline: 'auto' }}
+          className="flex-1"
+          style={{ minHeight: MESSAGE_AREA_MIN_HEIGHT_PX, paddingInline: CENTER_INLINE_PADDING }}
+          data-testid="rdlens-target-message-area-padded"
         >
-        <ResearchChatPanel
-          turns={conversation.turns}
-          isStreaming={conversation.isStreaming}
-          onSend={() => Promise.resolve(false)}
-          onSendCoverage={(): Promise<CoverageSubmitOutcome> =>
-            Promise.resolve({ status: 'not_dispatched' })
-          }
-          sendDisabled={!conversation.canExecute}
-          blockedHint={conversation.blockedHint}
-          onCitationReturn={handleCitationReturn}
-          onViewNote={onViewNote}
-          scrollToMessage={scrollToMessage}
-          onSelectionJump={onSelectionJump}
-          backgroundNotice={conversation.backgroundNotice}
-          resolveChatOrigin={conversation.resolveChatOrigin}
-          editorSnapshot={conversation.sessionWired ? conversation.editorSnapshot : undefined}
-          submissionReady={conversation.submissionReady}
-          editorHandle={conversation.editor}
-          conversation={conversation.conversation}
-          sessionRef={conversation.activeRef}
-          sessionMeta={conversation.sessionMeta}
-          sessionCards={conversation.sessionCards}
-          submissionLookup={conversation.submissionLookup}
-          markerWriteFailed={conversation.markerWriteFailed}
-          refreshMarkerLookups={conversation.refreshMarkerLookups}
-          onSendSession={async () => false}
-          onNewSession={onNewConversation}
-          onDraftChange={(text) => conversation.editor.setDraftText(text)}
-          onRetrySave={() => void conversation.editor.retrySave()}
-          hideComposer
-          // 目标壳 composer 由 shell 拥有：跨端草稿的 draft-token 级冷启动
-          // 查回不适用（mount 的 reconcileMarkers 仍恢复 active/marker）；
-          // 详见 ResearchChatPanel 的 prop 注释（真实 harness 缺陷修复）。
-          suppressColdStartLookup
-          // #1106：回答脚注「改用途」入口（能力位 false 时不传入 → 不渲染
-          // 纠正动作，避免假控件）。点击把该轮提问放回 composer。
-          onRequestPurposeChange={
-            conversation.purposeInferenceAvailable
-              ? handleRequestPurposeChange
-              : undefined
-          }
-          // #1106/D6：422 scope_selected_empty 的「改为探索讨论并重发」。
-          onRetryWithPurpose={
-            conversation.purposeInferenceAvailable
-              ? (query) => conversation.sendWithPurpose(query, 'exploration')
-              : undefined
-          }
-          prefill={purposePrefill}
-          showCoverageScopeSelector={false}
-          showSessionScopeBar={false}
-          showSessionHeader={false}
-        />
+          <div
+            className="h-full min-h-0"
+            data-testid="rdlens-target-message-area"
+            style={{ maxWidth: CENTER_BODY_MAX_WIDTH, width: '100%', marginInline: 'auto' }}
+          >
+          <ResearchChatPanel
+            turns={conversation.turns}
+            isStreaming={conversation.isStreaming}
+            onSend={() => Promise.resolve(false)}
+            onSendCoverage={(): Promise<CoverageSubmitOutcome> =>
+              Promise.resolve({ status: 'not_dispatched' })
+            }
+            sendDisabled={!conversation.canExecute}
+            blockedHint={conversation.blockedHint}
+            onCitationReturn={handleCitationReturn}
+            onViewNote={onViewNote}
+            scrollToMessage={scrollToMessage}
+            onSelectionJump={onSelectionJump}
+            backgroundNotice={conversation.backgroundNotice}
+            resolveChatOrigin={conversation.resolveChatOrigin}
+            editorSnapshot={conversation.sessionWired ? conversation.editorSnapshot : undefined}
+            submissionReady={conversation.submissionReady}
+            editorHandle={conversation.editor}
+            conversation={conversation.conversation}
+            sessionRef={conversation.activeRef}
+            sessionMeta={conversation.sessionMeta}
+            sessionCards={conversation.sessionCards}
+            submissionLookup={conversation.submissionLookup}
+            markerWriteFailed={conversation.markerWriteFailed}
+            refreshMarkerLookups={conversation.refreshMarkerLookups}
+            onSendSession={async () => false}
+            onNewSession={onNewConversation}
+            onDraftChange={(text) => conversation.editor.setDraftText(text)}
+            onRetrySave={() => void conversation.editor.retrySave()}
+            hideComposer
+            // 目标壳 composer 由 shell 拥有：跨端草稿的 draft-token 级冷启动
+            // 查回不适用（mount 的 reconcileMarkers 仍恢复 active/marker）；
+            // 详见 ResearchChatPanel 的 prop 注释（真实 harness 缺陷修复）。
+            suppressColdStartLookup
+            // #1106：回答脚注「改用途」入口（能力位 false 时不传入 → 不渲染
+            // 纠正动作，避免假控件）。点击把该轮提问放回 composer。
+            onRequestPurposeChange={
+              conversation.purposeInferenceAvailable
+                ? handleRequestPurposeChange
+                : undefined
+            }
+            // #1106/D6：422 scope_selected_empty 的「改为探索讨论并重发」。
+            onRetryWithPurpose={
+              conversation.purposeInferenceAvailable
+                ? (query) => conversation.sendWithPurpose(query, 'exploration')
+                : undefined
+            }
+            prefill={purposePrefill}
+            showCoverageScopeSelector={false}
+            showSessionScopeBar={false}
+            showSessionHeader={false}
+            // #1234（R-14）：提交状态卡随消息滚动，避免固定卡在 1024+右栏时
+            // 把消息区压成窄条（目标壳专用；旧壳默认仍为 pinned）。
+            submissionStatusPlacement="scrolled"
+          />
+          </div>
         </div>
       </div>
 
