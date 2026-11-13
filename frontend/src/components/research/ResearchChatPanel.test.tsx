@@ -2042,6 +2042,7 @@ describe('ResearchChatPanel PR-5b：会话接线与解释 UI', () => {
     onSendCoverage = vi.fn(async () => ACCEPTED_OUTCOME),
     conversation = conversationStub(),
     onRetryWithPurpose,
+    submissionStatusPlacement,
     wrapPanel,
   }: {
     sessionMeta?: ResearchChatSessionMeta | null
@@ -2051,6 +2052,8 @@ describe('ResearchChatPanel PR-5b：会话接线与解释 UI', () => {
     onSendCoverage?: (q: string, snapshot: ResearchScopeSnapshot) => Promise<CoverageSubmitOutcome>
     conversation?: ConversationController
     onRetryWithPurpose?: (query: string) => Promise<boolean>
+    /** #1234（R-14）：提交状态卡位置（目标壳传 scrolled）。 */
+    submissionStatusPlacement?: 'pinned' | 'scrolled'
     /** 可选的 React 包装（如 Profiler），用于断言每次 commit 的 DOM 状态。 */
     wrapPanel?: (node: React.ReactNode) => React.ReactNode
   }) {
@@ -2084,6 +2087,7 @@ describe('ResearchChatPanel PR-5b：会话接线与解释 UI', () => {
               onChangeScope={vi.fn()}
               onDraftChange={vi.fn()}
               onRetrySave={vi.fn()}
+              submissionStatusPlacement={submissionStatusPlacement}
               />
             )}
           </ResearchScopeProvider>
@@ -2182,6 +2186,31 @@ describe('ResearchChatPanel PR-5b：会话接线与解释 UI', () => {
       'data-kind',
       'accepted',
     )
+    // #1234（R-14）：默认（旧壳）仍固定在消息区上方，不进入消息滚动内容。
+    const messages = screen.getByTestId('chat-messages')
+    expect(messages.contains(screen.getByTestId('research-submission-status'))).toBe(false)
+    expect(screen.getByTestId('chat-submission-status-band')).toHaveClass('shrink-0')
+  })
+
+  it('#1234（R-14）：submissionStatusPlacement=scrolled 时状态卡随消息滚动（目标壳）', () => {
+    renderSessionPanel({
+      submissionStatusPlacement: 'scrolled',
+      submissionLookup: {
+        token: 'draft_1',
+        acceptance: 'accepted',
+        generationId: 'gen_1',
+        generationState: 'running',
+        submittedDraftText: '已提交草稿',
+        contextReport: null,
+        lookupFailed: false,
+      },
+    })
+    const messages = screen.getByTestId('chat-messages')
+    const status = screen.getByTestId('research-submission-status')
+    // 状态卡在消息滚动容器内：不再作为 shrink-0 固定带占用消息区高度。
+    expect(messages.contains(status)).toBe(true)
+    expect(screen.getByTestId('chat-submission-status-band')).toHaveClass('pt-1')
+    expect(screen.getByTestId('chat-submission-status-band')).not.toHaveClass('shrink-0')
   })
 
   it('§9.6 Q1/Q2：202 返回时若输入已变为 Q2，不得清空 Q2', async () => {

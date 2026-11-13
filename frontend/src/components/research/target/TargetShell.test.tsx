@@ -922,6 +922,23 @@ describe('目标壳布局与地标（§3）', () => {
     expect(screen.getByTestId('rdlens-target-sources-search')).toHaveValue('doc_ready')
   })
 
+  it('#1234（R-14）：标题区/概览行/消息区同处滚动容器，composer 固定在容器外，消息区有最小高度', async () => {
+    media.wide = false
+    renderShell()
+    fireEvent.click(screen.getByTestId('rdlens-target-tasks-trigger'))
+    await waitFor(() => expect(screen.getByTestId('rdlens-target-right-pane')).toBeInTheDocument())
+    const scroll = screen.getByTestId('rdlens-target-conversation-scroll')
+    expect(scroll).toContainElement(screen.getByTestId('rdlens-target-conversation-header'))
+    expect(scroll).toContainElement(screen.getByTestId('rdlens-target-overview-slot'))
+    expect(scroll).toContainElement(screen.getByTestId('rdlens-target-message-area-padded'))
+    // 消息区最小高度（#1234：1024+右栏时不被压成窄条）
+    expect(screen.getByTestId('rdlens-target-message-area-padded')).toHaveStyle({
+      minHeight: '160px',
+    })
+    // composer 固定在中央列底部：在滚动容器之外
+    expect(scroll.contains(screen.getByTestId('rdlens-target-composer'))).toBe(false)
+  })
+
   it('≥1280 + 右栏打开：三栏并排，左栏不收起', async () => {
     media.wide = true
     renderShell()
